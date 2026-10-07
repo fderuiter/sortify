@@ -303,6 +303,8 @@ usage: app/main.py sort [-h] [--preset {demo,downloads,documents}] [--json]
                         [--tui] [--interactive]
                         [--accept-ai-consent | --decline-ai-consent]
                         [--skip-wizard] [--non-interactive]
+                        [--export-report EXPORT_REPORT]
+                        [--report-format {html,json}]
                         [directory]
 
 positional arguments:
@@ -339,6 +341,10 @@ options:
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
 ```
 
 ##### `scan`
@@ -351,6 +357,8 @@ usage: app/main.py scan [-h] [--preset {demo,downloads,documents}] [--json]
                         [--tui] [--interactive]
                         [--accept-ai-consent | --decline-ai-consent]
                         [--skip-wizard] [--non-interactive]
+                        [--export-report EXPORT_REPORT]
+                        [--report-format {html,json}]
                         [directory]
 
 positional arguments:
@@ -384,6 +392,10 @@ options:
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
 ```
 
 ##### `config`
@@ -396,6 +408,8 @@ usage: app/main.py config [-h] [--show] [--json] [--set KEY VALUE] [-q]
                           [--tui] [--interactive]
                           [--accept-ai-consent | --decline-ai-consent]
                           [--skip-wizard] [--non-interactive]
+                          [--export-report EXPORT_REPORT]
+                          [--report-format {html,json}]
 
 options:
   -h, --help            show this help message and exit
@@ -424,6 +438,10 @@ options:
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
 ```
 
 ##### `daemon`
@@ -436,6 +454,8 @@ usage: app/main.py daemon [-h] [--watch] [-q] [--no-color]
                           [--tui] [--interactive]
                           [--accept-ai-consent | --decline-ai-consent]
                           [--skip-wizard] [--non-interactive]
+                          [--export-report EXPORT_REPORT]
+                          [--report-format {html,json}]
                           [action] [directory]
 
 positional arguments:
@@ -468,6 +488,10 @@ options:
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
 ```
 
 ##### `undo`
@@ -481,6 +505,8 @@ usage: app/main.py undo [-h] [--session-id SESSION_ID] [--list] [--latest]
                         [--tui] [--interactive]
                         [--accept-ai-consent | --decline-ai-consent]
                         [--skip-wizard] [--non-interactive]
+                        [--export-report EXPORT_REPORT]
+                        [--report-format {html,json}]
 
 options:
   -h, --help            show this help message and exit
@@ -513,6 +539,10 @@ options:
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
 ```
 
 ##### `drop`
@@ -526,6 +556,8 @@ usage: app/main.py drop [-h] [--preset {demo,downloads,documents}]
                         [--tui] [--interactive]
                         [--accept-ai-consent | --decline-ai-consent]
                         [--skip-wizard] [--non-interactive]
+                        [--export-report EXPORT_REPORT]
+                        [--report-format {html,json}]
                         paths [paths ...]
 
 positional arguments:
@@ -561,6 +593,10 @@ options:
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
 ```
 
 ##### `ledger`

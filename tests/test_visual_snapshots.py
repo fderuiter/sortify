@@ -289,8 +289,11 @@ def test_cro_forensic_modal_snapshot():
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir="/dummy/study_root")
-        async with app.run_test(size=(100, 30)) as pilot:
-            app.push_screen(CROForensicModal(app.settings, base_dir=app.base_dir))
+        async with app.run_test(size=(100, 35)) as pilot:
+            modal = CROForensicModal(app.settings, base_dir=app.base_dir)
+            app.push_screen(modal)
+            await pilot.pause(0.3)
+            modal.query_one(".modal-box").scroll_home(animate=False)
             await pilot.pause(0.3)
             svg = app.export_screenshot()
             assert_svg_snapshot("cro_forensic_modal", svg)

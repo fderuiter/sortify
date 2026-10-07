@@ -45,17 +45,17 @@ flowchart TD
     end
     subgraph execution_operations ["Policy, Validation & File Operations (app.core)"]
         core_policy_engine{app.core.policy_engine}
+        core_rule_templates["app.core.rule_templates"]
         core_quarantine_interceptor["app.core.quarantine_interceptor"]
         core_domain_contracts["app.core.domain_contracts"]
         core_verifier{app.core.verifier}
-        core_domain_contracts["app.core.domain_contracts"]
+        core_simulation_exporter["app.core.simulation_exporter"]
         core_mover["app.core.mover"]
         core_file_renamer["app.core.file_renamer"]
         core_resilient_file_ops["app.core.resilient_file_ops"]
         core_scanner["app.core.scanner"]
         core_progress["app.core.progress"]
         core_metadata["app.core.metadata"]
-        core_domain_contracts["app.core.domain_contracts"]
     end
     subgraph utilities_security ["Security & Utilities (app.core)"]
         core_text_utils["app.core.text_utils"]
@@ -67,7 +67,6 @@ flowchart TD
         core_exceptions["app.core.exceptions"]
         core_domain_contracts["app.core.domain_contracts"]
     end
-    core_rule_templates["app.core.rule_templates"]
     app_main --> app_tui
     app_main --> core_session
     app_tui --> core_session

@@ -623,17 +623,17 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                 title="Policy, Validation & File Operations (app.core)",
                 nodes=[
                     "core_policy_engine",
+                    "core_rule_templates",
                     "core_quarantine_interceptor",
                     "core_domain_contracts",
                     "core_verifier",
-                    "core_domain_contracts",
+                    "core_simulation_exporter",
                     "core_mover",
                     "core_file_renamer",
                     "core_resilient_file_ops",
                     "core_scanner",
                     "core_progress",
                     "core_metadata",
-                    "core_domain_contracts",
                 ],
             ),
             DiagramSubgraph(
@@ -653,9 +653,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
         ],
         nodes=[
             # Presentation
-            DiagramNode(
-                id="app_main", label="app.main (CLI Entry Point)", shape="round"
-            ),
+            DiagramNode(id="app_main", label="app.main (CLI Entry Point)", shape="round"),
             DiagramNode(id="app_tui", label="app.tui (Textual Terminal Interface)"),
             # Orchestration
             DiagramNode(id="core_session", label="app.core.session"),
@@ -714,17 +712,14 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             ),
             DiagramNode(id="core_rule_templates", label="app.core.rule_templates"),
             DiagramNode(
-                id="core_quarantine_interceptor",
-                label="app.core.quarantine_interceptor",
+                id="core_quarantine_interceptor", label="app.core.quarantine_interceptor"
             ),
             DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
             DiagramNode(id="core_verifier", label="app.core.verifier", shape="rhombus"),
-            DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
+            DiagramNode(id="core_simulation_exporter", label="app.core.simulation_exporter"),
             DiagramNode(id="core_mover", label="app.core.mover"),
             DiagramNode(id="core_file_renamer", label="app.core.file_renamer"),
-            DiagramNode(
-                id="core_resilient_file_ops", label="app.core.resilient_file_ops"
-            ),
+            DiagramNode(id="core_resilient_file_ops", label="app.core.resilient_file_ops"),
             DiagramNode(id="core_scanner", label="app.core.scanner"),
             DiagramNode(id="core_progress", label="app.core.progress"),
             DiagramNode(id="core_metadata", label="app.core.metadata"),
@@ -794,7 +789,6 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramEdge(source="core_path_utils", target="core_exceptions"),
         ],
     )
-
 
 ARCHITECTURE_DATAFLOW_SPEC = DataFlowDiagramSpec(
     id="architecture_dataflow",

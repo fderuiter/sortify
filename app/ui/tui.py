@@ -9,7 +9,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from textual import events, on, work
 from textual.app import App, ComposeResult
@@ -104,15 +104,22 @@ class A11yMixin:
         except (FileNotFoundError, OSError):
             return None
 
-    def announce(self, message: str, priority: str = "polite") -> str:
+    def announce(
+        self,
+        message: str,
+        priority: str = "polite",
+        help_url: Optional[str] = None,
+    ) -> str:
         """Emit auditory screen reader announcement and log accessibility event."""
+        full_msg = f"{message} [Help: {help_url}]" if help_url else message
         entry = {
-            "message": message,
+            "message": full_msg,
             "priority": priority,
             "timestamp": time.time(),
+            "help_url": help_url,
         }
         self.announcements.append(entry)
-        self.last_announcement = message
+        self.last_announcement = full_msg
 
         forwarded = False
         # Forward to parent app if available
@@ -123,7 +130,7 @@ class A11yMixin:
             and hasattr(self.app, "announce")
         ):
             try:
-                self.app.announce(message, priority=priority)
+                self.app.announce(message, priority=priority, help_url=help_url)
                 forwarded = True
             except Exception:
                 pass
@@ -263,6 +270,26 @@ class A11yMixin:
             "speech_binary_fallback_ready": True,
             "status_bar_available": status_bar_available,
         }
+
+    def _show_help_button(self, help_url: str) -> None:
+        """Show the Help button and record contextual help_url."""
+        self.help_url = help_url
+
+        def _unhide() -> None:
+            try:
+                btn = self.query_one("#btn-help", Button)
+                btn.remove_class("hidden")
+            except Exception:
+                pass
+
+        app_obj = getattr(self, "app", None)
+        if app_obj and hasattr(app_obj, "call_from_thread"):
+            try:
+                app_obj.call_from_thread(_unhide)
+            except Exception:
+                _unhide()
+        else:
+            _unhide()
 
 
 class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
@@ -677,11 +704,15 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         border: heavy $accent;
         text-style: bold;
     }
+    Button.hidden {
+        display: none;
+    }
     """
 
     def __init__(self, settings):
         super().__init__()
         self.settings = settings
+        self.help_url = "https://docs.smartautosorter.com/troubleshooting/#settings-configuration"
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
@@ -793,6 +824,11 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel settings modification and close dialog"
                 yield btn_cancel
+                btn_help = Button(
+                    "Help", id="btn-help", variant="warning", classes="hidden"
+                )
+                btn_help.tooltip = "Open settings configuration troubleshooting guide"
+                yield btn_help
                 btn_save = Button("Save Settings", id="btn-save", variant="primary")
                 btn_save.tooltip = "Save modified application settings"
                 yield btn_save
@@ -832,15 +868,30 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             if i.strip()
         ]
 
+        help_url = "https://docs.smartautosorter.com/troubleshooting/#settings-configuration"
         try:
-            conc = int(self.query_one("#input-concurrency", Input).value.strip())
-        except ValueError:
-            conc = 4
+            conc_val = self.query_one("#input-concurrency", Input).value.strip()
+            conc = int(conc_val)
+            if conc <= 0:
+                raise ValueError("Worker concurrency must be greater than 0.")
+        except ValueError as e:
+            self._show_help_button(help_url)
+            from app.ui.notifications import notify
+            notify(f"Settings error: {e}", type="error", help_url=help_url)
+            self.announce(f"Settings error: {e}", help_url=help_url)
+            return
 
         try:
-            max_f = int(self.query_one("#input-max-folders", Input).value.strip())
-        except ValueError:
-            max_f = 12
+            max_f_val = self.query_one("#input-max-folders", Input).value.strip()
+            max_f = int(max_f_val)
+            if max_f <= 0:
+                raise ValueError("Max folders must be greater than 0.")
+        except ValueError as e:
+            self._show_help_button(help_url)
+            from app.ui.notifications import notify
+            notify(f"Settings error: {e}", type="error", help_url=help_url)
+            self.announce(f"Settings error: {e}", help_url=help_url)
+            return
 
         strat = self.query_one("#select-strategy", Select).value
         if strat == Select.BLANK:
@@ -865,6 +916,18 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         }
         self.announce("Saved application settings.")
         self.dismiss(res)
+
+    @on(Button.Pressed, "#btn-help")
+    def action_help(self) -> None:
+        """Open settings troubleshooting documentation."""
+        url = getattr(
+            self,
+            "help_url",
+            "https://docs.smartautosorter.com/troubleshooting/#settings-configuration",
+        )
+        from app.ui.notifications import notify
+        notify(f"Opening help link: {url}", type="info", help_url=url)
+        self.announce(f"Opened documentation link: {url}")
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
@@ -1263,6 +1326,10 @@ class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
                 )
                 yield btn_rollback
 
+                btn_help = Button("Help", id="btn-help", variant="default")
+                btn_help.tooltip = "Open session recovery troubleshooting guide"
+                yield btn_help
+
                 btn_resume = Button("Resume", id="btn-resume", variant="primary")
                 btn_resume.tooltip = "Resume pending file moves for interrupted run"
                 yield btn_resume
@@ -1301,6 +1368,14 @@ class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
         """Confirm clean action."""
         self.announce("Confirmed session clean.")
         self.dismiss("clean")
+
+    @on(Button.Pressed, "#btn-help")
+    def action_help(self) -> None:
+        """Open session recovery troubleshooting guide."""
+        url = "https://docs.smartautosorter.com/troubleshooting/#session-recovery"
+        from app.ui.notifications import notify
+        notify(f"Opening help link: {url}", type="info", help_url=url)
+        self.announce(f"Opened documentation link: {url}")
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
@@ -1357,7 +1432,7 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
         height: 3;
         align: right middle;
     }
-    Button:focus {
+    Button:focus, Input:focus, Select:focus {
         border: heavy $accent;
         text-style: bold;
     }
@@ -1514,6 +1589,9 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         border: heavy $accent;
         text-style: bold;
     }
+    Button.hidden {
+        display: none;
+    }
     """
 
     def __init__(self, settings: Any = None, base_dir: Optional[str] = None):
@@ -1558,6 +1636,14 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel dropzone triage operation and close dialog"
                 yield btn_cancel
+
+                btn_help = Button(
+                    "Help", id="btn-help", variant="warning", classes="hidden"
+                )
+                btn_help.tooltip = (
+                    "Open troubleshooting documentation for dropzone errors"
+                )
+                yield btn_help
 
                 btn_process = Button("Sort Items", id="btn-process", variant="primary")
                 btn_process.tooltip = (
@@ -1608,6 +1694,18 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         """Handle Sort Items button press."""
         self.trigger_drop_triage()
 
+    @on(Button.Pressed, "#btn-help")
+    def action_help(self) -> None:
+        """Open troubleshooting documentation link for dropzone."""
+        url = getattr(
+            self,
+            "help_url",
+            "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors",
+        )
+        from app.ui.notifications import notify
+        notify(f"Opening help link: {url}", type="info", help_url=url)
+        self.announce(f"Opened documentation link: {url}")
+
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
         """Dismiss dropzone modal."""
@@ -1622,10 +1720,13 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             raw_text = ""
 
+        help_url = "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors"
+
         if not raw_text:
-            self.update_status_msg(
-                "No file or folder paths provided. Please paste or type a path."
-            )
+            self._show_help_button(help_url)
+            from app.ui.notifications import notify
+            notify("No file or folder paths provided.", type="error", help_url=help_url)
+            self.update_status_msg("No file or folder paths provided. Please paste or type a path.", help_url=help_url)
             return
 
         raw_items = [
@@ -1658,25 +1759,25 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             validated_paths.append(abs_p)
 
         if not validated_paths:
-            err_text = (
-                "; ".join(invalid_messages)
-                if invalid_messages
-                else "No valid paths found."
-            )
-            self.update_status_msg(f"Error: {err_text}")
+            err_text = "; ".join(invalid_messages) if invalid_messages else "No valid paths found."
+            self._show_help_button(help_url)
+            from app.ui.notifications import notify
+            notify(f"DropZone error: {err_text}", type="error", help_url=help_url)
+            self.update_status_msg(f"Error: {err_text}", help_url=help_url)
             return
 
         self.update_status_msg(f"Processing {len(validated_paths)} dropped item(s)...")
         self.run_drop_worker(validated_paths)
 
-    def update_status_msg(self, msg: str) -> None:
+    def update_status_msg(self, msg: str, help_url: Optional[str] = None) -> None:
         """Update live status message region and screen reader announcement."""
+        display_msg = f"{msg} [Help: {help_url}]" if help_url else msg
         try:
             lbl = self.query_one("#dropzone-status", Label)
-            lbl.update(msg)
+            lbl.update(display_msg)
         except Exception:
             pass
-        self.announce(msg)
+        self.announce(msg, help_url=help_url)
 
     @work(exclusive=True, thread=True)
     def run_drop_worker(self, target_paths: List[str]) -> None:
@@ -1756,6 +1857,132 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 )
 
 
+class ExportReportModal(A11yMixin, ModalScreen[Optional[Tuple[str, str]]]):
+    """Modal dialog for exporting dry-run simulation reports."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    ExportReportModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .modal-subtitle {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Input:focus, Select:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(
+        self,
+        default_path: str = "./simulation_report.html",
+        default_format: str = "html",
+    ):
+        super().__init__()
+        self.default_path = default_path
+        self.default_format = default_format
+
+    def compose(self) -> ComposeResult:
+        """Compose export report modal widgets."""
+        with Vertical(classes="modal-box"):
+            yield Label("Export Simulation Report", classes="modal-title")
+            yield Label(
+                "Select output file path and report format:",
+                classes="modal-subtitle",
+            )
+            inp = Input(
+                value=self.default_path,
+                placeholder="Enter output path (e.g. ./report.html)...",
+                id="input-export-path",
+            )
+            inp.tooltip = "Enter path for exported dry-run simulation report"
+            yield inp
+
+            fmt_select = Select(
+                [("HTML Report (*.html)", "html"), ("JSON Data (*.json)", "json")],
+                value=self.default_format,
+                id="select-export-format",
+                allow_blank=False,
+            )
+            yield fmt_select
+
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
+                btn_cancel.tooltip = "Cancel report export action"
+                yield btn_cancel
+                btn_export = Button(
+                    "Export Report", id="btn-export", variant="primary"
+                )
+                btn_export.tooltip = "Export simulation report to disk"
+                yield btn_export
+
+    def _update_layout(self, width: int) -> None:
+        """Update layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle viewport resize event."""
+        self._update_layout(event.size.width)
+
+    def on_mount(self) -> None:
+        """Focus input field on mount and emit accessibility announcement."""
+        self._update_layout(self.size.width)
+        self.query_one("#input-export-path", Input).focus()
+        self.announce("Opened export simulation report dialog.")
+
+    @on(Input.Submitted, "#input-export-path")
+    def action_submit_input(self) -> None:
+        """Handle input submission event."""
+        self.action_export()
+
+    @on(Button.Pressed, "#btn-export")
+    def action_export(self) -> None:
+        """Confirm report export and dismiss modal with export parameters."""
+        path_val = self.query_one("#input-export-path", Input).value.strip()
+        if not path_val:
+            self.announce("Output path cannot be empty.")
+            return
+        format_val = self.query_one("#select-export-format", Select).value or "html"
+        self.dismiss((path_val, str(format_val)))
+
+    @on(Button.Pressed, "#btn-cancel")
+    def action_cancel(self) -> None:
+        """Cancel report export modal."""
+        self.dismiss(None)
 class VimTree(Tree):
     """Tree control with native vim motion navigation (h, j, k, l)."""
 
@@ -1809,7 +2036,7 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+c", "open_cro_forensic", "CRO Ingest", show=True),
         Binding("ctrl+d", "open_dropzone", "DropZone", show=True),
         Binding("ctrl+s", "scan_directory", "Scan", show=True),
-        Binding("ctrl+e", "execute_sort", "Execute", show=True),
+        Binding("ctrl+e", "export_simulation_report", "Export Report", show=True),
         Binding("enter", "execute_sort", "Execute", show=False),
         Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
         Binding("question_mark", "open_cheat_sheet", "Help (?)", show=True),
@@ -1926,12 +2153,18 @@ class AutoSorterTUI(A11yMixin, App):
         yield sb
         yield Footer()
 
-    def announce(self, message: str, priority: str = "polite") -> str:
+    def announce(
+        self,
+        message: str,
+        priority: str = "polite",
+        help_url: Optional[str] = None,
+    ) -> str:
         """Emit screen reader announcement and log to live execution log feed."""
-        res = super().announce(message, priority=priority)
+        res = super().announce(message, priority=priority, help_url=help_url)
         try:
             log_w = self.query_one("#tui-log", Log)
-            log_w.write_line(message)
+            display_msg = f"{message} [Help: {help_url}]" if help_url else message
+            log_w.write_line(display_msg)
         except Exception:
             pass
         return res
@@ -2292,6 +2525,43 @@ class AutoSorterTUI(A11yMixin, App):
         except Exception as e:
             logger.error(f"Error in run_scan_worker: {e}")
             self.call_from_thread(self.announce, f"Scan error: {e}")
+
+    def action_export_simulation_report(self) -> None:
+        """Trigger dry-run simulation report export modal screen."""
+        if self._is_text_control_focused():
+            return
+        if not self.plan or not self.base_dir:
+            self.announce("No plan available to export. Run [Ctrl+S] Scan first.")
+            return
+
+        default_out = str(Path(self.base_dir) / "simulation_report.html")
+
+        def handle_export_modal_result(result: Optional[Tuple[str, str]]) -> None:
+            if not result:
+                return
+            export_path, report_format = result
+            try:
+                from app.core.simulation_exporter import SimulationExporter
+
+                exporter = SimulationExporter(self.plan, self.base_dir)
+                if report_format == "json":
+                    exporter.export_json(export_path)
+                else:
+                    exporter.export_html(export_path)
+
+                self.announce(f"Simulation report exported to '{export_path}'.")
+            except Exception as e:
+                logger.error(f"Error exporting simulation report: {e}")
+                self.announce(f"Export error: {e}")
+
+        self.push_screen(
+            ExportReportModal(default_path=default_out, default_format="html"),
+            handle_export_modal_result,
+        )
+
+    def action_export_report(self) -> None:
+        """Alias for action_export_simulation_report."""
+        self.action_export_simulation_report()
 
     def action_execute_sort(self) -> None:
         """Trigger sorting plan execution worker."""

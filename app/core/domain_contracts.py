@@ -403,9 +403,11 @@ def validate_sorting_plan_node(payload: Any) -> SortingPlanNodeModel:
 
 def _make_json_serializable(obj: Any) -> Any:
     """Recursively convert model objects and dicts to JSON-serializable structures."""
+    if isinstance(obj, (str, int, float, bool)) or obj is None:
+        return obj
     if isinstance(obj, dict):
         return {k: _make_json_serializable(v) for k, v in obj.items()}
-    if isinstance(obj, list):
+    if isinstance(obj, (list, tuple, set)):
         return [_make_json_serializable(v) for v in obj]
     if hasattr(obj, "model_dump"):
         return obj.model_dump()
