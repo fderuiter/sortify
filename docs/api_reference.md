@@ -158,6 +158,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.resilient_file_ops
 
+## `app.core.sample_corpus`
+
+::: app.core.sample_corpus
+
 ## `app.core.scanner`
 
 ::: app.core.scanner
