@@ -1,0 +1,24 @@
+graph TD
+    A["Directory Selection"]
+    B(["File Extraction & Generator"])
+    C(["Chunked Yielding"])
+    D(["Incremental Analyzer (partial_fit)"])
+    E(["TF-IDF & NMF Clustering"])
+    F(["Recursive Topic Grouping"])
+    G[("Generate Sorting Plan")]
+    H["UI Tree Rendering"]
+    A -->|DirectoryPath| B
+    B -->|FileStream| C
+    C -->|ChunkBatch| D
+    D -->|FeatureVectors| E
+    E -->|TopicClusters| F
+    F -->|SortingPlan| G
+    G -->|PlanViewModel| H
+    click A "docs/user_guide.md#first-run-steps--setup-wizard" "Directory Selection Step"
+    click B "docs/user_guide.md#supported-file-formats" "File Extraction Step"
+    click C tooltip "Chunked Yielding Step"
+    click D tooltip "Analyzer Step"
+    click E "docs/user_guide.md#ai-clustering-constraints" "Clustering Step"
+    click F tooltip "Topic Grouping Step"
+    click G tooltip "Sorting Plan Step"
+    click H "docs/ui.md#appuiplan_treeview" "UI Rendering Step"

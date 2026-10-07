@@ -1,0 +1,3122 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../user_guide/">
+      
+      
+        <link rel="next" href="../tutorials/01_ml_analyzer_clustering/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Administrator Guide - Smart AutoSorter AI Pro API</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#administrator-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Smart AutoSorter AI Pro API" class="md-header__button md-logo" aria-label="Smart AutoSorter AI Pro API" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Smart AutoSorter AI Pro API
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Administrator Guide
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Smart AutoSorter AI Pro API" class="md-nav__button md-logo" aria-label="Smart AutoSorter AI Pro API" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Smart AutoSorter AI Pro API
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user_guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guides
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administrator Guide
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administrator Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Parameters
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration Parameters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#contextual_renaming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CONTEXTUAL_RENAMING
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ai_assisted_naming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI_ASSISTED_NAMING
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preserve_hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PRESERVE_HIERARCHY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_folders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_FOLDERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_workers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_WORKERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_depth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_DEPTH
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_FEATURES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cleanup_empty_folders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLEANUP_EMPTY_FOLDERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#explorer_integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EXPLORER_INTEGRATION
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keyword_rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KEYWORD_RULES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#learned_rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LEARNED_RULES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extension_categories" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EXTENSION_CATEGORIES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POLICIES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#visual_timeout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VISUAL_TIMEOUT
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#image_max_dimension" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IMAGE_MAX_DIMENSION
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#image_skip_threshold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IMAGE_SKIP_THRESHOLD
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model_threads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MODEL_THREADS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#snapshot_retention_days" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SNAPSHOT_RETENTION_DAYS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#protected_paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PROTECTED_PATHS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto_quarantine_ratings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AUTO_QUARANTINE_RATINGS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarantine_dir_name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        QUARANTINE_DIR_NAME
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PROXY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ocr_gpu_enabled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OCR_GPU_ENABLED
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#audio_gpu_enabled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AUDIO_GPU_ENABLED
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#audio_max_workers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AUDIO_MAX_WORKERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PLUGINS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ocr_languages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OCR_LANGUAGES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vision_engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VISION_ENGINE
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conflict_policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CONFLICT_POLICY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sorting_strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SORTING_STRATEGY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clinical_smart_renaming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLINICAL_SMART_RENAMING
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clinical_generate_audit_report" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLINICAL_GENERATE_AUDIT_REPORT
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#coherence_threshold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        COHERENCE_THRESHOLD
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#debounce_delay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DEBOUNCE_DELAY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_debounce_delay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_DEBOUNCE_DELAY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tabular_max_sheets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TABULAR_MAX_SHEETS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tabular_max_rows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TABULAR_MAX_ROWS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tabular_max_characters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TABULAR_MAX_CHARACTERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ignored_extensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IGNORED_EXTENSIONS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ai_consent_granted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI_CONSENT_GRANTED
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#log_file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LOG_FILE
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stop_words" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        STOP_WORDS
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#precedence-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Precedence Rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dynamic-configuration-saves" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dynamic Configuration Saves
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compliance-policies-routing-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compliance Policies &amp; Routing Rules
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Compliance Policies &amp; Routing Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#policy-evaluation-flowchart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Policy Evaluation Flowchart
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rule-syntax-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule Syntax &amp; Types
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sequential-execution-priority" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sequential Execution &amp; Priority
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#halting-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Halting Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#path-validation-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Path Validation Rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-recovery-troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Recovery &amp; Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#maintenance-scripts-and-cli-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maintenance Scripts and CLI Commands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Maintenance Scripts and CLI Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#appmainpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        app/main.py
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="app/main.py">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#top-level-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Top-Level Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#non-interactive-headless-execution-guard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-Interactive / Headless Execution Guard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subcommands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subcommands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Subcommands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sort" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sort
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        scan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        config
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#daemon" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        daemon
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#undo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        undo
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#drop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        drop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ledger" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ledger
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarantine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        quarantine
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sandbox_clipy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sandbox_cli.py
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="sandbox_cli.py">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scriptsprepare_offlinepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        scripts/prepare_offline.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scriptsinstall_offlinepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        scripts/install_offline.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_3" id="__nav_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interactive Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Interactive Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/01_ml_analyzer_clustering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stateful ML Analyzer Clustering
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/02_multi_format_text_extraction/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi-Format Text Extraction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/03_virtual_sorting_verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Virtual Sorting Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api_reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture & Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../auto_merge_policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Merge Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../branch_protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Branch Protection Rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributor Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5_6" >
+        
+          
+          <label class="md-nav__link" for="__nav_5_6" id="__nav_5_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_5_6_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Parameters
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration Parameters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#contextual_renaming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CONTEXTUAL_RENAMING
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ai_assisted_naming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI_ASSISTED_NAMING
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preserve_hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PRESERVE_HIERARCHY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_folders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_FOLDERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_workers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_WORKERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_depth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_DEPTH
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_FEATURES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cleanup_empty_folders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLEANUP_EMPTY_FOLDERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#explorer_integration" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EXPLORER_INTEGRATION
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keyword_rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KEYWORD_RULES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#learned_rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LEARNED_RULES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extension_categories" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EXTENSION_CATEGORIES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POLICIES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#visual_timeout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VISUAL_TIMEOUT
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#image_max_dimension" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IMAGE_MAX_DIMENSION
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#image_skip_threshold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IMAGE_SKIP_THRESHOLD
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model_threads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MODEL_THREADS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#snapshot_retention_days" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SNAPSHOT_RETENTION_DAYS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#protected_paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PROTECTED_PATHS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto_quarantine_ratings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AUTO_QUARANTINE_RATINGS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarantine_dir_name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        QUARANTINE_DIR_NAME
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PROXY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ocr_gpu_enabled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OCR_GPU_ENABLED
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#audio_gpu_enabled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AUDIO_GPU_ENABLED
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#audio_max_workers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AUDIO_MAX_WORKERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PLUGINS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ocr_languages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OCR_LANGUAGES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vision_engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VISION_ENGINE
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conflict_policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CONFLICT_POLICY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sorting_strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SORTING_STRATEGY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clinical_smart_renaming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLINICAL_SMART_RENAMING
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clinical_generate_audit_report" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLINICAL_GENERATE_AUDIT_REPORT
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#coherence_threshold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        COHERENCE_THRESHOLD
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#debounce_delay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DEBOUNCE_DELAY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_debounce_delay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_DEBOUNCE_DELAY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tabular_max_sheets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TABULAR_MAX_SHEETS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tabular_max_rows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TABULAR_MAX_ROWS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tabular_max_characters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TABULAR_MAX_CHARACTERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ignored_extensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IGNORED_EXTENSIONS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ai_consent_granted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI_CONSENT_GRANTED
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#log_file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LOG_FILE
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stop_words" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        STOP_WORDS
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#precedence-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Precedence Rules
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dynamic-configuration-saves" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dynamic Configuration Saves
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compliance-policies-routing-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compliance Policies &amp; Routing Rules
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Compliance Policies &amp; Routing Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#policy-evaluation-flowchart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Policy Evaluation Flowchart
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rule-syntax-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule Syntax &amp; Types
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sequential-execution-priority" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sequential Execution &amp; Priority
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#halting-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Halting Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#path-validation-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Path Validation Rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-recovery-troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Recovery &amp; Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#maintenance-scripts-and-cli-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maintenance Scripts and CLI Commands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Maintenance Scripts and CLI Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#appmainpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        app/main.py
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="app/main.py">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#top-level-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Top-Level Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#non-interactive-headless-execution-guard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-Interactive / Headless Execution Guard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subcommands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subcommands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Subcommands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sort" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sort
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        scan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        config
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#daemon" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        daemon
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#undo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        undo
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#drop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        drop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ledger" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ledger
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarantine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        quarantine
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sandbox_clipy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sandbox_cli.py
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="sandbox_cli.py">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scriptsprepare_offlinepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        scripts/prepare_offline.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scriptsinstall_offlinepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        scripts/install_offline.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="administrator-guide">Administrator Guide</h1>
+<p>This document is automatically generated. Do not edit manually.</p>
+<h2 id="configuration-parameters">Configuration Parameters</h2>
+<p>The following parameters are extracted directly from the application's configuration schema (<code>app.config.Settings</code>).</p>
+<h3 id="contextual_renaming"><code>CONTEXTUAL_RENAMING</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>False</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="ai_assisted_naming"><code>AI_ASSISTED_NAMING</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>False</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="preserve_hierarchy"><code>PRESERVE_HIERARCHY</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>False</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="max_folders"><code>MAX_FOLDERS</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>12</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="max_workers"><code>MAX_WORKERS</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>4</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="max_depth"><code>MAX_DEPTH</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>5</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="max_features"><code>MAX_FEATURES</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>3</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="cleanup_empty_folders"><code>CLEANUP_EMPTY_FOLDERS</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>True</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="explorer_integration"><code>EXPLORER_INTEGRATION</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>False</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="keyword_rules"><code>KEYWORD_RULES</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>PydanticUndefined</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="learned_rules"><code>LEARNED_RULES</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>PydanticUndefined</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="extension_categories"><code>EXTENSION_CATEGORIES</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>PydanticUndefined</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="policies"><code>POLICIES</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>PydanticUndefined</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="visual_timeout"><code>VISUAL_TIMEOUT</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>30</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="image_max_dimension"><code>IMAGE_MAX_DIMENSION</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>1000</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="image_skip_threshold"><code>IMAGE_SKIP_THRESHOLD</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>3000</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="model_threads"><code>MODEL_THREADS</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>2</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="snapshot_retention_days"><code>SNAPSHOT_RETENTION_DAYS</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>30</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="protected_paths"><code>PROTECTED_PATHS</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>PydanticUndefined</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="auto_quarantine_ratings"><code>AUTO_QUARANTINE_RATINGS</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>['CRITICAL', 'HIGH']</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="quarantine_dir_name"><code>QUARANTINE_DIR_NAME</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>_Compliance_Quarantine</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="proxy"><code>PROXY</code></h3>
+<ul>
+<li><strong>Default</strong>: ``</li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="ocr_gpu_enabled"><code>OCR_GPU_ENABLED</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>False</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="audio_gpu_enabled"><code>AUDIO_GPU_ENABLED</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>False</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="audio_max_workers"><code>AUDIO_MAX_WORKERS</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>2</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="plugins"><code>PLUGINS</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>PydanticUndefined</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="ocr_languages"><code>OCR_LANGUAGES</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>en</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="vision_engine"><code>VISION_ENGINE</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>easyocr</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="conflict_policy"><code>CONFLICT_POLICY</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>rename</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="sorting_strategy"><code>SORTING_STRATEGY</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>default</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="clinical_smart_renaming"><code>CLINICAL_SMART_RENAMING</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>False</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="clinical_generate_audit_report"><code>CLINICAL_GENERATE_AUDIT_REPORT</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>True</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="coherence_threshold"><code>COHERENCE_THRESHOLD</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>0.5</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="debounce_delay"><code>DEBOUNCE_DELAY</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>0.6</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="max_debounce_delay"><code>MAX_DEBOUNCE_DELAY</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>5.0</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="tabular_max_sheets"><code>TABULAR_MAX_SHEETS</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>10</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="tabular_max_rows"><code>TABULAR_MAX_ROWS</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>10000</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="tabular_max_characters"><code>TABULAR_MAX_CHARACTERS</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>50000</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="ignored_extensions"><code>IGNORED_EXTENSIONS</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>['.crdownload', '.tmp', '.download']</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="ai_consent_granted"><code>AI_CONSENT_GRANTED</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>None</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="log_file"><code>LOG_FILE</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>~/.autosorter/autosorter.log</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h3 id="stop_words"><code>STOP_WORDS</code></h3>
+<ul>
+<li><strong>Default</strong>: <code>['about', 'all', 'also', 'and', 'are', 'because', 'been', 'but', 'can', 'com', 'could', 'csv', 'docx', 'don', 'for', 'from', 'get', 'has', 'have', 'how', 'inc', 'into', 'like', 'much', 'nan', 'not', 'only', 'other', 'out', 'over', 'page', 'pdf', 'should', 'site', 'some', 'team', 'than', 'that', 'the', 'their', 'there', 'these', 'this', 'through', 'txt', 'unnamed', 'was', 'well', 'what', 'when', 'where', 'which', 'who', 'will', 'with', 'would', 'xls', 'xlsx', 'your']</code></li>
+<li><strong>Required</strong>: <code>False</code></li>
+</ul>
+<h2 id="precedence-rules">Precedence Rules</h2>
+<p>The application evaluates configuration parameters using a strict precedence hierarchy to determine how settings interact. The priority is applied as follows, from highest to lowest:</p>
+<ol>
+<li><strong>Local Settings File (<code>~/.autosorter/settings.json</code>):</strong> This local configuration file takes absolute priority. Any parameters defined here will override environment variables and default properties.</li>
+<li><strong>Environment Variables (or <code>.env</code> file):</strong> Variables configured in the environment take precedence over default parameters.</li>
+<li><strong>Default Parameters:</strong> Base defaults are used as fallbacks if a setting is not explicitly defined in the local file or environment.</li>
+</ol>
+<h2 id="dynamic-configuration-saves">Dynamic Configuration Saves</h2>
+<p>System settings modified during runtime are dynamically saved to the local JSON configuration file (<code>~/.autosorter/settings.json</code>) located in the user's home directory. To ensure stability and prevent excessive disk writes, these dynamic changes are saved with a short debounced delay of 0.5 seconds.</p>
+<h2 id="compliance-policies-routing-rules">Compliance Policies &amp; Routing Rules</h2>
+<h3 id="policy-evaluation-flowchart">Policy Evaluation Flowchart</h3>
+<p><img alt="Policy Evaluation Flowchart" src="../assets/diagrams/policy_evaluation_flow.svg" /></p>
+<h3 id="rule-syntax-types">Rule Syntax &amp; Types</h3>
+<p>Compliance policies categorize and sort documents based on three rule types:</p>
+<ul>
+<li><strong>Keyword Rules</strong>: Search for files containing a specific word or phrase anywhere in their text contents (for example, 'invoice' or 'billing').</li>
+<li><strong>Pattern Rules</strong>: Match files using structured formatting or text sequences (such as a standard format of letters followed by numbers) to match specific document types.</li>
+<li><strong>Override Rules</strong>: Check for exact text matches, taking precedent to bypass standard classification rules.</li>
+</ul>
+<h3 id="sequential-execution-priority">Sequential Execution &amp; Priority</h3>
+<p>Rules are evaluated sequentially, starting from the highest priority value down to the lowest. Because rules are checked in priority order, if a higher-priority rule matches, it will be executed first. This can sometimes result in 'shadowing', where a lower-priority rule never runs because a higher-priority rule has already matched the same conditions. To resolve overlaps, adjust rule priority numbers or make matching conditions more specific.</p>
+<h3 id="halting-parameters">Halting Parameters</h3>
+<p>Each policy includes a 'Halt on mismatch' setting. When active, if a document fails to meet this rule's criteria, the system will immediately stop evaluating any remaining lower-priority rules. This halting behavior is crucial for enforcing strict sequential checks and ensuring that files do not proceed to general classification or AI-based sorting if they fail compliance conditions.</p>
+<h3 id="path-validation-rules">Path Validation Rules</h3>
+<p>To ensure system security, stability, and compatibility across operating systems, all target paths must comply with the following strict validation rules:</p>
+<ul>
+<li><strong>No Absolute Paths</strong>: All target paths must be relative paths and cannot start with leading slashes (such as <code>/</code> or <code>\</code>).</li>
+<li><strong>No Directory Traversal</strong>: Paths are blocked from using directory traversal segments (such as <code>..</code>) to prevent files from being moved outside of the designated folders.</li>
+<li><strong>No Illegal Characters</strong>: Target paths must not contain any prohibited characters, including <code>&lt;</code>, <code>&gt;</code>, <code>:</code>, <code>"</code>, <code>|</code>, <code>?</code>, or <code>*</code>.</li>
+</ul>
+<h3 id="configuration-recovery-troubleshooting">Configuration Recovery &amp; Troubleshooting</h3>
+<p>If the system detects invalid fields or syntax errors in the configuration file (<code>settings.json</code>), automatic saves are locked. This safeguard prevents overwriting and potentially corrupting your existing settings. While saves are suspended, the application will use temporary default values to prevent crashes.</p>
+<p>To resolve a blocked-save state, follow these recovery options:</p>
+<ol>
+<li><strong>Check Warning Banners</strong>: Review the detailed list of validation errors displayed under the warning banner in the application settings dialog.</li>
+<li><strong>Manually Edit Settings</strong>: Open the local configuration file (<code>~/.autosorter/settings.json</code>) and correct the invalid values or formats.</li>
+<li><strong>Reset Configuration</strong>: Delete the invalid <code>settings.json</code> file or click the reset button to restore default, valid configuration values, which will immediately re-enable automatic saving.</li>
+</ol>
+<h2 id="maintenance-scripts-and-cli-commands">Maintenance Scripts and CLI Commands</h2>
+<h3 id="appmainpy"><code>app/main.py</code></h3>
+<p>Main command-line interface for Smart AutoSorter AI Pro.</p>
+<h4 id="top-level-usage">Top-Level Usage</h4>
+<div class="highlight"><pre><span></span><code>usage: app/main.py [-h] [-q] [--no-color] [--demo] [--smoke-test]
+                   [--update-snapshots] [--daemon] [--debug-layout] [--tui]
+                   [--interactive]
+                   [--accept-ai-consent | --decline-ai-consent]
+                   [--skip-wizard] [--non-interactive]
+                   {sort,scan,config,daemon,undo,drop,ledger,quarantine} ...
+
+Smart AutoSorter AI Pro
+
+positional arguments:
+  {sort,scan,config,daemon,undo,drop,ledger,quarantine}
+                        Available subcommands
+    sort                Run document sorting in headless batch processing mode
+    scan                Run directory scanning and analysis without moving
+                        files
+    config              View or update application configuration settings
+    daemon              Launch or control persistent directory-watching daemon
+    undo                Rollback sorting operations and manage history
+                        sessions
+    drop                Quick file drop triage receiver for target files or
+                        directories
+    ledger              Manage transaction ledger entries and automated
+                        reconciliation
+    quarantine          Manage compliance quarantine staging, inspection, and
+                        release
+
+options:
+  -h, --help            show this help message and exit
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --demo                Run interactive CLI demo mode
+  --smoke-test          Run automated database smoke test and exit
+  --update-snapshots    Regenerate reference baseline snapshots across all
+                        covered views
+  --daemon              Launch the persistent directory-watching daemon
+  --debug-layout        Enable visual debug outlines for UI elements in dev
+                        mode
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+</code></pre></div>
+<h4 id="non-interactive-headless-execution-guard">Non-Interactive / Headless Execution Guard</h4>
+<p>When executing <code>app/main.py</code> in non-interactive or detached standard input streams (such as CI automation pipelines or script redirections using <code>&lt; /dev/null</code> where <code>sys.stdin.isatty()</code> returns <code>False</code>):</p>
+<ul>
+<li><strong>Target Path Auto-Routing</strong>: If a positional target directory path is supplied without an explicit subcommand (e.g. <code>python3 app/main.py /tmp/docs &lt; /dev/null</code>), execution is automatically routed to headless batch document sorting (<code>handle_sort_command</code>).</li>
+<li><strong>CLI Guidance &amp; Exit Code 2</strong>: If no target directory path or subcommand is supplied (e.g. <code>python3 app/main.py &lt; /dev/null</code>), the application outputs CLI usage guidance to <code>sys.stderr</code> and exits cleanly with exit code <code>2</code>. This prevents non-interactive streams from hanging on terminal UI initialization.</li>
+<li><strong>Explicit Interface Flag Overrides</strong>: If explicit UI flags (<code>--gui</code>, <code>--tui</code>, <code>--demo</code>, <code>--daemon</code>, <code>FORCE_GUI</code>) are invoked, the requested interface launcher is executed as explicitly requested.</li>
+</ul>
+<h4 id="subcommands">Subcommands</h4>
+<h5 id="sort"><code>sort</code></h5>
+<div class="highlight"><pre><span></span><code>usage: app/main.py sort [-h] [--preset {demo,downloads,documents}] [--json]
+                        [--dest-dir DEST_DIR] [--dry-run] [-q] [--no-color]
+                        [--max-folders MAX_FOLDERS]
+                        [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                        [--conflict-policy {skip,rename}]
+                        [--contextual-renaming] [--no-contextual-renaming]
+                        [--tui] [--interactive]
+                        [--accept-ai-consent | --decline-ai-consent]
+                        [--skip-wizard] [--non-interactive]
+                        [--export-report EXPORT_REPORT]
+                        [--report-format {html,json}]
+                        [directory]
+
+positional arguments:
+  directory             Target directory to sort
+
+options:
+  -h, --help            show this help message and exit
+  --preset {demo,downloads,documents}
+                        Use standard workspace preset directory (demo,
+                        downloads, documents)
+  --json                Output result in structured JSON format
+  --dest-dir DEST_DIR   Destination directory for sorted files
+  --dry-run             Perform dry run analysis without executing physical
+                        moves
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
+</code></pre></div>
+<h5 id="scan"><code>scan</code></h5>
+<div class="highlight"><pre><span></span><code>usage: app/main.py scan [-h] [--preset {demo,downloads,documents}] [--json]
+                        [-q] [--no-color] [--max-folders MAX_FOLDERS]
+                        [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                        [--conflict-policy {skip,rename}]
+                        [--contextual-renaming] [--no-contextual-renaming]
+                        [--tui] [--interactive]
+                        [--accept-ai-consent | --decline-ai-consent]
+                        [--skip-wizard] [--non-interactive]
+                        [--export-report EXPORT_REPORT]
+                        [--report-format {html,json}]
+                        [directory]
+
+positional arguments:
+  directory             Target directory to scan
+
+options:
+  -h, --help            show this help message and exit
+  --preset {demo,downloads,documents}
+                        Use standard workspace preset directory (demo,
+                        downloads, documents)
+  --json                Output scan plan in structured JSON format
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
+</code></pre></div>
+<h5 id="config"><code>config</code></h5>
+<div class="highlight"><pre><span></span><code>usage: app/main.py config [-h] [--show] [--json] [--set KEY VALUE] [-q]
+                          [--no-color] [--max-folders MAX_FOLDERS]
+                          [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                          [--conflict-policy {skip,rename}]
+                          [--contextual-renaming] [--no-contextual-renaming]
+                          [--tui] [--interactive]
+                          [--accept-ai-consent | --decline-ai-consent]
+                          [--skip-wizard] [--non-interactive]
+                          [--export-report EXPORT_REPORT]
+                          [--report-format {html,json}]
+
+options:
+  -h, --help            show this help message and exit
+  --show                Display current configuration settings
+  --json                Output configuration as JSON
+  --set KEY VALUE       Set configuration KEY to VALUE
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
+</code></pre></div>
+<h5 id="daemon"><code>daemon</code></h5>
+<div class="highlight"><pre><span></span><code>usage: app/main.py daemon [-h] [--watch] [-q] [--no-color]
+                          [--max-folders MAX_FOLDERS]
+                          [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                          [--conflict-policy {skip,rename}]
+                          [--contextual-renaming] [--no-contextual-renaming]
+                          [--tui] [--interactive]
+                          [--accept-ai-consent | --decline-ai-consent]
+                          [--skip-wizard] [--non-interactive]
+                          [--export-report EXPORT_REPORT]
+                          [--report-format {html,json}]
+                          [action] [directory]
+
+positional arguments:
+  action                Action (start, status, health, metrics, pause, resume,
+                        stop) or directory to watch
+  directory             Directory to watch or control
+
+options:
+  -h, --help            show this help message and exit
+  --watch               Continuously monitor status telemetry in real time
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
+</code></pre></div>
+<h5 id="undo"><code>undo</code></h5>
+<div class="highlight"><pre><span></span><code>usage: app/main.py undo [-h] [--session-id SESSION_ID] [--list] [--latest]
+                        [--force] [--json] [-q] [--no-color]
+                        [--max-folders MAX_FOLDERS]
+                        [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                        [--conflict-policy {skip,rename}]
+                        [--contextual-renaming] [--no-contextual-renaming]
+                        [--tui] [--interactive]
+                        [--accept-ai-consent | --decline-ai-consent]
+                        [--skip-wizard] [--non-interactive]
+                        [--export-report EXPORT_REPORT]
+                        [--report-format {html,json}]
+
+options:
+  -h, --help            show this help message and exit
+  --session-id SESSION_ID
+                        Specific historical session ID UUID to rollback
+  --list                List active and completed historical sorting sessions
+  --latest              Rollback the latest historical sorting session
+  --force               Force rollback even if original files are missing
+  --json                Output session list or rollback status in structured
+                        JSON format
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
+</code></pre></div>
+<h5 id="drop"><code>drop</code></h5>
+<div class="highlight"><pre><span></span><code>usage: app/main.py drop [-h] [--preset {demo,downloads,documents}]
+                        [--dest-dir DEST_DIR] [--dry-run] [--json] [-q]
+                        [--no-color] [--max-folders MAX_FOLDERS]
+                        [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                        [--conflict-policy {skip,rename}]
+                        [--contextual-renaming] [--no-contextual-renaming]
+                        [--tui] [--interactive]
+                        [--accept-ai-consent | --decline-ai-consent]
+                        [--skip-wizard] [--non-interactive]
+                        [--export-report EXPORT_REPORT]
+                        [--report-format {html,json}]
+                        paths [paths ...]
+
+positional arguments:
+  paths                 Target file or directory paths to process
+
+options:
+  -h, --help            show this help message and exit
+  --preset {demo,downloads,documents}
+                        Use standard workspace preset directory
+  --dest-dir DEST_DIR   Destination directory for sorted files
+  --dry-run             Perform dry run analysis without executing physical
+                        moves
+  --json                Output result in structured JSON format
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
+</code></pre></div>
+<h5 id="ledger"><code>ledger</code></h5>
+<div class="highlight"><pre><span></span><code>usage: app/main.py ledger [-h] {status,reconcile,purge,export} ...
+
+positional arguments:
+  {status,reconcile,purge,export}
+                        Ledger subcommands
+    status              Display incomplete or pending transaction ledger
+                        entries
+    reconcile           Execute automated headless reconciliation for
+                        interrupted file moves
+    purge               Purge completed or session transaction ledger records
+    export              Export session history transaction records as CSV or
+                        JSON audit log
+
+options:
+  -h, --help            show this help message and exit
+</code></pre></div>
+<h5 id="quarantine"><code>quarantine</code></h5>
+<div class="highlight"><pre><span></span><code>usage: app/main.py quarantine [-h] {list,inspect,process,release} ...
+
+positional arguments:
+  {list,inspect,process,release}
+                        Quarantine subcommands
+    list                List staged and quarantined compliance items
+    inspect             Inspect a specific quarantine job record and audit
+                        trail
+    process             Trigger forensic scanning and policy evaluation for a
+                        quarantine job
+    release             Release a quarantined item to its destination
+                        directory
+
+options:
+  -h, --help            show this help message and exit
+</code></pre></div>
+<h3 id="sandbox_clipy"><code>sandbox_cli.py</code></h3>
+<p>CLI tool for testing ML extraction and analysis in an isolated sandbox environment.</p>
+<h4 id="usage">Usage</h4>
+<div class="highlight"><pre><span></span><code>usage: sandbox_cli.py [-h] [-q] [--no-color] [--tui] [--interactive]
+                      {reset,extract,analyze} ...
+
+Sandbox CLI Tool for ML Accuracy Verification
+
+positional arguments:
+  {reset,extract,analyze}
+                        Available commands
+    reset               Reset the sandbox dataset to its golden state
+    extract             Extract text from a specific sandbox file
+    analyze             Run the analysis pipeline on all sandbox files
+
+options:
+  -h, --help            show this help message and exit
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color output
+  --tui                 Launch full-screen Textual TUI mode on sandbox dataset
+  --interactive         Launch full-screen interactive TUI mode on sandbox
+                        dataset
+</code></pre></div>
+<h3 id="scriptsprepare_offlinepy"><code>scripts/prepare_offline.py</code></h3>
+<p>Utility script to prepare an offline deployment bundle.</p>
+<h3 id="scriptsinstall_offlinepy"><code>scripts/install_offline.py</code></h3>
+<p>Offline installation and verification script.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": [], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>
