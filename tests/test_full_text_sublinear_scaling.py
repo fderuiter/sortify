@@ -32,6 +32,7 @@ def test_tfidf_vocabulary_fitted_exclusively_on_historical(tmp_path):
 
         # Initialize strategy
         strategy = GenerativeNamingStrategy()
+        strategy.model_path = None
         strategy.set_db_context(db, base_dir)
         strategy._model_initialized = True
         strategy.generator = MagicMock()
@@ -109,6 +110,7 @@ def test_sublinear_tf_scaling_and_full_text_use(tmp_path):
         db.set_user_verified_target(base_dir, "h_c", "Cooking Recipes")
 
         strategy = GenerativeNamingStrategy()
+        strategy.model_path = None
         strategy.set_db_context(db, base_dir)
         strategy._model_initialized = True
         strategy.generator = MagicMock()
