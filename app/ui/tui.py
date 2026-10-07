@@ -763,7 +763,20 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[str]]):
     @on(Button.Pressed, "#preset-demo")
     def action_demo(self) -> None:
         """Select sandbox demo workspace preset."""
+        from app.ui.notifications import notify
+
         path = os.path.abspath("sandbox/demo_workspace")
+        if not os.path.exists(path):
+            try:
+                os.makedirs(path, exist_ok=True)
+                created_msg = f"Created demo workspace directory: {path}"
+                self.announce(created_msg)
+                notify(created_msg, type="info")
+            except Exception as exc:
+                err_msg = f"Failed to create directory '{path}': {exc}"
+                self.announce(err_msg, priority="assertive")
+                notify(err_msg, type="error")
+                return
         self.announce(f"Selected demo workspace preset: {path}")
         self.dismiss(path)
 
@@ -3497,11 +3510,19 @@ class AutoSorterTUI(A11yMixin, App):
             return
 
         def on_selected(path: Optional[str]) -> None:
-            if path and os.path.exists(path):
+            if not path:
+                return
+            if os.path.exists(path):
                 self.base_dir = os.path.abspath(path)
                 msg = f"Selected directory: {self.base_dir}"
                 self.announce(msg)
                 self.action_scan_directory()
+            else:
+                from app.ui.notifications import notify
+
+                err_msg = f"Target directory does not exist: {path}"
+                self.announce(err_msg, priority="assertive")
+                notify(err_msg, type="error")
 
         self.push_screen(DirectorySelectModal(current_dir=self.base_dir), on_selected)
 
