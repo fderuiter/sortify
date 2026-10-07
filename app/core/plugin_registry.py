@@ -8,6 +8,45 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 logger = logging.getLogger(__name__)
 
 
+ALLOWED_PLUGIN_PREFIXES: Tuple[str, ...] = ("app.plugins.", "sortify_plugin_")
+
+
+def _get_plugin_candidates(plugin_name_or_module: str) -> List[str]:
+    """Resolve candidate module import paths for a plugin in order of priority.
+
+    Evaluates scoped namespaces (app.plugins.<name>) before raw paths, and enforces
+    prefix guards to prevent loading unauthorized or standard library modules.
+    """
+    raw_name = plugin_name_or_module.strip()
+    if not raw_name:
+        return []
+
+    raw_candidates: List[str] = []
+
+    if raw_name.startswith("app.plugins."):
+        raw_candidates.append(raw_name)
+        if not raw_name.endswith(".plugin"):
+            raw_candidates.append(f"{raw_name}.plugin")
+    elif raw_name.startswith("sortify_plugin_"):
+        raw_candidates.append(f"app.plugins.{raw_name}")
+        if not raw_name.endswith(".plugin"):
+            raw_candidates.append(f"app.plugins.{raw_name}.plugin")
+        raw_candidates.append(raw_name)
+        if not raw_name.endswith(".plugin"):
+            raw_candidates.append(f"{raw_name}.plugin")
+    else:
+        raw_candidates.append(f"app.plugins.{raw_name}")
+        if not raw_name.endswith(".plugin"):
+            raw_candidates.append(f"app.plugins.{raw_name}.plugin")
+
+    valid_candidates: List[str] = []
+    for cand in raw_candidates:
+        if cand.startswith(ALLOWED_PLUGIN_PREFIXES) and cand not in valid_candidates:
+            valid_candidates.append(cand)
+
+    return valid_candidates
+
+
 class PluginRegistry:
     """Registry for discovering, registering, and triggering dynamic extension plugin hooks."""
 
@@ -117,14 +156,19 @@ class PluginRegistry:
 
         Fails gracefully with descriptive logs if plugin module is missing or fails initialization.
         """
+        if not plugin_name_or_module or not isinstance(plugin_name_or_module, str):
+            logger.warning("Invalid or empty plugin identifier supplied.")
+            return False
+
         if plugin_name_or_module in self._loaded_plugins:
             return True
 
-        module_candidates = [
-            plugin_name_or_module,
-            f"app.plugins.{plugin_name_or_module}",
-            f"app.plugins.{plugin_name_or_module}.plugin",
-        ]
+        module_candidates = _get_plugin_candidates(plugin_name_or_module)
+        if not module_candidates:
+            logger.warning(
+                f"Could not load plugin '{plugin_name_or_module}': forbidden or invalid plugin module path."
+            )
+            return False
 
         mod = None
         loaded_mod_name = None
