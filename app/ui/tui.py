@@ -18,6 +18,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
+    DataTable,
     Footer,
     Header,
     Input,
@@ -292,7 +293,7 @@ class A11yMixin:
 
 
 class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
-    """Modal dialog for renaming a file or folder node."""
+    """Modal dialog for renaming a file or folder node with pattern token formatting support."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
@@ -327,6 +328,16 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
         color: $text-muted;
         margin-bottom: 1;
     }
+    .token-help {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    .modal-preview {
+        color: $accent;
+        margin-top: 1;
+        margin-bottom: 1;
+        text-style: bold;
+    }
     .button-row {
         margin-top: 1;
         height: 3;
@@ -338,11 +349,41 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
     }
     """
 
-    def __init__(self, title: str, current_name: str = "", extension: str = ""):
+    def __init__(
+        self,
+        title: str,
+        current_name: str = "",
+        extension: str = "",
+        category: str = "",
+        file_date: str = "",
+        seq: int = 1,
+    ):
         super().__init__()
         self.modal_title = title
         self.current_name = current_name
         self.extension = extension
+        self.category = category
+        self.file_date = file_date
+        self.seq = seq
+
+    def _evaluate_preview(self, pattern_str: str) -> str:
+        """Evaluate formatted pattern string for live preview."""
+        from app.core.pattern_formatter import PatternTokenFormatter
+
+        metadata = {
+            "original": self.current_name,
+            "extension": self.extension,
+            "category": self.category,
+            "date": self.file_date,
+            "seq": self.seq,
+        }
+        fallback = f"{self.current_name}{self.extension}" if self.extension else self.current_name
+        return PatternTokenFormatter.format_pattern(
+            pattern=pattern_str,
+            metadata=metadata,
+            seq=self.seq,
+            fallback_original=fallback,
+        )
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
@@ -350,15 +391,25 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
             yield Label(self.modal_title, classes="modal-title")
             if self.extension:
                 yield Label(
-                    f"Extension '{self.extension}' is locked", classes="modal-subtitle"
+                    f"Extension '{self.extension}' is locked unless modified in template",
+                    classes="modal-subtitle",
                 )
+            yield Label(
+                "Tokens: {date}, {category}, {original}, {extension}, {seq}",
+                classes="token-help",
+            )
             inp = Input(
                 value=self.current_name,
-                placeholder="Enter new name...",
+                placeholder="Enter new name or pattern (e.g. {date}_{category}_{original})...",
                 id="input-name",
             )
-            inp.tooltip = "Enter new file or folder item name"
+            inp.tooltip = "Enter new file or folder name or pattern template"
             yield inp
+            yield Label(
+                f"Preview: {self._evaluate_preview(self.current_name)}",
+                id="label-preview",
+                classes="modal-preview",
+            )
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel rename action and close dialog"
@@ -383,18 +434,29 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
         self._update_layout(self.size.width)
         self.query_one("#input-name", Input).focus()
         self.announce(
-            f"Opened rename dialog for '{self.modal_title}'. Enter new name and press Enter or click Rename."
+            f"Opened rename dialog for '{self.modal_title}'. Enter new name or pattern and press Enter or click Rename."
         )
+
+    @on(Input.Changed, "#input-name")
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Update live preview on input value change."""
+        try:
+            preview_str = self._evaluate_preview(event.value)
+            lbl = self.query_one("#label-preview", Label)
+            lbl.update(f"Preview: {preview_str}")
+        except Exception:
+            pass
 
     @on(Button.Pressed, "#btn-confirm")
     def action_confirm(self) -> None:
         """Confirm renaming action."""
         val = self.query_one("#input-name", Input).value.strip()
-        if val:
-            self.announce(f"Confirmed rename to '{val}'.")
+        formatted = self._evaluate_preview(val) if val else ""
+        if formatted:
+            self.announce(f"Confirmed rename to '{formatted}'.")
         else:
             self.announce("Cancelled rename action.")
-        self.dismiss(val if val else None)
+        self.dismiss(formatted if formatted else None)
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
@@ -711,7 +773,9 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     def __init__(self, settings):
         super().__init__()
         self.settings = settings
-        self.help_url = "https://docs.smartautosorter.com/troubleshooting/#settings-configuration"
+        self.help_url = (
+            "https://docs.smartautosorter.com/troubleshooting/#settings-configuration"
+        )
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
@@ -852,7 +916,9 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             if i.strip()
         ]
 
-        help_url = "https://docs.smartautosorter.com/troubleshooting/#settings-configuration"
+        help_url = (
+            "https://docs.smartautosorter.com/troubleshooting/#settings-configuration"
+        )
         try:
             conc_val = self.query_one("#input-concurrency", Input).value.strip()
             conc = int(conc_val)
@@ -861,6 +927,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except ValueError as e:
             self._show_help_button(help_url)
             from app.ui.notifications import notify
+
             notify(f"Settings error: {e}", type="error", help_url=help_url)
             self.announce(f"Settings error: {e}", help_url=help_url)
             return
@@ -873,6 +940,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except ValueError as e:
             self._show_help_button(help_url)
             from app.ui.notifications import notify
+
             notify(f"Settings error: {e}", type="error", help_url=help_url)
             self.announce(f"Settings error: {e}", help_url=help_url)
             return
@@ -910,6 +978,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             "https://docs.smartautosorter.com/troubleshooting/#settings-configuration",
         )
         from app.ui.notifications import notify
+
         notify(f"Opening help link: {url}", type="info", help_url=url)
         self.announce(f"Opened documentation link: {url}")
 
@@ -1069,9 +1138,6 @@ class WizardModal(A11yMixin, ModalScreen[None]):
         self.dismiss(None)
 
 
-
-
-
 class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
     """Modal dialog for recovering interrupted file sorting sessions."""
 
@@ -1189,6 +1255,7 @@ class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
         """Open session recovery troubleshooting guide."""
         url = "https://docs.smartautosorter.com/troubleshooting/#session-recovery"
         from app.ui.notifications import notify
+
         notify(f"Opening help link: {url}", type="info", help_url=url)
         self.announce(f"Opened documentation link: {url}")
 
@@ -1432,11 +1499,19 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 placeholder="Paste or drop file / directory paths here...",
                 id="input-drop-paths",
             )
-            inp.tooltip = "Enter or drop target file or folder paths to trigger automated sorting"
+            inp.tooltip = (
+                "Enter or drop target file or folder paths to trigger automated sorting"
+            )
             yield inp
 
-            status_lbl = Label("Ready. Drop or enter paths above.", id="dropzone-status", classes="status-text")
-            status_lbl.tooltip = "Live visual progress indicators and classification status messages"
+            status_lbl = Label(
+                "Ready. Drop or enter paths above.",
+                id="dropzone-status",
+                classes="status-text",
+            )
+            status_lbl.tooltip = (
+                "Live visual progress indicators and classification status messages"
+            )
             yield status_lbl
 
             with Horizontal(classes="button-row"):
@@ -1453,7 +1528,9 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 yield btn_help
 
                 btn_process = Button("Sort Items", id="btn-process", variant="primary")
-                btn_process.tooltip = "Start automated classification and relocation on dropped paths"
+                btn_process.tooltip = (
+                    "Start automated classification and relocation on dropped paths"
+                )
                 yield btn_process
 
     def _update_layout(self, width: int) -> None:
@@ -1483,7 +1560,9 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             try:
                 inp = self.query_one("#input-drop-paths", Input)
                 inp.value = event.text.strip()
-                self.announce(f"Pasted path payload into dropzone: {event.text.strip()}")
+                self.announce(
+                    f"Pasted path payload into dropzone: {event.text.strip()}"
+                )
             except Exception:
                 pass
 
@@ -1506,6 +1585,7 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors",
         )
         from app.ui.notifications import notify
+
         notify(f"Opening help link: {url}", type="info", help_url=url)
         self.announce(f"Opened documentation link: {url}")
 
@@ -1528,11 +1608,19 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         if not raw_text:
             self._show_help_button(help_url)
             from app.ui.notifications import notify
+
             notify("No file or folder paths provided.", type="error", help_url=help_url)
-            self.update_status_msg("No file or folder paths provided. Please paste or type a path.", help_url=help_url)
+            self.update_status_msg(
+                "No file or folder paths provided. Please paste or type a path.",
+                help_url=help_url,
+            )
             return
 
-        raw_items = [p.strip().strip("'\"") for p in raw_text.replace("\r", "\n").split("\n") if p.strip()]
+        raw_items = [
+            p.strip().strip("'\"")
+            for p in raw_text.replace("\r", "\n").split("\n")
+            if p.strip()
+        ]
         validated_paths = []
         invalid_messages = []
 
@@ -1558,9 +1646,14 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             validated_paths.append(abs_p)
 
         if not validated_paths:
-            err_text = "; ".join(invalid_messages) if invalid_messages else "No valid paths found."
+            err_text = (
+                "; ".join(invalid_messages)
+                if invalid_messages
+                else "No valid paths found."
+            )
             self._show_help_button(help_url)
             from app.ui.notifications import notify
+
             notify(f"DropZone error: {err_text}", type="error", help_url=help_url)
             self.update_status_msg(f"Error: {err_text}", help_url=help_url)
             return
@@ -1616,7 +1709,11 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     for chunk in generator:
                         session.partial_fit(chunk)
 
-                    plan = session.generateSorting_plan() if hasattr(session, "generateSorting_plan") else session.generate_sorting_plan()
+                    plan = (
+                        session.generateSorting_plan()
+                        if hasattr(session, "generateSorting_plan")
+                        else session.generate_sorting_plan()
+                    )
                     if app_ref:
                         app_ref.call_from_thread(
                             self.update_status_msg,
@@ -1736,9 +1833,7 @@ class ExportReportModal(A11yMixin, ModalScreen[Optional[Tuple[str, str]]]):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel report export action"
                 yield btn_cancel
-                btn_export = Button(
-                    "Export Report", id="btn-export", variant="primary"
-                )
+                btn_export = Button("Export Report", id="btn-export", variant="primary")
                 btn_export.tooltip = "Export simulation report to disk"
                 yield btn_export
 
@@ -1778,6 +1873,294 @@ class ExportReportModal(A11yMixin, ModalScreen[Optional[Tuple[str, str]]]):
     def action_cancel(self) -> None:
         """Cancel report export modal."""
         self.dismiss(None)
+
+
+class AuditReportModal(A11yMixin, ModalScreen[None]):
+    """Interactive Modal Screen for Tabular Verification Tree & Multi-Format Audit Export."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Close verification dialog", show=True),
+        Binding("ctrl+j", "export_json", "Export JSON Report", show=True),
+        Binding("ctrl+c", "export_csv", "Export CSV Report", show=True),
+    ]
+
+    CSS = """
+    AuditReportModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.7);
+    }
+    .audit-modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 95%;
+        max-width: 100;
+        min-width: 50;
+        height: 85%;
+        min-height: 20;
+    }
+    .narrow .audit-modal-box {
+        padding: 0 1;
+        width: 98%;
+    }
+    .audit-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 0;
+    }
+    .audit-subtitle {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    .audit-stats-row {
+        height: 3;
+        margin-bottom: 1;
+        align: center middle;
+    }
+    .stat-card {
+        padding: 0 1;
+        margin-right: 1;
+        border: solid $secondary;
+        background: $surface;
+        min-width: 15;
+    }
+    .stat-pass {
+        color: $success;
+        border: solid $success;
+    }
+    .stat-fail {
+        color: $error;
+        border: solid $error;
+    }
+    .stat-skipped {
+        color: $warning;
+        border: solid $warning;
+    }
+    .filter-row {
+        height: 3;
+        margin-bottom: 1;
+    }
+    #audit-search-input {
+        width: 60%;
+        margin-right: 1;
+    }
+    #audit-status-filter {
+        width: 38%;
+    }
+    #audit-table {
+        height: 1fr;
+        margin-bottom: 1;
+        border: solid $accent;
+    }
+    .button-row {
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Input:focus, Select:focus, DataTable:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(self, report_data: Dict[str, Any]):
+        super().__init__()
+        self.report_data = report_data or {}
+
+    def compose(self) -> ComposeResult:
+        """Compose verification audit report modal widgets."""
+        with Vertical(classes="audit-modal-box"):
+            yield Label(
+                "Post-Sort File Integrity Verification Audit Report",
+                classes="audit-title",
+            )
+            base_dir_str = self.report_data.get("base_dir", "")
+            yield Label(f"Target Directory: {base_dir_str}", classes="audit-subtitle")
+
+            total = self.report_data.get("total_files", 0)
+            pass_cnt = self.report_data.get("verified_pass_count", 0)
+            fail_cnt = self.report_data.get("mismatch_fail_count", 0)
+            skip_cnt = self.report_data.get("skipped_count", 0)
+
+            with Horizontal(classes="audit-stats-row"):
+                yield Static(f"Total: {total}", classes="stat-card")
+                yield Static(f"[PASS]: {pass_cnt}", classes="stat-card stat-pass")
+                yield Static(f"[FAIL]: {fail_cnt}", classes="stat-card stat-fail")
+                yield Static(f"[SKIPPED]: {skip_cnt}", classes="stat-card stat-skipped")
+
+            with Horizontal(classes="filter-row"):
+                inp = Input(
+                    placeholder="Search by filename or path...",
+                    id="audit-search-input",
+                )
+                inp.tooltip = "Filter verification results by filename or path"
+                yield inp
+
+                status_sel = Select(
+                    [
+                        ("All Statuses", "ALL"),
+                        ("Verified Pass [PASS]", "VERIFIED_PASS"),
+                        ("Mismatch Fail [FAIL]", "MISMATCH_FAIL"),
+                        ("Skipped [SKIPPED]", "SKIPPED"),
+                    ],
+                    value="ALL",
+                    id="audit-status-filter",
+                    allow_blank=False,
+                )
+                status_sel.tooltip = "Filter results by verification status"
+                yield status_sel
+
+            table = DataTable(id="audit-table")
+            table.cursor_type = "row"
+            table.tooltip = "Audit report tabular verification tree"
+            yield table
+
+            with Horizontal(classes="button-row"):
+                btn_json = Button(
+                    "Export JSON", id="btn-export-json", variant="primary"
+                )
+                btn_json.tooltip = (
+                    "Export audit report to JSON file in target directory"
+                )
+                yield btn_json
+
+                btn_csv = Button("Export CSV", id="btn-export-csv", variant="success")
+                btn_csv.tooltip = "Export audit report to CSV file in target directory"
+                yield btn_csv
+
+                btn_close = Button("Close", id="btn-close", variant="default")
+                btn_close.tooltip = "Close verification audit report dialog"
+                yield btn_close
+
+    def _update_layout(self, width: int, height: int = 24) -> None:
+        """Update layout based on viewport width and height breakpoint."""
+        if width < 80 or height < 24:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle viewport resize event."""
+        self._update_layout(event.size.width, event.size.height)
+
+    def on_mount(self) -> None:
+        """Initialize table rows, accessibility announcement, and initial focus."""
+        self._update_layout(self.size.width, self.size.height)
+        self._populate_table()
+        total = self.report_data.get("total_files", 0)
+        pass_cnt = self.report_data.get("verified_pass_count", 0)
+        fail_cnt = self.report_data.get("mismatch_fail_count", 0)
+        skip_cnt = self.report_data.get("skipped_count", 0)
+        self.query_one("#audit-search-input", Input).focus()
+        self.announce(
+            f"Opened Audit Verification Report dialog. {total} total files: "
+            f"{pass_cnt} passed, {fail_cnt} failed, {skip_cnt} skipped."
+        )
+
+    def _populate_table(
+        self, search_query: str = "", status_filter: str = "ALL"
+    ) -> None:
+        """Populate DataTable with verification records matching filter criteria."""
+        table = self.query_one("#audit-table", DataTable)
+        table.clear(columns=True)
+        table.add_columns(
+            "Status",
+            "Filename",
+            "Pre-Sort SHA-256",
+            "Post-Sort SHA-256",
+            "Destination Path",
+        )
+
+        query = search_query.strip().lower()
+        records = self.report_data.get("records", [])
+
+        for rec in records:
+            status = rec.get("status", "")
+            filename = rec.get("filename", "")
+            rel_dst = rec.get("relative_destination", "") or rec.get(
+                "destination_path", ""
+            )
+            pre_h = rec.get("pre_hash", "") or ""
+            post_h = rec.get("post_hash", "") or ""
+
+            if status_filter != "ALL" and status != status_filter:
+                continue
+
+            if query:
+                match_fn = query in filename.lower()
+                match_src = query in rec.get("relative_source", "").lower()
+                match_dst = query in rel_dst.lower()
+                match_hash = query in pre_h.lower() or query in post_h.lower()
+                if not (match_fn or match_src or match_dst or match_hash):
+                    continue
+
+            badge = rec.get("status_badge", f"[{status}]")
+            pre_trunc = (pre_h[:12] + "...") if len(pre_h) > 12 else (pre_h or "N/A")
+            post_trunc = (
+                (post_h[:12] + "...") if len(post_h) > 12 else (post_h or "N/A")
+            )
+
+            table.add_row(badge, filename, pre_trunc, post_trunc, rel_dst)
+
+    @on(Input.Changed, "#audit-search-input")
+    def on_search_changed(self, event: Input.Changed) -> None:
+        """Handle search input filter update."""
+        status_val = self.query_one("#audit-status-filter", Select).value
+        self._populate_table(search_query=event.value, status_filter=str(status_val))
+
+    @on(Select.Changed, "#audit-status-filter")
+    def on_status_changed(self, event: Select.Changed) -> None:
+        """Handle status filter dropdown update."""
+        search_val = self.query_one("#audit-search-input", Input).value
+        self._populate_table(search_query=search_val, status_filter=str(event.value))
+
+    def action_export_json(self) -> None:
+        """Export audit report to JSON format."""
+        self._export_report("json")
+
+    def action_export_csv(self) -> None:
+        """Export audit report to CSV format."""
+        self._export_report("csv")
+
+    def _export_report(self, fmt: str) -> None:
+        """Export report to disk with error handling."""
+        base_dir = self.report_data.get("base_dir", ".") or "."
+        out_name = f"audit_report.{fmt}"
+        out_path = os.path.join(base_dir, out_name)
+
+        try:
+            from app.core.audit_reporter import export_audit_report
+
+            final_path = export_audit_report(
+                self.report_data, out_path, format_type=fmt
+            )
+            msg = f"Audit report successfully exported to {final_path}"
+            self.announce(msg)
+            self.notify(msg, severity="information")
+        except Exception as err:
+            err_msg = f"Failed to export audit report: {err}"
+            logger.error(err_msg)
+            self.announce(err_msg)
+            self.notify(err_msg, severity="error")
+
+    def action_cancel(self) -> None:
+        """Cancel dialog and dismiss modal."""
+        self.announce("Closed verification report dialog.")
+        self.dismiss()
+
+    @on(Button.Pressed, "#btn-export-json")
+    def on_btn_export_json(self) -> None:
+        """Handle JSON export button press."""
+        self.action_export_json()
+
+    @on(Button.Pressed, "#btn-export-csv")
+    def on_btn_export_csv(self) -> None:
+        """Handle CSV export button press."""
+        self.action_export_csv()
+
+    @on(Button.Pressed, "#btn-close")
+    def on_btn_close(self) -> None:
+        """Handle Close button press."""
+        self.action_cancel()
 
 
 class VimTree(Tree):
@@ -1834,6 +2217,7 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+d", "open_dropzone", "DropZone", show=True),
         Binding("ctrl+s", "scan_directory", "Scan", show=True),
         Binding("ctrl+e", "export_simulation_report", "Export Report", show=True),
+        Binding("ctrl+a", "open_audit_report", "Audit Report", show=True),
         Binding("enter", "execute_sort", "Execute", show=False),
         Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
         Binding("g", "generate_sample_corpus", "Sample Dataset", show=False),
@@ -2398,9 +2782,49 @@ class AutoSorterTUI(A11yMixin, App):
             msg = f"Execution completed successfully! Summary: {summary}"
             self.call_from_thread(self.announce, msg)
             self.call_from_thread(self.action_scan_directory)
+
+            audit_report = (
+                summary.get("audit_report") if isinstance(summary, dict) else None
+            )
+            if not audit_report and self.plan:
+                from app.core.audit_reporter import generate_audit_report
+                from app.core.verifier import VerificationEngine
+
+                base_dir = self.app_session.base_dir if self.app_session else "."
+                moves = VerificationEngine.get_moves(base_dir, self.plan)
+                records = [
+                    {"source_path": src, "destination_path": dst}
+                    for _, src, dst in moves
+                ]
+                audit_report = generate_audit_report(base_dir, records)
+
+            if audit_report:
+                self.call_from_thread(self.action_open_audit_report, audit_report)
         except Exception as e:
             logger.error(f"Error executing moves: {e}")
             self.call_from_thread(self.announce, f"Execution error: {e}")
+
+    def action_open_audit_report(
+        self, audit_report: Optional[Dict[str, Any]] = None
+    ) -> None:
+        """Open the Audit Report Modal Screen."""
+        if not audit_report and self.app_session and self.plan:
+            from app.core.audit_reporter import generate_audit_report
+            from app.core.verifier import VerificationEngine
+
+            base_dir = self.app_session.base_dir or "."
+            moves = VerificationEngine.get_moves(base_dir, self.plan)
+            records = [
+                {"source_path": src, "destination_path": dst} for _, src, dst in moves
+            ]
+            audit_report = generate_audit_report(base_dir, records)
+
+        if audit_report:
+            self.push_screen(AuditReportModal(audit_report))
+        else:
+            self.announce(
+                "No audit report available. Execute a sorting operation first."
+            )
 
     # --- Tree Management & Event Handlers ---
 
@@ -2725,14 +3149,24 @@ class AutoSorterTUI(A11yMixin, App):
 
         if is_file:
             stem, ext = os.path.splitext(old_name)
+            folder_cat = data.get("folder", "")
             modal = RenameModal(
-                title=f"Rename File: {old_name}", current_name=stem, extension=ext
+                title=f"Rename File: {old_name}",
+                current_name=stem,
+                extension=ext,
+                category=folder_cat,
             )
 
-            def on_renamed(new_stem: Optional[str]) -> None:
-                if not new_stem or new_stem == stem:
+            def on_renamed(new_formatted: Optional[str]) -> None:
+                if not new_formatted:
                     return
-                new_filename = new_stem + ext
+                if ext and not new_formatted.endswith(ext):
+                    new_filename = f"{new_formatted}{ext}"
+                else:
+                    new_filename = new_formatted
+
+                if new_filename == old_name:
+                    return
                 data["info"]["target_filename"] = new_filename
                 data["info"]["is_locked"] = True
                 data["is_locked"] = True
@@ -2747,7 +3181,9 @@ class AutoSorterTUI(A11yMixin, App):
             self.push_screen(modal, on_renamed)
         else:
             modal = RenameModal(
-                title=f"Rename Folder: {old_name}", current_name=old_name
+                title=f"Rename Folder: {old_name}",
+                current_name=old_name,
+                category=old_name,
             )
 
             def on_folder_renamed(new_name: Optional[str]) -> None:

@@ -26,6 +26,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.analyzer_strategies
 
+## `app.core.audit_reporter`
+
+::: app.core.audit_reporter
+
 ## `app.core.cache`
 
 ::: app.core.cache
@@ -129,6 +133,10 @@ This document is automatically generated. Do not edit manually.
 ## `app.core.path_utils`
 
 ::: app.core.path_utils
+
+## `app.core.pattern_formatter`
+
+::: app.core.pattern_formatter
 
 ## `app.core.plugin_registry`
 

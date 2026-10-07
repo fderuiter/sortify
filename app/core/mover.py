@@ -281,7 +281,9 @@ def _resolve_source_path(
     """Resolve normalized absolute source path for a plan node."""
     src_p = _get_val(content, "source_path")
     if src_p:
-        abs_sp = os.path.normpath(src_p if os.path.isabs(src_p) else os.path.join(base_dir, src_p))
+        abs_sp = os.path.normpath(
+            src_p if os.path.isabs(src_p) else os.path.join(base_dir, src_p)
+        )
         if os.path.lexists(abs_sp):
             return abs_sp
 
@@ -433,6 +435,7 @@ def _execute_moves_recursive(
     step_counter: list = None,
     ledger=None,
     history_manager=None,
+    audit_records: list = None,
 ) -> None:
     """Recursively move files according to the plan."""
     base_dir = os.path.normpath(base_dir)
@@ -1104,6 +1107,7 @@ def _process_move_item(
     db_lock: threading.Lock,
     step_counter: list,
     db_updates_batch: list,
+    audit_records: list = None,
 ) -> bool:
     """Execute a single physical move and SHA-256 hash calculation off-thread."""
     source_path = item["source_path"]
@@ -1219,6 +1223,14 @@ def _process_move_item(
             doc = db.get_document(base_dir, source_rel_path)
 
     file_hash = doc.get("file_hash") if (doc and isinstance(doc, dict)) else ""
+    pre_hash = file_hash
+    if not pre_hash and os.path.exists(source_path):
+        try:
+            from app.core.extractor import get_file_hash
+
+            pre_hash = get_file_hash(source_path)
+        except Exception:
+            pre_hash = ""
     entry_id = f"{session_id}:{source_rel_path}" if session_id else None
 
     if ledger and session_id:
@@ -1498,6 +1510,25 @@ def _process_move_item(
                     f"Failed to update transaction ledger completion: {exc}"
                 )
 
+    if audit_records is not None:
+        post_hash = None
+        if os.path.exists(dest_path):
+            try:
+                from app.core.extractor import get_file_hash
+
+                post_hash = get_file_hash(dest_path)
+            except Exception:
+                post_hash = None
+        with db_lock:
+            audit_records.append(
+                {
+                    "source_path": source_path,
+                    "destination_path": dest_path,
+                    "pre_hash": pre_hash,
+                    "post_hash": post_hash,
+                }
+            )
+
     return True
 
 
@@ -1647,9 +1678,14 @@ class AsyncMoveEngine:
 
         db_lock = threading.Lock()
         db_updates_batch: list[Any] = []
+        audit_records: list[dict] = []
         step_counter = [1]
         has_flushed_db = False
-        summary = {"deleted_folders": 0, "protected_folders": 0, "cancelled": False}
+        summary: dict[str, Any] = {
+            "deleted_folders": 0,
+            "protected_folders": 0,
+            "cancelled": False,
+        }
 
         try:
             import unittest.mock
@@ -1677,6 +1713,7 @@ class AsyncMoveEngine:
                     step_counter=step_counter,
                     ledger=ledger,
                     history_manager=history_manager,
+                    audit_records=audit_records,
                 )
                 emit_progress(
                     effective_progress_cb,
@@ -1711,6 +1748,7 @@ class AsyncMoveEngine:
                             db_lock,
                             step_counter,
                             db_updates_batch,
+                            audit_records,
                         )
                         for item in chunk
                     ]
@@ -1848,6 +1886,9 @@ class AsyncMoveEngine:
                         db.execute_batch_updates(list(db_updates_batch))
                         db_updates_batch.clear()
 
+            from app.core.audit_reporter import generate_audit_report
+
+            summary["audit_report"] = generate_audit_report(base_dir, audit_records)
             return summary
 
         except Exception as e:
