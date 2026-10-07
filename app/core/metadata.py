@@ -103,11 +103,19 @@ class MetadataPass:
 
     @staticmethod
     def run(
-        base_dir: str, items_to_sort: list, settings, db, callback, cancel_check
+        base_dir: str,
+        items_to_sort: list,
+        settings,
+        db,
+        callback=None,
+        cancel_check=None,
+        progress_callback=None,
     ) -> list:
         """Run an initial sequential metadata pass to bypass text extraction for matching files."""
         if not base_dir:
             return []
+
+        effective_callback = progress_callback or callback
 
         keyword_rules = getattr(settings, "KEYWORD_RULES", {})
         learned_rules = getattr(settings, "LEARNED_RULES", {})
@@ -127,9 +135,12 @@ class MetadataPass:
         bypassed_files = []
         docs_to_upsert = []
 
-        for item in items_to_sort:
+        total_items = len(items_to_sort)
+        for idx, item in enumerate(items_to_sort):
             if cancel_check and cancel_check():
                 break
+
+            progress_ratio = (idx + 1) / total_items if total_items > 0 else 1.0
 
             item_path = os.path.join(base_dir, item)
             try:
@@ -204,10 +215,10 @@ class MetadataPass:
                 bypassed_files.append(item)
                 docs_to_upsert.append((base_dir, item, file_hash, "[STATUS:BYPASSED]"))
                 emit_progress(
-                    callback,
-                    progress_or_update=1.0,
+                    effective_callback,
+                    progress_or_update=progress_ratio,
                     stage=f"Bypassed {item} via rule match",
-                    unit_count=1,
+                    unit_count=idx + 1,
                     unit_type="files",
                 )
             elif not is_supported:
@@ -217,10 +228,18 @@ class MetadataPass:
                     (base_dir, item, file_hash, "[STATUS:UNSUPPORTED]")
                 )
                 emit_progress(
-                    callback,
-                    progress_or_update=1.0,
+                    effective_callback,
+                    progress_or_update=progress_ratio,
                     stage=f"Bypassed {item} (unsupported format)",
-                    unit_count=1,
+                    unit_count=idx + 1,
+                    unit_type="files",
+                )
+            else:
+                emit_progress(
+                    effective_callback,
+                    progress_or_update=progress_ratio,
+                    stage=f"Scanning {item}",
+                    unit_count=idx + 1,
                     unit_type="files",
                 )
 

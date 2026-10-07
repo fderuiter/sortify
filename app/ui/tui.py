@@ -2979,6 +2979,12 @@ class AutoSorterTUI(A11yMixin, App):
         margin-top: 1;
         border: solid $secondary;
     }
+    #main-progress-bar {
+        width: 100%;
+        height: 1;
+        margin: 0;
+        padding: 0;
+    }
     #status-bar {
         height: 1;
         background: $primary-darken-2;
@@ -3040,6 +3046,10 @@ class AutoSorterTUI(A11yMixin, App):
                 tui_log = Log(id="tui-log", classes="tui-log-area")
                 tui_log.tooltip = "Live operation execution log output feed"
                 yield tui_log
+        pb = ProgressBar(total=100, show_percentage=True, id="main-progress-bar")
+        pb.tooltip = "Active operation background progress indicator"
+        pb.display = False
+        yield pb
         initial_status = f"{self._get_ai_status_badge()} Ready. Press [Ctrl+S] to Scan or [Ctrl+B] to select Directory."
         sb = Static(
             initial_status,
@@ -3064,6 +3074,70 @@ class AutoSorterTUI(A11yMixin, App):
         except Exception:
             pass
         return res
+
+    def _handle_progress_update(
+        self,
+        update_or_prog: Any = 0.0,
+        stage: Optional[str] = None,
+        unit_count: Optional[int] = None,
+        unit_type: Optional[str] = None,
+        **kwargs: Any,
+    ) -> None:
+        """Handle progress updates dispatched from worker threads to main UI thread."""
+        try:
+            pb = self.query_one("#main-progress-bar", ProgressBar)
+            pb.display = True
+
+            progress_val = 0.0
+            stage_text = stage
+            count_val = unit_count
+
+            if hasattr(update_or_prog, "progress"):
+                progress_val = getattr(update_or_prog, "progress", 0.0)
+                if stage_text is None:
+                    stage_text = getattr(update_or_prog, "stage", None)
+                if count_val is None:
+                    count_val = getattr(update_or_prog, "unit_count", None)
+                if unit_type is None:
+                    unit_type = getattr(update_or_prog, "unit_type", None)
+            elif isinstance(update_or_prog, (int, float)):
+                progress_val = float(update_or_prog)
+            elif isinstance(update_or_prog, str):
+                stage_text = update_or_prog
+
+            # Convert 0.0-1.0 ratio to percentage (0.0-100.0) if needed
+            if 0.0 <= progress_val <= 1.0:
+                pct = progress_val * 100.0
+            else:
+                pct = progress_val
+
+            pct = min(100.0, max(0.0, pct))
+            pb.progress = pct
+
+            if stage_text:
+                status_msg = f"[{pct:.0f}%] {stage_text}"
+                if count_val is not None:
+                    u_type = unit_type or "items"
+                    status_msg = f"[{pct:.0f}%] ({count_val} {u_type}) {stage_text}"
+                sb = self.query_one("#status-bar", Static)
+                sb.update(f"{self._get_ai_status_badge()} {status_msg}")
+                try:
+                    log_w = self.query_one("#tui-log", Log)
+                    log_w.write_line(status_msg)
+                except Exception:
+                    pass
+        except Exception as e:
+            logger.debug(f"Error handling progress update: {e}")
+
+    def reset_progress_bar(self) -> None:
+        """Reset progress bar to idle state and hide component."""
+        try:
+            pb = self.query_one("#main-progress-bar", ProgressBar)
+            pb.progress = 0.0
+            pb.total = 100
+            pb.display = False
+        except Exception:
+            pass
 
     def _update_layout(self, width: int) -> None:
         """Update container CSS classes based on viewport width breakpoint."""
@@ -3454,13 +3528,16 @@ class AutoSorterTUI(A11yMixin, App):
 
             from app.core.metadata import MetadataPass
 
+            def scan_progress_cb(update_or_prog: Any, stage: Optional[str] = None, **kwargs: Any) -> None:
+                self.call_from_thread(self._handle_progress_update, update_or_prog, stage, **kwargs)
+
             MetadataPass.run(
                 self.base_dir,
                 files,
                 self.settings,
                 self.app_session.db,
-                None,
-                lambda: False,
+                progress_callback=scan_progress_cb,
+                cancel_check=lambda: False,
             )
 
             # Load locks & ratings
@@ -3486,6 +3563,8 @@ class AutoSorterTUI(A11yMixin, App):
         except Exception as e:
             logger.error(f"Error in run_scan_worker: {e}")
             self.call_from_thread(self.announce, f"Scan error: {e}")
+        finally:
+            self.call_from_thread(self.reset_progress_bar)
 
     def action_export_simulation_report(self) -> None:
         """Trigger dry-run simulation report export modal screen."""
@@ -3598,7 +3677,13 @@ class AutoSorterTUI(A11yMixin, App):
     def run_execute_worker(self) -> None:
         """Execute moves in worker thread."""
         try:
-            summary = self.app_session.execute_moves(self.plan)
+            def move_progress_cb(update_or_prog: Any, stage: Optional[str] = None, **kwargs: Any) -> None:
+                self.call_from_thread(self._handle_progress_update, update_or_prog, stage, **kwargs)
+
+            summary = self.app_session.execute_moves(
+                self.plan,
+                progress_callback=move_progress_cb,
+            )
             msg = f"Execution completed successfully! Summary: {summary}"
             self.call_from_thread(self.announce, msg)
             self.call_from_thread(self.action_scan_directory)
@@ -3623,6 +3708,8 @@ class AutoSorterTUI(A11yMixin, App):
         except Exception as e:
             logger.error(f"Error executing moves: {e}")
             self.call_from_thread(self.announce, f"Execution error: {e}")
+        finally:
+            self.call_from_thread(self.reset_progress_bar)
 
     def action_open_audit_report(
         self, audit_report: Optional[Dict[str, Any]] = None
