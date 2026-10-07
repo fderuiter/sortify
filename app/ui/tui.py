@@ -2448,8 +2448,8 @@ class ExportReportModal(A11yMixin, ModalScreen[Optional[Tuple[str, str]]]):
 
     def __init__(
         self,
-        default_path: str = "./simulation_report.html",
-        default_format: str = "html",
+        default_path: str = "./simulation_report.json",
+        default_format: str = "json",
     ):
         super().__init__()
         self.default_path = default_path
@@ -2465,14 +2465,14 @@ class ExportReportModal(A11yMixin, ModalScreen[Optional[Tuple[str, str]]]):
             )
             inp = Input(
                 value=self.default_path,
-                placeholder="Enter output path (e.g. ./report.html)...",
+                placeholder="Enter output path (e.g. ./report.json)...",
                 id="input-export-path",
             )
             inp.tooltip = "Enter path for exported dry-run simulation report"
             yield inp
 
             fmt_select = Select(
-                [("HTML Report (*.html)", "html"), ("JSON Data (*.json)", "json")],
+                [("JSON Data (*.json)", "json"), ("Plain Text (*.txt)", "text")],
                 value=self.default_format,
                 id="select-export-format",
                 allow_blank=False,
@@ -2516,7 +2516,7 @@ class ExportReportModal(A11yMixin, ModalScreen[Optional[Tuple[str, str]]]):
         if not path_val:
             self.announce("Output path cannot be empty.")
             return
-        format_val = self.query_one("#select-export-format", Select).value or "html"
+        format_val = self.query_one("#select-export-format", Select).value or "json"
         self.dismiss((path_val, str(format_val)))
 
     @on(Button.Pressed, "#btn-cancel")
@@ -3692,7 +3692,7 @@ class AutoSorterTUI(A11yMixin, App):
             self.announce("No plan available to export. Run [Ctrl+S] Scan first.")
             return
 
-        default_out = str(Path(self.base_dir) / "simulation_report.html")
+        default_out = str(Path(self.base_dir) / "simulation_report.json")
 
         def handle_export_modal_result(result: Optional[Tuple[str, str]]) -> None:
             if not result:
@@ -3702,10 +3702,10 @@ class AutoSorterTUI(A11yMixin, App):
                 from app.core.simulation_exporter import SimulationExporter
 
                 exporter = SimulationExporter(self.plan, self.base_dir)
-                if report_format == "json":
-                    exporter.export_json(export_path)
+                if report_format in ("text", "txt"):
+                    exporter.export_text(export_path)
                 else:
-                    exporter.export_html(export_path)
+                    exporter.export_json(export_path)
 
                 self.announce(f"Simulation report exported to '{export_path}'.")
             except Exception as e:
@@ -3713,7 +3713,7 @@ class AutoSorterTUI(A11yMixin, App):
                 self.announce(f"Export error: {e}")
 
         self.push_screen(
-            ExportReportModal(default_path=default_out, default_format="html"),
+            ExportReportModal(default_path=default_out, default_format="json"),
             handle_export_modal_result,
         )
 

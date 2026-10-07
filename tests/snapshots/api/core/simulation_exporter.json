@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "56ae915a52e6327054effaa18e902251828d09a25037cf6444e1a76b95950830"
+    "checksum": "4e734ee631248a41a9468a29ad5a999165f45f59b9ba616f3e921ebefd23d371"
   },
   "classes": [
     {
@@ -38,7 +38,7 @@
         {
           "async": false,
           "decorators": [],
-          "name": "export_html",
+          "name": "export_json",
           "parameters": [
             {
               "annotation": null,
@@ -56,7 +56,7 @@
         {
           "async": false,
           "decorators": [],
-          "name": "export_json",
+          "name": "export_text",
           "parameters": [
             {
               "annotation": null,

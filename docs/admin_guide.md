@@ -304,7 +304,7 @@ usage: app/main.py sort [-h] [--preset {demo,downloads,documents}] [--json]
                         [--accept-ai-consent | --decline-ai-consent]
                         [--skip-wizard] [--non-interactive]
                         [--export-report EXPORT_REPORT]
-                        [--report-format {html,json}]
+                        [--report-format {json,text}]
                         [directory]
 
 positional arguments:
@@ -343,8 +343,8 @@ options:
                         modal dialogs
   --export-report EXPORT_REPORT
                         Export dry-run simulation report to output file path
-  --report-format {html,json}
-                        Format for exported simulation report (html or json)
+  --report-format {json,text}
+                        Format for exported simulation report (json or text)
 ```
 
 ##### `scan`
@@ -358,7 +358,7 @@ usage: app/main.py scan [-h] [--preset {demo,downloads,documents}] [--json]
                         [--accept-ai-consent | --decline-ai-consent]
                         [--skip-wizard] [--non-interactive]
                         [--export-report EXPORT_REPORT]
-                        [--report-format {html,json}]
+                        [--report-format {json,text}]
                         [directory]
 
 positional arguments:
@@ -394,8 +394,8 @@ options:
                         modal dialogs
   --export-report EXPORT_REPORT
                         Export dry-run simulation report to output file path
-  --report-format {html,json}
-                        Format for exported simulation report (html or json)
+  --report-format {json,text}
+                        Format for exported simulation report (json or text)
 ```
 
 ##### `config`
@@ -409,7 +409,7 @@ usage: app/main.py config [-h] [--show] [--json] [--set KEY VALUE] [-q]
                           [--accept-ai-consent | --decline-ai-consent]
                           [--skip-wizard] [--non-interactive]
                           [--export-report EXPORT_REPORT]
-                          [--report-format {html,json}]
+                          [--report-format {json,text}]
 
 options:
   -h, --help            show this help message and exit
@@ -440,8 +440,8 @@ options:
                         modal dialogs
   --export-report EXPORT_REPORT
                         Export dry-run simulation report to output file path
-  --report-format {html,json}
-                        Format for exported simulation report (html or json)
+  --report-format {json,text}
+                        Format for exported simulation report (json or text)
 ```
 
 ##### `daemon`
@@ -455,7 +455,7 @@ usage: app/main.py daemon [-h] [--watch] [-q] [--no-color]
                           [--accept-ai-consent | --decline-ai-consent]
                           [--skip-wizard] [--non-interactive]
                           [--export-report EXPORT_REPORT]
-                          [--report-format {html,json}]
+                          [--report-format {json,text}]
                           [action] [directory]
 
 positional arguments:
@@ -490,8 +490,8 @@ options:
                         modal dialogs
   --export-report EXPORT_REPORT
                         Export dry-run simulation report to output file path
-  --report-format {html,json}
-                        Format for exported simulation report (html or json)
+  --report-format {json,text}
+                        Format for exported simulation report (json or text)
 ```
 
 ##### `undo`
@@ -506,7 +506,7 @@ usage: app/main.py undo [-h] [--session-id SESSION_ID] [--list] [--latest]
                         [--accept-ai-consent | --decline-ai-consent]
                         [--skip-wizard] [--non-interactive]
                         [--export-report EXPORT_REPORT]
-                        [--report-format {html,json}]
+                        [--report-format {json,text}]
 
 options:
   -h, --help            show this help message and exit
@@ -541,8 +541,8 @@ options:
                         modal dialogs
   --export-report EXPORT_REPORT
                         Export dry-run simulation report to output file path
-  --report-format {html,json}
-                        Format for exported simulation report (html or json)
+  --report-format {json,text}
+                        Format for exported simulation report (json or text)
 ```
 
 ##### `drop`
@@ -557,7 +557,7 @@ usage: app/main.py drop [-h] [--preset {demo,downloads,documents}]
                         [--accept-ai-consent | --decline-ai-consent]
                         [--skip-wizard] [--non-interactive]
                         [--export-report EXPORT_REPORT]
-                        [--report-format {html,json}]
+                        [--report-format {json,text}]
                         paths [paths ...]
 
 positional arguments:
@@ -595,8 +595,8 @@ options:
                         modal dialogs
   --export-report EXPORT_REPORT
                         Export dry-run simulation report to output file path
-  --report-format {html,json}
-                        Format for exported simulation report (html or json)
+  --report-format {json,text}
+                        Format for exported simulation report (json or text)
 ```
 
 ##### `ledger`
