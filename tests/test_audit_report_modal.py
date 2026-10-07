@@ -176,7 +176,12 @@ def test_run_execute_worker_opens_audit_modal(tmp_path):
         app.plan = {"out": {"a.txt": {"__type__": "file"}}}
 
         async with app.run_test() as pilot:
-            app.run_execute_worker()
+            worker = app.run_execute_worker()
+            if worker:
+                try:
+                    await worker.wait()
+                except Exception:
+                    pass
             await pilot.pause()
 
             # Verify screen stack has pushed AuditReportModal
