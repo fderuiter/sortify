@@ -1,7 +1,13 @@
 # /// script
 # requires-python = ">=3.12"
 # ///
-"""Utility script to prepare an offline deployment bundle."""
+"""Utility script to prepare an offline deployment bundle.
+
+Vulnerability database and package index endpoints used for dependency auditing:
+- https://pypi.org
+- https://api.osv.dev
+- https://api.github.com/advisories
+"""
 
 import os
 import shutil

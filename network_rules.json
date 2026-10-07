@@ -29,6 +29,21 @@
       "pattern": "astral-sh/setup-uv",
       "match_type": "substring",
       "description": "Setting up uv in CI."
+    },
+    {
+      "pattern": "https://pypi\\.org",
+      "match_type": "regex",
+      "description": "Fetching package metadata and vulnerability advisories from PyPI."
+    },
+    {
+      "pattern": "https://api\\.osv\\.dev",
+      "match_type": "regex",
+      "description": "Querying Open Source Vulnerabilities (OSV) database."
+    },
+    {
+      "pattern": "https://api\\.github\\.com/advisories",
+      "match_type": "regex",
+      "description": "Fetching vulnerability advisories from the GitHub Security Advisory database."
     }
   ]
 }

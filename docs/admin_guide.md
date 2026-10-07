@@ -666,6 +666,12 @@ options:
 ### `scripts/prepare_offline.py`
 Utility script to prepare an offline deployment bundle.
 
+Vulnerability database and package index endpoints used for dependency auditing:
+- https://pypi.org
+- https://api.osv.dev
+- https://api.github.com/advisories
+
+
 ### `scripts/install_offline.py`
 Offline installation and verification script.
 
