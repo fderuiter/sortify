@@ -865,6 +865,15 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     yield Label(sw_lbl)
 
             with Horizontal(classes="switch-row"):
+                sw_ai = Switch(
+                    value=bool(getattr(self.settings, "AI_CONSENT_GRANTED", False)),
+                    id="switch-ai-consent",
+                )
+                sw_ai.tooltip = "Toggle AI consent for semantic document classification"
+                yield sw_ai
+                yield Label(" AI Consent Granted")
+
+            with Horizontal(classes="switch-row"):
                 sw_ctx = Switch(
                     value=bool(getattr(self.settings, "CONTEXTUAL_RENAMING", False)),
                     id="switch-contextual-renaming",
@@ -956,6 +965,12 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             else bool(getattr(self.settings, "CLINICAL_SMART_RENAMING", False))
         )
         ctx_renaming = self.query_one("#switch-contextual-renaming", Switch).value
+        ai_consent_sw = self.query(Switch).filter("#switch-ai-consent")
+        ai_consent = (
+            ai_consent_sw.first().value
+            if ai_consent_sw
+            else bool(getattr(self.settings, "AI_CONSENT_GRANTED", False))
+        )
 
         res = {
             "PROTECTED_PATHS": p_list,
@@ -965,6 +980,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             "SORTING_STRATEGY": strat,
             "CLINICAL_SMART_RENAMING": clin_renaming,
             "CONTEXTUAL_RENAMING": ctx_renaming,
+            "AI_CONSENT_GRANTED": ai_consent,
         }
         self.announce("Saved application settings.")
         self.dismiss(res)
@@ -2327,8 +2343,9 @@ class AutoSorterTUI(A11yMixin, App):
                 tui_log = Log(id="tui-log", classes="tui-log-area")
                 tui_log.tooltip = "Live operation execution log output feed"
                 yield tui_log
+        initial_status = f"{self._get_ai_status_badge()} Ready. Press [Ctrl+S] to Scan or [Ctrl+B] to select Directory."
         sb = Static(
-            "Ready. Press [Ctrl+S] to Scan or [Ctrl+B] to select Directory.",
+            initial_status,
             id="status-bar",
         )
         sb.tooltip = "Application status and screen reader announcement bar"
@@ -2373,6 +2390,12 @@ class AutoSorterTUI(A11yMixin, App):
             from app.ui.notifications import NotificationManager
 
             NotificationManager.get_instance().register_tui(self)
+        except Exception:
+            pass
+        try:
+            from app.config import AppSettings
+
+            AppSettings.add_observer("AI_CONSENT_GRANTED", self._on_ai_consent_changed)
         except Exception:
             pass
         try:
@@ -2422,6 +2445,12 @@ class AutoSorterTUI(A11yMixin, App):
             from app.ui.notifications import NotificationManager
 
             NotificationManager.get_instance().unregister_tui(self)
+        except Exception:
+            pass
+        try:
+            from app.config import AppSettings
+
+            AppSettings.remove_observer("AI_CONSENT_GRANTED", self._on_ai_consent_changed)
         except Exception:
             pass
 
@@ -2521,11 +2550,37 @@ class AutoSorterTUI(A11yMixin, App):
             shutil.rmtree(session_dir, ignore_errors=True)
         self.announce(f"Cleaned session files for '{session_info.get('session_id')}'.")
 
-    def update_status(self, text: str) -> None:
-        """Update status bar label."""
+    def _get_ai_status_badge(self) -> str:
+        """Return visual AI consent status badge string."""
+        consent = getattr(self.settings, "AI_CONSENT_GRANTED", None)
+        return "[AI: Active]" if consent is True else "[AI: Disabled]"
+
+    def _on_ai_consent_changed(self, value: Any = None) -> None:
+        """Handle AI_CONSENT_GRANTED setting change notification."""
+        self.update_status()
+
+    def update_status(self, text: Optional[str] = None) -> None:
+        """Update status bar label with current message and AI consent badge."""
         try:
+            if text is not None:
+                clean_text = str(text)
+                for badge_str in ("[AI: Active]", "[AI: Disabled]"):
+                    if clean_text.startswith(badge_str):
+                        clean_text = clean_text[len(badge_str) :].lstrip()
+                self._current_status_text = clean_text
+            elif not hasattr(self, "_current_status_text"):
+                self._current_status_text = (
+                    "Ready. Press [Ctrl+S] to Scan or [Ctrl+B] to select Directory."
+                )
+
+            badge = self._get_ai_status_badge()
+            full_text = (
+                f"{badge} {self._current_status_text}"
+                if getattr(self, "_current_status_text", "")
+                else badge
+            )
             sb = self.query_one("#status-bar", Static)
-            sb.update(text)
+            sb.update(full_text)
         except Exception:
             pass
 
@@ -2611,8 +2666,11 @@ class AutoSorterTUI(A11yMixin, App):
                     ]
                 if "CONTEXTUAL_RENAMING" in res:
                     self.settings.CONTEXTUAL_RENAMING = res["CONTEXTUAL_RENAMING"]
+                if "AI_CONSENT_GRANTED" in res:
+                    self.settings.AI_CONSENT_GRANTED = res["AI_CONSENT_GRANTED"]
                 if hasattr(self.settings, "_save"):
                     self.settings._save()
+                self.update_status()
                 self.announce("Settings updated and saved.")
                 if self.base_dir:
                     self.action_scan_directory()
