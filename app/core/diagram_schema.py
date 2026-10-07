@@ -718,6 +718,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
         DiagramNode(id="core_simulation_exporter", label="app.core.simulation_exporter"),
         DiagramNode(id="core_mover", label="app.core.mover"),
         DiagramNode(id="core_file_renamer", label="app.core.file_renamer"),
+        DiagramNode(id="core_pattern_formatter", label="app.core.pattern_formatter"),
         DiagramNode(id="core_resilient_file_ops", label="app.core.resilient_file_ops"),
         DiagramNode(id="core_scanner", label="app.core.scanner"),
         DiagramNode(id="core_progress", label="app.core.progress"),
