@@ -67,5 +67,11 @@ repos:
         language: system
         files: '^app/.*\.py$'
         pass_filenames: false
+      - id: validate-imports
+        name: Validate Import Gate and Direct Dependencies
+        entry: uv run python scripts/validate_imports.py
+        language: system
+        files: '(^app/.*\.py$|^pyproject\.toml$)'
+        pass_filenames: false
 
 

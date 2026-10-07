@@ -80,13 +80,25 @@ class PatternTokenFormatter:
                 os.path.basename(fallback_original)
             )
 
-        if "original" not in meta or meta["original"] is None or str(meta["original"]).strip() == "":
-            meta["original"] = fallback_stem if fallback_stem else DEFAULT_TOKEN_FALLBACKS["original"]
+        if (
+            "original" not in meta
+            or meta["original"] is None
+            or str(meta["original"]).strip() == ""
+        ):
+            meta["original"] = (
+                fallback_stem if fallback_stem else DEFAULT_TOKEN_FALLBACKS["original"]
+            )
 
         if "extension" not in meta or meta["extension"] is None:
-            meta["extension"] = fallback_ext if fallback_ext else DEFAULT_TOKEN_FALLBACKS["extension"]
+            meta["extension"] = (
+                fallback_ext if fallback_ext else DEFAULT_TOKEN_FALLBACKS["extension"]
+            )
 
-        if "date" not in meta or meta["date"] is None or str(meta["date"]).strip() == "":
+        if (
+            "date" not in meta
+            or meta["date"] is None
+            or str(meta["date"]).strip() == ""
+        ):
             date_prov = DEFAULT_TOKEN_FALLBACKS["date"]
             meta["date"] = date_prov() if callable(date_prov) else str(date_prov)
         elif isinstance(meta["date"], (datetime,)):
@@ -115,7 +127,7 @@ class PatternTokenFormatter:
 
         try:
             tokens_in_pattern = cls.parse_tokens(pattern)
-            
+
             # If no tokens present in pattern string, treat pattern as static string
             if not tokens_in_pattern:
                 safe_stem = sanitize_name(pattern)
@@ -134,7 +146,9 @@ class PatternTokenFormatter:
                 if token_lower == "extension":
                     if f".{placeholder}" in formatted:
                         clean_ext = ext_val.lstrip(".")
-                        formatted = formatted.replace(f".{placeholder}", f".{clean_ext}")
+                        formatted = formatted.replace(
+                            f".{placeholder}", f".{clean_ext}"
+                        )
                     else:
                         formatted = formatted.replace(placeholder, ext_val)
                 elif token_lower in meta and meta[token_lower] is not None:
@@ -144,7 +158,9 @@ class PatternTokenFormatter:
                     # Token missing in metadata -> substitute clean default
                     fallback_val = DEFAULT_TOKEN_FALLBACKS.get(token_lower, token_lower)
                     fallback_str = (
-                        str(fallback_val()) if callable(fallback_val) else str(fallback_val)
+                        str(fallback_val())
+                        if callable(fallback_val)
+                        else str(fallback_val)
                     )
                     formatted = formatted.replace(placeholder, fallback_str)
 

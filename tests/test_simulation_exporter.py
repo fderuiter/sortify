@@ -91,7 +91,9 @@ def test_export_html_structure(sample_plan_with_data, tmp_path):
 
 def test_scrubbing_user_home_and_credentials(tmp_path):
     home_dir = str(Path.home())
-    home_file = os.path.join(home_dir, "sensitive_folder", "sk_live_999999999999999999999999.txt")
+    home_file = os.path.join(
+        home_dir, "sensitive_folder", "sk_live_999999999999999999999999.txt"
+    )
 
     plan = {
         "Docs": {
@@ -166,13 +168,15 @@ def test_cli_sort_export_report_dry_run(tmp_path, capsys):
     from app.main import build_parser, handle_sort_command
 
     parser = build_parser()
-    args = parser.parse_args([
-        "sort",
-        str(tmp_path),
-        "--dry-run",
-        "--export-report",
-        str(out_html),
-    ])
+    args = parser.parse_args(
+        [
+            "sort",
+            str(tmp_path),
+            "--dry-run",
+            "--export-report",
+            str(out_html),
+        ]
+    )
 
     settings = AppSettings()
     with pytest.raises(SystemExit) as exc_info:
@@ -194,14 +198,16 @@ def test_cli_scan_export_report_json(tmp_path, capsys):
     from app.main import build_parser, handle_scan_command
 
     parser = build_parser()
-    args = parser.parse_args([
-        "scan",
-        str(tmp_path),
-        "--export-report",
-        str(out_json),
-        "--report-format",
-        "json",
-    ])
+    args = parser.parse_args(
+        [
+            "scan",
+            str(tmp_path),
+            "--export-report",
+            str(out_json),
+            "--report-format",
+            "json",
+        ]
+    )
 
     settings = AppSettings()
     with pytest.raises(SystemExit) as exc_info:
@@ -248,4 +254,3 @@ def test_tui_export_report_modal(tmp_path):
             assert "<!DOCTYPE html>" in default_out.read_text(encoding="utf-8")
 
     asyncio.run(_test())
-

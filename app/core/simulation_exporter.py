@@ -94,7 +94,11 @@ class SimulationExporter:
             return self._scrub(data)
         elif isinstance(data, dict):
             return {
-                (self._scrub(k) if isinstance(k, str) and ("/" in k or "\\" in k or "_" in k) else k): self._scrub_structure(v)
+                (
+                    self._scrub(k)
+                    if isinstance(k, str) and ("/" in k or "\\" in k or "_" in k)
+                    else k
+                ): self._scrub_structure(v)
                 for k, v in data.items()
             }
         elif isinstance(data, (list, tuple)):
@@ -199,10 +203,12 @@ class SimulationExporter:
                         or target_path in circular_paths
                     )
 
-                    is_quarantine_hold = (
-                        sens_rating in ("HIGH", "CRITICAL", "RESTRICTED", "QUARANTINE")
-                        or policy_action in ("sensitivity_hold", "quarantine")
-                    )
+                    is_quarantine_hold = sens_rating in (
+                        "HIGH",
+                        "CRITICAL",
+                        "RESTRICTED",
+                        "QUARANTINE",
+                    ) or policy_action in ("sensitivity_hold", "quarantine")
 
                     moves.append(
                         {
@@ -308,9 +314,7 @@ class SimulationExporter:
         self._cached_report_data = res
         return res
 
-    def export_json(
-        self, output_path: Optional[Union[str, Path]] = None
-    ) -> str:
+    def export_json(self, output_path: Optional[Union[str, Path]] = None) -> str:
         """Serialize simulation report into JSON format and write to output_path if specified."""
         data = self.generate_report_data()
         json_content = json.dumps(data, indent=2)
@@ -323,9 +327,7 @@ class SimulationExporter:
 
         return json_content
 
-    def export_html(
-        self, output_path: Optional[Union[str, Path]] = None
-    ) -> str:
+    def export_html(self, output_path: Optional[Union[str, Path]] = None) -> str:
         """Serialize simulation report into standalone HTML format and write to output_path if specified."""
         data = self.generate_report_data()
         summary = data["summary"]
@@ -349,7 +351,7 @@ class SimulationExporter:
             f"""
             <div class="warning-banner">
                 <h3>Simulation Warnings ({len(warnings)})</h3>
-                <ul>{''.join(warning_items_html)}</ul>
+                <ul>{"".join(warning_items_html)}</ul>
             </div>
             """
             if warnings
@@ -361,18 +363,20 @@ class SimulationExporter:
             '<tr data-collision="{col}" data-hold="{hold}" data-confirmed="{conf}">'
             '<td class="code-cell">{src}</td>'
             '<td class="code-cell">{tgt}</td>'
-            '<td>{fn}</td>'
+            "<td>{fn}</td>"
             '<td><span class="badge {sens_cls}">{sens}</span>{hold_badge}</td>'
-            '<td>{col_badge}</td>'
-            '<td>{conf_badge}</td>'
-            '</tr>'
+            "<td>{col_badge}</td>"
+            "<td>{conf_badge}</td>"
+            "</tr>"
         )
 
         badge_ok = '<span class="badge badge-success">OK</span>'
         badge_collision = '<span class="badge badge-danger">COLLISION</span>'
         badge_confirmed = '<span class="badge badge-info">Confirmed</span>'
         badge_unconfirmed = '<span class="badge badge-muted">Unconfirmed</span>'
-        badge_quarantine_hold = ' <span class="badge badge-danger">QUARANTINE HOLD</span>'
+        badge_quarantine_hold = (
+            ' <span class="badge badge-danger">QUARANTINE HOLD</span>'
+        )
 
         table_rows = []
         for m in move_mappings:
@@ -579,7 +583,7 @@ class SimulationExporter:
         <div class="header-title">
             <h1>Sortify Dry-Run Simulation Report</h1>
             <div class="header-meta">
-                Generated: {data['generated_at']} | Target Directory: <code>{data['base_directory']}</code>
+                Generated: {data["generated_at"]} | Target Directory: <code>{data["base_directory"]}</code>
             </div>
         </div>
         <div>
@@ -589,23 +593,23 @@ class SimulationExporter:
 
     <div class="metrics-grid">
         <div class="metric-card">
-            <div class="metric-value">{summary['total_files']}</div>
+            <div class="metric-value">{summary["total_files"]}</div>
             <div class="metric-label">Total Files Analyzed</div>
         </div>
         <div class="metric-card">
-            <div class="metric-value">{summary['collisions_count']}</div>
+            <div class="metric-value">{summary["collisions_count"]}</div>
             <div class="metric-label">Path Collisions</div>
         </div>
         <div class="metric-card">
-            <div class="metric-value">{summary['sensitivity_holds_count']}</div>
+            <div class="metric-value">{summary["sensitivity_holds_count"]}</div>
             <div class="metric-label">Sensitivity Quarantine Holds</div>
         </div>
         <div class="metric-card">
-            <div class="metric-value">{summary['broken_links_count']}</div>
+            <div class="metric-value">{summary["broken_links_count"]}</div>
             <div class="metric-label">Broken Symlinks / Links</div>
         </div>
         <div class="metric-card">
-            <div class="metric-value">{summary['total_warnings']}</div>
+            <div class="metric-value">{summary["total_warnings"]}</div>
             <div class="metric-label">Total Warnings</div>
         </div>
     </div>

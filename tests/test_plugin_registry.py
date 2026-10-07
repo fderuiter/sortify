@@ -168,4 +168,7 @@ def test_app_settings_graceful_handling_of_invalid_plugins_config(tmp_path, capl
         app_settings = AppSettings(filepath=str(settings_file))
         assert app_settings.PLUGINS == []
 
-    assert "Invalid PLUGINS in config" in caplog.text or "Forbidden plugin module path" in caplog.text
+    assert (
+        "Invalid PLUGINS in config" in caplog.text
+        or "Forbidden plugin module path" in caplog.text
+    )

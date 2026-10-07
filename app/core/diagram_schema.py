@@ -726,7 +726,9 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramNode(id="core_audit_reporter", label="app.core.audit_reporter"),
             DiagramNode(id="core_mover", label="app.core.mover"),
             DiagramNode(id="core_file_renamer", label="app.core.file_renamer"),
-            DiagramNode(id="core_pattern_formatter", label="app.core.pattern_formatter"),
+            DiagramNode(
+                id="core_pattern_formatter", label="app.core.pattern_formatter"
+            ),
             DiagramNode(
                 id="core_resilient_file_ops", label="app.core.resilient_file_ops"
             ),
@@ -798,6 +800,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramEdge(source="core_path_utils", target="core_exceptions"),
         ],
     )
+
 
 ARCHITECTURE_DATAFLOW_SPEC = DataFlowDiagramSpec(
     id="architecture_dataflow",

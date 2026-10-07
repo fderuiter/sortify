@@ -65,7 +65,10 @@ def test_cli_notification_dispatch_with_help_url(caplog):
     stream_content = stream.getvalue()
     expected = f"[NOTIFICATION] [ERROR] Scan Error: Scan operation failed due to permission error [Help: {help_url}]"
     assert expected in stream_content
-    assert f"Scan Error: Scan operation failed due to permission error [Help: {help_url}]" in caplog.text
+    assert (
+        f"Scan Error: Scan operation failed due to permission error [Help: {help_url}]"
+        in caplog.text
+    )
 
 
 def test_cli_notification_without_help_url():
