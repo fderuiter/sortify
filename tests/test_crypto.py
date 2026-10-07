@@ -1237,6 +1237,8 @@ def test_import_fallbacks():
         cwd=repo_root,
     )
     assert res_sql.returncode == 0, f"SQLite fallback failed: {res_sql.stderr}"
+
+
 def test_key_rotation_with_single_quote_escaping(tmp_path):
     """Verify that key rotation succeeds when the new key contains single quotes."""
     db_path = tmp_path / "test_rotate_quote.db"

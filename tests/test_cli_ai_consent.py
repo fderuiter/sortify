@@ -12,14 +12,16 @@ from app.ui.tui import AutoSorterTUI, WizardModal
 def test_cli_parser_accept_ai_consent_flag():
     """Verify --accept-ai-consent flag parsing at top level and subcommand."""
     parser = build_parser()
-    
+
     # Top level
     args = parser.parse_args(["--accept-ai-consent"])
     assert args.accept_ai_consent is True
     assert args.decline_ai_consent is False
 
     # Subcommand
-    args_sub = parser.parse_args(["sort", "--accept-ai-consent", "sandbox/demo_workspace"])
+    args_sub = parser.parse_args(
+        ["sort", "--accept-ai-consent", "sandbox/demo_workspace"]
+    )
     assert args_sub.accept_ai_consent is True
     assert args_sub.decline_ai_consent is False
 
@@ -34,7 +36,9 @@ def test_cli_parser_decline_ai_consent_flag():
     assert args.accept_ai_consent is False
 
     # Subcommand
-    args_sub = parser.parse_args(["scan", "--decline-ai-consent", "sandbox/demo_workspace"])
+    args_sub = parser.parse_args(
+        ["scan", "--decline-ai-consent", "sandbox/demo_workspace"]
+    )
     assert args_sub.decline_ai_consent is True
     assert args_sub.accept_ai_consent is False
 

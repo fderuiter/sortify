@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "b953af089116cafb10c1773187315a570ce893b4cf831e33befb1e284d76d463"
+    "checksum": "673b09c4e56393fec8b101d770972521a16224640fa614d0e7e6b7ea90f57eae"
   },
   "cli": {
     "app/main.py": [
@@ -9700,6 +9700,57 @@
             }
           ],
           "returns": null
+        }
+      ]
+    },
+    "app/core/rule_templates.py": {
+      "classes": [
+        {
+          "class_name": "StarterTemplatePack",
+          "decorators": [
+            "@dataclass"
+          ],
+          "methods": []
+        }
+      ],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "apply_starter_templates",
+          "parameters": [
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "settings"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "pack_ids"
+            }
+          ],
+          "returns": "tuple[Dict[str, str], List[Dict[str, Any]]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_starter_template_by_id",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "pack_id"
+            }
+          ],
+          "returns": "Optional[StarterTemplatePack]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_starter_templates",
+          "parameters": [],
+          "returns": "List[StarterTemplatePack]"
         }
       ]
     },

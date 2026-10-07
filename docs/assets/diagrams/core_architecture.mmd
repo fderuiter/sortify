@@ -45,6 +45,7 @@ flowchart TD
     end
     subgraph execution_operations ["Policy, Validation & File Operations (app.core)"]
         core_policy_engine{app.core.policy_engine}
+        core_rule_templates["app.core.rule_templates"]
         core_quarantine_interceptor["app.core.quarantine_interceptor"]
         core_domain_contracts["app.core.domain_contracts"]
         core_verifier{app.core.verifier}

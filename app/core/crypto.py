@@ -185,7 +185,9 @@ class CryptoManager:
         return proxy_str
 
     @staticmethod
-    def rotate_database_key(db_path: Path | str, key_path: Path | str, new_key_str: str | None = None) -> str:
+    def rotate_database_key(
+        db_path: Path | str, key_path: Path | str, new_key_str: str | None = None
+    ) -> str:
         """Rotate database key using SessionCrypto."""
         crypto = SessionCrypto(Path(key_path), Path(db_path))
         return crypto.rotate_key(new_key_str=new_key_str)

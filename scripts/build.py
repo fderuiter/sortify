@@ -459,7 +459,9 @@ def package_sidecar_models():
 
     offline_bundle = Path("offline_bundle")
     if not offline_bundle.exists() or not any(offline_bundle.iterdir()):
-        print("Warning: offline_bundle directory empty or missing. Skipping sidecar packaging.")
+        print(
+            "Warning: offline_bundle directory empty or missing. Skipping sidecar packaging."
+        )
         return
 
     dist_dir = Path("dist")
@@ -476,6 +478,7 @@ def package_sidecar_models():
     root_zip = Path("smart-autosorter-models.zip")
     if zip_path.exists():
         import shutil
+
         shutil.copy2(zip_path, root_zip)
 
     print(f"Successfully packaged sidecar model archive: {zip_path}")

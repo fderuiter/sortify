@@ -235,7 +235,9 @@ async def test_ipc_drop_endpoint(tmp_path):
         drop_file.write_text("sample document content")
 
         # Test drop endpoint with valid file
-        drop_res = await client.send_command("drop", {"paths": [str(drop_file)], "dry_run": True})
+        drop_res = await client.send_command(
+            "drop", {"paths": [str(drop_file)], "dry_run": True}
+        )
         assert drop_res["status"] == "success"
         assert drop_res["processed_count"] == 1
 
@@ -249,4 +251,3 @@ async def test_ipc_drop_endpoint(tmp_path):
 
     finally:
         server.stop()
-

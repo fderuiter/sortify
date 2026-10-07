@@ -1717,7 +1717,9 @@ def run_incremental_training_in_background(session: Any, base_dir: str) -> None:
             filepath = doc.get("filepath") or ""
             text = doc.get("extracted_text") or doc.get("text") or ""
             f_hash = doc.get("file_hash") or doc.get("hash") or ""
-            verified_target = doc.get("user_verified_target_path") or doc.get("verified_target")
+            verified_target = doc.get("user_verified_target_path") or doc.get(
+                "verified_target"
+            )
         else:
             continue
         if not verified_target:
@@ -1737,4 +1739,3 @@ def run_incremental_training_in_background(session: Any, base_dir: str) -> None:
             session.analyzer.partial_fit(
                 base_dir, new_corpus, getattr(session, "settings", None)
             )
-

@@ -532,7 +532,9 @@ def test_sidecar_model_hydration_success(tmp_path, monkeypatch):
     def progress_cb(update):
         progress_updates.append(update)
 
-    resolved = OfflineModelLoader.resolve_model_path("model", progress_callback=progress_cb)
+    resolved = OfflineModelLoader.resolve_model_path(
+        "model", progress_callback=progress_cb
+    )
 
     assert os.path.exists(resolved)
     assert os.path.exists(os.path.join(resolved, "config.json"))
@@ -560,8 +562,14 @@ def test_sidecar_hydration_tampered_weights_error(tmp_path, monkeypatch):
     SharedModelRegistry._instance = None
     registry = SharedModelRegistry.get_instance()
     registry.register_expected_hashes(
-        "easyocr", {"craft_mlt_25k.pth": "0000000000000000000000000000000000000000000000000000000000000000"}
+        "easyocr",
+        {
+            "craft_mlt_25k.pth": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
     )
 
     with pytest.raises(OfflineModelLoadError, match="integrity check"):
-        OfflineModelLoader.hydrate_sidecar_models(sidecar_zip_path=str(sidecar_zip), target_dir=str(target_home / ".smart-autosorter" / "offline_bundle"))
+        OfflineModelLoader.hydrate_sidecar_models(
+            sidecar_zip_path=str(sidecar_zip),
+            target_dir=str(target_home / ".smart-autosorter" / "offline_bundle"),
+        )

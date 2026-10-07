@@ -47,7 +47,9 @@ def test_resilient_move_dynamic_target_retry(tmp_path):
     assert os.path.normpath(actual_target) == os.path.normpath(expected_target)
 
     assert dst.read_text(encoding="utf-8") == "Existing Report Content"
-    assert (dest_dir / "report_1.docx").read_text(encoding="utf-8") == "New Report Content"
+    assert (dest_dir / "report_1.docx").read_text(
+        encoding="utf-8"
+    ) == "New Report Content"
     assert not src.exists()
 
 
@@ -66,7 +68,9 @@ def test_multiple_collisions_dynamic_suffix_increment(tmp_path):
 
     expected_target = str(dest_dir / "invoice_2.pdf")
     assert os.path.normpath(actual_target) == os.path.normpath(expected_target)
-    assert (dest_dir / "invoice_2.pdf").read_text(encoding="utf-8") == "Third Incoming Invoice"
+    assert (dest_dir / "invoice_2.pdf").read_text(
+        encoding="utf-8"
+    ) == "Third Incoming Invoice"
     assert not src.exists()
 
 
@@ -125,7 +129,10 @@ def test_unrecoverable_conflict_logs_warning_and_preserves_source(tmp_path, capl
     dst = tmp_path / "dest" / "unmovable.txt"
 
     # Simulate permission error during atomic move
-    with patch("app.core.resilient_file_ops.atomic_move_non_clobber", side_effect=PermissionError("Permission denied")):
+    with patch(
+        "app.core.resilient_file_ops.atomic_move_non_clobber",
+        side_effect=PermissionError("Permission denied"),
+    ):
         with caplog.at_level(logging.WARNING):
             with pytest.raises(PermissionError):
                 resilient_move(str(src), str(dst))
@@ -153,7 +160,9 @@ def test_batch_execution_resilience_under_move_conflicts(tmp_path):
     target_dir.mkdir()
 
     # Pre-create file1.txt at target to trigger collision
-    (target_dir / "file1.txt").write_text("Pre-existing File 1 at target", encoding="utf-8")
+    (target_dir / "file1.txt").write_text(
+        "Pre-existing File 1 at target", encoding="utf-8"
+    )
 
     plan = {
         "Organized": {
@@ -173,8 +182,10 @@ def test_batch_execution_resilience_under_move_conflicts(tmp_path):
     class DummyDB:
         def get_document(self, base_dir, source_rel_path):
             return None
+
         def update_document_path(self, base_dir, old_path, new_path):
             pass
+
         def set_user_verified_target(self, base_dir, file_hash, target):
             pass
 
@@ -187,6 +198,8 @@ def test_batch_execution_resilience_under_move_conflicts(tmp_path):
 
     # file1.txt collided with pre-existing file1.txt -> moved to file1_1.txt!
     # file2.txt moved to file2.txt!
-    assert (target_dir / "file1.txt").read_text(encoding="utf-8") == "Pre-existing File 1 at target"
+    assert (target_dir / "file1.txt").read_text(
+        encoding="utf-8"
+    ) == "Pre-existing File 1 at target"
     assert (target_dir / "file1_1.txt").read_text(encoding="utf-8") == "File 1 content"
     assert (target_dir / "file2.txt").read_text(encoding="utf-8") == "File 2 content"

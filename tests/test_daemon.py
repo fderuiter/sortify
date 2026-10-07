@@ -421,4 +421,3 @@ async def test_daemon_triage_uncategorized_file_remains_intact(tmp_path):
     finally:
         daemon.stop()
         clear_connection_cache(only_current_and_inactive=False)
-

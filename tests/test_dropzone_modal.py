@@ -39,6 +39,7 @@ class ModalTestApp(App):
 
     def compose(self):
         from textual.widgets import Label
+
         yield Label("Base Screen")
 
     def on_mount(self) -> None:
@@ -56,7 +57,9 @@ async def test_dropzone_modal_a11y_compliance(tmp_path):
         active_modal = app.screen
         assert isinstance(active_modal, DropZoneModal)
         audit = active_modal.audit_a11y_compliance()
-        assert audit["compliant"] is True, f"A11y violations found: {audit['violations']}"
+        assert audit["compliant"] is True, (
+            f"A11y violations found: {audit['violations']}"
+        )
 
 
 @pytest.mark.anyio
@@ -82,7 +85,7 @@ async def test_dropzone_modal_paste_and_trigger(tmp_path):
 
         # Trigger triage
         active_modal.trigger_drop_triage()
-        
+
         # Wait for worker thread execution
         for _ in range(60):
             await pilot.pause(0.1)

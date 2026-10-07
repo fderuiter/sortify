@@ -60,9 +60,7 @@ class StudyIngestSummary(BaseModel):
     def __contains__(self, item: str) -> bool:
         """Check if key exists in attributes or extra fields."""
         extra = getattr(self, "__pydantic_extra__", None)
-        return hasattr(self, item) or (
-            extra is not None and item in extra
-        )
+        return hasattr(self, item) or (extra is not None and item in extra)
 
 
 class MasterPipelineResult(BaseModel):
@@ -101,9 +99,7 @@ class MasterPipelineResult(BaseModel):
     def __contains__(self, item: str) -> bool:
         """Check if key exists in attributes or extra fields."""
         extra = getattr(self, "__pydantic_extra__", None)
-        return hasattr(self, item) or (
-            extra is not None and item in extra
-        )
+        return hasattr(self, item) or (extra is not None and item in extra)
 
 
 class CROMultiStudyPipeline:

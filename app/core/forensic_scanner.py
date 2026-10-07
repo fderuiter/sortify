@@ -332,7 +332,9 @@ class ForensicScanner:
                                     self._ingest_file(
                                         source_path=full_path,
                                         actual_file_path=ext_file,
-                                        rel_path=os.path.relpath(ext_file, archive_staging),
+                                        rel_path=os.path.relpath(
+                                            ext_file, archive_staging
+                                        ),
                                         archive_origin=rel_path,
                                     )
                                     count += 1

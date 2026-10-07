@@ -87,7 +87,11 @@ class DaemonIPCServer:
                 )
             logger.info(f"Removing stale lockfile and socket from PID {existing_pid}")
             stale_sock = existing_info.get("socket_path")
-            if stale_sock and os.path.exists(stale_sock) and not stale_sock.startswith("tcp://"):
+            if (
+                stale_sock
+                and os.path.exists(stale_sock)
+                and not stale_sock.startswith("tcp://")
+            ):
                 try:
                     os.unlink(stale_sock)
                 except Exception as e:
@@ -96,7 +100,9 @@ class DaemonIPCServer:
                 try:
                     os.unlink(self.pid_path)
                 except Exception as e:
-                    logger.warning(f"Failed to remove stale pid file {self.pid_path}: {e}")
+                    logger.warning(
+                        f"Failed to remove stale pid file {self.pid_path}: {e}"
+                    )
 
         # Step 2: Determine socket path
         if sys.platform == "win32":
@@ -160,7 +166,9 @@ class DaemonIPCServer:
 
         logger.info(f"IPC server listening on {self.socket_path}")
 
-    async def _handle_client(self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter):
+    async def _handle_client(
+        self, reader: asyncio.StreamReader, writer: asyncio.StreamWriter
+    ):
         """Handle incoming line-delimited JSON-RPC requests."""
         while self.is_running:
             try:
@@ -287,7 +295,9 @@ class DaemonIPCServer:
                 invalid_reasons.append(f"Path does not exist: {clean_p}")
                 continue
 
-            if hasattr(self.daemon, "should_ignore_path") and self.daemon.should_ignore_path(abs_p):
+            if hasattr(
+                self.daemon, "should_ignore_path"
+            ) and self.daemon.should_ignore_path(abs_p):
                 invalid_reasons.append(f"Ignored path pattern: {clean_p}")
                 continue
 
@@ -308,11 +318,17 @@ class DaemonIPCServer:
             validated_paths.append(abs_p)
 
         if not validated_paths:
-            reasons_str = "; ".join(invalid_reasons) if invalid_reasons else "No valid file paths supplied."
+            reasons_str = (
+                "; ".join(invalid_reasons)
+                if invalid_reasons
+                else "No valid file paths supplied."
+            )
             raise ValueError(f"Path validation failed: {reasons_str}")
 
         if hasattr(self.daemon, "process_dropped_items"):
-            res = self.daemon.process_dropped_items(validated_paths, dry_run=dry_run, dest_dir=dest_dir)
+            res = self.daemon.process_dropped_items(
+                validated_paths, dry_run=dry_run, dest_dir=dest_dir
+            )
             res["validated_paths"] = validated_paths
             return res
         else:
@@ -345,7 +361,9 @@ class DaemonIPCServer:
                 try:
                     os.unlink(self.socket_path)
                 except Exception as e:
-                    logger.warning(f"Failed to remove socket file {self.socket_path}: {e}")
+                    logger.warning(
+                        f"Failed to remove socket file {self.socket_path}: {e}"
+                    )
 
         if os.path.exists(self.pid_path):
             try:

@@ -321,7 +321,13 @@ def test_package_sidecar_models(tmp_path):
 
         with zipfile.ZipFile(zip_path, "r") as zf:
             names = zf.namelist()
-            assert "model/model.onnx" in names or "model/model.onnx".replace("/", os.sep) in names
-            assert "easyocr/english_g2.pth" in names or "easyocr/english_g2.pth".replace("/", os.sep) in names
+            assert (
+                "model/model.onnx" in names
+                or "model/model.onnx".replace("/", os.sep) in names
+            )
+            assert (
+                "easyocr/english_g2.pth" in names
+                or "easyocr/english_g2.pth".replace("/", os.sep) in names
+            )
     finally:
         os.chdir(original_cwd)
