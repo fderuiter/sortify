@@ -1,0 +1,26 @@
+{
+  "_metadata": {
+    "checksum": "a49cefc8ac676feb1685885886ba99f885fbb21ec883a4b9eb48c7f388ec15f1"
+  },
+  "classes": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "generate_sample_corpus",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "overwrite"
+        }
+      ],
+      "returns": "List[str]"
+    }
+  ]
+}

@@ -1,0 +1,213 @@
+{
+  "_metadata": {
+    "checksum": "741d215000dcc6d99eddd9e3ff1ac5205310736dd01c16a371f6b8c3701ec1c0"
+  },
+  "classes": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "check_local_models_exist",
+      "parameters": [],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_base_path",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": "None",
+          "name": "caller_file_path"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_session_base_dir",
+      "parameters": [],
+      "returns": "Path"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_junction_entry",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "entry"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_junction_path",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "path"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_packaged",
+      "parameters": [],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_path_too_long",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "path"
+        },
+        {
+          "annotation": "int",
+          "default": "260",
+          "name": "limit"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_valid_name",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "name"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "resolve_db_crypto",
+      "parameters": [
+        {
+          "annotation": "Path | str",
+          "default": null,
+          "name": "db_path"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "sanitize_folder_key",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "key"
+        }
+      ],
+      "returns": "tuple[str, bool]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "sanitize_name",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "name"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "sanitize_plan",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "plan"
+        }
+      ],
+      "returns": "tuple[dict, list[str]]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "scrub_pii_from_filename",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "name"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "scrub_user_home_paths",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "text"
+        },
+        {
+          "annotation": "str | Path | None",
+          "default": "None",
+          "name": "home_dir"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "setup_session_directory",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": "None",
+          "name": "session_id"
+        }
+      ],
+      "returns": "tuple[str, Path]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "validate_target_path",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "target_path"
+        },
+        {
+          "annotation": "str",
+          "default": "None",
+          "name": "keyword"
+        }
+      ],
+      "returns": "None"
+    }
+  ]
+}

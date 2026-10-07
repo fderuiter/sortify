@@ -107,7 +107,7 @@ def test_snapshot_baseline_change_is_blocked():
         title="test: update snapshots",
         author="stitch",
         labels=["automerge"],
-        changed_files=["tests/snapshots/api_snapshot.json"],
+        changed_files=["tests/snapshots/api/core/analyzer_strategies.json"],
         additions=10,
         deletions=10,
     )

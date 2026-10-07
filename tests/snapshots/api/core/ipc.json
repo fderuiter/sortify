@@ -1,0 +1,137 @@
+{
+  "_metadata": {
+    "checksum": "28ba53b634db491300870436c54fc8c5fb57d80ed2ddca219ee776b31c657186"
+  },
+  "classes": [
+    {
+      "class_name": "DaemonIPCClient",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": true,
+          "decorators": [],
+          "name": "send_command",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "method"
+            },
+            {
+              "annotation": "Optional[dict]",
+              "default": "None",
+              "name": "params"
+            },
+            {
+              "annotation": "float",
+              "default": "5.0",
+              "name": "timeout"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        }
+      ]
+    },
+    {
+      "class_name": "DaemonIPCServer",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "daemon"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": true,
+          "decorators": [],
+          "name": "start",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "stop",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_process_alive",
+      "parameters": [
+        {
+          "annotation": "int",
+          "default": null,
+          "name": "pid"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "read_pid_file",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        }
+      ],
+      "returns": "Optional[Dict[str, Any]]"
+    }
+  ]
+}

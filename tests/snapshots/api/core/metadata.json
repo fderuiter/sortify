@@ -1,0 +1,73 @@
+{
+  "_metadata": {
+    "checksum": "4e13a68b5c1ea6ed389f7e7e52d1e11f06dac71ee1da21617dfd54ca24ccb676"
+  },
+  "classes": [
+    {
+      "class_name": "MetadataPass",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "run",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "list",
+              "default": null,
+              "name": "items_to_sort"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "settings"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "db"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "callback"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cancel_check"
+            }
+          ],
+          "returns": "list"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_extension_category_target",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "item"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "settings"
+        }
+      ],
+      "returns": "str | None"
+    }
+  ]
+}

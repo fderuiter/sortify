@@ -1,0 +1,61 @@
+{
+  "_metadata": {
+    "checksum": "6a922a4cf0a0b4c67d602173467035226c558027514510190df4ee4208356ea3"
+  },
+  "classes": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "bootstrap_binaries",
+      "parameters": [
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "force_download"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "check_internet_connection",
+      "parameters": [
+        {
+          "annotation": "float",
+          "default": "2.0",
+          "name": "timeout"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_bootstrap_bin_dir",
+      "parameters": [],
+      "returns": "Path"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "inject_bootstrap_paths",
+      "parameters": [
+        {
+          "annotation": "Path",
+          "default": "None",
+          "name": "platform_binaries_dir"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "verify_sqlcipher_encryption",
+      "parameters": [],
+      "returns": "bool"
+    }
+  ]
+}

@@ -1,0 +1,367 @@
+{
+  "_metadata": {
+    "checksum": "24df8c9ed57cc441fca1c2a0b4464a62b67cf3f6a07afeb9b61444a9a18b5d32"
+  },
+  "classes": [
+    {
+      "class_name": "BoundedMemoryCache",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "int",
+              "default": "1000",
+              "name": "max_size"
+            },
+            {
+              "annotation": "float | None",
+              "default": "None",
+              "name": "ttl"
+            },
+            {
+              "annotation": "Callable[[K, V], None] | None",
+              "default": "None",
+              "name": "on_evict"
+            },
+            {
+              "annotation": "Callable[[], float]",
+              "default": "time.monotonic",
+              "name": "time_func"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "clear",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "K",
+              "default": null,
+              "name": "key"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "default"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "invalidate",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "K",
+              "default": null,
+              "name": "key"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "items",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "list[tuple[K, V]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "keys",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "list[K]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "pop",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "K",
+              "default": null,
+              "name": "key"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "default"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "put",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "K",
+              "default": null,
+              "name": "key"
+            },
+            {
+              "annotation": "V",
+              "default": null,
+              "name": "value"
+            },
+            {
+              "annotation": "float | None",
+              "default": "None",
+              "name": "ttl"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "set",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "K",
+              "default": null,
+              "name": "key"
+            },
+            {
+              "annotation": "V",
+              "default": null,
+              "name": "value"
+            },
+            {
+              "annotation": "float | None",
+              "default": "None",
+              "name": "ttl"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "values",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "list[V]"
+        }
+      ]
+    },
+    {
+      "class_name": "CacheManager",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "db_path"
+            },
+            {
+              "annotation": "'DBWorker | Any'",
+              "default": null,
+              "name": "worker"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "load_cache",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "source_directory"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    {
+      "class_name": "SparseMatrixLRUCache",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "int",
+              "default": "500",
+              "name": "max_documents"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "doc_count",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "base_dir"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": "Optional[List[Tuple[str, str, float]]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "invalidate",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "base_dir"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "put",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "List[Tuple[str, str, float]]",
+              "default": null,
+              "name": "rows"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    }
+  ],
+  "functions": []
+}

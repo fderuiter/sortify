@@ -1,0 +1,181 @@
+{
+  "_metadata": {
+    "checksum": "b7706dc6c0f5c37b7995011bb843b02c15778f2b8209112b0bf2b46362321dd0"
+  },
+  "classes": [
+    {
+      "class_name": "DiscoveredDocument",
+      "decorators": [
+        "@dataclass"
+      ],
+      "methods": []
+    },
+    {
+      "class_name": "ForensicScanner",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "temp_staging_dir"
+            },
+            {
+              "annotation": "int",
+              "default": "1000",
+              "name": "max_files"
+            },
+            {
+              "annotation": "int",
+              "default": "500 * 1024 * 1024",
+              "name": "max_total_size_bytes"
+            },
+            {
+              "annotation": "int",
+              "default": "100 * 1024 * 1024",
+              "name": "max_file_size_bytes"
+            },
+            {
+              "annotation": "float",
+              "default": "100.0",
+              "name": "max_ratio"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "cleanup",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "compute_sha256",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filepath"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "parse_eml_file",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "eml_path"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "destination_dir"
+            }
+          ],
+          "returns": "tuple[str, List[str]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "scan_drive",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "source_root"
+            },
+            {
+              "annotation": "Optional[Callable[..., None]]",
+              "default": "None",
+              "name": "progress_callback"
+            },
+            {
+              "annotation": "Optional[Callable[[], bool]]",
+              "default": "None",
+              "name": "cancel_check"
+            }
+          ],
+          "returns": "List[DiscoveredDocument]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "unpack_archive",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "archive_path"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "destination_dir"
+            },
+            {
+              "annotation": "Optional[int]",
+              "default": "None",
+              "name": "max_files"
+            },
+            {
+              "annotation": "Optional[int]",
+              "default": "None",
+              "name": "max_total_size_bytes"
+            },
+            {
+              "annotation": "Optional[int]",
+              "default": "None",
+              "name": "max_file_size_bytes"
+            },
+            {
+              "annotation": "Optional[float]",
+              "default": "None",
+              "name": "max_ratio"
+            }
+          ],
+          "returns": "List[str]"
+        }
+      ]
+    }
+  ],
+  "functions": []
+}

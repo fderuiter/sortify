@@ -1,0 +1,382 @@
+{
+  "_metadata": {
+    "checksum": "8113e57df3728d7e8f143c32eb2fad91eb6d85cef6adcc080fb085deeb26ca32"
+  },
+  "classes": [
+    {
+      "class_name": "AudioExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_check"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "CsvExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "DocumentExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "DocxExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "ExtractorRegistry",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_extractor",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "extension"
+            }
+          ],
+          "returns": "DocumentExtractor"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_supported",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "extension"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "register",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "extension"
+            },
+            {
+              "annotation": "DocumentExtractor",
+              "default": null,
+              "name": "extractor"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    {
+      "class_name": "ImageExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "PdfExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "TxtExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "XlsxExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "extract_text_from_image",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "image"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "settings"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "file_path"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "progress_callback"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_audio_duration",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "file_path"
+        }
+      ],
+      "returns": "float"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_ocr_reader",
+      "parameters": [],
+      "returns": null
+    }
+  ]
+}

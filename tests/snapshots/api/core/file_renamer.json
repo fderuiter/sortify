@@ -1,0 +1,252 @@
+{
+  "_metadata": {
+    "checksum": "08c16498c49e2796455ee8b8f7887bd063860d8ab5dcb9775c8a3baff789b5f9"
+  },
+  "classes": [
+    {
+      "class_name": "ContextExtractor",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "extract_keywords_tfidf",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            },
+            {
+              "annotation": "Optional[Set[str]]",
+              "default": "None",
+              "name": "stop_words"
+            },
+            {
+              "annotation": "int",
+              "default": "3",
+              "name": "max_keywords"
+            }
+          ],
+          "returns": "List[str]"
+        }
+      ]
+    },
+    {
+      "class_name": "FileRenamerEngine",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "runtime_settings"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "db"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "embedding_manager"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "format_pattern_name",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "original_filename"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "pattern"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "category"
+            },
+            {
+              "annotation": "int",
+              "default": "1",
+              "name": "seq"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "file_date"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "generate_contextual_name",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "original_filename"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            },
+            {
+              "annotation": "Optional[Set[str]]",
+              "default": "None",
+              "name": "stop_words"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "process_sorting_plan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "plan"
+            },
+            {
+              "annotation": "Dict[str, str]",
+              "default": null,
+              "name": "documents_map"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "Optional[dict]",
+              "default": "None",
+              "name": "locked_files"
+            },
+            {
+              "annotation": "Optional[Set[str]]",
+              "default": "None",
+              "name": "stop_words"
+            }
+          ],
+          "returns": "dict"
+        }
+      ]
+    },
+    {
+      "class_name": "HeuristicEvaluator",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "evaluate_filename",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filename"
+            }
+          ],
+          "returns": "dict"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "is_poorly_named",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filename"
+            }
+          ],
+          "returns": "bool"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_file_protected_or_locked",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "filepath"
+        },
+        {
+          "annotation": "Optional[dict]",
+          "default": "None",
+          "name": "locked_files"
+        },
+        {
+          "annotation": "Optional[list]",
+          "default": "None",
+          "name": "protected_paths"
+        },
+        {
+          "annotation": "Optional[dict]",
+          "default": "None",
+          "name": "matched_policies"
+        }
+      ],
+      "returns": "bool"
+    }
+  ]
+}

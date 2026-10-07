@@ -1,0 +1,288 @@
+{
+  "_metadata": {
+    "checksum": "465f410a3915c9371ba157c90b855dc3722f2307e2a6eb399ddaf2b345665902"
+  },
+  "classes": [
+    {
+      "class_name": "DimensionMismatchError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "ModelProperties",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "ModelValidationError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "SemanticEmbeddingManager",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "db"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "model_path"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "bypass_validation"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "force_validation"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "generate_embedding",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | None",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "list[float]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_embedding",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | None",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "list[float]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_vector",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filepath"
+            }
+          ],
+          "returns": "list[float] | None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_vectors_batch",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "list[str]",
+              "default": null,
+              "name": "filepaths"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "regenerate"
+            }
+          ],
+          "returns": "dict[str, list[float]]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "is_mock",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_reconstruction_active",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "stop",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "stop_all",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "trigger_reconstruction",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "validate_model_assets",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "validate_vector_dimension",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "list[float] | None",
+              "default": null,
+              "name": "vector"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "verify_active_model",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_active_model_properties",
+      "parameters": [
+        {
+          "annotation": "str | None",
+          "default": null,
+          "name": "model_path"
+        }
+      ],
+      "returns": "tuple[str, int, str]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "set_low_priority",
+      "parameters": [],
+      "returns": null
+    }
+  ]
+}

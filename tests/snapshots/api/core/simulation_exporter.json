@@ -1,0 +1,91 @@
+{
+  "_metadata": {
+    "checksum": "56ae915a52e6327054effaa18e902251828d09a25037cf6444e1a76b95950830"
+  },
+  "classes": [
+    {
+      "class_name": "SimulationExporter",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "plan"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "base_dir"
+            },
+            {
+              "annotation": "Optional[Dict[str, Any]]",
+              "default": "None",
+              "name": "simulation_results"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "export_html",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[Union[str, Path]]",
+              "default": "None",
+              "name": "output_path"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "export_json",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[Union[str, Path]]",
+              "default": "None",
+              "name": "output_path"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "generate_report_data",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        }
+      ]
+    }
+  ],
+  "functions": []
+}

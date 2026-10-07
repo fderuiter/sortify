@@ -59,7 +59,7 @@ repos:
         name: Validate API and CLI Signatures
         entry: uv run python scripts/validate_signatures.py
         language: system
-        files: '(\.py$|tests/snapshots/api_snapshot\.json$)'
+        files: '(\.py$|tests/snapshots/api/.*)'
         pass_filenames: false
       - id: validate-architecture
         name: Validate Architectural Guardrails and System Utilities

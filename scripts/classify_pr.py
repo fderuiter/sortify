@@ -30,7 +30,7 @@ SENSITIVE_PATHS = [
 ]
 
 BASELINE_PATHS = [
-    r"^tests/snapshots/api_snapshot\.json$",
+    r"^tests/snapshots/api/.*",
     r"^tests/snapshots/tui_svg/.*",
 ]
 
