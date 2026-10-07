@@ -5,31 +5,7 @@ import os
 import sys
 import tempfile
 
-
-def generate_sample_corpus(base_dir: str):
-    """Generate a sample corpus with at least 3 documents."""
-    os.makedirs(base_dir, exist_ok=True)
-
-    with open(os.path.join(base_dir, "demo_finance.txt"), "w") as f:
-        f.write(
-            "This is a detailed report on finance, money, investment, and banking strategies. The economy is growing."
-        )
-
-    with open(os.path.join(base_dir, "demo_tech.txt"), "w") as f:
-        f.write(
-            "Notes on software engineering, computer science, algorithms, and technology. Python is great."
-        )
-
-    with open(os.path.join(base_dir, "demo_health.txt"), "w") as f:
-        f.write(
-            "Medical science, healthcare, doctor, patient, clinical trials, medicine, and health."
-        )
-
-    # Create empty file as well to test robustness
-    with open(os.path.join(base_dir, "empty.txt"), "w") as f:
-        f.write("")
-
-    return ["demo_finance.txt", "demo_tech.txt", "demo_health.txt", "empty.txt"]
+from app.core.sample_corpus import generate_sample_corpus
 
 
 def run_demo(settings):

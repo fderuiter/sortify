@@ -9,7 +9,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 from textual import events, on, work
 from textual.app import App, ComposeResult
@@ -1058,6 +1058,14 @@ class WizardModal(A11yMixin, ModalScreen[None]):
                 yield sw
                 yield Label(" AI Consent Granted")
 
+            with Horizontal(classes="switch-row"):
+                sw_sample = Switch(value=False, id="switch-sample-corpus")
+                sw_sample.tooltip = (
+                    "Toggle generation of sample document corpus in active workspace"
+                )
+                yield sw_sample
+                yield Label(" Generate Sample Documents")
+
             yield Label("Status: Local embedded AI model weights verified.")
 
             with Horizontal(classes="button-row"):
@@ -1094,6 +1102,29 @@ class WizardModal(A11yMixin, ModalScreen[None]):
                 self.settings._save()
             except Exception as e:
                 logger.error(f"Error saving consent setting: {e}")
+
+        gen_sample = False
+        try:
+            gen_sample = self.query_one("#switch-sample-corpus", Switch).value
+        except Exception:
+            pass
+
+        if gen_sample:
+            from app.core.sample_corpus import generate_sample_corpus
+
+            target_dir = getattr(self.app, "base_dir", "") or os.getcwd()
+            if hasattr(self.app, "base_dir"):
+                self.app.base_dir = target_dir
+            try:
+                generate_sample_corpus(target_dir, overwrite=True)
+                self.announce(
+                    f"Generated sample document corpus in '{target_dir}'."
+                )
+                if hasattr(self.app, "action_scan_directory"):
+                    self.app.action_scan_directory()
+            except Exception as exc:
+                logger.error(f"Failed to generate sample corpus: {exc}")
+
         self.announce("Finished model onboarding wizard and saved consent settings.")
         self.dismiss(None)
 
@@ -2189,6 +2220,7 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+a", "open_audit_report", "Audit Report", show=True),
         Binding("enter", "execute_sort", "Execute", show=False),
         Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
+        Binding("g", "generate_sample_corpus", "Sample Dataset", show=False),
         Binding("question_mark", "open_cheat_sheet", "Help (?)", show=True),
         Binding("f1", "open_cheat_sheet", "Help (F1)", show=False),
         Binding("ctrl+q", "quit", "Quit", show=True),
@@ -2529,6 +2561,24 @@ class AutoSorterTUI(A11yMixin, App):
 
         self.push_screen(DirectorySelectModal(current_dir=self.base_dir), on_selected)
 
+    def action_generate_sample_corpus(self) -> None:
+        """Generate sample document corpus in active workspace directory [G]."""
+        if self._is_text_control_focused():
+            return
+
+        target_dir = self.base_dir or os.getcwd()
+        self.base_dir = target_dir
+
+        from app.core.sample_corpus import generate_sample_corpus
+
+        try:
+            generate_sample_corpus(target_dir, overwrite=True)
+            self.announce(f"Generated sample dataset in {target_dir}.")
+            self.action_scan_directory()
+        except Exception as exc:
+            logger.error(f"Error generating sample dataset: {exc}")
+            self.announce(f"Failed to generate sample dataset: {exc}")
+
     def action_open_settings(self) -> None:
         """Open settings modal screen."""
         if self._is_text_control_focused():
@@ -2778,12 +2828,46 @@ class AutoSorterTUI(A11yMixin, App):
 
     # --- Tree Management & Event Handlers ---
 
+    def _has_file_nodes(self, plan_dict: Dict[str, Any]) -> bool:
+        """Check if plan structure contains any document file nodes."""
+        if not plan_dict or not isinstance(plan_dict, dict):
+            return False
+        for k, v in plan_dict.items():
+            if isinstance(v, dict):
+                if v.get("__type__") == "file":
+                    return True
+                if self._has_file_nodes(v):
+                    return True
+        return False
+
     def rebuild_tree(self) -> None:
         """Rebuild Textual Tree widget from in-memory plan structure."""
         try:
             tree = self.query_one("#plan-tree", Tree)
             tree.reset("Proposed Organization Plan")
-            self._build_tree_nodes(self.plan, tree.root, current_folder="")
+            if not self._has_file_nodes(self.plan):
+                tree.root.add_leaf(
+                    "💡 Empty Workspace: No documents found in target directory",
+                    data={"is_empty_state": True, "action": "info"},
+                )
+                tree.root.add_leaf(
+                    "▶ Press [G] to Load Sample Dataset",
+                    data={
+                        "is_empty_state": True,
+                        "action": "generate_sample_corpus",
+                        "shortcut": "G",
+                    },
+                )
+                tree.root.add_leaf(
+                    "▶ Press [Ctrl+B] to Select Different Directory",
+                    data={
+                        "is_empty_state": True,
+                        "action": "select_dir",
+                        "shortcut": "Ctrl+B",
+                    },
+                )
+            else:
+                self._build_tree_nodes(self.plan, tree.root, current_folder="")
             tree.root.expand_all()
         except Exception as e:
             logger.error(f"Error rebuilding tree: {e}")
@@ -2895,6 +2979,22 @@ class AutoSorterTUI(A11yMixin, App):
                 pass
             return msg
 
+        if data.get("is_empty_state"):
+            action = data.get("action")
+            if action == "generate_sample_corpus":
+                msg = "Empty workspace node. Press [G] to load sample dataset into active directory."
+            elif action == "select_dir":
+                msg = "Empty workspace node. Press [Ctrl+B] to select a different directory."
+            else:
+                msg = "Empty workspace node. No documents found in target directory."
+            self.announce(msg)
+            try:
+                meta_widget = self.query_one("#meta-details", Static)
+                meta_widget.update(msg)
+            except Exception:
+                pass
+            return msg
+
         lines = []
         if data.get("is_file"):
             key = data.get("key", "")
@@ -2985,10 +3085,17 @@ class AutoSorterTUI(A11yMixin, App):
 
     @on(Tree.NodeHighlighted, "#plan-tree")
     @on(Tree.NodeSelected, "#plan-tree")
-    def on_node_selected(self, event: Tree.NodeSelected) -> None:
+    def on_node_selected(self, event: Union[Tree.NodeSelected, Tree.NodeHighlighted]) -> None:
         """Handle tree node selection or highlight to update metadata pane and screen reader announcement."""
         self.active_tree_node = event.node
         self._update_inspector(event.node)
+        if isinstance(event, Tree.NodeSelected) and event.node and event.node.data:
+            if event.node.data.get("is_empty_state"):
+                action = event.node.data.get("action")
+                if action == "generate_sample_corpus":
+                    self.action_generate_sample_corpus()
+                elif action == "select_dir":
+                    self.action_select_dir()
 
     # --- Keyboard Action Hotkeys ---
 
