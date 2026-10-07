@@ -479,4 +479,3 @@ def test_drop_subcommand_dry_run_json(tmp_path):
     assert data["dry_run"] is True
     assert data["processed_count"] == 1
     assert len(data["results"]) == 1
-

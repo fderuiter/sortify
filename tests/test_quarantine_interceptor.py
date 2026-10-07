@@ -527,4 +527,3 @@ def test_quarantine_cli_release_db_failure_rollback():
     # Verify physical file was rolled back to staged_path
     assert os.path.exists(staged_path)
     assert not os.path.exists(released_dest)
-

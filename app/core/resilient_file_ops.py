@@ -93,13 +93,17 @@ def _cross_volume_atomic_move(src: str, dst: str) -> None:
 
         # Verify target availability and integrity before finalizing source file deletion
         if not os.path.lexists(dst):
-            raise RuntimeError(f"Target verification failed: {dst} does not exist after move.")
+            raise RuntimeError(
+                f"Target verification failed: {dst} does not exist after move."
+            )
 
         if not os.path.isdir(src) and os.path.lexists(src):
             src_sz = os.path.getsize(src)
             dst_sz = os.path.getsize(dst)
             if src_sz != dst_sz:
-                raise RuntimeError(f"Target verification failed: Size mismatch ({dst_sz} vs {src_sz}).")
+                raise RuntimeError(
+                    f"Target verification failed: Size mismatch ({dst_sz} vs {src_sz})."
+                )
 
         # Target verified! Now safely remove source file/directory.
         resilient_remove(src)
@@ -244,7 +248,9 @@ def atomic_quarantine_relocation(
         yield actual_dest
     except Exception:
         if moved and os.path.exists(actual_dest) and src_str:
-            if not os.path.exists(src_str) or os.path.abspath(src_str) != os.path.abspath(actual_dest):
+            if not os.path.exists(src_str) or os.path.abspath(
+                src_str
+            ) != os.path.abspath(actual_dest):
                 try:
                     resilient_move(actual_dest, src_str)
                 except Exception as rollback_err:

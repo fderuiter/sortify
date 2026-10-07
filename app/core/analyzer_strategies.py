@@ -1805,7 +1805,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             if torch is None:
                 import torch
             elif (
-                hasattr(torch, "__spec__") and type(torch.__spec__).__name__ == "MagicMock"
+                hasattr(torch, "__spec__")
+                and type(torch.__spec__).__name__ == "MagicMock"
             ):
                 from importlib.machinery import ModuleSpec
 
@@ -1814,7 +1815,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             from app.core.shared_registry import SharedModelRegistry
 
             if hasattr(torch, "set_num_threads"):
-                torch.set_num_threads(SharedModelRegistry.get_instance().get_thread_limit())
+                torch.set_num_threads(
+                    SharedModelRegistry.get_instance().get_thread_limit()
+                )
         except (ImportError, Exception):
             torch = None
 
@@ -3193,7 +3196,9 @@ class ClusteringRegistry:
                     if strat is not None:
                         self._strategies[name] = strat
                 except Exception as e:
-                    logging.warning(f"Error querying PluginRegistry for strategy '{name}': {e}")
+                    logging.warning(
+                        f"Error querying PluginRegistry for strategy '{name}': {e}"
+                    )
         return self._strategies.get(name)
 
 

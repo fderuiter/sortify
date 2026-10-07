@@ -90,17 +90,27 @@ class OfflineModelLoader:
             candidates.append(os.path.join(sys._MEIPASS, "smart-autosorter-models.zip"))
 
         candidates.append(os.path.join(os.getcwd(), "smart-autosorter-models.zip"))
-        candidates.append(os.path.join(os.getcwd(), "dist", "smart-autosorter-models.zip"))
+        candidates.append(
+            os.path.join(os.getcwd(), "dist", "smart-autosorter-models.zip")
+        )
 
         try:
             base_dir = get_base_path()
             candidates.append(os.path.join(base_dir, "smart-autosorter-models.zip"))
-            candidates.append(os.path.join(base_dir, "dist", "smart-autosorter-models.zip"))
+            candidates.append(
+                os.path.join(base_dir, "dist", "smart-autosorter-models.zip")
+            )
         except Exception:
             pass
 
-        candidates.append(os.path.expanduser("~/.smart-autosorter/smart-autosorter-models.zip"))
-        candidates.append(os.path.expanduser("~/.smart-autosorter/offline_bundle/smart-autosorter-models.zip"))
+        candidates.append(
+            os.path.expanduser("~/.smart-autosorter/smart-autosorter-models.zip")
+        )
+        candidates.append(
+            os.path.expanduser(
+                "~/.smart-autosorter/offline_bundle/smart-autosorter-models.zip"
+            )
+        )
 
         unique_cands = []
         for c in candidates:
@@ -152,7 +162,9 @@ class OfflineModelLoader:
                     found_zip = cand
                     break
             if not found_zip:
-                logger.error("No sidecar model archive (smart-autosorter-models.zip) found for hydration.")
+                logger.error(
+                    "No sidecar model archive (smart-autosorter-models.zip) found for hydration."
+                )
                 return False
             sidecar_zip_path = found_zip
 
@@ -176,8 +188,12 @@ class OfflineModelLoader:
                         stage=f"Hydrating sidecar model weights ({idx + 1}/{total_files})...",
                     )
         except Exception as e:
-            logger.error(f"Failed to extract sidecar model zip archive '{sidecar_zip_path}': {e}")
-            raise OfflineModelLoadError(f"Failed to extract sidecar model package: {e}") from e
+            logger.error(
+                f"Failed to extract sidecar model zip archive '{sidecar_zip_path}': {e}"
+            )
+            raise OfflineModelLoadError(
+                f"Failed to extract sidecar model package: {e}"
+            ) from e
 
         emit_progress(
             progress_callback,
@@ -193,8 +209,12 @@ class OfflineModelLoader:
                     check_id = "generative_naming" if item == "model" else item
                     registry.verify_integrity(check_id, subpath)
         except Exception as err:
-            logger.error(f"Cryptographic hash verification failed after hydration: {err}")
-            raise OfflineModelLoadError(f"Hydrated sidecar weights failed integrity check: {err}") from err
+            logger.error(
+                f"Cryptographic hash verification failed after hydration: {err}"
+            )
+            raise OfflineModelLoadError(
+                f"Hydrated sidecar weights failed integrity check: {err}"
+            ) from err
 
         emit_progress(
             progress_callback,
@@ -227,7 +247,9 @@ class OfflineModelLoader:
         ModelWeightsNotFoundError
             If the model cannot be resolved in any search paths.
         """
-        folder_name = "model" if model_id in ("generative_naming", "model") else model_id
+        folder_name = (
+            "model" if model_id in ("generative_naming", "model") else model_id
+        )
         searched_paths = []
 
         # Precedence 1: Environment variable custom path
@@ -262,7 +284,9 @@ class OfflineModelLoader:
             logger.debug(f"Could not resolve base path for model '{model_id}': {e}")
 
         # Precedence 4: User home directory fallback
-        home_path = os.path.expanduser(f"~/.smart-autosorter/offline_bundle/{folder_name}")
+        home_path = os.path.expanduser(
+            f"~/.smart-autosorter/offline_bundle/{folder_name}"
+        )
         searched_paths.append(home_path)
 
         # Helper to test path existence
@@ -307,7 +331,9 @@ class OfflineModelLoader:
                 break
 
         if found_zip:
-            logger.info(f"Sidecar package detected at '{found_zip}'. Hydrating model weights...")
+            logger.info(
+                f"Sidecar package detected at '{found_zip}'. Hydrating model weights..."
+            )
             try:
                 hydrated = cls.hydrate_sidecar_models(
                     sidecar_zip_path=found_zip,

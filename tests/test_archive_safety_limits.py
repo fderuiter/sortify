@@ -89,7 +89,10 @@ def test_unpack_zip_max_single_file_size_limit_aborts_and_cleans_up(tmp_path):
     with pytest.raises(ArchiveSafetyError) as exc_info:
         scanner.unpack_archive(str(zip_path), str(dest_dir))
 
-    assert "file uncompressed size" in str(exc_info.value).lower() or "exceeds limit" in str(exc_info.value).lower()
+    assert (
+        "file uncompressed size" in str(exc_info.value).lower()
+        or "exceeds limit" in str(exc_info.value).lower()
+    )
     extracted_items = list(dest_dir.glob("**/*"))
     assert len(extracted_items) == 0
 
@@ -162,7 +165,9 @@ def test_quarantine_interceptor_captures_archive_safety_error(tmp_path):
         # Configure scanner on service to have strict file limit
         service.forensic_scanner.max_files = 3
 
-        staged_info = service.stage_incoming_file(source_path=str(zip_path), base_dir=str(sample_dir))
+        staged_info = service.stage_incoming_file(
+            source_path=str(zip_path), base_dir=str(sample_dir)
+        )
         job_id = staged_info["job_id"]
 
         record = service.process_quarantine_job(job_id)
@@ -172,4 +177,5 @@ def test_quarantine_interceptor_captures_archive_safety_error(tmp_path):
     finally:
         db_worker.stop()
         from app.core.db_conn import clear_connection_cache
+
         clear_connection_cache()

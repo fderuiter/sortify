@@ -264,14 +264,10 @@ def inject_bootstrap_paths(platform_binaries_dir: Path = None):
                     )
                 )
                 paths.append(
-                    os.path.join(
-                        internal_dir, "app", "binaries", "macos", "sqlcipher3"
-                    )
+                    os.path.join(internal_dir, "app", "binaries", "macos", "sqlcipher3")
                 )
                 paths.append(
-                    os.path.join(
-                        internal_dir, "app", "binaries", "linux", "sqlcipher3"
-                    )
+                    os.path.join(internal_dir, "app", "binaries", "linux", "sqlcipher3")
                 )
 
         if sys.platform == "win32":
