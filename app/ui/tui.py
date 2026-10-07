@@ -294,6 +294,90 @@ class A11yMixin:
             _unhide()
 
 
+class LabeledSwitch(Horizontal):
+    """A horizontal container combining a Switch and an associated Label with container-level click delegation."""
+
+    DEFAULT_CSS = """
+    LabeledSwitch {
+        margin-top: 1;
+        margin-bottom: 1;
+        height: 3;
+        align: left middle;
+    }
+    """
+
+    def __init__(
+        self,
+        label: str,
+        value: bool = False,
+        switch_id: str | None = None,
+        tooltip: str | None = None,
+        *,
+        name: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
+        disabled: bool = False,
+    ) -> None:
+        cls_list = ["switch-row"]
+        if classes:
+            cls_list.append(classes)
+        super().__init__(
+            name=name,
+            id=id,
+            classes=" ".join(cls_list),
+            disabled=disabled,
+        )
+        self.label_text = label
+        effective_switch_id = switch_id or (
+            id if id and id.startswith("switch-") else None
+        )
+        self.switch = Switch(value=value, id=effective_switch_id)
+        if tooltip:
+            self.tooltip = tooltip
+            self.switch.tooltip = tooltip
+        formatted_label = label if label.startswith(" ") else f" {label}"
+        self.label_widget = Label(formatted_label)
+
+    def compose(self) -> ComposeResult:
+        """Yield child Switch and Label controls."""
+        yield self.switch
+        yield self.label_widget
+
+    @property
+    def value(self) -> bool:
+        """Get the underlying switch value."""
+        return self.switch.value
+
+    @value.setter
+    def value(self, val: bool) -> None:
+        """Set the underlying switch value."""
+        self.switch.value = val
+
+    def _is_switch_target(self, target: Any) -> bool:
+        """Check if target widget is the child switch or contained within it."""
+        if target is None:
+            return False
+        curr = target
+        while curr is not None and curr is not self:
+            if curr is self.switch:
+                return True
+            curr = getattr(curr, "parent", None)
+        return False
+
+    def on_click(self, event: events.Click) -> None:
+        """Handle mouse click events on container or label by toggling and focusing the switch."""
+        if self.disabled or self.switch.disabled:
+            return
+
+        target_widget = getattr(event, "widget", getattr(event, "control", None))
+        if not self._is_switch_target(target_widget):
+            self.switch.value = not self.switch.value
+            self.switch.focus()
+            event.stop()
+        else:
+            self.switch.focus()
+
+
 class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
     """Modal dialog for renaming a file or folder node with pattern token formatting support."""
 
@@ -379,7 +463,11 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
             "date": self.file_date,
             "seq": self.seq,
         }
-        fallback = f"{self.current_name}{self.extension}" if self.extension else self.current_name
+        fallback = (
+            f"{self.current_name}{self.extension}"
+            if self.extension
+            else self.current_name
+        )
         return PatternTokenFormatter.format_pattern(
             pattern=pattern_str,
             metadata=metadata,
@@ -860,29 +948,26 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 sw_lbl = sw_cfg.get("label", f" {sw_key}")
                 sw_tip = sw_cfg.get("tooltip", "")
                 sw_val = bool(getattr(self.settings, sw_key, False))
-                with Horizontal(classes="switch-row"):
-                    sw_elem = Switch(value=sw_val, id=sw_id)
-                    sw_elem.tooltip = sw_tip
-                    yield sw_elem
-                    yield Label(sw_lbl)
-
-            with Horizontal(classes="switch-row"):
-                sw_ai = Switch(
-                    value=bool(getattr(self.settings, "AI_CONSENT_GRANTED", False)),
-                    id="switch-ai-consent",
+                yield LabeledSwitch(
+                    label=sw_lbl,
+                    value=sw_val,
+                    switch_id=sw_id,
+                    tooltip=sw_tip,
                 )
-                sw_ai.tooltip = "Toggle AI consent for semantic document classification"
-                yield sw_ai
-                yield Label(" AI Consent Granted")
 
-            with Horizontal(classes="switch-row"):
-                sw_ctx = Switch(
-                    value=bool(getattr(self.settings, "CONTEXTUAL_RENAMING", False)),
-                    id="switch-contextual-renaming",
-                )
-                sw_ctx.tooltip = "Toggle AI contextual file renaming"
-                yield sw_ctx
-                yield Label(" AI Contextual Renaming")
+            yield LabeledSwitch(
+                label="AI Consent Granted",
+                value=bool(getattr(self.settings, "AI_CONSENT_GRANTED", False)),
+                switch_id="switch-ai-consent",
+                tooltip="Toggle AI consent for semantic document classification",
+            )
+
+            yield LabeledSwitch(
+                label="AI Contextual Renaming",
+                value=bool(getattr(self.settings, "CONTEXTUAL_RENAMING", False)),
+                switch_id="switch-contextual-renaming",
+                tooltip="Toggle AI contextual file renaming",
+            )
 
             btn_templates = Button(
                 "Starter Rule Template Gallery",
@@ -1097,6 +1182,7 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
         """Resolve primary model directory path."""
         try:
             from app.config import get_app_dir
+
             return str(get_app_dir() / "model")
         except Exception:
             return os.path.expanduser("~/.smart-autosorter/model")
@@ -1107,10 +1193,16 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
             yield Label("Interactive Model Management [Ctrl+M]", classes="modal-title")
 
             yield Label("Model Status:", classes="field-label")
-            yield Label("Status: Checking...", id="lbl-model-status", classes="info-label")
-            yield Label("Location: Checking...", id="lbl-model-path", classes="info-label")
+            yield Label(
+                "Status: Checking...", id="lbl-model-status", classes="info-label"
+            )
+            yield Label(
+                "Location: Checking...", id="lbl-model-path", classes="info-label"
+            )
             yield Label("Size on Disk: 0 MB", id="lbl-model-size", classes="info-label")
-            yield Label("Verification: Checking...", id="lbl-model-hash", classes="info-label")
+            yield Label(
+                "Verification: Checking...", id="lbl-model-hash", classes="info-label"
+            )
 
             yield Label("Download Progress & Throughput:", classes="field-label")
             pb = ProgressBar(total=100, show_percentage=True, id="progress-bar")
@@ -1145,7 +1237,9 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
                 yield btn_retry
 
                 btn_delete = Button("Delete Model", id="btn-delete", variant="error")
-                btn_delete.tooltip = "Unload in-memory model instances and delete local files"
+                btn_delete.tooltip = (
+                    "Unload in-memory model instances and delete local files"
+                )
                 yield btn_delete
 
                 btn_close = Button("Close", id="btn-close", variant="default")
@@ -1176,6 +1270,7 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
         if self.settings:
             setattr(self.settings, "PROXY", p_val)
         from app.core.downloader import DownloadManager
+
         dm = DownloadManager.get_instance()
         dm.update_proxy(p_val)
         return p_val
@@ -1183,6 +1278,7 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
     def _refresh_ui_state(self) -> None:
         """Update model file info labels and control button states."""
         from app.core.downloader import DownloadManager, verify_downloaded_model
+
         dm = DownloadManager.get_instance()
 
         model_dir = self._resolve_model_dir()
@@ -1221,11 +1317,14 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
         self.query_one("#btn-start", Button).disabled = is_dl
         self.query_one("#btn-cancel-dl", Button).disabled = not is_dl
         self.query_one("#btn-retry", Button).disabled = is_dl
-        self.query_one("#btn-delete", Button).disabled = not (model_exists or tmp_exists or is_dl)
+        self.query_one("#btn-delete", Button).disabled = not (
+            model_exists or tmp_exists or is_dl
+        )
 
     def _poll_download_status(self) -> None:
         """Periodic non-blocking timer callback to poll download status."""
         from app.core.downloader import DownloadManager
+
         dm = DownloadManager.get_instance()
 
         is_dl = dm.state["is_downloading"]
@@ -1243,11 +1342,15 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
         elif succ:
             lbl_prog.update("Download complete!")
         else:
-            lbl_prog.update(status_text if status_text else ("Downloading..." if is_dl else "Idle"))
+            lbl_prog.update(
+                status_text if status_text else ("Downloading..." if is_dl else "Idle")
+            )
 
         if self._prev_is_downloading and not is_dl:
             if succ:
-                self.announce("Model download completed successfully.", priority="polite")
+                self.announce(
+                    "Model download completed successfully.", priority="polite"
+                )
             elif err:
                 self.announce(f"Model download failed: {err}", priority="assertive")
             elif "cancelled" in status_text.lower():
@@ -1263,6 +1366,7 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
         """Start background model weight download."""
         p_val = self._apply_proxy()
         from app.core.downloader import DEFAULT_MODEL_URL, DownloadManager
+
         dm = DownloadManager.get_instance()
         model_dir = self._resolve_model_dir()
         try:
@@ -1270,6 +1374,7 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
             self.announce("Started model download.", priority="polite")
         except Exception as e:
             from app.ui.notifications import notify
+
             notify(f"Download error: {e}", type="error")
             self.announce(f"Download error: {e}", priority="assertive")
 
@@ -1277,6 +1382,7 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
     def action_cancel_download(self) -> None:
         """Cancel active model download thread."""
         from app.core.downloader import DownloadManager
+
         dm = DownloadManager.get_instance()
         dm.cancel_download()
         self.announce("Cancelled model download.", priority="polite")
@@ -1286,6 +1392,7 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
         """Retry model weight download operation."""
         p_val = self._apply_proxy()
         from app.core.downloader import DEFAULT_MODEL_URL, DownloadManager
+
         dm = DownloadManager.get_instance()
         if dm.state["is_downloading"]:
             dm.cancel_download()
@@ -1295,6 +1402,7 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
             self.announce("Retrying model download.", priority="polite")
         except Exception as e:
             from app.ui.notifications import notify
+
             notify(f"Download error: {e}", type="error")
             self.announce(f"Download error: {e}", priority="assertive")
 
@@ -1302,6 +1410,7 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
     def action_delete_model(self) -> None:
         """Asynchronously delete local model files."""
         from app.core.downloader import DownloadManager
+
         dm = DownloadManager.get_instance()
         model_dir = self._resolve_model_dir()
 
@@ -1324,7 +1433,6 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
         """Cancel and close model management dialog."""
         self.announce("Closed Model Management dialog.")
         self.dismiss(None)
-
 
 
 class TemplateGalleryModal(A11yMixin, ModalScreen[None]):
@@ -1553,22 +1661,22 @@ class WizardModal(A11yMixin, ModalScreen[None]):
             yield Label("Welcome to Smart AutoSorter AI Pro TUI.")
             yield Label("Enable AI semantic categorization consent below:")
 
-            with Horizontal(classes="switch-row"):
-                consent_val = getattr(self.settings, "AI_CONSENT_GRANTED", None)
-                if consent_val is None:
-                    consent_val = False
-                sw = Switch(value=bool(consent_val), id="switch-consent")
-                sw.tooltip = "Toggle AI consent for semantic document classification"
-                yield sw
-                yield Label(" AI Consent Granted")
+            consent_val = getattr(self.settings, "AI_CONSENT_GRANTED", None)
+            if consent_val is None:
+                consent_val = False
+            yield LabeledSwitch(
+                label="AI Consent Granted",
+                value=bool(consent_val),
+                switch_id="switch-consent",
+                tooltip="Toggle AI consent for semantic document classification",
+            )
 
-            with Horizontal(classes="switch-row"):
-                sw_sample = Switch(value=False, id="switch-sample-corpus")
-                sw_sample.tooltip = (
-                    "Toggle generation of sample document corpus in active workspace"
-                )
-                yield sw_sample
-                yield Label(" Generate Sample Documents")
+            yield LabeledSwitch(
+                label="Generate Sample Documents",
+                value=False,
+                switch_id="switch-sample-corpus",
+                tooltip="Toggle generation of sample document corpus in active workspace",
+            )
 
             yield Label("Starter Rule Template Packs:", classes="field-label")
             yield Label(
@@ -1655,9 +1763,7 @@ class WizardModal(A11yMixin, ModalScreen[None]):
                 self.app.base_dir = target_dir
             try:
                 generate_sample_corpus(target_dir, overwrite=True)
-                self.announce(
-                    f"Generated sample document corpus in '{target_dir}'."
-                )
+                self.announce(f"Generated sample document corpus in '{target_dir}'.")
                 if hasattr(self.app, "action_scan_directory"):
                     self.app.action_scan_directory()
             except Exception as exc:
@@ -2803,7 +2909,9 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 placeholder="Enter export path (e.g. ./audit_log.csv)...",
                 id="input-history-path",
             )
-            inp_path.tooltip = "Enter target output path for exported session audit log file"
+            inp_path.tooltip = (
+                "Enter target output path for exported session audit log file"
+            )
             yield inp_path
 
             yield Label("Export Format:")
@@ -3229,7 +3337,9 @@ class AutoSorterTUI(A11yMixin, App):
         try:
             from app.config import AppSettings
 
-            AppSettings.remove_observer("AI_CONSENT_GRANTED", self._on_ai_consent_changed)
+            AppSettings.remove_observer(
+                "AI_CONSENT_GRANTED", self._on_ai_consent_changed
+            )
         except Exception:
             pass
 
@@ -3619,9 +3729,7 @@ class AutoSorterTUI(A11yMixin, App):
 
         sessions = find_all_history_sessions()
 
-        def handle_history_modal_result(
-            result: Optional[Dict[str, Any]]
-        ) -> None:
+        def handle_history_modal_result(result: Optional[Dict[str, Any]]) -> None:
             if not result:
                 return
             session_id = result["session_id"]
@@ -4000,7 +4108,9 @@ class AutoSorterTUI(A11yMixin, App):
 
     @on(Tree.NodeHighlighted, "#plan-tree")
     @on(Tree.NodeSelected, "#plan-tree")
-    def on_node_selected(self, event: Union[Tree.NodeSelected, Tree.NodeHighlighted]) -> None:
+    def on_node_selected(
+        self, event: Union[Tree.NodeSelected, Tree.NodeHighlighted]
+    ) -> None:
         """Handle tree node selection or highlight to update metadata pane and screen reader announcement."""
         self.active_tree_node = event.node
         self._update_inspector(event.node)
