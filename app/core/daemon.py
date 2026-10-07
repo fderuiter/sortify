@@ -181,7 +181,9 @@ class ContinuousWatchdogDaemon:
             paused = self._is_paused
 
         return {
-            "status": "paused" if paused else ("running" if self._is_running else "stopped"),
+            "status": "paused"
+            if paused
+            else ("running" if self._is_running else "stopped"),
             "is_paused": paused,
             "is_running": self._is_running,
             "pid": os.getpid(),
@@ -198,7 +200,9 @@ class ContinuousWatchdogDaemon:
     def get_health_telemetry(self) -> dict:
         """Get process health check telemetry for IPC monitoring."""
         queue_depth = self._event_queue.qsize() if self._event_queue is not None else 0
-        queue_full = self._event_queue.full() if self._event_queue is not None else False
+        queue_full = (
+            self._event_queue.full() if self._event_queue is not None else False
+        )
         uptime = time.time() - self._start_time if self._start_time else 0.0
         with self._lock:
             paused = self._is_paused
@@ -1036,9 +1040,7 @@ class ContinuousWatchdogDaemon:
                 logger.error(f"Error processing dropped path {abs_path}: {e}")
                 errors.append(f"Processing error for {abs_path}: {e}")
 
-        status_res = (
-            "success" if processed_items else ("error" if errors else "no_op")
-        )
+        status_res = "success" if processed_items else ("error" if errors else "no_op")
         return {
             "status": status_res,
             "processed_count": len(processed_items),

@@ -719,10 +719,13 @@ class SharedModelRegistry:
             # Resolve easyocr_dir
             try:
                 from app.core.offline_loader import OfflineModelLoader
+
                 easyocr_dir = OfflineModelLoader.resolve_model_path("easyocr")
             except Exception:
                 if hasattr(sys, "_MEIPASS"):
-                    easyocr_dir = os.path.join(sys._MEIPASS, "offline_bundle", "easyocr")
+                    easyocr_dir = os.path.join(
+                        sys._MEIPASS, "offline_bundle", "easyocr"
+                    )
                 else:
                     try:
                         from app.core.path_utils import get_base_path

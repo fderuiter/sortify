@@ -393,13 +393,26 @@ def split_plan_phases(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, A
     fast_plan: Dict[str, Any] = {}
     slow_plan: Dict[str, Any] = {}
 
-    FAST_ROUTES = {"keyword", "override", "rule", "extension", "jev_classifier", "preset"}
+    FAST_ROUTES = {
+        "keyword",
+        "override",
+        "rule",
+        "extension",
+        "jev_classifier",
+        "preset",
+    }
 
-    def process_node(node: Any, fast_target: Dict[str, Any], slow_target: Dict[str, Any]):
+    def process_node(
+        node: Any, fast_target: Dict[str, Any], slow_target: Dict[str, Any]
+    ):
         if not isinstance(node, dict):
             return
         for key, val in node.items():
-            if isinstance(val, dict) and "__type__" in val and val["__type__"] == "file":
+            if (
+                isinstance(val, dict)
+                and "__type__" in val
+                and val["__type__"] == "file"
+            ):
                 routed_by = val.get("routed_by")
                 if routed_by in FAST_ROUTES:
                     fast_target[key] = val
@@ -418,4 +431,3 @@ def split_plan_phases(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, A
 
     process_node(plan, fast_plan, slow_plan)
     return fast_plan, slow_plan
-

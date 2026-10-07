@@ -437,7 +437,9 @@ def run_smoke_test():
             pass
 
 
-def _extract_bool_arg(args: argparse.Namespace, attr: str, default: bool = False) -> bool:
+def _extract_bool_arg(
+    args: argparse.Namespace, attr: str, default: bool = False
+) -> bool:
     """Safely extract boolean flag from CLI args namespace, handling MagicMock objects in tests."""
     from unittest.mock import MagicMock
 
@@ -464,7 +466,9 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
         settings.CONFLICT_POLICY = conflict_policy
 
     contextual_renaming = getattr(args, "contextual_renaming", None)
-    if contextual_renaming is not None and not isinstance(contextual_renaming, MagicMock):
+    if contextual_renaming is not None and not isinstance(
+        contextual_renaming, MagicMock
+    ):
         settings.CONTEXTUAL_RENAMING = contextual_renaming
 
     # Handle AI consent flags and environment variables

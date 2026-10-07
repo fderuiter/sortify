@@ -69,7 +69,9 @@ class PluginRegistry:
 
             clustering_registry.register(name, strategy)
         except Exception as e:
-            logger.debug(f"Note: Could not automatically register strategy into ClusteringRegistry: {e}")
+            logger.debug(
+                f"Note: Could not automatically register strategy into ClusteringRegistry: {e}"
+            )
 
     def get_clustering_strategy(self, name: str) -> Optional[Any]:
         """Retrieve a plugin-supplied clustering strategy by name."""
@@ -153,7 +155,9 @@ class PluginRegistry:
                 self._loaded_plugins.add(plugin_name_or_module)
                 if loaded_mod_name:
                     self._loaded_plugins.add(loaded_mod_name)
-                logger.info(f"Successfully registered plugin '{plugin_name_or_module}'.")
+                logger.info(
+                    f"Successfully registered plugin '{plugin_name_or_module}'."
+                )
                 return True
             except Exception as e:
                 logger.error(
