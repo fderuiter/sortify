@@ -229,14 +229,32 @@ class SemanticEmbeddingManager:
 
         self.validation_error_message = None
 
+        self.force_validation = force_validation
+        self.degradation_state = "HEALTHY"
+        self.is_degraded = False
+        self.degradation_reason = None
+        self.suggested_recovery_action = None
+
         if self.model_path is not None and not bypass_validation:
             is_pytest = "PYTEST_CURRENT_TEST" in os.environ
             if force_validation or not is_pytest:
                 try:
                     self.validate_model_assets()
-                except ModelValidationError as e:
+                except Exception as e:
                     self.is_model_valid = False
+                    self.is_degraded = True
+                    self.degradation_state = "DEGRADED_FALLBACK"
+                    self.degradation_reason = str(e)
+                    self.suggested_recovery_action = "RE_DOWNLOAD_MODEL"
                     self.validation_error_message = str(e)
+                    from app.core.shared_registry import SharedModelRegistry
+
+                    SharedModelRegistry.get_instance().record_model_health(
+                        "onnx_embeddings",
+                        status="DEGRADED_FALLBACK",
+                        failure_reason=str(e),
+                        suggested_recovery_action="RE_DOWNLOAD_MODEL",
+                    )
                     raise e
 
         # Initialize global metadata and verify profile
@@ -533,7 +551,7 @@ class SemanticEmbeddingManager:
         if not text or not text.strip():
             return self._generate_fallback_embedding(text)
 
-        # If model_path is provided, we must use local ONNX model and must not do silent fallback
+        # If model_path is provided, we must check local ONNX model
         if self.model_path is not None:
             if not getattr(self, "is_model_valid", True):
                 msg = getattr(
@@ -541,7 +559,21 @@ class SemanticEmbeddingManager:
                     "validation_error_message",
                     "Model validation failed or files are missing.",
                 )
-                raise ModelValidationError(msg)
+                self.is_degraded = True
+                self.degradation_state = "DEGRADED_FALLBACK"
+                self.degradation_reason = msg
+                self.suggested_recovery_action = "RE_DOWNLOAD_MODEL"
+                from app.core.shared_registry import SharedModelRegistry
+
+                SharedModelRegistry.get_instance().record_model_health(
+                    "onnx_embeddings",
+                    status="DEGRADED_FALLBACK",
+                    failure_reason=msg,
+                    suggested_recovery_action="RE_DOWNLOAD_MODEL",
+                )
+                if getattr(self, "force_validation", False):
+                    raise ModelValidationError(msg)
+                return self._generate_fallback_embedding(text)
 
             try:
                 onnx_file = None
@@ -664,11 +696,27 @@ class SemanticEmbeddingManager:
                     raise ModelValidationError("Model ONNX file not found.")
 
             except Exception as e:
-                if isinstance(e, ModelValidationError):
+                self.is_degraded = True
+                self.degradation_state = "DEGRADED_FALLBACK"
+                self.degradation_reason = str(e)
+                self.suggested_recovery_action = "RE_DOWNLOAD_MODEL"
+                from app.core.shared_registry import SharedModelRegistry
+
+                SharedModelRegistry.get_instance().record_model_health(
+                    "onnx_embeddings",
+                    status="DEGRADED_FALLBACK",
+                    failure_reason=str(e),
+                    suggested_recovery_action="RE_DOWNLOAD_MODEL",
+                )
+                if isinstance(e, ModelValidationError) and getattr(
+                    self, "force_validation", False
+                ):
                     raise e
                 msg = f"Local ONNX embedding generation failed: {e}"
                 logging.error(msg)
-                raise ModelValidationError(msg) from e
+                if getattr(self, "force_validation", False):
+                    raise ModelValidationError(msg) from e
+                return self._generate_fallback_embedding(text)
 
         # If model_path is None, we run standard deterministic dummy generator (mock/test mode)
         return self._generate_fallback_embedding(text)

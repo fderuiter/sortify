@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "36481464abc4d9dfc74b3abeaff17557202ba1cd6ac7c4bef99134adead013ea"
+    "checksum": "976f2ba00cb480aebbccc1dc7bc24669b292f2e58f0381d11f5e32c729c6b930"
   },
   "classes": [
     {
@@ -299,6 +299,19 @@
         {
           "async": false,
           "decorators": [],
+          "name": "get_all_model_health",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "dict"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "get_florence_processor",
           "parameters": [
             {
@@ -354,6 +367,24 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_model_health",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "model_id"
+            }
+          ],
+          "returns": "dict"
         },
         {
           "async": false,
@@ -421,6 +452,39 @@
             }
           ],
           "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "record_model_health",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "model_id"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "status"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "failure_reason"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "suggested_recovery_action"
+            }
+          ],
+          "returns": "dict"
         },
         {
           "async": false,

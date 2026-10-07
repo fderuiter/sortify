@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "9012c7e87eeeb4c71b829fd7deb6bfb407f4b4d5f222e69052bd161383b85b95"
+    "checksum": "f4411e7f1219499f13e0ecab51fa955dd119b7a519b4cb9e225153b9aace6138"
   },
   "classes": [
     {
@@ -105,40 +105,6 @@
           "returns": "None"
         }
       ]
-    },
-    {
-      "class_name": "ModelWeightsNotFoundError",
-      "decorators": [],
-      "methods": [
-        {
-          "async": false,
-          "decorators": [],
-          "name": "__init__",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "model_id"
-            },
-            {
-              "annotation": "List[str]",
-              "default": null,
-              "name": "searched_paths"
-            }
-          ],
-          "returns": null
-        }
-      ]
-    },
-    {
-      "class_name": "OfflineModelLoadError",
-      "decorators": [],
-      "methods": []
     },
     {
       "class_name": "OfflineModelLoader",

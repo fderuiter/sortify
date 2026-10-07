@@ -19,6 +19,48 @@ class OfflineLoaderError(SortifyBaseError):
     pass
 
 
+class OfflineModelLoadError(OfflineLoaderError):
+    """Base exception for all offline model loading errors."""
+
+    pass
+
+
+class ArchiveCorruptionError(OfflineModelLoadError):
+    """Raised when sidecar archive extraction fails due to file corruption or invalid zip format."""
+
+    pass
+
+
+class HashVerificationError(OfflineModelLoadError, ValueError):
+    """Raised when cryptographic SHA-256 hash verification fails for model files."""
+
+    pass
+
+
+class ModelWeightsNotFoundError(OfflineModelLoadError, FileNotFoundError):
+    """Raised when model weights cannot be found in any searched locations."""
+
+    def __init__(
+        self,
+        model_id: str = "model",
+        searched_paths: list[str] | None = None,
+        message: str | None = None,
+    ) -> None:
+        self.model_id = model_id
+        self.searched_paths = searched_paths or []
+        if not message:
+            paths_str = (
+                ", ".join(f"'{p}'" for p in self.searched_paths)
+                if self.searched_paths
+                else "searched locations"
+            )
+            message = (
+                f"Model weights for '{model_id}' were not found in any of the searched paths: {paths_str}. "
+                f"Please ensure the model bundle is downloaded and placed in one of these locations."
+            )
+        super().__init__(message)
+
+
 class SemanticEmbeddingError(SortifyBaseError):
     """Base exception for semantic vector embeddings and ONNX model validation."""
 
