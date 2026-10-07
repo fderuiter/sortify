@@ -114,6 +114,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.ledger
 
+## `app.core.license`
+
+::: app.core.license
+
 ## `app.core.link_manager`
 
 ::: app.core.link_manager

@@ -18,6 +18,22 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `False`
 - **Required**: `False`
 
+### `LICENSE_KEY`
+- **Default**: ``
+- **Required**: `False`
+
+### `LICENSE_TIER`
+- **Default**: `Community`
+- **Required**: `False`
+
+### `LICENSE_EXPIRATION`
+- **Default**: ``
+- **Required**: `False`
+
+### `LICENSE_OWNER`
+- **Default**: ``
+- **Required**: `False`
+
 ### `MAX_FOLDERS`
 - **Default**: `12`
 - **Required**: `False`

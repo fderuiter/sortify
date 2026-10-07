@@ -517,6 +517,8 @@ class VirtualFilesystemTracker:
         collisions = []
         base_dir_abs = os.path.abspath(base_dir) if base_dir else ""
 
+        moving_srcs = {os.path.abspath(s) for _, s, _ in moves_list}
+
         dest_to_srcs: dict[Any, Any] = {}
         for rel_path, src, dst in moves_list:
             abs_src = os.path.abspath(src)
@@ -578,9 +580,7 @@ class VirtualFilesystemTracker:
                         }
                     )
                 else:
-                    is_dst_moving = any(
-                        os.path.abspath(s) == abs_dst for _, s, _ in moves_list
-                    )
+                    is_dst_moving = abs_dst in moving_srcs
                     if not is_dst_moving and abs_src != abs_dst:
                         collisions.append(
                             {
@@ -650,6 +650,9 @@ class VirtualFilesystemTracker:
         path_map = {
             os.path.abspath(src): os.path.abspath(dst) for _, src, dst in moves_list
         }
+        dst_to_src = {
+            os.path.abspath(dst): os.path.abspath(src) for _, src, dst in moves_list
+        }
 
         for abs_path, node in final_nodes.items():
             target_path = None
@@ -666,14 +669,7 @@ class VirtualFilesystemTracker:
                 continue
 
             # Determine original absolute target path before moves
-            orig_src = None
-            for rel_path, src, dst in moves_list:
-                if os.path.abspath(dst) == abs_path:
-                    orig_src = os.path.abspath(src)
-                    break
-
-            if orig_src is None:
-                orig_src = abs_path
+            orig_src = dst_to_src.get(abs_path, abs_path)
 
             if os.path.isabs(target_path):
                 abs_target_orig = os.path.abspath(target_path)
