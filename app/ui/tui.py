@@ -9,7 +9,7 @@ import threading
 import time
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Tuple
 
 from textual import events, on, work
 from textual.app import App, ComposeResult
@@ -1141,7 +1141,7 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
         height: 3;
         align: right middle;
     }
-    Button:focus {
+    Button:focus, Input:focus, Select:focus {
         border: heavy $accent;
         text-style: bold;
     }
@@ -1513,6 +1513,135 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     self.update_status_msg, f"Dropzone triage error: {e}"
                 )
 
+
+class ExportReportModal(A11yMixin, ModalScreen[Optional[Tuple[str, str]]]):
+    """Modal dialog for exporting dry-run simulation reports."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    ExportReportModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .modal-subtitle {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Input:focus, Select:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(
+        self,
+        default_path: str = "./simulation_report.html",
+        default_format: str = "html",
+    ):
+        super().__init__()
+        self.default_path = default_path
+        self.default_format = default_format
+
+    def compose(self) -> ComposeResult:
+        """Compose export report modal widgets."""
+        with Vertical(classes="modal-box"):
+            yield Label("Export Simulation Report", classes="modal-title")
+            yield Label(
+                "Select output file path and report format:",
+                classes="modal-subtitle",
+            )
+            inp = Input(
+                value=self.default_path,
+                placeholder="Enter output path (e.g. ./report.html)...",
+                id="input-export-path",
+            )
+            inp.tooltip = "Enter path for exported dry-run simulation report"
+            yield inp
+
+            fmt_select = Select(
+                [("HTML Report (*.html)", "html"), ("JSON Data (*.json)", "json")],
+                value=self.default_format,
+                id="select-export-format",
+                allow_blank=False,
+            )
+            yield fmt_select
+
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
+                btn_cancel.tooltip = "Cancel report export action"
+                yield btn_cancel
+                btn_export = Button(
+                    "Export Report", id="btn-export", variant="primary"
+                )
+                btn_export.tooltip = "Export simulation report to disk"
+                yield btn_export
+
+    def _update_layout(self, width: int) -> None:
+        """Update layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle viewport resize event."""
+        self._update_layout(event.size.width)
+
+    def on_mount(self) -> None:
+        """Focus input field on mount and emit accessibility announcement."""
+        self._update_layout(self.size.width)
+        self.query_one("#input-export-path", Input).focus()
+        self.announce("Opened export simulation report dialog.")
+
+    @on(Input.Submitted, "#input-export-path")
+    def action_submit_input(self) -> None:
+        """Handle input submission event."""
+        self.action_export()
+
+    @on(Button.Pressed, "#btn-export")
+    def action_export(self) -> None:
+        """Confirm report export and dismiss modal with export parameters."""
+        path_val = self.query_one("#input-export-path", Input).value.strip()
+        if not path_val:
+            self.announce("Output path cannot be empty.")
+            return
+        format_val = self.query_one("#select-export-format", Select).value or "html"
+        self.dismiss((path_val, str(format_val)))
+
+    @on(Button.Pressed, "#btn-cancel")
+    def action_cancel(self) -> None:
+        """Cancel report export modal."""
+        self.dismiss(None)
+
+
 class VimTree(Tree):
     """Tree control with native vim motion navigation (h, j, k, l)."""
 
@@ -1566,7 +1695,7 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+c", "open_cro_forensic", "CRO Ingest", show=True),
         Binding("ctrl+d", "open_dropzone", "DropZone", show=True),
         Binding("ctrl+s", "scan_directory", "Scan", show=True),
-        Binding("ctrl+e", "execute_sort", "Execute", show=True),
+        Binding("ctrl+e", "export_simulation_report", "Export Report", show=True),
         Binding("enter", "execute_sort", "Execute", show=False),
         Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
         Binding("question_mark", "open_cheat_sheet", "Help (?)", show=True),
@@ -2049,6 +2178,43 @@ class AutoSorterTUI(A11yMixin, App):
         except Exception as e:
             logger.error(f"Error in run_scan_worker: {e}")
             self.call_from_thread(self.announce, f"Scan error: {e}")
+
+    def action_export_simulation_report(self) -> None:
+        """Trigger dry-run simulation report export modal screen."""
+        if self._is_text_control_focused():
+            return
+        if not self.plan or not self.base_dir:
+            self.announce("No plan available to export. Run [Ctrl+S] Scan first.")
+            return
+
+        default_out = str(Path(self.base_dir) / "simulation_report.html")
+
+        def handle_export_modal_result(result: Optional[Tuple[str, str]]) -> None:
+            if not result:
+                return
+            export_path, report_format = result
+            try:
+                from app.core.simulation_exporter import SimulationExporter
+
+                exporter = SimulationExporter(self.plan, self.base_dir)
+                if report_format == "json":
+                    exporter.export_json(export_path)
+                else:
+                    exporter.export_html(export_path)
+
+                self.announce(f"Simulation report exported to '{export_path}'.")
+            except Exception as e:
+                logger.error(f"Error exporting simulation report: {e}")
+                self.announce(f"Export error: {e}")
+
+        self.push_screen(
+            ExportReportModal(default_path=default_out, default_format="html"),
+            handle_export_modal_result,
+        )
+
+    def action_export_report(self) -> None:
+        """Alias for action_export_simulation_report."""
+        self.action_export_simulation_report()
 
     def action_execute_sort(self) -> None:
         """Trigger sorting plan execution worker."""

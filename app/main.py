@@ -684,6 +684,33 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
             plan = re_rooted_plan
 
         serializable_plan = _make_json_serializable(plan)
+
+        export_report_path = getattr(args, "export_report", None)
+        report_format = getattr(args, "report_format", None)
+        if export_report_path:
+            from app.core.simulation_exporter import SimulationExporter
+
+            fmt = report_format
+            if not fmt:
+                fmt = (
+                    "json"
+                    if str(export_report_path).lower().endswith(".json")
+                    else "html"
+                )
+            fmt = str(fmt).lower()
+
+            exporter = SimulationExporter(plan, base_dir=str(target_path))
+            if fmt == "json":
+                exporter.export_json(export_report_path)
+            else:
+                exporter.export_html(export_report_path)
+
+            if not getattr(args, "quiet", False):
+                print(
+                    f"Exported simulation report ({fmt.upper()}) to '{export_report_path}'.",
+                    file=sys.stderr,
+                )
+
         if dry_run:
             result = {
                 "status": "success",
@@ -791,6 +818,32 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
 
         plan = session.generate_sorting_plan()
         serializable_plan = _make_json_serializable(plan)
+
+        export_report_path = getattr(args, "export_report", None)
+        report_format = getattr(args, "report_format", None)
+        if export_report_path:
+            from app.core.simulation_exporter import SimulationExporter
+
+            fmt = report_format
+            if not fmt:
+                fmt = (
+                    "json"
+                    if str(export_report_path).lower().endswith(".json")
+                    else "html"
+                )
+            fmt = str(fmt).lower()
+
+            exporter = SimulationExporter(plan, base_dir=str(target_path))
+            if fmt == "json":
+                exporter.export_json(export_report_path)
+            else:
+                exporter.export_html(export_report_path)
+
+            if not getattr(args, "quiet", False):
+                print(
+                    f"Exported simulation report ({fmt.upper()}) to '{export_report_path}'.",
+                    file=sys.stderr,
+                )
 
         result = {
             "status": "success",
@@ -1413,6 +1466,19 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
             action="store_true",
             default=False,
             help="Run in non-interactive mode and bypass interactive modal dialogs",
+        )
+        subparser.add_argument(
+            "--export-report",
+            type=str,
+            default=None,
+            help="Export dry-run simulation report to output file path",
+        )
+        subparser.add_argument(
+            "--report-format",
+            type=str,
+            choices=["html", "json"],
+            default=None,
+            help="Format for exported simulation report (html or json)",
         )
 
     # Subcommand: sort
