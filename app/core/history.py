@@ -877,6 +877,197 @@ class HistoryManager:
                 (session_id,),
             )
 
+    def export_audit_log(
+        self,
+        output_path: str,
+        session_id: Any = None,
+        format: Any = None,
+    ) -> Dict[str, Any]:
+        """Export session history records into standard CSV or JSON audit log formats."""
+        import csv
+        import json
+        from datetime import datetime, timezone
+
+        conn = get_db_connection(self.db_path)
+        sessions = []
+        with conn:
+            if session_id:
+                cur_sess = conn.execute(
+                    "SELECT session_id, timestamp, base_dir, status FROM sessions WHERE session_id = ?",
+                    (session_id,),
+                )
+                row = cur_sess.fetchone()
+                if row:
+                    sessions.append(
+                        {
+                            "session_id": row[0],
+                            "timestamp": row[1],
+                            "base_dir": row[2],
+                            "status": row[3],
+                        }
+                    )
+            else:
+                cur_sess = conn.execute(
+                    "SELECT session_id, timestamp, base_dir, status FROM sessions ORDER BY timestamp DESC"
+                )
+                sessions = [
+                    {
+                        "session_id": r[0],
+                        "timestamp": r[1],
+                        "base_dir": r[2],
+                        "status": r[3],
+                    }
+                    for r in cur_sess.fetchall()
+                ]
+
+        with conn:
+            if session_id:
+                cur_steps = conn.execute(
+                    """
+                    SELECT step_id, session_id, source_path, target_path, original_path,
+                           original_filename, is_cross_volume, is_collision_renamed,
+                           file_hash, timestamp, status
+                    FROM step_ledger
+                    WHERE session_id = ?
+                    ORDER BY step_id ASC
+                    """,
+                    (session_id,),
+                )
+            else:
+                cur_steps = conn.execute(
+                    """
+                    SELECT step_id, session_id, source_path, target_path, original_path,
+                           original_filename, is_cross_volume, is_collision_renamed,
+                           file_hash, timestamp, status
+                    FROM step_ledger
+                    ORDER BY session_id ASC, step_id ASC
+                    """
+                )
+            rows = cur_steps.fetchall()
+
+        steps = []
+        for r in rows:
+            ts = r[9]
+            ts_iso = ""
+            if ts:
+                try:
+                    ts_iso = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+                except Exception:
+                    pass
+            steps.append(
+                {
+                    "step_id": r[0],
+                    "session_id": r[1],
+                    "source_path": r[2] or "",
+                    "target_path": r[3] or "",
+                    "original_path": r[4] or "",
+                    "original_filename": r[5] or "",
+                    "is_cross_volume": bool(r[6]),
+                    "is_collision_renamed": bool(r[7]),
+                    "file_hash": r[8] or "",
+                    "timestamp": r[9] or 0.0,
+                    "timestamp_iso": ts_iso,
+                    "status": r[10] or "completed",
+                }
+            )
+
+        if not steps:
+            try:
+                from app.core.ledger import TransactionLedger
+
+                tx_ledger = TransactionLedger()
+                pending = tx_ledger.get_pending_entries(session_id=session_id)
+                for idx, entry in enumerate(pending, 1):
+                    ts = entry.get("updated_at") or entry.get("created_at") or 0.0
+                    ts_iso = ""
+                    if ts:
+                        try:
+                            ts_iso = datetime.fromtimestamp(
+                                ts, tz=timezone.utc
+                            ).isoformat()
+                        except Exception:
+                            pass
+                    steps.append(
+                        {
+                            "step_id": idx,
+                            "session_id": entry.get("session_id")
+                            or session_id
+                            or "unknown",
+                            "source_path": entry.get("source_path") or "",
+                            "target_path": entry.get("dest_path") or "",
+                            "original_path": entry.get("source_path") or "",
+                            "original_filename": os.path.basename(
+                                entry.get("source_path") or ""
+                            ),
+                            "is_cross_volume": False,
+                            "is_collision_renamed": False,
+                            "file_hash": entry.get("file_hash") or "",
+                            "timestamp": ts,
+                            "timestamp_iso": ts_iso,
+                            "status": entry.get("status") or "pending",
+                        }
+                    )
+            except Exception:
+                pass
+
+        if session_id and not sessions and not steps:
+            raise ValueError(
+                f"Session '{session_id}' not found in history database."
+            )
+
+        fmt = (format or "").lower().strip()
+        if not fmt:
+            if output_path.lower().endswith(".csv"):
+                fmt = "csv"
+            else:
+                fmt = "json"
+
+        if fmt not in ("csv", "json"):
+            raise ValueError(
+                f"Unsupported export format '{fmt}'. Supported formats are 'csv' and 'json'."
+            )
+
+        out_dir = os.path.dirname(os.path.abspath(output_path))
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
+
+        if fmt == "csv":
+            fieldnames = [
+                "session_id",
+                "step_id",
+                "timestamp",
+                "timestamp_iso",
+                "source_path",
+                "target_path",
+                "original_path",
+                "original_filename",
+                "file_hash",
+                "status",
+            ]
+            with open(output_path, "w", newline="", encoding="utf-8") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+                writer.writeheader()
+                for step in steps:
+                    writer.writerow(step)
+        else:
+            export_payload = {
+                "export_timestamp": datetime.now(timezone.utc).isoformat(),
+                "session_id": session_id,
+                "sessions": sessions,
+                "total_steps": len(steps),
+                "steps": steps,
+            }
+            with open(output_path, "w", encoding="utf-8") as f:
+                json.dump(export_payload, f, indent=2)
+
+        return {
+            "status": "success",
+            "session_id": session_id,
+            "output_path": output_path,
+            "format": fmt,
+            "count": len(steps),
+        }
+
     def unwind_session(self, session_id: str, db=None) -> int:
         """Unwind completed relocation steps in exact reverse chronological order using step ledger."""
         return self._unwind_session_internal(session_id, db=db)

@@ -85,6 +85,37 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
         help="Bypass confirmation prompt when purging records",
     )
 
+    p_export = ledger_subparsers.add_parser(
+        "export", help="Export session history transaction records as CSV or JSON audit log"
+    )
+    add_ledger_common(p_export)
+    p_export.add_argument(
+        "--session-id",
+        type=str,
+        default=None,
+        help="Export entries for a specific session ID",
+    )
+    p_export.add_argument(
+        "-o",
+        "--output",
+        type=str,
+        default=None,
+        help="Output file path for exported audit log",
+    )
+    p_export.add_argument(
+        "-f",
+        "--format",
+        type=str,
+        choices=["csv", "json"],
+        default=None,
+        help="Audit log export format (csv or json)",
+    )
+    p_export.add_argument(
+        "--csv",
+        action="store_true",
+        help="Export audit log in CSV format",
+    )
+
 
 def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bool:
     """Handle ledger subcommand execution. Returns True if handled."""
@@ -94,7 +125,7 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
     ledger_cmd = getattr(args, "ledger_command", None)
     if not ledger_cmd:
         print(
-            "Error: Missing ledger subcommand. Use 'status', 'reconcile', or 'purge'.",
+            "Error: Missing ledger subcommand. Use 'status', 'reconcile', 'purge', or 'export'.",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -202,6 +233,66 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
                     )
 
             sys.exit(0)
+
+        elif ledger_cmd == "export":
+            session_id = getattr(args, "session_id", None)
+            output_path = getattr(args, "output", None)
+            fmt = getattr(args, "format", None)
+            is_csv = getattr(args, "csv", False)
+
+            if is_csv and not fmt:
+                fmt = "csv"
+
+            if not output_path:
+                ext = ".csv" if fmt == "csv" else ".json"
+                output_path = f"audit_log_{session_id or 'all'}{ext}"
+
+            from app.core.cache import CacheManager
+            from app.core.db_worker import DBWorker
+            from app.core.history import HistoryManager
+            from app.main import find_all_history_sessions
+
+            target_db_path = None
+            all_sessions = find_all_history_sessions()
+            if session_id:
+                for s in all_sessions:
+                    if s.get("session_id") == session_id:
+                        target_db_path = s.get("history_db_path")
+                        break
+            if not target_db_path and all_sessions:
+                target_db_path = all_sessions[0].get("history_db_path")
+            if not target_db_path:
+                target_db_path = str(get_app_dir() / "history.db")
+
+            worker = DBWorker()
+            try:
+                db = Database(get_app_dir() / "autosorter.db", worker)
+                cache_mgr = CacheManager(str(get_app_dir() / "cache.db"), worker)
+                history_mgr = HistoryManager(db, cache_mgr, target_db_path)
+                export_res = history_mgr.export_audit_log(
+                    output_path=output_path,
+                    session_id=session_id,
+                    format=fmt,
+                )
+
+                if is_json:
+                    sys.stdout.write(json.dumps(export_res, indent=2) + "\n")
+                    sys.stdout.flush()
+                else:
+                    if not quiet:
+                        print(
+                            f"Audit log exported ({export_res.get('format', '').upper()}) to '{output_path}'. {export_res.get('count', 0)} record(s) written.",
+                            file=sys.stderr,
+                        )
+                sys.exit(0)
+            except ValueError as ve:
+                err_res = {"status": "error", "message": str(ve)}
+                if is_json:
+                    sys.stdout.write(json.dumps(err_res, indent=2) + "\n")
+                    sys.stdout.flush()
+                else:
+                    print(f"Error: {ve}", file=sys.stderr)
+                sys.exit(1)
 
     finally:
         if db and hasattr(db, "worker") and db.worker:
