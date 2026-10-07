@@ -33,6 +33,12 @@ from textual.widgets import (
 )
 from textual.widgets.tree import TreeNode
 
+from app.core.sidecar_tags import (
+    load_sidecar_tags,
+    parse_tags_input,
+    save_sidecar_tags,
+)
+
 logger = logging.getLogger(__name__)
 
 
@@ -555,6 +561,137 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
         self.dismiss(None)
 
     @on(Input.Submitted)
+    def action_submit(self) -> None:
+        """Submit input on Enter key press."""
+        self.action_confirm()
+
+
+class TagEditorModal(A11yMixin, ModalScreen[Optional[List[str]]]):
+    """Modal dialog for editing custom sidecar tags on a document file node."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    TagEditorModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .modal-subtitle {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    .tag-help {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Input:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(
+        self,
+        filename: str,
+        filepath: str = "",
+        current_tags: Optional[List[str]] = None,
+    ):
+        super().__init__()
+        self.filename = filename
+        self.filepath = filepath
+        self.current_tags = current_tags or []
+
+    def compose(self) -> ComposeResult:
+        """Compose tag editor modal children."""
+        with Vertical(classes="modal-box"):
+            yield Label(f"Tag Editor: {self.filename}", classes="modal-title")
+            yield Label(
+                "Manage custom sidecar tags (.sortify_tags.json):",
+                classes="modal-subtitle",
+            )
+            initial_val = ", ".join(self.current_tags)
+            inp = Input(
+                value=initial_val,
+                placeholder="e.g. Reviewed 2026, Tax, Urgent",
+                id="tag-input",
+            )
+            inp.tooltip = "Enter comma-separated tag labels"
+            yield inp
+
+            yield Label(
+                "Tip: Separate multiple tags with commas. Leave empty to clear tags.",
+                classes="tag-help",
+            )
+
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
+                btn_cancel.tooltip = "Cancel tag editing without saving"
+                yield btn_cancel
+
+                btn_save = Button("Save", id="btn-save", variant="primary")
+                btn_save.tooltip = "Save tags to local sidecar file"
+                yield btn_save
+
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal viewport resize event."""
+        self._update_layout(event.size.width)
+
+    def on_mount(self) -> None:
+        """Focus input on mount and emit screen reader announcement."""
+        self._update_layout(self.size.width)
+        self.query_one("#tag-input", Input).focus()
+        self.announce(f"Opened Tag Editor dialog for '{self.filename}'.")
+
+    @on(Button.Pressed, "#btn-save")
+    def action_confirm(self) -> None:
+        """Save tags and dismiss modal dialog."""
+        raw_val = self.query_one("#tag-input", Input).value
+        parsed = parse_tags_input(raw_val)
+        tag_summary = ", ".join(parsed) if parsed else "None"
+        self.announce(f"Saved tags for '{self.filename}': {tag_summary}")
+        self.dismiss(parsed)
+
+    @on(Button.Pressed, "#btn-cancel")
+    def action_cancel(self) -> None:
+        """Cancel tag editing action."""
+        self.announce("Cancelled tag editing.")
+        self.dismiss(None)
+
+    @on(Input.Submitted, "#tag-input")
     def action_submit(self) -> None:
         """Submit input on Enter key press."""
         self.action_confirm()
@@ -1990,6 +2127,9 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
                 "  Ctrl+N      - Create new target folder", classes="shortcut-row"
             )
             yield Label(
+                "  t           - Edit tags for selected file", classes="shortcut-row"
+            )
+            yield Label(
                 "  + / -       - Rate classification quality (+ / -)",
                 classes="shortcut-row",
             )
@@ -3037,6 +3177,7 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+l", "toggle_lock", "Lock/Unlock", show=True),
         Binding("ctrl+r", "rename_node", "Rename Node", show=True),
         Binding("ctrl+n", "new_folder", "New Folder", show=True),
+        Binding("t", "edit_tags", "Edit Tags", show=True),
         Binding("plus", "rate_positive", "Rating (+)", show=True),
         Binding("minus", "rate_negative", "Rating (-)", show=True),
         Binding("ctrl+o", "open_settings", "Settings", show=True),
@@ -3922,6 +4063,12 @@ class AutoSorterTUI(A11yMixin, App):
                 )
                 rating = self._ratings_cache.get(filepath) or file_info.get("rating")
 
+                tags = file_info.get("tags")
+                if tags is None and filepath:
+                    tags = load_sidecar_tags(filepath)
+                if tags:
+                    file_info["tags"] = tags
+
                 label_parts = []
                 if is_locked:
                     label_parts.append("[LOCKED]")
@@ -3929,6 +4076,9 @@ class AutoSorterTUI(A11yMixin, App):
                     label_parts.append("[+]")
                 elif rating == "negative":
                     label_parts.append("[-]")
+
+                if tags:
+                    label_parts.append(f"[TAGS: {', '.join(tags)}]")
 
                 routed_by = file_info.get("routed_by")
                 if routed_by == "jev_classifier" or file_info.get("is_jev"):
@@ -4025,10 +4175,20 @@ class AutoSorterTUI(A11yMixin, App):
             locked = "Yes [LOCKED]" if data.get("is_locked") else "No"
             rating = data.get("rating") or "None"
             info = data.get("info") if isinstance(data.get("info"), dict) else {}
+            filepath = data.get("filepath", "")
+
+            tags = data.get("tags") or info.get("tags")
+            if not tags and filepath:
+                tags = load_sidecar_tags(filepath)
 
             lines.append(f"[bold accent]File:[/bold accent] {key}")
-            lines.append(f"[bold]Path:[/bold] {data.get('filepath')}")
+            lines.append(f"[bold]Path:[/bold] {filepath}")
             lines.append(f"[bold]Target Folder:[/bold] {folder}")
+
+            if tags:
+                lines.append(f"[bold]Tags:[/bold] {', '.join(tags)}")
+            else:
+                lines.append("[bold]Tags:[/bold] None")
 
             target_fn = info.get("target_filename")
             if target_fn:
@@ -4239,6 +4399,48 @@ class AutoSorterTUI(A11yMixin, App):
                 self.announce(f"Folder category '{folder_name}' already exists.")
 
         self.push_screen(NewFolderModal(), on_created)
+
+    def action_edit_tags(self) -> None:
+        """Open Tag Editor modal [t] for the active file node."""
+        if self._is_text_control_focused():
+            return
+        node = self._get_active_node()
+        if not node or not node.data or not node.data.get("is_file"):
+            self.announce("Select a file node to edit tags [t].")
+            return
+
+        data = node.data
+        file_key = data.get("key", "")
+        filepath = data.get("filepath", "")
+        current_tags = data.get("tags") or data.get("info", {}).get("tags") or []
+        if not current_tags and filepath:
+            current_tags = load_sidecar_tags(filepath)
+
+        modal = TagEditorModal(
+            filename=file_key,
+            filepath=filepath,
+            current_tags=current_tags,
+        )
+
+        def on_tags_saved(new_tags: Optional[List[str]]) -> None:
+            if new_tags is None:
+                return
+            if filepath:
+                try:
+                    save_sidecar_tags(filepath, new_tags)
+                except Exception as e:
+                    logger.error(f"Failed to save sidecar tags: {e}")
+
+            data["tags"] = new_tags
+            if isinstance(data.get("info"), dict):
+                data["info"]["tags"] = new_tags
+
+            self.rebuild_tree()
+            self._update_inspector(node)
+            tag_str = ", ".join(new_tags) if new_tags else "None"
+            self.announce(f"Updated tags for '{file_key}': {tag_str}")
+
+        self.push_screen(modal, on_tags_saved)
 
     def action_rate_positive(self) -> None:
         """Set positive ML rating feedback [+] for selected node."""

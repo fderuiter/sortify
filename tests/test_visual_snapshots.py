@@ -15,6 +15,7 @@ from app.ui.tui import (
     NewFolderModal,
     RenameModal,
     SettingsModal,
+    TagEditorModal,
     WizardModal,
 )
 
@@ -341,5 +342,28 @@ def test_directory_select_modal_snapshot():
                 await pilot.pause()
             svg = app.export_screenshot()
             assert_svg_snapshot("directory_select_modal", svg)
+
+    asyncio.run(_test())
+
+
+@pytest.mark.slow
+def test_tag_editor_modal_snapshot():
+    """Verify visual layout of TagEditorModal screen."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir="/dummy/workspace")
+        async with app.run_test(size=(100, 30)) as pilot:
+            modal = TagEditorModal(
+                filename="tax_report_2026.pdf",
+                filepath="/dummy/workspace/tax_report_2026.pdf",
+                current_tags=["Reviewed 2026", "Tax"],
+            )
+            app.push_screen(modal)
+            for _ in range(5):
+                await pilot.pause()
+            svg = app.export_screenshot()
+            assert_svg_snapshot("tag_editor_modal", svg)
 
     asyncio.run(_test())
