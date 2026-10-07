@@ -1893,6 +1893,10 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
                 "  Ctrl+S      - Scan directory and generate plan",
                 classes="shortcut-row",
             )
+            yield Label(
+                "  Ctrl+H      - Session history & audit log export",
+                classes="shortcut-row",
+            )
             yield Label("  Ctrl+E/Enter- Execute sorting plan", classes="shortcut-row")
             yield Label(
                 "  Ctrl+B      - Browse / select target directory",
@@ -2703,6 +2707,173 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
         self.action_cancel()
 
 
+class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
+    """Modal dialog for viewing session history records and exporting audit logs."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    HistoryModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 90;
+        min-width: 40;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .modal-subtitle {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Input:focus, Select:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(
+        self,
+        sessions: Optional[List[Dict[str, Any]]] = None,
+        base_dir: str = "",
+    ):
+        super().__init__()
+        if sessions is None:
+            from app.main import find_all_history_sessions
+
+            sessions = find_all_history_sessions()
+        self.sessions = sessions or []
+        self.base_dir = base_dir
+
+    def compose(self) -> ComposeResult:
+        """Compose history view and export modal widgets."""
+        with Vertical(classes="modal-box"):
+            yield Label(
+                "Session History & Audit Log Export [Ctrl+H]", classes="modal-title"
+            )
+            yield Label(
+                "Select a session row to export activity audit log:",
+                classes="modal-subtitle",
+            )
+
+            options = []
+            for s in self.sessions:
+                sid = s.get("session_id", "unknown")
+                b_dir = s.get("base_dir") or "N/A"
+                status = s.get("status") or "completed"
+                options.append((f"{sid[:8]}... | {status} | {b_dir}", sid))
+
+            if not options:
+                options = [("No historical sessions found", "none")]
+
+            select_sess = Select(
+                options,
+                value=options[0][1] if options else "none",
+                id="select-history-session",
+                allow_blank=False,
+            )
+            select_sess.tooltip = "Select historical session row for audit log export"
+            yield select_sess
+
+            yield Label("Output File Path:")
+            inp_path = Input(
+                value="./audit_log.csv",
+                placeholder="Enter export path (e.g. ./audit_log.csv)...",
+                id="input-history-path",
+            )
+            inp_path.tooltip = "Enter target output path for exported session audit log file"
+            yield inp_path
+
+            yield Label("Export Format:")
+            fmt_select = Select(
+                [("CSV Format (*.csv)", "csv"), ("JSON Format (*.json)", "json")],
+                value="csv",
+                id="select-history-format",
+                allow_blank=False,
+            )
+            fmt_select.tooltip = "Select audit log output format"
+            yield fmt_select
+
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
+                btn_cancel.tooltip = "Cancel history export dialog"
+                yield btn_cancel
+                btn_export = Button(
+                    "Export Audit Log", id="btn-export", variant="primary"
+                )
+                btn_export.tooltip = (
+                    "Export audit log file for selected session history row"
+                )
+                yield btn_export
+
+    def _update_layout(self, width: int) -> None:
+        """Update layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle viewport resize event."""
+        self._update_layout(event.size.width)
+
+    def on_mount(self) -> None:
+        """Focus session select widget on mount and emit accessibility announcement."""
+        self._update_layout(self.size.width)
+        self.query_one("#select-history-session", Select).focus()
+        self.announce("Opened session history export modal dialog.")
+
+    @on(Button.Pressed, "#btn-export")
+    def action_export_audit(self) -> None:
+        """Confirm session audit log export and dismiss modal screen."""
+        session_val = self.query_one("#select-history-session", Select).value
+        if not session_val or session_val == "none":
+            self.announce("No session selected for audit log export.")
+            return
+
+        path_val = self.query_one("#input-history-path", Input).value.strip()
+        if not path_val:
+            self.announce("Output file path cannot be empty.")
+            return
+
+        format_val = self.query_one("#select-history-format", Select).value or "csv"
+
+        self.dismiss(
+            {
+                "session_id": str(session_val),
+                "output_path": path_val,
+                "format": str(format_val),
+            }
+        )
+
+    @on(Button.Pressed, "#btn-cancel")
+    def action_cancel(self) -> None:
+        """Cancel history export modal."""
+        self.dismiss(None)
+
+
 class VimTree(Tree):
     """Tree control with native vim motion navigation (h, j, k, l)."""
 
@@ -2757,6 +2928,7 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+c", "open_cro_forensic", "CRO Ingest", show=True),
         Binding("ctrl+d", "open_dropzone", "DropZone", show=True),
         Binding("ctrl+s", "scan_directory", "Scan", show=True),
+        Binding("ctrl+h", "open_history", "History View", show=True),
         Binding("ctrl+e", "export_simulation_report", "Export Report", show=True),
         Binding("ctrl+a", "open_audit_report", "Audit Report", show=True),
         Binding("enter", "execute_sort", "Execute", show=False),
@@ -3351,6 +3523,65 @@ class AutoSorterTUI(A11yMixin, App):
     def action_export_report(self) -> None:
         """Alias for action_export_simulation_report."""
         self.action_export_simulation_report()
+
+    def action_open_history(self) -> None:
+        """Trigger session history view and audit log export modal screen."""
+        if self._is_text_control_focused():
+            return
+        from app.main import find_all_history_sessions
+
+        sessions = find_all_history_sessions()
+
+        def handle_history_modal_result(
+            result: Optional[Dict[str, Any]]
+        ) -> None:
+            if not result:
+                return
+            session_id = result["session_id"]
+            output_path = result["output_path"]
+            fmt = result["format"]
+
+            try:
+                target_db_path = None
+                for s in sessions:
+                    if s.get("session_id") == session_id:
+                        target_db_path = s.get("history_db_path")
+                        break
+                if not target_db_path:
+                    from app.config import get_app_dir
+
+                    target_db_path = str(get_app_dir() / "history.db")
+
+                from app.config import get_app_dir
+                from app.core.cache import CacheManager
+                from app.core.db import Database
+                from app.core.db_worker import DBWorker
+                from app.core.history import HistoryManager
+
+                worker = DBWorker()
+                db = Database(get_app_dir() / "autosorter.db", worker)
+                cache_mgr = CacheManager(str(get_app_dir() / "cache.db"), worker)
+                history_mgr = HistoryManager(db, cache_mgr, target_db_path)
+
+                export_res = history_mgr.export_audit_log(
+                    output_path=output_path,
+                    session_id=session_id if session_id != "none" else None,
+                    format=fmt,
+                )
+                cnt = export_res.get("count", 0)
+                msg = f"Audit log exported ({fmt.upper()}) to '{output_path}' ({cnt} records)."
+                self.announce(msg)
+                from app.ui.notifications import notify
+
+                notify(msg, type="info")
+            except Exception as e:
+                logger.error(f"Error exporting audit log from TUI: {e}")
+                self.announce(f"Export error: {e}")
+
+        self.push_screen(
+            HistoryModal(sessions=sessions, base_dir=self.base_dir),
+            handle_history_modal_result,
+        )
 
     def action_execute_sort(self) -> None:
         """Trigger sorting plan execution worker."""
