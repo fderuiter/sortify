@@ -1587,8 +1587,6 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     @generator.setter
     def generator(self, value):
         self._generator = value
-        if value is not None:
-            self._model_initialized = True
 
     def unload(self):
         """Unload generative naming strategy model references."""
