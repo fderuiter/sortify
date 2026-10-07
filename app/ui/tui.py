@@ -330,7 +330,6 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
     .token-help {
         color: $text-muted;
         margin-bottom: 1;
-        font-size: 80%;
     }
     .modal-preview {
         color: $accent;

@@ -9,7 +9,7 @@ import logging
 import os
 import re
 from datetime import datetime
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Dict, List, Optional
 
 from app.core.path_utils import sanitize_name
 
