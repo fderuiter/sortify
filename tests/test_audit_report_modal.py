@@ -36,6 +36,12 @@ def sample_audit_report(tmp_path):
             "post_hash": "dddd111122223333",
             "skipped": True,
         },
+        {
+            "source_path": str(tmp_path / "doc4.csv"),
+            "destination_path": str(tmp_path / "Sorted" / "doc4.csv"),
+            "pre_hash": "",
+            "post_hash": "eeee111122223333",
+        },
     ]
     return generate_audit_report(str(tmp_path), records)
 
@@ -56,7 +62,7 @@ def test_audit_report_modal_mount_and_a11y(sample_audit_report):
             # Verify table and controls presence
             table = modal.query_one("#audit-table", DataTable)
             assert table is not None
-            assert table.row_count == 3
+            assert table.row_count == 4
 
             search_inp = modal.query_one("#audit-search-input", Input)
             assert search_inp is not None
@@ -92,7 +98,7 @@ def test_audit_report_modal_search_and_filter(sample_audit_report):
             await pilot.pause()
 
             table = modal.query_one("#audit-table", DataTable)
-            assert table.row_count == 3
+            assert table.row_count == 4
 
             # Search by filename "doc1"
             search_inp = modal.query_one("#audit-search-input", Input)
@@ -104,11 +110,17 @@ def test_audit_report_modal_search_and_filter(sample_audit_report):
             # Clear search input
             search_inp.value = ""
             await pilot.pause()
-            assert table.row_count == 3
+            assert table.row_count == 4
 
             # Filter by status MISMATCH_FAIL
             status_sel = modal.query_one("#audit-status-filter", Select)
             status_sel.value = "MISMATCH_FAIL"
+            await pilot.pause()
+
+            assert table.row_count == 1
+
+            # Filter by status UNVERIFIED
+            status_sel.value = "UNVERIFIED"
             await pilot.pause()
 
             assert table.row_count == 1

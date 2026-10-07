@@ -14,11 +14,13 @@ logger = logging.getLogger(__name__)
 VERIFIED_PASS = "VERIFIED_PASS"
 MISMATCH_FAIL = "MISMATCH_FAIL"
 SKIPPED = "SKIPPED"
+UNVERIFIED = "UNVERIFIED"
 
 STATUS_BADGES = {
     VERIFIED_PASS: "[PASS]",
     MISMATCH_FAIL: "[FAIL]",
     SKIPPED: "[SKIPPED]",
+    UNVERIFIED: "[UNVERIFIED]",
 }
 
 
@@ -47,6 +49,7 @@ def generate_audit_report(
     pass_count = 0
     fail_count = 0
     skipped_count = 0
+    unverified_count = 0
 
     for item in move_records:
         src = item.get("source_path") or ""
@@ -55,16 +58,16 @@ def generate_audit_report(
         post_hash = item.get("post_hash") or item.get("new_hash")
         override_status = item.get("status")
 
-        if override_status in (VERIFIED_PASS, MISMATCH_FAIL, SKIPPED):
+        if override_status in (VERIFIED_PASS, MISMATCH_FAIL, SKIPPED, UNVERIFIED):
             status = override_status
         elif not dst or src == dst or item.get("skipped"):
             status = SKIPPED
         elif pre_hash and post_hash and pre_hash == post_hash:
             status = VERIFIED_PASS
-        elif pre_hash != post_hash:
+        elif pre_hash and post_hash and pre_hash != post_hash:
             status = MISMATCH_FAIL
         elif post_hash and not pre_hash:
-            status = VERIFIED_PASS
+            status = UNVERIFIED
         else:
             status = MISMATCH_FAIL
 
@@ -74,6 +77,8 @@ def generate_audit_report(
             fail_count += 1
         elif status == SKIPPED:
             skipped_count += 1
+        elif status == UNVERIFIED:
+            unverified_count += 1
 
         rel_src = (
             os.path.relpath(src, base_dir).replace("\\", "/")
@@ -110,6 +115,7 @@ def generate_audit_report(
         "verified_pass_count": pass_count,
         "mismatch_fail_count": fail_count,
         "skipped_count": skipped_count,
+        "unverified_count": unverified_count,
         "records": processed_records,
     }
 

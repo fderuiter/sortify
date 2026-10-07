@@ -9,6 +9,7 @@ import pytest
 from app.core.audit_reporter import (
     MISMATCH_FAIL,
     SKIPPED,
+    UNVERIFIED,
     VERIFIED_PASS,
     export_audit_report,
     export_audit_report_csv,
@@ -49,6 +50,7 @@ def test_generate_audit_report_metrics_and_statuses():
     assert report["verified_pass_count"] == 1
     assert report["mismatch_fail_count"] == 1
     assert report["skipped_count"] == 1
+    assert report["unverified_count"] == 0
 
     recs = report["records"]
     assert recs[0]["status"] == VERIFIED_PASS
@@ -59,6 +61,49 @@ def test_generate_audit_report_metrics_and_statuses():
 
     assert recs[2]["status"] == SKIPPED
     assert recs[2]["status_badge"] == "[SKIPPED]"
+
+
+def test_generate_audit_report_unverified_status():
+    """Test generating audit report with missing pre-sort hash yielding UNVERIFIED status."""
+    records = [
+        {
+            "source_path": "/tmp/unverified1.txt",
+            "destination_path": "/tmp/sorted/unverified1.txt",
+            "pre_hash": "",
+            "post_hash": "posthash123456",
+        },
+        {
+            "source_path": "/tmp/unverified2.txt",
+            "destination_path": "/tmp/sorted/unverified2.txt",
+            "pre_hash": None,
+            "post_hash": "posthash789012",
+        },
+        {
+            "source_path": "/tmp/override.txt",
+            "destination_path": "/tmp/sorted/override.txt",
+            "pre_hash": "hashA",
+            "post_hash": "hashA",
+            "status": UNVERIFIED,
+        },
+    ]
+
+    report = generate_audit_report("/tmp", records)
+
+    assert report["total_files"] == 3
+    assert report["verified_pass_count"] == 0
+    assert report["mismatch_fail_count"] == 0
+    assert report["skipped_count"] == 0
+    assert report["unverified_count"] == 3
+
+    recs = report["records"]
+    assert recs[0]["status"] == UNVERIFIED
+    assert recs[0]["status_badge"] == "[UNVERIFIED]"
+
+    assert recs[1]["status"] == UNVERIFIED
+    assert recs[1]["status_badge"] == "[UNVERIFIED]"
+
+    assert recs[2]["status"] == UNVERIFIED
+    assert recs[2]["status_badge"] == "[UNVERIFIED]"
 
 
 def test_export_audit_report_json(tmp_path):
