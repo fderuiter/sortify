@@ -6630,6 +6630,44 @@
             {
               "async": false,
               "decorators": [],
+              "name": "format_pattern_name",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "self"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "original_filename"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "pattern"
+                },
+                {
+                  "annotation": "str",
+                  "default": "''",
+                  "name": "category"
+                },
+                {
+                  "annotation": "int",
+                  "default": "1",
+                  "name": "seq"
+                },
+                {
+                  "annotation": "Optional[str]",
+                  "default": "None",
+                  "name": "file_date"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [],
               "name": "generate_contextual_name",
               "parameters": [
                 {
@@ -8731,6 +8769,101 @@
             }
           ],
           "returns": "None"
+        }
+      ]
+    },
+    "app/core/pattern_formatter.py": {
+      "classes": [
+        {
+          "class_name": "PatternTokenFormatter",
+          "decorators": [],
+          "methods": [
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "format_pattern",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "pattern"
+                },
+                {
+                  "annotation": "Optional[Dict[str, Any]]",
+                  "default": "None",
+                  "name": "metadata"
+                },
+                {
+                  "annotation": "int",
+                  "default": "1",
+                  "name": "seq"
+                },
+                {
+                  "annotation": "str",
+                  "default": "''",
+                  "name": "fallback_original"
+                }
+              ],
+              "returns": "str"
+            },
+            {
+              "async": false,
+              "decorators": [
+                "@classmethod"
+              ],
+              "name": "parse_tokens",
+              "parameters": [
+                {
+                  "annotation": null,
+                  "default": null,
+                  "name": "cls"
+                },
+                {
+                  "annotation": "str",
+                  "default": null,
+                  "name": "pattern"
+                }
+              ],
+              "returns": "List[str]"
+            }
+          ]
+        }
+      ],
+      "functions": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "format_pattern",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "pattern"
+            },
+            {
+              "annotation": "Optional[Dict[str, Any]]",
+              "default": "None",
+              "name": "metadata"
+            },
+            {
+              "annotation": "int",
+              "default": "1",
+              "name": "seq"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "fallback_original"
+            }
+          ],
+          "returns": "str"
         }
       ]
     },

@@ -293,7 +293,7 @@ class A11yMixin:
 
 
 class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
-    """Modal dialog for renaming a file or folder node."""
+    """Modal dialog for renaming a file or folder node with pattern token formatting support."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
@@ -328,6 +328,16 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
         color: $text-muted;
         margin-bottom: 1;
     }
+    .token-help {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    .modal-preview {
+        color: $accent;
+        margin-top: 1;
+        margin-bottom: 1;
+        text-style: bold;
+    }
     .button-row {
         margin-top: 1;
         height: 3;
@@ -339,11 +349,41 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
     }
     """
 
-    def __init__(self, title: str, current_name: str = "", extension: str = ""):
+    def __init__(
+        self,
+        title: str,
+        current_name: str = "",
+        extension: str = "",
+        category: str = "",
+        file_date: str = "",
+        seq: int = 1,
+    ):
         super().__init__()
         self.modal_title = title
         self.current_name = current_name
         self.extension = extension
+        self.category = category
+        self.file_date = file_date
+        self.seq = seq
+
+    def _evaluate_preview(self, pattern_str: str) -> str:
+        """Evaluate formatted pattern string for live preview."""
+        from app.core.pattern_formatter import PatternTokenFormatter
+
+        metadata = {
+            "original": self.current_name,
+            "extension": self.extension,
+            "category": self.category,
+            "date": self.file_date,
+            "seq": self.seq,
+        }
+        fallback = f"{self.current_name}{self.extension}" if self.extension else self.current_name
+        return PatternTokenFormatter.format_pattern(
+            pattern=pattern_str,
+            metadata=metadata,
+            seq=self.seq,
+            fallback_original=fallback,
+        )
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
@@ -351,15 +391,25 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
             yield Label(self.modal_title, classes="modal-title")
             if self.extension:
                 yield Label(
-                    f"Extension '{self.extension}' is locked", classes="modal-subtitle"
+                    f"Extension '{self.extension}' is locked unless modified in template",
+                    classes="modal-subtitle",
                 )
+            yield Label(
+                "Tokens: {date}, {category}, {original}, {extension}, {seq}",
+                classes="token-help",
+            )
             inp = Input(
                 value=self.current_name,
-                placeholder="Enter new name...",
+                placeholder="Enter new name or pattern (e.g. {date}_{category}_{original})...",
                 id="input-name",
             )
-            inp.tooltip = "Enter new file or folder item name"
+            inp.tooltip = "Enter new file or folder name or pattern template"
             yield inp
+            yield Label(
+                f"Preview: {self._evaluate_preview(self.current_name)}",
+                id="label-preview",
+                classes="modal-preview",
+            )
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel rename action and close dialog"
@@ -384,18 +434,29 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
         self._update_layout(self.size.width)
         self.query_one("#input-name", Input).focus()
         self.announce(
-            f"Opened rename dialog for '{self.modal_title}'. Enter new name and press Enter or click Rename."
+            f"Opened rename dialog for '{self.modal_title}'. Enter new name or pattern and press Enter or click Rename."
         )
+
+    @on(Input.Changed, "#input-name")
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Update live preview on input value change."""
+        try:
+            preview_str = self._evaluate_preview(event.value)
+            lbl = self.query_one("#label-preview", Label)
+            lbl.update(f"Preview: {preview_str}")
+        except Exception:
+            pass
 
     @on(Button.Pressed, "#btn-confirm")
     def action_confirm(self) -> None:
         """Confirm renaming action."""
         val = self.query_one("#input-name", Input).value.strip()
-        if val:
-            self.announce(f"Confirmed rename to '{val}'.")
+        formatted = self._evaluate_preview(val) if val else ""
+        if formatted:
+            self.announce(f"Confirmed rename to '{formatted}'.")
         else:
             self.announce("Cancelled rename action.")
-        self.dismiss(val if val else None)
+        self.dismiss(formatted if formatted else None)
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
@@ -2981,14 +3042,24 @@ class AutoSorterTUI(A11yMixin, App):
 
         if is_file:
             stem, ext = os.path.splitext(old_name)
+            folder_cat = data.get("folder", "")
             modal = RenameModal(
-                title=f"Rename File: {old_name}", current_name=stem, extension=ext
+                title=f"Rename File: {old_name}",
+                current_name=stem,
+                extension=ext,
+                category=folder_cat,
             )
 
-            def on_renamed(new_stem: Optional[str]) -> None:
-                if not new_stem or new_stem == stem:
+            def on_renamed(new_formatted: Optional[str]) -> None:
+                if not new_formatted:
                     return
-                new_filename = new_stem + ext
+                if ext and not new_formatted.endswith(ext):
+                    new_filename = f"{new_formatted}{ext}"
+                else:
+                    new_filename = new_formatted
+
+                if new_filename == old_name:
+                    return
                 data["info"]["target_filename"] = new_filename
                 data["info"]["is_locked"] = True
                 data["is_locked"] = True
@@ -3003,7 +3074,9 @@ class AutoSorterTUI(A11yMixin, App):
             self.push_screen(modal, on_renamed)
         else:
             modal = RenameModal(
-                title=f"Rename Folder: {old_name}", current_name=old_name
+                title=f"Rename Folder: {old_name}",
+                current_name=old_name,
+                category=old_name,
             )
 
             def on_folder_renamed(new_name: Optional[str]) -> None:
