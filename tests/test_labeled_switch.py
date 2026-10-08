@@ -120,7 +120,7 @@ def test_settings_modal_labeled_switch_click_label(tmp_path):
             assert sw_ai.value is False
 
             # Scroll to center switch in scroll container before clicking label
-            modal.query_one(".modal-box").scroll_to_widget(ls_ai, center=True)
+            modal.query_one(".modal-box").scroll_to_widget(ls_ai, center=True, animate=False)
             await pilot.pause(0.05)
             await pilot.click(ls_ai.label_widget)
             await pilot.pause(0.05)
