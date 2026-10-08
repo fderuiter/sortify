@@ -2,6 +2,8 @@
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from app.core.extractor import process_item_worker
 from app.core.forensic_scanner import ForensicScanner
 from app.core.metadata import MetadataPass
@@ -96,6 +98,8 @@ def test_forensic_scanner_emits_structured_progress(tmp_path):
     assert any(ev.unit_type == "items" for ev in events)
 
 
+@pytest.mark.slow
+@pytest.mark.integration
 def test_cro_pipeline_emits_normalized_ratios(tmp_path):
     """Verify CROMultiStudyPipeline emits ratios strictly between 0.0 and 1.0."""
     src = tmp_path / "src"
