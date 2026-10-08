@@ -22,6 +22,7 @@ def test_wizard_modal_starter_templates_applied(tmp_path):
                 assert isinstance(modal, WizardModal)
 
                 # Finish wizard onboarding
+                await pilot.pause(0.1)
                 modal.action_finish()
                 await pilot.pause(0.1)
 
