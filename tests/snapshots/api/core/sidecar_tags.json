@@ -1,0 +1,78 @@
+{
+  "_metadata": {
+    "checksum": "32cc04c215cae9d030e30b4ddf02f7e66e9ec90ae02652c2e55ea726f492b3f9"
+  },
+  "classes": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_sidecar_path",
+      "parameters": [
+        {
+          "annotation": "Union[str, Path]",
+          "default": null,
+          "name": "filepath"
+        }
+      ],
+      "returns": "Path"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "load_all_sidecar_tags_for_dir",
+      "parameters": [
+        {
+          "annotation": "Union[str, Path]",
+          "default": null,
+          "name": "dirpath"
+        }
+      ],
+      "returns": "Dict[str, List[str]]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "load_sidecar_tags",
+      "parameters": [
+        {
+          "annotation": "Union[str, Path]",
+          "default": null,
+          "name": "filepath"
+        }
+      ],
+      "returns": "List[str]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "parse_tags_input",
+      "parameters": [
+        {
+          "annotation": "Union[str, List[str]]",
+          "default": null,
+          "name": "tags_input"
+        }
+      ],
+      "returns": "List[str]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "save_sidecar_tags",
+      "parameters": [
+        {
+          "annotation": "Union[str, Path]",
+          "default": null,
+          "name": "filepath"
+        },
+        {
+          "annotation": "Union[str, List[str]]",
+          "default": null,
+          "name": "tags"
+        }
+      ],
+      "returns": "None"
+    }
+  ]
+}
