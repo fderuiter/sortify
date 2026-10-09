@@ -127,7 +127,9 @@ def isolated_app_dir(monkeypatch, tmp_path):
     """Ensure AppSettings is isolated from persistent disk configuration changes."""
     import app.config
     import app.core.session
+    from app.core.plugin_registry import PluginRegistry
 
+    PluginRegistry.reset_instance()
     app.config.AppSettings.clear_observers()
     monkeypatch.setenv("FORCE_COLOR", "1")
     monkeypatch.setenv("COLORTERM", "truecolor")

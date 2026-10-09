@@ -283,6 +283,12 @@ class VerificationEngine:
             if is_node:
                 if node_type == "directory":
                     continue
+                if (
+                    _get_val(content, "is_excluded")
+                    or _get_val(content, "excluded")
+                    or _get_val(content, "is_checked") is False
+                ):
+                    continue
 
                 if depth > 0:
                     rel_src_val = _get_val(content, "relative_source")
