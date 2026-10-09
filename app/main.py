@@ -697,17 +697,17 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
             fmt = report_format
             if not fmt:
                 fmt = (
-                    "json"
-                    if str(export_report_path).lower().endswith(".json")
-                    else "html"
+                    "text"
+                    if str(export_report_path).lower().endswith((".txt", ".text"))
+                    else "json"
                 )
             fmt = str(fmt).lower()
 
             exporter = SimulationExporter(plan, base_dir=str(target_path))
-            if fmt == "json":
-                exporter.export_json(export_report_path)
+            if fmt in ("text", "txt"):
+                exporter.export_text(export_report_path)
             else:
-                exporter.export_html(export_report_path)
+                exporter.export_json(export_report_path)
 
             if not getattr(args, "quiet", False):
                 print(
@@ -831,17 +831,17 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
             fmt = report_format
             if not fmt:
                 fmt = (
-                    "json"
-                    if str(export_report_path).lower().endswith(".json")
-                    else "html"
+                    "text"
+                    if str(export_report_path).lower().endswith((".txt", ".text"))
+                    else "json"
                 )
             fmt = str(fmt).lower()
 
             exporter = SimulationExporter(plan, base_dir=str(target_path))
-            if fmt == "json":
-                exporter.export_json(export_report_path)
+            if fmt in ("text", "txt"):
+                exporter.export_text(export_report_path)
             else:
-                exporter.export_html(export_report_path)
+                exporter.export_json(export_report_path)
 
             if not getattr(args, "quiet", False):
                 print(
@@ -1480,9 +1480,9 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
         subparser.add_argument(
             "--report-format",
             type=str,
-            choices=["html", "json"],
+            choices=["json", "text"],
             default=None,
-            help="Format for exported simulation report (html or json)",
+            help="Format for exported simulation report (json or text)",
         )
 
     # Subcommand: sort

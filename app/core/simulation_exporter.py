@@ -1,4 +1,4 @@
-"""Simulation Exporter for dry-run reports in JSON and HTML formats."""
+"""Simulation Exporter for dry-run reports in JSON and text formats."""
 
 import json
 import os
@@ -14,7 +14,7 @@ from app.core.verifier import VerificationEngine
 
 
 class SimulationExporter:
-    """Engine to serialize sorting plans and dry-run simulation results into JSON and HTML reports."""
+    """Engine to serialize sorting plans and dry-run simulation results into JSON and text reports."""
 
     def __init__(
         self,
@@ -323,362 +323,67 @@ class SimulationExporter:
 
         return json_content
 
-    def export_html(
+    def export_text(
         self, output_path: Optional[Union[str, Path]] = None
     ) -> str:
-        """Serialize simulation report into standalone HTML format and write to output_path if specified."""
+        """Serialize simulation report into human-readable plain text format and write to output_path if specified."""
         data = self.generate_report_data()
         summary = data["summary"]
         move_mappings = data["move_mappings"]
         warnings = data["simulation_warnings"]
 
-        safety_status = summary["safety_status"]
-        if safety_status == "PASSED_SAFETY_CHECK":
-            badge_class = "status-passed"
-            badge_text = "SAFE TO EXECUTE"
-        elif safety_status == "WARNINGS_DETECTED":
-            badge_class = "status-warning"
-            badge_text = "WARNINGS DETECTED"
+        lines = [
+            "=" * 80,
+            "                    SORTIFY DRY-RUN SIMULATION REPORT",
+            "=" * 80,
+            f"Generated At: {data['generated_at']}",
+            f"Base Directory: {data['base_directory']}",
+            f"Safety Status: {summary['safety_status']}",
+            "",
+            "SUMMARY METRICS:",
+            "-" * 80,
+            f"Total Files Analyzed:       {summary['total_files']}",
+            f"Path Collisions:            {summary['collisions_count']}",
+            f"Quarantine Holds:           {summary['sensitivity_holds_count']}",
+            f"Broken Symlinks / Links:    {summary['broken_links_count']}",
+            f"Long Paths:                 {summary['long_paths_count']}",
+            f"Invalid Renames:            {summary['invalid_renames_count']}",
+            f"Unconfirmed Renames:        {summary['unconfirmed_renames_count']}",
+            f"Total Warnings:             {summary['total_warnings']}",
+            f"Execution Safe:             {summary['success']}",
+            "",
+        ]
+
+        if warnings:
+            lines.append(f"SIMULATION WARNINGS ({len(warnings)}):")
+            lines.append("-" * 80)
+            for w in warnings:
+                lines.append(f"- {w}")
+            lines.append("")
+
+        lines.append(f"MOVE MAPPINGS ({len(move_mappings)} files):")
+        lines.append("-" * 80)
+
+        if not move_mappings:
+            lines.append("No file moves scheduled.")
         else:
-            badge_class = "status-danger"
-            badge_text = "SAFETY HOLD"
-
-        # Build warning banners
-        warning_items_html = [f"<li>{w}</li>" for w in warnings]
-        warning_banner_html = (
-            f"""
-            <div class="warning-banner">
-                <h3>Simulation Warnings ({len(warnings)})</h3>
-                <ul>{''.join(warning_items_html)}</ul>
-            </div>
-            """
-            if warnings
-            else ""
-        )
-
-        # Build table rows with optimized row template
-        row_template = (
-            '<tr data-collision="{col}" data-hold="{hold}" data-confirmed="{conf}">'
-            '<td class="code-cell">{src}</td>'
-            '<td class="code-cell">{tgt}</td>'
-            '<td>{fn}</td>'
-            '<td><span class="badge {sens_cls}">{sens}</span>{hold_badge}</td>'
-            '<td>{col_badge}</td>'
-            '<td>{conf_badge}</td>'
-            '</tr>'
-        )
-
-        badge_ok = '<span class="badge badge-success">OK</span>'
-        badge_collision = '<span class="badge badge-danger">COLLISION</span>'
-        badge_confirmed = '<span class="badge badge-info">Confirmed</span>'
-        badge_unconfirmed = '<span class="badge badge-muted">Unconfirmed</span>'
-        badge_quarantine_hold = ' <span class="badge badge-danger">QUARANTINE HOLD</span>'
-
-        table_rows = []
-        for m in move_mappings:
-            sens = m["sensitivity_rating"]
-            if sens in ("CRITICAL", "HIGH", "RESTRICTED", "QUARANTINE"):
-                sens_badge_class = "badge-danger"
-            elif sens == "MEDIUM":
-                sens_badge_class = "badge-warning"
-            else:
-                sens_badge_class = "badge-success"
-
-            is_col = m["collision_flag"]
-            is_conf = m["confirmation_status"] == "Confirmed"
-            is_hold = m.get("quarantine_hold", False)
-
-            table_rows.append(
-                row_template.format(
-                    col="true" if is_col else "false",
-                    hold="true" if is_hold else "false",
-                    conf="true" if is_conf else "false",
-                    src=m["source_path"],
-                    tgt=m["target_path"],
-                    fn=m["target_filename"],
-                    sens_cls=sens_badge_class,
-                    sens=sens,
-                    hold_badge=badge_quarantine_hold if is_hold else "",
-                    col_badge=badge_collision if is_col else badge_ok,
-                    conf_badge=badge_confirmed if is_conf else badge_unconfirmed,
+            for idx, m in enumerate(move_mappings, start=1):
+                lines.append(f"[{idx}] Source: {m['source_path']}")
+                lines.append(f"    Target: {m['target_path']}")
+                lines.append(f"    Filename: {m['target_filename']}")
+                lines.append(
+                    f"    Sensitivity: {m['sensitivity_rating']} (Score: {m['sensitivity_score']})"
                 )
-            )
+                lines.append(f"    Status: {m['status']}")
+                lines.append(f"    Confirmation: {m['confirmation_status']}")
+                lines.append("-" * 80)
 
-        table_rows_html = "".join(table_rows)
-
-        html_content = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sortify - Dry-Run Simulation Report</title>
-    <style>
-        :root {{
-            --bg-color: #0d1117;
-            --card-bg: #161b22;
-            --border-color: #30363d;
-            --text-color: #c9d1d9;
-            --text-muted: #8b949e;
-            --accent-blue: #58a6ff;
-            --accent-green: #238636;
-            --accent-warning: #d29922;
-            --accent-danger: #da3633;
-            --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
-            --mono-font: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
-        }}
-        body {{
-            background-color: var(--bg-color);
-            color: var(--text-color);
-            font-family: var(--font-family);
-            margin: 0;
-            padding: 24px;
-            line-height: 1.5;
-        }}
-        .header-container {{
-            display: flex;
-            justify-content: space-between;
-            align-items: center;
-            border-bottom: 1px solid var(--border-color);
-            padding-bottom: 16px;
-            margin-bottom: 24px;
-        }}
-        .header-title h1 {{
-            margin: 0 0 8px 0;
-            font-size: 24px;
-            color: #ffffff;
-        }}
-        .header-meta {{
-            color: var(--text-muted);
-            font-size: 14px;
-        }}
-        .status-badge {{
-            padding: 8px 16px;
-            border-radius: 20px;
-            font-weight: bold;
-            font-size: 14px;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }}
-        .status-passed {{
-            background-color: rgba(35, 134, 54, 0.2);
-            border: 1px solid var(--accent-green);
-            color: #3fb950;
-        }}
-        .status-warning {{
-            background-color: rgba(210, 153, 34, 0.2);
-            border: 1px solid var(--accent-warning);
-            color: #d29922;
-        }}
-        .status-danger {{
-            background-color: rgba(218, 54, 51, 0.2);
-            border: 1px solid var(--accent-danger);
-            color: #f85149;
-        }}
-        .metrics-grid {{
-            display: grid;
-            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-            gap: 16px;
-            margin-bottom: 24px;
-        }}
-        .metric-card {{
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            padding: 16px;
-        }}
-        .metric-value {{
-            font-size: 28px;
-            font-weight: bold;
-            color: #ffffff;
-            margin-bottom: 4px;
-        }}
-        .metric-label {{
-            color: var(--text-muted);
-            font-size: 13px;
-            text-transform: uppercase;
-        }}
-        .warning-banner {{
-            background-color: rgba(210, 153, 34, 0.1);
-            border: 1px solid var(--accent-warning);
-            border-radius: 8px;
-            padding: 16px;
-            margin-bottom: 24px;
-        }}
-        .warning-banner h3 {{
-            margin: 0 0 12px 0;
-            color: var(--accent-warning);
-        }}
-        .warning-banner ul {{
-            margin: 0;
-            padding-left: 20px;
-        }}
-        .controls-row {{
-            display: flex;
-            gap: 12px;
-            margin-bottom: 16px;
-            flex-wrap: wrap;
-        }}
-        .search-input {{
-            flex: 1;
-            min-width: 250px;
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            color: var(--text-color);
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 14px;
-        }}
-        .filter-select {{
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            color: var(--text-color);
-            padding: 8px 12px;
-            border-radius: 6px;
-            font-size: 14px;
-        }}
-        .data-table {{
-            width: 100%;
-            border-collapse: collapse;
-            background-color: var(--card-bg);
-            border: 1px solid var(--border-color);
-            border-radius: 8px;
-            overflow: hidden;
-        }}
-        .data-table th, .data-table td {{
-            padding: 10px 14px;
-            text-align: left;
-            border-bottom: 1px solid var(--border-color);
-            font-size: 13px;
-        }}
-        .data-table th {{
-            background-color: #21262d;
-            color: #ffffff;
-            font-weight: 600;
-        }}
-        .code-cell {{
-            font-family: var(--mono-font);
-            font-size: 12px;
-            word-break: break-all;
-        }}
-        .badge {{
-            display: inline-block;
-            padding: 2px 8px;
-            border-radius: 12px;
-            font-size: 11px;
-            font-weight: 600;
-        }}
-        .badge-success {{ background: rgba(35, 134, 54, 0.2); color: #3fb950; border: 1px solid var(--accent-green); }}
-        .badge-warning {{ background: rgba(210, 153, 34, 0.2); color: #d29922; border: 1px solid var(--accent-warning); }}
-        .badge-danger {{ background: rgba(218, 54, 51, 0.2); color: #f85149; border: 1px solid var(--accent-danger); }}
-        .badge-info {{ background: rgba(88, 166, 255, 0.2); color: #58a6ff; border: 1px solid var(--accent-blue); }}
-        .badge-muted {{ background: rgba(139, 148, 158, 0.2); color: var(--text-muted); border: 1px solid var(--text-muted); }}
-    </style>
-</head>
-<body>
-    <div class="header-container">
-        <div class="header-title">
-            <h1>Sortify Dry-Run Simulation Report</h1>
-            <div class="header-meta">
-                Generated: {data['generated_at']} | Target Directory: <code>{data['base_directory']}</code>
-            </div>
-        </div>
-        <div>
-            <span class="status-badge {badge_class}">{badge_text}</span>
-        </div>
-    </div>
-
-    <div class="metrics-grid">
-        <div class="metric-card">
-            <div class="metric-value">{summary['total_files']}</div>
-            <div class="metric-label">Total Files Analyzed</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value">{summary['collisions_count']}</div>
-            <div class="metric-label">Path Collisions</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value">{summary['sensitivity_holds_count']}</div>
-            <div class="metric-label">Sensitivity Quarantine Holds</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value">{summary['broken_links_count']}</div>
-            <div class="metric-label">Broken Symlinks / Links</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value">{summary['total_warnings']}</div>
-            <div class="metric-label">Total Warnings</div>
-        </div>
-    </div>
-
-    {warning_banner_html}
-
-    <div class="controls-row">
-        <input type="text" id="searchInput" class="search-input" placeholder="Search paths, filenames, or sensitivity...">
-        <select id="filterSelect" class="filter-select">
-            <option value="all">All File Mappings</option>
-            <option value="collisions">Collisions Only</option>
-            <option value="holds">Quarantine Holds Only</option>
-            <option value="confirmed">Confirmed Only</option>
-            <option value="unconfirmed">Unconfirmed Only</option>
-        </select>
-    </div>
-
-    <table class="data-table" id="mappingsTable">
-        <thead>
-            <tr>
-                <th>Source Path</th>
-                <th>Target Path</th>
-                <th>Filename</th>
-                <th>Sensitivity Rating</th>
-                <th>Collision Flag</th>
-                <th>Confirmation Status</th>
-            </tr>
-        </thead>
-        <tbody>
-            {table_rows_html}
-        </tbody>
-    </table>
-
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {{
-            const searchInput = document.getElementById('searchInput');
-            const filterSelect = document.getElementById('filterSelect');
-            const tableRows = document.querySelectorAll('#mappingsTable tbody tr');
-
-            function filterTable() {{
-                const query = searchInput.value.toLowerCase();
-                const filterVal = filterSelect.value;
-
-                tableRows.forEach(row => {{
-                    const text = row.textContent.toLowerCase();
-                    const matchesSearch = text.includes(query);
-
-                    const isCollision = row.getAttribute('data-collision') === 'true';
-                    const isHold = row.getAttribute('data-hold') === 'true';
-                    const isConfirmed = row.getAttribute('data-confirmed') === 'true';
-
-                    let matchesFilter = true;
-                    if (filterVal === 'collisions') matchesFilter = isCollision;
-                    else if (filterVal === 'holds') matchesFilter = isHold;
-                    else if (filterVal === 'confirmed') matchesFilter = isConfirmed;
-                    else if (filterVal === 'unconfirmed') matchesFilter = !isConfirmed;
-
-                    row.style.display = (matchesSearch && matchesFilter) ? '' : 'none';
-                }});
-            }}
-
-            searchInput.addEventListener('input', filterTable);
-            filterSelect.addEventListener('change', filterTable);
-        }});
-    </script>
-</body>
-</html>
-"""
+        text_content = "\n".join(lines) + "\n"
 
         if output_path is not None:
             p = Path(output_path)
             if p.parent and not p.parent.exists():
                 p.parent.mkdir(parents=True, exist_ok=True)
-            p.write_text(html_content, encoding="utf-8")
+            p.write_text(text_content, encoding="utf-8")
 
-        return html_content
+        return text_content

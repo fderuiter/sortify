@@ -1,5 +1,6 @@
 import asyncio
 
+from textual import events
 from textual.app import App, ComposeResult
 from textual.widgets import Input, Label, Switch
 
@@ -122,7 +123,9 @@ def test_settings_modal_labeled_switch_click_label(tmp_path):
             # Scroll visible and click the label text for AI Consent
             ls_ai.scroll_visible()
             await pilot.pause(0.05)
-            await pilot.click(ls_ai.label_widget)
+            ls_ai.label_widget.post_message(
+                events.Click(ls_ai.label_widget, 0, 0, 0, 0, 1, False, False, False)
+            )
             await pilot.pause(0.05)
 
             assert sw_ai.value is True

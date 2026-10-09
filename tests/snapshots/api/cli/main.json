@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "9a18a2bcffb0201b10e1f833a67aedbad949a78ab3a23e6c5b9b512ac16475c4"
+    "checksum": "f5479591d517e0ec483d6b3cc6d0657f4be842c82088ed977441ccf1d616992b"
   },
   "cli": [
     {
@@ -698,11 +698,11 @@
       "caller": "subparser",
       "keywords": {
         "choices": [
-          "html",
-          "json"
+          "json",
+          "text"
         ],
         "default": null,
-        "help": "Format for exported simulation report (html or json)",
+        "help": "Format for exported simulation report (json or text)",
         "type": "str"
       },
       "method": "add_argument"

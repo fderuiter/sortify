@@ -70,23 +70,18 @@ def test_export_json_structure(sample_plan_with_data, tmp_path):
     assert "plan_hierarchy" in parsed
 
 
-def test_export_html_structure(sample_plan_with_data, tmp_path):
+def test_export_text_structure(sample_plan_with_data, tmp_path):
     plan, base_dir = sample_plan_with_data
-    out_html = tmp_path / "report.html"
+    out_txt = tmp_path / "report.txt"
 
     exporter = SimulationExporter(plan, base_dir=base_dir)
-    html_str = exporter.export_html(out_html)
+    text_str = exporter.export_text(out_txt)
 
-    assert out_html.exists()
-    assert "<!DOCTYPE html>" in html_str
-    assert "Sortify Dry-Run Simulation Report" in html_str
-    assert "metrics-grid" in html_str
-    assert "mappingsTable" in html_str
-    assert "searchInput" in html_str
-    assert "filterSelect" in html_str
-    # Zero external CDN resources guardrail
-    assert "http://" not in html_str
-    assert "https://" not in html_str
+    assert out_txt.exists()
+    assert "SORTIFY DRY-RUN SIMULATION REPORT" in text_str
+    assert "SUMMARY METRICS:" in text_str
+    assert "MOVE MAPPINGS" in text_str
+    assert "financial_doc.pdf" in text_str
 
 
 def test_scrubbing_user_home_and_credentials(tmp_path):
@@ -107,14 +102,14 @@ def test_scrubbing_user_home_and_credentials(tmp_path):
 
     exporter = SimulationExporter(plan, base_dir=home_dir)
     json_str = exporter.export_json()
-    html_str = exporter.export_html()
+    text_str = exporter.export_text()
 
     # User home path should be scrubbed
     assert home_dir not in json_str
-    assert home_dir not in html_str
+    assert home_dir not in text_str
     # Sensitive credential sk_live_ should be scrubbed
     assert "sk_live_999999999999999999999999" not in json_str
-    assert "sk_live_999999999999999999999999" not in html_str
+    assert "sk_live_999999999999999999999999" not in text_str
 
 
 def test_read_only_guardrail(sample_plan_with_data, tmp_path):
@@ -125,7 +120,7 @@ def test_read_only_guardrail(sample_plan_with_data, tmp_path):
 
     exporter = SimulationExporter(plan, base_dir=base_dir)
     exporter.export_json()
-    exporter.export_html()
+    exporter.export_text()
 
     # Verify target directory remains untouched
     final_files = set(os.listdir(base_dir))
@@ -147,11 +142,11 @@ def test_export_performance_large_plan(tmp_path):
 
     start_time = time.perf_counter()
     json_content = exporter.export_json()
-    html_content = exporter.export_html()
+    text_content = exporter.export_text()
     duration = time.perf_counter() - start_time
 
     assert len(json_content) > 0
-    assert len(html_content) > 0
+    assert len(text_content) > 0
     sla_threshold = 25.0 if _is_ci_or_parallel() else 5.0
     assert duration < sla_threshold
 
@@ -160,7 +155,7 @@ def test_cli_sort_export_report_dry_run(tmp_path, capsys):
     doc = tmp_path / "test.txt"
     doc.write_text("Sample file content for sorting.")
 
-    out_html = tmp_path / "cli_report.html"
+    out_json = tmp_path / "cli_report.json"
 
     from app.config import AppSettings
     from app.main import build_parser, handle_sort_command
@@ -171,7 +166,7 @@ def test_cli_sort_export_report_dry_run(tmp_path, capsys):
         str(tmp_path),
         "--dry-run",
         "--export-report",
-        str(out_html),
+        str(out_json),
     ])
 
     settings = AppSettings()
@@ -179,8 +174,9 @@ def test_cli_sort_export_report_dry_run(tmp_path, capsys):
         handle_sort_command(args, settings)
 
     assert exc_info.value.code == 0
-    assert out_html.exists()
-    assert "<!DOCTYPE html>" in out_html.read_text(encoding="utf-8")
+    assert out_json.exists()
+    parsed = json.loads(out_json.read_text(encoding="utf-8"))
+    assert parsed["summary"]["total_files"] >= 1
     assert doc.exists()  # Dry run preserved original physical file
 
 
@@ -243,9 +239,10 @@ def test_tui_export_report_modal(tmp_path):
             await pilot.press("enter")
             await pilot.pause()
 
-            default_out = tmp_path / "simulation_report.html"
+            default_out = tmp_path / "simulation_report.json"
             assert default_out.exists()
-            assert "<!DOCTYPE html>" in default_out.read_text(encoding="utf-8")
+            parsed = json.loads(default_out.read_text(encoding="utf-8"))
+            assert parsed["title"] == "Sortify Dry-Run Simulation Report"
 
     asyncio.run(_test())
 
