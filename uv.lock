@@ -4096,21 +4096,21 @@ build = [
     { name = "sqlcipher3-wheels", specifier = "==0.5.7" },
 ]
 dev = [
-    { name = "ipykernel" },
-    { name = "jupyter" },
-    { name = "mkdocs" },
-    { name = "mkdocs-material" },
-    { name = "mkdocstrings", extras = ["python"] },
-    { name = "mypy" },
-    { name = "notebook" },
-    { name = "pre-commit" },
+    { name = "ipykernel", specifier = ">=7.3.0" },
+    { name = "jupyter", specifier = ">=1.1.1" },
+    { name = "mkdocs", specifier = ">=1.6.1" },
+    { name = "mkdocs-material", specifier = ">=9.7.7" },
+    { name = "mkdocstrings", extras = ["python"], specifier = ">=1.0.6" },
+    { name = "mypy", specifier = ">=2.3.1" },
+    { name = "notebook", specifier = ">=7.6.3" },
+    { name = "pre-commit", specifier = ">=4.6.2" },
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
     { name = "pytest-mock", specifier = ">=3.15.1" },
     { name = "pytest-timeout", specifier = ">=2.4.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "reportlab", specifier = ">=5.0.0" },
-    { name = "ruff" },
+    { name = "ruff", specifier = ">=0.16.9" },
 ]
 
 [[package]]
