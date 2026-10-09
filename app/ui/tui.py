@@ -2062,6 +2062,8 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         Binding("escape", "cancel", "Cancel dialog", show=True),
     ]
 
+    SUPPORTED_EXTENSIONS = {".txt", ".docx", ".csv", ".xlsx", ".xls", ".pdf"}
+
     CSS = """
     DropZoneModal {
         align: center middle;
@@ -2072,10 +2074,10 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         background: $panel;
         border: double $accent;
         width: 90%;
-        max-width: 80;
-        min-width: 40;
+        max-width: 100;
+        min-width: 50;
         height: auto;
-        max-height: 90%;
+        max-height: 95%;
         overflow-y: auto;
     }
     .narrow .modal-box {
@@ -2085,14 +2087,14 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     .modal-title {
         text-style: bold;
         color: $accent;
-        margin-bottom: 1;
+        margin-bottom: 0;
     }
     .dropzone-target {
         border: dashed $primary;
         background: $surface;
-        padding: 1 2;
-        margin-top: 1;
-        margin-bottom: 1;
+        padding: 0 1;
+        margin-top: 0;
+        margin-bottom: 0;
         align: center middle;
         height: auto;
     }
@@ -2100,24 +2102,36 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         text-style: bold;
         color: $primary;
         text-align: center;
-        margin-bottom: 1;
+        margin-bottom: 0;
     }
     .dropzone-subinstructions {
         color: $text-muted;
         text-align: center;
     }
+    #dropzone-staging-table {
+        height: 6;
+        min-height: 4;
+        margin-top: 0;
+        margin-bottom: 0;
+        border: solid $accent;
+    }
     .status-text {
         color: $accent;
-        margin-top: 1;
-        margin-bottom: 1;
+        margin-top: 0;
+        margin-bottom: 0;
         text-style: italic;
     }
     .button-row {
-        margin-top: 1;
+        margin-top: 0;
         height: 3;
         align: right middle;
     }
-    Button:focus, Input:focus {
+    .queue-row {
+        margin-top: 0;
+        height: 3;
+        align: center middle;
+    }
+    Button:focus, Input:focus, DataTable:focus {
         border: heavy $accent;
         text-style: bold;
     }
@@ -2131,6 +2145,7 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         self.settings = settings
         self.base_dir = base_dir
         self.processed_result: Optional[Dict[str, Any]] = None
+        self.staged_items: List[Dict[str, Any]] = []
 
     def compose(self) -> ComposeResult:
         """Compose floating dropzone modal overlay controls."""
@@ -2153,6 +2168,32 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 "Enter or drop target file or folder paths to trigger automated sorting"
             )
             yield inp
+
+            table = DataTable(id="dropzone-staging-table")
+            table.cursor_type = "row"
+            table.tooltip = "Interactive staging queue displaying file status and details"
+            yield table
+
+            with Horizontal(classes="queue-row"):
+                btn_filter = Button("Filter Unsupported", id="btn-filter-unsupported", variant="warning")
+                btn_filter.tooltip = "Remove unsupported file formats from the queue"
+                yield btn_filter
+
+                btn_remove = Button("Remove Item", id="btn-remove-item", variant="error")
+                btn_remove.tooltip = "Remove the selected row from the staging table"
+                yield btn_remove
+
+                btn_up = Button("Move Up", id="btn-move-up", variant="default")
+                btn_up.tooltip = "Move selected item up in queue priority"
+                yield btn_up
+
+                btn_down = Button("Move Down", id="btn-move-down", variant="default")
+                btn_down.tooltip = "Move selected item down in queue priority"
+                yield btn_down
+
+                btn_clear = Button("Clear Queue", id="btn-clear-queue", variant="default")
+                btn_clear.tooltip = "Clear all staged items from the modal"
+                yield btn_clear
 
             status_lbl = Label(
                 "Ready. Drop or enter paths above.",
@@ -2194,10 +2235,196 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         """Handle modal viewport resize event."""
         self._update_layout(event.size.width)
 
+    def _format_size(self, size_bytes: int) -> str:
+        """Format size in bytes to human readable string."""
+        if size_bytes <= 0:
+            return "0 B"
+        units = ["B", "KB", "MB", "GB", "TB"]
+        size = float(size_bytes)
+        idx = 0
+        while size >= 1024.0 and idx < len(units) - 1:
+            size /= 1024.0
+            idx += 1
+        if idx == 0:
+            return f"{int(size)} B"
+        return f"{size:.1f} {units[idx]}"
+
+    def _refresh_table(self) -> None:
+        """Re-render staging table with items from self.staged_items."""
+        try:
+            table = self.query_one("#dropzone-staging-table", DataTable)
+        except Exception:
+            return
+        table.clear(columns=True)
+        table.add_columns("Status", "Filename", "Extension", "Size", "Full Path")
+        for item in self.staged_items:
+            table.add_row(
+                item["status"],
+                item["filename"],
+                item["extension"],
+                item["size_str"],
+                item["path"],
+            )
+
+    def stage_paths(self, raw_text: str) -> None:
+        """Parse raw input string, expand directories, validate, and stage items."""
+        raw_items = [
+            p.strip().strip("'\"")
+            for p in raw_text.replace("\r", "\n").split("\n")
+            if p.strip()
+        ]
+        if not raw_items:
+            return
+
+        from app.core.scanner import get_files_recursively
+
+        protected = getattr(self.settings, "PROTECTED_PATHS", []) if self.settings else []
+        new_count = 0
+
+        for item in raw_items:
+            abs_p = os.path.abspath(item)
+            if os.path.isdir(abs_p):
+                files = get_files_recursively(abs_p)
+                for f_path in files:
+                    self._add_single_file_to_staging(f_path, protected)
+                    new_count += 1
+            else:
+                self._add_single_file_to_staging(abs_p, protected)
+                new_count += 1
+
+        self._refresh_table()
+        try:
+            inp = self.query_one("#input-drop-paths", Input)
+            inp.value = ""
+        except Exception:
+            pass
+
+        ready_cnt = sum(1 for item in self.staged_items if item["status"] == "Ready")
+        msg = f"Staged {new_count} item(s). Queue total: {len(self.staged_items)} ({ready_cnt} ready)."
+        self.update_status_msg(msg)
+
+    def _add_single_file_to_staging(self, abs_p: str, protected: List[str]) -> None:
+        """Validate and append a single file path to staged_items."""
+        from app.core.mover import is_subpath_or_equal
+
+        is_prot = False
+        for prot in protected:
+            if prot and is_subpath_or_equal(abs_p, prot):
+                is_prot = True
+                break
+
+        filename = os.path.basename(abs_p) or abs_p
+        ext = os.path.splitext(abs_p)[1].lower()
+
+        if is_prot:
+            status = "BLOCKED"
+            size_bytes = os.path.getsize(abs_p) if os.path.exists(abs_p) else 0
+        elif not os.path.exists(abs_p):
+            status = "Not Found"
+            size_bytes = 0
+        elif ext not in self.SUPPORTED_EXTENSIONS:
+            status = "Unsupported"
+            size_bytes = os.path.getsize(abs_p) if os.path.exists(abs_p) else 0
+        else:
+            status = "Ready"
+            size_bytes = os.path.getsize(abs_p)
+
+        size_str = self._format_size(size_bytes)
+
+        if not any(item["path"] == abs_p for item in self.staged_items):
+            self.staged_items.append({
+                "path": abs_p,
+                "filename": filename,
+                "extension": ext,
+                "size": size_bytes,
+                "size_str": size_str,
+                "status": status,
+            })
+
+    def filter_unsupported_items(self) -> None:
+        """Remove items with 'Unsupported' status from the queue."""
+        before = len(self.staged_items)
+        self.staged_items = [
+            item for item in self.staged_items if item["status"] != "Unsupported"
+        ]
+        removed = before - len(self.staged_items)
+        self._refresh_table()
+        msg = f"Filtered {removed} unsupported item(s) from queue. {len(self.staged_items)} item(s) remaining."
+        self.update_status_msg(msg)
+
+    def remove_selected_item(self) -> None:
+        """Remove currently selected row from the staging table."""
+        try:
+            table = self.query_one("#dropzone-staging-table", DataTable)
+            row_idx = table.cursor_row
+        except Exception:
+            row_idx = None
+
+        if row_idx is not None and 0 <= row_idx < len(self.staged_items):
+            removed_item = self.staged_items.pop(row_idx)
+            self._refresh_table()
+            msg = f"Removed '{removed_item['filename']}' from queue. {len(self.staged_items)} item(s) remaining."
+            self.update_status_msg(msg)
+            if self.staged_items:
+                new_idx = min(row_idx, len(self.staged_items) - 1)
+                try:
+                    table.move_cursor(row=new_idx)
+                except Exception:
+                    pass
+        else:
+            self.update_status_msg("No item selected to remove.")
+
+    def move_selected_item_up(self) -> None:
+        """Move selected queue item up in priority."""
+        try:
+            table = self.query_one("#dropzone-staging-table", DataTable)
+            row_idx = table.cursor_row
+        except Exception:
+            row_idx = None
+
+        if row_idx is not None and 0 < row_idx < len(self.staged_items):
+            self.staged_items[row_idx], self.staged_items[row_idx - 1] = (
+                self.staged_items[row_idx - 1],
+                self.staged_items[row_idx],
+            )
+            self._refresh_table()
+            try:
+                table.move_cursor(row=row_idx - 1)
+            except Exception:
+                pass
+            self.update_status_msg(f"Moved '{self.staged_items[row_idx - 1]['filename']}' up in queue priority.")
+
+    def move_selected_item_down(self) -> None:
+        """Move selected queue item down in priority."""
+        try:
+            table = self.query_one("#dropzone-staging-table", DataTable)
+            row_idx = table.cursor_row
+        except Exception:
+            row_idx = None
+
+        if row_idx is not None and 0 <= row_idx < len(self.staged_items) - 1:
+            self.staged_items[row_idx], self.staged_items[row_idx + 1] = (
+                self.staged_items[row_idx + 1],
+                self.staged_items[row_idx],
+            )
+            self._refresh_table()
+            try:
+                table.move_cursor(row=row_idx + 1)
+            except Exception:
+                pass
+            self.update_status_msg(f"Moved '{self.staged_items[row_idx + 1]['filename']}' down in queue priority.")
+
+    def clear_queue(self) -> None:
+        """Clear all staged items from modal queue."""
+        self.staged_items.clear()
+        self._refresh_table()
+        self.update_status_msg("Cleared all staged items from the queue.")
+
     def on_mount(self) -> None:
-        """Focus input on mount and announce modal opening."""
+        """Focus input on mount, render staging table, and announce modal opening."""
         self._app_ref = self.app
         self._update_layout(self.size.width)
+        self._refresh_table()
         try:
             self.query_one("#input-drop-paths", Input).focus()
         except Exception:
@@ -2210,16 +2437,40 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             try:
                 inp = self.query_one("#input-drop-paths", Input)
                 inp.value = event.text.strip()
-                self.announce(
-                    f"Pasted path payload into dropzone: {event.text.strip()}"
-                )
             except Exception:
                 pass
+            self.stage_paths(event.text)
 
     @on(Input.Submitted, "#input-drop-paths")
     def on_input_submitted(self, event: Input.Submitted) -> None:
-        """Handle enter key in drop paths input field."""
-        self.trigger_drop_triage()
+        """Handle enter key in drop paths input field to stage items or process queue."""
+        if event.value.strip():
+            self.stage_paths(event.value)
+
+    @on(Button.Pressed, "#btn-filter-unsupported")
+    def on_btn_filter_unsupported_pressed(self, event: Button.Pressed) -> None:
+        """Filter unsupported file formats button handler."""
+        self.filter_unsupported_items()
+
+    @on(Button.Pressed, "#btn-remove-item")
+    def on_btn_remove_pressed(self, event: Button.Pressed) -> None:
+        """Remove selected item button handler."""
+        self.remove_selected_item()
+
+    @on(Button.Pressed, "#btn-move-up")
+    def on_btn_move_up_pressed(self, event: Button.Pressed) -> None:
+        """Move item up button handler."""
+        self.move_selected_item_up()
+
+    @on(Button.Pressed, "#btn-move-down")
+    def on_btn_move_down_pressed(self, event: Button.Pressed) -> None:
+        """Move item down button handler."""
+        self.move_selected_item_down()
+
+    @on(Button.Pressed, "#btn-clear-queue")
+    def on_btn_clear_pressed(self, event: Button.Pressed) -> None:
+        """Clear queue button handler."""
+        self.clear_queue()
 
     @on(Button.Pressed, "#btn-process")
     def on_btn_process_pressed(self, event: Button.Pressed) -> None:
@@ -2246,70 +2497,43 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         self.dismiss(None)
 
     def trigger_drop_triage(self) -> None:
-        """Parse input paths and trigger automated classification worker."""
+        """Parse input paths if any, validate active queue, and trigger worker."""
         try:
             inp = self.query_one("#input-drop-paths", Input)
             raw_text = inp.value.strip()
         except Exception:
             raw_text = ""
 
+        if raw_text:
+            self.stage_paths(raw_text)
+
         help_url = "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors"
 
-        if not raw_text:
-            self._show_help_button(help_url)
-            from app.ui.notifications import notify
-
-            notify("No file or folder paths provided.", type="error", help_url=help_url)
-            self.update_status_msg(
-                "No file or folder paths provided. Please paste or type a path.",
-                help_url=help_url,
-            )
-            return
-
-        raw_items = [
-            p.strip().strip("'\"")
-            for p in raw_text.replace("\r", "\n").split("\n")
-            if p.strip()
+        # Check for blocked or invalid items in staged_items if no items exist or no ready items exist
+        ready_paths = [
+            item["path"] for item in self.staged_items if item["status"] == "Ready"
         ]
-        validated_paths = []
-        invalid_messages = []
 
-        for item in raw_items:
-            abs_p = os.path.abspath(item)
-            if not os.path.exists(abs_p):
-                invalid_messages.append(f"Path does not exist: {item}")
-                continue
+        if not ready_paths:
+            blocked_items = [
+                item for item in self.staged_items if item["status"] == "BLOCKED"
+            ]
+            if blocked_items:
+                err_text = f"Protected path blocked: {blocked_items[0]['filename']}"
+            elif self.staged_items:
+                err_text = "No ready files to sort in queue."
+            else:
+                err_text = "No file or folder paths provided."
 
-            if self.settings:
-                protected = getattr(self.settings, "PROTECTED_PATHS", [])
-                from app.core.mover import is_subpath_or_equal
-
-                is_prot = False
-                for prot in protected:
-                    if prot and is_subpath_or_equal(abs_p, prot):
-                        is_prot = True
-                        break
-                if is_prot:
-                    invalid_messages.append(f"Protected path blocked: {item}")
-                    continue
-
-            validated_paths.append(abs_p)
-
-        if not validated_paths:
-            err_text = (
-                "; ".join(invalid_messages)
-                if invalid_messages
-                else "No valid paths found."
-            )
             self._show_help_button(help_url)
             from app.ui.notifications import notify
 
             notify(f"DropZone error: {err_text}", type="error", help_url=help_url)
-            self.update_status_msg(f"Error: {err_text}", help_url=help_url)
+            self.update_status_msg(f"Protected path blocked: {blocked_items[0]['path']}" if blocked_items else f"Error: {err_text}", help_url=help_url)
             return
 
-        self.update_status_msg(f"Processing {len(validated_paths)} dropped item(s)...")
-        self.run_drop_worker(validated_paths)
+        self.update_status_msg(f"Processing {len(ready_paths)} dropped item(s)...")
+        self.run_drop_worker(ready_paths)
 
     def update_status_msg(self, msg: str, help_url: Optional[str] = None) -> None:
         """Update live status message region and screen reader announcement."""
