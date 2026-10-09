@@ -3646,8 +3646,12 @@ class AutoSorterTUI(A11yMixin, App):
 
             from app.core.metadata import MetadataPass
 
-            def scan_progress_cb(update_or_prog: Any, stage: Optional[str] = None, **kwargs: Any) -> None:
-                self.call_from_thread(self._handle_progress_update, update_or_prog, stage, **kwargs)
+            def scan_progress_cb(
+                update_or_prog: Any, stage: Optional[str] = None, **kwargs: Any
+            ) -> None:
+                self.call_from_thread(
+                    self._handle_progress_update, update_or_prog, stage, **kwargs
+                )
 
             MetadataPass.run(
                 self.base_dir,
@@ -3793,8 +3797,13 @@ class AutoSorterTUI(A11yMixin, App):
     def run_execute_worker(self) -> None:
         """Execute moves in worker thread."""
         try:
-            def move_progress_cb(update_or_prog: Any, stage: Optional[str] = None, **kwargs: Any) -> None:
-                self.call_from_thread(self._handle_progress_update, update_or_prog, stage, **kwargs)
+
+            def move_progress_cb(
+                update_or_prog: Any, stage: Optional[str] = None, **kwargs: Any
+            ) -> None:
+                self.call_from_thread(
+                    self._handle_progress_update, update_or_prog, stage, **kwargs
+                )
 
             summary = self.app_session.execute_moves(
                 self.plan,
