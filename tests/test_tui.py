@@ -1593,3 +1593,126 @@ def test_tui_enter_key_navigates_tree_without_executing_plan(temp_workspace):
 
     asyncio.run(_test())
 
+
+def test_directory_select_modal_demo_preset_auto_creation(temp_workspace, monkeypatch, tmp_path):
+    """Verify selecting Demo Workspace preset auto-creates sandbox/demo_workspace if missing, sets base_dir, and scans."""
+    import shutil
+
+    from app.ui.tui import AutoSorterTUI, DirectorySelectModal
+
+    demo_dir = tmp_path / "sandbox" / "demo_workspace"
+    if demo_dir.exists():
+        shutil.rmtree(demo_dir)
+
+    orig_abspath = os.path.abspath
+
+    def mock_abspath(p):
+        if p == "sandbox/demo_workspace":
+            return str(demo_dir)
+        return orig_abspath(p)
+
+    monkeypatch.setattr(os.path, "abspath", mock_abspath)
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        scan_called = []
+
+        def mock_scan():
+            scan_called.append(True)
+
+        app.action_scan_directory = mock_scan
+
+        async with app.run_test() as pilot:
+            await pilot.press("ctrl+b")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, DirectorySelectModal)
+
+            await pilot.click("#preset-demo")
+            await pilot.pause(0.05)
+
+            assert demo_dir.exists()
+            assert app.base_dir == str(demo_dir)
+            assert len(scan_called) == 1
+
+    asyncio.run(_test())
+
+
+def test_directory_select_modal_preset_creation_error_graceful_handling(temp_workspace, monkeypatch):
+    """Verify permission errors during preset creation are handled gracefully without crashing."""
+    from app.ui.tui import AutoSorterTUI, DirectorySelectModal
+
+    def mock_makedirs(path, exist_ok=True):
+        raise PermissionError("Permission denied creating directory")
+
+    monkeypatch.setattr(os, "makedirs", mock_makedirs)
+
+    orig_exists = os.path.exists
+
+    def mock_exists(p):
+        if "sandbox/demo_workspace" in p:
+            return False
+        return orig_exists(p)
+
+    monkeypatch.setattr(os.path, "exists", mock_exists)
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            await pilot.press("ctrl+b")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, DirectorySelectModal)
+
+            modal = app.screen
+            announcements_before = len(modal.announcements)
+
+            await pilot.click("#preset-demo")
+            await pilot.pause(0.05)
+
+            assert any(
+                "Failed to create directory" in a["message"]
+                for a in modal.announcements[announcements_before:]
+            )
+            assert app.base_dir == str(temp_workspace)
+
+    asyncio.run(_test())
+
+
+def test_directory_select_modal_nonexistent_custom_directory(temp_workspace, tmp_path):
+    """Verify entering a non-existent custom path displays an explicit error notification."""
+    from app.ui.tui import AutoSorterTUI, DirectorySelectModal
+
+    non_existent_path = str(tmp_path / "non_existent_dir_12345")
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        scan_called = []
+        app.action_scan_directory = lambda: scan_called.append(True)
+
+        async with app.run_test() as pilot:
+            await pilot.press("ctrl+b")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, DirectorySelectModal)
+
+            inp = app.screen.query_one("#input-dir")
+            inp.value = non_existent_path
+            await pilot.click("#btn-confirm")
+            await pilot.pause(0.05)
+
+            assert app.base_dir == str(temp_workspace)
+            assert len(scan_called) == 0
+            assert any(
+                "Target directory does not exist" in a["message"]
+                for a in app.announcements
+            )
+
+    asyncio.run(_test())
+
