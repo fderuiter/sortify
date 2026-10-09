@@ -1718,13 +1718,19 @@ class WizardModal(A11yMixin, ModalScreen[None]):
     def on_mount(self) -> None:
         """Focus switch on mount and emit screen reader announcement."""
         self._update_layout(self.size.width)
-        self.query_one("#switch-consent", Switch).focus()
+        try:
+            self.query_one("#switch-consent", Switch).focus()
+        except Exception:
+            pass
         self.announce("Opened model onboarding wizard dialog.")
 
     @on(Button.Pressed, "#btn-finish")
     def action_finish(self) -> None:
         """Finish wizard, save consent settings, and apply selected starter rule templates."""
-        consent = self.query_one("#switch-consent", Switch).value
+        try:
+            consent = self.query_one("#switch-consent", Switch).value
+        except Exception:
+            consent = False
         self.settings.AI_CONSENT_GRANTED = consent
 
         from app.core.rule_templates import (
