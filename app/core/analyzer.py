@@ -78,6 +78,23 @@ class SortingPlan(dict):
     """Pydantic-validated dict representing a complete hierarchical sorting plan."""
 
     def __init__(self, plan: Optional[Dict[str, Any]] = None, **kwargs):
+        self.model_status = kwargs.pop(
+            "model_status", getattr(plan, "model_status", "HEALTHY")
+        )
+        self.degradation_reason = kwargs.pop(
+            "degradation_reason", getattr(plan, "degradation_reason", None)
+        )
+        self.recovery_action = kwargs.pop(
+            "recovery_action", getattr(plan, "recovery_action", None)
+        )
+        self.suggested_recovery_action = kwargs.pop(
+            "suggested_recovery_action",
+            getattr(plan, "suggested_recovery_action", self.recovery_action),
+        )
+        self.failure_reason = kwargs.pop(
+            "failure_reason", getattr(plan, "failure_reason", None)
+        )
+
         if plan is not None and isinstance(plan, dict):
             if "plan" in plan and isinstance(plan["plan"], dict) and len(plan) == 1:
                 target = plan["plan"]
@@ -98,6 +115,35 @@ class SortingPlan(dict):
             super().__init__(validated)
         else:
             super().__init__()
+
+    def __getitem__(self, key: Any) -> Any:
+        """Access dictionary items or fallback to diagnostic telemetry attributes."""
+        if key in (
+            "model_status",
+            "degradation_reason",
+            "recovery_action",
+            "suggested_recovery_action",
+            "failure_reason",
+        ):
+            if key in self:
+                return super().__getitem__(key)
+            return getattr(self, key, None)
+        return super().__getitem__(key)
+
+    def get(self, key: Any, default: Any = None) -> Any:
+        """Get dictionary item or fallback to diagnostic telemetry attributes with default."""
+        if key in (
+            "model_status",
+            "degradation_reason",
+            "recovery_action",
+            "suggested_recovery_action",
+            "failure_reason",
+        ):
+            if key in self:
+                return super().__getitem__(key)
+            val = getattr(self, key, None)
+            return val if val is not None else default
+        return super().get(key, default)
 
     @classmethod
     def model_validate(cls, obj: Any, *args, **kwargs) -> "SortingPlan":
@@ -552,6 +598,69 @@ class IncrementalAnalyzer:
                 new_node[k] = self._inject_hierarchy(v)
         return new_node
 
+    def _build_sorting_plan(self, validated_plan: dict) -> SortingPlan:
+        """Construct a SortingPlan object and attach model health telemetry metadata."""
+        from app.core.shared_registry import SharedModelRegistry
+
+        registry = SharedModelRegistry.get_instance()
+        health_records = registry.get_all_model_health()
+
+        is_degraded = False
+        degradation_reason = None
+        recovery_action = None
+
+        if getattr(self, "embedding_manager", None) and getattr(
+            self.embedding_manager, "is_degraded", False
+        ):
+            is_degraded = True
+            degradation_reason = getattr(
+                self.embedding_manager,
+                "degradation_reason",
+                "Embedding model degraded",
+            )
+            recovery_action = getattr(
+                self.embedding_manager,
+                "suggested_recovery_action",
+                "RE_DOWNLOAD_MODEL",
+            )
+
+        if not is_degraded and health_records:
+            for model_id, record in health_records.items():
+                status = record.get("status")
+                if status in ("DEGRADED_FALLBACK", "FAILED"):
+                    is_degraded = True
+                    degradation_reason = (
+                        record.get("failure_reason")
+                        or f"Model '{model_id}' failed or degraded"
+                    )
+                    recovery_action = (
+                        record.get("suggested_recovery_action")
+                        or "RE_DOWNLOAD_MODEL"
+                    )
+                    break
+
+        plan_kwargs = {"plan": validated_plan}
+        if is_degraded:
+            plan_kwargs["model_status"] = "DEGRADED_FALLBACK"
+            plan_kwargs["degradation_reason"] = degradation_reason
+            plan_kwargs["recovery_action"] = recovery_action
+            plan_kwargs["suggested_recovery_action"] = recovery_action
+
+            try:
+                from app.ui.notifications import NotificationManager
+
+                NotificationManager.get_instance().notify(
+                    message=f"Sorting plan generated in degraded fallback mode: {degradation_reason}",
+                    type="warning",
+                    caption=f"Suggested recovery action: {recovery_action}",
+                )
+            except Exception as notif_err:
+                logging.debug(
+                    f"Failed to dispatch degradation notification: {notif_err}"
+                )
+
+        return SortingPlan(**plan_kwargs)
+
     def generate_sorting_plan(
         self,
         base_dir: str,
@@ -614,7 +723,7 @@ class IncrementalAnalyzer:
                     or os.path.normpath(d[0]).replace("\\", "/") in norm_target_paths
                 ]
             if not docs and not jev_results:
-                return SortingPlan()
+                return self._build_sorting_plan({})
             if docs is None:
                 docs = []
 
@@ -1674,13 +1783,13 @@ class IncrementalAnalyzer:
 
             raw_plan = self._inject_hierarchy(clean_plan)
             validated_plan = _validate_sorting_plan_nodes(raw_plan)
-            return SortingPlan(plan=validated_plan)
+            return self._build_sorting_plan(validated_plan)
 
         except Exception as e:
             logging.error(
                 f"Failed during generate_sorting_plan. Error: {str(e)}", exc_info=True
             )
-            return SortingPlan()
+            return self._build_sorting_plan({})
         finally:
             try:
                 active_strategy_name = self.strategy_name

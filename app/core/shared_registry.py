@@ -585,6 +585,7 @@ class SharedModelRegistry:
         self._lock = threading.RLock()
         self._models = {}
         self._expected_hashes = {}
+        self._model_health = {}
         self._cached_settings = None
         self.apply_onnx_thread_limits()
         try:
@@ -594,6 +595,47 @@ class SharedModelRegistry:
                 self.register_expected_hashes(model_id, file_hashes)
         except ImportError:
             pass
+
+    def record_model_health(
+        self,
+        model_id: str,
+        status: str,
+        failure_reason: str | None = None,
+        suggested_recovery_action: str | None = None,
+    ) -> dict:
+        """Record diagnostic health status for a model in the shared registry."""
+        import time
+
+        with self._lock:
+            record = {
+                "model_id": model_id,
+                "status": status,
+                "failure_reason": failure_reason,
+                "suggested_recovery_action": suggested_recovery_action,
+                "timestamp": time.time(),
+            }
+            self._model_health[model_id] = record
+            return record
+
+    def get_model_health(self, model_id: str) -> dict:
+        """Retrieve diagnostic health status for a specific model."""
+        import time
+
+        with self._lock:
+            if model_id in self._model_health:
+                return dict(self._model_health[model_id])
+            return {
+                "model_id": model_id,
+                "status": "UNINITIALIZED",
+                "failure_reason": None,
+                "suggested_recovery_action": None,
+                "timestamp": time.time(),
+            }
+
+    def get_all_model_health(self) -> dict:
+        """Retrieve diagnostic health status mapping for all registered models."""
+        with self._lock:
+            return {k: dict(v) for k, v in self._model_health.items()}
 
     def get_thread_limit(self) -> int:
         """Get the current thread limit from configuration, falling back to 2."""
@@ -661,6 +703,8 @@ class SharedModelRegistry:
 
     def verify_integrity(self, model_id: str, model_path: str) -> bool:
         """Verify model files against expected hashes if they are registered."""
+        from app.core.exceptions import HashVerificationError
+
         if model_id in self._expected_hashes:
             from app.core.path_utils import is_packaged
 
@@ -671,9 +715,14 @@ class SharedModelRegistry:
                         f"Model path {model_path} does not exist. Skipping integrity check in non-packaged mode."
                     )
                     return True
-                raise FileNotFoundError(
-                    f"Model path {model_path} does not exist for integrity check."
+                reason = f"Model path {model_path} does not exist for integrity check."
+                self.record_model_health(
+                    model_id,
+                    status="FAILED",
+                    failure_reason=reason,
+                    suggested_recovery_action="RE_DOWNLOAD_MODEL",
                 )
+                raise FileNotFoundError(reason)
 
             if os.path.isdir(model_path):
                 for filename, expected_hash in expected.items():
@@ -684,17 +733,29 @@ class SharedModelRegistry:
                                 f"Required model file {file_path} is missing. Skipping integrity check in non-packaged mode."
                             )
                             return True
-                        raise FileNotFoundError(
-                            f"Required model file {file_path} is missing."
+                        reason = f"Required model file {file_path} is missing."
+                        self.record_model_health(
+                            model_id,
+                            status="FAILED",
+                            failure_reason=reason,
+                            suggested_recovery_action="RE_DOWNLOAD_MODEL",
                         )
+                        raise FileNotFoundError(reason)
 
                     from app.core.resilient_file_ops import resilient_file_hash
 
                     actual_hash = resilient_file_hash(file_path)
                     if actual_hash != expected_hash:
-                        raise ValueError(
+                        reason = (
                             f"Integrity check failed for {filename}. Expected {expected_hash}, got {actual_hash}"
                         )
+                        self.record_model_health(
+                            model_id,
+                            status="FAILED",
+                            failure_reason=reason,
+                            suggested_recovery_action="RE_DOWNLOAD_MODEL",
+                        )
+                        raise HashVerificationError(reason)
             else:
                 # Single file
                 from app.core.resilient_file_ops import resilient_file_hash
@@ -705,9 +766,19 @@ class SharedModelRegistry:
                     or list(expected.values())[0]
                 )
                 if actual_hash != expected_hash:
-                    raise ValueError(
-                        f"Integrity check failed. Expected {expected_hash}, got {actual_hash}"
+                    reason = (
+                        f"Integrity check failed for {os.path.basename(model_path)}. "
+                        f"Expected {expected_hash}, got {actual_hash}"
                     )
+                    self.record_model_health(
+                        model_id,
+                        status="FAILED",
+                        failure_reason=reason,
+                        suggested_recovery_action="RE_DOWNLOAD_MODEL",
+                    )
+                    raise HashVerificationError(reason)
+
+        self.record_model_health(model_id, status="HEALTHY")
         return True
 
     def get_ocr_reader(self):

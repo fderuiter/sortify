@@ -3676,7 +3676,15 @@ class AutoSorterTUI(A11yMixin, App):
 
             self.plan = self.app_session.generate_sorting_plan()
             self.call_from_thread(self.rebuild_tree)
-            msg = f"Scan complete. Analyzed {len(files)} files into proposed plan."
+            model_status = getattr(self.plan, "model_status", "HEALTHY")
+            if model_status == "DEGRADED_FALLBACK" or (
+                isinstance(self.plan, dict) and self.plan.get("model_status") == "DEGRADED_FALLBACK"
+            ):
+                reason = getattr(self.plan, "degradation_reason", None) or self.plan.get("degradation_reason") or "Model unavailable"
+                rec_action = getattr(self.plan, "recovery_action", None) or self.plan.get("recovery_action") or "Re-download model bundle"
+                msg = f"Scan complete (DEGRADED FALLBACK MODE: {reason}. Suggested action: {rec_action}). Analyzed {len(files)} files."
+            else:
+                msg = f"Scan complete. Analyzed {len(files)} files into proposed plan."
             self.call_from_thread(self.announce, msg)
         except Exception as e:
             logger.error(f"Error in run_scan_worker: {e}")
