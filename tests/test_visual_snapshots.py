@@ -1,8 +1,11 @@
 """Visual snapshot tests for Textual full-screen terminal user interface and modals."""
 
 import asyncio
+import hashlib
 import os
 import re
+import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock
 
 import pytest
@@ -23,13 +26,23 @@ pytestmark = [pytest.mark.slow, pytest.mark.xdist_group(name="tui")]
 SNAPSHOT_DIR = os.path.join(os.path.dirname(__file__), "snapshots", "tui_svg")
 
 
-def sanitize_svg(svg: str) -> str:
+async def sync_tui_frame(pilot, app=None) -> None:
+    """Synchronize TUI rendering state on event queue idle and frame completion."""
+    await pilot.pause()
+    if hasattr(pilot, "wait_for_scheduled_animations"):
+        await pilot.wait_for_scheduled_animations()
+    if app and hasattr(app, "_test_flush_events"):
+        await app._test_flush_events()
+    await pilot.pause()
+
+
+def sanitize_svg(svg: str, extra_paths: list[str] | None = None) -> str:
     """Sanitize and canonicalize dynamic elements in Textual rendered SVG output.
 
     Normalizes Rich's auto-generated unique element ID prefixes, clock timestamps,
-    Windows path separators, drive letters, filters out unused CSS style declarations,
-    and sorts active style declarations to ensure deterministic baseline snapshot
-    comparisons across operating systems and test execution order.
+    Windows path separators, drive letters, hashes CSS style declarations using content-hashed
+    selectors, strips dynamic temporary paths, and normalizes line endings for deterministic
+    baseline snapshot comparisons across operating systems and test execution order.
     """
     svg = svg.replace("\r\n", "\n")
     svg = re.sub(r"terminal-\d+-", "terminal-test-", svg)
@@ -37,7 +50,7 @@ def sanitize_svg(svg: str) -> str:
     # Normalize cursor blink dim fill color #495259 to standard text fill color #a0a3a6
     svg = svg.replace("fill: #495259", "fill: #a0a3a6")
 
-    # Normalize Windows drive letters, backslashes, and HTML entities in test paths
+    # Unescape HTML path entities
     svg = (
         svg.replace("&#92;", "\\")
         .replace("&bsol;", "\\")
@@ -48,7 +61,61 @@ def sanitize_svg(svg: str) -> str:
         .replace("&#x2F;", "/")
         .replace("&#x2f;", "/")
     )
+
+    # Gather dynamic temporary paths to sanitize to /dummy
+    paths_to_sanitize = []
+    if extra_paths:
+        paths_to_sanitize.extend(extra_paths)
+
+    app_dir = os.environ.get("AUTOSORTER_APP_DIR")
+    if app_dir:
+        paths_to_sanitize.append(app_dir)
+
+    try:
+        from app.config import get_app_dir
+
+        paths_to_sanitize.append(str(get_app_dir()))
+    except Exception:
+        pass
+
+    temp_dir = tempfile.gettempdir()
+    if temp_dir:
+        paths_to_sanitize.append(temp_dir)
+
+    try:
+        home_dir = str(Path.home())
+        paths_to_sanitize.append(home_dir)
+    except Exception:
+        pass
+
+    # Sort paths by length descending so longer subpaths match first
+    for path in sorted(set(paths_to_sanitize), key=len, reverse=True):
+        if not path or len(path) < 2:
+            continue
+        p_norm = path.replace("\\", "/").rstrip("/")
+        p_no_drive = re.sub(r"^[A-Za-z]:", "", p_norm)
+
+        for p in [p_norm, p_no_drive]:
+            if not p or len(p) < 2:
+                continue
+            pattern = re.escape(p).replace("/", r"[/\\]+")
+            pattern_with_drive = r"(?:[A-Za-z]:)?" + pattern
+            svg = re.sub(pattern_with_drive, "/dummy", svg)
+
+    # General pattern match for pytest temp directories and system temp folders
+    svg = re.sub(
+        r"(?:[A-Za-z]:)?[/\\]+(?:private[/\\]+)?(?:var|tmp|temp)[/\\]+pytest-of-[^/\"\s<]+(?:[/\\]+pytest-\d+)?(?:[/\\]+test_[^/\"\s<]+)?",
+        "/dummy",
+        svg,
+    )
+    svg = re.sub(
+        r"(?:[A-Za-z]:)?[/\\]+(?:private[/\\]+)?var[/\\]+folders[/\\]+[^\"\s<]+",
+        "/dummy",
+        svg,
+    )
     svg = re.sub(r"(?:[A-Za-z]:)?[/\\]+dummy", "/dummy", svg)
+
+    # Normalize slashes inside dummy paths
     svg = re.sub(
         r"/dummy([^<\"]*)",
         lambda m: "/dummy" + m.group(1).replace("\\", "/"),
@@ -70,17 +137,23 @@ def sanitize_svg(svg: str) -> str:
             ]
 
             style_map = {}
-            sorted_unique_styles = sorted(
-                list(set(body.strip() for cls, body in used_rules))
-            )
+            unique_styles = {}
 
-            for old_class, style_body in used_rules:
-                style_index = sorted_unique_styles.index(style_body.strip())
-                style_map[old_class] = f"terminal-test-c{style_index}"
+            for old_class, body in used_rules:
+                props = [
+                    p.strip() for p in body.strip().rstrip(";").split(";") if p.strip()
+                ]
+                normalized_body = ";".join(sorted(props))
+                hash_hex = hashlib.sha256(
+                    normalized_body.encode("utf-8")
+                ).hexdigest()[:8]
+                new_class = f"terminal-test-s-{hash_hex}"
+                style_map[old_class] = new_class
+                unique_styles[new_class] = ";".join(props)
 
             new_css_lines = [
-                f"    .terminal-test-c{idx} {{ {body} }}"
-                for idx, body in enumerate(sorted_unique_styles)
+                f"    .{cls} {{ {body} }}"
+                for cls, body in sorted(unique_styles.items())
             ]
             new_css = "\n" + "\n".join(new_css_lines) + "\n    "
             svg = svg.replace(css_text, new_css)
@@ -171,8 +244,7 @@ def test_tui_main_screen_snapshot():
         settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
-            for _ in range(5):
-                await pilot.pause()
+            await sync_tui_frame(pilot, app)
             svg = app.export_screenshot()
             assert_svg_snapshot("tui_main_screen", svg)
 
@@ -216,8 +288,7 @@ def test_tui_populated_plan_snapshot():
                 },
             }
             app.rebuild_tree()
-            for _ in range(5):
-                await pilot.pause()
+            await sync_tui_frame(pilot, app)
             svg = app.export_screenshot()
             assert_svg_snapshot("tui_populated_plan", svg)
 
@@ -234,8 +305,7 @@ def test_wizard_modal_snapshot():
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(WizardModal(app.settings))
-            for _ in range(5):
-                await pilot.pause()
+            await sync_tui_frame(pilot, app)
             svg = app.export_screenshot()
             assert_svg_snapshot("wizard_modal", svg)
 
@@ -253,11 +323,9 @@ def test_settings_modal_snapshot():
         async with app.run_test(size=(100, 35)) as pilot:
             modal = SettingsModal(app.settings)
             app.push_screen(modal)
-            for _ in range(5):
-                await pilot.pause()
+            await sync_tui_frame(pilot, app)
             modal.query_one(".modal-box").scroll_home(animate=False)
-            for _ in range(5):
-                await pilot.pause()
+            await sync_tui_frame(pilot, app)
             svg = app.export_screenshot()
             assert_svg_snapshot("settings_modal", svg)
 
@@ -279,8 +347,7 @@ def test_rename_modal_snapshot():
                 extension=".pdf",
             )
             app.push_screen(modal)
-            for _ in range(5):
-                await pilot.pause()
+            await sync_tui_frame(pilot, app)
             svg = app.export_screenshot()
             assert_svg_snapshot("rename_modal", svg)
 
@@ -298,11 +365,9 @@ def test_cro_forensic_modal_snapshot():
         async with app.run_test(size=(100, 35)) as pilot:
             modal = CROForensicModal(app.settings, base_dir=app.base_dir)
             app.push_screen(modal)
-            for _ in range(5):
-                await pilot.pause()
+            await sync_tui_frame(pilot, app)
             modal.query_one(".modal-box").scroll_home(animate=False)
-            for _ in range(5):
-                await pilot.pause()
+            await sync_tui_frame(pilot, app)
             svg = app.export_screenshot()
             assert_svg_snapshot("cro_forensic_modal", svg)
 
@@ -319,8 +384,7 @@ def test_new_folder_modal_snapshot():
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(NewFolderModal())
-            for _ in range(5):
-                await pilot.pause()
+            await sync_tui_frame(pilot, app)
             svg = app.export_screenshot()
             assert_svg_snapshot("new_folder_modal", svg)
 
@@ -337,9 +401,60 @@ def test_directory_select_modal_snapshot():
         app = AutoSorterTUI(settings=settings, base_dir="/dummy/projects")
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(DirectorySelectModal(current_dir=app.base_dir))
-            for _ in range(5):
-                await pilot.pause()
+            await sync_tui_frame(pilot, app)
             svg = app.export_screenshot()
             assert_svg_snapshot("directory_select_modal", svg)
 
     asyncio.run(_test())
+
+
+def test_sanitize_svg_content_hashed_selectors():
+    """Verify that adding a new CSS declaration to a component changes class selectors
+    for that style without affecting selectors in unrelated rules.
+    """
+    svg_a = """<svg><style>
+    .terminal-123-r0 { fill: #003054 }
+    .terminal-123-r1 { fill: #004578 }
+    </style>
+    <text class="terminal-123-r0">A</text>
+    <text class="terminal-123-r1">B</text>
+    </svg>"""
+
+    sanitized_a = sanitize_svg(svg_a)
+
+    # Calculate expected hashes:
+    hash_r0 = hashlib.sha256("fill: #003054".encode("utf-8")).hexdigest()[:8]
+    hash_r1 = hashlib.sha256("fill: #004578".encode("utf-8")).hexdigest()[:8]
+
+    assert f"terminal-test-s-{hash_r0}" in sanitized_a
+    assert f"terminal-test-s-{hash_r1}" in sanitized_a
+
+    # Modify style r0 by adding font-weight: bold
+    svg_b = """<svg><style>
+    .terminal-123-r0 { fill: #003054; font-weight: bold }
+    .terminal-123-r1 { fill: #004578 }
+    </style>
+    <text class="terminal-123-r0">A</text>
+    <text class="terminal-123-r1">B</text>
+    </svg>"""
+
+    sanitized_b = sanitize_svg(svg_b)
+
+    hash_r0_new = hashlib.sha256("fill: #003054;font-weight: bold".encode("utf-8")).hexdigest()[:8]
+
+    # r0 hash changed
+    assert f"terminal-test-s-{hash_r0_new}" in sanitized_b
+    assert f"terminal-test-s-{hash_r0}" not in sanitized_b
+    # r1 hash remains unchanged!
+    assert f"terminal-test-s-{hash_r1}" in sanitized_b
+
+
+def test_sanitize_svg_dynamic_path_sanitization():
+    """Verify that dynamic temporary paths are sanitized to /dummy."""
+    dynamic_path = "/tmp/pytest-of-runner/pytest-42/test_run_0/workspace/file.txt"
+    svg_input = f"""<svg><text>{dynamic_path}</text></svg>"""
+
+    sanitized = sanitize_svg(svg_input, extra_paths=["/tmp/pytest-of-runner/pytest-42/test_run_0"])
+    assert "/dummy/workspace/file.txt" in sanitized
+    assert "pytest-of-runner" not in sanitized
+
