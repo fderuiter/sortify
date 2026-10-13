@@ -24,7 +24,7 @@ easyocr==1.7.2
     # via smart-autosorter (pyproject.toml)
 et-xmlfile==2.0.0
     # via openpyxl
-filelock==4.0.12
+filelock==4.1.0
     # via torch
 frozenlist==1.8.0
     # via
@@ -37,7 +37,7 @@ idna==3.20
     # via
     #   anyio
     #   yarl
-imageio==2.38.0
+imageio==2.38.1
     # via scikit-image
 jaraco-classes==3.4.0
     # via keyring
@@ -68,11 +68,11 @@ more-itertools==11.1.0
     #   jaraco-functools
 mpmath==1.4.1
     # via sympy
-multidict==7.0.0
+multidict==7.1.0
     # via
     #   aiohttp
     #   yarl
-narwhals==2.26.0
+narwhals==2.27.1
     # via scikit-learn
 networkx==3.7
     # via
@@ -114,17 +114,17 @@ propcache==0.5.4
     #   yarl
 pyclipper==1.4.0
     # via easyocr
-pycparser==3.0
+pycparser==3.11
     # via cffi
-pydantic==2.13.5
+pydantic==2.14.0
     # via pydantic-settings
-pydantic-core==2.49.0
+pydantic-core==2.50.0
     # via pydantic
 pydantic-settings==2.15.0
     # via smart-autosorter (pyproject.toml)
 pylnk3==0.4.3
     # via smart-autosorter (pyproject.toml)
-pypdf==6.19.0
+pypdf==6.20.0
     # via smart-autosorter (pyproject.toml)
 python-bidi==0.6.11
     # via easyocr
@@ -157,7 +157,7 @@ secretstorage==3.5.0
     # via keyring
 setuptools==84.0.0
     # via torch
-shapely==2.1.2
+shapely==2.2.0
     # via easyocr
 six==1.17.0
     # via python-dateutil
