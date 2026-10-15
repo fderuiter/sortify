@@ -222,6 +222,7 @@ async def test_dropzone_remove_and_clear_queue(tmp_path):
 
         # Select first row and move down
         table.move_cursor(row=0)
+        await pilot.pause()
         await pilot.click("#btn-move-down")
         await pilot.pause()
 
@@ -230,6 +231,7 @@ async def test_dropzone_remove_and_clear_queue(tmp_path):
 
         # Remove item at cursor (row 1)
         table.move_cursor(row=1)
+        await pilot.pause()
         await pilot.click("#btn-remove-item")
         await pilot.pause()
 
