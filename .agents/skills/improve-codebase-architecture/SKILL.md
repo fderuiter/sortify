@@ -1,6 +1,6 @@
 ---
 name: improve-codebase-architecture
-description: "Scan a codebase for deepening opportunities, present them as a visual HTML report, then grill through whichever one you pick."
+description: "Scan a codebase for deepening opportunities, present them as a visual Markdown report, then grill through whichever one you pick."
 license: MIT
 metadata:
   author: Matt Pocock
@@ -37,20 +37,20 @@ Then spawn a sub-agent to walk the codebase. Don't follow rigid heuristics; expl
 
 Apply the **deletion test** to anything you suspect is shallow: would deleting it concentrate complexity, or just move it? A "yes, concentrates" is the signal you want.
 
-### 2. Present candidates as an HTML report
+### 2. Present candidates as a Markdown report
 
-Write a self-contained HTML file to the OS temp directory so nothing lands in the repo. Resolve the temp dir from `$TMPDIR`, falling back to `/tmp` (or `%TEMP%` on Windows), and write to `<tmpdir>/architecture-review-<timestamp>.html` so each run gets a fresh file. Open it for the user (`xdg-open <path>` on Linux, `open <path>` on macOS, `start <path>` on Windows) and tell them the absolute path.
+Write a self-contained Markdown file (`ARCHITECTURE-REPORT.md` or output directly to terminal stdout). If saving to disk, save to `ARCHITECTURE-REPORT.md` (or `<tmpdir>/architecture-review-<timestamp>.md`). Display or print the report directly to the terminal without launching external web browsers or fetching web CDN assets.
 
-The report uses **Tailwind via CDN** for layout and styling, and **Mermaid via CDN** for diagrams where a graph/flow/sequence reliably communicates the structure. Mix Mermaid with hand-crafted CSS/SVG visuals: use Mermaid when relationships are graph-shaped (call graphs, dependencies, sequences), and hand-built divs/SVG when you want something more editorial (mass diagrams, cross-sections, collapse animations). Each candidate gets a **before/after visualisation**. Be visual.
+The report uses structured Markdown layout with ASCII/Unicode before/after visual diagrams formatted for standard terminal displays (80-120 column width). Use ASCII/Unicode box-drawing characters (`┌`, `─`, `┐`, `│`, `└`, `┘`, `├`, `┤`, `┬`, `┴`, `┼`, `═`, `║`, `►`, `▲`, `▼`, `◄`) and clean text alignment for diagrams. Each candidate gets a **before/after visualisation**. Be visual within terminal constraints.
 
-For each candidate, render a card with:
+For each candidate, render a section with:
 
 - **Files**: which files/modules are involved
 - **Problem**: why the current architecture is causing friction
 - **Solution**: plain English description of what would change
 - **Benefits**: explained in terms of locality and leverage, and how tests would improve
-- **Before / After diagram**: side-by-side, custom-drawn, illustrating the shallowness and the deepening
-- **Recommendation strength**: one of `Strong`, `Worth exploring`, `Speculative`, rendered as a badge
+- **Before / After diagram**: side-by-side or stacked ASCII/Unicode box diagrams, illustrating the shallowness and the deepening
+- **Recommendation strength**: one of `Strong`, `Worth exploring`, `Speculative`, rendered as a badge or tag (`[Strong]`, `[Worth exploring]`, `[Speculative]`)
 
 End the report with a **Top recommendation** section: which candidate you'd tackle first and why.
 
@@ -58,9 +58,9 @@ End the report with a **Top recommendation** section: which candidate you'd tack
 
 **ADR conflicts**: if a candidate contradicts an existing ADR, only surface it when the friction is real enough to warrant revisiting the ADR. Mark it clearly in the card (e.g. a warning callout: _"contradicts ADR-0007, but worth reopening because…"_). Don't list every theoretical refactor an ADR forbids.
 
-See [HTML-REPORT.md](HTML-REPORT.md) for the full HTML scaffold, diagram patterns, and styling guidance.
+See [ARCHITECTURE-REPORT.md](references/ARCHITECTURE-REPORT.md) for the full Markdown spec, ASCII/Unicode diagram patterns, and terminal layout guidance.
 
-Do NOT propose interfaces yet. After the file is written, ask the user: "Which of these would you like to explore?"
+Do NOT propose interfaces yet. After the report is presented, ask the user: "Which of these would you like to explore?"
 
 ### 3. Grilling loop
 
