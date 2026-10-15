@@ -1,0 +1,12 @@
+flowchart TD
+    query("Database Transaction Request")
+    cache[("Query Cache Layer")]
+    pool[["SQLite Connection Pool"]]
+    storage[("On-Disk Encrypted Database")]
+    query -->|Cache Check| cache
+    cache -->|Cache Miss| pool
+    pool -->|Read / Write| storage
+    click query "docs/api_reference.md#appcoredb" "DB Transaction Request"
+    click cache "docs/api_reference.md#appcorecache" "Query Cache"
+    click pool "docs/api_reference.md#appcoredb_conn" "Connection Pool"
+    click storage tooltip "Encrypted Storage"

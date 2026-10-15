@@ -26,12 +26,18 @@ def extract_metadata_and_payload(snapshot_data: dict) -> tuple[dict, dict]:
     """Separate metadata header from definition payload dictionary."""
     metadata = {}
     if isinstance(snapshot_data, dict):
-        if "_metadata" in snapshot_data and isinstance(snapshot_data["_metadata"], dict):
+        if "_metadata" in snapshot_data and isinstance(
+            snapshot_data["_metadata"], dict
+        ):
             metadata = snapshot_data["_metadata"]
-        elif "metadata" in snapshot_data and isinstance(snapshot_data["metadata"], dict):
+        elif "metadata" in snapshot_data and isinstance(
+            snapshot_data["metadata"], dict
+        ):
             metadata = snapshot_data["metadata"]
 
-    payload = {k: v for k, v in snapshot_data.items() if k not in ("_metadata", "metadata")}
+    payload = {
+        k: v for k, v in snapshot_data.items() if k not in ("_metadata", "metadata")
+    }
     return metadata, payload
 
 
@@ -45,55 +51,112 @@ def parse_annotation_ast(annotation_str: str | None):
     return None
 
 
-def detect_contract_breaking_changes(base_payload: dict, ours_payload: dict, theirs_payload: dict) -> list[str]:
+def detect_contract_breaking_changes(
+    base_payload: dict, ours_payload: dict, theirs_payload: dict
+) -> list[str]:
     """Detect dropped or removed public API signatures relative to ancestor base_payload."""
     errors = []
 
     def check_branch(branch_payload: dict, branch_name: str):
         # 1. Check dropped classes
-        base_classes = {c["class_name"]: c for c in base_payload.get("classes", []) if isinstance(c, dict) and "class_name" in c}
-        branch_classes = {c["class_name"]: c for c in branch_payload.get("classes", []) if isinstance(c, dict) and "class_name" in c}
+        base_classes = {
+            c["class_name"]: c
+            for c in base_payload.get("classes", [])
+            if isinstance(c, dict) and "class_name" in c
+        }
+        branch_classes = {
+            c["class_name"]: c
+            for c in branch_payload.get("classes", [])
+            if isinstance(c, dict) and "class_name" in c
+        }
 
         for c_name, base_cls in base_classes.items():
             if c_name not in branch_classes:
-                errors.append(f"Contract Error ({branch_name}): Public class '{c_name}' was removed or dropped.")
+                errors.append(
+                    f"Contract Error ({branch_name}): Public class '{c_name}' was removed or dropped."
+                )
                 continue
 
             # Check dropped methods
             branch_cls = branch_classes[c_name]
-            base_methods = {m["name"]: m for m in base_cls.get("methods", []) if isinstance(m, dict) and "name" in m}
-            branch_methods = {m["name"]: m for m in branch_cls.get("methods", []) if isinstance(m, dict) and "name" in m}
+            base_methods = {
+                m["name"]: m
+                for m in base_cls.get("methods", [])
+                if isinstance(m, dict) and "name" in m
+            }
+            branch_methods = {
+                m["name"]: m
+                for m in branch_cls.get("methods", [])
+                if isinstance(m, dict) and "name" in m
+            }
 
             for m_name, base_method in base_methods.items():
                 if m_name not in branch_methods:
-                    errors.append(f"Contract Error ({branch_name}): Public method '{c_name}.{m_name}' was removed or dropped.")
+                    errors.append(
+                        f"Contract Error ({branch_name}): Public method '{c_name}.{m_name}' was removed or dropped."
+                    )
                 else:
                     # Check dropped required parameters
                     branch_method = branch_methods[m_name]
-                    base_params = {p["name"]: p for p in base_method.get("parameters", []) if isinstance(p, dict) and "name" in p}
-                    branch_params = {p["name"]: p for p in branch_method.get("parameters", []) if isinstance(p, dict) and "name" in p}
+                    base_params = {
+                        p["name"]: p
+                        for p in base_method.get("parameters", [])
+                        if isinstance(p, dict) and "name" in p
+                    }
+                    branch_params = {
+                        p["name"]: p
+                        for p in branch_method.get("parameters", [])
+                        if isinstance(p, dict) and "name" in p
+                    }
                     for p_name, base_param in base_params.items():
                         parse_annotation_ast(base_param.get("annotation"))
-                        if base_param.get("default") is None and not p_name.startswith("*") and p_name != "self" and p_name != "cls":
+                        if (
+                            base_param.get("default") is None
+                            and not p_name.startswith("*")
+                            and p_name != "self"
+                            and p_name != "cls"
+                        ):
                             if p_name not in branch_params:
-                                errors.append(f"Contract Error ({branch_name}): Required parameter '{p_name}' in method '{c_name}.{m_name}' was removed.")
+                                errors.append(
+                                    f"Contract Error ({branch_name}): Required parameter '{p_name}' in method '{c_name}.{m_name}' was removed."
+                                )
 
         # 2. Check dropped functions
-        base_funcs = {f["name"]: f for f in base_payload.get("functions", []) if isinstance(f, dict) and "name" in f}
-        branch_funcs = {f["name"]: f for f in branch_payload.get("functions", []) if isinstance(f, dict) and "name" in f}
+        base_funcs = {
+            f["name"]: f
+            for f in base_payload.get("functions", [])
+            if isinstance(f, dict) and "name" in f
+        }
+        branch_funcs = {
+            f["name"]: f
+            for f in branch_payload.get("functions", [])
+            if isinstance(f, dict) and "name" in f
+        }
 
         for f_name, base_func in base_funcs.items():
             if f_name not in branch_funcs:
-                errors.append(f"Contract Error ({branch_name}): Public function '{f_name}' was removed or dropped.")
+                errors.append(
+                    f"Contract Error ({branch_name}): Public function '{f_name}' was removed or dropped."
+                )
             else:
                 branch_func = branch_funcs[f_name]
-                base_params = {p["name"]: p for p in base_func.get("parameters", []) if isinstance(p, dict) and "name" in p}
-                branch_params = {p["name"]: p for p in branch_func.get("parameters", []) if isinstance(p, dict) and "name" in p}
+                base_params = {
+                    p["name"]: p
+                    for p in base_func.get("parameters", [])
+                    if isinstance(p, dict) and "name" in p
+                }
+                branch_params = {
+                    p["name"]: p
+                    for p in branch_func.get("parameters", [])
+                    if isinstance(p, dict) and "name" in p
+                }
                 for p_name, base_param in base_params.items():
                     parse_annotation_ast(base_param.get("annotation"))
                     if base_param.get("default") is None and not p_name.startswith("*"):
                         if p_name not in branch_params:
-                            errors.append(f"Contract Error ({branch_name}): Required parameter '{p_name}' in function '{f_name}' was removed.")
+                            errors.append(
+                                f"Contract Error ({branch_name}): Required parameter '{p_name}' in function '{f_name}' was removed."
+                            )
 
     check_branch(ours_payload, "ours")
     check_branch(theirs_payload, "theirs")
@@ -101,20 +164,42 @@ def detect_contract_breaking_changes(base_payload: dict, ours_payload: dict, the
     return errors
 
 
-def write_conflict_file(target_path: str, ours_str: str, theirs_str: str, label_ours="OURS", label_theirs="THEIRS"):
+def write_conflict_file(
+    target_path: str,
+    ours_str: str,
+    theirs_str: str,
+    label_ours="OURS",
+    label_theirs="THEIRS",
+):
     """Write standard Git conflict markers to target_path."""
     content = f"<<<<<<< {label_ours}\n{ours_str}\n=======\n{theirs_str}\n>>>>>>> {label_theirs}\n"
     with open(target_path, "w", encoding="utf-8") as f:
         f.write(content)
 
 
-def merge_json_lists_by_key(base_list: list, ours_list: list, theirs_list: list, key_name: str) -> tuple[bool, list]:
+def merge_json_lists_by_key(
+    base_list: list, ours_list: list, theirs_list: list, key_name: str
+) -> tuple[bool, list]:
     """3-way merge of lists of dictionaries keyed by key_name (e.g. 'class_name' or 'name')."""
-    base_map = {item[key_name]: item for item in base_list if isinstance(item, dict) and key_name in item}
-    ours_map = {item[key_name]: item for item in ours_list if isinstance(item, dict) and key_name in item}
-    theirs_map = {item[key_name]: item for item in theirs_list if isinstance(item, dict) and key_name in item}
+    base_map = {
+        item[key_name]: item
+        for item in base_list
+        if isinstance(item, dict) and key_name in item
+    }
+    ours_map = {
+        item[key_name]: item
+        for item in ours_list
+        if isinstance(item, dict) and key_name in item
+    }
+    theirs_map = {
+        item[key_name]: item
+        for item in theirs_list
+        if isinstance(item, dict) and key_name in item
+    }
 
-    all_keys = sorted(set(base_map.keys()) | set(ours_map.keys()) | set(theirs_map.keys()))
+    all_keys = sorted(
+        set(base_map.keys()) | set(ours_map.keys()) | set(theirs_map.keys())
+    )
     merged_items = []
 
     for k in all_keys:
@@ -155,7 +240,9 @@ def merge_json_lists_by_key(base_list: list, ours_list: list, theirs_list: list,
                     merged_items.append(ours_map[k])
                 else:
                     if key_name == "class_name":
-                        success, merged_cls = merge_class_item({}, ours_map[k], theirs_map[k])
+                        success, merged_cls = merge_class_item(
+                            {}, ours_map[k], theirs_map[k]
+                        )
                         if not success:
                             return False, []
                         merged_items.append(merged_cls)
@@ -165,9 +252,15 @@ def merge_json_lists_by_key(base_list: list, ours_list: list, theirs_list: list,
     return True, merged_items
 
 
-def merge_class_item(base_cls: dict, ours_cls: dict, theirs_cls: dict) -> tuple[bool, dict]:
+def merge_class_item(
+    base_cls: dict, ours_cls: dict, theirs_cls: dict
+) -> tuple[bool, dict]:
     """Merge class definitions including decorators and methods."""
-    class_name = ours_cls.get("class_name") or theirs_cls.get("class_name") or base_cls.get("class_name")
+    class_name = (
+        ours_cls.get("class_name")
+        or theirs_cls.get("class_name")
+        or base_cls.get("class_name")
+    )
 
     # Merge decorators
     ours_decs = ours_cls.get("decorators", [])
@@ -183,7 +276,9 @@ def merge_class_item(base_cls: dict, ours_cls: dict, theirs_cls: dict) -> tuple[
     ours_methods = ours_cls.get("methods", [])
     theirs_methods = theirs_cls.get("methods", [])
 
-    success, merged_methods = merge_json_lists_by_key(base_methods, ours_methods, theirs_methods, "name")
+    success, merged_methods = merge_json_lists_by_key(
+        base_methods, ours_methods, theirs_methods, "name"
+    )
     if not success:
         return False, {}
 
@@ -205,7 +300,9 @@ def merge_cli_calls(base_cli: list, ours_cli: list, theirs_cli: list) -> list:
     return merged
 
 
-def three_way_json_merge(base_data: dict, ours_data: dict, theirs_data: dict) -> tuple[bool, dict]:
+def three_way_json_merge(
+    base_data: dict, ours_data: dict, theirs_data: dict
+) -> tuple[bool, dict]:
     """Perform 3-way merge on JSON snapshot payloads."""
     _, base_payload = extract_metadata_and_payload(base_data)
     _, ours_payload = extract_metadata_and_payload(ours_data)
@@ -219,7 +316,9 @@ def three_way_json_merge(base_data: dict, ours_data: dict, theirs_data: dict) ->
     theirs_classes = theirs_payload.get("classes", [])
 
     if base_classes or ours_classes or theirs_classes:
-        success, merged_classes = merge_json_lists_by_key(base_classes, ours_classes, theirs_classes, "class_name")
+        success, merged_classes = merge_json_lists_by_key(
+            base_classes, ours_classes, theirs_classes, "class_name"
+        )
         if not success:
             return False, {}
         merged_classes.sort(key=lambda c: c.get("class_name", ""))
@@ -231,7 +330,9 @@ def three_way_json_merge(base_data: dict, ours_data: dict, theirs_data: dict) ->
     theirs_funcs = theirs_payload.get("functions", [])
 
     if base_funcs or ours_funcs or theirs_funcs:
-        success, merged_funcs = merge_json_lists_by_key(base_funcs, ours_funcs, theirs_funcs, "name")
+        success, merged_funcs = merge_json_lists_by_key(
+            base_funcs, ours_funcs, theirs_funcs, "name"
+        )
         if not success:
             return False, {}
         merged_funcs.sort(key=lambda f: f.get("name", ""))
@@ -246,7 +347,9 @@ def three_way_json_merge(base_data: dict, ours_data: dict, theirs_data: dict) ->
         merged_payload["cli"] = merge_cli_calls(base_cli, ours_cli, theirs_cli)
 
     # Merge any remaining arbitrary dict keys
-    all_keys = set(base_payload.keys()) | set(ours_payload.keys()) | set(theirs_payload.keys())
+    all_keys = (
+        set(base_payload.keys()) | set(ours_payload.keys()) | set(theirs_payload.keys())
+    )
     for k in all_keys:
         if k in ("classes", "functions", "cli"):
             continue
@@ -268,7 +371,9 @@ def three_way_json_merge(base_data: dict, ours_data: dict, theirs_data: dict) ->
     return True, merged_payload
 
 
-def run_json_merge_driver(ancestor_path: str, current_path: str, incoming_path: str, pathname: str = "") -> int:
+def run_json_merge_driver(
+    ancestor_path: str, current_path: str, incoming_path: str, pathname: str = ""
+) -> int:
     """Run 3-way merge driver for JSON snapshot files."""
     try:
         with open(ancestor_path, "r", encoding="utf-8") as f:
@@ -286,16 +391,24 @@ def run_json_merge_driver(ancestor_path: str, current_path: str, incoming_path: 
     _, theirs_payload = extract_metadata_and_payload(theirs_data)
 
     # Check for contract breaking changes
-    contract_errors = detect_contract_breaking_changes(base_payload, ours_payload, theirs_payload)
+    contract_errors = detect_contract_breaking_changes(
+        base_payload, ours_payload, theirs_payload
+    )
     if contract_errors:
-        print(f"FAIL: Snapshot contract breaking changes detected in '{pathname or current_path}'!", file=sys.stderr)
+        print(
+            f"FAIL: Snapshot contract breaking changes detected in '{pathname or current_path}'!",
+            file=sys.stderr,
+        )
         for err in contract_errors:
             print(f"  - {err}", file=sys.stderr)
         return 1
 
     success, merged_payload = three_way_json_merge(base_data, ours_data, theirs_data)
     if not success:
-        print(f"Conflict: Unresolvable JSON snapshot collision in '{pathname or current_path}'. Writing conflict markers.", file=sys.stderr)
+        print(
+            f"Conflict: Unresolvable JSON snapshot collision in '{pathname or current_path}'. Writing conflict markers.",
+            file=sys.stderr,
+        )
         ours_str = json.dumps(ours_data, indent=2, sort_keys=True)
         theirs_str = json.dumps(theirs_data, indent=2, sort_keys=True)
         write_conflict_file(current_path, ours_str, theirs_str)
@@ -317,7 +430,9 @@ def run_json_merge_driver(ancestor_path: str, current_path: str, incoming_path: 
     return 0
 
 
-def three_way_svg_merge(base_str: str, ours_str: str, theirs_str: str) -> tuple[bool, str]:
+def three_way_svg_merge(
+    base_str: str, ours_str: str, theirs_str: str
+) -> tuple[bool, str]:
     """Perform 3-way merge on SVG snapshot XML strings."""
     if ours_str == theirs_str:
         return True, ours_str
@@ -334,15 +449,23 @@ def three_way_svg_merge(base_str: str, ours_str: str, theirs_str: str) -> tuple[
         return False, ""
 
     # Compare children elements
-    base_children = [ET.tostring(c, encoding="utf-8").decode("utf-8") for c in base_root]
+    base_children = [
+        ET.tostring(c, encoding="utf-8").decode("utf-8") for c in base_root
+    ]
 
     # Check additions in theirs
-    theirs_additions = [c for c in theirs_root if ET.tostring(c, encoding="utf-8").decode("utf-8") not in base_children]
+    theirs_additions = [
+        c
+        for c in theirs_root
+        if ET.tostring(c, encoding="utf-8").decode("utf-8") not in base_children
+    ]
 
     # If roots match and we have additions from both sides
     if ours_root.tag == theirs_root.tag == base_root.tag:
         merged_root = ET.fromstring(ours_str)
-        existing_xml_strings = {ET.tostring(c, encoding="utf-8").decode("utf-8") for c in merged_root}
+        existing_xml_strings = {
+            ET.tostring(c, encoding="utf-8").decode("utf-8") for c in merged_root
+        }
         for add_child in theirs_additions:
             xml_str = ET.tostring(add_child, encoding="utf-8").decode("utf-8")
             if xml_str not in existing_xml_strings:
@@ -357,7 +480,9 @@ def three_way_svg_merge(base_str: str, ours_str: str, theirs_str: str) -> tuple[
     return False, ""
 
 
-def run_svg_merge_driver(ancestor_path: str, current_path: str, incoming_path: str, pathname: str = "") -> int:
+def run_svg_merge_driver(
+    ancestor_path: str, current_path: str, incoming_path: str, pathname: str = ""
+) -> int:
     """Run 3-way merge driver for SVG visual snapshot files."""
     try:
         with open(ancestor_path, "r", encoding="utf-8") as f:
@@ -378,7 +503,10 @@ def run_svg_merge_driver(ancestor_path: str, current_path: str, incoming_path: s
                 f.write("\n")
         return 0
 
-    print(f"Conflict: Unresolvable SVG snapshot collision in '{pathname or current_path}'. Writing conflict markers.", file=sys.stderr)
+    print(
+        f"Conflict: Unresolvable SVG snapshot collision in '{pathname or current_path}'. Writing conflict markers.",
+        file=sys.stderr,
+    )
     write_conflict_file(current_path, ours_str, theirs_str)
     return 1
 
@@ -386,16 +514,34 @@ def run_svg_merge_driver(ancestor_path: str, current_path: str, incoming_path: s
 def run_git_setup():
     """Configure local Git repository with custom merge drivers."""
     cmds = [
-        ["git", "config", "merge.snapshot-json.name", "Snapshot JSON 3-way merge driver"],
-        ["git", "config", "merge.snapshot-json.driver", "python scripts/snapshot_merge_driver.py --mode=json %O %A %B %P"],
+        [
+            "git",
+            "config",
+            "merge.snapshot-json.name",
+            "Snapshot JSON 3-way merge driver",
+        ],
+        [
+            "git",
+            "config",
+            "merge.snapshot-json.driver",
+            "python scripts/snapshot_merge_driver.py --mode=json %O %A %B %P",
+        ],
         ["git", "config", "merge.snapshot-svg.name", "Snapshot SVG 3-way merge driver"],
-        ["git", "config", "merge.snapshot-svg.driver", "python scripts/snapshot_merge_driver.py --mode=svg %O %A %B %P"],
+        [
+            "git",
+            "config",
+            "merge.snapshot-svg.driver",
+            "python scripts/snapshot_merge_driver.py --mode=svg %O %A %B %P",
+        ],
     ]
     for cmd in cmds:
         try:
             subprocess.run(cmd, check=True)
         except Exception as e:
-            print(f"Error executing git config command {' '.join(cmd)}: {e}", file=sys.stderr)
+            print(
+                f"Error executing git config command {' '.join(cmd)}: {e}",
+                file=sys.stderr,
+            )
             sys.exit(1)
 
     print("Successfully configured snapshot merge drivers in git config.")
@@ -413,7 +559,11 @@ def run_cli_resolver(file_path: str = None, diff_only: bool = False):
     else:
         # Scan snapshot directory for files or conflicts
         target_files = []
-        snap_dir = os.path.join(os.path.dirname(os.path.dirname(os.path.abspath(__file__))), "tests", "snapshots")
+        snap_dir = os.path.join(
+            os.path.dirname(os.path.dirname(os.path.abspath(__file__))),
+            "tests",
+            "snapshots",
+        )
         if os.path.exists(snap_dir):
             for root, _, files in os.walk(snap_dir):
                 for file in files:
@@ -431,7 +581,11 @@ def run_cli_resolver(file_path: str = None, diff_only: bool = False):
         try:
             with open(tf, "r", encoding="utf-8") as f:
                 content = f.read()
-                if "<<<<<<<" in content and "=======" in content and ">>>>>>>" in content:
+                if (
+                    "<<<<<<<" in content
+                    and "=======" in content
+                    and ">>>>>>>" in content
+                ):
                     has_conflict = True
         except Exception:
             pass
@@ -454,15 +608,30 @@ def run_cli_resolver(file_path: str = None, diff_only: bool = False):
                         data = json.loads(content)
                         if isinstance(data, dict):
                             meta, payload = extract_metadata_and_payload(data)
-                            classes = [c.get("class_name") for c in payload.get("classes", []) if isinstance(c, dict)]
-                            funcs = [f.get("name") for f in payload.get("functions", []) if isinstance(f, dict)]
+                            classes = [
+                                c.get("class_name")
+                                for c in payload.get("classes", [])
+                                if isinstance(c, dict)
+                            ]
+                            funcs = [
+                                f.get("name")
+                                for f in payload.get("functions", [])
+                                if isinstance(f, dict)
+                            ]
                             print(f"  Checksum: {meta.get('checksum')}")
                             print(f"  Classes ({len(classes)}): {', '.join(classes)}")
                             print(f"  Functions ({len(funcs)}): {', '.join(funcs)}")
                         elif isinstance(data, list):
                             print(f"  JSON list items: {len(data)}")
                         # Generate diff against empty payload baseline for verification
-                        diff = list(difflib.unified_diff([], content.splitlines(), fromfile="Baseline", tofile=rel_p))
+                        diff = list(
+                            difflib.unified_diff(
+                                [],
+                                content.splitlines(),
+                                fromfile="Baseline",
+                                tofile=rel_p,
+                            )
+                        )
                         if diff:
                             print(f"  Diff lines generated: {len(diff)}")
                     elif tf.endswith(".svg"):
@@ -483,24 +652,45 @@ def run_cli_resolver(file_path: str = None, diff_only: bool = False):
             with open(selected, "r", encoding="utf-8") as f:
                 content = f.read()
                 print("Content Preview:")
-                print("----------------------------------------------------------------")
+                print(
+                    "----------------------------------------------------------------"
+                )
                 lines = content.splitlines()
                 for line in lines[:30]:
                     print(line)
                 if len(lines) > 30:
                     print(f"... ({len(lines) - 30} more lines)")
-                print("----------------------------------------------------------------")
+                print(
+                    "----------------------------------------------------------------"
+                )
     except (KeyboardInterrupt, EOFError):
         print("\nExiting interactive resolver.")
         sys.exit(0)
 
 
 def main():
-    parser = argparse.ArgumentParser(description="Git Snapshot 3-Way Merge Driver and Conflict Resolver.")
-    parser.add_argument("--setup", action="store_true", help="Configure local Git config with custom snapshot merge drivers.")
-    parser.add_argument("--cli", action="store_true", help="Run interactive CLI snapshot conflict & diff analysis tool.")
-    parser.add_argument("--mode", choices=["json", "svg", "auto"], default="auto", help="Snapshot mode (json, svg, or auto-detect).")
-    parser.add_argument("args", nargs="*", help="Positional arguments passed by Git: %O %A %B [%P]")
+    parser = argparse.ArgumentParser(
+        description="Git Snapshot 3-Way Merge Driver and Conflict Resolver."
+    )
+    parser.add_argument(
+        "--setup",
+        action="store_true",
+        help="Configure local Git config with custom snapshot merge drivers.",
+    )
+    parser.add_argument(
+        "--cli",
+        action="store_true",
+        help="Run interactive CLI snapshot conflict & diff analysis tool.",
+    )
+    parser.add_argument(
+        "--mode",
+        choices=["json", "svg", "auto"],
+        default="auto",
+        help="Snapshot mode (json, svg, or auto-detect).",
+    )
+    parser.add_argument(
+        "args", nargs="*", help="Positional arguments passed by Git: %O %A %B [%P]"
+    )
 
     parsed, unknown = parser.parse_known_args()
 
@@ -533,9 +723,13 @@ def main():
             mode = "json"
 
     if mode == "svg":
-        code = run_svg_merge_driver(ancestor_path, current_path, incoming_path, pathname)
+        code = run_svg_merge_driver(
+            ancestor_path, current_path, incoming_path, pathname
+        )
     else:
-        code = run_json_merge_driver(ancestor_path, current_path, incoming_path, pathname)
+        code = run_json_merge_driver(
+            ancestor_path, current_path, incoming_path, pathname
+        )
 
     sys.exit(code)
 

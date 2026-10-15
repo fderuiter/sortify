@@ -117,6 +117,10 @@ jobs:
       run: |
         uv run python scripts/prompt_manifest.py verify
 
+    - name: Validate Diagram Specifications and Toolchain
+      run: |
+        uv run python scripts/diagram_toolchain.py verify
+
     - name: Validate Documentation and Integrity
       run: |
         uv run docs --check
