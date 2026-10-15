@@ -2,9 +2,13 @@
 
 import importlib.util
 import types
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
+
+REPO_ROOT = Path(__file__).resolve().parent.parent
+DBAPI2_PATH = str(REPO_ROOT / "app" / "binaries" / "linux" / "sqlcipher3" / "dbapi2.py")
 
 
 class DummyRow:
@@ -27,7 +31,7 @@ def test_load_sqlcipher_native_libraries_failure():
     """Verify that _load_sqlcipher_native_libraries handles ctypes LoadLibrary failures gracefully."""
     spec = importlib.util.spec_from_file_location(
         "linux_dbapi2_fail_libs",
-        "/app/sortify/app/binaries/linux/sqlcipher3/dbapi2.py",
+        DBAPI2_PATH,
     )
     dbapi2 = importlib.util.module_from_spec(spec)
 
@@ -48,7 +52,7 @@ def test_dbapi2_fallback_to_standard_sqlite3_on_loadlibrary_failure():
     """Verify fallback import paths when dynamic shared object loading fails but fallback symbols are available."""
     spec = importlib.util.spec_from_file_location(
         "linux_dbapi2_fallback",
-        "/app/sortify/app/binaries/linux/sqlcipher3/dbapi2.py",
+        DBAPI2_PATH,
     )
     module = importlib.util.module_from_spec(spec)
 
@@ -69,7 +73,7 @@ def test_dbapi2_raises_descriptive_importerror_on_missing_dependencies():
     """Verify that missing SQLCipher library dependencies raise a descriptive ImportError."""
     spec = importlib.util.spec_from_file_location(
         "linux_dbapi2_error",
-        "/app/sortify/app/binaries/linux/sqlcipher3/dbapi2.py",
+        DBAPI2_PATH,
     )
     module = importlib.util.module_from_spec(spec)
 
@@ -102,7 +106,7 @@ def test_load_sqlcipher_native_libraries_success():
     """Verify _load_sqlcipher_native_libraries behavior when ctypes LoadLibrary succeeds."""
     spec = importlib.util.spec_from_file_location(
         "linux_dbapi2_success",
-        "/app/sortify/app/binaries/linux/sqlcipher3/dbapi2.py",
+        DBAPI2_PATH,
     )
     dbapi2 = importlib.util.module_from_spec(spec)
 
