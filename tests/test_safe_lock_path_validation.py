@@ -120,6 +120,7 @@ def test_tui_scan_worker_announces_skipped_invalid_locks():
         announcements.append(msg)
 
     with patch("app.core.session.AppSession", return_value=mock_session), \
+         patch("app.core.scanner.get_files_from_sources", return_value=["bad_doc.txt"]), \
          patch("app.core.scanner.get_files_recursively", return_value=["bad_doc.txt"]), \
          patch("app.core.metadata.MetadataPass.run"), \
          patch.object(app, "call_from_thread", side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs) if callable(fn) else None), \

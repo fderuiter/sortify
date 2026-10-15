@@ -4515,7 +4515,10 @@ class AutoSorterTUI(A11yMixin, App):
                     invalid_locks = self.plan.get("invalid_locks", {}) or {}
 
                 is_invalid_lock = (
-                    filepath in invalid_locks or file_key in invalid_locks
+                    filepath in invalid_locks
+                    or file_key in invalid_locks
+                    or (bool(filepath) and filepath.replace("\\", "/") in invalid_locks)
+                    or (bool(filepath) and os.path.normpath(filepath) in invalid_locks)
                 )
 
                 is_excluded = file_info.get("is_excluded", False)
@@ -4677,7 +4680,12 @@ class AutoSorterTUI(A11yMixin, App):
                 invalid_locks = self.plan.get("invalid_locks", {}) or {}
             filepath_str = data.get("filepath", "")
             key_str = data.get("key", "")
-            lock_err = invalid_locks.get(filepath_str) or invalid_locks.get(key_str)
+            lock_err = (
+                invalid_locks.get(filepath_str)
+                or invalid_locks.get(key_str)
+                or (invalid_locks.get(filepath_str.replace("\\", "/")) if filepath_str else None)
+                or (invalid_locks.get(os.path.normpath(filepath_str)) if filepath_str else None)
+            )
             if lock_err:
                 lines.append(f"[bold error]Lock Warning:[/bold error] {lock_err}")
 
