@@ -137,6 +137,7 @@ def test_write_smoke_test_error_all_blocked_handles_gracefully():
     logger = logging.getLogger("app.main")
     with (
         patch("builtins.open", side_effect=restricted_open_all),
+        patch("tempfile.mkstemp", side_effect=PermissionError("System temp write-restricted!")),
         patch("app.config.get_app_dir", return_value=Path("/mock/home/.autosorter")),
         patch.object(logger, "error") as mock_error,
     ):
@@ -153,6 +154,57 @@ def test_write_smoke_test_error_all_blocked_handles_gracefully():
             "All diagnostic log write options failed" in call_msg
             for call_msg in error_calls
         )
+
+
+def test_write_smoke_test_error_falls_back_to_system_temp_mkstemp(tmp_path, monkeypatch):
+    """Verify system temporary directory fallback uses mkstemp with strict 0o600 permissions when primary and home paths fail."""
+    import os
+    import stat
+
+    # Force primary and user home directory writes to fail
+    def restricted_open(file, mode="r", *args, **kwargs):
+        filepath = str(file)
+        if "smoke_test_error.txt" in filepath:
+            raise PermissionError("Primary and home paths restricted")
+        return open(file, mode, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", restricted_open)
+    monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
+
+    write_smoke_test_error("Fallback system temp error", include_traceback=False)
+
+    # Find the fallback file created in tmp_path
+    created_files = list(tmp_path.glob("smoke_test_error_*.txt"))
+    assert len(created_files) == 1
+    fallback_file = created_files[0]
+
+    assert fallback_file.exists()
+    content = fallback_file.read_text(encoding="utf-8")
+    assert "Fallback system temp error" in content
+
+    # Verify 0o600 permissions on POSIX systems
+    if os.name == "posix":
+        file_mode = stat.S_IMODE(fallback_file.stat().st_mode)
+        assert file_mode == 0o600
+
+
+def test_write_smoke_test_error_sys_temp_chmod_failure_handled_gracefully(tmp_path, monkeypatch):
+    """Verify that if os.chmod fails on non-POSIX or restricted filesystems, fallback writing still completes."""
+    def restricted_open(file, mode="r", *args, **kwargs):
+        filepath = str(file)
+        if "smoke_test_error.txt" in filepath:
+            raise PermissionError("Primary and home paths restricted")
+        return open(file, mode, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", restricted_open)
+    monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
+    monkeypatch.setattr("os.chmod", MagicMock(side_effect=OSError("Operation not supported")))
+
+    write_smoke_test_error("Chmod failure test error", include_traceback=False)
+
+    created_files = list(tmp_path.glob("smoke_test_error_*.txt"))
+    assert len(created_files) == 1
+    assert created_files[0].read_text(encoding="utf-8").strip() == "Chmod failure test error"
 
 
 def test_null_writer_and_reader_stream_properties():

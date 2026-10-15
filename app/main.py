@@ -254,6 +254,8 @@ class ANSIStrippingWriter:
 def write_smoke_test_error(message, include_traceback=False):
     """Write smoke test diagnostic error message and traceback to file."""
     import logging
+    import os
+    import sys
     import tempfile
     import traceback
     from pathlib import Path
@@ -298,42 +300,49 @@ def write_smoke_test_error(message, include_traceback=False):
 
     # Fallback writing sequence
     if not primary_success:
-        fallback_paths = []
+        fallback_success = False
+
+        # 1. Try writing to user home configuration directory
         try:
             app_dir = get_app_dir()
-            fallback_paths.append(
-                ("user home configuration directory", app_dir / "smoke_test_error.txt")
+            app_path = (app_dir / "smoke_test_error.txt").resolve()
+            with open(app_path, "w", encoding="utf-8") as f:
+                f.write(err_str)
+            fallback_success = True
+            logger.warning(
+                f"Diagnostic log fallback write succeeded. Saved to: {app_path}"
             )
         except Exception as e:
             logger.warning(
-                f"Could not resolve user home configuration directory for fallback: {e}"
+                f"Failed to write fallback diagnostic report to user home configuration directory: {e}"
             )
 
-        try:
-            sys_temp_dir = Path(tempfile.gettempdir())
-            fallback_paths.append(
-                ("system temporary directory", sys_temp_dir / "smoke_test_error.txt")
-            )
-        except Exception as e:
-            logger.warning(
-                f"Could not resolve system temporary directory for fallback: {e}"
-            )
-
-        fallback_success = False
-        for desc, path in fallback_paths:
+        # 2. Try writing to system temporary directory with atomic mkstemp and strict 0o600 permissions
+        if not fallback_success:
             try:
-                abs_path = path.resolve()
-                with open(abs_path, "w", encoding="utf-8") as f:
+                sys_temp_dir = tempfile.gettempdir()
+                fd, path_str = tempfile.mkstemp(
+                    prefix="smoke_test_error_", suffix=".txt", dir=sys_temp_dir
+                )
+                abs_path = Path(path_str).resolve()
+                try:
+                    os.chmod(fd, 0o600)
+                except (OSError, AttributeError):
+                    try:
+                        os.chmod(abs_path, 0o600)
+                    except (OSError, AttributeError):
+                        pass
+
+                with os.fdopen(fd, "w", encoding="utf-8") as f:
                     f.write(err_str)
+
                 fallback_success = True
-                # Log the fallback diagnostic log location to the system logger
                 logger.warning(
                     f"Diagnostic log fallback write succeeded. Saved to: {abs_path}"
                 )
-                break
             except Exception as e:
                 logger.warning(
-                    f"Failed to write fallback diagnostic report to {desc} at {path}: {e}"
+                    f"Failed to write fallback diagnostic report to system temporary directory: {e}"
                 )
 
         if not fallback_success:
