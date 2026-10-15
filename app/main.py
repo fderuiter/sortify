@@ -326,11 +326,14 @@ def write_smoke_test_error(message, include_traceback=False):
                 )
                 abs_path = Path(path_str).resolve()
                 try:
-                    os.chmod(fd, 0o600)
-                except (OSError, AttributeError):
+                    if hasattr(os, "fchmod"):
+                        os.fchmod(fd, 0o600)
+                    else:
+                        os.chmod(abs_path, 0o600)
+                except (OSError, AttributeError, TypeError):
                     try:
                         os.chmod(abs_path, 0o600)
-                    except (OSError, AttributeError):
+                    except (OSError, AttributeError, TypeError):
                         pass
 
                 with os.fdopen(fd, "w", encoding="utf-8") as f:
