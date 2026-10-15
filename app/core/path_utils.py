@@ -1,5 +1,6 @@
 """Utility functions for handling paths and sanitizing filenames."""
 
+import functools
 import os
 import re
 import sys
@@ -109,20 +110,19 @@ def _get_short_path_name(path_str: str) -> str | None:
     return None
 
 
-def scrub_user_home_paths(text: str, home_dir: str | Path | None = None) -> str:
-    """Replace all forms of the current user's home directory path with <USER_HOME>."""
-    if not isinstance(text, str) or not text:
-        return text
-
+@functools.lru_cache(maxsize=32)
+def _get_compiled_home_patterns(
+    home_dir_str: str | None,
+    userprofile: str | None,
+    home_env: str | None,
+    homepath: str | None,
+    homedrive: str | None,
+) -> tuple[re.Pattern, ...]:
+    """Resolve user home directory variants and return memoized compiled regex pattern objects."""
     home_dirs = []
 
-    if home_dir is not None:
-        try:
-            hd_str = str(home_dir)
-            if hd_str:
-                home_dirs.append(hd_str)
-        except Exception:
-            pass
+    if home_dir_str:
+        home_dirs.append(home_dir_str)
 
     try:
         ph = str(Path.home())
@@ -138,13 +138,12 @@ def scrub_user_home_paths(text: str, home_dir: str | Path | None = None) -> str:
     except Exception:
         pass
 
-    for env_var in ("USERPROFILE", "HOME", "HOMEPATH"):
-        val = os.environ.get(env_var)
+    for val in (userprofile, home_env, homepath):
         if val and val not in home_dirs:
             home_dirs.append(val)
 
-    if os.environ.get("HOMEDRIVE") and os.environ.get("HOMEPATH"):
-        combined = os.environ.get("HOMEDRIVE") + os.environ.get("HOMEPATH")
+    if homedrive and homepath:
+        combined = homedrive + homepath
         if combined and combined not in home_dirs:
             home_dirs.append(combined)
 
@@ -162,6 +161,7 @@ def scrub_user_home_paths(text: str, home_dir: str | Path | None = None) -> str:
 
     home_dirs = sorted(home_dirs, key=len, reverse=True)
 
+    patterns = []
     for h in home_dirs:
         clean = h.strip("\\/ ")
         if not h or clean in ("", "/", "\\") or len(clean) <= 2:
@@ -185,7 +185,7 @@ def scrub_user_home_paths(text: str, home_dir: str | Path | None = None) -> str:
         if not body_parts:
             continue
 
-        pattern = (
+        pattern_str = (
             r"(?<![a-zA-Z0-9_])"
             + r"(?:[a-zA-Z]:[\/\\]*|[\/\\][a-zA-Z][\/\\]+)?"
             + r"[\/\\]*"
@@ -193,7 +193,39 @@ def scrub_user_home_paths(text: str, home_dir: str | Path | None = None) -> str:
             + r"(?=[\\/]|[^a-zA-Z0-9_-]|$)"
         )
         try:
-            text = re.sub(pattern, "<USER_HOME>", text, flags=re.IGNORECASE)
+            patterns.append(re.compile(pattern_str, flags=re.IGNORECASE))
+        except Exception:
+            pass
+
+    return tuple(patterns)
+
+
+def scrub_user_home_paths(text: str, home_dir: str | Path | None = None) -> str:
+    """Replace all forms of the current user's home directory path with <USER_HOME>."""
+    if not isinstance(text, str) or not text:
+        return text
+
+    home_dir_str = None
+    if home_dir is not None:
+        try:
+            hd_str = str(home_dir)
+            if hd_str:
+                home_dir_str = hd_str
+        except Exception:
+            pass
+
+    userprofile = os.environ.get("USERPROFILE")
+    home_env = os.environ.get("HOME")
+    homepath = os.environ.get("HOMEPATH")
+    homedrive = os.environ.get("HOMEDRIVE")
+
+    patterns = _get_compiled_home_patterns(
+        home_dir_str, userprofile, home_env, homepath, homedrive
+    )
+
+    for pattern in patterns:
+        try:
+            text = pattern.sub("<USER_HOME>", text)
         except Exception:
             pass
 

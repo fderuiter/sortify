@@ -373,7 +373,8 @@ def verify_snapshot_integrity(
         path_str = f" in {snapshot_path}" if snapshot_path else ""
         return (
             False,
-            f"Error: Snapshot file integrity check failed: missing embedded metadata header{path_str}.",
+            f"Error: Snapshot file integrity check failed: missing embedded metadata header{path_str}.\n"
+            f"  To regenerate snapshot baseline files, run: python scripts/validate_signatures.py --regenerate",
             payload,
         )
 
@@ -382,7 +383,8 @@ def verify_snapshot_integrity(
         path_str = f" in {snapshot_path}" if snapshot_path else ""
         return (
             False,
-            f"Error: Snapshot file integrity check failed: missing checksum in metadata header{path_str}.",
+            f"Error: Snapshot file integrity check failed: missing checksum in metadata header{path_str}.\n"
+            f"  To regenerate snapshot baseline files, run: python scripts/validate_signatures.py --regenerate",
             payload,
         )
 
@@ -392,7 +394,8 @@ def verify_snapshot_integrity(
         err = (
             f"Error: Snapshot file integrity verification failed! Checksum mismatch{path_str}.\n"
             f"  Embedded checksum: {embedded_checksum}\n"
-            f"  Computed checksum: {computed_checksum}"
+            f"  Computed checksum: {computed_checksum}\n"
+            f"  To regenerate snapshot baseline files, run: python scripts/validate_signatures.py --regenerate"
         )
         return False, err, payload
 
@@ -599,16 +602,21 @@ def main():
         if not is_valid:
             print(err_msg, file=sys.stderr)
             has_errors = True
-            continue
 
         current_json = json.dumps(m["payload"], indent=2, sort_keys=True)
         snapshot_json = json.dumps(snapshot_payload, indent=2, sort_keys=True)
 
         if current_json != snapshot_json:
-            print(
-                f"FAIL: Signature drift detected in '{m['source_rel']}' ({rel_snap})!",
-                file=sys.stderr,
-            )
+            if is_valid:
+                print(
+                    f"FAIL: Signature drift detected in '{m['source_rel']}' ({rel_snap})!",
+                    file=sys.stderr,
+                )
+            else:
+                print(
+                    f"Signature diff for '{m['source_rel']}' ({rel_snap}):",
+                    file=sys.stderr,
+                )
             print(
                 "----------------------------------------------------------------",
                 file=sys.stderr,
@@ -652,7 +660,7 @@ def main():
                 file=sys.stderr,
             )
             print(
-                f"  python3 {safe_relpath(__file__, BASE_DIR)} --update",
+                "  python scripts/validate_signatures.py --regenerate",
                 file=sys.stderr,
             )
         else:
