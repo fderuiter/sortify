@@ -65,7 +65,9 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
         super().__init__()
         self.settings = settings
         self.base_dir = base_dir
-        self.help_url = "https://docs.smartautosorter.com/troubleshooting/#cro-forensic-ingestion"
+        self.help_url = (
+            "https://docs.smartautosorter.com/troubleshooting/#cro-forensic-ingestion"
+        )
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
@@ -148,13 +150,18 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
         log_w = self.query_one("#log-widget", Log)
         src = self.query_one("#input-source", Input).value.strip()
         tgt = self.query_one("#input-target", Input).value.strip()
-        help_url = "https://docs.smartautosorter.com/troubleshooting/#cro-forensic-ingestion"
+        help_url = (
+            "https://docs.smartautosorter.com/troubleshooting/#cro-forensic-ingestion"
+        )
 
         if not src or not os.path.exists(src):
-            log_w.write_line(f"Error: Source directory does not exist. [Help: {help_url}]")
+            log_w.write_line(
+                f"Error: Source directory does not exist. [Help: {help_url}]"
+            )
             err_msg = "Forensic scan error: Source directory does not exist."
             self._show_help_button(help_url)
             from app.ui.notifications import notify
+
             notify(err_msg, type="error", help_url=help_url)
             if self.app:
                 self.app.call_from_thread(
@@ -194,6 +201,7 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
             err_msg = f"Forensic scan error: {e}"
             self._show_help_button(help_url)
             from app.ui.notifications import notify
+
             notify(err_msg, type="error", help_url=help_url)
             if self.app:
                 self.app.call_from_thread(
@@ -211,6 +219,7 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
             "https://docs.smartautosorter.com/troubleshooting/#cro-forensic-ingestion",
         )
         from app.ui.notifications import notify
+
         notify(f"Opening help link: {url}", type="info", help_url=url)
         self.announce(f"Opened documentation link: {url}")
 

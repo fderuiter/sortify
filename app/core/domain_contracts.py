@@ -145,6 +145,11 @@ class SortingPlanModel(BaseModel):
     """Pydantic v2 contract model for complete sorting plans."""
 
     nodes: Dict[str, Any] = Field(default_factory=dict)
+    model_status: str = "HEALTHY"
+    degradation_reason: Optional[str] = None
+    recovery_action: Optional[str] = None
+    suggested_recovery_action: Optional[str] = None
+    failure_reason: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
 

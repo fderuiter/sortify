@@ -86,7 +86,8 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
     )
 
     p_export = ledger_subparsers.add_parser(
-        "export", help="Export session history transaction records as CSV or JSON audit log"
+        "export",
+        help="Export session history transaction records as CSV or JSON audit log",
     )
     add_ledger_common(p_export)
     p_export.add_argument(
