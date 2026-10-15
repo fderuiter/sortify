@@ -266,6 +266,7 @@ async def test_dropzone_empty_queue_blocking(tmp_path):
         await pilot.pause()
 
         status_lbl = active_modal.query_one("#dropzone-status")
-        assert "No file or folder paths provided" in str(status_lbl.render()) or "No ready files to sort" in str(status_lbl.render())
+        assert "No file or folder paths provided" in str(
+            status_lbl.render()
+        ) or "No ready files to sort" in str(status_lbl.render())
         assert active_modal.processed_result is None
-

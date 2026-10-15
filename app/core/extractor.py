@@ -14,6 +14,7 @@ import pypdf.errors
 from pydantic import BaseModel, ConfigDict
 
 from app.core.extractor_strategies import registry
+from app.core.path_utils import safe_relpath
 from app.core.progress import emit_progress
 from app.core.text_utils import sanitize_text
 
@@ -179,7 +180,7 @@ def extract_file_text(
                     extract_file_text(file_path, settings=settings, fast_triage=False)
                 )
                 if base_dir:
-                    rel_path = os.path.relpath(file_path, base_dir).replace("\\", "/")
+                    rel_path = safe_relpath(file_path, base_dir).replace("\\", "/")
                     f_hash = get_file_hash(file_path)
                     db.upsert_document(base_dir, rel_path, f_hash, full_text)
                     db.update_tfidf_matrix_cache(base_dir)
@@ -211,7 +212,7 @@ def extract_file_text(
                         def _bg_escalation_job():
                             full_text = str(extractor.extract(file_path, **kwargs))
                             if base_dir:
-                                rel_path = os.path.relpath(file_path, base_dir).replace(
+                                rel_path = safe_relpath(file_path, base_dir).replace(
                                     "\\", "/"
                                 )
                                 f_hash = get_file_hash(file_path)
@@ -283,14 +284,17 @@ def process_item_worker(
 ) -> Tuple[str, str, str]:
     """Process a single item, checking hash first, and extract its text content."""
     try:
-        item_path = os.path.join(base_dir, item)
+        from app.core.scanner import parse_item_identifier
+
+        src_root, rel_p = parse_item_identifier(item, default_base_dir=base_dir)
+        item_path = os.path.join(src_root, rel_p) if src_root else item
         if os.path.isfile(item_path):
             _, ext = os.path.splitext(item_path)
             if not registry.is_supported(ext):
                 return item, "[STATUS:UNSUPPORTED]", ""
 
             file_hash = get_file_hash(item_path)
-            doc = db.get_document(base_dir, item)
+            doc = db.get_document(src_root, rel_p) if db else None
             if doc and doc["file_hash"] == file_hash:
                 # Skip extraction if unchanged
                 return item, doc["extracted_text"], file_hash
@@ -299,6 +303,8 @@ def process_item_worker(
                 item_path, settings=settings, progress_callback=progress_callback
             )
             text = str(res)
+            if db:
+                db.upsert_document(src_root, rel_p, file_hash, text)
             return item, text, file_hash
         elif os.path.isdir(item_path):
             return item, item, ""
@@ -326,6 +332,7 @@ async def build_corpus_generator_async(
     settings=None,
     progress_callback: Callable | None = None,
     batch_size: int = 50,
+    source_dirs: list[str] | None = None,
 ):
     """Asynchronously map every item to its text payload sequentially in fixed batches and yield file-by-file.
 
@@ -345,6 +352,8 @@ async def build_corpus_generator_async(
         Optional callback for intra-file progress updates.
     batch_size : int
         Fixed batch size for ingestion (default 50).
+    source_dirs : list[str] | None
+        Optional list of source root directories.
 
     Yields
     ------
@@ -372,13 +381,20 @@ async def build_corpus_generator_async(
                 if cancel_check and cancel_check():
                     break
 
-                item_path = os.path.join(base_dir, item)
+                from app.core.scanner import parse_item_identifier
+
+                src_root, rel_p = parse_item_identifier(item, default_base_dir=base_dir)
+                item_path = os.path.join(src_root, rel_p) if src_root else item
 
                 # 1. Run file hashing in background thread to protect event loop
                 file_hash = await asyncio.to_thread(get_file_hash, item_path)
 
                 # 2. Check cache database
-                doc = await asyncio.to_thread(db.get_document, base_dir, item)
+                doc = (
+                    await asyncio.to_thread(db.get_document, src_root, rel_p)
+                    if db
+                    else None
+                )
                 if doc and doc["file_hash"] == file_hash:
                     # Skip extraction and yield immediately
                     yield item, doc["extracted_text"], file_hash, True
@@ -392,6 +408,12 @@ async def build_corpus_generator_async(
                     progress_callback=progress_callback,
                     cancel_check=cancel_check,
                 )
+
+                extracted_str = str(text)
+                if db:
+                    await asyncio.to_thread(
+                        db.upsert_document, src_root, rel_p, file_hash, extracted_str
+                    )
 
                 yield item, text, file_hash, False
     finally:

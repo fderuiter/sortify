@@ -719,6 +719,25 @@ def is_valid_name(name: str) -> bool:
     return True
 
 
+def safe_relpath(path: str | Path, start: str | Path | None = None) -> str:
+    """Safely compute relative path, handling cross-drive mismatches on Windows gracefully.
+
+    If path and start reside on different drives/mounts on Windows, os.path.relpath
+    raises ValueError. In that scenario, return the normalized absolute path string.
+    """
+    if not path:
+        return ""
+    path_str = str(path)
+    if start is None:
+        return os.path.abspath(path_str)
+    start_str = str(start)
+
+    try:
+        return os.path.relpath(path_str, start_str)
+    except (ValueError, TypeError, Exception):
+        return os.path.abspath(path_str)
+
+
 def is_path_too_long(path: str, limit: int = 260) -> bool:
     """Check if the normalized/absolute target path equals or exceeds 260 characters."""
     if not path:
