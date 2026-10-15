@@ -94,6 +94,9 @@ class SortingPlan(dict):
         self.failure_reason = kwargs.pop(
             "failure_reason", getattr(plan, "failure_reason", None)
         )
+        self.invalid_locks = (
+            kwargs.pop("invalid_locks", getattr(plan, "invalid_locks", {})) or {}
+        )
 
         if plan is not None and isinstance(plan, dict):
             if "plan" in plan and isinstance(plan["plan"], dict) and len(plan) == 1:
@@ -124,10 +127,15 @@ class SortingPlan(dict):
             "recovery_action",
             "suggested_recovery_action",
             "failure_reason",
+            "invalid_locks",
         ):
             if key in self:
                 return super().__getitem__(key)
-            return getattr(self, key, None)
+            return (
+                getattr(self, key, {})
+                if key == "invalid_locks"
+                else getattr(self, key, None)
+            )
         return super().__getitem__(key)
 
     def get(self, key: Any, default: Any = None) -> Any:
@@ -138,6 +146,7 @@ class SortingPlan(dict):
             "recovery_action",
             "suggested_recovery_action",
             "failure_reason",
+            "invalid_locks",
         ):
             if key in self:
                 return super().__getitem__(key)
@@ -150,12 +159,16 @@ class SortingPlan(dict):
         """Validate and construct a SortingPlan from a dictionary or instance."""
         if isinstance(obj, SortingPlan):
             return obj
+        invalid_locks = {}
         if isinstance(obj, BaseModel):
+            invalid_locks = getattr(obj, "invalid_locks", {}) or {}
             obj = obj.model_dump(by_alias=True, exclude_none=True)
         if isinstance(obj, dict):
+            if not invalid_locks and "invalid_locks" in obj:
+                invalid_locks = obj.pop("invalid_locks", {})
             if "plan" in obj and isinstance(obj["plan"], dict) and len(obj) == 1:
-                return cls(obj["plan"])
-            return cls(obj)
+                return cls(obj["plan"], invalid_locks=invalid_locks)
+            return cls(obj, invalid_locks=invalid_locks)
         raise ValueError(f"Cannot validate {type(obj)} as SortingPlan")
 
     @property
@@ -598,7 +611,11 @@ class IncrementalAnalyzer:
                 new_node[k] = self._inject_hierarchy(v)
         return new_node
 
-    def _build_sorting_plan(self, validated_plan: dict) -> SortingPlan:
+    def _build_sorting_plan(
+        self,
+        validated_plan: dict,
+        invalid_locks: Optional[Dict[str, str]] = None,
+    ) -> SortingPlan:
         """Construct a SortingPlan object and attach model health telemetry metadata."""
         from app.core.shared_registry import SharedModelRegistry
 
@@ -640,6 +657,8 @@ class IncrementalAnalyzer:
                     break
 
         plan_kwargs = {"plan": validated_plan}
+        if invalid_locks:
+            plan_kwargs["invalid_locks"] = invalid_locks
         if is_degraded:
             plan_kwargs["model_status"] = "DEGRADED_FALLBACK"
             plan_kwargs["degradation_reason"] = degradation_reason
@@ -689,12 +708,21 @@ class IncrementalAnalyzer:
         -------
             SortingPlan mapping relative file paths to target folder categories or absolute paths.
         """
+        invalid_locks: Dict[str, str] = {}
+        valid_locked_files: Dict[str, str] = {}
         if locked_files:
             from app.core.policy_engine import PolicyEngine
 
             for f, lock_path in locked_files.items():
                 if lock_path:
-                    PolicyEngine.validate_lock_path(lock_path, file_path=f)
+                    is_valid, err_msg = PolicyEngine.validate_lock_path_safe(
+                        lock_path, file_path=f
+                    )
+                    if is_valid:
+                        valid_locked_files[f] = lock_path
+                    else:
+                        invalid_locks[f] = err_msg or "Invalid lock path"
+            locked_files = valid_locked_files
 
         norm_target_paths = None
         if target_paths is not None:
@@ -723,7 +751,7 @@ class IncrementalAnalyzer:
                     or os.path.normpath(d[0]).replace("\\", "/") in norm_target_paths
                 ]
             if not docs and not jev_results:
-                return self._build_sorting_plan({})
+                return self._build_sorting_plan({}, invalid_locks=invalid_locks)
             if docs is None:
                 docs = []
 
@@ -1783,13 +1811,15 @@ class IncrementalAnalyzer:
 
             raw_plan = self._inject_hierarchy(clean_plan)
             validated_plan = _validate_sorting_plan_nodes(raw_plan)
-            return self._build_sorting_plan(validated_plan)
+            return self._build_sorting_plan(
+                validated_plan, invalid_locks=invalid_locks
+            )
 
         except Exception as e:
             logging.error(
                 f"Failed during generate_sorting_plan. Error: {str(e)}", exc_info=True
             )
-            return self._build_sorting_plan({})
+            return self._build_sorting_plan({}, invalid_locks=invalid_locks)
         finally:
             try:
                 active_strategy_name = self.strategy_name

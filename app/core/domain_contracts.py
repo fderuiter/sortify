@@ -150,6 +150,7 @@ class SortingPlanModel(BaseModel):
     recovery_action: Optional[str] = None
     suggested_recovery_action: Optional[str] = None
     failure_reason: Optional[str] = None
+    invalid_locks: Dict[str, str] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow")
 
