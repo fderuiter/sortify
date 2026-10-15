@@ -1,8 +1,13 @@
 {
   "_metadata": {
-    "checksum": "7b325ad727b7bb46ff25fc0b1b80d20492efd4df2b85111dbe2b2505989f3a1d"
+    "checksum": "80acbb92d0bb489edb2adfdc1e672a2fffc4ff5a3c06926181943249fc5fd183"
   },
   "classes": [
+    {
+      "class_name": "ArchiveCorruptionError",
+      "decorators": [],
+      "methods": []
+    },
     {
       "class_name": "ArchiveSafetyError",
       "decorators": [],
@@ -29,7 +34,51 @@
       "methods": []
     },
     {
+      "class_name": "HashVerificationError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "ModelWeightsNotFoundError",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": "'model'",
+              "name": "model_id"
+            },
+            {
+              "annotation": "list[str] | None",
+              "default": "None",
+              "name": "searched_paths"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "message"
+            }
+          ],
+          "returns": "None"
+        }
+      ]
+    },
+    {
       "class_name": "OfflineLoaderError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "OfflineModelLoadError",
       "decorators": [],
       "methods": []
     },
