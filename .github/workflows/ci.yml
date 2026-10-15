@@ -33,7 +33,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --only-group dev --no-install-project
+        uv sync --frozen --only-group dev --no-install-project
 
     - name: Run Dependency Audit
       run: |
@@ -66,7 +66,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --only-group dev
+        uv sync --frozen --only-group dev
 
     - name: Run MyPy Type Check
       run: |
@@ -91,7 +91,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --frozen --all-groups
 
     - name: Lint with Ruff
       run: |
@@ -145,7 +145,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --frozen --all-groups
 
     - name: Terminal Interface Snapshot Validation
       run: |
@@ -261,7 +261,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --only-group dev
+        uv sync --frozen --only-group dev
 
     - name: Deploy Documentation
       if: github.ref == 'refs/heads/main'
@@ -298,12 +298,12 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --frozen --all-groups
 
     - name: Heavy ML and Integration Tests
       shell: bash
       run: |
-        uv sync --all-groups --extra ml
+        uv sync --frozen --all-groups --extra ml
         if ! uv run pytest -m "slow" -n auto --cov --cov-report=term tests/; then
           if [ -f pytest_failures.txt ]; then
             echo "=== PYTEST FAILURES ==="
