@@ -583,6 +583,7 @@ class SharedModelRegistry:
     def __init__(self):
         apply_global_socket_sandbox()
         self._lock = threading.RLock()
+        self._per_model_locks = {}
         self._models = {}
         self._expected_hashes = {}
         self._model_health = {}
@@ -595,6 +596,13 @@ class SharedModelRegistry:
                 self.register_expected_hashes(model_id, file_hashes)
         except ImportError:
             pass
+
+    def _get_model_lock(self, model_id: str) -> threading.Lock:
+        """Get or create a per-model initialization lock."""
+        with self._lock:
+            if model_id not in self._per_model_locks:
+                self._per_model_locks[model_id] = threading.Lock()
+            return self._per_model_locks[model_id]
 
     def record_model_health(
         self,
@@ -682,33 +690,44 @@ class SharedModelRegistry:
 
     def get_onnx_session(self, model_path: str, sess_options=None):
         """Lazily load and return an ONNX InferenceSession with configured thread limits."""
-        with self._lock:
-            model_id = f"onnx_{model_path}"
-            if model_id not in self._models:
-                import onnxruntime as ort
-
-                if sess_options is None:
-                    sess_options = ort.SessionOptions()
-
-                thread_limit = self.get_thread_limit()
-                sess_options.intra_op_num_threads = thread_limit
-                sess_options.inter_op_num_threads = thread_limit
-
-                self._models[model_id] = ort.InferenceSession(model_path, sess_options)
+        model_id = f"onnx_{model_path}"
+        if model_id in self._models and self._models[model_id] is not None:
             return self._models[model_id]
+
+        model_lock = self._get_model_lock(model_id)
+        with model_lock:
+            if model_id in self._models and self._models[model_id] is not None:
+                return self._models[model_id]
+
+            import onnxruntime as ort
+
+            if sess_options is None:
+                sess_options = ort.SessionOptions()
+
+            thread_limit = self.get_thread_limit()
+            sess_options.intra_op_num_threads = thread_limit
+            sess_options.inter_op_num_threads = thread_limit
+
+            session = ort.InferenceSession(model_path, sess_options)
+            with self._lock:
+                self._models[model_id] = session
+            return session
 
     def register_expected_hashes(self, model_id: str, hashes: dict[str, str]):
         """Register expected SHA-256 hashes for files of a model."""
-        self._expected_hashes[model_id] = hashes
+        with self._lock:
+            self._expected_hashes[model_id] = hashes
 
     def verify_integrity(self, model_id: str, model_path: str) -> bool:
         """Verify model files against expected hashes if they are registered."""
         from app.core.exceptions import HashVerificationError
 
-        if model_id in self._expected_hashes:
+        with self._lock:
+            expected = self._expected_hashes.get(model_id)
+
+        if expected:
             from app.core.path_utils import is_packaged
 
-            expected = self._expected_hashes[model_id]
             if not model_path or not os.path.exists(model_path):
                 if not is_packaged():
                     logging.warning(
@@ -781,188 +800,225 @@ class SharedModelRegistry:
 
     def get_ocr_reader(self):
         """Lazily load and return the EasyOCR Reader from registry."""
-        with self._lock:
-            model_id = "easyocr"
-            import sys
+        model_id = "easyocr"
+        import sys
 
-            # Resolve easyocr_dir
-            try:
-                from app.core.offline_loader import OfflineModelLoader
+        # Resolve easyocr_dir
+        try:
+            from app.core.offline_loader import OfflineModelLoader
 
-                easyocr_dir = OfflineModelLoader.resolve_model_path("easyocr")
-            except Exception:
-                if hasattr(sys, "_MEIPASS"):
-                    easyocr_dir = os.path.join(
-                        sys._MEIPASS, "offline_bundle", "easyocr"
+            easyocr_dir = OfflineModelLoader.resolve_model_path("easyocr")
+        except Exception:
+            if hasattr(sys, "_MEIPASS"):
+                easyocr_dir = os.path.join(
+                    sys._MEIPASS, "offline_bundle", "easyocr"
+                )
+            else:
+                try:
+                    from app.core.path_utils import get_base_path
+
+                    base_path = get_base_path(__file__)
+                except Exception:
+                    base_path = os.path.dirname(
+                        os.path.dirname(os.path.abspath(__file__))
                     )
+                local_easyocr_path = os.path.join(
+                    base_path, "offline_bundle", "easyocr"
+                )
+                cwd_easyocr_path = os.path.join(
+                    os.getcwd(), "offline_bundle", "easyocr"
+                )
+                easyocr_path = os.environ.get("EASYOCR_MODULE_PATH")
+                if os.path.exists(local_easyocr_path):
+                    easyocr_dir = local_easyocr_path
+                elif os.path.exists(cwd_easyocr_path):
+                    easyocr_dir = cwd_easyocr_path
+                elif easyocr_path:
+                    easyocr_dir = os.path.join(easyocr_path, "model")
                 else:
-                    try:
-                        from app.core.path_utils import get_base_path
+                    easyocr_dir = os.path.expanduser("~/.EasyOCR/model")
 
-                        base_path = get_base_path(__file__)
-                    except Exception:
-                        base_path = os.path.dirname(
-                            os.path.dirname(os.path.abspath(__file__))
-                        )
-                    local_easyocr_path = os.path.join(
-                        base_path, "offline_bundle", "easyocr"
-                    )
-                    cwd_easyocr_path = os.path.join(
-                        os.getcwd(), "offline_bundle", "easyocr"
-                    )
-                    easyocr_path = os.environ.get("EASYOCR_MODULE_PATH")
-                    if os.path.exists(local_easyocr_path):
-                        easyocr_dir = local_easyocr_path
-                    elif os.path.exists(cwd_easyocr_path):
-                        easyocr_dir = cwd_easyocr_path
-                    elif easyocr_path:
-                        easyocr_dir = os.path.join(easyocr_path, "model")
-                    else:
-                        easyocr_dir = os.path.expanduser("~/.EasyOCR/model")
+        # Get settings
+        from app.config import AppSettings
 
-            # Get settings
-            from app.config import AppSettings
+        settings = getattr(self, "_cached_settings", None) or AppSettings()
 
-            settings = getattr(self, "_cached_settings", None) or AppSettings()
+        # Safely retrieve OCR_LANGUAGES and OCR_GPU_ENABLED, handling mocks/missing attributes
+        raw_langs = getattr(settings, "OCR_LANGUAGES", "en")
+        if not isinstance(raw_langs, str):
+            raw_langs = "en"
 
-            # Safely retrieve OCR_LANGUAGES and OCR_GPU_ENABLED, handling mocks/missing attributes
-            raw_langs = getattr(settings, "OCR_LANGUAGES", "en")
-            if not isinstance(raw_langs, str):
-                raw_langs = "en"
+        langs = [lang.strip() for lang in raw_langs.split(",") if lang.strip()]
+        if not langs:
+            langs = ["en"]
 
-            langs = [lang.strip() for lang in raw_langs.split(",") if lang.strip()]
-            if not langs:
-                langs = ["en"]
+        ocr_gpu_enabled = getattr(settings, "OCR_GPU_ENABLED", False)
+        if not isinstance(ocr_gpu_enabled, bool):
+            ocr_gpu_enabled = False
 
-            ocr_gpu_enabled = getattr(settings, "OCR_GPU_ENABLED", False)
-            if not isinstance(ocr_gpu_enabled, bool):
-                ocr_gpu_enabled = False
+        from app.core.env_helper import is_cuda_available, is_mps_available
 
-            from app.core.env_helper import is_cuda_available, is_mps_available
+        gpu_available = is_cuda_available() or is_mps_available()
+        use_gpu = bool(ocr_gpu_enabled and gpu_available)
 
-            gpu_available = is_cuda_available() or is_mps_available()
-            use_gpu = bool(ocr_gpu_enabled and gpu_available)
+        current_reader_info = self._models.get("easyocr_info")
+        reader = self._models.get(model_id)
+        if reader is not None and current_reader_info == (langs, use_gpu):
+            return reader
 
+        model_lock = self._get_model_lock(model_id)
+        with model_lock:
             current_reader_info = self._models.get("easyocr_info")
-            if model_id not in self._models or current_reader_info != (langs, use_gpu):
-                # Check integrity if expected hashes are registered
-                if model_id in self._expected_hashes:
-                    self.verify_integrity(model_id, easyocr_dir)
+            reader = self._models.get(model_id)
+            if reader is not None and current_reader_info == (langs, use_gpu):
+                return reader
 
+            # Check integrity if expected hashes are registered
+            if model_id in self._expected_hashes:
+                self.verify_integrity(model_id, easyocr_dir)
+
+            try:
+                import easyocr
+                import torch
+
+                torch.set_num_threads(self.get_thread_limit())
+                logging.info(
+                    f"Initializing EasyOCR reader with languages {langs} and gpu={use_gpu}"
+                )
+                reader = easyocr.Reader(
+                    langs,
+                    gpu=use_gpu,
+                    model_storage_directory=easyocr_dir,
+                    download_enabled=False,
+                )
+                info = (langs, use_gpu)
+            except Exception as e:
+                logging.error(
+                    f"Failed to load EasyOCR reader with languages {langs} and gpu={use_gpu}: {e}. Falling back to 'en' and cpu."
+                )
                 try:
                     import easyocr
                     import torch
 
                     torch.set_num_threads(self.get_thread_limit())
-                    logging.info(
-                        f"Initializing EasyOCR reader with languages {langs} and gpu={use_gpu}"
-                    )
-                    self._models[model_id] = easyocr.Reader(
-                        langs,
-                        gpu=use_gpu,
+                    reader = easyocr.Reader(
+                        ["en"],
+                        gpu=False,
                         model_storage_directory=easyocr_dir,
                         download_enabled=False,
                     )
-                    self._models["easyocr_info"] = (langs, use_gpu)
-                except Exception as e:
-                    logging.error(
-                        f"Failed to load EasyOCR reader with languages {langs} and gpu={use_gpu}: {e}. Falling back to 'en' and cpu."
+                    info = (["en"], False)
+                except Exception as ex:
+                    logging.critical(
+                        f"Critical: Fallback EasyOCR initialization failed: {ex}"
                     )
-                    try:
-                        import easyocr
-                        import torch
+                    reader = None
+                    info = (None, None)
 
-                        torch.set_num_threads(self.get_thread_limit())
-                        self._models[model_id] = easyocr.Reader(
-                            ["en"],
-                            gpu=False,
-                            model_storage_directory=easyocr_dir,
-                            download_enabled=False,
-                        )
-                        self._models["easyocr_info"] = (["en"], False)
-                    except Exception as ex:
-                        logging.critical(
-                            f"Critical: Fallback EasyOCR initialization failed: {ex}"
-                        )
-                        self._models[model_id] = None
-                        self._models["easyocr_info"] = (None, None)
+            with self._lock:
+                self._models[model_id] = reader
+                self._models["easyocr_info"] = info
 
-            return self._models[model_id]
+            return reader
 
     def get_generative_model(self, model_path: str):
         """Lazily load and return the generative naming model from registry."""
-        with self._lock:
-            model_id = "generative_naming"
-            if model_id not in self._models:
-                if not model_path or not os.path.exists(model_path):
-                    logging.warning("Offline model bundle path not found.")
-                    return None, None, None
+        model_id = "generative_naming"
+        if model_id in self._models and self._models[model_id] is not None:
+            return self._models[model_id]
 
-                # Models loaded by the shared registry successfully pass SHA-256 integrity checks before execution [cite:cf_009]
-                self.verify_integrity(model_id, model_path)
+        model_lock = self._get_model_lock(model_id)
+        with model_lock:
+            if model_id in self._models and self._models[model_id] is not None:
+                return self._models[model_id]
 
-                try:
-                    # Use block_external_network to ensure offline execution boundaries
-                    with block_external_network():
-                        import torch
-                        from transformers import (
-                            AutoModelForCausalLM,
-                            AutoModelForSeq2SeqLM,
-                            AutoTokenizer,
-                            pipeline,
-                        )
+            if not model_path or not os.path.exists(model_path):
+                logging.warning("Offline model bundle path not found.")
+                return None, None, None
 
-                        torch.set_num_threads(self.get_thread_limit())
+            # Models loaded by the shared registry successfully pass SHA-256 integrity checks before execution [cite:cf_009]
+            self.verify_integrity(model_id, model_path)
 
-                        tokenizer = AutoTokenizer.from_pretrained(
+            try:
+                # Use block_external_network to ensure offline execution boundaries
+                with block_external_network():
+                    import torch
+                    from transformers import (
+                        AutoModelForCausalLM,
+                        AutoModelForSeq2SeqLM,
+                        AutoTokenizer,
+                        pipeline,
+                    )
+
+                    torch.set_num_threads(self.get_thread_limit())
+
+                    tokenizer = AutoTokenizer.from_pretrained(
+                        model_path, local_files_only=True
+                    )
+                    try:
+                        model = AutoModelForSeq2SeqLM.from_pretrained(
                             model_path, local_files_only=True
                         )
-                        try:
-                            model = AutoModelForSeq2SeqLM.from_pretrained(
-                                model_path, local_files_only=True
-                            )
-                            task = "text2text-generation"
-                        except Exception:
-                            model = AutoModelForCausalLM.from_pretrained(
-                                model_path, local_files_only=True
-                            )
-                            task = "text-generation"
-
-                        quantized_model = torch.quantization.quantize_dynamic(
-                            model, {torch.nn.Linear}, dtype=torch.qint8
+                        task = "text2text-generation"
+                    except Exception:
+                        model = AutoModelForCausalLM.from_pretrained(
+                            model_path, local_files_only=True
                         )
+                        task = "text-generation"
 
-                        generator = pipeline(
-                            task, model=quantized_model, tokenizer=tokenizer, device=-1
-                        )
+                    quantized_model = torch.quantization.quantize_dynamic(
+                        model, {torch.nn.Linear}, dtype=torch.qint8
+                    )
 
-                        self._models[model_id] = (generator, task, tokenizer)
-                except Exception as e:
-                    logging.error(f"Failed to load generative model in registry: {e}")
-                    raise e
+                    generator = pipeline(
+                        task, model=quantized_model, tokenizer=tokenizer, device=-1
+                    )
+
+                    gen_tuple = (generator, task, tokenizer)
+                    with self._lock:
+                        self._models[model_id] = gen_tuple
+            except Exception as e:
+                logging.error(f"Failed to load generative model in registry: {e}")
+                raise e
+
             return self._models.get(model_id, (None, None, None))
 
     def get_jev_classifier(self):
         """Lazily load and return the cached singleton JevClassifierEngine instance."""
-        with self._lock:
-            model_id = "jev_classifier"
-            if model_id not in self._models or self._models[model_id] is None:
-                from app.core.jev_classifier import JevClassifierEngine
-
-                self._models[model_id] = JevClassifierEngine()
+        model_id = "jev_classifier"
+        if model_id in self._models and self._models[model_id] is not None:
             return self._models[model_id]
+
+        model_lock = self._get_model_lock(model_id)
+        with model_lock:
+            if model_id in self._models and self._models[model_id] is not None:
+                return self._models[model_id]
+
+            from app.core.jev_classifier import JevClassifierEngine
+
+            engine = JevClassifierEngine()
+            with self._lock:
+                self._models[model_id] = engine
+            return engine
 
     def get_florence_processor(self):
         """Lazily load and return the Florence-2 visual processor wrapper from registry."""
-        with self._lock:
-            model_id = "florence-2"
-            if model_id not in self._models:
-                from app.core.offline_loader import Florence2VisualProcessor
-
-                processor = Florence2VisualProcessor(model_id=model_id)
-                processor.load()
-                self._models[model_id] = processor
+        model_id = "florence-2"
+        if model_id in self._models and self._models[model_id] is not None:
             return self._models[model_id]
+
+        model_lock = self._get_model_lock(model_id)
+        with model_lock:
+            if model_id in self._models and self._models[model_id] is not None:
+                return self._models[model_id]
+
+            from app.core.offline_loader import Florence2VisualProcessor
+
+            processor = Florence2VisualProcessor(model_id=model_id)
+            processor.load()
+            with self._lock:
+                self._models[model_id] = processor
+            return processor
 
     def _free_memory(self):
         """Drop object references, run garbage collection, and clear hardware acceleration buffers."""
@@ -1003,7 +1059,6 @@ class SharedModelRegistry:
         Drops object references, runs garbage collection, and clears hardware acceleration buffers.
         """
         with self._lock:
-            unloaded = False
             keys_to_remove = []
 
             if model_id == "easyocr":
@@ -1011,22 +1066,29 @@ class SharedModelRegistry:
             elif model_id == "onnx":
                 keys_to_remove = [
                     k
-                    for k in self._models
+                    for k in set(self._models.keys()) | set(self._per_model_locks.keys())
                     if k.startswith("onnx_") or k.startswith("tokenizer_")
                 ]
             else:
-                if model_id in self._models:
-                    keys_to_remove.append(model_id)
-                else:
-                    keys_to_remove = [
-                        k
-                        for k in self._models
-                        if k == model_id or k.startswith(f"{model_id}_")
-                    ]
+                keys_to_remove = [
+                    k
+                    for k in set(self._models.keys()) | set(self._per_model_locks.keys())
+                    if k == model_id or k.startswith(f"{model_id}_")
+                ]
 
-            for key in keys_to_remove:
-                if key in self._models:
-                    obj = self._models.pop(key)
+            lock_keys = [k for k in keys_to_remove if k != "easyocr_info"]
+
+        unloaded = False
+        for lock_key in lock_keys:
+            lock = self._get_model_lock(lock_key)
+            with lock:
+                with self._lock:
+                    obj = self._models.pop(lock_key, None)
+                    if lock_key == "easyocr":
+                        self._models.pop("easyocr_info", None)
+                    self._per_model_locks.pop(lock_key, None)
+
+                if obj is not None:
                     unloaded = True
                     if hasattr(obj, "unload") and callable(getattr(obj, "unload")):
                         try:
@@ -1034,22 +1096,39 @@ class SharedModelRegistry:
                         except Exception:
                             pass
 
-            if unloaded:
-                self._free_memory()
+        if unloaded:
+            self._free_memory()
 
-            return unloaded
+        return unloaded
 
     def unload_all_models(self) -> None:
         """Explicitly unload all machine learning models from active memory in a thread-safe manner."""
         with self._lock:
-            for key, obj in list(self._models.items()):
-                if hasattr(obj, "unload") and callable(getattr(obj, "unload")):
-                    try:
-                        obj.unload()
-                    except Exception:
-                        pass
+            lock_keys = [
+                k
+                for k in set(self._models.keys()) | set(self._per_model_locks.keys())
+                if k != "easyocr_info"
+            ]
+
+        for lock_key in lock_keys:
+            lock = self._get_model_lock(lock_key)
+            with lock:
+                with self._lock:
+                    obj = self._models.pop(lock_key, None)
+                    self._per_model_locks.pop(lock_key, None)
+
+                if obj is not None:
+                    if hasattr(obj, "unload") and callable(getattr(obj, "unload")):
+                        try:
+                            obj.unload()
+                        except Exception:
+                            pass
+
+        with self._lock:
             self._models.clear()
-            self._free_memory()
+            self._per_model_locks.clear()
+
+        self._free_memory()
 
 
 class SharedWorkerPool:

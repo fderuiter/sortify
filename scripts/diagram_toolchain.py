@@ -18,10 +18,11 @@ from typing import TYPE_CHECKING, Dict, List, Optional
 if TYPE_CHECKING:
     from app.core.diagram_schema import BaseDiagramSpec
 
-# Add project root to sys.path so we can import app modules
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
-DEFAULT_OUTPUT_DIR = Path("docs/assets/diagrams")
+DEFAULT_OUTPUT_DIR = REPO_ROOT / "docs/assets/diagrams"
 CACHE_FILE_NAME = ".build_cache.json"
 
 
@@ -267,9 +268,14 @@ def validate_mermaid_syntax(mmd_content: str) -> List[str]:
     return errors
 
 
-def check_no_raw_mermaid_in_docs(docs_dir: Path = Path("docs")) -> bool:
+def check_no_raw_mermaid_in_docs(docs_dir: Optional[Path] = None) -> bool:
     """Scan docs directory for raw inline ```mermaid code blocks and return False if any remain."""
     import re
+
+    if docs_dir is None:
+        docs_dir = REPO_ROOT / "docs"
+    elif not docs_dir.is_absolute():
+        docs_dir = REPO_ROOT / docs_dir
 
     if not docs_dir.exists():
         return True
@@ -400,15 +406,15 @@ def parse_and_validate_click_directives(mmd_content: str) -> List[str]:
                 errors.append(f"Line {idx}: Missing node ID in click directive")
                 continue
 
+            # If this is a tooltip-only click directive (e.g., click node_id tooltip "text"), no URL check needed
+            if len(parts) > 2 and parts[2].lower() == "tooltip":
+                continue
+
             # Check for URL in quotes
             m_quotes = re.findall(r'"([^"]*)"', stripped)
             if m_quotes:
                 url_candidate = m_quotes[0]
-                if url_candidate and (
-                    "://" in url_candidate
-                    or url_candidate.startswith(("javascript:", "data:", "vbscript:"))
-                    or ":" in url_candidate
-                ):
+                if url_candidate:
                     try:
                         from app.core.diagram_schema import DiagramNode
 
@@ -417,6 +423,20 @@ def parse_and_validate_click_directives(mmd_content: str) -> List[str]:
                         errors.append(
                             f"Line {idx}: Unsafe or invalid URL in click directive: {ve}"
                         )
+
+                    # Check relative file path target existence if not an absolute URI scheme or hash-only
+                    lower_url = url_candidate.lower()
+                    if not (
+                        lower_url.startswith(("http://", "https://", "mailto:", "file:", "#"))
+                        or "://" in lower_url
+                    ):
+                        file_part = url_candidate.split("#")[0].strip()
+                        if file_part:
+                            target_file = REPO_ROOT / file_part
+                            if not target_file.exists():
+                                errors.append(
+                                    f"Line {idx}: Click directive target file '{file_part}' does not exist relative to REPO_ROOT ({REPO_ROOT})"
+                                )
 
     return errors
 
@@ -464,6 +484,10 @@ def build_diagrams(
     verify_only: bool = False,
 ) -> bool:
     """Compile diagram specifications into .mmd, SVG, and PNG assets."""
+    os.chdir(REPO_ROOT)
+    if not output_dir.is_absolute():
+        output_dir = REPO_ROOT / output_dir
+
     output_dir.mkdir(parents=True, exist_ok=True)
     specs = collect_all_specs()
 
@@ -620,6 +644,7 @@ def build_diagrams(
 
 def main():
     """CLI launcher for diagram toolchain compiler and validator."""
+    os.chdir(REPO_ROOT)
     parser = argparse.ArgumentParser(
         description="Schema-driven Diagram Toolchain & Visual Asset Compiler"
     )

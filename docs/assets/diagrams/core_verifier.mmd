@@ -1,0 +1,20 @@
+flowchart TD
+    plan["Proposed Reorganization Plan"]
+    space{Target Volume Space Check}
+    pathlen{OS Path Length Constraints Check}
+    lock{Source File Access Lock Check}
+    pass_node(["Plan Verified Safe"])
+    fail_node["Verification Error Manifest"]
+    plan --> space
+    space -->|Space OK| pathlen
+    space -->|Disk Space Error| fail_node
+    pathlen -->|Length OK| lock
+    pathlen -->|Length Exceeded| fail_node
+    lock -->|No Locks| pass_node
+    lock -->|File Locked| fail_node
+    click plan "docs/api_reference.md#appcoreverifier" "Plan Spec"
+    click space tooltip "Space Check"
+    click pathlen tooltip "Path Length Check"
+    click lock tooltip "Lock Check"
+    click pass_node tooltip "Verification Passed"
+    click fail_node tooltip "Verification Failed"

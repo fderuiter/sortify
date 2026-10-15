@@ -145,7 +145,7 @@ async def test_autosorter_tui_dropzone_action(tmp_path):
 @pytest.mark.anyio
 async def test_dropzone_staging_table_population_and_filtering(tmp_path):
     """Test staging table population, columns, and filtering unsupported file types."""
-    from textual.widgets import DataTable
+    from textual.widgets import Button, DataTable
 
     settings = DummySettings(tmp_path)
     test_dir = tmp_path / "staging_test"
@@ -182,7 +182,7 @@ async def test_dropzone_staging_table_population_and_filtering(tmp_path):
         assert "Unsupported" in statuses
 
         # Click Filter Unsupported button
-        await pilot.click("#btn-filter-unsupported")
+        active_modal.query_one("#btn-filter-unsupported", Button).press()
         await pilot.pause()
 
         assert len(active_modal.staged_items) == 1
@@ -222,7 +222,7 @@ async def test_dropzone_remove_and_clear_queue(tmp_path):
 
         # Select first row and move down
         table.move_cursor(row=0)
-        await pilot.click("#btn-move-down")
+        active_modal.query_one("#btn-move-down", Button).press()
         await pilot.pause()
 
         assert active_modal.staged_items[0]["filename"] == "doc2.csv"
@@ -230,7 +230,7 @@ async def test_dropzone_remove_and_clear_queue(tmp_path):
 
         # Remove item at cursor (row 1)
         table.move_cursor(row=1)
-        await pilot.click("#btn-remove-item")
+        active_modal.query_one("#btn-remove-item", Button).press()
         await pilot.pause()
 
         assert len(active_modal.staged_items) == 2
