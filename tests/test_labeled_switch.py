@@ -120,7 +120,7 @@ def test_settings_modal_labeled_switch_click_label(tmp_path):
             assert sw_ai.value is False
 
             # Scroll visible and click the label text for AI Consent
-            ls_ai.scroll_visible()
+            ls_ai.scroll_visible(animate=False)
             await pilot.pause(0.05)
             await pilot.click(ls_ai.label_widget)
             await pilot.pause(0.05)
