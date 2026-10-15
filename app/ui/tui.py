@@ -2947,6 +2947,10 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
         color: $warning;
         border: solid $warning;
     }
+    .stat-unverified {
+        color: $text-muted;
+        border: solid $secondary;
+    }
     .filter-row {
         height: 3;
         margin-bottom: 1;
@@ -2991,12 +2995,17 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
             pass_cnt = self.report_data.get("verified_pass_count", 0)
             fail_cnt = self.report_data.get("mismatch_fail_count", 0)
             skip_cnt = self.report_data.get("skipped_count", 0)
+            unverified_cnt = self.report_data.get("unverified_count", 0)
 
             with Horizontal(classes="audit-stats-row"):
                 yield Static(f"Total: {total}", classes="stat-card")
                 yield Static(f"[PASS]: {pass_cnt}", classes="stat-card stat-pass")
                 yield Static(f"[FAIL]: {fail_cnt}", classes="stat-card stat-fail")
                 yield Static(f"[SKIPPED]: {skip_cnt}", classes="stat-card stat-skipped")
+                yield Static(
+                    f"[UNVERIFIED]: {unverified_cnt}",
+                    classes="stat-card stat-unverified",
+                )
 
             with Horizontal(classes="filter-row"):
                 inp = Input(
@@ -3012,6 +3021,7 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
                         ("Verified Pass [PASS]", "VERIFIED_PASS"),
                         ("Mismatch Fail [FAIL]", "MISMATCH_FAIL"),
                         ("Skipped [SKIPPED]", "SKIPPED"),
+                        ("Unverified [UNVERIFIED]", "UNVERIFIED"),
                     ],
                     value="ALL",
                     id="audit-status-filter",
@@ -3061,10 +3071,11 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
         pass_cnt = self.report_data.get("verified_pass_count", 0)
         fail_cnt = self.report_data.get("mismatch_fail_count", 0)
         skip_cnt = self.report_data.get("skipped_count", 0)
+        unverified_cnt = self.report_data.get("unverified_count", 0)
         self.query_one("#audit-search-input", Input).focus()
         self.announce(
             f"Opened Audit Verification Report dialog. {total} total files: "
-            f"{pass_cnt} passed, {fail_cnt} failed, {skip_cnt} skipped."
+            f"{pass_cnt} passed, {fail_cnt} failed, {skip_cnt} skipped, {unverified_cnt} unverified."
         )
 
     def _populate_table(
