@@ -183,6 +183,7 @@ class Settings(BaseSettings):
             if cleaned not in validated:
                 validated.append(cleaned)
         return validated
+
     OCR_LANGUAGES: str = Field(default="en")
     VISION_ENGINE: Literal["easyocr", "florence-2"] = Field(default="easyocr")
     CONFLICT_POLICY: Literal["skip", "rename"] = Field(default="rename")

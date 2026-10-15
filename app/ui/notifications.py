@@ -273,10 +273,9 @@ class NotificationManager:
                 raise RuntimeError("Both TUI toast and log widget dispatch failed")
 
         try:
-            if (
-                threading.current_thread() is getattr(tui_app, "_thread", None)
-                or getattr(tui_app, "is_headless", False)
-            ):
+            if threading.current_thread() is getattr(
+                tui_app, "_thread", None
+            ) or getattr(tui_app, "is_headless", False):
                 _do_notify()
             elif hasattr(tui_app, "call_from_thread"):
                 tui_app.call_from_thread(_do_notify)
