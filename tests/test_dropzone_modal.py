@@ -140,3 +140,129 @@ async def test_autosorter_tui_dropzone_action(tmp_path):
         await pilot.press("escape")
         await pilot.pause()
         assert not isinstance(tui.screen, DropZoneModal)
+
+
+@pytest.mark.anyio
+async def test_dropzone_staging_table_population_and_filtering(tmp_path):
+    """Test staging table population, columns, and filtering unsupported file types."""
+    from textual.widgets import DataTable
+
+    settings = DummySettings(tmp_path)
+    test_dir = tmp_path / "staging_test"
+    test_dir.mkdir()
+
+    valid_doc = test_dir / "report.pdf"
+    valid_doc.write_text("PDF content")
+
+    unsupported_file = test_dir / "image.png"
+    unsupported_file.write_text("PNG image data")
+
+    app = ModalTestApp(settings=settings, base_dir=str(test_dir))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        active_modal = app.screen
+        assert isinstance(active_modal, DropZoneModal)
+
+        # Stage both files
+        active_modal.stage_paths(f"{valid_doc}\n{unsupported_file}")
+        await pilot.pause()
+
+        table = active_modal.query_one("#dropzone-staging-table", DataTable)
+        assert len(active_modal.staged_items) == 2
+        assert table.row_count == 2
+
+        # Check column headers
+        col_labels = [str(col.label) for col in table.columns.values()]
+        assert col_labels == ["Status", "Filename", "Extension", "Size", "Full Path"]
+
+        # Check item statuses
+        statuses = [item["status"] for item in active_modal.staged_items]
+        assert "Ready" in statuses
+        assert "Unsupported" in statuses
+
+        # Click Filter Unsupported button
+        await pilot.click("#btn-filter-unsupported")
+        await pilot.pause()
+
+        assert len(active_modal.staged_items) == 1
+        assert table.row_count == 1
+        assert active_modal.staged_items[0]["status"] == "Ready"
+        assert active_modal.staged_items[0]["filename"] == "report.pdf"
+
+
+@pytest.mark.anyio
+async def test_dropzone_remove_and_clear_queue(tmp_path):
+    """Test removing selected item, reordering items, and clearing queue."""
+    from textual.widgets import Button, DataTable
+
+    settings = DummySettings(tmp_path)
+    test_dir = tmp_path / "queue_test"
+    test_dir.mkdir()
+
+    file1 = test_dir / "doc1.txt"
+    file1.write_text("doc 1")
+    file2 = test_dir / "doc2.csv"
+    file2.write_text("col1,col2")
+    file3 = test_dir / "doc3.docx"
+    file3.write_text("doc 3")
+
+    app = ModalTestApp(settings=settings, base_dir=str(test_dir))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        active_modal = app.screen
+        assert isinstance(active_modal, DropZoneModal)
+
+        active_modal.stage_paths(f"{file1}\n{file2}\n{file3}")
+        await pilot.pause()
+
+        table = active_modal.query_one("#dropzone-staging-table", DataTable)
+        assert table.row_count == 3
+
+        # Select first row and move down
+        table.move_cursor(row=0)
+        await pilot.click("#btn-move-down")
+        await pilot.pause()
+
+        assert active_modal.staged_items[0]["filename"] == "doc2.csv"
+        assert active_modal.staged_items[1]["filename"] == "doc1.txt"
+
+        # Remove item at cursor (row 1)
+        table.move_cursor(row=1)
+        await pilot.click("#btn-remove-item")
+        await pilot.pause()
+
+        assert len(active_modal.staged_items) == 2
+        filenames = [item["filename"] for item in active_modal.staged_items]
+        assert "doc1.txt" not in filenames
+
+        # Clear queue
+        active_modal.query_one("#btn-clear-queue", Button).press()
+        await pilot.pause()
+
+        assert len(active_modal.staged_items) == 0
+        assert table.row_count == 0
+
+
+@pytest.mark.anyio
+async def test_dropzone_empty_queue_blocking(tmp_path):
+    """Test that trying to sort an empty queue blocks execution with error message."""
+    from textual.widgets import Button
+
+    settings = DummySettings(tmp_path)
+    app = ModalTestApp(settings=settings, base_dir=str(tmp_path))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        active_modal = app.screen
+        assert isinstance(active_modal, DropZoneModal)
+
+        # Click Sort Items on empty queue
+        active_modal.query_one("#btn-process", Button).press()
+        await pilot.pause()
+
+        status_lbl = active_modal.query_one("#dropzone-status")
+        assert "No file or folder paths provided" in str(status_lbl.render()) or "No ready files to sort" in str(status_lbl.render())
+        assert active_modal.processed_result is None
+
