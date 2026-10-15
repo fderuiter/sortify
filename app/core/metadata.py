@@ -110,10 +110,13 @@ class MetadataPass:
         callback=None,
         cancel_check=None,
         progress_callback=None,
+        source_dirs=None,
     ) -> list:
         """Run an initial sequential metadata pass to bypass text extraction for matching files."""
-        if not base_dir:
+        if not base_dir and not source_dirs:
             return []
+
+        from app.core.scanner import parse_item_identifier
 
         effective_callback = progress_callback or callback
 
@@ -126,7 +129,7 @@ class MetadataPass:
             policies, key=lambda x: x.get("priority", 0), reverse=True
         )
 
-        docs = db.get_all_documents(base_dir) if db else []
+        docs = db.get_all_documents(base_dir, source_dirs=source_dirs) if db else []
         hash_to_target = {}
         for d in docs:
             if len(d) >= 4 and d[2] and d[3]:
@@ -142,7 +145,8 @@ class MetadataPass:
 
             progress_ratio = (idx + 1) / total_items if total_items > 0 else 1.0
 
-            item_path = os.path.join(base_dir, item)
+            src_root, rel_p = parse_item_identifier(item, default_base_dir=base_dir)
+            item_path = os.path.join(src_root, rel_p) if src_root else item
             try:
                 if not os.path.isfile(item_path):
                     continue
@@ -156,14 +160,14 @@ class MetadataPass:
                 continue
 
             file_hash = get_file_hash(item_path)
-            _, ext = os.path.splitext(item)
+            _, ext = os.path.splitext(rel_p)
             is_supported = registry.is_supported(ext)
 
             matched_target = None
             if file_hash in hash_to_target:
                 matched_target = hash_to_target[file_hash]
             else:
-                filename_only = os.path.basename(item).lower()
+                filename_only = os.path.basename(rel_p).lower()
                 file_path_lower = item_path.lower()
                 halt_evaluation = False
 
@@ -213,7 +217,7 @@ class MetadataPass:
 
             if matched_target:
                 bypassed_files.append(item)
-                docs_to_upsert.append((base_dir, item, file_hash, "[STATUS:BYPASSED]"))
+                docs_to_upsert.append((src_root, rel_p, file_hash, "[STATUS:BYPASSED]"))
                 emit_progress(
                     effective_callback,
                     progress_or_update=progress_ratio,
@@ -225,7 +229,7 @@ class MetadataPass:
                 # Unsupported extension format without matching rules: mark as UNSUPPORTED and bypass heavy text extraction
                 bypassed_files.append(item)
                 docs_to_upsert.append(
-                    (base_dir, item, file_hash, "[STATUS:UNSUPPORTED]")
+                    (src_root, rel_p, file_hash, "[STATUS:UNSUPPORTED]")
                 )
                 emit_progress(
                     effective_callback,

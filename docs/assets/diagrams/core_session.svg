@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="430" viewBox="0 0 800 430">
+  <rect width="100%" height="100%" fill="#f8fafc" rx="8" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="20" y="40" font-family="sans-serif" font-size="18" font-weight="bold" fill="#0f172a">Session Lifecycle Subsystem Workflow</text>
+  <text x="20" y="70" font-family="sans-serif" font-size="12" fill="#64748b">Mermaid Diagram Specification (Fallback View):</text>
+  <foreignObject x="20" y="90" width="760" height="210">
+    <pre xmlns="http://www.w3.org/1999/xhtml" style="font-family: monospace; font-size: 12px; color: #334155; background: #ffffff; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; overflow: auto; height: 180px;">flowchart TD
+start("Initialize Application Session")
+bootstrap[["User Space Bootstrap"]]
+scanner["Directory Scanner Instance"]
+analyzer["Document Analyzer Instance"]
+state[("Active Session Model")]
+start --&gt; bootstrap
+bootstrap --&gt; scanner
+bootstrap --&gt; analyzer
+scanner --&gt; state
+analyzer --&gt; state
+click start "docs/api_reference.md#appcoresession" "Session Start"
+click bootstrap "docs/api_reference.md#appcoreuser_space_bootstrap" "Bootstrap Exec"
+click scanner "docs/api_reference.md#appcorescanner" "Scanner Instance"
+click analyzer "docs/api_reference.md#appcoreanalyzer" "Analyzer Instance"</pre>
+  </foreignObject>
+    <a href="docs/api_reference.md#appcoresession" style="color: #2563eb; text-decoration: underline;"><text x="20" y="320" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node start -&gt; Session Start</text></a>
+    <a href="docs/api_reference.md#appcoreuser_space_bootstrap" style="color: #2563eb; text-decoration: underline;"><text x="20" y="338" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node bootstrap -&gt; Bootstrap Exec</text></a>
+    <a href="docs/api_reference.md#appcorescanner" style="color: #2563eb; text-decoration: underline;"><text x="20" y="356" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node scanner -&gt; Scanner Instance</text></a>
+    <a href="docs/api_reference.md#appcoreanalyzer" style="color: #2563eb; text-decoration: underline;"><text x="20" y="374" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node analyzer -&gt; Analyzer Instance</text></a>
+    <a href="Session Model State" style="color: #2563eb; text-decoration: underline;"><text x="20" y="392" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node state -&gt; Session Model State</text></a>
+</svg>

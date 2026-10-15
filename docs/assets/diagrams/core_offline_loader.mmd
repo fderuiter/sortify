@@ -1,0 +1,16 @@
+flowchart TD
+    check{Offline Bundle Inspection}
+    load[["Load Pre-packaged Weights"]]
+    verify{Integrity Checksum Validation}
+    hydrate(["Hydrate FastEmbed Engine"])
+    fallback["Fallback Non-Semantic Parser"]
+    check -->|Bundle Present| load
+    load -->|Validate SHA256| verify
+    verify -->|Valid Checksum| hydrate
+    check -->|Bundle Missing| fallback
+    verify -->|Checksum Mismatch| fallback
+    click check "docs/user_guide.md#offline-non-semantic-mode" "Offline Bundle Inspection"
+    click load "docs/api_reference.md#appcoreoffline_loader" "Load Weights"
+    click verify "docs/api_reference.md#appcorecrypto" "Verify Checksum"
+    click hydrate "docs/api_reference.md#appcoresemantic_embeddings" "Hydrate Embeddings Engine"
+    click fallback tooltip "Fallback Mode"

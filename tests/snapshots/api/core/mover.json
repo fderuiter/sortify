@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "5858c02f137dc3e8bfe35132145665f2d83b4ecbfd97ca682c1ea9897797d44e"
+    "checksum": "9b1fe6aaabec75b73976e6cf514f163056774d0de05ae76513ff99aac5e2f5fb"
   },
   "classes": [
     {
@@ -181,6 +181,11 @@
           "annotation": null,
           "default": "None",
           "name": "progress_callback"
+        },
+        {
+          "annotation": "list[str] | None",
+          "default": "None",
+          "name": "source_dirs"
         }
       ],
       "returns": "dict"

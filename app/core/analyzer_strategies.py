@@ -1519,7 +1519,9 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 model_status=getattr(self, "degradation_state", "HEALTHY"),
                 degradation_reason=getattr(self, "degradation_reason", None),
                 recovery_action=getattr(self, "suggested_recovery_action", None),
-                suggested_recovery_action=getattr(self, "suggested_recovery_action", None),
+                suggested_recovery_action=getattr(
+                    self, "suggested_recovery_action", None
+                ),
             ),
             error,
         )

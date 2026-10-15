@@ -5,8 +5,9 @@ import os
 import sys
 from pathlib import Path
 
-# Add project root to sys.path so we can import app modules
-sys.path.insert(0, os.path.abspath(os.path.join(os.path.dirname(__file__), "..")))
+REPO_ROOT = Path(__file__).resolve().parent.parent
+if str(REPO_ROOT) not in sys.path:
+    sys.path.insert(0, str(REPO_ROOT))
 
 
 def get_python_executable():
@@ -651,6 +652,7 @@ def validate_mermaid_diagrams():
 
 
 def main():
+    os.chdir(REPO_ROOT)
     import argparse
     import subprocess
     import traceback
