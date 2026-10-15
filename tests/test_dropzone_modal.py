@@ -145,7 +145,7 @@ async def test_autosorter_tui_dropzone_action(tmp_path):
 @pytest.mark.anyio
 async def test_dropzone_staging_table_population_and_filtering(tmp_path):
     """Test staging table population, columns, and filtering unsupported file types."""
-    from textual.widgets import DataTable
+    from textual.widgets import Button, DataTable
 
     settings = DummySettings(tmp_path)
     test_dir = tmp_path / "staging_test"
@@ -182,7 +182,7 @@ async def test_dropzone_staging_table_population_and_filtering(tmp_path):
         assert "Unsupported" in statuses
 
         # Click Filter Unsupported button
-        await pilot.click("#btn-filter-unsupported")
+        active_modal.query_one("#btn-filter-unsupported", Button).press()
         await pilot.pause()
 
         assert len(active_modal.staged_items) == 1
@@ -265,6 +265,7 @@ async def test_dropzone_empty_queue_blocking(tmp_path):
         await pilot.pause()
 
         status_lbl = active_modal.query_one("#dropzone-status")
-        assert "No file or folder paths provided" in str(status_lbl.render()) or "No ready files to sort" in str(status_lbl.render())
+        assert "No file or folder paths provided" in str(
+            status_lbl.render()
+        ) or "No ready files to sort" in str(status_lbl.render())
         assert active_modal.processed_result is None
-

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "741d215000dcc6d99eddd9e3ff1ac5205310736dd01c16a371f6b8c3701ec1c0"
+    "checksum": "c13d2693ee749943aed8c40e86a8baa680fa04179c2e8e21c3dfd150a52d6977"
   },
   "classes": [],
   "functions": [
@@ -107,6 +107,24 @@
         }
       ],
       "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "safe_relpath",
+      "parameters": [
+        {
+          "annotation": "str | Path",
+          "default": null,
+          "name": "path"
+        },
+        {
+          "annotation": "str | Path | None",
+          "default": "None",
+          "name": "start"
+        }
+      ],
+      "returns": "str"
     },
     {
       "async": false,

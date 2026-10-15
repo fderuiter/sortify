@@ -1609,7 +1609,9 @@ def test_tui_enter_key_navigates_tree_without_executing_plan(temp_workspace):
     asyncio.run(_test())
 
 
-def test_directory_select_modal_demo_preset_auto_creation(temp_workspace, monkeypatch, tmp_path):
+def test_directory_select_modal_demo_preset_auto_creation(
+    temp_workspace, monkeypatch, tmp_path
+):
     """Verify selecting Demo Workspace preset auto-creates sandbox/demo_workspace if missing, sets base_dir, and scans."""
     import shutil
 
@@ -1655,7 +1657,9 @@ def test_directory_select_modal_demo_preset_auto_creation(temp_workspace, monkey
     asyncio.run(_test())
 
 
-def test_directory_select_modal_preset_creation_error_graceful_handling(temp_workspace, monkeypatch):
+def test_directory_select_modal_preset_creation_error_graceful_handling(
+    temp_workspace, monkeypatch
+):
     """Verify permission errors during preset creation are handled gracefully without crashing."""
     from app.ui.tui import AutoSorterTUI, DirectorySelectModal
 
@@ -1730,4 +1734,3 @@ def test_directory_select_modal_nonexistent_custom_directory(temp_workspace, tmp
             )
 
     asyncio.run(_test())
-
