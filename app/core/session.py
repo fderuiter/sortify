@@ -306,7 +306,11 @@ class AppSession:
         if not self.base_dir and not self.source_dirs:
             return {}
         locked = {}
-        dirs_to_check = self.source_dirs if self.source_dirs else ([self.base_dir] if self.base_dir else [])
+        dirs_to_check = (
+            self.source_dirs
+            if self.source_dirs
+            else ([self.base_dir] if self.base_dir else [])
+        )
         for s_dir in dirs_to_check:
             _, lk, _, _ = self.cache_manager.load_cache(s_dir)
             if lk:

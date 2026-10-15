@@ -712,7 +712,9 @@ class ReassignModal(A11yMixin, ModalScreen[Optional[str]]):
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
-            yield Label(f"Reassign {self.count} Selected File(s)", classes="modal-title")
+            yield Label(
+                f"Reassign {self.count} Selected File(s)", classes="modal-title"
+            )
             yield Label("Select Existing Target Folder:")
             options = [(f, f) for f in sorted(self.existing_folders)]
             if options:
@@ -834,9 +836,7 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     }
     """
 
-    def __init__(
-        self, current_dir: str = "", source_dirs: Optional[List[str]] = None
-    ):
+    def __init__(self, current_dir: str = "", source_dirs: Optional[List[str]] = None):
         super().__init__()
         self.current_dir = current_dir
         self.added_via_btn = False
@@ -2373,15 +2373,21 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
             table = DataTable(id="dropzone-staging-table")
             table.cursor_type = "row"
-            table.tooltip = "Interactive staging queue displaying file status and details"
+            table.tooltip = (
+                "Interactive staging queue displaying file status and details"
+            )
             yield table
 
             with Horizontal(classes="queue-row"):
-                btn_filter = Button("Filter Unsupported", id="btn-filter-unsupported", variant="warning")
+                btn_filter = Button(
+                    "Filter Unsupported", id="btn-filter-unsupported", variant="warning"
+                )
                 btn_filter.tooltip = "Remove unsupported file formats from the queue"
                 yield btn_filter
 
-                btn_remove = Button("Remove Item", id="btn-remove-item", variant="error")
+                btn_remove = Button(
+                    "Remove Item", id="btn-remove-item", variant="error"
+                )
                 btn_remove.tooltip = "Remove the selected row from the staging table"
                 yield btn_remove
 
@@ -2393,7 +2399,9 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 btn_down.tooltip = "Move selected item down in queue priority"
                 yield btn_down
 
-                btn_clear = Button("Clear Queue", id="btn-clear-queue", variant="default")
+                btn_clear = Button(
+                    "Clear Queue", id="btn-clear-queue", variant="default"
+                )
                 btn_clear.tooltip = "Clear all staged items from the modal"
                 yield btn_clear
 
@@ -2480,7 +2488,9 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
         from app.core.scanner import get_files_recursively
 
-        protected = getattr(self.settings, "PROTECTED_PATHS", []) if self.settings else []
+        protected = (
+            getattr(self.settings, "PROTECTED_PATHS", []) if self.settings else []
+        )
         new_count = 0
 
         for item in raw_items:
@@ -2534,14 +2544,16 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         size_str = self._format_size(size_bytes)
 
         if not any(item["path"] == abs_p for item in self.staged_items):
-            self.staged_items.append({
-                "path": abs_p,
-                "filename": filename,
-                "extension": ext,
-                "size": size_bytes,
-                "size_str": size_str,
-                "status": status,
-            })
+            self.staged_items.append(
+                {
+                    "path": abs_p,
+                    "filename": filename,
+                    "extension": ext,
+                    "size": size_bytes,
+                    "size_str": size_str,
+                    "status": status,
+                }
+            )
 
     def filter_unsupported_items(self) -> None:
         """Remove items with 'Unsupported' status from the queue."""
@@ -2594,7 +2606,9 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 table.move_cursor(row=row_idx - 1)
             except Exception:
                 pass
-            self.update_status_msg(f"Moved '{self.staged_items[row_idx - 1]['filename']}' up in queue priority.")
+            self.update_status_msg(
+                f"Moved '{self.staged_items[row_idx - 1]['filename']}' up in queue priority."
+            )
 
     def move_selected_item_down(self) -> None:
         """Move selected queue item down in priority."""
@@ -2614,7 +2628,9 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 table.move_cursor(row=row_idx + 1)
             except Exception:
                 pass
-            self.update_status_msg(f"Moved '{self.staged_items[row_idx + 1]['filename']}' down in queue priority.")
+            self.update_status_msg(
+                f"Moved '{self.staged_items[row_idx + 1]['filename']}' down in queue priority."
+            )
 
     def clear_queue(self) -> None:
         """Clear all staged items from modal queue."""
@@ -2731,7 +2747,12 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             from app.ui.notifications import notify
 
             notify(f"DropZone error: {err_text}", type="error", help_url=help_url)
-            self.update_status_msg(f"Protected path blocked: {blocked_items[0]['path']}" if blocked_items else f"Error: {err_text}", help_url=help_url)
+            self.update_status_msg(
+                f"Protected path blocked: {blocked_items[0]['path']}"
+                if blocked_items
+                else f"Error: {err_text}",
+                help_url=help_url,
+            )
             return
 
         self.update_status_msg(f"Processing {len(ready_paths)} dropped item(s)...")
@@ -4135,12 +4156,16 @@ class AutoSorterTUI(A11yMixin, App):
                     pass
 
             self.app_session = AppSession(
-                self.settings, self.base_dir, source_dirs=getattr(self, "source_dirs", None)
+                self.settings,
+                self.base_dir,
+                source_dirs=getattr(self, "source_dirs", None),
             )
 
             from app.core.scanner import get_files_from_sources
 
-            s_dirs = getattr(self, "source_dirs", None) or ([self.base_dir] if self.base_dir else [])
+            s_dirs = getattr(self, "source_dirs", None) or (
+                [self.base_dir] if self.base_dir else []
+            )
             files = get_files_from_sources(s_dirs)
 
             from app.core.metadata import MetadataPass
@@ -4184,10 +4209,19 @@ class AutoSorterTUI(A11yMixin, App):
             self.call_from_thread(self.rebuild_tree)
             model_status = getattr(self.plan, "model_status", "HEALTHY")
             if model_status == "DEGRADED_FALLBACK" or (
-                isinstance(self.plan, dict) and self.plan.get("model_status") == "DEGRADED_FALLBACK"
+                isinstance(self.plan, dict)
+                and self.plan.get("model_status") == "DEGRADED_FALLBACK"
             ):
-                reason = getattr(self.plan, "degradation_reason", None) or self.plan.get("degradation_reason") or "Model unavailable"
-                rec_action = getattr(self.plan, "recovery_action", None) or self.plan.get("recovery_action") or "Re-download model bundle"
+                reason = (
+                    getattr(self.plan, "degradation_reason", None)
+                    or self.plan.get("degradation_reason")
+                    or "Model unavailable"
+                )
+                rec_action = (
+                    getattr(self.plan, "recovery_action", None)
+                    or self.plan.get("recovery_action")
+                    or "Re-download model bundle"
+                )
                 msg = f"Scan complete (DEGRADED FALLBACK MODE: {reason}. Suggested action: {rec_action}). Analyzed {len(files)} files."
             else:
                 msg = f"Scan complete. Analyzed {len(files)} files into proposed plan."
@@ -4720,7 +4754,9 @@ class AutoSorterTUI(A11yMixin, App):
             node = self._get_active_node()
             if node:
                 self.visual_selected_nodes.append(node)
-            self.announce("Visual range selection mode enabled. Move cursor [j/k] to extend range.")
+            self.announce(
+                "Visual range selection mode enabled. Move cursor [j/k] to extend range."
+            )
         else:
             self.announce("Visual range selection mode disabled.")
 
@@ -4752,7 +4788,9 @@ class AutoSorterTUI(A11yMixin, App):
                 file_infos_to_toggle.append(data["info"])
             else:
                 info_dict = data.get("info", {})
-                file_infos_to_toggle.extend(self._collect_file_nodes_from_dict(info_dict))
+                file_infos_to_toggle.extend(
+                    self._collect_file_nodes_from_dict(info_dict)
+                )
 
         if not file_infos_to_toggle:
             self.announce("No file nodes found to toggle.")
@@ -4771,13 +4809,16 @@ class AutoSorterTUI(A11yMixin, App):
 
         self.rebuild_tree()
         status_str = "checked [x]" if new_checked else "unchecked [ ]"
-        self.announce(f"Toggled {len(file_infos_to_toggle)} document item(s) to {status_str}.")
+        self.announce(
+            f"Toggled {len(file_infos_to_toggle)} document item(s) to {status_str}."
+        )
 
     def _get_target_file_infos(self) -> List[Dict[str, Any]]:
         """Return checked file info dicts, or active/focused node file infos if none checked."""
         all_files = self._collect_file_nodes_from_dict(self.plan)
         checked_files = [
-            f for f in all_files
+            f
+            for f in all_files
             if f.get("is_checked", True) and not f.get("is_excluded", False)
         ]
         if checked_files:
@@ -4842,7 +4883,8 @@ class AutoSorterTUI(A11yMixin, App):
             return
 
         existing_folders = [
-            k for k, v in self.plan.items()
+            k
+            for k, v in self.plan.items()
             if isinstance(v, dict) and v.get("__type__") != "file"
         ]
 
@@ -4884,9 +4926,13 @@ class AutoSorterTUI(A11yMixin, App):
                     reassigned_count += 1
 
             self.rebuild_tree()
-            self.announce(f"Reassigned {reassigned_count} file(s) to folder '{target_folder}'.")
+            self.announce(
+                f"Reassigned {reassigned_count} file(s) to folder '{target_folder}'."
+            )
 
-        self.push_screen(ReassignModal(existing_folders, count=len(target_files)), on_reassigned)
+        self.push_screen(
+            ReassignModal(existing_folders, count=len(target_files)), on_reassigned
+        )
 
     def action_toggle_select_all(self) -> None:
         """Toggle Select All / Deselect All file nodes in plan [A]."""

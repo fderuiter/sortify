@@ -18,7 +18,7 @@ from pydantic import BaseModel
 
 from app.core.domain_contracts import _get_val
 from app.core.link_manager import LinkManager
-from app.core.path_utils import is_junction_path
+from app.core.path_utils import is_junction_path, safe_relpath
 from app.core.progress import emit_progress
 from app.core.verifier import VerificationEngine
 
@@ -204,7 +204,7 @@ def resolve_new_target(abs_target: str, path_map: dict) -> str:
         )
         src_norm = os.path.normcase(os.path.abspath(src_clean))
         if norm_target.startswith(src_norm + os.sep):
-            rel = os.path.relpath(abs_target, src_clean)
+            rel = safe_relpath(abs_target, src_clean)
             return os.path.normpath(os.path.join(dst_path, rel))
 
     for src_file, dst_file in path_map.items():
@@ -213,7 +213,7 @@ def resolve_new_target(abs_target: str, path_map: dict) -> str:
         )
         src_file_norm = os.path.normcase(os.path.abspath(src_file_clean))
         if src_file_norm.startswith(norm_target + os.sep):
-            rel = os.path.relpath(src_file_clean, abs_target)
+            rel = safe_relpath(src_file_clean, abs_target)
             dst_file_str = str(dst_file)
             if dst_file_str.replace("\\", "/").endswith(rel.replace("\\", "/")):
                 inferred = dst_file_str[: -len(rel)].rstrip("\\/")
@@ -564,8 +564,8 @@ def _execute_moves_recursive(
             dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
             dest_path = unicodedata.normalize("NFC", dest_path)
 
-            source_rel_path = os.path.relpath(source_path, base_dir).replace("\\", "/")
-            rel_dest = os.path.relpath(dest_path, base_dir).replace("\\", "/")
+            source_rel_path = safe_relpath(source_path, base_dir).replace("\\", "/")
+            rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
             if sens_rating_str in auto_ratings and db:
                 try:
                     job_id = f"qjob_mover_{uuid.uuid4().hex[:12]}"
@@ -669,7 +669,7 @@ def _execute_moves_recursive(
 
                     if link_info["type"] == "symlink":
                         if not os.path.isabs(original_target):
-                            final_target = os.path.relpath(new_abs_target, dest_dir)
+                            final_target = safe_relpath(new_abs_target, dest_dir)
                         else:
                             final_target = new_abs_target
 
@@ -793,7 +793,7 @@ def _execute_moves_recursive(
                 from app.core.resilient_file_ops import resilient_move
 
                 dest_path = resilient_move(source_path, dest_path)
-                rel_dest = os.path.relpath(dest_path, base_dir).replace("\\", "/")
+                rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
 
             if ledger and entry_id:
                 try:
@@ -1186,8 +1186,8 @@ def _process_move_item(
     dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
     dest_path = unicodedata.normalize("NFC", dest_path)
 
-    source_rel_path = os.path.relpath(source_path, base_dir).replace("\\", "/")
-    rel_dest = os.path.relpath(dest_path, base_dir).replace("\\", "/")
+    source_rel_path = safe_relpath(source_path, base_dir).replace("\\", "/")
+    rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
 
     if sens_rating_str in auto_ratings and db:
         with db_lock:
@@ -1302,7 +1302,7 @@ def _process_move_item(
 
             if link_info["type"] == "symlink":
                 if not os.path.isabs(original_target):
-                    final_target = os.path.relpath(new_abs_target, dest_dir)
+                    final_target = safe_relpath(new_abs_target, dest_dir)
                 else:
                     final_target = new_abs_target
 
@@ -1422,7 +1422,7 @@ def _process_move_item(
             from app.core.resilient_file_ops import resilient_move
 
             dest_path = resilient_move(source_path, dest_path)
-            rel_dest = os.path.relpath(dest_path, base_dir).replace("\\", "/")
+            rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
 
     if ledger and entry_id:
         with db_lock:

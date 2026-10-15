@@ -16,6 +16,7 @@ from app.core.domain_contracts import (
     validate_corpus_prefetch_batch,
     validate_jev_classification_result,
 )
+from app.core.path_utils import safe_relpath
 
 _UNSPECIFIED = object()
 
@@ -634,8 +635,7 @@ class IncrementalAnalyzer:
                         or f"Model '{model_id}' failed or degraded"
                     )
                     recovery_action = (
-                        record.get("suggested_recovery_action")
-                        or "RE_DOWNLOAD_MODEL"
+                        record.get("suggested_recovery_action") or "RE_DOWNLOAD_MODEL"
                     )
                     break
 
@@ -687,7 +687,7 @@ class IncrementalAnalyzer:
                 if not p:
                     continue
                 if os.path.isabs(p) and base_dir and p.startswith(base_dir):
-                    rel = os.path.relpath(p, base_dir).replace("\\", "/")
+                    rel = safe_relpath(p, base_dir).replace("\\", "/")
                 else:
                     rel = p.replace("\\", "/")
                 norm_target_paths.add(rel)
@@ -1704,7 +1704,7 @@ class IncrementalAnalyzer:
                         raw_k = k
                         if "::" in k:
                             src_root, raw_k = k.split("::", 1)
-                        rel_src = os.path.relpath(
+                        rel_src = safe_relpath(
                             os.path.join(src_root, raw_k),
                             os.path.join(src_root, current_path)
                             if current_path
@@ -1727,7 +1727,7 @@ class IncrementalAnalyzer:
                             if "relative_source" not in v:
                                 raw_k = k.split("::", 1)[1] if "::" in k else k
                                 s_root = v.get("source_root") or base_dir
-                                rel_src = os.path.relpath(
+                                rel_src = safe_relpath(
                                     os.path.join(s_root, raw_k),
                                     os.path.join(s_root, current_path)
                                     if current_path

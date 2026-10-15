@@ -481,7 +481,10 @@ class Database:
 
         if not multi_root and base_dir:
             with self._cache_lock:
-                if self._cached_base_dir == base_dir and self._cached_documents is not None:
+                if (
+                    self._cached_base_dir == base_dir
+                    and self._cached_documents is not None
+                ):
                     cached = (
                         self._cached_documents.values()
                         if hasattr(self._cached_documents, "values")

@@ -14,6 +14,7 @@ import pypdf.errors
 from pydantic import BaseModel, ConfigDict
 
 from app.core.extractor_strategies import registry
+from app.core.path_utils import safe_relpath
 from app.core.progress import emit_progress
 from app.core.text_utils import sanitize_text
 
@@ -179,7 +180,7 @@ def extract_file_text(
                     extract_file_text(file_path, settings=settings, fast_triage=False)
                 )
                 if base_dir:
-                    rel_path = os.path.relpath(file_path, base_dir).replace("\\", "/")
+                    rel_path = safe_relpath(file_path, base_dir).replace("\\", "/")
                     f_hash = get_file_hash(file_path)
                     db.upsert_document(base_dir, rel_path, f_hash, full_text)
                     db.update_tfidf_matrix_cache(base_dir)
@@ -211,7 +212,7 @@ def extract_file_text(
                         def _bg_escalation_job():
                             full_text = str(extractor.extract(file_path, **kwargs))
                             if base_dir:
-                                rel_path = os.path.relpath(file_path, base_dir).replace(
+                                rel_path = safe_relpath(file_path, base_dir).replace(
                                     "\\", "/"
                                 )
                                 f_hash = get_file_hash(file_path)
@@ -389,7 +390,11 @@ async def build_corpus_generator_async(
                 file_hash = await asyncio.to_thread(get_file_hash, item_path)
 
                 # 2. Check cache database
-                doc = await asyncio.to_thread(db.get_document, src_root, rel_p) if db else None
+                doc = (
+                    await asyncio.to_thread(db.get_document, src_root, rel_p)
+                    if db
+                    else None
+                )
                 if doc and doc["file_hash"] == file_hash:
                     # Skip extraction and yield immediately
                     yield item, doc["extracted_text"], file_hash, True

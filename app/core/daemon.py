@@ -19,6 +19,7 @@ from app.core.domain_contracts import (
 )
 from app.core.metadata import MetadataPass
 from app.core.mover import is_subpath_or_equal
+from app.core.path_utils import safe_relpath
 from app.core.quarantine_interceptor import QuarantineInterceptorService
 from app.core.resilient_file_ops import resilient_remove
 from app.core.scanner import get_files_recursively
@@ -64,7 +65,7 @@ def _extract_plan_destinations(plan, base_dir=None, current_dest="", dests_set=N
                 )
         elif isinstance(content, str):
             rel_dst = (
-                os.path.relpath(content, base_dir).replace("\\", "/")
+                safe_relpath(content, base_dir).replace("\\", "/")
                 if base_dir and os.path.isabs(content)
                 else content.replace("\\", "/")
             )
@@ -685,7 +686,7 @@ class ContinuousWatchdogDaemon:
 
         if self.base_dir and is_subpath_or_equal(abs_path, self.base_dir):
             try:
-                rel_path = os.path.relpath(abs_path, self.base_dir).replace("\\", "/")
+                rel_path = safe_relpath(abs_path, self.base_dir).replace("\\", "/")
             except ValueError:
                 norm_abs = os.path.abspath(abs_path)
                 norm_base = os.path.abspath(self.base_dir)

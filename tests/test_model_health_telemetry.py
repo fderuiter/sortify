@@ -54,7 +54,7 @@ def test_exception_subclassing_and_error_boundary():
 def test_shared_model_registry_health_tracking():
     """Verify SharedModelRegistry records, retrieves, and updates model health telemetry."""
     registry = SharedModelRegistry.get_instance()
-    
+
     # Check uninitialized status
     uninit = registry.get_model_health("test_model_1")
     assert uninit["status"] == "UNINITIALIZED"
@@ -85,7 +85,7 @@ def test_shared_model_registry_health_tracking():
 def test_archive_corruption_raises_explicit_exception_and_records_telemetry(tmp_path):
     """Verify sidecar zip corruption raises ArchiveCorruptionError and records registry health."""
     registry = SharedModelRegistry.get_instance()
-    
+
     corrupt_zip = tmp_path / "smart-autosorter-models.zip"
     corrupt_zip.write_bytes(b"INVALID_ZIP_HEADER_BYTES")
 
@@ -96,23 +96,33 @@ def test_archive_corruption_raises_explicit_exception_and_records_telemetry(tmp_
             sidecar_zip_path=str(corrupt_zip), target_dir=str(target_dir)
         )
 
-    assert "corrupted" in str(exc_info.value).lower() or "zip" in str(exc_info.value).lower()
+    assert (
+        "corrupted" in str(exc_info.value).lower()
+        or "zip" in str(exc_info.value).lower()
+    )
 
     health = registry.get_model_health("sidecar_bundle")
     assert health["status"] in ("FAILED", "DEGRADED_FALLBACK")
     assert health["suggested_recovery_action"] == "RE_DOWNLOAD_MODEL"
 
 
-def test_hash_verification_failure_raises_explicit_exception_and_records_telemetry(tmp_path):
+def test_hash_verification_failure_raises_explicit_exception_and_records_telemetry(
+    tmp_path,
+):
     """Verify hash mismatch in verify_integrity raises HashVerificationError and records telemetry."""
     registry = SharedModelRegistry.get_instance()
-    
+
     model_dir = tmp_path / "test_hash_model"
     model_dir.mkdir()
     bad_file = model_dir / "config.json"
     bad_file.write_text("modified file content")
 
-    registry.register_expected_hashes("hash_test_model", {"config.json": "0000000000000000000000000000000000000000000000000000000000000000"})
+    registry.register_expected_hashes(
+        "hash_test_model",
+        {
+            "config.json": "0000000000000000000000000000000000000000000000000000000000000000"
+        },
+    )
 
     with pytest.raises(HashVerificationError) as exc_info:
         registry.verify_integrity("hash_test_model", str(model_dir))
@@ -127,10 +137,12 @@ def test_hash_verification_failure_raises_explicit_exception_and_records_telemet
 def test_semantic_embedding_manager_degradation_telemetry(db):
     """Verify SemanticEmbeddingManager records degradation telemetry and falls back gracefully."""
     registry = SharedModelRegistry.get_instance()
-    
+
     # Initialize embedding manager with force_validation=False on non-existent path
-    manager = SemanticEmbeddingManager(db, model_path="/non_existent/model/path", bypass_validation=True)
-    
+    manager = SemanticEmbeddingManager(
+        db, model_path="/non_existent/model/path", bypass_validation=True
+    )
+
     # Trigger generate_embedding when model path is invalid
     vec = manager.generate_embedding("Sample text for vector generation")
     assert len(vec) == 384
@@ -180,7 +192,9 @@ def test_sorting_plan_diagnostic_metadata_contract():
     assert plan.get("recovery_action") == "RE_DOWNLOAD_MODEL"
 
 
-def test_incremental_analyzer_propagates_degraded_telemetry_and_dispatches_notification(db, tmp_path):
+def test_incremental_analyzer_propagates_degraded_telemetry_and_dispatches_notification(
+    db, tmp_path
+):
     """Verify IncrementalAnalyzer attaches model_status="DEGRADED_FALLBACK" and dispatches warning notification."""
     registry = SharedModelRegistry.get_instance()
     registry.record_model_health(
@@ -191,8 +205,9 @@ def test_incremental_analyzer_propagates_degraded_telemetry_and_dispatches_notif
     )
 
     analyzer = IncrementalAnalyzer(5, set(), db)
-    
+
     notifications = []
+
     def custom_handler(event):
         notifications.append(event)
 
@@ -202,7 +217,7 @@ def test_incremental_analyzer_propagates_degraded_telemetry_and_dispatches_notif
     try:
         # Generate sorting plan when system is in degraded state
         plan = analyzer.generate_sorting_plan(base_dir=str(tmp_path))
-        
+
         assert plan.model_status == "DEGRADED_FALLBACK"
         assert "Model weights not found" in str(plan.degradation_reason)
         assert plan.recovery_action == "RE_DOWNLOAD_MODEL"

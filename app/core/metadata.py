@@ -129,9 +129,7 @@ class MetadataPass:
             policies, key=lambda x: x.get("priority", 0), reverse=True
         )
 
-        docs = (
-            db.get_all_documents(base_dir, source_dirs=source_dirs) if db else []
-        )
+        docs = db.get_all_documents(base_dir, source_dirs=source_dirs) if db else []
         hash_to_target = {}
         for d in docs:
             if len(d) >= 4 and d[2] and d[3]:
