@@ -145,7 +145,7 @@ async def test_autosorter_tui_dropzone_action(tmp_path):
 @pytest.mark.anyio
 async def test_dropzone_staging_table_population_and_filtering(tmp_path):
     """Test staging table population, columns, and filtering unsupported file types."""
-    from textual.widgets import DataTable
+    from textual.widgets import Button, DataTable
 
     settings = DummySettings(tmp_path)
     test_dir = tmp_path / "staging_test"
@@ -159,7 +159,7 @@ async def test_dropzone_staging_table_population_and_filtering(tmp_path):
 
     app = ModalTestApp(settings=settings, base_dir=str(test_dir))
 
-    async with app.run_test() as pilot:
+    async with app.run_test(size=(100, 50)) as pilot:
         await pilot.pause()
         active_modal = app.screen
         assert isinstance(active_modal, DropZoneModal)
@@ -182,6 +182,9 @@ async def test_dropzone_staging_table_population_and_filtering(tmp_path):
         assert "Unsupported" in statuses
 
         # Click Filter Unsupported button
+        btn_filter = active_modal.query_one("#btn-filter-unsupported", Button)
+        btn_filter.scroll_visible()
+        await pilot.pause()
         await pilot.click("#btn-filter-unsupported")
         await pilot.pause()
 
@@ -209,7 +212,7 @@ async def test_dropzone_remove_and_clear_queue(tmp_path):
 
     app = ModalTestApp(settings=settings, base_dir=str(test_dir))
 
-    async with app.run_test() as pilot:
+    async with app.run_test(size=(100, 50)) as pilot:
         await pilot.pause()
         active_modal = app.screen
         assert isinstance(active_modal, DropZoneModal)
@@ -222,6 +225,9 @@ async def test_dropzone_remove_and_clear_queue(tmp_path):
 
         # Select first row and move down
         table.move_cursor(row=0)
+        btn_down = active_modal.query_one("#btn-move-down", Button)
+        btn_down.scroll_visible()
+        await pilot.pause()
         await pilot.click("#btn-move-down")
         await pilot.pause()
 
@@ -230,6 +236,9 @@ async def test_dropzone_remove_and_clear_queue(tmp_path):
 
         # Remove item at cursor (row 1)
         table.move_cursor(row=1)
+        btn_remove = active_modal.query_one("#btn-remove-item", Button)
+        btn_remove.scroll_visible()
+        await pilot.pause()
         await pilot.click("#btn-remove-item")
         await pilot.pause()
 
