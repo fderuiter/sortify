@@ -7,6 +7,7 @@ import pytest
 from scripts import validate_signatures
 from scripts.validate_signatures import (
     SNAPSHOT_DIR,
+    collect_cli_definitions,
     collect_core_definitions,
     collect_current_definitions,
     collect_modules_and_payloads,
@@ -145,6 +146,34 @@ parser.add_argument("--verbose", action="store_true", help="Enable verbose loggi
     }
 
 
+def test_dynamic_cli_file_discovery(tmp_path):
+    cli_dir = tmp_path / "cli"
+    cli_dir.mkdir()
+
+    (cli_dir / "__init__.py").write_text("# init")
+    (cli_dir / "_private_helper.py").write_text("parser.add_argument('--private')")
+    (cli_dir / "alpha_cli.py").write_text("parser.add_argument('--alpha')")
+    (cli_dir / "beta_cli.py").write_text("parser.add_argument('--beta')")
+
+    cli_defs = collect_cli_definitions(str(cli_dir))
+    assert "app/main.py" in cli_defs
+    assert "sandbox_cli.py" in cli_defs
+
+    # Check that public files in cli_dir were discovered, while __init__.py and _*.py were ignored
+    discovered = [k for k in cli_defs.keys() if k not in ("app/main.py", "sandbox_cli.py")]
+    assert len(discovered) == 2
+    assert any("alpha_cli.py" in k for k in discovered)
+    assert any("beta_cli.py" in k for k in discovered)
+    assert not any("__init__.py" in k for k in discovered)
+    assert not any("_private_helper.py" in k for k in discovered)
+
+    # Automatically discovers newly added CLI subcommand file
+    (cli_dir / "gamma_cli.py").write_text("parser.add_argument('--gamma')")
+    cli_defs_updated = collect_cli_definitions(str(cli_dir))
+    discovered_updated = [k for k in cli_defs_updated.keys() if k not in ("app/main.py", "sandbox_cli.py")]
+    assert len(discovered_updated) == 3
+
+
 def test_collect_current_definitions():
     defs = collect_current_definitions()
     assert "core" in defs
@@ -157,6 +186,8 @@ def test_collect_current_definitions():
     # Check CLI keys
     assert "app/main.py" in defs["cli"]
     assert "sandbox_cli.py" in defs["cli"]
+    assert "app/cli/ledger_cli.py" in defs["cli"]
+    assert "app/cli/quarantine_cli.py" in defs["cli"]
 
     main_cli = defs["cli"]["app/main.py"]
     assert len(main_cli) > 0
