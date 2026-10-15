@@ -29,6 +29,7 @@ dependencies = [
     "numpy",
     "pydantic",
     "nicegui",
+    "rich",
 ]
 
 [project.optional-dependencies]
