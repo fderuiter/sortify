@@ -162,6 +162,33 @@ def test_write_smoke_test_error_fallback_scrubs_diagnostic_file(tmp_path, monkey
     assert "<USER_HOME>/user_data" in content
 
 
+def test_write_smoke_test_error_sys_temp_fallback_scrubs_diagnostic_file(tmp_path, monkeypatch):
+    from app.main import write_smoke_test_error
+
+    home = Path.home()
+
+    def restricted_open(file, mode="r", *args, **kwargs):
+        filepath = str(file)
+        if "smoke_test_error.txt" in filepath:
+            raise PermissionError("Access denied to primary and home location")
+        return open(file, mode, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.open", restricted_open)
+    monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
+
+    err_msg = f"Sys temp failure with {home}/sensitive_data and enc:SecretSysTempToken999"
+    write_smoke_test_error(err_msg, include_traceback=False)
+
+    created_files = list(tmp_path.glob("smoke_test_error_*.txt"))
+    assert len(created_files) == 1
+    content = created_files[0].read_text(encoding="utf-8")
+
+    assert str(home) not in content
+    assert "enc:" not in content
+    assert "SecretSysTempToken999" not in content
+    assert "<USER_HOME>/sensitive_data" in content
+
+
 def test_scrub_user_home_paths_win32_short_paths(monkeypatch):
     from app.core.path_utils import scrub_user_home_paths
 

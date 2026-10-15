@@ -1,0 +1,19 @@
+flowchart TD
+    req("Atomic File Transaction Request")
+    lock["Acquire Cross-process File Lock"]
+    transfer[["Chunked Stream Transfer"]]
+    hash{Post-transfer SHA256 Check}
+    rollback["Automatic Rollback & Cleanup"]
+    complete(["Transaction Committed"])
+    req --> lock
+    lock -->|Lock Granted| transfer
+    transfer --> hash
+    hash -->|Hash Match| complete
+    hash -->|Hash Mismatch| rollback
+    rollback -->|Retry| req
+    click req "docs/api_reference.md#appcoreresilient_file_ops" "Atomic Transaction Request"
+    click lock tooltip "Acquire Lock"
+    click transfer tooltip "Stream Transfer"
+    click hash tooltip "Hash Check"
+    click rollback tooltip "Rollback Handler"
+    click complete tooltip "Transaction Complete"

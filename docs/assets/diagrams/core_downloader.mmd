@@ -1,0 +1,15 @@
+flowchart TD
+    req("Model Download Request")
+    net{Network Connectivity Test}
+    progress["Progress Tracker"]
+    bundle[("Save Model Weights Bundle")]
+    fallback(["Fallback to Offline Mode"])
+    req --> net
+    net -->|Online| progress
+    net -->|Offline| fallback
+    progress -->|Complete| bundle
+    click req "docs/api_reference.md#appcoredownloader" "Download Request"
+    click net "docs/api_reference.md#appcoreenv_helper" "Connectivity Check"
+    click progress "docs/api_reference.md#appcoreprogress" "Progress Tracker"
+    click bundle "docs/api_reference.md#appcoreoffline_loader" "Save Bundle"
+    click fallback tooltip "Offline Fallback"
