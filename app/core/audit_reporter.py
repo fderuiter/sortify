@@ -133,7 +133,9 @@ def export_audit_report_json(report_data: Dict[str, Any], output_path: str) -> s
     """
     abs_path = os.path.abspath(output_path)
     try:
-        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        out_dir = os.path.dirname(abs_path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
         with open(abs_path, "w", encoding="utf-8") as f:
             json.dump(report_data, f, indent=2, ensure_ascii=False)
         logger.info(f"Audit report successfully exported to JSON: {abs_path}")
@@ -161,7 +163,9 @@ def export_audit_report_csv(report_data: Dict[str, Any], output_path: str) -> st
     """
     abs_path = os.path.abspath(output_path)
     try:
-        os.makedirs(os.path.dirname(abs_path), exist_ok=True)
+        out_dir = os.path.dirname(abs_path)
+        if out_dir:
+            os.makedirs(out_dir, exist_ok=True)
         records = report_data.get("records", [])
         fieldnames = [
             "Filename",
