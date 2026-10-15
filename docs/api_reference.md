@@ -170,10 +170,6 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.scanner
 
-## `app.core.security`
-
-::: app.core.security
-
 ## `app.core.semantic_embeddings`
 
 ::: app.core.semantic_embeddings
