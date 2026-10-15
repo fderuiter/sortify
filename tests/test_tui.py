@@ -354,7 +354,7 @@ def test_tui_returning_launch_bypasses_wizard(temp_workspace):
 
 
 def test_tui_wizard_modal_cancel_preserves_defaults(temp_workspace):
-    """Verify canceling WizardModal maintains defaults and emits announcement."""
+    """Verify canceling WizardModal maintains None consent state, sets session suppression flag, and triggers again on restart."""
 
     async def _test():
         settings = AppSettings()
@@ -369,8 +369,22 @@ def test_tui_wizard_modal_cancel_preserves_defaults(temp_workspace):
             modal.action_cancel()
             await pilot.pause(0.1)
 
-            assert app.settings.AI_CONSENT_GRANTED is False
+            assert app.settings.AI_CONSENT_GRANTED is None
+            assert app._wizard_dismissed_this_session is True
             assert not isinstance(app.screen, WizardModal)
+
+            # Re-running on_mount in same session should not reopen wizard modal
+            app.on_mount()
+            await pilot.pause(0.1)
+            assert not isinstance(app.screen, WizardModal)
+
+        # Simulating app restart with unconfigured settings opens wizard modal again
+        restarted_app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        assert restarted_app._wizard_dismissed_this_session is False
+
+        async with restarted_app.run_test() as pilot:
+            await pilot.pause(0.2)
+            assert isinstance(restarted_app.screen, WizardModal)
 
     asyncio.run(_test())
 

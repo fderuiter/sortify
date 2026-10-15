@@ -1913,10 +1913,8 @@ class WizardModal(A11yMixin, ModalScreen[None]):
 
     def action_cancel(self) -> None:
         """Cancel wizard on Escape key press."""
-        if getattr(self.settings, "AI_CONSENT_GRANTED", None) is None:
-            self.settings.AI_CONSENT_GRANTED = False
-            if hasattr(self.settings, "_save"):
-                self.settings._save()
+        if hasattr(self.app, "_wizard_dismissed_this_session"):
+            self.app._wizard_dismissed_this_session = True
         self.announce("Closed model onboarding wizard dialog.")
         self.dismiss(None)
 
@@ -3546,6 +3544,7 @@ class AutoSorterTUI(A11yMixin, App):
         self.active_tree_node = None
         self.visual_select_active: bool = False
         self.visual_selected_nodes: list = []
+        self._wizard_dismissed_this_session: bool = False
 
     def compose(self) -> ComposeResult:
         """Compose main dual-pane TUI layout."""
@@ -3726,7 +3725,7 @@ class AutoSorterTUI(A11yMixin, App):
                         self.settings._save()
                     except Exception:
                         pass
-            else:
+            elif not getattr(self, "_wizard_dismissed_this_session", False):
                 self.call_after_refresh(self.action_open_wizard)
 
     def on_unmount(self) -> None:
