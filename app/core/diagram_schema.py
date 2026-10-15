@@ -3108,6 +3108,1177 @@ def _create_admin_policy_evaluation_spec() -> ComponentDiagramSpec:
     )
 
 
+def _create_core_quarantine_interceptor_spec() -> ComponentDiagramSpec:
+    """Build core_quarantine_interceptor diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_quarantine_interceptor",
+        title="Quarantine Interceptor Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="eval",
+                label="Quarantine Evaluation",
+                shape="rhombus",
+                url="docs/api_reference.md#appcorequarantine_interceptor",
+                tooltip="Quarantine Evaluation Node",
+            ),
+            DiagramNode(
+                id="policy",
+                label="Compliance Policy Check",
+                shape="rectangle",
+                url="docs/admin_guide.md",
+                tooltip="Compliance Policy Check",
+            ),
+            DiagramNode(
+                id="isolate",
+                label="Isolate Quarantine Record",
+                shape="rectangle",
+                url="docs/api_reference.md#appcorequarantine_interceptor",
+                tooltip="Isolate File Record",
+            ),
+            DiagramNode(
+                id="notify",
+                label="Audit Trail Event Logger",
+                shape="database",
+                url="docs/api_reference.md#appcoreaudit_reporter",
+                tooltip="Logger Node",
+            ),
+            DiagramNode(
+                id="bypass",
+                label="Safe Path Release",
+                shape="stadium",
+                tooltip="Bypass Release",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="eval", target="policy", label="Flagged Violation"),
+            DiagramEdge(source="policy", target="isolate", label="Confirm Isolation"),
+            DiagramEdge(source="isolate", target="notify", label="Log Audit Record"),
+            DiagramEdge(source="eval", target="bypass", label="Clean File"),
+        ],
+    )
+
+
+def _create_core_offline_loader_spec() -> ComponentDiagramSpec:
+    """Build core_offline_loader diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_offline_loader",
+        title="Offline Bundle Loader & Hydration Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="check",
+                label="Offline Bundle Inspection",
+                shape="rhombus",
+                url="docs/user_guide.md#offline-non-semantic-mode",
+                tooltip="Offline Bundle Inspection",
+            ),
+            DiagramNode(
+                id="load",
+                label="Load Pre-packaged Weights",
+                shape="subroutine",
+                url="docs/api_reference.md#appcoreoffline_loader",
+                tooltip="Load Weights",
+            ),
+            DiagramNode(
+                id="verify",
+                label="Integrity Checksum Validation",
+                shape="rhombus",
+                url="docs/api_reference.md#appcorecrypto",
+                tooltip="Verify Checksum",
+            ),
+            DiagramNode(
+                id="hydrate",
+                label="Hydrate FastEmbed Engine",
+                shape="stadium",
+                url="docs/api_reference.md#appcoresemantic_embeddings",
+                tooltip="Hydrate Embeddings Engine",
+            ),
+            DiagramNode(
+                id="fallback",
+                label="Fallback Non-Semantic Parser",
+                shape="rectangle",
+                tooltip="Fallback Mode",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="check", target="load", label="Bundle Present"),
+            DiagramEdge(source="load", target="verify", label="Validate SHA256"),
+            DiagramEdge(source="verify", target="hydrate", label="Valid Checksum"),
+            DiagramEdge(source="check", target="fallback", label="Bundle Missing"),
+            DiagramEdge(source="verify", target="fallback", label="Checksum Mismatch"),
+        ],
+    )
+
+
+def _create_core_resilient_file_ops_spec() -> ComponentDiagramSpec:
+    """Build core_resilient_file_ops diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_resilient_file_ops",
+        title="Resilient File Operations Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="req",
+                label="Atomic File Transaction Request",
+                shape="round",
+                url="docs/api_reference.md#appcoreresilient_file_ops",
+                tooltip="Atomic Transaction Request",
+            ),
+            DiagramNode(
+                id="lock",
+                label="Acquire Cross-process File Lock",
+                shape="rectangle",
+                tooltip="Acquire Lock",
+            ),
+            DiagramNode(
+                id="transfer",
+                label="Chunked Stream Transfer",
+                shape="subroutine",
+                tooltip="Stream Transfer",
+            ),
+            DiagramNode(
+                id="hash",
+                label="Post-transfer SHA256 Check",
+                shape="rhombus",
+                tooltip="Hash Check",
+            ),
+            DiagramNode(
+                id="rollback",
+                label="Automatic Rollback & Cleanup",
+                shape="rectangle",
+                tooltip="Rollback Handler",
+            ),
+            DiagramNode(
+                id="complete",
+                label="Transaction Committed",
+                shape="stadium",
+                tooltip="Transaction Complete",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="req", target="lock"),
+            DiagramEdge(source="lock", target="transfer", label="Lock Granted"),
+            DiagramEdge(source="transfer", target="hash"),
+            DiagramEdge(source="hash", target="complete", label="Hash Match"),
+            DiagramEdge(source="hash", target="rollback", label="Hash Mismatch"),
+            DiagramEdge(source="rollback", target="req", label="Retry"),
+        ],
+    )
+
+
+def _create_core_simulation_exporter_spec() -> ComponentDiagramSpec:
+    """Build core_simulation_exporter diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_simulation_exporter",
+        title="Simulation Exporter Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="plan",
+                label="Reorganization Plan Input",
+                shape="rectangle",
+                url="docs/api_reference.md#appcoresimulation_exporter",
+                tooltip="Plan Input",
+            ),
+            DiagramNode(
+                id="selector",
+                label="Export Format Selector",
+                shape="rhombus",
+                tooltip="Format Selector",
+            ),
+            DiagramNode(
+                id="json",
+                label="JSON Audit Export",
+                shape="rectangle",
+                tooltip="JSON Export",
+            ),
+            DiagramNode(
+                id="csv",
+                label="CSV Summary Export",
+                shape="rectangle",
+                tooltip="CSV Export",
+            ),
+            DiagramNode(
+                id="html",
+                label="Interactive HTML Preview",
+                shape="rectangle",
+                tooltip="HTML Export",
+            ),
+            DiagramNode(
+                id="writer",
+                label="Disk Output Writer",
+                shape="database",
+                tooltip="Output Writer",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="plan", target="selector"),
+            DiagramEdge(source="selector", target="json", label="Format: JSON"),
+            DiagramEdge(source="selector", target="csv", label="Format: CSV"),
+            DiagramEdge(source="selector", target="html", label="Format: HTML"),
+            DiagramEdge(source="json", target="writer"),
+            DiagramEdge(source="csv", target="writer"),
+            DiagramEdge(source="html", target="writer"),
+        ],
+    )
+
+
+def _create_core_forensic_scanner_spec() -> ComponentDiagramSpec:
+    """Build core_forensic_scanner diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_forensic_scanner",
+        title="Forensic Scanner Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="scan",
+                label="Forensic Drive Scan",
+                shape="round",
+                url="docs/api_reference.md#appcoreforensic_scanner",
+                tooltip="Drive Scan",
+            ),
+            DiagramNode(
+                id="header",
+                label="Magic Byte Header Inspection",
+                shape="rhombus",
+                tooltip="Header Inspection",
+            ),
+            DiagramNode(
+                id="entropy",
+                label="Entropy & Hash Analysis",
+                shape="subroutine",
+                tooltip="Entropy Analysis",
+            ),
+            DiagramNode(
+                id="hidden",
+                label="Hidden Stream Detection",
+                shape="rectangle",
+                tooltip="Hidden Detection",
+            ),
+            DiagramNode(
+                id="report",
+                label="Forensic Evidence Manifest",
+                shape="database",
+                tooltip="Evidence Manifest",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="scan", target="header"),
+            DiagramEdge(source="header", target="entropy", label="Header Extracted"),
+            DiagramEdge(source="entropy", target="hidden"),
+            DiagramEdge(source="hidden", target="report", label="Emit Manifest"),
+        ],
+    )
+
+
+def _create_core_jev_classifier_spec() -> ComponentDiagramSpec:
+    """Build core_jev_classifier diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_jev_classifier",
+        title="JEV Classifier Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="features",
+                label="Extracted Feature Matrix",
+                shape="rectangle",
+                url="docs/api_reference.md#appcorejev_classifier",
+                tooltip="Feature Matrix",
+            ),
+            DiagramNode(
+                id="fastpath",
+                label="Heuristic Rule Fast-Path",
+                shape="rhombus",
+                tooltip="Fast Path Check",
+            ),
+            DiagramNode(
+                id="model",
+                label="Joint Embedding Classifier",
+                shape="subroutine",
+                tooltip="JEV Model Exec",
+            ),
+            DiagramNode(
+                id="confidence",
+                label="Confidence Threshold Guard",
+                shape="rhombus",
+                tooltip="Confidence Guard",
+            ),
+            DiagramNode(
+                id="category",
+                label="Assigned Category Label",
+                shape="stadium",
+                tooltip="Output Category",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="features", target="fastpath"),
+            DiagramEdge(source="fastpath", target="category", label="Certain Match"),
+            DiagramEdge(source="fastpath", target="model", label="Uncertain Match"),
+            DiagramEdge(source="model", target="confidence"),
+            DiagramEdge(source="confidence", target="category", label="Score >= 0.8"),
+        ],
+    )
+
+
+def _create_core_semantic_embeddings_spec() -> ComponentDiagramSpec:
+    """Build core_semantic_embeddings diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_semantic_embeddings",
+        title="Semantic Embeddings Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="text",
+                label="Sanitized Document Text",
+                shape="rectangle",
+                url="docs/api_reference.md#appcoresemantic_embeddings",
+                tooltip="Document Text Input",
+            ),
+            DiagramNode(
+                id="cache",
+                label="ONNX Model Property Cache",
+                shape="database",
+                url="docs/api_reference.md#appcorecache",
+                tooltip="Model Cache",
+            ),
+            DiagramNode(
+                id="engine",
+                label="FastEmbed Embedding Engine",
+                shape="subroutine",
+                tooltip="Embedding Engine",
+            ),
+            DiagramNode(
+                id="vector",
+                label="Dense Vector Embedding Output",
+                shape="stadium",
+                tooltip="Vector Output [384]",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="text", target="cache", label="Check Initialized"),
+            DiagramEdge(source="cache", target="engine", label="Pass Weights"),
+            DiagramEdge(source="engine", target="vector", label="Emit Vector"),
+        ],
+    )
+
+
+def _create_core_mover_spec() -> ComponentDiagramSpec:
+    """Build core_mover diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_mover",
+        title="File Mover Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="queue",
+                label="Batch Move Task Queue",
+                shape="rectangle",
+                url="docs/api_reference.md#appcoremover",
+                tooltip="Move Task Queue",
+            ),
+            DiagramNode(
+                id="pool",
+                label="SharedWorkerPool Dispatcher",
+                shape="subroutine",
+                url="docs/api_reference.md#appcoreshared_registry",
+                tooltip="Worker Dispatcher",
+            ),
+            DiagramNode(
+                id="ops",
+                label="Resilient Transfer Execution",
+                shape="rectangle",
+                url="docs/api_reference.md#appcoreresilient_file_ops",
+                tooltip="Resilient Ops",
+            ),
+            DiagramNode(
+                id="history",
+                label="Transaction History Logger",
+                shape="database",
+                url="docs/api_reference.md#appcorehistory",
+                tooltip="History Logger",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="queue", target="pool", label="Enqueue Tasks"),
+            DiagramEdge(source="pool", target="ops", label="Parallel Exec"),
+            DiagramEdge(source="ops", target="history", label="Record Event"),
+        ],
+    )
+
+
+def _create_core_verifier_spec() -> ComponentDiagramSpec:
+    """Build core_verifier diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_verifier",
+        title="Plan Verifier Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="plan",
+                label="Proposed Reorganization Plan",
+                shape="rectangle",
+                url="docs/api_reference.md#appcoreverifier",
+                tooltip="Plan Spec",
+            ),
+            DiagramNode(
+                id="space",
+                label="Target Volume Space Check",
+                shape="rhombus",
+                tooltip="Space Check",
+            ),
+            DiagramNode(
+                id="pathlen",
+                label="OS Path Length Constraints Check",
+                shape="rhombus",
+                tooltip="Path Length Check",
+            ),
+            DiagramNode(
+                id="lock",
+                label="Source File Access Lock Check",
+                shape="rhombus",
+                tooltip="Lock Check",
+            ),
+            DiagramNode(
+                id="pass_node",
+                label="Plan Verified Safe",
+                shape="stadium",
+                tooltip="Verification Passed",
+            ),
+            DiagramNode(
+                id="fail_node",
+                label="Verification Error Manifest",
+                shape="rectangle",
+                tooltip="Verification Failed",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="plan", target="space"),
+            DiagramEdge(source="space", target="pathlen", label="Space OK"),
+            DiagramEdge(source="space", target="fail_node", label="Disk Space Error"),
+            DiagramEdge(source="pathlen", target="lock", label="Length OK"),
+            DiagramEdge(source="pathlen", target="fail_node", label="Length Exceeded"),
+            DiagramEdge(source="lock", target="pass_node", label="No Locks"),
+            DiagramEdge(source="lock", target="fail_node", label="File Locked"),
+        ],
+    )
+
+
+def _create_core_policy_engine_spec() -> ComponentDiagramSpec:
+    """Build core_policy_engine diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_policy_engine",
+        title="Policy Engine Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="doc",
+                label="Target Document Metadata",
+                shape="rectangle",
+                url="docs/api_reference.md#appcorepolicy_engine",
+                tooltip="Document Input",
+            ),
+            DiagramNode(
+                id="templates",
+                label="Rule Templates Engine",
+                shape="database",
+                url="docs/api_reference.md#appcorerule_templates",
+                tooltip="Templates Engine",
+            ),
+            DiagramNode(
+                id="sort",
+                label="Sort Policy Rules High-to-Low",
+                shape="rectangle",
+                tooltip="Sort Priority",
+            ),
+            DiagramNode(
+                id="eval",
+                label="Evaluate Next Policy Rule",
+                shape="rhombus",
+                tooltip="Evaluate Rule",
+            ),
+            DiagramNode(
+                id="quarantine",
+                label="Quarantine Interceptor",
+                shape="rectangle",
+                url="docs/api_reference.md#appcorequarantine_interceptor",
+                tooltip="Quarantine Trigger",
+            ),
+            DiagramNode(
+                id="route",
+                label="Assigned Destination Category",
+                shape="stadium",
+                tooltip="Destination Category",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="doc", target="sort"),
+            DiagramEdge(source="sort", target="templates", label="Fetch Rules"),
+            DiagramEdge(source="templates", target="eval"),
+            DiagramEdge(source="eval", target="quarantine", label="Violation Match"),
+            DiagramEdge(source="eval", target="route", label="Rule Matched"),
+        ],
+    )
+
+
+def _create_core_daemon_spec() -> ComponentDiagramSpec:
+    """Build core_daemon diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_daemon",
+        title="Daemon Service Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="start",
+                label="Daemon Service Initializer",
+                shape="round",
+                url="docs/api_reference.md#appcoredaemon",
+                tooltip="Daemon Initializer",
+            ),
+            DiagramNode(
+                id="ipc",
+                label="IPC Server Listener",
+                shape="subroutine",
+                url="docs/api_reference.md#appcoreipc",
+                tooltip="IPC Server",
+            ),
+            DiagramNode(
+                id="watchdog",
+                label="Background Watchdog Observer",
+                shape="rectangle",
+                tooltip="Watchdog Observer",
+            ),
+            DiagramNode(
+                id="session",
+                label="Session Controller Instance",
+                shape="rectangle",
+                url="docs/api_reference.md#appcoresession",
+                tooltip="Session Instance",
+            ),
+            DiagramNode(
+                id="stop",
+                label="Clean Shutdown Handler",
+                shape="stadium",
+                tooltip="Shutdown Handler",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="start", target="ipc"),
+            DiagramEdge(source="ipc", target="session", label="RPC Calls"),
+            DiagramEdge(source="watchdog", target="session", label="FS Events"),
+            DiagramEdge(source="session", target="stop", label="Termination Signal"),
+        ],
+    )
+
+
+def _create_core_ipc_spec() -> ComponentDiagramSpec:
+    """Build core_ipc diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_ipc",
+        title="IPC Transport Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="client",
+                label="IPC Client Connection",
+                shape="round",
+                url="docs/api_reference.md#appcoreipc",
+                tooltip="IPC Client",
+            ),
+            DiagramNode(
+                id="pipe",
+                label="Named Pipe Stream",
+                shape="rectangle",
+                tooltip="Named Pipe",
+            ),
+            DiagramNode(
+                id="serializer",
+                label="JSON-RPC Message Serializer",
+                shape="subroutine",
+                tooltip="Message Serializer",
+            ),
+            DiagramNode(
+                id="handler",
+                label="Daemon Command Handler",
+                shape="rectangle",
+                url="docs/api_reference.md#appcoredaemon",
+                tooltip="Command Handler",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="client", target="pipe"),
+            DiagramEdge(source="pipe", target="serializer", label="Send Payload"),
+            DiagramEdge(source="serializer", target="handler", label="Dispatch Event"),
+        ],
+    )
+
+
+def _create_core_plugin_registry_spec() -> ComponentDiagramSpec:
+    """Build core_plugin_registry diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_plugin_registry",
+        title="Plugin Registry Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="discover",
+                label="Discover Extension Modules",
+                shape="rectangle",
+                url="docs/api_reference.md#appcoreplugin_registry",
+                tooltip="Discover Extensions",
+            ),
+            DiagramNode(
+                id="validate",
+                label="Plugin Manifest Integrity Check",
+                shape="rhombus",
+                tooltip="Manifest Validation",
+            ),
+            DiagramNode(
+                id="hooks",
+                label="Register Analysis Hooks",
+                shape="subroutine",
+                tooltip="Register Hooks",
+            ),
+            DiagramNode(
+                id="pool",
+                label="Active Plugin Registry Pool",
+                shape="database",
+                tooltip="Plugin Pool",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="discover", target="validate"),
+            DiagramEdge(source="validate", target="hooks", label="Valid Signature"),
+            DiagramEdge(source="hooks", target="pool", label="Loaded"),
+        ],
+    )
+
+
+def _create_core_audit_reporter_spec() -> ComponentDiagramSpec:
+    """Build core_audit_reporter diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_audit_reporter",
+        title="Audit Reporter Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="events",
+                label="In-Memory Audit Events Stream",
+                shape="rectangle",
+                url="docs/api_reference.md#appcoreaudit_reporter",
+                tooltip="Audit Stream",
+            ),
+            DiagramNode(
+                id="formatter",
+                label="Report Formatter (HTML/PDF/JSON)",
+                shape="subroutine",
+                tooltip="Report Formatter",
+            ),
+            DiagramNode(
+                id="signature",
+                label="Cryptographic Signature Generator",
+                shape="rhombus",
+                url="docs/api_reference.md#appcorecrypto",
+                tooltip="Signature Generator",
+            ),
+            DiagramNode(
+                id="output",
+                label="Audit Report Output File",
+                shape="database",
+                tooltip="Audit Output File",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="events", target="formatter"),
+            DiagramEdge(source="formatter", target="signature", label="Generate Hash"),
+            DiagramEdge(source="signature", target="output", label="Write File"),
+        ],
+    )
+
+
+def _create_core_crypto_spec() -> ComponentDiagramSpec:
+    """Build core_crypto diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_crypto",
+        title="Cryptographic Services Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="req",
+                label="Cryptographic Operation Request",
+                shape="round",
+                url="docs/api_reference.md#appcorecrypto",
+                tooltip="Crypto Request",
+            ),
+            DiagramNode(
+                id="key",
+                label="Master Key Provider",
+                shape="database",
+                tooltip="Key Provider",
+            ),
+            DiagramNode(
+                id="engine",
+                label="SHA256 / AES-256 Engine",
+                shape="subroutine",
+                tooltip="Crypto Engine",
+            ),
+            DiagramNode(
+                id="res",
+                label="Encrypted Payload / Digest",
+                shape="stadium",
+                tooltip="Crypto Result",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="req", target="key"),
+            DiagramEdge(source="key", target="engine", label="Supply Key Material"),
+            DiagramEdge(source="engine", target="res"),
+        ],
+    )
+
+
+def _create_core_db_spec() -> ComponentDiagramSpec:
+    """Build core_db diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_db",
+        title="Database Persistence Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="query",
+                label="Database Transaction Request",
+                shape="round",
+                url="docs/api_reference.md#appcoredb",
+                tooltip="DB Transaction Request",
+            ),
+            DiagramNode(
+                id="cache",
+                label="Query Cache Layer",
+                shape="database",
+                url="docs/api_reference.md#appcorecache",
+                tooltip="Query Cache",
+            ),
+            DiagramNode(
+                id="pool",
+                label="SQLite Connection Pool",
+                shape="subroutine",
+                url="docs/api_reference.md#appcoredb_conn",
+                tooltip="Connection Pool",
+            ),
+            DiagramNode(
+                id="storage",
+                label="On-Disk Encrypted Database",
+                shape="database",
+                tooltip="Encrypted Storage",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="query", target="cache", label="Cache Check"),
+            DiagramEdge(source="cache", target="pool", label="Cache Miss"),
+            DiagramEdge(source="pool", target="storage", label="Read / Write"),
+        ],
+    )
+
+
+def _create_core_history_spec() -> ComponentDiagramSpec:
+    """Build core_history diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_history",
+        title="History & Audit Trail Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="event",
+                label="User Action / Move Event",
+                shape="round",
+                url="docs/api_reference.md#appcorehistory",
+                tooltip="History Event",
+            ),
+            DiagramNode(
+                id="writer",
+                label="Encrypted DB Writer",
+                shape="subroutine",
+                url="docs/api_reference.md#appcoredb",
+                tooltip="DB Writer",
+            ),
+            DiagramNode(
+                id="stack",
+                label="Reversible Operation Stack",
+                shape="database",
+                tooltip="Undo Stack",
+            ),
+            DiagramNode(
+                id="view",
+                label="History Audit Query View",
+                shape="stadium",
+                tooltip="History View",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="event", target="writer"),
+            DiagramEdge(source="writer", target="stack", label="Push Reversal Link"),
+            DiagramEdge(source="stack", target="view", label="Query History"),
+        ],
+    )
+
+
+def _create_core_ledger_spec() -> ComponentDiagramSpec:
+    """Build core_ledger diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_ledger",
+        title="Ledger Persistence Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="entry",
+                label="File Relocation Ledger Record",
+                shape="round",
+                url="docs/api_reference.md#appcoreledger",
+                tooltip="Ledger Entry",
+            ),
+            DiagramNode(
+                id="hashreg",
+                label="Hashes Registry Validator",
+                shape="rhombus",
+                url="docs/api_reference.md#appcorehashes_registry",
+                tooltip="Hash Validator",
+            ),
+            DiagramNode(
+                id="db",
+                label="Immutable SQLite Ledger Table",
+                shape="database",
+                url="docs/api_reference.md#appcoredb",
+                tooltip="Ledger Table",
+            ),
+            DiagramNode(
+                id="provenance",
+                label="Export Provenance Manifest",
+                shape="stadium",
+                tooltip="Provenance Output",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="entry", target="hashreg", label="Verify Hash"),
+            DiagramEdge(source="hashreg", target="db", label="Commit Entry"),
+            DiagramEdge(source="db", target="provenance"),
+        ],
+    )
+
+
+def _create_core_session_spec() -> ComponentDiagramSpec:
+    """Build core_session diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_session",
+        title="Session Lifecycle Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="start",
+                label="Initialize Application Session",
+                shape="round",
+                url="docs/api_reference.md#appcoresession",
+                tooltip="Session Start",
+            ),
+            DiagramNode(
+                id="bootstrap",
+                label="User Space Bootstrap",
+                shape="subroutine",
+                url="docs/api_reference.md#appcoreuser_space_bootstrap",
+                tooltip="Bootstrap Exec",
+            ),
+            DiagramNode(
+                id="scanner",
+                label="Directory Scanner Instance",
+                shape="rectangle",
+                url="docs/api_reference.md#appcorescanner",
+                tooltip="Scanner Instance",
+            ),
+            DiagramNode(
+                id="analyzer",
+                label="Document Analyzer Instance",
+                shape="rectangle",
+                url="docs/api_reference.md#appcoreanalyzer",
+                tooltip="Analyzer Instance",
+            ),
+            DiagramNode(
+                id="state",
+                label="Active Session Model",
+                shape="database",
+                tooltip="Session Model State",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="start", target="bootstrap"),
+            DiagramEdge(source="bootstrap", target="scanner"),
+            DiagramEdge(source="bootstrap", target="analyzer"),
+            DiagramEdge(source="scanner", target="state"),
+            DiagramEdge(source="analyzer", target="state"),
+        ],
+    )
+
+
+def _create_core_user_space_bootstrap_spec() -> ComponentDiagramSpec:
+    """Build core_user_space_bootstrap diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_user_space_bootstrap",
+        title="User Space Bootstrap Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="launch",
+                label="Application Startup Request",
+                shape="round",
+                url="docs/api_reference.md#appcoreuser_space_bootstrap",
+                tooltip="Startup Request",
+            ),
+            DiagramNode(
+                id="guard",
+                label="Environment Directory Guard",
+                shape="rhombus",
+                url="docs/api_reference.md#appcoreenv_helper",
+                tooltip="Env Guard",
+            ),
+            DiagramNode(
+                id="mkdir",
+                label="Create ~/.autosorter Directories",
+                shape="rectangle",
+                tooltip="Mkdir Autosorter",
+            ),
+            DiagramNode(
+                id="settings",
+                label="Load & Debounce Settings",
+                shape="database",
+                tooltip="Load Settings",
+            ),
+            DiagramNode(
+                id="ready",
+                label="User Space Initialized",
+                shape="stadium",
+                tooltip="Bootstrap Ready",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="launch", target="guard"),
+            DiagramEdge(source="guard", target="mkdir", label="First Run"),
+            DiagramEdge(source="mkdir", target="settings"),
+            DiagramEdge(source="guard", target="settings", label="Dirs Exist"),
+            DiagramEdge(source="settings", target="ready"),
+        ],
+    )
+
+
+def _create_core_downloader_spec() -> ComponentDiagramSpec:
+    """Build core_downloader diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_downloader",
+        title="Model Downloader Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="req",
+                label="Model Download Request",
+                shape="round",
+                url="docs/api_reference.md#appcoredownloader",
+                tooltip="Download Request",
+            ),
+            DiagramNode(
+                id="net",
+                label="Network Connectivity Test",
+                shape="rhombus",
+                url="docs/api_reference.md#appcoreenv_helper",
+                tooltip="Connectivity Check",
+            ),
+            DiagramNode(
+                id="progress",
+                label="Progress Tracker",
+                shape="rectangle",
+                url="docs/api_reference.md#appcoreprogress",
+                tooltip="Progress Tracker",
+            ),
+            DiagramNode(
+                id="bundle",
+                label="Save Model Weights Bundle",
+                shape="database",
+                url="docs/api_reference.md#appcoreoffline_loader",
+                tooltip="Save Bundle",
+            ),
+            DiagramNode(
+                id="fallback",
+                label="Fallback to Offline Mode",
+                shape="stadium",
+                tooltip="Offline Fallback",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="req", target="net"),
+            DiagramEdge(source="net", target="progress", label="Online"),
+            DiagramEdge(source="net", target="fallback", label="Offline"),
+            DiagramEdge(source="progress", target="bundle", label="Complete"),
+        ],
+    )
+
+
+def _create_core_extractor_spec() -> ComponentDiagramSpec:
+    """Build core_extractor diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_extractor",
+        title="Document Extractor Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="file",
+                label="Target Document File",
+                shape="rectangle",
+                url="docs/api_reference.md#appcoreextractor",
+                tooltip="Document File Input",
+            ),
+            DiagramNode(
+                id="router",
+                label="Extractor Strategies Dispatcher",
+                shape="rhombus",
+                url="docs/api_reference.md#appcoreextractor_strategies",
+                tooltip="Strategy Router",
+            ),
+            DiagramNode(
+                id="extractor",
+                label="Structured Text Extractor",
+                shape="subroutine",
+                tooltip="Text Extractor Exec",
+            ),
+            DiagramNode(
+                id="forensic",
+                label="Forensic Scanner Fallback",
+                shape="rectangle",
+                url="docs/api_reference.md#appcoreforensic_scanner",
+                tooltip="Forensic Fallback",
+            ),
+            DiagramNode(
+                id="text",
+                label="Extracted Text Payload",
+                shape="stadium",
+                tooltip="Extracted Text Output",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="file", target="router"),
+            DiagramEdge(source="router", target="extractor", label="Standard Format"),
+            DiagramEdge(source="router", target="forensic", label="Unrecognized Format"),
+            DiagramEdge(source="extractor", target="text"),
+            DiagramEdge(source="forensic", target="text"),
+        ],
+    )
+
+
+def _create_core_file_renamer_spec() -> ComponentDiagramSpec:
+    """Build core_file_renamer diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_file_renamer",
+        title="File Renamer Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="rename",
+                label="Target File Rename Spec",
+                shape="rectangle",
+                url="docs/api_reference.md#appcorefile_renamer",
+                tooltip="Rename Task Spec",
+            ),
+            DiagramNode(
+                id="fmt",
+                label="Pattern Formatter Engine",
+                shape="subroutine",
+                url="docs/api_reference.md#appcorepattern_formatter",
+                tooltip="Pattern Formatter",
+            ),
+            DiagramNode(
+                id="sanitizer",
+                label="Filename Path Sanitizer",
+                shape="rhombus",
+                url="docs/api_reference.md#appcorepath_utils",
+                tooltip="Path Sanitizer",
+            ),
+            DiagramNode(
+                id="ops",
+                label="Resilient File Operation",
+                shape="rectangle",
+                url="docs/api_reference.md#appcoreresilient_file_ops",
+                tooltip="Resilient Move Exec",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="rename", target="fmt"),
+            DiagramEdge(source="fmt", target="sanitizer", label="Formatted Name"),
+            DiagramEdge(source="sanitizer", target="ops", label="Sanitized Target"),
+        ],
+    )
+
+
+def _create_core_scanner_spec() -> ComponentDiagramSpec:
+    """Build core_scanner diagram specification."""
+    return ComponentDiagramSpec(
+        id="core_scanner",
+        title="Directory Scanner Subsystem Workflow",
+        diagram_type="flowchart",
+        direction="TD",
+        nodes=[
+            DiagramNode(
+                id="dir_node",
+                label="Target Search Directory",
+                shape="rectangle",
+                url="docs/api_reference.md#appcorescanner",
+                tooltip="Search Directory",
+            ),
+            DiagramNode(
+                id="walk",
+                label="Recursive Directory Walk",
+                shape="subroutine",
+                tooltip="Recursive Walk Exec",
+            ),
+            DiagramNode(
+                id="filter_node",
+                label="Ignore & Transient Filter",
+                shape="rhombus",
+                url="docs/api_reference.md#appcorepath_utils",
+                tooltip="Transient Filter",
+            ),
+            DiagramNode(
+                id="stream",
+                label="Discovered File Stream",
+                shape="stadium",
+                tooltip="File Stream Yield",
+            ),
+        ],
+        edges=[
+            DiagramEdge(source="dir_node", target="walk"),
+            DiagramEdge(source="walk", target="filter_node"),
+            DiagramEdge(source="filter_node", target="stream", label="Valid Files"),
+        ],
+    )
+
+
 _SPEC_FACTORIES: Dict[str, Callable[[], BaseDiagramSpec]] = {
     "core_architecture": _create_core_architecture_spec,
     "architecture_dataflow": _create_architecture_dataflow_spec,
@@ -3130,6 +4301,30 @@ _SPEC_FACTORIES: Dict[str, Callable[[], BaseDiagramSpec]] = {
     "user_guide_watchdog_state": _create_user_guide_watchdog_state_spec,
     "api_core_architecture": _create_api_core_architecture_spec,
     "admin_policy_evaluation": _create_admin_policy_evaluation_spec,
+    "core_quarantine_interceptor": _create_core_quarantine_interceptor_spec,
+    "core_offline_loader": _create_core_offline_loader_spec,
+    "core_resilient_file_ops": _create_core_resilient_file_ops_spec,
+    "core_simulation_exporter": _create_core_simulation_exporter_spec,
+    "core_forensic_scanner": _create_core_forensic_scanner_spec,
+    "core_jev_classifier": _create_core_jev_classifier_spec,
+    "core_semantic_embeddings": _create_core_semantic_embeddings_spec,
+    "core_mover": _create_core_mover_spec,
+    "core_verifier": _create_core_verifier_spec,
+    "core_policy_engine": _create_core_policy_engine_spec,
+    "core_daemon": _create_core_daemon_spec,
+    "core_ipc": _create_core_ipc_spec,
+    "core_plugin_registry": _create_core_plugin_registry_spec,
+    "core_audit_reporter": _create_core_audit_reporter_spec,
+    "core_crypto": _create_core_crypto_spec,
+    "core_db": _create_core_db_spec,
+    "core_history": _create_core_history_spec,
+    "core_ledger": _create_core_ledger_spec,
+    "core_session": _create_core_session_spec,
+    "core_user_space_bootstrap": _create_core_user_space_bootstrap_spec,
+    "core_downloader": _create_core_downloader_spec,
+    "core_extractor": _create_core_extractor_spec,
+    "core_file_renamer": _create_core_file_renamer_spec,
+    "core_scanner": _create_core_scanner_spec,
 }
 
 CONSTANT_TO_KEY_MAP: Dict[str, str] = {
@@ -3154,6 +4349,30 @@ CONSTANT_TO_KEY_MAP: Dict[str, str] = {
     "USER_GUIDE_WATCHDOG_STATE_SPEC": "user_guide_watchdog_state",
     "API_CORE_ARCHITECTURE_SPEC": "api_core_architecture",
     "ADMIN_POLICY_EVALUATION_SPEC": "admin_policy_evaluation",
+    "CORE_QUARANTINE_INTERCEPTOR_SPEC": "core_quarantine_interceptor",
+    "CORE_OFFLINE_LOADER_SPEC": "core_offline_loader",
+    "CORE_RESILIENT_FILE_OPS_SPEC": "core_resilient_file_ops",
+    "CORE_SIMULATION_EXPORTER_SPEC": "core_simulation_exporter",
+    "CORE_FORENSIC_SCANNER_SPEC": "core_forensic_scanner",
+    "CORE_JEV_CLASSIFIER_SPEC": "core_jev_classifier",
+    "CORE_SEMANTIC_EMBEDDINGS_SPEC": "core_semantic_embeddings",
+    "CORE_MOVER_SPEC": "core_mover",
+    "CORE_VERIFIER_SPEC": "core_verifier",
+    "CORE_POLICY_ENGINE_SPEC": "core_policy_engine",
+    "CORE_DAEMON_SPEC": "core_daemon",
+    "CORE_IPC_SPEC": "core_ipc",
+    "CORE_PLUGIN_REGISTRY_SPEC": "core_plugin_registry",
+    "CORE_AUDIT_REPORTER_SPEC": "core_audit_reporter",
+    "CORE_CRYPTO_SPEC": "core_crypto",
+    "CORE_DB_SPEC": "core_db",
+    "CORE_HISTORY_SPEC": "core_history",
+    "CORE_LEDGER_SPEC": "core_ledger",
+    "CORE_SESSION_SPEC": "core_session",
+    "CORE_USER_SPACE_BOOTSTRAP_SPEC": "core_user_space_bootstrap",
+    "CORE_DOWNLOADER_SPEC": "core_downloader",
+    "CORE_EXTRACTOR_SPEC": "core_extractor",
+    "CORE_FILE_RENAMER_SPEC": "core_file_renamer",
+    "CORE_SCANNER_SPEC": "core_scanner",
 }
 
 _SPEC_LOCK = threading.RLock()

@@ -15,7 +15,7 @@ from pydantic import BaseModel, Field
 
 from app.core.forensic_scanner import ForensicScanner
 from app.core.mover import get_safe_path
-from app.core.path_utils import sanitize_name
+from app.core.path_utils import safe_relpath, sanitize_name
 from app.core.progress import ProgressUpdate, emit_progress
 from app.plugins.clinical_compliance.clinical_compliance import ClinicalComplianceEngine
 from app.plugins.clinical_compliance.clinical_renamer import ClinicalRenamer
@@ -280,7 +280,7 @@ class CROMultiStudyPipeline:
                             "assigned_study": study_id,
                             "classified_artifact_id": art_id,
                             "classified_artifact_name": art_name,
-                            "destination_path": os.path.relpath(
+                            "destination_path": safe_relpath(
                                 dest_file_path, target_root
                             ),
                             "is_duplicate": doc.is_duplicate,

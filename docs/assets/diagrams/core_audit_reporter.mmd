@@ -1,0 +1,12 @@
+flowchart TD
+    events["In-Memory Audit Events Stream"]
+    formatter[["Report Formatter (HTML/PDF/JSON)"]]
+    signature{Cryptographic Signature Generator}
+    output[("Audit Report Output File")]
+    events --> formatter
+    formatter -->|Generate Hash| signature
+    signature -->|Write File| output
+    click events "docs/api_reference.md#appcoreaudit_reporter" "Audit Stream"
+    click formatter tooltip "Report Formatter"
+    click signature "docs/api_reference.md#appcorecrypto" "Signature Generator"
+    click output tooltip "Audit Output File"
