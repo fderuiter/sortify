@@ -13,36 +13,20 @@ import socket
 import sys
 from typing import Any, Callable, Dict, List, Optional, Tuple
 
-from app.core.exceptions import OfflineLoaderError
+from app.core.exceptions import (
+    ArchiveCorruptionError,
+    HashVerificationError,
+    ModelWeightsNotFoundError,
+    OfflineModelLoadError,
+)
 from app.core.shared_registry import block_external_network
 from app.core.text_utils import sanitize_text
 
 logger = logging.getLogger(__name__)
 
-# Regular expression to match 4 consecutive location tokens in Florence-2 format
-# e.g., <loc_100><loc_200><loc_300><loc_400> or with spacing
 LOC_BOX_PATTERN = re.compile(
     r"<loc_(\d{1,4})>\s*<loc_(\d{1,4})>\s*<loc_(\d{1,4})>\s*<loc_(\d{1,4})>"
 )
-
-
-class OfflineModelLoadError(OfflineLoaderError):
-    """Base exception for all offline model loading errors."""
-
-    pass
-
-
-class ModelWeightsNotFoundError(OfflineModelLoadError):
-    """Raised when model weights cannot be found in any fallback search paths."""
-
-    def __init__(self, model_id: str, searched_paths: List[str]):
-        self.model_id = model_id
-        self.searched_paths = searched_paths
-        paths_str = ", ".join(f"'{p}'" for p in searched_paths)
-        super().__init__(
-            f"Model weights for '{model_id}' were not found in any of the searched paths: {paths_str}. "
-            f"Please ensure the model bundle is downloaded and placed in one of these locations."
-        )
 
 
 class OfflineModelLoader:
@@ -191,8 +175,20 @@ class OfflineModelLoader:
             logger.error(
                 f"Failed to extract sidecar model zip archive '{sidecar_zip_path}': {e}"
             )
-            raise OfflineModelLoadError(
-                f"Failed to extract sidecar model package: {e}"
+            SharedModelRegistry.get_instance().record_model_health(
+                "sidecar_archive",
+                status="FAILED",
+                failure_reason=f"Corrupted sidecar model archive '{sidecar_zip_path}': {e}",
+                suggested_recovery_action="RE_DOWNLOAD_MODEL",
+            )
+            SharedModelRegistry.get_instance().record_model_health(
+                "sidecar_bundle",
+                status="FAILED",
+                failure_reason=f"Corrupted sidecar model archive '{sidecar_zip_path}': {e}",
+                suggested_recovery_action="RE_DOWNLOAD_MODEL",
+            )
+            raise ArchiveCorruptionError(
+                f"Failed to extract sidecar model package '{sidecar_zip_path}': {e}"
             ) from e
 
         emit_progress(
@@ -208,11 +204,19 @@ class OfflineModelLoader:
                 if os.path.isdir(subpath):
                     check_id = "generative_naming" if item == "model" else item
                     registry.verify_integrity(check_id, subpath)
+        except HashVerificationError:
+            raise
         except Exception as err:
             logger.error(
                 f"Cryptographic hash verification failed after hydration: {err}"
             )
-            raise OfflineModelLoadError(
+            registry.record_model_health(
+                "sidecar_archive",
+                status="FAILED",
+                failure_reason=f"Hydrated sidecar weights failed integrity check: {err}",
+                suggested_recovery_action="RE_DOWNLOAD_MODEL",
+            )
+            raise HashVerificationError(
                 f"Hydrated sidecar weights failed integrity check: {err}"
             ) from err
 
