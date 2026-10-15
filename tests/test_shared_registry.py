@@ -699,3 +699,140 @@ def test_check_ai_status_local_offline_bundle(tmp_path, monkeypatch):
         _, kwargs = mock_easyocr.Reader.call_args
         assert "offline_bundle" in kwargs.get("model_storage_directory", "")
         assert "easyocr" in kwargs.get("model_storage_directory", "")
+
+
+def test_fast_path_read_does_not_block_on_global_lock():
+    """Verify pre-cached models are retrieved on fast path without waiting for registry._lock."""
+    import threading
+    import time
+
+    SharedModelRegistry._instance = None
+    registry = SharedModelRegistry.get_instance()
+
+    # Pre-populate registry._models
+    mock_onnx = MagicMock()
+    mock_ocr = MagicMock()
+    mock_gen = (MagicMock(), "task", MagicMock())
+    registry._models["onnx_path/to/model.onnx"] = mock_onnx
+    registry._models["easyocr"] = mock_ocr
+    registry._models["easyocr_info"] = (["en"], False)
+    registry._models["generative_naming"] = mock_gen
+
+    # Acquire registry._lock in a separate thread and hold it
+    lock_acquired = threading.Event()
+    release_lock = threading.Event()
+
+    def hold_global_lock():
+        with registry._lock:
+            lock_acquired.set()
+            release_lock.wait(timeout=2.0)
+
+    t = threading.Thread(target=hold_global_lock)
+    t.start()
+    assert lock_acquired.wait(timeout=1.0)
+
+    try:
+        start_time = time.time()
+        res_onnx = registry.get_onnx_session("path/to/model.onnx")
+        res_ocr = registry.get_ocr_reader()
+        res_gen = registry.get_generative_model("dummy_path")
+        elapsed = time.time() - start_time
+
+        assert res_onnx is mock_onnx
+        assert res_ocr is mock_ocr
+        assert res_gen is mock_gen
+        assert elapsed < 0.5, f"Fast path getter blocked on global lock! Elapsed: {elapsed}s"
+    finally:
+        release_lock.set()
+        t.join()
+
+
+def test_verify_integrity_runs_outside_global_lock(tmp_path):
+    """Verify file hashing in verify_integrity executes without holding registry._lock."""
+    SharedModelRegistry._instance = None
+    registry = SharedModelRegistry.get_instance()
+
+    test_file = tmp_path / "model.bin"
+    test_content = b"fake model weights data"
+    test_file.write_bytes(test_content)
+    file_hash = hashlib.sha256(test_content).hexdigest()
+
+    registry.register_expected_hashes("test_model", {"model.bin": file_hash})
+
+    lock_state_during_hash = None
+
+    from app.core import resilient_file_ops
+
+    orig_hash_fn = resilient_file_ops.resilient_file_hash
+
+    def mock_file_hash(path):
+        nonlocal lock_state_during_hash
+        lock_state_during_hash = registry._lock.acquire(blocking=False)
+        if lock_state_during_hash:
+            registry._lock.release()
+        return orig_hash_fn(path)
+
+    with patch("app.core.resilient_file_ops.resilient_file_hash", side_effect=mock_file_hash):
+        assert registry.verify_integrity("test_model", str(tmp_path)) is True
+
+    assert lock_state_during_hash is True, "global registry lock was held during file hashing!"
+
+
+def test_parallel_model_initialization():
+    """Verify initializations of different model instances proceed in parallel with per-model locks."""
+    import threading
+    import time
+
+    SharedModelRegistry._instance = None
+    registry = SharedModelRegistry.get_instance()
+
+    def init_jev():
+        time.sleep(0.2)
+        return MagicMock()
+
+    with patch("app.core.jev_classifier.JevClassifierEngine", side_effect=init_jev), \
+         patch("app.core.offline_loader.Florence2VisualProcessor") as mock_florence_cls:
+
+        mock_proc = MagicMock()
+        mock_proc.load.side_effect = lambda: time.sleep(0.01)
+        mock_florence_cls.return_value = mock_proc
+
+        t_a = threading.Thread(target=registry.get_jev_classifier)
+        t_b = threading.Thread(target=registry.get_florence_processor)
+
+        t_a.start()
+        time.sleep(0.05)
+        t_b.start()
+
+        t_b.join()
+        b_done_time = time.time()
+        t_a.join()
+        a_done_time = time.time()
+
+        assert b_done_time < a_done_time
+        assert registry.is_model_loaded("jev_classifier")
+        assert registry.is_model_loaded("florence-2")
+
+
+def test_per_model_lock_cleanup_on_unload():
+    """Verify unloading models cleans up per-model locks in _per_model_locks."""
+    SharedModelRegistry._instance = None
+    registry = SharedModelRegistry.get_instance()
+
+    with patch("app.core.jev_classifier.JevClassifierEngine", return_value=MagicMock()):
+        registry.get_jev_classifier()
+        assert "jev_classifier" in registry._models
+        assert "jev_classifier" in registry._per_model_locks
+
+        unloaded = registry.unload_model("jev_classifier")
+        assert unloaded is True
+        assert "jev_classifier" not in registry._models
+        assert "jev_classifier" not in registry._per_model_locks
+
+        # Test unload_all_models
+        registry.get_jev_classifier()
+        assert "jev_classifier" in registry._per_model_locks
+        registry.unload_all_models()
+        assert len(registry._models) == 0
+        assert len(registry._per_model_locks) == 0
+
