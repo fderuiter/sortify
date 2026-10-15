@@ -1,7 +1,7 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
-from scripts.generate_docs import (
+from app.cli.generate_docs import (
     audit_handwritten_docs,
     get_handwritten_docs,
     main,
@@ -59,7 +59,7 @@ def test_audit_handwritten_docs_detects_invalid_path(tmp_path):
     )
 
     with patch(
-        "scripts.generate_docs.get_handwritten_docs", return_value=[str(bad_doc)]
+        "app.cli.generate_docs.get_handwritten_docs", return_value=[str(bad_doc)]
     ):
         errors = audit_handwritten_docs()
         assert len(errors) == 1
@@ -74,7 +74,7 @@ def test_audit_handwritten_docs_detects_broken_link(tmp_path):
 
     with (
         patch(
-            "scripts.generate_docs.get_handwritten_docs", return_value=[str(bad_doc)]
+            "app.cli.generate_docs.get_handwritten_docs", return_value=[str(bad_doc)]
         ),
         patch(
             "scripts.validate_links.validate_url",
@@ -91,13 +91,13 @@ def test_main_strict_flag():
     """Verify that --strict (default) and --no-strict set mkdocs arguments correctly."""
     with patch("sys.argv", ["generate_docs.py", "--no-strict"]):
         with (
-            patch("scripts.generate_docs.compile_diagram_assets") as mock_diag,
-            patch("scripts.generate_docs.generate_tutorial_docs") as mock_tut,
-            patch("scripts.generate_docs.generate_api_docs") as mock_api,
-            patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
-            patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
-            patch("scripts.generate_docs.update_security_md") as mock_sec,
-            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch("app.cli.generate_docs.compile_diagram_assets") as mock_diag,
+            patch("app.cli.generate_docs.generate_tutorial_docs") as mock_tut,
+            patch("app.cli.generate_docs.generate_api_docs") as mock_api,
+            patch("app.cli.generate_docs.generate_ui_docs") as mock_ui,
+            patch("app.cli.generate_docs.generate_admin_guide") as mock_admin,
+            patch("app.cli.generate_docs.update_security_md") as mock_sec,
+            patch("app.cli.generate_docs.validate_mermaid_diagrams", return_value=[]),
             patch("subprocess.run") as mock_run,
         ):
             mock_run.return_value = MagicMock(returncode=0)
@@ -123,13 +123,13 @@ def test_main_default_strict():
     """Verify that by default mkdocs is run with --strict."""
     with patch("sys.argv", ["generate_docs.py"]):
         with (
-            patch("scripts.generate_docs.compile_diagram_assets") as mock_diag,
-            patch("scripts.generate_docs.generate_tutorial_docs") as mock_tut,
-            patch("scripts.generate_docs.generate_api_docs") as mock_api,
-            patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
-            patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
-            patch("scripts.generate_docs.update_security_md") as mock_sec,
-            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch("app.cli.generate_docs.compile_diagram_assets") as mock_diag,
+            patch("app.cli.generate_docs.generate_tutorial_docs") as mock_tut,
+            patch("app.cli.generate_docs.generate_api_docs") as mock_api,
+            patch("app.cli.generate_docs.generate_ui_docs") as mock_ui,
+            patch("app.cli.generate_docs.generate_admin_guide") as mock_admin,
+            patch("app.cli.generate_docs.update_security_md") as mock_sec,
+            patch("app.cli.generate_docs.validate_mermaid_diagrams", return_value=[]),
             patch("subprocess.run") as mock_run,
         ):
             mock_run.return_value = MagicMock(returncode=0)
@@ -148,13 +148,13 @@ def test_main_no_build_flag():
     """Verify that --no-build skips running subprocess.run for mkdocs build."""
     with patch("sys.argv", ["generate_docs.py", "--no-build"]):
         with (
-            patch("scripts.generate_docs.compile_diagram_assets") as mock_diag,
-            patch("scripts.generate_docs.generate_tutorial_docs") as mock_tut,
-            patch("scripts.generate_docs.generate_api_docs") as mock_api,
-            patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
-            patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
-            patch("scripts.generate_docs.update_security_md") as mock_sec,
-            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch("app.cli.generate_docs.compile_diagram_assets") as mock_diag,
+            patch("app.cli.generate_docs.generate_tutorial_docs") as mock_tut,
+            patch("app.cli.generate_docs.generate_api_docs") as mock_api,
+            patch("app.cli.generate_docs.generate_ui_docs") as mock_ui,
+            patch("app.cli.generate_docs.generate_admin_guide") as mock_admin,
+            patch("app.cli.generate_docs.update_security_md") as mock_sec,
+            patch("app.cli.generate_docs.validate_mermaid_diagrams", return_value=[]),
             patch("subprocess.run") as mock_run,
         ):
             main()
@@ -172,13 +172,13 @@ def test_main_skip_build_flag():
     """Verify that --skip-build skips running subprocess.run for mkdocs build."""
     with patch("sys.argv", ["generate_docs.py", "--skip-build"]):
         with (
-            patch("scripts.generate_docs.compile_diagram_assets") as mock_diag,
-            patch("scripts.generate_docs.generate_tutorial_docs") as mock_tut,
-            patch("scripts.generate_docs.generate_api_docs") as mock_api,
-            patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
-            patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
-            patch("scripts.generate_docs.update_security_md") as mock_sec,
-            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch("app.cli.generate_docs.compile_diagram_assets") as mock_diag,
+            patch("app.cli.generate_docs.generate_tutorial_docs") as mock_tut,
+            patch("app.cli.generate_docs.generate_api_docs") as mock_api,
+            patch("app.cli.generate_docs.generate_ui_docs") as mock_ui,
+            patch("app.cli.generate_docs.generate_admin_guide") as mock_admin,
+            patch("app.cli.generate_docs.update_security_md") as mock_sec,
+            patch("app.cli.generate_docs.validate_mermaid_diagrams", return_value=[]),
             patch("subprocess.run") as mock_run,
         ):
             main()
@@ -197,16 +197,16 @@ def test_main_detects_unsynced_files_on_check():
     original_open = open
     with patch("sys.argv", ["generate_docs.py", "--check"]):
         with (
-            patch("scripts.generate_docs.compile_diagram_assets"),
-            patch("scripts.generate_docs.generate_tutorial_docs"),
-            patch("scripts.generate_docs.generate_api_docs"),
-            patch("scripts.generate_docs.generate_ui_docs"),
-            patch("scripts.generate_docs.generate_admin_guide"),
-            patch("scripts.generate_docs.update_security_md"),
-            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
-            patch("scripts.generate_docs.audit_handwritten_docs", return_value=[]),
+            patch("app.cli.generate_docs.compile_diagram_assets"),
+            patch("app.cli.generate_docs.generate_tutorial_docs"),
+            patch("app.cli.generate_docs.generate_api_docs"),
+            patch("app.cli.generate_docs.generate_ui_docs"),
+            patch("app.cli.generate_docs.generate_admin_guide"),
+            patch("app.cli.generate_docs.update_security_md"),
+            patch("app.cli.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch("app.cli.generate_docs.audit_handwritten_docs", return_value=[]),
             patch("subprocess.run") as mock_run,
-            patch("scripts.generate_docs.os.path.exists", return_value=True),
+            patch("app.cli.generate_docs.os.path.exists", return_value=True),
             patch("builtins.open") as mock_open,
             patch("sys.exit") as mock_exit,
         ):
@@ -284,16 +284,16 @@ def test_main_clean_on_check():
     original_open = open
     with patch("sys.argv", ["generate_docs.py", "--check"]):
         with (
-            patch("scripts.generate_docs.compile_diagram_assets"),
-            patch("scripts.generate_docs.generate_tutorial_docs"),
-            patch("scripts.generate_docs.generate_api_docs"),
-            patch("scripts.generate_docs.generate_ui_docs"),
-            patch("scripts.generate_docs.generate_admin_guide"),
-            patch("scripts.generate_docs.update_security_md"),
-            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
-            patch("scripts.generate_docs.audit_handwritten_docs", return_value=[]),
+            patch("app.cli.generate_docs.compile_diagram_assets"),
+            patch("app.cli.generate_docs.generate_tutorial_docs"),
+            patch("app.cli.generate_docs.generate_api_docs"),
+            patch("app.cli.generate_docs.generate_ui_docs"),
+            patch("app.cli.generate_docs.generate_admin_guide"),
+            patch("app.cli.generate_docs.update_security_md"),
+            patch("app.cli.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch("app.cli.generate_docs.audit_handwritten_docs", return_value=[]),
             patch("subprocess.run") as mock_run,
-            patch("scripts.generate_docs.os.path.exists", return_value=True),
+            patch("app.cli.generate_docs.os.path.exists", return_value=True),
             patch("builtins.open") as mock_open,
             patch("sys.exit") as mock_exit,
         ):
@@ -984,4 +984,3 @@ def test_network_rules_vulnerability_database_egress_rules():
 
     assert re.search(gh_rule["pattern"], "https://api.github.com/advisories")
     assert not re.search(gh_rule["pattern"], "https://apiXgithubXcom/advisories")
-

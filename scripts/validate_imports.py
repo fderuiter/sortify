@@ -45,12 +45,13 @@ MODULE_TO_PACKAGE_MAP = {
     "easyocr": "easyocr",
     "transformers": "transformers",
     "onnxruntime": "onnxruntime",
+    "rich": "rich",
 }
 
 STDLIB_MODULES = set(getattr(sys, "stdlib_module_names", set())) | set(
     sys.builtin_module_names
 )
-INTERNAL_MODULES = {"app"}
+INTERNAL_MODULES = {"app", "scripts", "sandbox_cli"}
 
 
 def normalize_package_name(name: str) -> str:
