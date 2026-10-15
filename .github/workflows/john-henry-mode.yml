@@ -2,7 +2,7 @@ name: Sanitize CI/CD Fix Bot Comment
 
 on:
   issue_comment:
-    types: [created]
+    types: [created, edited]
 
 permissions:
   issues: write
@@ -10,13 +10,23 @@ permissions:
 
 jobs:
   sanitize-comment:
-    if: github.event.issue.pull_request && contains(github.event.comment.body, '[CI/CD Fix Attempt ')
+    if: |
+      github.event.issue.pull_request &&
+      contains(fromJSON('["MEMBER", "OWNER", "COLLABORATOR"]'), github.event.comment.author_association) &&
+      contains(github.event.comment.body, '[CI/CD Fix Attempt ')
     runs-on: ubuntu-latest
     steps:
       - name: Update Comment Body
         uses: actions/github-script@v9
         with:
           script: |
+            const authorAssoc = context.payload.comment.author_association;
+            const allowedRoles = ['MEMBER', 'OWNER', 'COLLABORATOR'];
+            if (!allowedRoles.includes(authorAssoc)) {
+              console.log(`Skipping: author_association '${authorAssoc}' is not authorized.`);
+              return;
+            }
+
             const commentId = context.payload.comment.id;
             const originalBody = context.payload.comment.body;
 
