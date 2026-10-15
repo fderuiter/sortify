@@ -3572,9 +3572,11 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
             self.remove_class("narrow")
 
     def on_resize(self, event: events.Resize) -> None:
+        """Handle screen resize events to update dynamic narrow layout."""
         self._update_layout(event.size.width)
 
     def on_mount(self) -> None:
+        """Initialize data table columns and trigger initial record fetch on mount."""
         self._update_layout(self.size.width)
         dt = self.query_one("#quarantine-table", DataTable)
         dt.add_columns("Job ID", "Filename", "Status", "Policy Action", "Created")
@@ -3582,10 +3584,12 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
         self.action_refresh_records()
 
     def action_cancel(self) -> None:
+        """Close quarantine vault modal on Escape key press."""
         self.dismiss(None)
 
     @on(Button.Pressed, "#btn-quarantine-close")
     def action_close_button(self) -> None:
+        """Close quarantine vault modal via close button."""
         self.dismiss(None)
 
     def _get_db(self) -> Any:
@@ -3616,10 +3620,12 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
 
     @on(Button.Pressed, "#btn-quarantine-refresh")
     def action_refresh_records(self) -> None:
+        """Refresh quarantine records from database."""
         self.fetch_records_async()
 
     @work(thread=True)
     def fetch_records_async(self) -> None:
+        """Fetch quarantine records asynchronously on background worker thread."""
         try:
             db_inst = self._get_db()
 
@@ -3786,6 +3792,7 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
 
     @on(Button.Pressed, "#btn-quarantine-release")
     def action_release_selected(self) -> None:
+        """Prompt destination directory and release selected quarantine item."""
         record = self._get_selected_record(self.selected_job_id)
         if not record:
             self.announce("No quarantine item selected for release.")
@@ -3818,6 +3825,7 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
 
     @work(thread=True)
     def execute_release_async(self, record: dict, dest_file_path: str) -> None:
+        """Asynchronously perform atomic quarantine relocation to destination path."""
         job_id = record["job_id"]
         staged_path = record["staged_filepath"]
         try:
@@ -3848,6 +3856,7 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
 
     @on(Button.Pressed, "#btn-quarantine-dismiss")
     def action_dismiss_selected(self) -> None:
+        """Dismiss the selected quarantine item without restoring file."""
         record = self._get_selected_record(self.selected_job_id)
         if not record:
             self.announce("No quarantine item selected for dismissal.")
@@ -3863,6 +3872,7 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
 
     @work(thread=True)
     def execute_dismiss_async(self, job_id: str) -> None:
+        """Asynchronously mark quarantine item as dismissed in database."""
         try:
             db_inst = self._get_db()
             db_inst.update_quarantine_status(
@@ -3885,6 +3895,7 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
 
     @on(Button.Pressed, "#btn-quarantine-reinspect")
     def action_reinspect_selected(self) -> None:
+        """Trigger background forensic re-inspection scan for selected item."""
         record = self._get_selected_record(self.selected_job_id)
         if not record:
             self.announce("No quarantine item selected for re-inspection.")
@@ -3898,6 +3909,7 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
 
     @work(thread=True)
     def execute_reinspect_async(self, job_id: str) -> None:
+        """Asynchronously execute policy re-inspection on worker thread."""
         try:
             db_inst = self._get_db()
 

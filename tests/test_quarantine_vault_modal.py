@@ -2,8 +2,6 @@
 
 import asyncio
 import os
-import shutil
-import time
 
 import pytest
 from textual.widgets import Button, DataTable, Input, Select, Static
