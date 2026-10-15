@@ -63,6 +63,8 @@ class PRMetadata:
     deletions: int = 0
     is_dependabot: bool = False
     dependency_update_type: str = "minor"  # 'major', 'minor', 'patch'
+    all_commits_verified: bool = True
+    unverified_commit_shas: List[str] = field(default_factory=list)
 
 
 @dataclass
@@ -91,6 +93,19 @@ def classify_pr(meta: PRMetadata) -> ClassificationResult:
     blocking_reasons: List[str] = []
     risk_level = "low"
     labels_to_add: List[str] = []
+
+    # 0. Commit signature check
+    if not meta.all_commits_verified:
+        if risk_level not in ("sensitive", "high"):
+            risk_level = "high"
+        shas_str = (
+            f": {', '.join(meta.unverified_commit_shas[:3])}"
+            if meta.unverified_commit_shas
+            else ""
+        )
+        if len(meta.unverified_commit_shas) > 3:
+            shas_str += f" (+{len(meta.unverified_commit_shas) - 3} more)"
+        blocking_reasons.append(f"PR contains unverified commit signatures{shas_str}.")
 
     # 1. Disable override check
     if "disable-automerge" in meta.labels:
@@ -240,6 +255,8 @@ def main() -> None:
         deletions=data.get("deletions", 0),
         is_dependabot=data.get("is_dependabot", False),
         dependency_update_type=data.get("dependency_update_type", "minor"),
+        all_commits_verified=data.get("all_commits_verified", True),
+        unverified_commit_shas=data.get("unverified_commit_shas", []),
     )
 
     result = classify_pr(meta)
