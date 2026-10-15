@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "4645279f04fbe20e17a7561ccfa3919a958eb8791e52feefb2e17fc46a57923d"
+    "checksum": "dcf0db43a607748959e2687ad39a75e311fc7bdbff8e008d7822ee4412dc0133"
   },
   "classes": [
     {
@@ -48,6 +48,11 @@
               "annotation": null,
               "default": "None",
               "name": "progress_callback"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "source_dirs"
             }
           ],
           "returns": "list"

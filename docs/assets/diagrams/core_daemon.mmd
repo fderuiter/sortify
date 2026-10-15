@@ -1,0 +1,15 @@
+flowchart TD
+    start("Daemon Service Initializer")
+    ipc[["IPC Server Listener"]]
+    watchdog["Background Watchdog Observer"]
+    session["Session Controller Instance"]
+    stop(["Clean Shutdown Handler"])
+    start --> ipc
+    ipc -->|RPC Calls| session
+    watchdog -->|FS Events| session
+    session -->|Termination Signal| stop
+    click start "docs/api_reference.md#appcoredaemon" "Daemon Initializer"
+    click ipc "docs/api_reference.md#appcoreipc" "IPC Server"
+    click watchdog tooltip "Watchdog Observer"
+    click session "docs/api_reference.md#appcoresession" "Session Instance"
+    click stop tooltip "Shutdown Handler"
