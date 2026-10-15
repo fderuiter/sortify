@@ -231,3 +231,22 @@ def test_scrubbing_parity_between_logging_and_prompt(monkeypatch):
         == util_posix
         == r"Failed to load <USER_HOME>/documents/report.pdf"
     )
+
+
+def test_scrub_user_home_paths_caching():
+    from app.core.path_utils import _get_compiled_home_patterns, scrub_user_home_paths
+
+    _get_compiled_home_patterns.cache_clear()
+    info_start = _get_compiled_home_patterns.cache_info()
+    assert info_start.hits == 0
+
+    text = "Accessing /custom/home/user/data.txt"
+    res1 = scrub_user_home_paths(text, home_dir="/custom/home/user")
+    info_after_1 = _get_compiled_home_patterns.cache_info()
+    assert info_after_1.misses >= 1
+
+    hits_before = info_after_1.hits
+    res2 = scrub_user_home_paths(text, home_dir="/custom/home/user")
+    info_after_2 = _get_compiled_home_patterns.cache_info()
+    assert info_after_2.hits == hits_before + 1
+    assert res1 == res2 == "Accessing <USER_HOME>/data.txt"
