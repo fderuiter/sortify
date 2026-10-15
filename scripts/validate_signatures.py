@@ -21,6 +21,60 @@ MAIN_CLI_PATH = os.path.join(BASE_DIR, "app", "main.py")
 SANDBOX_CLI_PATH = os.path.join(BASE_DIR, "sandbox_cli.py")
 
 
+def get_snapshot_root_dir():
+    """Get the root snapshot directory (tests/snapshots) for auditing orphaned snapshot files."""
+    if os.path.exists(SNAPSHOT_DIR):
+        parent = os.path.dirname(SNAPSHOT_DIR)
+        if os.path.exists(parent) and os.path.basename(SNAPSHOT_DIR) == "api":
+            return parent
+    return SNAPSHOT_DIR
+
+
+def collect_tui_svg_snapshots(tests_dir=None):
+    """Collect expected TUI SVG snapshot file paths by statically parsing test files."""
+    if tests_dir is None:
+        tests_dir = os.path.join(BASE_DIR, "tests")
+
+    svg_paths = set()
+    if not os.path.exists(tests_dir):
+        return svg_paths
+
+    for root, _, files in os.walk(tests_dir):
+        for file in files:
+            if file.startswith("test_") and file.endswith(".py"):
+                file_path = os.path.join(root, file)
+                try:
+                    with open(file_path, "r", encoding="utf-8") as f:
+                        tree = ast.parse(f.read(), filename=file_path)
+                    for node in ast.walk(tree):
+                        if isinstance(node, ast.Call):
+                            func_name = ""
+                            if isinstance(node.func, ast.Name):
+                                func_name = node.func.id
+                            elif isinstance(node.func, ast.Attribute):
+                                func_name = node.func.attr
+                            if func_name == "assert_svg_snapshot" and node.args:
+                                first_arg = node.args[0]
+                                snap_name = None
+                                if isinstance(first_arg, ast.Constant) and isinstance(
+                                    first_arg.value, str
+                                ):
+                                    snap_name = first_arg.value
+                                if snap_name:
+                                    svg_path = os.path.join(
+                                        BASE_DIR,
+                                        "tests",
+                                        "snapshots",
+                                        "tui_svg",
+                                        f"{snap_name}.svg",
+                                    )
+                                    svg_paths.add(os.path.realpath(svg_path))
+                except Exception:
+                    pass
+
+    return svg_paths
+
+
 def safe_relpath(path, start):
     """Compute relative path if possible, fallback to absolute path if on different Windows drives."""
     try:
@@ -272,6 +326,34 @@ def extract_cli(file_path):
     return cli_calls
 
 
+def collect_cli_definitions(cli_dir=None):
+    """Dynamically scan CLI package modules and main entry points to extract CLI call nodes."""
+    if cli_dir is None:
+        cli_dir = os.path.join(BASE_DIR, "app", "cli")
+
+    cli_data = {}
+    if os.path.exists(MAIN_CLI_PATH):
+        cli_data["app/main.py"] = extract_cli(MAIN_CLI_PATH)
+    if os.path.exists(SANDBOX_CLI_PATH):
+        cli_data["sandbox_cli.py"] = extract_cli(SANDBOX_CLI_PATH)
+
+    if os.path.exists(cli_dir):
+        for root, dirs, files in os.walk(cli_dir):
+            dirs.sort()
+            files.sort()
+            for file in files:
+                if (
+                    file.endswith(".py")
+                    and not file.startswith("_")
+                    and not file.startswith(".")
+                ):
+                    full_path = os.path.join(root, file)
+                    rel_path = safe_relpath(full_path, BASE_DIR).replace("\\", "/")
+                    cli_data[rel_path] = extract_cli(full_path)
+
+    return dict(sorted(cli_data.items()))
+
+
 def collect_core_definitions(core_dir=None):
     """Dynamically scan core package modules and extract public definitions."""
     if core_dir is None:
@@ -291,16 +373,11 @@ def collect_core_definitions(core_dir=None):
     return dict(sorted(core_data.items()))
 
 
-def collect_current_definitions():
+def collect_current_definitions(cli_dir=None, core_dir=None):
     """Parse codebase files and return the complete current definitions structure."""
-    cli_data = {
-        "app/main.py": extract_cli(MAIN_CLI_PATH),
-        "sandbox_cli.py": extract_cli(SANDBOX_CLI_PATH),
-    }
-
     return {
-        "cli": cli_data,
-        "core": collect_core_definitions(),
+        "cli": collect_cli_definitions(cli_dir=cli_dir),
+        "core": collect_core_definitions(core_dir=core_dir),
     }
 
 
@@ -550,18 +627,21 @@ def main():
             print(f"Updated baseline snapshot: {rel_snap}")
             updated_count += 1
 
-        if not args.module_paths and os.path.exists(SNAPSHOT_DIR):
+        snap_root = get_snapshot_root_dir()
+        if not args.module_paths and os.path.exists(snap_root):
             valid_snap_paths = {
                 os.path.realpath(m["snapshot_path"]) for m in all_modules
             }
-            for root, _, files in os.walk(SNAPSHOT_DIR):
+            valid_snap_paths.update(collect_tui_svg_snapshots())
+            for root, _, files in os.walk(snap_root):
                 for file in files:
-                    if file.endswith(".json"):
-                        full_snap = os.path.realpath(os.path.join(root, file))
-                        if full_snap not in valid_snap_paths:
-                            os.remove(full_snap)
-                            rel_removed = safe_relpath(full_snap, BASE_DIR)
-                            print(f"Removed orphaned snapshot file: {rel_removed}")
+                    if file.endswith(".actual") or file.startswith("."):
+                        continue
+                    full_snap = os.path.realpath(os.path.join(root, file))
+                    if full_snap not in valid_snap_paths:
+                        os.remove(full_snap)
+                        rel_removed = safe_relpath(full_snap, BASE_DIR)
+                        print(f"Removed orphaned snapshot file: {rel_removed}")
 
         print(
             f"Successfully processed baseline snapshot updates ({updated_count} files written)."
@@ -636,18 +716,21 @@ def main():
             )
             has_errors = True
 
-    if not args.module_paths and os.path.exists(SNAPSHOT_DIR):
-        for root, _, files in os.walk(SNAPSHOT_DIR):
+    snap_root = get_snapshot_root_dir()
+    if not args.module_paths and os.path.exists(snap_root):
+        valid_snap_paths.update(collect_tui_svg_snapshots())
+        for root, _, files in os.walk(snap_root):
             for file in files:
-                if file.endswith(".json"):
-                    full_snap = os.path.realpath(os.path.join(root, file))
-                    if full_snap not in valid_snap_paths:
-                        rel_orphaned = safe_relpath(full_snap, BASE_DIR)
-                        print(
-                            f"FAIL: Orphaned snapshot file detected: {rel_orphaned}",
-                            file=sys.stderr,
-                        )
-                        has_errors = True
+                if file.endswith(".actual") or file.startswith("."):
+                    continue
+                full_snap = os.path.realpath(os.path.join(root, file))
+                if full_snap not in valid_snap_paths:
+                    rel_orphaned = safe_relpath(full_snap, BASE_DIR)
+                    print(
+                        f"FAIL: Orphaned snapshot file detected: {rel_orphaned}",
+                        file=sys.stderr,
+                    )
+                    has_errors = True
 
     if has_errors:
         print(

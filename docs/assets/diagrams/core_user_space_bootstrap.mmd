@@ -1,0 +1,16 @@
+flowchart TD
+    launch("Application Startup Request")
+    guard{Environment Directory Guard}
+    mkdir["Create ~/.autosorter Directories"]
+    settings[("Load & Debounce Settings")]
+    ready(["User Space Initialized"])
+    launch --> guard
+    guard -->|First Run| mkdir
+    mkdir --> settings
+    guard -->|Dirs Exist| settings
+    settings --> ready
+    click launch "docs/api_reference.md#appcoreuser_space_bootstrap" "Startup Request"
+    click guard "docs/api_reference.md#appcoreenv_helper" "Env Guard"
+    click mkdir tooltip "Mkdir Autosorter"
+    click settings tooltip "Load Settings"
+    click ready tooltip "Bootstrap Ready"

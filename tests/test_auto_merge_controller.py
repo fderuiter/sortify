@@ -46,6 +46,24 @@ def test_process_queue_no_eligible_prs():
     assert res is None
 
 
+def test_get_commit_verification():
+    client = GitHubClient("fake_token", "owner", "repo")
+    client._get = MagicMock(
+        return_value={
+            "commit": {
+                "verification": {
+                    "verified": True,
+                    "reason": "valid",
+                    "signature": "gpg_sig",
+                }
+            }
+        }
+    )
+    res = client.get_commit_verification("sha123")
+    assert res == {"verified": True, "reason": "valid", "signature": "gpg_sig"}
+    client._get.assert_called_once_with("commits/sha123")
+
+
 def test_process_queue_merges_eligible_pr():
     client = MagicMock(spec=GitHubClient)
     client.list_open_pull_requests.return_value = [
@@ -60,6 +78,10 @@ def test_process_queue_merges_eligible_pr():
         "mergeable": True,
         "mergeable_state": "clean",
         "user": {"login": "fderuiter"},
+    }
+    client.get_commit_verification.return_value = {
+        "verified": True,
+        "reason": "valid",
     }
     client.get_check_runs.return_value = {
         "Required CI": "success",
@@ -93,6 +115,10 @@ def test_process_queue_updates_behind_branch():
         "mergeable_state": "behind",
         "user": {"login": "stitch"},
     }
+    client.get_commit_verification.return_value = {
+        "verified": True,
+        "reason": "valid",
+    }
     client.update_branch.return_value = True
 
     res = process_auto_merge_queue(client)
@@ -115,6 +141,10 @@ def test_process_queue_does_not_update_blocked_mergeable_state():
         "mergeable": True,
         "mergeable_state": "blocked",  # blocked due to requirements, not base staleness
         "user": {"login": "stitch"},
+    }
+    client.get_commit_verification.return_value = {
+        "verified": True,
+        "reason": "valid",
     }
     client.get_check_runs.return_value = {}
     client.get_commit_status_checks.return_value = {}
@@ -140,6 +170,10 @@ def test_process_queue_handles_branch_update_conflict():
         "mergeable_state": "behind",
         "user": {"login": "jules"},
     }
+    client.get_commit_verification.return_value = {
+        "verified": True,
+        "reason": "valid",
+    }
     client.update_branch.return_value = False  # Conflict on update
 
     res = process_auto_merge_queue(client)
@@ -148,3 +182,61 @@ def test_process_queue_handles_branch_update_conflict():
         202, ["automerge:conflict", "automerge:blocked"]
     )
     client.merge_pull_request.assert_not_called()
+
+
+def test_process_queue_blocks_unverified_head_commit():
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 204, "labels": [{"name": "automerge:eligible"}], "draft": False}
+    ]
+    client.get_pull_request.return_value = {
+        "number": 204,
+        "title": "feat: untrusted change",
+        "draft": False,
+        "state": "open",
+        "head": {"sha": "sha_unverified"},
+        "mergeable": True,
+        "mergeable_state": "clean",
+        "user": {"login": "attacker"},
+    }
+    client.get_commit_verification.return_value = {
+        "verified": False,
+        "reason": "unsigned",
+    }
+
+    res = process_auto_merge_queue(client)
+    assert res is None
+    client.add_labels.assert_called_once_with(
+        204, ["automerge:blocked", "risk:high"]
+    )
+    client.merge_pull_request.assert_not_called()
+
+
+def test_process_queue_bot_commit_verification():
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 205, "labels": [{"name": "automerge:eligible"}], "draft": False}
+    ]
+    client.get_pull_request.return_value = {
+        "number": 205,
+        "title": "bump ruff",
+        "draft": False,
+        "state": "open",
+        "head": {"sha": "sha_bot_commit"},
+        "mergeable": True,
+        "mergeable_state": "clean",
+        "user": {"login": "dependabot[bot]"},
+    }
+    # Spoofed bot commit with verification.verified == False
+    client.get_commit_verification.return_value = {
+        "verified": False,
+        "reason": "unknown_key",
+    }
+
+    res = process_auto_merge_queue(client)
+    assert res is None
+    client.add_labels.assert_called_once_with(
+        205, ["automerge:blocked", "risk:high"]
+    )
+    client.merge_pull_request.assert_not_called()
+
