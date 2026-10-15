@@ -326,6 +326,34 @@ def extract_cli(file_path):
     return cli_calls
 
 
+def collect_cli_definitions(cli_dir=None):
+    """Dynamically scan CLI package modules and main entry points to extract CLI call nodes."""
+    if cli_dir is None:
+        cli_dir = os.path.join(BASE_DIR, "app", "cli")
+
+    cli_data = {}
+    if os.path.exists(MAIN_CLI_PATH):
+        cli_data["app/main.py"] = extract_cli(MAIN_CLI_PATH)
+    if os.path.exists(SANDBOX_CLI_PATH):
+        cli_data["sandbox_cli.py"] = extract_cli(SANDBOX_CLI_PATH)
+
+    if os.path.exists(cli_dir):
+        for root, dirs, files in os.walk(cli_dir):
+            dirs.sort()
+            files.sort()
+            for file in files:
+                if (
+                    file.endswith(".py")
+                    and not file.startswith("_")
+                    and not file.startswith(".")
+                ):
+                    full_path = os.path.join(root, file)
+                    rel_path = safe_relpath(full_path, BASE_DIR).replace("\\", "/")
+                    cli_data[rel_path] = extract_cli(full_path)
+
+    return dict(sorted(cli_data.items()))
+
+
 def collect_core_definitions(core_dir=None):
     """Dynamically scan core package modules and extract public definitions."""
     if core_dir is None:
@@ -345,16 +373,11 @@ def collect_core_definitions(core_dir=None):
     return dict(sorted(core_data.items()))
 
 
-def collect_current_definitions():
+def collect_current_definitions(cli_dir=None, core_dir=None):
     """Parse codebase files and return the complete current definitions structure."""
-    cli_data = {
-        "app/main.py": extract_cli(MAIN_CLI_PATH),
-        "sandbox_cli.py": extract_cli(SANDBOX_CLI_PATH),
-    }
-
     return {
-        "cli": cli_data,
-        "core": collect_core_definitions(),
+        "cli": collect_cli_definitions(cli_dir=cli_dir),
+        "core": collect_core_definitions(core_dir=core_dir),
     }
 
 

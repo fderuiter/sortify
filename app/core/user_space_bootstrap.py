@@ -7,6 +7,7 @@ paths, and verifies database encryption.
 
 import logging
 import os
+import socket
 import sys
 from pathlib import Path
 
@@ -25,6 +26,17 @@ def get_bootstrap_bin_dir() -> Path:
 def check_internet_connection(timeout: float = 2.0) -> bool:
     """Check if we have an active internet connection by trying to reach a reliable host."""
     import urllib.request
+
+    for env_var in ("SORTIFY_OFFLINE", "OFFLINE_MODE"):
+        val = os.getenv(env_var, "").strip().lower()
+        if val in ("1", "true", "yes", "on"):
+            return False
+
+    try:
+        with socket.create_connection(("8.8.8.8", 53), timeout=0.2):
+            pass
+    except (OSError, PermissionError, Exception):
+        return False
 
     try:
         urllib.request.urlopen("https://www.google.com", timeout=timeout)

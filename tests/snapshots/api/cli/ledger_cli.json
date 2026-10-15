@@ -1,0 +1,206 @@
+{
+  "_metadata": {
+    "checksum": "55707fb61c6c5e46703599ed25734b705910cf384e11deac2edd9614ac184cf9"
+  },
+  "cli": [
+    {
+      "args": [
+        "ledger"
+      ],
+      "caller": "subparsers",
+      "keywords": {
+        "help": "Manage transaction ledger entries and automated reconciliation"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "status"
+      ],
+      "caller": "ledger_subparsers",
+      "keywords": {
+        "help": "Display incomplete or pending transaction ledger entries"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "--session-id"
+      ],
+      "caller": "p_status",
+      "keywords": {
+        "default": null,
+        "help": "Filter pending entries by session ID",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "reconcile"
+      ],
+      "caller": "ledger_subparsers",
+      "keywords": {
+        "help": "Execute automated headless reconciliation for interrupted file moves"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "purge"
+      ],
+      "caller": "ledger_subparsers",
+      "keywords": {
+        "help": "Purge completed or session transaction ledger records"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "--session-id"
+      ],
+      "caller": "p_purge",
+      "keywords": {
+        "default": null,
+        "help": "Purge entries for a specific session ID",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--completed"
+      ],
+      "caller": "p_purge",
+      "keywords": {
+        "action": "store_true",
+        "help": "Purge all completed transaction records"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--force"
+      ],
+      "caller": "p_purge",
+      "keywords": {
+        "action": "store_true",
+        "help": "Bypass confirmation prompt when purging records"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "export"
+      ],
+      "caller": "ledger_subparsers",
+      "keywords": {
+        "help": "Export session history transaction records as CSV or JSON audit log"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "--session-id"
+      ],
+      "caller": "p_export",
+      "keywords": {
+        "default": null,
+        "help": "Export entries for a specific session ID",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "-o",
+        "--output"
+      ],
+      "caller": "p_export",
+      "keywords": {
+        "default": null,
+        "help": "Output file path for exported audit log",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "-f",
+        "--format"
+      ],
+      "caller": "p_export",
+      "keywords": {
+        "choices": [
+          "csv",
+          "json"
+        ],
+        "default": null,
+        "help": "Audit log export format (csv or json)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--csv"
+      ],
+      "caller": "p_export",
+      "keywords": {
+        "action": "store_true",
+        "help": "Export audit log in CSV format"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--ledger-db"
+      ],
+      "caller": "p",
+      "keywords": {
+        "default": null,
+        "help": "Path to sidecar transaction ledger database file",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "-q",
+        "--quiet"
+      ],
+      "caller": "p",
+      "keywords": {
+        "action": "store_true",
+        "default": "argparse.SUPPRESS",
+        "dest": "quiet",
+        "help": "Suppress informational prints"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--no-color"
+      ],
+      "caller": "p",
+      "keywords": {
+        "action": "store_true",
+        "default": "argparse.SUPPRESS",
+        "dest": "no_color",
+        "help": "Disable ANSI color formatting"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--json"
+      ],
+      "caller": "p",
+      "keywords": {
+        "action": "store_true",
+        "help": "Output response in structured JSON format"
+      },
+      "method": "add_argument"
+    }
+  ]
+}

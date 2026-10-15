@@ -23,12 +23,50 @@ def test_get_bootstrap_bin_dir():
 
 def test_check_internet_connection():
     """Verify that internet connection check detects connectivity correctly."""
-    with patch("urllib.request.urlopen") as mock_urlopen:
+    with (
+        patch("socket.create_connection") as mock_socket,
+        patch("urllib.request.urlopen") as mock_urlopen,
+    ):
+        mock_socket.return_value.__enter__.return_value = MagicMock()
         mock_urlopen.return_value = MagicMock()
         assert check_internet_connection() is True
 
-    with patch("urllib.request.urlopen", side_effect=Exception("Timeout")):
+    with (
+        patch("socket.create_connection") as mock_socket,
+        patch("urllib.request.urlopen", side_effect=Exception("Timeout")),
+    ):
+        mock_socket.return_value.__enter__.return_value = MagicMock()
         assert check_internet_connection() is False
+
+
+def test_check_internet_connection_env_bypass():
+    """Verify check_internet_connection returns False immediately when offline env var is set."""
+    for var in ("SORTIFY_OFFLINE", "OFFLINE_MODE"):
+        for val in ("1", "true", "YES", "on"):
+            with (
+                patch.dict(os.environ, {var: val}),
+                patch("socket.create_connection") as mock_socket,
+                patch("urllib.request.urlopen") as mock_urlopen,
+            ):
+                assert check_internet_connection() is False
+                mock_socket.assert_not_called()
+                mock_urlopen.assert_not_called()
+
+
+def test_check_internet_connection_socket_failure():
+    """Verify check_internet_connection returns False immediately when fast socket probe fails."""
+    for err in (
+        OSError("Network unreachable"),
+        PermissionError("Sandboxed"),
+        TimeoutError("Connection timed out"),
+    ):
+        with (
+            patch("socket.create_connection", side_effect=err) as mock_socket,
+            patch("urllib.request.urlopen") as mock_urlopen,
+        ):
+            assert check_internet_connection() is False
+            mock_socket.assert_called_once_with(("8.8.8.8", 53), timeout=0.2)
+            mock_urlopen.assert_not_called()
 
 
 def test_verify_sqlcipher_encryption_success():

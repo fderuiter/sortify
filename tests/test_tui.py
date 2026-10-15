@@ -354,7 +354,7 @@ def test_tui_returning_launch_bypasses_wizard(temp_workspace):
 
 
 def test_tui_wizard_modal_cancel_preserves_defaults(temp_workspace):
-    """Verify canceling WizardModal maintains defaults and emits announcement."""
+    """Verify canceling WizardModal maintains None consent state, sets session suppression flag, and triggers again on restart."""
 
     async def _test():
         settings = AppSettings()
@@ -369,8 +369,22 @@ def test_tui_wizard_modal_cancel_preserves_defaults(temp_workspace):
             modal.action_cancel()
             await pilot.pause(0.1)
 
-            assert app.settings.AI_CONSENT_GRANTED is False
+            assert app.settings.AI_CONSENT_GRANTED is None
+            assert app._wizard_dismissed_this_session is True
             assert not isinstance(app.screen, WizardModal)
+
+            # Re-running on_mount in same session should not reopen wizard modal
+            app.on_mount()
+            await pilot.pause(0.1)
+            assert not isinstance(app.screen, WizardModal)
+
+        # Simulating app restart with unconfigured settings opens wizard modal again
+        restarted_app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        assert restarted_app._wizard_dismissed_this_session is False
+
+        async with restarted_app.run_test() as pilot:
+            await pilot.pause(0.2)
+            assert isinstance(restarted_app.screen, WizardModal)
 
     asyncio.run(_test())
 
@@ -431,7 +445,8 @@ def test_tui_cro_forensic_modal(temp_workspace):
                 mock_run.return_value = mock_res
 
                 modal.action_run()
-                await pilot.pause(0.2)
+                await app.workers.wait_for_complete()
+                await pilot.pause(0.05)
 
                 assert mock_run.called
 
@@ -1434,7 +1449,8 @@ def test_tui_cro_forensic_modal_help_button_and_error(temp_workspace):
             # Set invalid source path to trigger worker error
             modal.query_one("#input-source", Input).value = "/nonexistent/invalid/path"
             modal.action_run()
-            await pilot.pause(0.1)
+            await app.workers.wait_for_complete()
+            await pilot.pause(0.05)
 
             assert not btn_help.has_class("hidden")
             assert (
