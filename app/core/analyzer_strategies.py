@@ -1513,7 +1513,16 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         validated_gen_plan = _validate_sorting_plan_nodes(
             new_plan.model_dump() if hasattr(new_plan, "model_dump") else new_plan
         )
-        return SortingPlan(plan=validated_gen_plan), error
+        return (
+            SortingPlan(
+                plan=validated_gen_plan,
+                model_status=getattr(self, "degradation_state", "HEALTHY"),
+                degradation_reason=getattr(self, "degradation_reason", None),
+                recovery_action=getattr(self, "suggested_recovery_action", None),
+                suggested_recovery_action=getattr(self, "suggested_recovery_action", None),
+            ),
+            error,
+        )
 
     def __init__(self, model_path: str = None):
         self._generator = None
@@ -1553,6 +1562,10 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         self._gguf_process = None
         self._gguf_input_queue = None
         self._gguf_output_queue = None
+        self.degradation_state = "HEALTHY"
+        self.is_degraded = False
+        self.degradation_reason = None
+        self.suggested_recovery_action = None
 
     @property
     def generator(self):
@@ -1563,24 +1576,49 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         registry = SharedModelRegistry.get_instance()
         try:
-            if not registry.is_model_loaded("generative_naming"):
-                if getattr(self, "_model_initialized", False) and getattr(
-                    self, "model_path", None
-                ):
-                    gen, task, tok = registry.get_generative_model(self.model_path)
-                    self.task = task
-                    if tok:
-                        self.token_biases = self._build_logit_biases(tok)
-                    self._generator = gen
-                    return gen
+            if not self.model_path or not os.path.exists(self.model_path):
+                reason = f"Model path does not exist: '{self.model_path}'"
+                self.is_degraded = True
+                self.degradation_state = "DEGRADED_FALLBACK"
+                self.degradation_reason = reason
+                self.suggested_recovery_action = "RE_DOWNLOAD_MODEL"
+                registry.record_model_health(
+                    "generative_naming",
+                    status="DEGRADED_FALLBACK",
+                    failure_reason=reason,
+                    suggested_recovery_action="RE_DOWNLOAD_MODEL",
+                )
                 return None
             gen, task, tok = registry.get_generative_model(self.model_path)
+            if gen is None:
+                reason = f"Failed to initialize generative model at '{self.model_path}'"
+                self.is_degraded = True
+                self.degradation_state = "DEGRADED_FALLBACK"
+                self.degradation_reason = reason
+                self.suggested_recovery_action = "RE_DOWNLOAD_MODEL"
+                registry.record_model_health(
+                    "generative_naming",
+                    status="DEGRADED_FALLBACK",
+                    failure_reason=reason,
+                    suggested_recovery_action="RE_DOWNLOAD_MODEL",
+                )
+                return None
             self.task = task
             if tok:
                 self.token_biases = self._build_logit_biases(tok)
             self._generator = gen
             return gen
         except Exception as e:
+            self.is_degraded = True
+            self.degradation_state = "DEGRADED_FALLBACK"
+            self.degradation_reason = str(e)
+            self.suggested_recovery_action = "RE_DOWNLOAD_MODEL"
+            registry.record_model_health(
+                "generative_naming",
+                status="DEGRADED_FALLBACK",
+                failure_reason=str(e),
+                suggested_recovery_action="RE_DOWNLOAD_MODEL",
+            )
             logging.error(f"Failed to load generative model in generator property: {e}")
             return None
 
