@@ -183,9 +183,7 @@ async def test_dropzone_staging_table_population_and_filtering(tmp_path):
 
         # Click Filter Unsupported button
         btn_filter = active_modal.query_one("#btn-filter-unsupported", Button)
-        btn_filter.scroll_visible()
-        await pilot.pause()
-        await pilot.click("#btn-filter-unsupported")
+        btn_filter.press()
         await pilot.pause()
 
         assert len(active_modal.staged_items) == 1
@@ -226,9 +224,7 @@ async def test_dropzone_remove_and_clear_queue(tmp_path):
         # Select first row and move down
         table.move_cursor(row=0)
         btn_down = active_modal.query_one("#btn-move-down", Button)
-        btn_down.scroll_visible()
-        await pilot.pause()
-        await pilot.click("#btn-move-down")
+        btn_down.press()
         await pilot.pause()
 
         assert active_modal.staged_items[0]["filename"] == "doc2.csv"
@@ -237,9 +233,7 @@ async def test_dropzone_remove_and_clear_queue(tmp_path):
         # Remove item at cursor (row 1)
         table.move_cursor(row=1)
         btn_remove = active_modal.query_one("#btn-remove-item", Button)
-        btn_remove.scroll_visible()
-        await pilot.pause()
-        await pilot.click("#btn-remove-item")
+        btn_remove.press()
         await pilot.pause()
 
         assert len(active_modal.staged_items) == 2
