@@ -8,6 +8,7 @@ from datetime import datetime, timezone
 from typing import Any, Dict, List
 
 from app.core.exceptions import AuditExportError
+from app.core.path_utils import safe_relpath
 
 logger = logging.getLogger(__name__)
 
@@ -76,14 +77,10 @@ def generate_audit_report(
             skipped_count += 1
 
         rel_src = (
-            os.path.relpath(src, base_dir).replace("\\", "/")
-            if src and base_dir
-            else src
+            safe_relpath(src, base_dir).replace("\\", "/") if src and base_dir else src
         )
         rel_dst = (
-            os.path.relpath(dst, base_dir).replace("\\", "/")
-            if dst and base_dir
-            else dst
+            safe_relpath(dst, base_dir).replace("\\", "/") if dst and base_dir else dst
         )
         filename = os.path.basename(dst or src)
 

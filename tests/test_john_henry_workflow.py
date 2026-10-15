@@ -2,7 +2,9 @@
 
 from pathlib import Path
 
-WORKFLOW_PATH = Path(__file__).parent.parent / ".github" / "workflows" / "john-henry-mode.yml"
+WORKFLOW_PATH = (
+    Path(__file__).parent.parent / ".github" / "workflows" / "john-henry-mode.yml"
+)
 
 
 def test_workflow_file_exists():
@@ -44,46 +46,68 @@ def simulate_workflow_condition(
 def test_simulate_workflow_condition_authorized_roles():
     """Verify authorized roles trigger workflow when fix attempt pattern is present."""
     for role in ["MEMBER", "OWNER", "COLLABORATOR"]:
-        assert simulate_workflow_condition(
-            is_pull_request=True,
-            author_association=role,
-            comment_body="[CI/CD Fix Attempt 1] Fixing issue",
-        ) is True
+        assert (
+            simulate_workflow_condition(
+                is_pull_request=True,
+                author_association=role,
+                comment_body="[CI/CD Fix Attempt 1] Fixing issue",
+            )
+            is True
+        )
 
 
 def test_simulate_workflow_condition_untrusted_roles():
     """Verify external/untrusted roles do NOT trigger workflow."""
-    untrusted_roles = ["CONTRIBUTOR", "FIRST_TIMER", "FIRST_TIME_CONTRIBUTOR", "NONE", "MANNEQUIN", ""]
+    untrusted_roles = [
+        "CONTRIBUTOR",
+        "FIRST_TIMER",
+        "FIRST_TIME_CONTRIBUTOR",
+        "NONE",
+        "MANNEQUIN",
+        "",
+    ]
     for role in untrusted_roles:
-        assert simulate_workflow_condition(
-            is_pull_request=True,
-            author_association=role,
-            comment_body="[CI/CD Fix Attempt 1] Malicious edit",
-        ) is False
+        assert (
+            simulate_workflow_condition(
+                is_pull_request=True,
+                author_association=role,
+                comment_body="[CI/CD Fix Attempt 1] Malicious edit",
+            )
+            is False
+        )
 
 
 def test_simulate_workflow_condition_edited_comment_pattern():
     """Verify edited comment with fix attempt marker passes condition for authorized role."""
-    assert simulate_workflow_condition(
-        is_pull_request=True,
-        author_association="MEMBER",
-        comment_body="Edited comment with [CI/CD Fix Attempt 5] marker",
-    ) is True
+    assert (
+        simulate_workflow_condition(
+            is_pull_request=True,
+            author_association="MEMBER",
+            comment_body="Edited comment with [CI/CD Fix Attempt 5] marker",
+        )
+        is True
+    )
 
 
 def test_simulate_workflow_condition_non_pr():
     """Verify issue comments not on pull requests do not trigger workflow."""
-    assert simulate_workflow_condition(
-        is_pull_request=False,
-        author_association="OWNER",
-        comment_body="[CI/CD Fix Attempt 1] Regular issue comment",
-    ) is False
+    assert (
+        simulate_workflow_condition(
+            is_pull_request=False,
+            author_association="OWNER",
+            comment_body="[CI/CD Fix Attempt 1] Regular issue comment",
+        )
+        is False
+    )
 
 
 def test_simulate_workflow_condition_missing_pattern():
     """Verify comments without the fix attempt pattern do not trigger workflow."""
-    assert simulate_workflow_condition(
-        is_pull_request=True,
-        author_association="COLLABORATOR",
-        comment_body="Regular PR comment without fix marker",
-    ) is False
+    assert (
+        simulate_workflow_condition(
+            is_pull_request=True,
+            author_association="COLLABORATOR",
+            comment_body="Regular PR comment without fix marker",
+        )
+        is False
+    )
