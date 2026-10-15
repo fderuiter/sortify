@@ -40,9 +40,7 @@ print(f"[*] Safe base workspace directory: {base_dir}")
 # 1. Create a plain text (.txt) file
 txt_path = os.path.join(base_dir, "sample_notes.txt")
 with open(txt_path, "w", encoding="utf-8") as f:
-    f.write(
-        "Software development notes. Python programming, unit tests, and continuous integration pipelines."
-    )
+    f.write("Software development notes. Python programming, unit tests, and continuous integration pipelines.")
 
 # 2. Create a CSV (.csv) spreadsheet file
 csv_path = os.path.join(base_dir, "sample_spreadsheet.csv")
@@ -56,9 +54,7 @@ with open(csv_path, "w", encoding="utf-8", newline="") as f:
 docx_path = os.path.join(base_dir, "sample_doc.docx")
 doc = docx.Document()
 doc.add_heading("Project Specification", level=1)
-doc.add_paragraph(
-    "This document details clinical trial results, healthcare diagnostics, and medical treatments."
-)
+doc.add_paragraph("This document details clinical trial results, healthcare diagnostics, and medical treatments.")
 doc.save(docx_path)
 
 # 4. Create an Excel (.xlsx) workbook file
@@ -71,9 +67,7 @@ ws["A2"] = "Total Investment Assets and Balance Sheets"
 ws["B2"] = 750000
 wb.save(xlsx_path)
 
-files_created = [
-    os.path.basename(p) for p in [txt_path, csv_path, docx_path, xlsx_path]
-]
+files_created = [os.path.basename(p) for p in [txt_path, csv_path, docx_path, xlsx_path]]
 print(f"[+] Generated {len(files_created)} sample multi-format files: {files_created}")
 ```
 
@@ -89,11 +83,9 @@ session = AppSession(settings=settings, base_dir=base_dir)
 print(f"[+] AppSession initialized! ID: {session.session_id}")
 print(f"[*] Session directory containing logs & databases: {session.session_dir}")
 
-
 def progress_callback():
     """Progress callback function for text extraction."""
     print("    -> Extracting file...")
-
 
 # Execute synchronous extraction of text payload and hashing from sample documents
 generator = build_corpus_generator(
@@ -104,7 +96,7 @@ generator = build_corpus_generator(
     db=session.db,
     chunk_size=10,
     sequential=True,
-    settings=settings,
+    settings=settings
 )
 
 extracted_chunks = list(generator)
