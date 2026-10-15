@@ -186,9 +186,14 @@ def test_run_execute_worker_opens_audit_modal(tmp_path):
         app.app_session = MagicMock()
         app.app_session.execute_moves.return_value = mock_summary
         app.plan = {"out": {"a.txt": {"__type__": "file"}}}
+        app.action_scan_directory = MagicMock()
 
         async with app.run_test() as pilot:
-            app.run_execute_worker()
+            worker = app.run_execute_worker()
+            try:
+                await worker.wait()
+            except Exception:
+                pass
             await pilot.pause()
 
             # Verify screen stack has pushed AuditReportModal

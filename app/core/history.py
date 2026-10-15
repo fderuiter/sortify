@@ -1011,9 +1011,7 @@ class HistoryManager:
                 pass
 
         if session_id and not sessions and not steps:
-            raise ValueError(
-                f"Session '{session_id}' not found in history database."
-            )
+            raise ValueError(f"Session '{session_id}' not found in history database.")
 
         fmt = (format or "").lower().strip()
         if not fmt:
