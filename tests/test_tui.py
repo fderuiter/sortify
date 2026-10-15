@@ -836,7 +836,9 @@ def test_tui_settings_modal_ai_consent_toggle_flow(temp_workspace):
     async def _test():
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = False
-        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace, skip_wizard=True)
+        app = AutoSorterTUI(
+            settings=settings, base_dir=temp_workspace, skip_wizard=True
+        )
 
         with patch.object(AppSettings, "_save") as mock_save:
             async with app.run_test() as pilot:
@@ -1435,7 +1437,10 @@ def test_tui_cro_forensic_modal_help_button_and_error(temp_workspace):
             await pilot.pause(0.1)
 
             assert not btn_help.has_class("hidden")
-            assert modal.help_url == "https://docs.smartautosorter.com/troubleshooting/#cro-forensic-ingestion"
+            assert (
+                modal.help_url
+                == "https://docs.smartautosorter.com/troubleshooting/#cro-forensic-ingestion"
+            )
 
             # Trigger help action
             modal.action_help()
@@ -1461,12 +1466,17 @@ def test_tui_dropzone_modal_help_button_and_error(temp_workspace):
             assert btn_help.has_class("hidden")
 
             # Submit invalid path
-            modal.query_one("#input-drop-paths", Input).value = "/nonexistent/path/dropzone"
+            modal.query_one(
+                "#input-drop-paths", Input
+            ).value = "/nonexistent/path/dropzone"
             modal.trigger_drop_triage()
             await pilot.pause(0.05)
 
             assert not btn_help.has_class("hidden")
-            assert modal.help_url == "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors"
+            assert (
+                modal.help_url
+                == "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors"
+            )
 
             # Trigger Help action
             modal.action_help()
@@ -1524,7 +1534,10 @@ def test_tui_settings_modal_help_button_on_validation_error(temp_workspace):
             await pilot.pause(0.05)
 
             assert not btn_help.has_class("hidden")
-            assert modal.help_url == "https://docs.smartautosorter.com/troubleshooting/#settings-configuration"
+            assert (
+                modal.help_url
+                == "https://docs.smartautosorter.com/troubleshooting/#settings-configuration"
+            )
 
             modal.action_help()
             await pilot.pause(0.05)
@@ -1535,7 +1548,9 @@ def test_tui_settings_modal_help_button_on_validation_error(temp_workspace):
 
 def test_tui_bindings_no_global_enter_and_ctrl_e_executes():
     """Verify global BINDINGS does not bind enter to execute_sort and ctrl+e binds to execute_sort."""
-    bindings_by_key = {b.key: b.action for b in AutoSorterTUI.BINDINGS if hasattr(b, "key")}
+    bindings_by_key = {
+        b.key: b.action for b in AutoSorterTUI.BINDINGS if hasattr(b, "key")
+    }
     assert "enter" not in bindings_by_key or bindings_by_key["enter"] != "execute_sort"
     assert bindings_by_key.get("ctrl+e") == "execute_sort"
 
@@ -1592,4 +1607,3 @@ def test_tui_enter_key_navigates_tree_without_executing_plan(temp_workspace):
             mock_execute.assert_called_once()
 
     asyncio.run(_test())
-

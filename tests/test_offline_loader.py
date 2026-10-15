@@ -568,7 +568,7 @@ def test_sidecar_hydration_tampered_weights_error(tmp_path, monkeypatch):
         },
     )
 
-    with pytest.raises(OfflineModelLoadError, match="integrity check"):
+    with pytest.raises(OfflineModelLoadError, match="(?i)integrity check"):
         OfflineModelLoader.hydrate_sidecar_models(
             sidecar_zip_path=str(sidecar_zip),
             target_dir=str(target_home / ".smart-autosorter" / "offline_bundle"),
