@@ -132,14 +132,14 @@ def test_audit_report_modal_export_actions(sample_audit_report, tmp_path):
             await pilot.pause()
 
             btn_json = modal.query_one("#btn-export-json", Button)
-            await pilot.click(btn_json)
+            btn_json.press()
             await pilot.pause()
 
             json_export_file = tmp_path / "audit_report.json"
             assert json_export_file.exists()
 
             btn_csv = modal.query_one("#btn-export-csv", Button)
-            await pilot.click(btn_csv)
+            btn_csv.press()
             await pilot.pause()
 
             csv_export_file = tmp_path / "audit_report.csv"

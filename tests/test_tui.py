@@ -712,7 +712,7 @@ def test_tui_session_recovery_modal_actions(temp_workspace):
 
             app.push_screen(modal, on_dismiss)
             await pilot.pause(0.05)
-            await pilot.click("#btn-resume")
+            modal.query_one("#btn-resume", Button).press()
             await pilot.pause(0.05)
             assert res == "resume"
 
@@ -728,7 +728,7 @@ def test_tui_session_recovery_modal_actions(temp_workspace):
 
             app.push_screen(modal, on_dismiss)
             await pilot.pause(0.05)
-            await pilot.click("#btn-rollback")
+            modal.query_one("#btn-rollback", Button).press()
             await pilot.pause(0.05)
             assert res == "rollback"
 
@@ -744,7 +744,7 @@ def test_tui_session_recovery_modal_actions(temp_workspace):
 
             app.push_screen(modal, on_dismiss)
             await pilot.pause(0.05)
-            await pilot.click("#btn-clean")
+            modal.query_one("#btn-clean", Button).press()
             await pilot.pause(0.05)
             assert res == "clean"
 
@@ -1663,7 +1663,7 @@ def test_directory_select_modal_demo_preset_auto_creation(
             await pilot.pause(0.05)
             assert isinstance(app.screen, DirectorySelectModal)
 
-            await pilot.click("#preset-demo")
+            app.screen.query_one("#preset-demo", Button).press()
             await pilot.pause(0.05)
 
             assert demo_dir.exists()
@@ -1706,7 +1706,7 @@ def test_directory_select_modal_preset_creation_error_graceful_handling(
             modal = app.screen
             announcements_before = len(modal.announcements)
 
-            await pilot.click("#preset-demo")
+            modal.query_one("#preset-demo", Button).press()
             await pilot.pause(0.05)
 
             assert any(
@@ -1739,7 +1739,7 @@ def test_directory_select_modal_nonexistent_custom_directory(temp_workspace, tmp
 
             inp = app.screen.query_one("#input-dir")
             inp.value = non_existent_path
-            await pilot.click("#btn-confirm")
+            app.screen.query_one("#btn-confirm", Button).press()
             await pilot.pause(0.05)
 
             assert app.base_dir == str(temp_workspace)
