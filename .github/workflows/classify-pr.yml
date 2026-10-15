@@ -39,6 +39,22 @@ jobs:
               per_page: 100
             });
 
+            const commits = await github.paginate(github.rest.pulls.listCommits, {
+              owner: context.repo.owner,
+              repo: context.repo.repo,
+              pull_number: pr.number,
+              per_page: 100
+            });
+
+            const unverifiedCommitShas = [];
+            for (const c of commits) {
+              const verified = c.commit && c.commit.verification && c.commit.verification.verified;
+              if (!verified) {
+                unverifiedCommitShas.push(c.sha);
+              }
+            }
+            const allCommitsVerified = commits.length > 0 && unverifiedCommitShas.length === 0;
+
             const filenames = files.map(f => f.filename);
             const additions = files.reduce((acc, f) => acc + f.additions, 0);
             const deletions = files.reduce((acc, f) => acc + f.deletions, 0);
@@ -63,6 +79,8 @@ jobs:
               deletions: deletions,
               is_dependabot: isDependabot,
               dependency_update_type: dependencyUpdateType,
+              all_commits_verified: allCommitsVerified,
+              unverified_commit_shas: unverifiedCommitShas,
             };
 
             const fs = require('fs');
