@@ -936,3 +936,52 @@ def test_diagram_toolchain_cli_verify_failure_on_bad_syntax(tmp_path):
     ):
         dt.main()
         mock_exit.assert_called_once_with(1)
+
+
+def test_network_rules_vulnerability_database_egress_rules():
+    """Verify network_rules.json contains valid egress rules for vulnerability database endpoints."""
+    import json
+    import re
+    from pathlib import Path
+
+    rules_path = Path("network_rules.json")
+    assert rules_path.exists(), "network_rules.json must exist"
+
+    raw_json = rules_path.read_text(encoding="utf-8")
+    config = json.loads(raw_json)
+
+    assert "rules" in config, "network_rules.json must contain 'rules' array"
+    rules = config["rules"]
+
+    # Verify JSON escaping uses '\\.' in source file so dot is regex-escaped
+    assert "https://pypi\\\\.org" in raw_json
+    assert "https://api\\\\.osv\\\\.dev" in raw_json
+    assert "https://api\\\\.github\\\\.com/advisories" in raw_json
+
+    # Locate required vulnerability database endpoints
+    pypi_rule = next((r for r in rules if "pypi" in r.get("pattern", "")), None)
+    osv_rule = next((r for r in rules if "osv" in r.get("pattern", "")), None)
+    gh_rule = next((r for r in rules if "github" in r.get("pattern", "")), None)
+
+    assert pypi_rule is not None, "Missing PyPI vulnerability database egress rule"
+    assert osv_rule is not None, "Missing OSV database egress rule"
+    assert gh_rule is not None, "Missing GitHub Security Advisory egress rule"
+
+    for rule in (pypi_rule, osv_rule, gh_rule):
+        assert rule.get("pattern"), "Rule must define pattern"
+        assert rule.get("match_type") == "regex", "Rule match_type must be regex"
+        assert rule.get("description"), "Rule must contain non-empty description"
+        # Ensure pattern compiles as valid regex
+        compiled = re.compile(rule["pattern"])
+        assert compiled is not None
+
+    # Verify literal dot matching and wildcard prevention
+    assert re.search(pypi_rule["pattern"], "https://pypi.org")
+    assert not re.search(pypi_rule["pattern"], "https://pypixorg")
+
+    assert re.search(osv_rule["pattern"], "https://api.osv.dev")
+    assert not re.search(osv_rule["pattern"], "https://apiXosvXdev")
+
+    assert re.search(gh_rule["pattern"], "https://api.github.com/advisories")
+    assert not re.search(gh_rule["pattern"], "https://apiXgithubXcom/advisories")
+

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "1537578d6264bd89c9ff653bb2c295bc7ea3bde7ec3da27e0b8fca13b8699c5f"
+    "checksum": "bde9db017a4bc6ee88fb94712af98174383549ed0e7cad459f31cc5c11d562c5"
   },
   "classes": [
     {
@@ -216,6 +216,29 @@
             }
           ],
           "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "key"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "default"
+            }
+          ],
+          "returns": "Any"
         },
         {
           "async": false,

@@ -22,6 +22,14 @@ dependencies = [
     "jsonschema>=4.25.1",
     "sqlcipher3-wheels==0.5.7",
     "textual>=0.50.0",
+    "pillow",
+    "python-pptx",
+    "xlrd",
+    "scipy",
+    "numpy",
+    "pydantic",
+    "nicegui",
+    "rich",
 ]
 
 [project.optional-dependencies]
@@ -30,6 +38,7 @@ ml = [
     "transformers>=4.57.6",
     "onnxruntime>=1.28.0",
     "llama-cpp-python>=0.3.34",
+    "torch",
 ]
 
 [project.scripts]
@@ -109,6 +118,7 @@ ignore_errors = true
 
 [dependency-groups]
 dev = [
+    "deptry",
     "mkdocs>=1.6.1",
     "mkdocs-material>=9.7.7",
     "mkdocstrings[python]>=1.0.6",
