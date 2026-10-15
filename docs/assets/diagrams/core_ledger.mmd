@@ -1,0 +1,12 @@
+flowchart TD
+    entry("File Relocation Ledger Record")
+    hashreg{Hashes Registry Validator}
+    db[("Immutable SQLite Ledger Table")]
+    provenance(["Export Provenance Manifest"])
+    entry -->|Verify Hash| hashreg
+    hashreg -->|Commit Entry| db
+    db --> provenance
+    click entry "docs/api_reference.md#appcoreledger" "Ledger Entry"
+    click hashreg "docs/api_reference.md#appcorehashes_registry" "Hash Validator"
+    click db "docs/api_reference.md#appcoredb" "Ledger Table"
+    click provenance tooltip "Provenance Output"
