@@ -25,7 +25,37 @@ import datetime
 import time
 import collections.abc
 
-from sqlcipher3._sqlite3 import *
+def _load_sqlcipher_native_libraries():
+    """Attempt to dynamically load SQLCipher shared objects or fallback symbols."""
+    try:
+        import ctypes
+    except ImportError:
+        return False, ["ctypes not available"]
+
+    libs_to_load = ["libsqlcipher.so.0", "libsqlcipher.so", "libcrypto.so"]
+    loaded_any = False
+    load_errors = []
+
+    for lib in libs_to_load:
+        try:
+            if hasattr(ctypes, "cdll") and hasattr(ctypes.cdll, "LoadLibrary"):
+                ctypes.cdll.LoadLibrary(lib)
+                loaded_any = True
+        except (OSError, Exception) as err:
+            load_errors.append(f"{lib}: {err}")
+
+    return loaded_any, load_errors
+
+try:
+    _load_sqlcipher_native_libraries()
+    from sqlcipher3._sqlite3 import *
+except (ImportError, OSError) as _primary_err:
+    try:
+        from _sqlite3 import *
+    except (ImportError, OSError) as _fallback_err:
+        raise ImportError(
+            f"Failed to load SQLCipher native extension or shared library dependencies: {_primary_err}"
+        ) from _primary_err
 
 paramstyle = "qmark"
 
