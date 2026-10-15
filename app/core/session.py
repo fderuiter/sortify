@@ -170,9 +170,24 @@ async def scan_abandoned_sessions_async():
 class AppSession:
     """Encapsulates the core business logic, analytics, and database services for a single application run."""
 
-    def __init__(self, settings, base_dir=None, session_id=None):
+    def __init__(self, settings, base_dir=None, session_id=None, source_dirs=None):
         self.settings = settings
-        self.base_dir = base_dir
+        if source_dirs:
+            norm_dirs = []
+            for d in source_dirs:
+                if d:
+                    abs_d = os.path.normpath(os.path.abspath(os.path.expanduser(d)))
+                    if abs_d not in norm_dirs:
+                        norm_dirs.append(abs_d)
+            self.source_dirs = norm_dirs
+        elif base_dir:
+            self.source_dirs = [
+                os.path.normpath(os.path.abspath(os.path.expanduser(base_dir)))
+            ]
+        else:
+            self.source_dirs = []
+
+        self.base_dir = self.source_dirs[0] if self.source_dirs else base_dir
 
         from app.core.path_utils import get_base_path, setup_session_directory
 
@@ -260,7 +275,7 @@ class AppSession:
         self, items_to_sort, cancel_check, progress_callback=None
     ):
         """Build corpus asynchronous generator for files, yielded file-by-file sequentially."""
-        if not self.base_dir:
+        if not self.base_dir and not self.source_dirs:
             return
         from app.core.extractor import build_corpus_generator_async
 
@@ -271,12 +286,13 @@ class AppSession:
             cancel_check=cancel_check,
             settings=self.settings,
             progress_callback=progress_callback,
+            source_dirs=self.source_dirs,
         ):
             yield item, text, file_hash, was_skipped
 
     def partial_fit(self, chunk):
         """Incrementally train the analyzer."""
-        if not self.base_dir:
+        if not self.base_dir and not self.source_dirs:
             return
         self.analyzer.partial_fit(self.base_dir, chunk, self.settings)
 
@@ -287,9 +303,14 @@ class AppSession:
         jev_results: Optional[Dict[str, Any]] = None,
     ):
         """Generate sorting plan from analyzer."""
-        if not self.base_dir:
+        if not self.base_dir and not self.source_dirs:
             return {}
-        _, locked, _, _ = self.cache_manager.load_cache(self.base_dir)
+        locked = {}
+        dirs_to_check = self.source_dirs if self.source_dirs else ([self.base_dir] if self.base_dir else [])
+        for s_dir in dirs_to_check:
+            _, lk, _, _ = self.cache_manager.load_cache(s_dir)
+            if lk:
+                locked.update(lk)
         return self.analyzer.generate_sorting_plan(
             self.base_dir,
             self.settings,
@@ -297,6 +318,7 @@ class AppSession:
             fast_path_only=fast_path_only,
             target_paths=target_paths,
             jev_results=jev_results,
+            source_dirs=self.source_dirs,
         )
 
     def rollback(self, session_id, ignore_missing=False):
@@ -326,7 +348,7 @@ class AppSession:
         -------
             dict: Summary dictionary containing move execution results and statistics.
         """
-        if not self.base_dir:
+        if not self.base_dir and not self.source_dirs:
             return {}
 
         plan_path = self.session_dir / "plan.json"
@@ -346,6 +368,7 @@ class AppSession:
             cancel_check=cancel_check,
             chunk_size=chunk_size,
             progress_callback=progress_callback,
+            source_dirs=self.source_dirs,
             **kwargs,
         )
 

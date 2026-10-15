@@ -333,6 +333,11 @@ class Database:
 
     def get_document(self, base_dir, filepath):
         """Retrieve a document by its base directory and filepath."""
+        if "::" in filepath:
+            s_root, rel_p = filepath.split("::", 1)
+            base_dir = s_root
+            filepath = rel_p
+
         filepath = filepath.replace("\\", "/")
         self._populate_cache_if_needed(base_dir)
         with self._cache_lock:
@@ -376,6 +381,10 @@ class Database:
 
     def upsert_document(self, base_dir, filepath, file_hash, extracted_text):
         """Insert or update a document in the database."""
+        if "::" in filepath:
+            s_root, rel_p = filepath.split("::", 1)
+            base_dir = s_root
+            filepath = rel_p
         self.upsert_documents([(base_dir, filepath, file_hash, extracted_text)])
 
     def upsert_documents(self, documents):
@@ -391,7 +400,11 @@ class Database:
 
                 rows_to_insert = []
                 for doc in documents:
-                    base_dir, filepath, file_hash, extracted_text = doc
+                    base_dir, filepath, file_hash, extracted_text = doc[:4]
+                    if "::" in filepath:
+                        s_root, rel_p = filepath.split("::", 1)
+                        base_dir = s_root
+                        filepath = rel_p
                     filepath = filepath.replace("\\", "/")
 
                     sanitized_text = (
@@ -420,7 +433,11 @@ class Database:
                 )
 
                 for doc in documents:
-                    base_dir, filepath, file_hash, extracted_text = doc
+                    base_dir, filepath, file_hash, extracted_text = doc[:4]
+                    if "::" in filepath:
+                        s_root, rel_p = filepath.split("::", 1)
+                        base_dir = s_root
+                        filepath = rel_p
                     filepath = filepath.replace("\\", "/")
                     cursor = conn.execute(
                         "SELECT user_verified_target_path FROM documents WHERE base_dir = ? AND filepath = ?",
@@ -446,10 +463,9 @@ class Database:
 
         self.worker.execute_write(_write)
 
-    def get_all_documents(self, base_dir, target_paths=None):
-        """Retrieve valid documents for a given base directory, optionally restricted by target_paths."""
-        if not base_dir:
-            return []
+    def get_all_documents(self, base_dir, target_paths=None, source_dirs=None):
+        """Retrieve valid documents for a given base directory or list of source_dirs, optionally restricted by target_paths."""
+        multi_root = bool(source_dirs and len(source_dirs) > 1)
 
         norm_targets = None
         if target_paths is not None:
@@ -457,62 +473,90 @@ class Database:
             for p in target_paths:
                 if not p:
                     continue
-                if os.path.isabs(p) and base_dir and p.startswith(base_dir):
-                    rel = os.path.relpath(p, base_dir).replace("\\", "/")
+                if "::" in p:
+                    norm_targets.add(p)
                 else:
-                    rel = p.replace("\\", "/")
-                norm_targets.add(rel)
-                norm_targets.add(os.path.normpath(rel).replace("\\", "/"))
+                    norm_targets.add(p.replace("\\", "/"))
+                    norm_targets.add(os.path.normpath(p).replace("\\", "/"))
 
-        with self._cache_lock:
-            if self._cached_base_dir == base_dir and self._cached_documents is not None:
-                if norm_targets is not None:
-                    return [
-                        d
-                        for d in self._cached_documents
-                        if d[0] in norm_targets
-                        or os.path.normpath(d[0]).replace("\\", "/") in norm_targets
-                    ]
-                return list(self._cached_documents)
+        if not multi_root and base_dir:
+            with self._cache_lock:
+                if self._cached_base_dir == base_dir and self._cached_documents is not None:
+                    cached = (
+                        self._cached_documents.values()
+                        if hasattr(self._cached_documents, "values")
+                        else self._cached_documents
+                    )
+                    if norm_targets is not None:
+                        return [
+                            d
+                            for d in cached
+                            if d[0] in norm_targets
+                            or os.path.normpath(d[0]).replace("\\", "/") in norm_targets
+                        ]
+                    return list(cached)
 
-        # Fallback to DB query directly if cache was invalidated concurrently or target_paths is requested
-        conn = get_db_connection(self.db_path)
-        with conn:
-            if norm_targets is not None:
-                if not norm_targets:
-                    return []
-                targets_list = list(norm_targets)
-                placeholders = ",".join(["?"] * len(targets_list))
-                cursor = conn.execute(
-                    f"SELECT filepath, extracted_text, file_hash, user_verified_target_path FROM documents WHERE base_dir = ? AND filepath IN ({placeholders})",
-                    (base_dir, *targets_list),
-                )
-            else:
+            if norm_targets is None:
                 self._populate_cache_if_needed(base_dir)
                 with self._cache_lock:
                     if (
                         self._cached_base_dir == base_dir
                         and self._cached_documents is not None
                     ):
-                        return list(self._cached_documents)
-                cursor = conn.execute(
-                    "SELECT filepath, extracted_text, file_hash, user_verified_target_path FROM documents WHERE base_dir = ?",
-                    (base_dir,),
-                )
+                        cached = (
+                            self._cached_documents.values()
+                            if hasattr(self._cached_documents, "values")
+                            else self._cached_documents
+                        )
+                        return list(cached)
+
+        sources = []
+        if source_dirs:
+            for s in source_dirs:
+                if s:
+                    if s not in sources:
+                        sources.append(s)
+                    norm_s = os.path.normpath(os.path.abspath(s))
+                    if norm_s not in sources:
+                        sources.append(norm_s)
+        elif base_dir:
+            sources.append(base_dir)
+            norm_b = os.path.normpath(os.path.abspath(base_dir))
+            if norm_b not in sources:
+                sources.append(norm_b)
+
+        if not sources:
+            return []
+        conn = get_db_connection(self.db_path)
+        with conn:
+            placeholders = ",".join(["?"] * len(sources))
+            query = f"SELECT base_dir, filepath, extracted_text, file_hash, user_verified_target_path FROM documents WHERE base_dir IN ({placeholders})"
+            cursor = conn.execute(query, tuple(sources))
             rows = cursor.fetchall()
 
             from app.core.shared_registry import SharedWorkerPool
 
             def _decrypt_row(row):
+                doc_base, fp, text_enc, f_hash, verified_target = row
                 decrypted_text = (
-                    self.crypto.decrypt_text(row[1]) if row[1] is not None else None
+                    self.crypto.decrypt_text(text_enc) if text_enc is not None else None
                 )
-                return (row[0].replace("\\", "/"), decrypted_text, row[2], row[3])
+                rel_p = fp.replace("\\", "/")
+                item_key = f"{doc_base}::{rel_p}" if multi_root else rel_p
+                return (item_key, decrypted_text, f_hash, verified_target, doc_base)
 
             results = []
             if rows:
                 pool = SharedWorkerPool.get_instance()
                 results = list(pool.map(_decrypt_row, rows))
+
+            if norm_targets is not None:
+                results = [
+                    r
+                    for r in results
+                    if r[0] in norm_targets
+                    or os.path.normpath(r[0]).replace("\\", "/") in norm_targets
+                ]
 
             return results
 

@@ -280,18 +280,28 @@ def _resolve_source_path(
 ) -> str:
     """Resolve normalized absolute source path for a plan node."""
     src_p = _get_val(content, "source_path")
+    src_root = _get_val(content, "source_root")
+    rel_src = _get_val(content, "relative_source") or key
+
+    if "::" in rel_src:
+        parsed_root, parsed_rel = rel_src.split("::", 1)
+        src_root = src_root or parsed_root
+        rel_src = parsed_rel
+
+    effective_base = src_root if src_root else base_dir
+
     if src_p:
         abs_sp = os.path.normpath(
-            src_p if os.path.isabs(src_p) else os.path.join(base_dir, src_p)
+            src_p if os.path.isabs(src_p) else os.path.join(effective_base, src_p)
         )
         if os.path.lexists(abs_sp):
             return abs_sp
 
-    rel_src = _get_val(content, "relative_source") or key
-
     if depth > 0 and active_parent_path:
-        alt = os.path.normpath(os.path.join(base_dir, rel_src))
-        primary = os.path.normpath(os.path.join(base_dir, active_parent_path, rel_src))
+        alt = os.path.normpath(os.path.join(effective_base, rel_src))
+        primary = os.path.normpath(
+            os.path.join(effective_base, active_parent_path, rel_src)
+        )
         if os.path.lexists(alt) and not _is_same_path(alt, primary):
             return alt
         if os.path.lexists(primary):
@@ -300,7 +310,7 @@ def _resolve_source_path(
             return alt
         return primary
 
-    return os.path.normpath(os.path.join(base_dir, rel_src))
+    return os.path.normpath(os.path.join(effective_base, rel_src))
 
 
 def _get_node_mtime(
@@ -1935,6 +1945,7 @@ def execute_moves(
     cancellation_token=None,
     priority: str = None,
     progress_callback=None,
+    source_dirs: list[str] | None = None,
 ) -> dict:
     """Create directories and safely move files using chunked asynchronous execution.
 

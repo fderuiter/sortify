@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "32065c6acdce4eaaa60dedbb3e52f18c45ed257dada61e33ce77b9ea8cd12a67"
+    "checksum": "67874d109225fb2a5772acb0283e526485196b31302c11e33c43c80723ab6d7f"
   },
   "classes": [
     {
@@ -31,6 +31,11 @@
               "annotation": null,
               "default": "None",
               "name": "session_id"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "source_dirs"
             }
           ],
           "returns": null
