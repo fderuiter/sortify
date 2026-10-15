@@ -40,7 +40,9 @@ def test_handle_progress_update_and_reset(tmp_path):
             assert pb.display is False
 
             # Dispatch progress update with ratio 0.5
-            app._handle_progress_update(0.5, stage="Scanning test_doc.pdf", unit_count=5, unit_type="files")
+            app._handle_progress_update(
+                0.5, stage="Scanning test_doc.pdf", unit_count=5, unit_type="files"
+            )
             await pilot.pause()
 
             assert pb.display is True
@@ -69,7 +71,12 @@ def test_handle_progress_update_object(tmp_path):
 
         async with app.run_test() as pilot:
             pb = app.query_one("#main-progress-bar", ProgressBar)
-            update = ProgressUpdate(progress=0.75, stage="Moving batch chunk 2", unit_count=15, unit_type="files")
+            update = ProgressUpdate(
+                progress=0.75,
+                stage="Moving batch chunk 2",
+                unit_count=15,
+                unit_type="files",
+            )
 
             app._handle_progress_update(update)
             await pilot.pause()
@@ -116,7 +123,15 @@ def test_run_execute_worker_passes_progress_callback(tmp_path):
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
-        app.plan = {"Target": {"sample.txt": {"__type__": "file", "filepath": os.path.join(str(tmp_path), "sample.txt"), "target_filename": "sample.txt"}}}
+        app.plan = {
+            "Target": {
+                "sample.txt": {
+                    "__type__": "file",
+                    "filepath": os.path.join(str(tmp_path), "sample.txt"),
+                    "target_filename": "sample.txt",
+                }
+            }
+        }
 
         async with app.run_test() as pilot:
             mock_session = MagicMock()

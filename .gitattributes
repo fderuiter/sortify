@@ -3,3 +3,7 @@
 *.py text eol=lf
 *.sh text eol=lf
 *.bat text eol=crlf
+
+tests/snapshots/api_snapshot.json merge=snapshot-json
+tests/snapshots/api/**/*.json merge=snapshot-json
+tests/snapshots/tui_svg/*.svg merge=snapshot-svg
