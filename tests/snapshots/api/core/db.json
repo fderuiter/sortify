@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "94c3238070e59f23a009278e5786847e49b99385099554bff64894ef5dcc4f45"
+    "checksum": "747c172fe6ebd4f11c2a136eaf59a24865cc54ad6593d352b6a2be03bed93acc"
   },
   "classes": [
     {
@@ -139,6 +139,11 @@
               "annotation": null,
               "default": "None",
               "name": "target_paths"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "source_dirs"
             }
           ],
           "returns": null

@@ -16,6 +16,7 @@ from app.core.domain_contracts import (
     validate_corpus_prefetch_batch,
     validate_jev_classification_result,
 )
+from app.core.path_utils import safe_relpath
 
 _UNSPECIFIED = object()
 
@@ -651,8 +652,7 @@ class IncrementalAnalyzer:
                         or f"Model '{model_id}' failed or degraded"
                     )
                     recovery_action = (
-                        record.get("suggested_recovery_action")
-                        or "RE_DOWNLOAD_MODEL"
+                        record.get("suggested_recovery_action") or "RE_DOWNLOAD_MODEL"
                     )
                     break
 
@@ -689,6 +689,7 @@ class IncrementalAnalyzer:
         fast_path_only: bool = False,
         target_paths: Optional[list[str]] = None,
         jev_results: Optional[Dict[str, Any]] = None,
+        source_dirs: Optional[list[str]] = None,
     ) -> SortingPlan:
         """Generate a sorting plan mapping file paths to destination paths based on current model state.
 
@@ -731,7 +732,7 @@ class IncrementalAnalyzer:
                 if not p:
                     continue
                 if os.path.isabs(p) and base_dir and p.startswith(base_dir):
-                    rel = os.path.relpath(p, base_dir).replace("\\", "/")
+                    rel = safe_relpath(p, base_dir).replace("\\", "/")
                 else:
                     rel = p.replace("\\", "/")
                 norm_target_paths.add(rel)
@@ -739,7 +740,9 @@ class IncrementalAnalyzer:
 
         try:
             docs = (
-                self.db.get_all_documents(base_dir, target_paths=norm_target_paths)
+                self.db.get_all_documents(
+                    base_dir, target_paths=norm_target_paths, source_dirs=source_dirs
+                )
                 if self.db
                 else []
             )
@@ -1742,29 +1745,38 @@ class IncrementalAnalyzer:
             def _ensure_relative_source(node, current_path=""):
                 for k, v in list(node.items()):
                     if v is None:
-                        # Convert None to a standard file dictionary with relative_source
-                        rel_src = os.path.relpath(
-                            os.path.join(base_dir, k),
-                            os.path.join(base_dir, current_path)
+                        src_root = base_dir
+                        raw_k = k
+                        if "::" in k:
+                            src_root, raw_k = k.split("::", 1)
+                        rel_src = safe_relpath(
+                            os.path.join(src_root, raw_k),
+                            os.path.join(src_root, current_path)
                             if current_path
-                            else base_dir,
+                            else src_root,
                         ).replace("\\", "/")
                         node[k] = {
                             "__type__": "file",
                             "relative_source": rel_src,
+                            "source_root": src_root,
                             "status": None,
                         }
                     elif isinstance(v, dict):
                         if v.get("__type__") == "file":
+                            if "::" in k and "source_root" not in v:
+                                s_root, raw_k = k.split("::", 1)
+                                v["source_root"] = s_root
+                            elif "source_root" not in v:
+                                v["source_root"] = base_dir
+
                             if "relative_source" not in v:
-                                # k is the relative path of the file from base_dir (e.g. invoice_12345.txt)
-                                # current_path is the destination folder path (e.g. Invoices)
-                                # We need relative_source of k relative to current_path
-                                rel_src = os.path.relpath(
-                                    os.path.join(base_dir, k),
-                                    os.path.join(base_dir, current_path)
+                                raw_k = k.split("::", 1)[1] if "::" in k else k
+                                s_root = v.get("source_root") or base_dir
+                                rel_src = safe_relpath(
+                                    os.path.join(s_root, raw_k),
+                                    os.path.join(s_root, current_path)
                                     if current_path
-                                    else base_dir,
+                                    else s_root,
                                 ).replace("\\", "/")
                                 v["relative_source"] = rel_src
                         else:

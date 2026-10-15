@@ -984,4 +984,3 @@ def test_network_rules_vulnerability_database_egress_rules():
 
     assert re.search(gh_rule["pattern"], "https://api.github.com/advisories")
     assert not re.search(gh_rule["pattern"], "https://apiXgithubXcom/advisories")
-
