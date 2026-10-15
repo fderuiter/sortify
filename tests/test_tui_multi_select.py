@@ -11,6 +11,7 @@ from app.ui.tui import AutoSorterTUI
 
 class MockSettings:
     """Mock application settings for testing."""
+
     def __init__(self):
         self.language = "en"
         self.ai_status_badge = "ON"
@@ -64,6 +65,7 @@ def sample_plan():
 
 def test_checkboxes_render_in_tree(sample_plan):
     """Verify checkboxes render next to file nodes and folder nodes in tree view."""
+
     async def _test():
         app = AutoSorterTUI(settings=MockSettings(), base_dir="/app/sample")
         app.plan = sample_plan
@@ -77,7 +79,9 @@ def test_checkboxes_render_in_tree(sample_plan):
             assert any("[x] 📁 Documents" in label for label in folder_labels)
             assert any("[x] 📁 Invoices" in label for label in folder_labels)
 
-            doc_node = next(n for n in tree.root.children if "Documents" in str(n.label))
+            doc_node = next(
+                n for n in tree.root.children if "Documents" in str(n.label)
+            )
             file_labels = [str(child.label) for child in doc_node.children]
             assert any("[x] 📄 draft_1.docx" in label for label in file_labels)
             assert any("[x] 📄 draft_2.docx" in label for label in file_labels)
@@ -87,6 +91,7 @@ def test_checkboxes_render_in_tree(sample_plan):
 
 def test_spacebar_toggles_single_file_node(sample_plan):
     """Verify Spacebar toggles checkbox selection for a highlighted file node."""
+
     async def _test():
         app = AutoSorterTUI(settings=MockSettings(), base_dir="/app/sample")
         app.plan = sample_plan
@@ -96,7 +101,9 @@ def test_spacebar_toggles_single_file_node(sample_plan):
             await pilot.pause()
             tree = app.query_one("#plan-tree")
 
-            doc_folder = next(n for n in tree.root.children if "Documents" in str(n.label))
+            doc_folder = next(
+                n for n in tree.root.children if "Documents" in str(n.label)
+            )
             file_node = doc_folder.children[0]
             app.active_tree_node = file_node
 
@@ -105,7 +112,9 @@ def test_spacebar_toggles_single_file_node(sample_plan):
             app.action_toggle_selection()
             await pilot.pause()
 
-            doc_folder_updated = next(n for n in tree.root.children if "Documents" in str(n.label))
+            doc_folder_updated = next(
+                n for n in tree.root.children if "Documents" in str(n.label)
+            )
             file_node_updated = doc_folder_updated.children[0]
 
             assert file_node_updated.data["info"]["is_checked"] is False
@@ -116,6 +125,7 @@ def test_spacebar_toggles_single_file_node(sample_plan):
 
 def test_spacebar_toggles_folder_group(sample_plan):
     """Verify Spacebar toggles checkbox selection for all items in a folder group simultaneously."""
+
     async def _test():
         app = AutoSorterTUI(settings=MockSettings(), base_dir="/app/sample")
         app.plan = sample_plan
@@ -125,7 +135,9 @@ def test_spacebar_toggles_folder_group(sample_plan):
             await pilot.pause()
             tree = app.query_one("#plan-tree")
 
-            doc_folder = next(n for n in tree.root.children if "Documents" in str(n.label))
+            doc_folder = next(
+                n for n in tree.root.children if "Documents" in str(n.label)
+            )
             app.active_tree_node = doc_folder
 
             for child in doc_folder.children:
@@ -134,7 +146,9 @@ def test_spacebar_toggles_folder_group(sample_plan):
             app.action_toggle_selection()
             await pilot.pause()
 
-            doc_folder_updated = next(n for n in tree.root.children if "Documents" in str(n.label))
+            doc_folder_updated = next(
+                n for n in tree.root.children if "Documents" in str(n.label)
+            )
 
             for child in doc_folder_updated.children:
                 assert child.data["info"]["is_checked"] is False
@@ -145,7 +159,9 @@ def test_spacebar_toggles_folder_group(sample_plan):
             app.action_toggle_selection()
             await pilot.pause()
 
-            doc_folder_restored = next(n for n in tree.root.children if "Documents" in str(n.label))
+            doc_folder_restored = next(
+                n for n in tree.root.children if "Documents" in str(n.label)
+            )
 
             for child in doc_folder_restored.children:
                 assert child.data["info"]["is_checked"] is True
@@ -157,6 +173,7 @@ def test_spacebar_toggles_folder_group(sample_plan):
 
 def test_bulk_exclusion_scenario(sample_plan):
     """Verify Scenario: Bulk Exclusion across checked items."""
+
     async def _test():
         app = AutoSorterTUI(settings=MockSettings(), base_dir="/app/sample")
         app.plan = sample_plan
@@ -186,6 +203,7 @@ def test_bulk_exclusion_scenario(sample_plan):
 
 def test_bulk_inclusion_scenario(sample_plan):
     """Verify Bulk Inclusion restores excluded items."""
+
     async def _test():
         app = AutoSorterTUI(settings=MockSettings(), base_dir="/app/sample")
         app.plan = sample_plan
@@ -212,6 +230,7 @@ def test_bulk_inclusion_scenario(sample_plan):
 
 def test_bulk_reassign_action(sample_plan):
     """Verify Bulk Reassign moves checked items to a target folder in plan."""
+
     async def _test():
         app = AutoSorterTUI(settings=MockSettings(), base_dir="/app/sample")
         app.plan = sample_plan
@@ -265,6 +284,7 @@ def test_bulk_reassign_action(sample_plan):
 
 def test_toggle_select_all_action(sample_plan):
     """Verify 'a' key toggles select all and deselect all."""
+
     async def _test():
         app = AutoSorterTUI(settings=MockSettings(), base_dir="/app/sample")
         app.plan = sample_plan

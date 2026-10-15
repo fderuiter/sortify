@@ -86,6 +86,7 @@ class SortingPlanNodeModel(BaseModel):
     is_confirmed: Optional[bool] = None
     user_confirmed: Optional[bool] = None
     jev_category: Optional[str] = None
+    source_root: Optional[str] = None
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 

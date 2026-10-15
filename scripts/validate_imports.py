@@ -34,6 +34,7 @@ MODULE_TO_PACKAGE_MAP = {
     "keyring": "keyring",
     "jsonschema": "jsonschema",
     "textual": "textual",
+    "rich": "rich",
     "watchdog": "watchdog",
     "pandas": "pandas",
     "scipy": "scipy",

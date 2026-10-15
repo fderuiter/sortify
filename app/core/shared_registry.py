@@ -746,9 +746,7 @@ class SharedModelRegistry:
 
                     actual_hash = resilient_file_hash(file_path)
                     if actual_hash != expected_hash:
-                        reason = (
-                            f"Integrity check failed for {filename}. Expected {expected_hash}, got {actual_hash}"
-                        )
+                        reason = f"Integrity check failed for {filename}. Expected {expected_hash}, got {actual_hash}"
                         self.record_model_health(
                             model_id,
                             status="FAILED",

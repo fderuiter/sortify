@@ -55,7 +55,9 @@ def test_concurrent_json_additions_and_checksum_update(tmp_path):
                         "async": False,
                         "decorators": [],
                         "name": "__init__",
-                        "parameters": [{"annotation": None, "default": None, "name": "self"}],
+                        "parameters": [
+                            {"annotation": None, "default": None, "name": "self"}
+                        ],
                         "returns": "None",
                     }
                 ],
@@ -149,7 +151,9 @@ def test_contract_breaking_change_detection(tmp_path):
                         "async": False,
                         "decorators": [],
                         "name": "essential_method",
-                        "parameters": [{"annotation": None, "default": None, "name": "self"}],
+                        "parameters": [
+                            {"annotation": None, "default": None, "name": "self"}
+                        ],
                         "returns": None,
                     }
                 ],
@@ -160,7 +164,9 @@ def test_contract_breaking_change_detection(tmp_path):
                 "async": False,
                 "decorators": [],
                 "name": "essential_function",
-                "parameters": [{"annotation": "int", "default": None, "name": "req_param"}],
+                "parameters": [
+                    {"annotation": "int", "default": None, "name": "req_param"}
+                ],
                 "returns": None,
             }
         ],
@@ -225,7 +231,9 @@ def test_json_collision_conflict_marker_fallback(tmp_path):
 def test_svg_3way_merge_and_conflict_fallback(tmp_path):
     """Verify 3-way SVG merging of additions and fallback to conflict markers on collision."""
     svg_o = '<svg xmlns="http://www.w3.org/2000/svg"><g id="main"></g></svg>'
-    svg_a = '<svg xmlns="http://www.w3.org/2000/svg"><g id="main"></g><rect id="r1"/></svg>'
+    svg_a = (
+        '<svg xmlns="http://www.w3.org/2000/svg"><g id="main"></g><rect id="r1"/></svg>'
+    )
     svg_b = '<svg xmlns="http://www.w3.org/2000/svg"><g id="main"></g><circle id="c1"/></svg>'
 
     f_o = tmp_path / "O.svg"
@@ -255,15 +263,30 @@ def test_svg_3way_merge_and_conflict_fallback(tmp_path):
 def test_cli_setup_command(base_dir):
     """Verify python scripts/snapshot_merge_driver.py --setup registers git config settings."""
     script_path = os.path.join(base_dir, "scripts", "snapshot_merge_driver.py")
-    res = subprocess.run([sys.executable, script_path, "--setup"], capture_output=True, text=True, cwd=base_dir)
+    res = subprocess.run(
+        [sys.executable, script_path, "--setup"],
+        capture_output=True,
+        text=True,
+        cwd=base_dir,
+    )
     assert res.returncode == 0
     assert "Successfully configured snapshot merge drivers" in res.stdout
 
-    check_json = subprocess.run(["git", "config", "--get", "merge.snapshot-json.driver"], capture_output=True, text=True, cwd=base_dir)
+    check_json = subprocess.run(
+        ["git", "config", "--get", "merge.snapshot-json.driver"],
+        capture_output=True,
+        text=True,
+        cwd=base_dir,
+    )
     assert check_json.returncode == 0
     assert "snapshot_merge_driver.py" in check_json.stdout
 
-    check_svg = subprocess.run(["git", "config", "--get", "merge.snapshot-svg.driver"], capture_output=True, text=True, cwd=base_dir)
+    check_svg = subprocess.run(
+        ["git", "config", "--get", "merge.snapshot-svg.driver"],
+        capture_output=True,
+        text=True,
+        cwd=base_dir,
+    )
     assert check_svg.returncode == 0
     assert "snapshot_merge_driver.py" in check_svg.stdout
 
@@ -271,6 +294,11 @@ def test_cli_setup_command(base_dir):
 def test_cli_resolver_command(base_dir):
     """Verify python scripts/snapshot_merge_driver.py --cli runs inspection mode cleanly."""
     script_path = os.path.join(base_dir, "scripts", "snapshot_merge_driver.py")
-    res = subprocess.run([sys.executable, script_path, "--cli"], capture_output=True, text=True, cwd=base_dir)
+    res = subprocess.run(
+        [sys.executable, script_path, "--cli"],
+        capture_output=True,
+        text=True,
+        cwd=base_dir,
+    )
     assert res.returncode == 0
     assert "Interactive Snapshot Conflict & Diff Resolver" in res.stdout
