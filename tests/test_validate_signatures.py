@@ -698,7 +698,7 @@ def test_validation_fails_on_missing_snapshot(tmp_path, monkeypatch):
     assert exited_code == 1
 
 
-def test_snapshot_integrity_checksum_mismatch(tmp_path, monkeypatch):
+def test_snapshot_integrity_checksum_mismatch(tmp_path, monkeypatch, capsys):
     fake_snap_dir = tmp_path / "api"
     fake_snap_dir.mkdir(parents=True)
 
@@ -708,7 +708,7 @@ def test_snapshot_integrity_checksum_mismatch(tmp_path, monkeypatch):
     valid_payload = {"classes": [], "functions": []}
     valid_checksum = compute_payload_checksum(valid_payload)
 
-    # Tampered payload but keeping old checksum
+    # Tampered payload in snapshot keeping old checksum
     tampered_data = {
         "_metadata": {
             "checksum": valid_checksum,
@@ -718,9 +718,14 @@ def test_snapshot_integrity_checksum_mismatch(tmp_path, monkeypatch):
     }
     module_snap.write_text(json.dumps(tampered_data, indent=2, sort_keys=True))
 
+    codebase_payload = {
+        "classes": [{"class_name": "NewClass", "decorators": [], "methods": []}],
+        "functions": [],
+    }
+
     current_defs = {
         "cli": {},
-        "core": {"app/core/analyzer_strategies.py": tampered_data},
+        "core": {"app/core/analyzer_strategies.py": codebase_payload},
     }
 
     monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_snap_dir))
@@ -744,6 +749,15 @@ def test_snapshot_integrity_checksum_mismatch(tmp_path, monkeypatch):
 
     assert exc_info.value.code == 1
     assert exited_code == 1
+
+    captured = capsys.readouterr()
+    assert (
+        "Error: Snapshot file integrity verification failed! Checksum mismatch"
+        in captured.err
+    )
+    assert "python scripts/validate_signatures.py --regenerate" in captured.err
+    assert "Signature diff for 'app/core/analyzer_strategies.py'" in captured.err
+    assert "NewClass" in captured.err
 
 
 def test_snapshot_integrity_missing_metadata(tmp_path, monkeypatch):
