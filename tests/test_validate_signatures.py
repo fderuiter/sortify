@@ -842,3 +842,66 @@ def test_validation_runner_detects_orphaned_snapshot(tmp_path, monkeypatch):
         validate_signatures.main()
     assert exc_info.value.code == 0
     assert not orphaned_snap.exists()
+
+
+def test_validation_runner_detects_orphaned_snapshot_across_subdirectories(
+    tmp_path, monkeypatch
+):
+    snapshots_root = tmp_path / "snapshots"
+    api_dir = snapshots_root / "api"
+    tui_dir = snapshots_root / "tui_svg"
+    other_dir = snapshots_root / "other"
+    api_dir.mkdir(parents=True)
+    tui_dir.mkdir(parents=True)
+    other_dir.mkdir(parents=True)
+
+    valid_snap = api_dir / "core" / "analyzer_strategies.json"
+    valid_snap.parent.mkdir(parents=True, exist_ok=True)
+    payload = {"classes": [], "functions": []}
+    data = {"_metadata": {"checksum": compute_payload_checksum(payload)}, **payload}
+    valid_snap.write_text(json.dumps(data, indent=2))
+
+    orphaned_tui = tui_dir / "stale_view.svg"
+    orphaned_tui.write_text("<svg>stale</svg>")
+
+    orphaned_other = other_dir / "old_plan.json"
+    orphaned_other.write_text("{}")
+
+    actual_diff = tui_dir / "test_view.svg.actual"
+    actual_diff.write_text("<svg>diff</svg>")
+
+    current_defs = {"cli": {}, "core": {"app/core/analyzer_strategies.py": payload}}
+
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(api_dir))
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(api_dir))
+    monkeypatch.setattr(
+        validate_signatures, "collect_current_definitions", lambda: current_defs
+    )
+    monkeypatch.setattr(
+        validate_signatures, "collect_tui_svg_snapshots", lambda tests_dir=None: set()
+    )
+    monkeypatch.delenv("CI", raising=False)
+
+    exited_code = None
+
+    def mock_exit(code):
+        nonlocal exited_code
+        exited_code = code
+        raise SystemExit(code)
+
+    monkeypatch.setattr(sys, "exit", mock_exit)
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+    assert exc_info.value.code == 1
+
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py", "--update"])
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+    assert exc_info.value.code == 0
+
+    assert not orphaned_tui.exists()
+    assert not orphaned_other.exists()
+    assert actual_diff.exists()
+

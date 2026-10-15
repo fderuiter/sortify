@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "bde9db017a4bc6ee88fb94712af98174383549ed0e7cad459f31cc5c11d562c5"
+    "checksum": "b58ce09460afdb16e553e0be70380a8b2ed4952e67b5c1cbfae6f93fbd9ef4c3"
   },
   "classes": [
     {
@@ -102,6 +102,11 @@
               "annotation": "Optional[Dict[str, Any]]",
               "default": "None",
               "name": "jev_results"
+            },
+            {
+              "annotation": "Optional[list[str]]",
+              "default": "None",
+              "name": "source_dirs"
             }
           ],
           "returns": "SortingPlan"

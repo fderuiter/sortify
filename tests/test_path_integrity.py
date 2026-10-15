@@ -137,3 +137,23 @@ def test_physical_filesystem_remains_unaltered():
         assert os.path.exists(real_file)
         if __import__("sys").platform != "win32":
             assert os.path.islink(real_link)
+
+
+def test_safe_relpath(monkeypatch):
+    from app.core.path_utils import safe_relpath
+
+    # Standard relative path
+    rel = safe_relpath("/app/tests/file.txt", "/app")
+    assert rel in ("tests/file.txt", "tests\\file.txt")
+
+    # Empty path or start=None
+    assert safe_relpath("") == ""
+    assert safe_relpath("/app/file.txt", None) == os.path.abspath("/app/file.txt")
+
+    # Cross-drive ValueError simulation on Windows
+    def mock_relpath(path, start):
+        raise ValueError("path is on mount 'D:', start is on mount 'C:'")
+
+    monkeypatch.setattr(os.path, "relpath", mock_relpath)
+    fallback = safe_relpath("D:\\data\\file.txt", "C:\\Users")
+    assert fallback == os.path.abspath("D:\\data\\file.txt")

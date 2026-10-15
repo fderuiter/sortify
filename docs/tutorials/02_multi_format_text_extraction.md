@@ -124,7 +124,8 @@ records = cursor.fetchall()
 
 print("\n--- Persisted Documents & Extracted Content ---")
 for filepath, f_hash, text in records:
-    truncated_text = text[:100] + "..." if len(text) > 100 else text
+    text_str = session.db.crypto.decrypt_text(text) if isinstance(text, bytes) else text
+    truncated_text = text_str[:100] + "..." if len(text_str) > 100 else text_str
     print(f"File: {filepath}")
     print(f"  Hash: {f_hash}")
     print(f"  Text preview: {truncated_text}")

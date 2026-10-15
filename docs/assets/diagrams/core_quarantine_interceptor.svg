@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="430" viewBox="0 0 800 430">
+  <rect width="100%" height="100%" fill="#f8fafc" rx="8" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="20" y="40" font-family="sans-serif" font-size="18" font-weight="bold" fill="#0f172a">Quarantine Interceptor Subsystem Workflow</text>
+  <text x="20" y="70" font-family="sans-serif" font-size="12" fill="#64748b">Mermaid Diagram Specification (Fallback View):</text>
+  <foreignObject x="20" y="90" width="760" height="210">
+    <pre xmlns="http://www.w3.org/1999/xhtml" style="font-family: monospace; font-size: 12px; color: #334155; background: #ffffff; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; overflow: auto; height: 180px;">flowchart TD
+eval{Quarantine Evaluation}
+policy["Compliance Policy Check"]
+isolate["Isolate Quarantine Record"]
+notify[("Audit Trail Event Logger")]
+bypass(["Safe Path Release"])
+eval --&gt;|Flagged Violation| policy
+policy --&gt;|Confirm Isolation| isolate
+isolate --&gt;|Log Audit Record| notify
+eval --&gt;|Clean File| bypass
+click eval "docs/api_reference.md#appcorequarantine_interceptor" "Quarantine Evaluation Node"
+click policy "docs/admin_guide.md" "Compliance Policy Check"
+click isolate "docs/api_reference.md#appcorequarantine_interceptor" "Isolate File Record"
+click notify "docs/api_reference.md#appcoreaudit_reporter" "Logger Node"
+click bypass tooltip "Bypass Release"</pre>
+  </foreignObject>
+    <a href="docs/api_reference.md#appcorequarantine_interceptor" style="color: #2563eb; text-decoration: underline;"><text x="20" y="320" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node eval -&gt; Quarantine Evaluation Node</text></a>
+    <a href="docs/admin_guide.md" style="color: #2563eb; text-decoration: underline;"><text x="20" y="338" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node policy -&gt; Compliance Policy Check</text></a>
+    <a href="docs/api_reference.md#appcorequarantine_interceptor" style="color: #2563eb; text-decoration: underline;"><text x="20" y="356" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node isolate -&gt; Isolate File Record</text></a>
+    <a href="docs/api_reference.md#appcoreaudit_reporter" style="color: #2563eb; text-decoration: underline;"><text x="20" y="374" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node notify -&gt; Logger Node</text></a>
+    <a href="Bypass Release" style="color: #2563eb; text-decoration: underline;"><text x="20" y="392" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node bypass -&gt; Bypass Release</text></a>
+</svg>

@@ -34,6 +34,7 @@ MODULE_TO_PACKAGE_MAP = {
     "keyring": "keyring",
     "jsonschema": "jsonschema",
     "textual": "textual",
+    "rich": "rich",
     "watchdog": "watchdog",
     "pandas": "pandas",
     "scipy": "scipy",
@@ -45,7 +46,6 @@ MODULE_TO_PACKAGE_MAP = {
     "easyocr": "easyocr",
     "transformers": "transformers",
     "onnxruntime": "onnxruntime",
-    "rich": "rich",
 }
 
 STDLIB_MODULES = set(getattr(sys, "stdlib_module_names", set())) | set(

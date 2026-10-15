@@ -16,6 +16,7 @@ from typing import Callable, Dict, List, Optional
 
 from app.core.exceptions import ArchiveSafetyError
 from app.core.extractor import extract_file_text
+from app.core.path_utils import safe_relpath
 from app.core.progress import emit_progress
 from app.core.resilient_file_ops import _set_posix_mode, resilient_rmtree
 
@@ -312,7 +313,7 @@ class ForensicScanner:
                     return self.discovered_documents
 
                 full_path = os.path.join(root, file)
-                rel_path = os.path.relpath(full_path, source_root)
+                rel_path = safe_relpath(full_path, source_root)
                 _, ext = os.path.splitext(file)
                 ext_lower = ext.lower()
 
@@ -332,7 +333,7 @@ class ForensicScanner:
                                     self._ingest_file(
                                         source_path=full_path,
                                         actual_file_path=ext_file,
-                                        rel_path=os.path.relpath(
+                                        rel_path=safe_relpath(
                                             ext_file, archive_staging
                                         ),
                                         archive_origin=rel_path,

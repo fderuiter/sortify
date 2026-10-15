@@ -8,7 +8,7 @@ from pathlib import Path
 from typing import Any, Dict, List
 
 from app.core.db_conn import get_db_connection
-from app.core.path_utils import is_junction_path
+from app.core.path_utils import is_junction_path, safe_relpath
 
 try:
     import pylnk3
@@ -1127,10 +1127,10 @@ class HistoryManager:
 
                     if db and base_dir:
                         try:
-                            rel_target = os.path.relpath(target_path, base_dir).replace(
+                            rel_target = safe_relpath(target_path, base_dir).replace(
                                 "\\", "/"
                             )
-                            rel_source = os.path.relpath(source_path, base_dir).replace(
+                            rel_source = safe_relpath(source_path, base_dir).replace(
                                 "\\", "/"
                             )
                             db.update_document_path(base_dir, rel_target, rel_source)
@@ -1141,7 +1141,7 @@ class HistoryManager:
             for root, dirs, files in os.walk(base_dir):
                 for f in files:
                     full_path = os.path.join(root, f)
-                    rel_path = os.path.relpath(full_path, base_dir).replace("\\", "/")
+                    rel_path = safe_relpath(full_path, base_dir).replace("\\", "/")
                     if rel_path not in snapshot_files:
                         try:
                             target_dirs_to_clean.add(os.path.dirname(full_path))
@@ -1535,7 +1535,7 @@ class HistoryManager:
                                     moves.append((current_abs, target_abs))
 
                 planned_target_rels = {
-                    os.path.relpath(m[1], base_dir).lower().replace("\\", "/")
+                    safe_relpath(m[1], base_dir).lower().replace("\\", "/")
                     for m in moves
                 }
 
@@ -1595,7 +1595,7 @@ class HistoryManager:
 
                         # Fix parent directory collisions
                         parts = (
-                            os.path.relpath(dst, base_dir).replace("\\", "/").split("/")
+                            safe_relpath(dst, base_dir).replace("\\", "/").split("/")
                         )
                         current = base_dir
                         for part in parts[:-1]:
@@ -1605,12 +1605,12 @@ class HistoryManager:
                                     os.path.dirname(current), os.path.basename(current)
                                 )
                                 _robust_move(current, safe_current)
-                                rel_current = os.path.relpath(
-                                    current, base_dir
-                                ).replace("\\", "/")
-                                rel_safe = os.path.relpath(
-                                    safe_current, base_dir
-                                ).replace("\\", "/")
+                                rel_current = safe_relpath(current, base_dir).replace(
+                                    "\\", "/"
+                                )
+                                rel_safe = safe_relpath(safe_current, base_dir).replace(
+                                    "\\", "/"
+                                )
                                 with db_conn:
                                     db_conn.execute(
                                         "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
@@ -1636,8 +1636,8 @@ class HistoryManager:
                             except OSError:
                                 pass
 
-                        rel_src = os.path.relpath(src, base_dir).replace("\\", "/")
-                        rel_dst = os.path.relpath(dst, base_dir).replace("\\", "/")
+                        rel_src = safe_relpath(src, base_dir).replace("\\", "/")
+                        rel_dst = safe_relpath(dst, base_dir).replace("\\", "/")
 
                         if os.path.exists(dst) and not os.path.samefile(src, dst):
                             is_cyclic = False
@@ -1671,7 +1671,7 @@ class HistoryManager:
                                 )
                                 _robust_move(dst, safe_dst)
 
-                                safe_rel = os.path.relpath(safe_dst, base_dir).replace(
+                                safe_rel = safe_relpath(safe_dst, base_dir).replace(
                                     "\\", "/"
                                 )
                                 with db_conn:
@@ -1745,10 +1745,10 @@ class HistoryManager:
                                 )
                                 _robust_move(target_abs, safe_path)
 
-                                rel_target = os.path.relpath(
-                                    target_abs, base_dir
-                                ).replace("\\", "/")
-                                rel_safe = os.path.relpath(safe_path, base_dir).replace(
+                                rel_target = safe_relpath(target_abs, base_dir).replace(
+                                    "\\", "/"
+                                )
+                                rel_safe = safe_relpath(safe_path, base_dir).replace(
                                     "\\", "/"
                                 )
                                 db_conn = get_db_connection(self.db.db_path)
@@ -1814,10 +1814,10 @@ class HistoryManager:
                                 )
                                 _robust_move(target_abs, safe_path)
 
-                                rel_target = os.path.relpath(
-                                    target_abs, base_dir
-                                ).replace("\\", "/")
-                                rel_safe = os.path.relpath(safe_path, base_dir).replace(
+                                rel_target = safe_relpath(target_abs, base_dir).replace(
+                                    "\\", "/"
+                                )
+                                rel_safe = safe_relpath(safe_path, base_dir).replace(
                                     "\\", "/"
                                 )
                                 db_conn = get_db_connection(self.db.db_path)
