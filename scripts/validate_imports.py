@@ -46,7 +46,6 @@ MODULE_TO_PACKAGE_MAP = {
     "easyocr": "easyocr",
     "transformers": "transformers",
     "onnxruntime": "onnxruntime",
-    "rich": "rich",
 }
 
 STDLIB_MODULES = set(getattr(sys, "stdlib_module_names", set())) | set(
