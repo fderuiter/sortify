@@ -45,6 +45,7 @@ def test_model_manager_modal_accessibility_audit():
 
 def test_model_manager_open_via_hotkey(temp_workspace):
     """Verify Ctrl+M hotkey opens ModelManagerModal."""
+
     async def _test():
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
@@ -67,6 +68,7 @@ def test_model_manager_open_via_hotkey(temp_workspace):
 
 def test_model_manager_open_via_settings_button(temp_workspace):
     """Verify clicking Model Manager button in SettingsModal opens ModelManagerModal."""
+
     async def _test():
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
@@ -89,6 +91,7 @@ def test_model_manager_open_via_settings_button(temp_workspace):
 
 def test_model_manager_display_status_missing(temp_workspace):
     """Verify status labels when model file is missing."""
+
     async def _test():
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
@@ -102,13 +105,16 @@ def test_model_manager_display_status_missing(temp_workspace):
             assert isinstance(modal, ModelManagerModal)
 
             lbl_status = modal.query_one("#lbl-model-status", Label)
-            assert "Missing" in str(lbl_status.content) or "Not Downloaded" in str(lbl_status.content)
+            assert "Missing" in str(lbl_status.content) or "Not Downloaded" in str(
+                lbl_status.content
+            )
 
     asyncio.run(_test())
 
 
 def test_model_manager_start_download_and_progress(temp_workspace):
     """Verify starting download updates progress bar, throughput label, and screen reader announcements."""
+
     async def _test():
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
@@ -144,13 +150,17 @@ def test_model_manager_start_download_and_progress(temp_workspace):
             modal._poll_download_status()
             await pilot.pause(0.1)
 
-            assert modal.get_last_announcement() == "Model download completed successfully."
+            assert (
+                modal.get_last_announcement()
+                == "Model download completed successfully."
+            )
 
     asyncio.run(_test())
 
 
 def test_model_manager_cancel_download(temp_workspace):
     """Verify clicking Cancel button stops background download."""
+
     async def _test():
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
@@ -178,6 +188,7 @@ def test_model_manager_cancel_download(temp_workspace):
 
 def test_model_manager_retry_download(temp_workspace):
     """Verify clicking Retry Download restarts model download process."""
+
     async def _test():
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
@@ -202,6 +213,7 @@ def test_model_manager_retry_download(temp_workspace):
 
 def test_model_manager_delete_model(temp_workspace):
     """Verify clicking Delete Model invokes delete_model_async thread-safely."""
+
     async def _test():
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
@@ -232,6 +244,7 @@ def test_model_manager_delete_model(temp_workspace):
 
 def test_model_manager_proxy_setting_sync(temp_workspace):
     """Verify proxy input syncs with AppSettings and DownloadManager dynamically."""
+
     async def _test():
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
@@ -259,6 +272,7 @@ def test_model_manager_proxy_setting_sync(temp_workspace):
 
 def test_model_manager_responsive_layout_narrow(temp_workspace):
     """Verify ModelManagerModal applies narrow class on narrow viewports (<80 width)."""
+
     async def _test():
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
