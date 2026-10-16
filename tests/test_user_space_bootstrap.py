@@ -13,13 +13,16 @@ from app.core.user_space_bootstrap import (
 )
 
 
-@pytest.fixture(autouse=True)
+@pytest.fixture
 def reset_bootstrap_state():
     import app.core.user_space_bootstrap as usb
 
+    prev_state = usb._is_bootstrapped
     usb._is_bootstrapped = False
-    yield
-    usb._is_bootstrapped = False
+    try:
+        yield
+    finally:
+        usb._is_bootstrapped = prev_state
 
 
 def test_get_bootstrap_bin_dir():
@@ -143,7 +146,7 @@ def test_inject_bootstrap_paths(tmp_path):
             assert str(bin_dir) in os.environ["PATH"]
 
 
-def test_bootstrap_binaries_bypass_if_cached(tmp_path):
+def test_bootstrap_binaries_bypass_if_cached(tmp_path, reset_bootstrap_state):
     """Verify that if binaries are cached and verified, we bypass all download and fallback steps."""
 
     mock_app_dir = tmp_path / ".autosorter"
@@ -470,7 +473,7 @@ def test_sqlite3_mock_fallback_on_import_error():
         importlib.reload(app.core.db_conn)
 
 
-def test_bootstrap_binaries_windows_direct_import_fallback():
+def test_bootstrap_binaries_windows_direct_import_fallback(reset_bootstrap_state):
     """Verify that on Windows, if not frozen, bootstrap_binaries discovers and injects DLL search paths before verification."""
     mock_add_dll = MagicMock()
     mock_spec = MagicMock()
@@ -582,7 +585,7 @@ def test_bootstrap_binaries_pyinstaller_alternate_candidate_locations(tmp_path):
         mock_inject.assert_called_once()
 
 
-def test_concurrent_bootstrap_binaries():
+def test_concurrent_bootstrap_binaries(reset_bootstrap_state):
     """Verify that concurrent thread calls to bootstrap_binaries execute safely without race conditions."""
     import concurrent.futures
 
