@@ -101,6 +101,14 @@ async def scan_abandoned_sessions_async():
                     except Exception:
                         step_count = 0
 
+                    branch_dir = os.path.join(base_dir, ".branches", sid)
+                    has_trapped = False
+                    if os.path.exists(branch_dir):
+                        for root, dirs, files in os.walk(branch_dir):
+                            if files:
+                                has_trapped = True
+                                break
+
                     if step_count > 0 and status in ("active", "uncommitted", "failed"):
                         abandoned.append(
                             {
@@ -111,30 +119,23 @@ async def scan_abandoned_sessions_async():
                                 "has_step_ledger": True,
                                 "step_count": step_count,
                                 "uncommitted_batch": True,
-                                "has_trapped_files": False,
+                                "has_trapped_files": has_trapped,
+                                "safety_folder": branch_dir if has_trapped else None,
                             }
                         )
                         break
 
-                    if status in ("active", "failed"):
-                        branch_dir = os.path.join(base_dir, ".branches", sid)
-                        has_files = False
-                        if os.path.exists(branch_dir):
-                            for root, dirs, files in os.walk(branch_dir):
-                                if files:
-                                    has_files = True
-                                    break
-                        if has_files:
-                            trapped_sessions.append(
-                                {
-                                    "session_id": sid,
-                                    "base_dir": base_dir,
-                                    "session_dir": str(session_dir),
-                                    "status": status,
-                                    "has_trapped_files": True,
-                                    "safety_folder": branch_dir,
-                                }
-                            )
+                    if status in ("active", "failed", "uncommitted") and has_trapped:
+                        trapped_sessions.append(
+                            {
+                                "session_id": sid,
+                                "base_dir": base_dir,
+                                "session_dir": str(session_dir),
+                                "status": status,
+                                "has_trapped_files": True,
+                                "safety_folder": branch_dir,
+                            }
+                        )
 
                 if trapped_sessions:
                     abandoned.extend(trapped_sessions)
