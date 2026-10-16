@@ -649,6 +649,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                     "core_domain_contracts",
                     "core_exceptions",
                     "core_sample_corpus",
+                    "core_security_advisory",
                 ],
             ),
         ],
@@ -744,6 +745,9 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
             DiagramNode(id="core_exceptions", label="app.core.exceptions"),
             DiagramNode(id="core_sample_corpus", label="app.core.sample_corpus"),
+            DiagramNode(
+                id="core_security_advisory", label="app.core.security_advisory"
+            ),
         ],
         edges=[
             DiagramEdge(source="app_main", target="app_tui"),

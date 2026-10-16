@@ -1,6 +1,8 @@
 """Local database management for autosorter."""
 
+import logging
 import os
+import weakref
 from pathlib import Path
 from typing import Optional
 
@@ -28,10 +30,12 @@ class Database:
     """SQLite database abstraction for persistent storage of document state."""
 
     CURRENT_VERSION = 6
+    _active_instances = weakref.WeakSet()
 
     def __init__(self, db_path: Path, worker: DBWorker):
         self.db_path = str(db_path)
         self.worker = worker
+        Database._active_instances.add(self)
         from app.core.path_utils import resolve_db_crypto
 
         self.crypto = resolve_db_crypto(db_path)
@@ -1801,15 +1805,65 @@ class Database:
 
         self.worker.execute_write(_write)
 
+    def get_document_vectors_count(self) -> int:
+        """Return total count of stored document vectors in document_vectors table."""
+        try:
+            conn = get_db_connection(self.db_path)
+            with conn:
+                cursor = conn.execute(
+                    "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='document_vectors'"
+                )
+                if not cursor.fetchone()[0]:
+                    return 0
+                cursor = conn.execute("SELECT COUNT(*) FROM document_vectors")
+                row = cursor.fetchone()
+                return row[0] if row else 0
+        except Exception as e:
+            logging.debug(f"Error fetching document vectors count: {e}")
+            return 0
+
     def clear_all_document_vectors(self):
         """Delete all document vectors from the decoupled table."""
 
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
-                conn.execute("DELETE FROM document_vectors")
+                cursor = conn.execute(
+                    "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='document_vectors'"
+                )
+                if cursor.fetchone()[0]:
+                    conn.execute("DELETE FROM document_vectors")
+
+        with self._corrupted_vectors_lock:
+            self.corrupted_vectors.clear()
+        if hasattr(self, "matrix_lru_cache") and self.matrix_lru_cache:
+            try:
+                self.matrix_lru_cache.clear()
+            except Exception:
+                pass
 
         self.worker.execute_write(_write)
+
+    @classmethod
+    def scrub_all_vectors(cls):
+        """Scrub document vectors across all active database instances and default database."""
+        active_instances = list(cls._active_instances)
+        scrubbed_paths = set()
+        for instance in active_instances:
+            try:
+                instance.clear_all_document_vectors()
+                scrubbed_paths.add(os.path.abspath(instance.db_path))
+            except Exception as e:
+                logging.debug(f"Failed to clear document vectors on instance {instance}: {e}")
+
+        try:
+            from app.config import get_app_dir
+            default_db_path = os.path.abspath(str(get_app_dir() / "autosorter.db"))
+            if default_db_path not in scrubbed_paths and os.path.exists(default_db_path):
+                default_db = cls(Path(default_db_path), DBWorker())
+                default_db.clear_all_document_vectors()
+        except Exception as e:
+            logging.debug(f"Failed to scrub default database vectors: {e}")
 
     def get_documents_missing_vectors(
         self,
