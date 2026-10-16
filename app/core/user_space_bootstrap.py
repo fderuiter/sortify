@@ -99,6 +99,19 @@ def _resolve_platform_driver_paths() -> list:
         except Exception:
             pass
 
+    # Discover local repo packaged binary paths
+    repo_bin_base = Path(__file__).resolve().parent.parent / "binaries"
+    platform_key = "windows" if sys.platform == "win32" else ("macos" if sys.platform == "darwin" else "linux")
+    local_platform_dir = repo_bin_base / platform_key
+    for cand in (local_platform_dir, local_platform_dir / "sqlcipher3"):
+        try:
+            if cand.is_dir():
+                cand_str = str(cand.resolve())
+                if cand_str not in dirs_to_add:
+                    dirs_to_add.append(cand_str)
+        except Exception:
+            pass
+
     venv_dirs = []
     v_env = os.environ.get("VIRTUAL_ENV")
     if v_env:

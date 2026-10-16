@@ -79,7 +79,7 @@ def _close_evicted_connection(key, conn):
 
 _connection_cache = BoundedMemoryCache(max_size=50, on_evict=_close_evicted_connection)
 _cache_lock = threading.Lock()
-_disable_pytest_win_fallback = False
+_disable_pytest_win_fallback = True
 
 
 def clear_connection_cache(only_current_and_inactive: bool = True):
