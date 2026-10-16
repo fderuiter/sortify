@@ -208,7 +208,7 @@ class AppSession:
         try:
             from app.core.shared_registry import SharedModelRegistry
 
-            if getattr(self.settings, "AI_CONSENT_GRANTED", True) is not False:
+            if getattr(self.settings, "AI_CONSENT_GRANTED", True):
                 jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
                 jev_engine.set_database(
                     str(self.session_dir / "autosorter.db"), self.db_worker
@@ -230,10 +230,11 @@ class AppSession:
         user_model_path = str(get_app_dir() / "model")
 
         active_model_path = None
-        import sys
+        from app.core.path_utils import get_meipass_dir
 
-        if hasattr(sys, "_MEIPASS"):
-            mei_bundle_path = os.path.join(sys._MEIPASS, "offline_bundle", "model")
+        mei_dir = get_meipass_dir()
+        if mei_dir:
+            mei_bundle_path = os.path.join(mei_dir, "offline_bundle", "model")
             if os.path.exists(mei_bundle_path):
                 active_model_path = mei_bundle_path
 
@@ -375,6 +376,20 @@ class AppSession:
             chunk_size=chunk_size,
             progress_callback=progress_callback,
             source_dirs=self.source_dirs,
+            **kwargs,
+        )
+
+    def retry_failed_moves(self, failed_items, progress_callback=None, **kwargs):
+        """Re-attempt move operations for failed items."""
+        from app.core.mover import retry_failed_moves
+
+        return retry_failed_moves(
+            self.base_dir,
+            failed_items,
+            db=self.db,
+            history_manager=self.history_manager,
+            runtime_settings=self.settings,
+            progress_callback=progress_callback,
             **kwargs,
         )
 

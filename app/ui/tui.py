@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -15,7 +16,7 @@ from rich.text import Text
 from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
@@ -36,6 +37,8 @@ from textual.widgets import (
 )
 from textual.widgets.tree import TreeNode
 
+from app.core.path_utils import scrub_user_home_paths
+from app.core.text_utils import sanitize_secret_patterns
 from app.ui.heading import Heading
 
 logger = logging.getLogger(__name__)
@@ -52,16 +55,16 @@ class A11yMixin:
 
     def update_status(self, text: str) -> None:
         """Update visual status region on self or parent application."""
-        if (
-            hasattr(self, "app")
-            and self.app
-            and self.app is not self
-            and hasattr(self.app, "update_status")
-        ):
-            try:
+        try:
+            if (
+                hasattr(self, "app")
+                and self.app
+                and self.app is not self
+                and hasattr(self.app, "update_status")
+            ):
                 self.app.update_status(text)
-            except Exception:
-                pass
+        except Exception:
+            pass
 
     def join_speech_thread(self, timeout: float = 1.0) -> None:
         """Wait for active speech synthesis thread to finish."""
@@ -118,6 +121,22 @@ class A11yMixin:
         help_url: Optional[str] = None,
     ) -> str:
         """Emit auditory screen reader announcement and log accessibility event."""
+        if message is None:
+            message = ""
+        else:
+            try:
+                s_msg = str(message)
+                message = (
+                    sanitize_secret_patterns(scrub_user_home_paths(s_msg))
+                    if s_msg
+                    else ""
+                )
+            except Exception:
+                try:
+                    message = str(message)
+                except Exception:
+                    message = ""
+
         full_msg = f"{message} [Help: {help_url}]" if help_url else message
         entry = {
             "message": full_msg,
@@ -130,17 +149,13 @@ class A11yMixin:
 
         forwarded = False
         # Forward to parent app if available
-        if (
-            hasattr(self, "app")
-            and self.app
-            and self.app is not self
-            and hasattr(self.app, "announce")
-        ):
-            try:
-                self.app.announce(message, priority=priority, help_url=help_url)
+        try:
+            app_obj = getattr(self, "_app", None) or getattr(self, "app", None)
+            if app_obj and app_obj is not self and hasattr(app_obj, "announce"):
+                app_obj.announce(message, priority=priority, help_url=help_url)
                 forwarded = True
-            except Exception:
-                pass
+        except Exception:
+            pass
 
         if not forwarded:
             # Check speech binary presence via _get_speech_binary before launching subprocess
@@ -280,7 +295,9 @@ class A11yMixin:
                                 "message": f"Modal screen '{type(self).__name__}' lacks a top-level semantic h1 heading.",
                             }
                         )
-                levels = [getattr(h, "level", 1) for h in headings if hasattr(h, "level")]
+                levels = [
+                    getattr(h, "level", 1) for h in headings if hasattr(h, "level")
+                ]
                 prev_level = 0
                 for lvl in levels:
                     if lvl > prev_level + 1 and prev_level > 0:
@@ -858,6 +875,10 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
         color: $accent;
         margin-bottom: 1;
     }
+    .error-banner {
+        color: $error;
+        text-style: bold;
+    }
     .preset-row {
         margin-top: 1;
         margin-bottom: 1;
@@ -901,6 +922,54 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
         else:
             self.selected_sources = []
 
+    @staticmethod
+    def _validate_directory_path(path_str: str) -> Optional[str]:
+        """Validate if path_str exists, is a directory, and allows read access.
+
+        Returns error message string if invalid, or None if valid.
+        """
+        if not path_str or not path_str.strip():
+            return "Directory path cannot be empty."
+
+        clean_path = path_str.strip()
+        expanded = os.path.abspath(os.path.expanduser(clean_path))
+
+        try:
+            if not os.path.exists(expanded):
+                return f"Target directory does not exist: {clean_path}"
+
+            if not os.path.isdir(expanded):
+                return f"Path is not a directory: {clean_path}"
+
+            if not os.access(expanded, os.R_OK):
+                return f"Permission denied for directory: {clean_path}"
+        except Exception as exc:
+            return f"Invalid directory path: {exc}"
+
+        return None
+
+    def _show_error(self, message: str) -> None:
+        """Display inline error banner, announce message, and focus input."""
+        try:
+            lbl = self.query_one("#lbl-error", Static)
+            lbl.update(message)
+        except Exception:
+            pass
+        self.announce(message, priority="assertive")
+        try:
+            self.query_one("#input-dir", Input).focus()
+        except Exception:
+            pass
+
+    @on(Input.Changed, "#input-dir")
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Clear error banner when user changes input text."""
+        try:
+            lbl = self.query_one("#lbl-error", Static)
+            lbl.update("")
+        except Exception:
+            pass
+
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
@@ -917,6 +986,7 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
             )
             inp.tooltip = "Enter absolute target directory path to scan"
             yield inp
+            yield Static("", id="lbl-error", classes="error-banner")
             yield Label("Selected Sources:", id="lbl-sources")
             yield Static(
                 self._format_sources_display(),
@@ -981,17 +1051,28 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     def action_add_dir(self) -> None:
         """Add input directory path to selected source list."""
         val = self.query_one("#input-dir", Input).value.strip()
-        if val:
-            abs_p = os.path.abspath(os.path.expanduser(val))
-            if abs_p not in self.selected_sources:
-                self.selected_sources.append(abs_p)
-                self.announce(f"Added directory path: {abs_p}")
-                self._update_sources_widget()
-            self.added_via_btn = True
+        if not val:
+            return
+        err = self._validate_directory_path(val)
+        if err:
+            self._show_error(err)
+            return
+
+        abs_p = os.path.abspath(os.path.expanduser(val))
+        if abs_p not in self.selected_sources:
+            self.selected_sources.append(abs_p)
+            self.announce(f"Added directory path: {abs_p}")
+            self._update_sources_widget()
+        self.added_via_btn = True
+        try:
+            self.query_one("#lbl-error", Static).update("")
+        except Exception:
+            pass
 
     @on(Button.Pressed, "#preset-demo")
     def action_demo(self) -> None:
         """Select sandbox demo workspace preset."""
+        from app.core.sample_corpus import generate_sample_corpus
         from app.ui.notifications import notify
 
         path = os.path.abspath("sandbox/demo_workspace")
@@ -1006,6 +1087,18 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
                 self.announce(err_msg, priority="assertive")
                 notify(err_msg, type="error")
                 return
+
+        try:
+            generate_sample_corpus(path, overwrite=True)
+            sample_msg = f"Generated sample corpus documents in '{path}'."
+            self.announce(sample_msg)
+            notify(sample_msg, type="info")
+        except Exception as exc:
+            logger.error(f"Failed to generate sample corpus in '{path}': {exc}")
+            err_msg = f"Failed to generate sample corpus: {exc}"
+            self.announce(err_msg, priority="assertive")
+            notify(err_msg, type="error")
+
         self.announce(f"Selected demo workspace preset: {path}")
         self.dismiss(path)
 
@@ -1013,6 +1106,10 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     def action_downloads(self) -> None:
         """Select user Downloads directory preset."""
         path = os.path.expanduser("~/Downloads")
+        err = self._validate_directory_path(path)
+        if err:
+            self._show_error(err)
+            return
         self.announce(f"Selected Downloads preset: {path}")
         self.dismiss(path)
 
@@ -1020,6 +1117,10 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     def action_documents(self) -> None:
         """Select user Documents directory preset."""
         path = os.path.expanduser("~/Documents")
+        err = self._validate_directory_path(path)
+        if err:
+            self._show_error(err)
+            return
         self.announce(f"Selected Documents preset: {path}")
         self.dismiss(path)
 
@@ -1028,6 +1129,11 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
         """Confirm directory selection."""
         val = self.query_one("#input-dir", Input).value.strip()
         if val:
+            err = self._validate_directory_path(val)
+            if err:
+                self._show_error(err)
+                return
+
             abs_p = os.path.abspath(os.path.expanduser(val))
             if not self.added_via_btn and len(self.selected_sources) <= 1:
                 self.announce(f"Confirmed directory selection: '{abs_p}'")
@@ -1038,6 +1144,12 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
                 self.selected_sources.append(abs_p)
 
         if self.selected_sources:
+            for source in self.selected_sources:
+                err = self._validate_directory_path(source)
+                if err:
+                    self._show_error(err)
+                    return
+
             self.announce(f"Confirmed directory selection: '{self.selected_sources}'")
             res = (
                 self.selected_sources
@@ -1152,7 +1264,9 @@ class ManualPathFallbackModal(A11yMixin, ModalScreen[Optional[str]]):
             )
             yield inp
             with Horizontal(classes="button-row"):
-                btn_cancel = Button("Cancel", id="btn-cancel-fallback", variant="default")
+                btn_cancel = Button(
+                    "Cancel", id="btn-cancel-fallback", variant="default"
+                )
                 yield btn_cancel
                 btn_confirm = Button(
                     "Confirm", id="btn-confirm-fallback", variant="primary"
@@ -1182,6 +1296,197 @@ class ManualPathFallbackModal(A11yMixin, ModalScreen[Optional[str]]):
         """Cancel manual path entry."""
         self.announce("Cancelled manual directory entry.")
         self.dismiss(None)
+
+
+def _get_vector_count(db=None) -> int:
+    """Return stored document vector count from database."""
+    try:
+        if db is not None and hasattr(db, "get_document_vectors_count"):
+            return db.get_document_vectors_count()
+        from app.config import get_app_dir
+        from app.core.db import Database
+        from app.core.db_worker import DBWorker
+
+        db_path = get_app_dir() / "autosorter.db"
+        if db_path.exists():
+            temp_db = Database(db_path, DBWorker())
+            return temp_db.get_document_vectors_count()
+    except Exception:
+        pass
+    return 0
+
+
+def _get_model_cache_footprint_mb() -> float:
+    """Return model cache size on disk in MB."""
+    try:
+        from app.config import get_app_dir
+
+        model_dir = get_app_dir() / "model"
+        if model_dir.exists() and model_dir.is_dir():
+            total_bytes = 0
+            for root, _, files in os.walk(model_dir):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    if os.path.exists(fp):
+                        total_bytes += os.path.getsize(fp)
+            return total_bytes / (1024 * 1024)
+    except Exception:
+        pass
+    return 0.0
+
+
+class ScrubArtifactsModal(A11yMixin, ModalScreen[bool]):
+    """Modal dialog for confirming manual scrubbing of AI vector database rows and model cache files."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    ScrubArtifactsModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .info-label {
+        margin-top: 1;
+        color: $text;
+    }
+    .warning-label {
+        margin-top: 1;
+        margin-bottom: 1;
+        color: $warning;
+        text-style: bold;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    """
+
+    def __init__(self, vector_count: int, cache_size_mb: float):
+        super().__init__()
+        self.vector_count = vector_count
+        self.cache_size_mb = cache_size_mb
+
+    def compose(self) -> ComposeResult:
+        """Compose the child widgets for the scrub AI artifacts modal."""
+        with Vertical(classes="modal-box"):
+            yield Heading("Scrub AI Artifacts Confirmation", level=1, classes="modal-title")
+            yield Label(f"Stored Document Vectors: {self.vector_count} records", classes="info-label", id="lbl-vector-count")
+            yield Label(f"Model Cache Footprint: {self.cache_size_mb:.2f} MB", classes="info-label", id="lbl-cache-size")
+            yield Label(
+                "Warning: This operation will permanently remove all stored document vector embeddings "
+                "from the SQLite database and purge local model cache files from disk. "
+                "Are you sure you want to scrub AI artifacts?",
+                classes="warning-label",
+            )
+            with Horizontal(classes="button-row"):
+                yield Button("Cancel", id="btn-cancel-scrub", variant="default")
+                yield Button("Scrub AI Artifacts", id="btn-confirm-scrub", variant="error")
+
+    @on(Button.Pressed, "#btn-confirm-scrub")
+    def action_confirm(self) -> None:
+        """Confirm scrubbing AI artifacts and dismiss dialog with True."""
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#btn-cancel-scrub")
+    def action_cancel(self) -> None:
+        """Cancel scrubbing AI artifacts and dismiss dialog with False."""
+        self.dismiss(False)
+
+
+class ConsentRevocationModal(A11yMixin, ModalScreen[bool]):
+    """Modal dialog for confirming revocation of AI consent and cascading artifact scrubbing."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    ConsentRevocationModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .info-label {
+        margin-top: 1;
+        color: $text;
+    }
+    .warning-label {
+        margin-top: 1;
+        margin-bottom: 1;
+        color: $warning;
+        text-style: bold;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    """
+
+    def __init__(self, vector_count: int, cache_size_mb: float):
+        super().__init__()
+        self.vector_count = vector_count
+        self.cache_size_mb = cache_size_mb
+
+    def compose(self) -> ComposeResult:
+        """Compose the child widgets for the consent revocation modal."""
+        with Vertical(classes="modal-box"):
+            yield Heading("Confirm AI Consent Revocation", level=1, classes="modal-title")
+            yield Label(f"Stored Document Vectors: {self.vector_count} records", classes="info-label", id="lbl-vector-count")
+            yield Label(f"Model Cache Footprint: {self.cache_size_mb:.2f} MB", classes="info-label", id="lbl-cache-size")
+            yield Label(
+                "Revoking AI consent will disable AI features, unload models from memory, "
+                "scrub stored document vectors from SQLite tables, and purge model cache files from disk. "
+                "Do you wish to proceed?",
+                classes="warning-label",
+            )
+            with Horizontal(classes="button-row"):
+                yield Button("Keep Consent Active", id="btn-cancel-revoke", variant="default")
+                yield Button("Revoke Consent & Scrub Data", id="btn-confirm-revoke", variant="error")
+
+    @on(Button.Pressed, "#btn-confirm-revoke")
+    def action_confirm(self) -> None:
+        """Confirm consent revocation and dismiss dialog with True."""
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#btn-cancel-revoke")
+    def action_cancel(self) -> None:
+        """Cancel consent revocation and dismiss dialog with False."""
+        self.dismiss(False)
 
 
 class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
@@ -1268,7 +1573,8 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             with TabbedContent(initial="tab-general", id="settings-tabbed-content"):
                 with TabPane("General Settings", id="tab-general"):
                     yield Label(
-                        "Protected Directories (comma-separated):", classes="field-label"
+                        "Protected Directories (comma-separated):",
+                        classes="field-label",
                     )
                     prot = getattr(
                         self.settings,
@@ -1276,23 +1582,31 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                         getattr(self.settings, "PROTECTED_DIRECTORIES", []),
                     )
                     prot_str = (
-                        ", ".join(prot) if isinstance(prot, (list, tuple, set)) else str(prot)
+                        ", ".join(prot)
+                        if isinstance(prot, (list, tuple, set))
+                        else str(prot)
                     )
                     inp_prot = Input(
-                        value=prot_str, placeholder="/path/1, /path/2", id="input-protected"
+                        value=prot_str,
+                        placeholder="/path/1, /path/2",
+                        id="input-protected",
                     )
-                    inp_prot.tooltip = (
-                        "Comma-separated protected directories exempt from automated moves"
-                    )
+                    inp_prot.tooltip = "Comma-separated protected directories exempt from automated moves"
                     yield inp_prot
 
-                    yield Label("Ignored Extensions (comma-separated):", classes="field-label")
+                    yield Label(
+                        "Ignored Extensions (comma-separated):", classes="field-label"
+                    )
                     ign = getattr(self.settings, "IGNORED_EXTENSIONS", [])
                     ign_str = (
-                        ", ".join(ign) if isinstance(ign, (list, tuple, set)) else str(ign)
+                        ", ".join(ign)
+                        if isinstance(ign, (list, tuple, set))
+                        else str(ign)
                     )
                     inp_ign = Input(
-                        value=ign_str, placeholder=".tmp, .bak, .log", id="input-ignored"
+                        value=ign_str,
+                        placeholder=".tmp, .bak, .log",
+                        id="input-ignored",
                     )
                     inp_ign.tooltip = (
                         "Comma-separated file extensions to ignore during scanning"
@@ -1301,8 +1615,12 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
                     yield Label("Max Folders:", classes="field-label")
                     max_f_str = str(getattr(self.settings, "MAX_FOLDERS", 12))
-                    inp_max_f = Input(value=max_f_str, placeholder="12", id="input-max-folders")
-                    inp_max_f.tooltip = "Maximum subdirectories generated during sorting"
+                    inp_max_f = Input(
+                        value=max_f_str, placeholder="12", id="input-max-folders"
+                    )
+                    inp_max_f.tooltip = (
+                        "Maximum subdirectories generated during sorting"
+                    )
                     yield inp_max_f
 
                     yield Label("Worker Concurrency (Threads):", classes="field-label")
@@ -1313,9 +1631,28 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                             getattr(self.settings, "WORKER_CONCURRENCY", 4),
                         )
                     )
-                    inp_conc = Input(value=conc_str, placeholder="4", id="input-concurrency")
+                    inp_conc = Input(
+                        value=conc_str, placeholder="4", id="input-concurrency"
+                    )
                     inp_conc.tooltip = "Worker concurrency thread limit for processing"
                     yield inp_conc
+
+                    yield Label("Conflict Policy:", classes="field-label")
+                    conflict_pol = getattr(self.settings, "CONFLICT_POLICY", "rename")
+                    conflict_options = [
+                        ("Overwrite", "overwrite"),
+                        ("Auto-Rename", "rename"),
+                        ("Skip", "skip"),
+                    ]
+                    sel_conflict = Select(
+                        options=conflict_options,
+                        value=conflict_pol,
+                        id="select-conflict-policy",
+                    )
+                    sel_conflict.tooltip = (
+                        "Select collision handling strategy for conflicting target files"
+                    )
+                    yield sel_conflict
 
                 with TabPane("AI & Privacy Settings", id="tab-ai-privacy"):
                     yield Heading("Sorting Strategy:", level=2, classes="field-label")
@@ -1331,13 +1668,17 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     options.extend(reg.get_tui_strategy_options())
                     if not any(opt[1] == strat for opt in options):
                         options.append((f"Extension ({strat})", strat))
-                    sel_strat = Select(options=options, value=strat, id="select-strategy")
+                    sel_strat = Select(
+                        options=options, value=strat, id="select-strategy"
+                    )
                     sel_strat.tooltip = (
                         "Select sorting strategy engine for document classification"
                     )
                     yield sel_strat
 
-                    yield Heading("Compliance & Renaming Toggles:", level=2, classes="field-label")
+                    yield Heading(
+                        "Compliance & Renaming Toggles:", level=2, classes="field-label"
+                    )
                     for sw_cfg in reg.get_tui_switches():
                         sw_key = sw_cfg.get("key", "")
                         sw_id = sw_cfg.get("id", f"switch-{sw_key.lower()}")
@@ -1360,10 +1701,22 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
                     yield LabeledSwitch(
                         label="AI Contextual Renaming",
-                        value=bool(getattr(self.settings, "CONTEXTUAL_RENAMING", False)),
+                        value=bool(
+                            getattr(self.settings, "CONTEXTUAL_RENAMING", False)
+                        ),
                         switch_id="switch-contextual-renaming",
                         tooltip="Toggle AI contextual file renaming",
                     )
+
+                    btn_scrub = Button(
+                        "Scrub AI Artifacts",
+                        id="btn-scrub-artifacts",
+                        variant="warning",
+                    )
+                    btn_scrub.tooltip = (
+                        "Report vector count and cache footprint, and scrub stored vectors and model files"
+                    )
+                    yield btn_scrub
 
                     btn_templates = Button(
                         "Starter Rule Template Gallery",
@@ -1417,6 +1770,94 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         """Open starter rule template gallery modal."""
         self.app.push_screen(TemplateGalleryModal(self.settings))
 
+    @on(Button.Pressed, "#btn-scrub-artifacts")
+    def action_scrub_artifacts(self) -> None:
+        """Open Scrub AI Artifacts confirmation modal."""
+        db_inst = getattr(self.app, "db", None) if hasattr(self, "app") else None
+        v_count = _get_vector_count(db_inst)
+        footprint_mb = _get_model_cache_footprint_mb()
+
+        def _on_scrub_modal_result(confirmed: bool) -> None:
+            if confirmed:
+                self._execute_scrub_and_purge()
+
+        if hasattr(self, "app") and self.app:
+            self.app.push_screen(
+                ScrubArtifactsModal(v_count, footprint_mb), _on_scrub_modal_result
+            )
+
+    @on(Switch.Changed, "#switch-ai-consent")
+    def on_ai_consent_changed(self, event: Switch.Changed) -> None:
+        """Prompt user confirmation when AI consent switch is toggled off."""
+        if not event.value:
+            db_inst = getattr(self.app, "db", None) if hasattr(self, "app") else None
+            v_count = _get_vector_count(db_inst)
+            footprint_mb = _get_model_cache_footprint_mb()
+
+            def _on_revoke_modal_result(confirmed: bool) -> None:
+                if confirmed:
+                    if self.settings:
+                        self.settings.AI_CONSENT_GRANTED = False
+                    self._execute_scrub_and_purge()
+                    if hasattr(self, "announce"):
+                        self.announce("AI consent revoked and artifacts scrubbed.", priority="polite")
+                else:
+                    event.switch.value = True
+
+            if hasattr(self, "app") and self.app:
+                self.app.push_screen(
+                    ConsentRevocationModal(v_count, footprint_mb), _on_revoke_modal_result
+                )
+
+    def _execute_scrub_and_purge(self) -> None:
+        """Execute memory model unload, database vector clearing, and background model cache purging."""
+        try:
+            from app.core.shared_registry import SharedModelRegistry
+
+            SharedModelRegistry.get_instance().unload_all_models()
+        except Exception:
+            pass
+
+        try:
+            from app.core.db import Database
+
+            Database.scrub_all_vectors()
+        except Exception:
+            pass
+
+        try:
+            from app.config import get_app_dir
+            from app.core.downloader import DownloadManager
+
+            model_dir = str(get_app_dir() / "model")
+            dm = DownloadManager.get_instance()
+
+            def _on_purge_done(success: bool, err: Optional[Exception]):
+                if success:
+                    if hasattr(self, "announce"):
+                        self.announce(
+                            "AI artifacts scrubbed and model cache purged successfully.",
+                            priority="polite",
+                        )
+                else:
+                    if hasattr(self, "announce"):
+                        self.announce(
+                            f"Model cache purge failed: {err}", priority="assertive"
+                        )
+
+            dm.delete_model_async(model_dir, on_done=_on_purge_done)
+        except Exception as e:
+            logger.error(f"Error purging model cache: {e}")
+
+        try:
+            from app.ui.notifications import notify
+
+            notify("AI artifacts scrubbed and model cache purging started.", type="info")
+        except Exception:
+            pass
+        if hasattr(self, "announce"):
+            self.announce("AI artifacts scrubbed and model cache purging started.")
+
     @on(Button.Pressed, "#btn-save")
     def action_save(self) -> None:
         """Save settings and dismiss modal."""
@@ -1466,7 +1907,9 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         try:
             clin_renaming = self.query_one("#switch-clinical-renaming", Switch).value
         except Exception:
-            clin_renaming = bool(getattr(self.settings, "CLINICAL_SMART_RENAMING", False))
+            clin_renaming = bool(
+                getattr(self.settings, "CLINICAL_SMART_RENAMING", False)
+            )
         try:
             ctx_renaming = self.query_one("#switch-contextual-renaming", Switch).value
         except Exception:
@@ -1476,11 +1919,22 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             ai_consent = bool(getattr(self.settings, "AI_CONSENT_GRANTED", False))
 
+        if ai_consent is False and getattr(self.settings, "AI_CONSENT_GRANTED", None) is True:
+            self._execute_scrub_and_purge()
+
+        try:
+            conflict_pol = self.query_one("#select-conflict-policy", Select).value
+            if conflict_pol == Select.BLANK:
+                conflict_pol = "rename"
+        except Exception:
+            conflict_pol = getattr(self.settings, "CONFLICT_POLICY", "rename")
+
         res = {
             "PROTECTED_PATHS": p_list,
             "IGNORED_EXTENSIONS": i_list,
             "MAX_WORKERS": conc,
             "MAX_FOLDERS": max_f,
+            "CONFLICT_POLICY": conflict_pol,
             "SORTING_STRATEGY": strat,
             "CLINICAL_SMART_RENAMING": clin_renaming,
             "CONTEXTUAL_RENAMING": ctx_renaming,
@@ -1604,7 +2058,9 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
                 "Verification: Checking...", id="lbl-model-hash", classes="info-label"
             )
 
-            yield Heading("Download Progress & Throughput:", level=2, classes="field-label")
+            yield Heading(
+                "Download Progress & Throughput:", level=2, classes="field-label"
+            )
             pb = ProgressBar(total=100, show_percentage=True, id="progress-bar")
             pb.tooltip = "Active model download percentage progress"
             yield pb
@@ -1928,6 +2384,13 @@ class TemplateGalleryModal(A11yMixin, ModalScreen[None]):
                 btn_close = Button("Close", id="btn-close-gallery", variant="default")
                 btn_close.tooltip = "Close template gallery"
                 yield btn_close
+                btn_import = Button(
+                    "Import External Rules",
+                    id="btn-import-rules",
+                    variant="primary",
+                )
+                btn_import.tooltip = "Import Hazel (.hazelrules) or DropIt XML/JSON rule files"
+                yield btn_import
                 btn_apply = Button(
                     "Apply Selected Templates",
                     id="btn-apply-templates",
@@ -1961,6 +2424,32 @@ class TemplateGalleryModal(A11yMixin, ModalScreen[None]):
                 pass
         self.announce("Opened starter rule template gallery.")
 
+    @on(Checkbox.Changed)
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Announce starter template gallery checkbox selection state changes."""
+        chk_id = getattr(event.checkbox, "id", None) or getattr(
+            event.control, "id", None
+        )
+        if not chk_id:
+            return
+
+        prefix = ""
+        if chk_id.startswith("chk-gallery-"):
+            prefix = "chk-gallery-"
+        elif chk_id.startswith("chk-template-"):
+            prefix = "chk-template-"
+        else:
+            return
+
+        pack_id = chk_id[len(prefix) :]
+        from app.core.rule_templates import get_starter_templates
+
+        for pack in get_starter_templates():
+            if pack.id == pack_id:
+                state = "selected" if event.value else "deselected"
+                self.announce(f"{pack.title} template pack {state}.")
+                break
+
     @on(Button.Pressed, "#btn-apply-templates")
     def action_apply_templates(self) -> None:
         """Apply selected starter template packs to settings."""
@@ -1989,6 +2478,11 @@ class TemplateGalleryModal(A11yMixin, ModalScreen[None]):
 
         self.dismiss(None)
 
+    @on(Button.Pressed, "#btn-import-rules")
+    def action_import_rules(self) -> None:
+        """Open external rule importer modal."""
+        self.app.push_screen(RuleImportModal(self.settings))
+
     @on(Button.Pressed, "#btn-close-gallery")
     def action_close(self) -> None:
         """Close template gallery dialog."""
@@ -1998,6 +2492,253 @@ class TemplateGalleryModal(A11yMixin, ModalScreen[None]):
     def action_cancel(self) -> None:
         """Cancel on Escape key."""
         self.announce("Closed starter rule template gallery.")
+        self.dismiss(None)
+
+
+class RuleImportModal(A11yMixin, ModalScreen[Optional[Any]]):
+    """Modal screen for selecting, inspecting, and merging external rules (Hazel & DropIt)."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    RuleImportModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 85;
+        min-width: 35;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .input-row {
+        margin-top: 1;
+        margin-bottom: 1;
+        height: auto;
+    }
+    .preview-card {
+        margin-top: 1;
+        margin-bottom: 1;
+        padding: 0 1;
+        border: solid $accent;
+        height: auto;
+        max-height: 12;
+        overflow-y: auto;
+    }
+    .warning-text {
+        color: $warning;
+        margin-top: 1;
+    }
+    .status-text {
+        color: $accent;
+        margin-top: 1;
+        text-style: bold;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Input:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(self, settings: Any):
+        super().__init__()
+        self.settings = settings
+        self.current_result: Optional[Any] = None
+
+    def compose(self) -> ComposeResult:
+        """Compose rule import modal children."""
+        with Vertical(classes="modal-box"):
+            yield Heading(
+                "Import External Rules",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
+            yield Label(
+                "Select a Hazel .hazelrules file or DropIt XML/JSON profile export file to import:"
+            )
+
+            with Horizontal(classes="input-row"):
+                yield Input(
+                    placeholder="/path/to/rules.hazelrules or profile.xml/json",
+                    id="input-rule-file-path",
+                )
+                btn_parse = Button("Parse File", id="btn-parse-rule-file", variant="primary")
+                btn_parse.tooltip = "Parse selected rule file and display preview"
+                yield btn_parse
+
+            yield Label(
+                "Enter file path and click 'Parse File' to preview extracted rules.",
+                id="lbl-import-status",
+                classes="status-text",
+            )
+
+            with Vertical(id="container-rule-preview", classes="preview-card"):
+                yield DataTable(id="dt-imported-keywords")
+                yield DataTable(id="dt-imported-policies")
+                yield Vertical(id="container-import-warnings")
+
+            with Horizontal(classes="button-row"):
+                btn_close = Button("Cancel", id="btn-close-importer", variant="default")
+                btn_close.tooltip = "Close import dialog"
+                yield btn_close
+
+                btn_merge = Button(
+                    "Merge Rules into Settings",
+                    id="btn-merge-imported-rules",
+                    variant="primary",
+                    disabled=True,
+                )
+                btn_merge.tooltip = "Safely merge extracted rules into settings without overwriting custom rules"
+                yield btn_merge
+
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle resize events."""
+        self._update_layout(event.size.width)
+
+    def on_mount(self) -> None:
+        """Focus initial input field on mount and set up preview tables."""
+        self._update_layout(self.size.width)
+        self.query_one("#input-rule-file-path", Input).focus()
+        try:
+            dt_kw = self.query_one("#dt-imported-keywords", DataTable)
+            dt_kw.add_columns("Keyword", "Target Path")
+
+            dt_pol = self.query_one("#dt-imported-policies", DataTable)
+            dt_pol.add_columns("Type", "Expression / Pattern", "Target Path", "Priority")
+        except Exception:
+            pass
+        self.announce("Opened external rule importer modal.")
+
+    @on(Button.Pressed, "#btn-parse-rule-file")
+    @on(Input.Submitted, "#input-rule-file-path")
+    def action_parse_file(self) -> None:
+        """Parse external rule package and render preview tables."""
+        path_str = self.query_one("#input-rule-file-path", Input).value.strip()
+        lbl_status = self.query_one("#lbl-import-status", Label)
+
+        if not path_str:
+            lbl_status.update("Please enter a valid rule file path.")
+            self.announce("Please enter a valid rule file path.")
+            return
+
+        p = Path(path_str)
+        if not p.exists():
+            lbl_status.update(f"File not found: '{path_str}'")
+            self.announce(f"File not found: '{path_str}'")
+            return
+
+        try:
+            from app.core.rule_importers import get_rule_importer
+
+            importer = get_rule_importer(p)
+            self.current_result = importer.parse_file(p)
+        except Exception as exc:
+            lbl_status.update(f"Error parsing rule package: {exc}")
+            self.announce(f"Error parsing rule package: {exc}")
+            return
+
+        res = self.current_result
+        dt_kw = self.query_one("#dt-imported-keywords", DataTable)
+        dt_pol = self.query_one("#dt-imported-policies", DataTable)
+        btn_merge = self.query_one("#btn-merge-imported-rules", Button)
+
+        dt_kw.clear()
+        dt_pol.clear()
+
+        for kw, target_dir in res.keyword_rules.items():
+            dt_kw.add_row(kw, target_dir)
+
+        for pol in res.policies:
+            dt_pol.add_row(
+                pol.get("type", "keyword"),
+                pol.get("expression", ""),
+                pol.get("target_path", ""),
+                str(pol.get("priority", 75)),
+            )
+
+        warn_container = self.query_one("#container-import-warnings", Vertical)
+        warn_container.remove_children()
+        for warn in res.warnings:
+            warn_container.mount(Label(f"⚠️ {warn}", classes="warning-text"))
+
+        total_rules = len(res.keyword_rules) + len(res.policies)
+        lbl_status.update(
+            f"Parsed {res.source_format}: {len(res.keyword_rules)} keyword rules, "
+            f"{len(res.policies)} policies, {len(res.warnings)} warning(s)."
+        )
+
+        if total_rules > 0:
+            btn_merge.disabled = False
+            btn_merge.focus()
+        else:
+            btn_merge.disabled = True
+
+        self.announce(
+            f"Parsed {res.source_format}: {total_rules} rules extracted."
+        )
+
+    @on(Button.Pressed, "#btn-merge-imported-rules")
+    def action_merge_rules(self) -> None:
+        """Merge parsed rules into settings and close modal."""
+        if not self.current_result:
+            try:
+                self.dismiss(None)
+            except Exception:
+                pass
+            return
+
+        new_kw, new_pol = self.current_result.merge_into_settings(self.settings)
+        msg = f"Merged imported rules: {len(self.current_result.keyword_rules)} keyword rules and {len(self.current_result.policies)} policies."
+        self.announce(msg)
+        try:
+            if hasattr(self.app, "notify"):
+                self.app.notify(msg)
+        except Exception:
+            pass
+
+        try:
+            self.dismiss(self.current_result)
+        except Exception:
+            pass
+
+    @on(Button.Pressed, "#btn-close-importer")
+    def action_close(self) -> None:
+        """Close import dialog."""
+        self.announce("Closed external rule importer modal.")
+        self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        """Cancel on Escape key."""
+        self.announce("Closed external rule importer modal.")
         self.dismiss(None)
 
 
@@ -2088,7 +2829,9 @@ class WizardModal(A11yMixin, ModalScreen[None]):
                 tooltip="Toggle generation of sample document corpus in active workspace",
             )
 
-            yield Heading("Starter Rule Template Packs:", level=2, classes="field-label")
+            yield Heading(
+                "Starter Rule Template Packs:", level=2, classes="field-label"
+            )
             yield Label(
                 "Select pre-built template packs to populate keyword rules & compliance policies:"
             )
@@ -2133,6 +2876,48 @@ class WizardModal(A11yMixin, ModalScreen[None]):
         except Exception:
             pass
         self.announce("Opened model onboarding wizard dialog.")
+
+    @on(Switch.Changed)
+    def on_switch_changed(self, event: Switch.Changed) -> None:
+        """Announce switch state changes for screen reader accessibility."""
+        switch_id = getattr(event.switch, "id", None) or getattr(
+            event.control, "id", None
+        )
+        if not switch_id:
+            return
+
+        if switch_id == "switch-consent":
+            state = "enabled" if event.value else "disabled"
+            self.announce(f"AI consent {state}.")
+        elif switch_id == "switch-sample-corpus":
+            state = "enabled" if event.value else "disabled"
+            self.announce(f"Sample document corpus generation {state}.")
+
+    @on(Checkbox.Changed)
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Announce starter template checkbox selection state changes."""
+        chk_id = getattr(event.checkbox, "id", None) or getattr(
+            event.control, "id", None
+        )
+        if not chk_id:
+            return
+
+        prefix = ""
+        if chk_id.startswith("chk-template-"):
+            prefix = "chk-template-"
+        elif chk_id.startswith("chk-gallery-"):
+            prefix = "chk-gallery-"
+        else:
+            return
+
+        pack_id = chk_id[len(prefix) :]
+        from app.core.rule_templates import get_starter_templates
+
+        for pack in get_starter_templates():
+            if pack.id == pack_id:
+                state = "selected" if event.value else "deselected"
+                self.announce(f"{pack.title} template pack {state}.")
+                break
 
     @on(Button.Pressed, "#btn-finish")
     def action_finish(self) -> None:
@@ -2395,7 +3180,9 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
                 id="modal-title",
             )
 
-            yield Heading("Navigation & Tree Controls:", level=2, classes="section-title")
+            yield Heading(
+                "Navigation & Tree Controls:", level=2, classes="section-title"
+            )
             yield Label(
                 "  j / k       - Move selection down / up (Vim motions)",
                 classes="shortcut-row",
@@ -2481,6 +3268,201 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
         self.dismiss(None)
 
 
+class DuplicateReviewModal(A11yMixin, ModalScreen[Optional[Dict[str, str]]]):
+    """Modal dialog for pre-move interactive duplicate cluster review and resolution."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    DuplicateReviewModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.65);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 90;
+        min-width: 40;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .modal-subtitle {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    .duplicate-card {
+        background: $surface;
+        border: solid $accent;
+        padding: 1;
+        margin-bottom: 1;
+    }
+    .card-title {
+        text-style: bold;
+        color: $accent;
+    }
+    .card-subtitle {
+        color: $text-muted;
+    }
+    .source-item {
+        color: $text;
+        margin-left: 2;
+    }
+    .action-select {
+        margin-top: 1;
+        width: 100%;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Select:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(
+        self,
+        duplicate_groups: Optional[List[Dict[str, Any]]] = None,
+    ):
+        super().__init__()
+        self.duplicate_groups = duplicate_groups or []
+        self.user_selections: Dict[str, str] = {
+            g["group_id"]: g.get("default_action", "rename")
+            for g in self.duplicate_groups
+        }
+
+    def compose(self) -> ComposeResult:
+        """Compose duplicate review dialog widgets."""
+        with Vertical(classes="modal-box"):
+            yield Heading(
+                "Duplicate Cluster Review & Resolution",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
+            yield Label(
+                "Review duplicate destination target collisions before physical move execution:",
+                classes="modal-subtitle",
+            )
+
+            with Vertical(id="duplicate-groups-list"):
+                for group in self.duplicate_groups:
+                    gid = group["group_id"]
+                    tf_name = group.get("target_filename", "Collision")
+                    t_dir = group.get("target_dir", "")
+                    items = group.get("items", [])
+                    default_action = group.get("default_action", "rename")
+
+                    with Vertical(classes="duplicate-card", id=f"card-{gid}"):
+                        yield Label(
+                            f"Destination Target: {tf_name} ({t_dir})",
+                            classes="card-title",
+                        )
+                        yield Label(
+                            f"Colliding source files ({len(items)}):",
+                            classes="card-subtitle",
+                        )
+                        for item in items:
+                            rel_src = item.get("relative_source") or item.get(
+                                "source_path", ""
+                            )
+                            yield Label(f"• {rel_src}", classes="source-item")
+
+                        options = [
+                            ("Rename (auto-number duplicates)", "rename"),
+                            ("Keep Primary File Only", "keep"),
+                            ("Skip Moving Duplicates", "skip"),
+                        ]
+                        sel = Select(
+                            options,
+                            value=default_action,
+                            id=f"select-action-{gid}",
+                            classes="action-select",
+                            allow_blank=False,
+                        )
+                        sel.tooltip = (
+                            f"Select deduplication resolution action for {tf_name}"
+                        )
+                        sel.aria_label = (
+                            f"Resolution action for duplicate group {tf_name}"
+                        )
+                        yield sel
+
+            with Horizontal(classes="button-row"):
+                yield Button(
+                    "Apply & Execute Moves",
+                    variant="primary",
+                    id="btn-confirm-duplicates",
+                )
+                yield Button("Cancel", id="btn-cancel-duplicates")
+
+    def _update_layout(self, width: int) -> None:
+        """Update responsiveness based on modal container width."""
+        if width < 60:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal resize event."""
+        self._update_layout(event.size.width)
+
+    def on_mount(self) -> None:
+        """Focus initial widget on mount and announce to screen reader."""
+        self._update_layout(self.size.width)
+        if self.duplicate_groups:
+            first_gid = self.duplicate_groups[0]["group_id"]
+            try:
+                self.query_one(f"#select-action-{first_gid}", Select).focus()
+            except Exception:
+                try:
+                    self.query_one("#btn-confirm-duplicates", Button).focus()
+                except Exception:
+                    pass
+        else:
+            try:
+                self.query_one("#btn-confirm-duplicates", Button).focus()
+            except Exception:
+                pass
+        self.announce("Opened interactive duplicate review modal.")
+
+    @on(Select.Changed)
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Record user selection updates for duplicate groups."""
+        if event.select.id and event.select.id.startswith("select-action-"):
+            gid = event.select.id.replace("select-action-", "")
+            if event.value is not None:
+                self.user_selections[gid] = str(event.value)
+
+    @on(Button.Pressed, "#btn-confirm-duplicates")
+    def action_confirm(self) -> None:
+        """Confirm deduplication selections and dismiss dialog."""
+        self.announce("Applied duplicate resolution selections.")
+        self.dismiss(self.user_selections)
+
+    @on(Button.Pressed, "#btn-cancel-duplicates")
+    def action_cancel(self) -> None:
+        """Cancel duplicate review and abort execution."""
+        self.announce("Cancelled duplicate review dialog.")
+        self.dismiss(None)
+
+
 class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     """Floating overlay modal dialog for quick drag-and-drop or paste file triage."""
 
@@ -2534,12 +3516,57 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         color: $text-muted;
         text-align: center;
     }
+    #input-queue-filter {
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+    .dropzone-split-container {
+        height: auto;
+        min-height: 8;
+        layout: horizontal;
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+    .narrow .dropzone-split-container {
+        layout: vertical;
+    }
     #dropzone-staging-table {
-        height: 6;
-        min-height: 4;
+        width: 60%;
+        height: 7;
+        min-height: 5;
         margin-top: 0;
         margin-bottom: 0;
         border: solid $accent;
+    }
+    .narrow #dropzone-staging-table {
+        width: 100%;
+        height: 6;
+    }
+    #dropzone-metadata-preview {
+        width: 40%;
+        height: 7;
+        min-height: 5;
+        border: solid $primary;
+        background: $surface;
+        padding: 0 1;
+        margin-left: 1;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+    .narrow #dropzone-metadata-preview {
+        width: 100%;
+        height: auto;
+        min-height: 4;
+        margin-left: 0;
+        margin-top: 1;
+    }
+    .preview-header {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 0;
+    }
+    .preview-field {
+        color: $text;
     }
     .status-text {
         color: $accent;
@@ -2600,12 +3627,29 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             )
             yield inp
 
-            table = DataTable(id="dropzone-staging-table")
-            table.cursor_type = "row"
-            table.tooltip = (
-                "Interactive staging queue displaying file status and details"
+            filter_inp = Input(
+                placeholder="Filter staged queue...",
+                id="input-queue-filter",
             )
-            yield table
+            filter_inp.tooltip = (
+                "Filter staged queue items by typing keywords (filename, path, status, extension)"
+            )
+            yield filter_inp
+
+            with Container(classes="dropzone-split-container"):
+                table = DataTable(id="dropzone-staging-table")
+                table.cursor_type = "row"
+                table.tooltip = (
+                    "Interactive staging queue displaying file status and details"
+                )
+                yield table
+
+                with Vertical(id="dropzone-metadata-preview"):
+                    yield Label("📋 Metadata Preview", classes="preview-header")
+                    yield Label("Path: N/A", id="preview-path", classes="preview-field")
+                    yield Label("Size: N/A", id="preview-size", classes="preview-field")
+                    yield Label("Modified: N/A", id="preview-mtime", classes="preview-field")
+                    yield Label("Status: N/A", id="preview-status", classes="preview-field")
 
             with Horizontal(classes="queue-row"):
                 btn_filter = Button(
@@ -2688,15 +3732,38 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             return f"{int(size)} B"
         return f"{size:.1f} {units[idx]}"
 
+    def get_filter_query(self) -> str:
+        """Get lowercase trimmed search query from input-queue-filter field."""
+        try:
+            inp = self.query_one("#input-queue-filter", Input)
+            return inp.value.strip().lower()
+        except Exception:
+            return ""
+
+    def get_filtered_items(self) -> List[Dict[str, Any]]:
+        """Return list of staged items filtered by search query."""
+        query = self.get_filter_query()
+        if not query:
+            return list(self.staged_items)
+        return [
+            item
+            for item in self.staged_items
+            if query in item["filename"].lower()
+            or query in item["path"].lower()
+            or query in item["extension"].lower()
+            or query in item["status"].lower()
+        ]
+
     def _refresh_table(self) -> None:
-        """Re-render staging table with items from self.staged_items."""
+        """Re-render staging table with items matching active search filter."""
         try:
             table = self.query_one("#dropzone-staging-table", DataTable)
         except Exception:
             return
         table.clear(columns=True)
         table.add_columns("Status", "Filename", "Extension", "Size", "Full Path")
-        for item in self.staged_items:
+        filtered = self.get_filtered_items()
+        for item in filtered:
             table.add_row(
                 item["status"],
                 item["filename"],
@@ -2704,6 +3771,68 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 item["size_str"],
                 item["path"],
             )
+        self.update_active_metadata_preview()
+
+    def update_metadata_preview(self, item: Optional[Dict[str, Any]] = None) -> None:
+        """Update metadata preview card panel for given staged item."""
+        if item is None:
+            path_str = "N/A"
+            size_str = "N/A"
+            mtime_str = "N/A"
+            status_str = "N/A"
+        else:
+            path_str = item.get("path", "N/A")
+            size_str = item.get("size_str", "N/A")
+            status_str = item.get("status", "N/A")
+            if path_str and path_str != "N/A" and os.path.exists(path_str):
+                try:
+                    mtime = os.path.getmtime(path_str)
+                    mtime_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    mtime_str = "Error reading timestamp"
+            else:
+                mtime_str = "N/A"
+
+        try:
+            self.query_one("#preview-path", Label).update(f"Path: {path_str}")
+            self.query_one("#preview-size", Label).update(f"Size: {size_str}")
+            self.query_one("#preview-mtime", Label).update(f"Modified: {mtime_str}")
+            self.query_one("#preview-status", Label).update(f"Status: {status_str}")
+        except Exception:
+            pass
+
+    def update_active_metadata_preview(self) -> None:
+        """Fetch item corresponding to current table cursor row and update metadata preview."""
+        try:
+            table = self.query_one("#dropzone-staging-table", DataTable)
+            row_idx = table.cursor_row
+            filtered = self.get_filtered_items()
+            if row_idx is not None and 0 <= row_idx < len(filtered):
+                self.update_metadata_preview(filtered[row_idx])
+            else:
+                self.update_metadata_preview(None)
+        except Exception:
+            self.update_metadata_preview(None)
+
+    @on(Input.Changed, "#input-queue-filter")
+    def on_queue_filter_changed(self, event: Input.Changed) -> None:
+        """Handle search filter text changes to dynamically update visible table rows."""
+        self._refresh_table()
+
+    @on(DataTable.RowHighlighted)
+    def _on_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        """Update metadata preview panel on table row focus/highlight."""
+        self.update_active_metadata_preview()
+
+    @on(DataTable.RowSelected)
+    def _on_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Update metadata preview panel on table row selection."""
+        self.update_active_metadata_preview()
+
+    @on(DataTable.CellHighlighted)
+    def _on_table_cell_highlighted(self, event: DataTable.CellHighlighted) -> None:
+        """Update metadata preview panel on cell selection/focus."""
+        self.update_active_metadata_preview()
 
     def stage_paths(self, raw_text: str) -> None:
         """Parse raw input string, expand directories, validate, and stage items."""
@@ -2803,17 +3932,22 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             row_idx = None
 
-        if row_idx is not None and 0 <= row_idx < len(self.staged_items):
-            removed_item = self.staged_items.pop(row_idx)
+        filtered = self.get_filtered_items()
+        if row_idx is not None and 0 <= row_idx < len(filtered):
+            removed_item = filtered[row_idx]
+            if removed_item in self.staged_items:
+                self.staged_items.remove(removed_item)
             self._refresh_table()
             msg = f"Removed '{removed_item['filename']}' from queue. {len(self.staged_items)} item(s) remaining."
             self.update_status_msg(msg)
-            if self.staged_items:
-                new_idx = min(row_idx, len(self.staged_items) - 1)
+            new_filtered = self.get_filtered_items()
+            if new_filtered:
+                new_idx = min(row_idx, len(new_filtered) - 1)
                 try:
                     table.move_cursor(row=new_idx)
                 except Exception:
                     pass
+            self.update_active_metadata_preview()
         else:
             self.update_status_msg("No item selected to remove.")
 
@@ -2825,18 +3959,24 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             row_idx = None
 
-        if row_idx is not None and 0 < row_idx < len(self.staged_items):
-            self.staged_items[row_idx], self.staged_items[row_idx - 1] = (
-                self.staged_items[row_idx - 1],
-                self.staged_items[row_idx],
+        filtered = self.get_filtered_items()
+        if row_idx is not None and 0 < row_idx < len(filtered):
+            item_curr = filtered[row_idx]
+            item_prev = filtered[row_idx - 1]
+            idx_curr = self.staged_items.index(item_curr)
+            idx_prev = self.staged_items.index(item_prev)
+            self.staged_items[idx_curr], self.staged_items[idx_prev] = (
+                self.staged_items[idx_prev],
+                self.staged_items[idx_curr],
             )
             self._refresh_table()
             try:
                 table.move_cursor(row=row_idx - 1)
             except Exception:
                 pass
+            self.update_active_metadata_preview()
             self.update_status_msg(
-                f"Moved '{self.staged_items[row_idx - 1]['filename']}' up in queue priority."
+                f"Moved '{item_curr['filename']}' up in queue priority."
             )
 
     def move_selected_item_down(self) -> None:
@@ -2847,18 +3987,24 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             row_idx = None
 
-        if row_idx is not None and 0 <= row_idx < len(self.staged_items) - 1:
-            self.staged_items[row_idx], self.staged_items[row_idx + 1] = (
-                self.staged_items[row_idx + 1],
-                self.staged_items[row_idx],
+        filtered = self.get_filtered_items()
+        if row_idx is not None and 0 <= row_idx < len(filtered) - 1:
+            item_curr = filtered[row_idx]
+            item_next = filtered[row_idx + 1]
+            idx_curr = self.staged_items.index(item_curr)
+            idx_next = self.staged_items.index(item_next)
+            self.staged_items[idx_curr], self.staged_items[idx_next] = (
+                self.staged_items[idx_next],
+                self.staged_items[idx_curr],
             )
             self._refresh_table()
             try:
                 table.move_cursor(row=row_idx + 1)
             except Exception:
                 pass
+            self.update_active_metadata_preview()
             self.update_status_msg(
-                f"Moved '{self.staged_items[row_idx + 1]['filename']}' down in queue priority."
+                f"Moved '{item_curr['filename']}' down in queue priority."
             )
 
     def clear_queue(self) -> None:
@@ -2956,13 +4102,15 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
         help_url = "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors"
 
-        # Check for blocked or invalid items in staged_items if no items exist or no ready items exist
+        filtered = self.get_filtered_items()
         ready_paths = [
-            item["path"] for item in self.staged_items if item["status"] == "Ready"
+            item["path"] for item in filtered if item["status"] == "Ready"
         ]
 
         if not ready_paths:
             blocked_items = [
+                item for item in filtered if item["status"] == "BLOCKED"
+            ] or [
                 item for item in self.staged_items if item["status"] == "BLOCKED"
             ]
             if blocked_items:
@@ -3211,6 +4359,8 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Close verification dialog", show=True),
+        Binding("ctrl+r", "retry_selected", "Retry Selected Failed Item", show=True),
+        Binding("ctrl+t", "retry_all", "Retry All Failed Items", show=True),
         Binding("ctrl+j", "export_json", "Export JSON Report", show=True),
         Binding("ctrl+c", "export_csv", "Export CSV Report", show=True),
     ]
@@ -3225,7 +4375,7 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
         background: $panel;
         border: thick $primary;
         width: 95%;
-        max-width: 100;
+        max-width: 105;
         min-width: 50;
         height: 85%;
         min-height: 20;
@@ -3282,10 +4432,14 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
     #audit-status-filter {
         width: 38%;
     }
-    #audit-table {
+    #audit-table, #failed-items-table {
         height: 1fr;
         margin-bottom: 1;
         border: solid $accent;
+    }
+    #audit-tabs {
+        height: 1fr;
+        margin-bottom: 1;
     }
     .button-row {
         height: 3;
@@ -3329,35 +4483,59 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
                     classes="stat-card stat-unverified",
                 )
 
-            with Horizontal(classes="filter-row"):
-                inp = Input(
-                    placeholder="Search by filename or path...",
-                    id="audit-search-input",
-                )
-                inp.tooltip = "Filter verification results by filename or path"
-                yield inp
+            with TabbedContent(initial="tab-all-records", id="audit-tabs"):
+                with TabPane("All Verification Records", id="tab-all-records"):
+                    with Horizontal(classes="filter-row"):
+                        inp = Input(
+                            placeholder="Search by filename or path...",
+                            id="audit-search-input",
+                        )
+                        inp.tooltip = "Filter verification results by filename or path"
+                        yield inp
 
-                status_sel = Select(
-                    [
-                        ("All Statuses", "ALL"),
-                        ("Verified Pass [PASS]", "VERIFIED_PASS"),
-                        ("Mismatch Fail [FAIL]", "MISMATCH_FAIL"),
-                        ("Skipped [SKIPPED]", "SKIPPED"),
-                        ("Unverified [UNVERIFIED]", "UNVERIFIED"),
-                    ],
-                    value="ALL",
-                    id="audit-status-filter",
-                    allow_blank=False,
-                )
-                status_sel.tooltip = "Filter results by verification status"
-                yield status_sel
+                        status_sel = Select(
+                            [
+                                ("All Statuses", "ALL"),
+                                ("Verified Pass [PASS]", "VERIFIED_PASS"),
+                                ("Mismatch Fail [FAIL]", "MISMATCH_FAIL"),
+                                ("Skipped [SKIPPED]", "SKIPPED"),
+                                ("Unverified [UNVERIFIED]", "UNVERIFIED"),
+                            ],
+                            value="ALL",
+                            id="audit-status-filter",
+                            allow_blank=False,
+                        )
+                        status_sel.tooltip = "Filter results by verification status"
+                        yield status_sel
 
-            table = DataTable(id="audit-table")
-            table.cursor_type = "row"
-            table.tooltip = "Audit report tabular verification tree"
-            yield table
+                    table = DataTable(id="audit-table")
+                    table.cursor_type = "row"
+                    table.tooltip = "Audit report tabular verification tree"
+                    yield table
+
+                with TabPane("Failed Items Queue", id="tab-failed-queue"):
+                    failed_table = DataTable(id="failed-items-table")
+                    failed_table.cursor_type = "row"
+                    failed_table.tooltip = "Dedicated Failed Items queue table"
+                    yield failed_table
 
             with Horizontal(classes="button-row"):
+                btn_retry_sel = Button(
+                    "Retry Selected", id="btn-retry-selected", variant="warning"
+                )
+                btn_retry_sel.tooltip = (
+                    "Re-attempt file move operation for selected failed item"
+                )
+                yield btn_retry_sel
+
+                btn_retry_all = Button(
+                    "Retry All", id="btn-retry-all", variant="error"
+                )
+                btn_retry_all.tooltip = (
+                    "Re-attempt file move operations for all failed items in queue"
+                )
+                yield btn_retry_all
+
                 btn_json = Button(
                     "Export JSON", id="btn-export-json", variant="primary"
                 )
@@ -3445,6 +4623,43 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
 
             table.add_row(badge, filename, pre_trunc, post_trunc, rel_dst)
 
+        self._populate_failed_table()
+
+    def _populate_failed_table(self) -> None:
+        """Populate dedicated Failed Items queue table with error descriptions."""
+        table = self.query_one("#failed-items-table", DataTable)
+        table.clear(columns=True)
+        table.add_columns(
+            "Filename",
+            "Status",
+            "Error Description",
+            "Source Path",
+            "Destination Path",
+        )
+
+        failed_records = self._get_failed_records()
+
+        for rec in failed_records:
+            fn = rec.get("filename", "")
+            st = rec.get("status_badge", rec.get("status", ""))
+            err = rec.get("error") or rec.get("error_description") or "Operation failed"
+            src = rec.get("relative_source") or rec.get("source_path", "")
+            dst = rec.get("relative_destination") or rec.get("destination_path", "")
+            table.add_row(fn, st, err, src, dst)
+
+    def _get_failed_records(self) -> List[Dict[str, Any]]:
+        """Get list of failed item records from report data."""
+        failed = self.report_data.get("failed_items", [])
+        if not failed:
+            records = self.report_data.get("records", [])
+            failed = [
+                r
+                for r in records
+                if r.get("status") in ("MISMATCH_FAIL", "MOVE_FAIL")
+                or r.get("error")
+            ]
+        return failed
+
     @on(Input.Changed, "#audit-search-input")
     def on_search_changed(self, event: Input.Changed) -> None:
         """Handle search input filter update."""
@@ -3456,6 +4671,105 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
         """Handle status filter dropdown update."""
         search_val = self.query_one("#audit-search-input", Input).value
         self._populate_table(search_query=search_val, status_filter=str(event.value))
+
+    def action_retry_selected(self) -> None:
+        """Retry move operation for selected failed item."""
+        failed_table = self.query_one("#failed-items-table", DataTable)
+        selected_record = None
+
+        if failed_table.cursor_row is not None and failed_table.row_count > 0:
+            failed_records = self._get_failed_records()
+            if 0 <= failed_table.cursor_row < len(failed_records):
+                selected_record = failed_records[failed_table.cursor_row]
+
+        if not selected_record:
+            audit_table = self.query_one("#audit-table", DataTable)
+            if audit_table.cursor_row is not None and audit_table.row_count > 0:
+                records = self.report_data.get("records", [])
+                if 0 <= audit_table.cursor_row < len(records):
+                    rec = records[audit_table.cursor_row]
+                    if rec.get("status") in ("MISMATCH_FAIL", "MOVE_FAIL") or rec.get("error"):
+                        selected_record = rec
+
+        if not selected_record:
+            msg = "No failed item selected to retry."
+            self.announce(msg)
+            self.notify(msg, severity="warning")
+            return
+
+        self._execute_retry([selected_record])
+
+    def action_retry_all(self) -> None:
+        """Retry move operations for all failed items in queue."""
+        failed_records = self._get_failed_records()
+        if not failed_records:
+            msg = "No failed items to retry."
+            self.announce(msg)
+            self.notify(msg, severity="warning")
+            return
+
+        self._execute_retry(failed_records)
+
+    def _execute_retry(self, items_to_retry: List[Dict[str, Any]]) -> None:
+        """Execute mover retry for selected failed items and refresh UI."""
+        from app.core.mover import retry_failed_moves
+
+        base_dir = self.report_data.get("base_dir", "")
+        retry_res = retry_failed_moves(base_dir, items_to_retry)
+        new_audit = retry_res.get("audit_report", {})
+
+        retried_map = {
+            r.get("source_path"): r
+            for r in new_audit.get("records", [])
+        }
+
+        records = self.report_data.get("records", [])
+        for idx, rec in enumerate(records):
+            src = rec.get("source_path")
+            if src in retried_map:
+                records[idx] = retried_map[src]
+
+        from app.core.audit_reporter import generate_audit_report
+
+        self.report_data = generate_audit_report(base_dir, records)
+
+        self._populate_table()
+        self._update_stats_cards()
+
+        pass_cnt = self.report_data.get("verified_pass_count", 0)
+        fail_cnt = self.report_data.get("mismatch_fail_count", 0)
+        msg = f"Retried {len(items_to_retry)} item(s). Overall status: {pass_cnt} passed, {fail_cnt} failed."
+        self.announce(msg)
+        self.notify(msg, severity="information")
+
+    def _update_stats_cards(self) -> None:
+        """Update stat card labels with current metrics."""
+        total = self.report_data.get("total_files", 0)
+        pass_cnt = self.report_data.get("verified_pass_count", 0)
+        fail_cnt = self.report_data.get("mismatch_fail_count", 0)
+        skip_cnt = self.report_data.get("skipped_count", 0)
+        unverified_cnt = self.report_data.get("unverified_count", 0)
+
+        try:
+            cards = self.query(".stat-card")
+            if len(cards) >= 5:
+                cards[0].update(f"Total: {total}")
+                cards[1].update(f"[PASS]: {pass_cnt}")
+                cards[2].update(f"[FAIL]: {fail_cnt}")
+                cards[3].update(f"[SKIPPED]: {skip_cnt}")
+                cards[4].update(f"[UNVERIFIED]: {unverified_cnt}")
+        except Exception:
+            pass
+
+    @on(Button.Pressed, "#btn-retry-selected")
+    def on_btn_retry_selected(self) -> None:
+        """Handle Retry Selected button press."""
+        self.action_retry_selected()
+
+    @on(Button.Pressed, "#btn-retry-all")
+    def on_btn_retry_all(self) -> None:
+        """Handle Retry All button press."""
+        self.action_retry_all()
 
     def action_export_json(self) -> None:
         """Export audit report to JSON format."""
@@ -3581,14 +4895,14 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 classes="modal-subtitle",
             )
 
-            options = []
+            options = [("All Sessions (Aggregate Audit Log)", "all")]
             for s in self.sessions:
                 sid = s.get("session_id", "unknown")
                 b_dir = s.get("base_dir") or "N/A"
                 status = s.get("status") or "completed"
                 options.append((f"{sid[:8]}... | {status} | {b_dir}", sid))
 
-            if not options:
+            if len(options) == 1 and not self.sessions:
                 options = [("No historical sessions found", "none")]
 
             select_sess = Select(
@@ -4149,6 +5463,13 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
             if not target_dir:
                 self.announce("Release operation cancelled.")
                 return
+            if not os.path.exists(target_dir) or not os.path.isdir(target_dir):
+                from app.ui.notifications import notify
+
+                err_msg = f"Target directory does not exist: {target_dir}"
+                self.announce(err_msg, priority="assertive")
+                notify(err_msg, type="error")
+                return
             dest_file_path = os.path.join(target_dir, os.path.basename(orig_rel))
             self.execute_release_async(record, dest_file_path)
 
@@ -4586,6 +5907,11 @@ class VimTree(Tree):
                 self.app.action_toggle_select_all()
             event.stop()
             event.prevent_default()
+        elif event.key in ("g", "G", "shift+g"):
+            if hasattr(self.app, "action_generate_sample_corpus"):
+                self.app.action_generate_sample_corpus()
+            event.stop()
+            event.prevent_default()
         elif event.key in ("enter", "return"):
             node = self.cursor_node
             if node:
@@ -4627,6 +5953,8 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+a", "open_audit_report", "Audit Report", show=True),
         Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
         Binding("g", "generate_sample_corpus", "Sample Dataset", show=False),
+        Binding("G", "generate_sample_corpus", "Sample Dataset", show=False),
+        Binding("shift+g", "generate_sample_corpus", "Sample Dataset", show=False),
         Binding("question_mark", "open_cheat_sheet", "Help (?)", show=True),
         Binding("f1", "open_cheat_sheet", "Help (F1)", show=False),
         Binding("ctrl+q", "quit", "Quit", show=True),
@@ -4696,6 +6024,32 @@ class AutoSorterTUI(A11yMixin, App):
         border: heavy $accent;
         text-style: bold;
     }
+    #alert-banner {
+        width: 100%;
+        height: auto;
+        min-height: 1;
+        max-height: 6;
+        padding: 0 1;
+        margin: 0;
+        display: none;
+    }
+    #alert-banner.alert-critical {
+        background: $error-darken-2;
+        color: $text;
+        border: solid $error;
+        text-style: bold;
+        display: block;
+    }
+    #alert-banner.alert-warning {
+        background: $warning-darken-2;
+        color: $text;
+        border: solid $warning;
+        display: block;
+    }
+    #btn-execute {
+        margin-top: 1;
+        width: 100%;
+    }
     """
 
     def __init__(
@@ -4705,9 +6059,11 @@ class AutoSorterTUI(A11yMixin, App):
         source_dirs: Optional[List[str]] = None,
         skip_wizard: bool = False,
         non_interactive: bool = False,
+        db: Optional[Any] = None,
     ):
         super().__init__()
         self.settings = settings
+        self.db = db
         if source_dirs:
             self.source_dirs = [
                 d if str(d).startswith("/") else os.path.abspath(d)
@@ -4734,6 +6090,10 @@ class AutoSorterTUI(A11yMixin, App):
         self.visual_select_active: bool = False
         self.visual_selected_nodes: list = []
         self._wizard_dismissed_this_session: bool = False
+        self.verification_result: Dict[str, Any] = {}
+        self.has_critical_errors: bool = False
+        self.critical_error_paths: set = set()
+        self.warning_paths: set = set()
 
     def compose(self) -> ComposeResult:
         """Compose main dual-pane TUI layout."""
@@ -4753,6 +6113,14 @@ class AutoSorterTUI(A11yMixin, App):
                 tui_log = Log(id="tui-log", classes="tui-log-area")
                 tui_log.tooltip = "Live operation execution log output feed"
                 yield tui_log
+                btn_exec = Button(
+                    "Execute Plan [Ctrl+E]", id="btn-execute", variant="primary"
+                )
+                btn_exec.tooltip = "Execute file sorting plan [Ctrl+E]"
+                yield btn_exec
+        alert_banner = Static("", id="alert-banner")
+        alert_banner.tooltip = "Validation alert banner displaying blocking errors or warnings"
+        yield alert_banner
         pb = ProgressBar(total=100, show_percentage=True, id="main-progress-bar")
         pb.tooltip = "Active operation background progress indicator"
         pb.display = False
@@ -4776,7 +6144,7 @@ class AutoSorterTUI(A11yMixin, App):
         res = super().announce(message, priority=priority, help_url=help_url)
         try:
             log_w = self.query_one("#tui-log", Log)
-            display_msg = f"{message} [Help: {help_url}]" if help_url else message
+            display_msg = f"{res} [Help: {help_url}]" if help_url else res
             log_w.write_line(display_msg)
         except Exception:
             pass
@@ -5046,7 +6414,11 @@ class AutoSorterTUI(A11yMixin, App):
     def _on_ai_consent_changed(self, value: Any = None) -> None:
         """Handle AI_CONSENT_GRANTED setting change notification."""
         self.update_status()
-        consent_val = value if value is not None else getattr(self.settings, "AI_CONSENT_GRANTED", None)
+        consent_val = (
+            value
+            if value is not None
+            else getattr(self.settings, "AI_CONSENT_GRANTED", None)
+        )
         if consent_val is False or consent_val is None:
             try:
                 from app.core.shared_registry import SharedModelRegistry
@@ -5054,7 +6426,10 @@ class AutoSorterTUI(A11yMixin, App):
                 SharedModelRegistry.get_instance().unload_all_models()
             except Exception:
                 pass
-            self.announce("AI processing disabled. In-memory AI models unloaded instantly.", priority="high")
+            self.announce(
+                "AI processing disabled. In-memory AI models unloaded instantly.",
+                priority="high",
+            )
         elif consent_val is True:
             self.announce("AI processing enabled.", priority="high")
 
@@ -5184,6 +6559,8 @@ class AutoSorterTUI(A11yMixin, App):
                     self.settings.CONTEXTUAL_RENAMING = res["CONTEXTUAL_RENAMING"]
                 if "AI_CONSENT_GRANTED" in res:
                     self.settings.AI_CONSENT_GRANTED = res["AI_CONSENT_GRANTED"]
+                if "CONFLICT_POLICY" in res:
+                    self.settings.CONFLICT_POLICY = res["CONFLICT_POLICY"]
                 if hasattr(self.settings, "_save"):
                     self.settings._save()
                 self.update_status()
@@ -5435,7 +6812,7 @@ class AutoSorterTUI(A11yMixin, App):
 
                 export_res = history_mgr.export_audit_log(
                     output_path=output_path,
-                    session_id=session_id if session_id != "none" else None,
+                    session_id=session_id if session_id not in ("none", "all") else None,
                     format=fmt,
                 )
                 cnt = export_res.get("count", 0)
@@ -5453,8 +6830,13 @@ class AutoSorterTUI(A11yMixin, App):
             handle_history_modal_result,
         )
 
+    @on(Button.Pressed, "#btn-execute")
+    def on_btn_execute_pressed(self) -> None:
+        """Handle Execute Plan button press."""
+        self.action_execute_sort()
+
     def action_execute_sort(self) -> None:
-        """Trigger sorting plan execution worker."""
+        """Trigger sorting plan execution worker with pre-move duplicate cluster review."""
         if self._is_text_control_focused():
             return
         if not self.plan or not self.app_session:
@@ -5466,8 +6848,247 @@ class AutoSorterTUI(A11yMixin, App):
             self.announce("No checked files in sorting plan to execute.")
             return
 
-        self.announce("Executing file moves according to plan...")
-        self.run_execute_worker()
+        if getattr(self, "has_critical_errors", False):
+            self.announce("Cannot execute plan: Critical validation errors exist (see Alert Banner).")
+            return
+
+        base_dir = self.app_session.base_dir if self.app_session else "."
+        from app.core.verifier import VerificationEngine
+
+        duplicate_groups = VerificationEngine.get_duplicate_groups(base_dir, exec_plan)
+        if duplicate_groups:
+
+            def handle_duplicate_modal_result(
+                selections: Optional[Dict[str, str]],
+            ) -> None:
+                if selections is None:
+                    self.announce("Move execution cancelled during duplicate review.")
+                    return
+
+                VerificationEngine.apply_deduplication_selections(
+                    base_dir, self.plan, selections
+                )
+                self.announce(
+                    "Executing file moves according to plan with deduplication applied..."
+                )
+                self.run_execute_worker()
+
+            self.push_screen(
+                DuplicateReviewModal(duplicate_groups=duplicate_groups),
+                handle_duplicate_modal_result,
+            )
+        else:
+            self.announce("Executing file moves according to plan...")
+            self.run_execute_worker()
+
+    @work(group="validation", exclusive=True, thread=True)
+    def run_validation_worker(self) -> None:
+        """Asynchronously verify plan integrity in background worker thread."""
+        try:
+            from app.core.verifier import VerificationEngine
+
+            exec_plan = self._get_executable_plan()
+            if not self.plan or not self._has_file_nodes(exec_plan):
+                self.call_from_thread(self._update_validation_state, {})
+                return
+
+            base_dir = (
+                self.app_session.base_dir
+                if self.app_session
+                else (self.base_dir or ".")
+            )
+            result = VerificationEngine.verify_plan_integrity(base_dir, exec_plan)
+            self.call_from_thread(self._update_validation_state, result)
+        except Exception as e:
+            logger.error(f"Error running validation worker: {e}")
+
+    def _update_validation_state(self, result: Dict[str, Any]) -> None:
+        """Update UI controls, alert banner, and tree highlights based on validation result."""
+        self.verification_result = result or {}
+
+        collisions = result.get("collisions", [])
+        circular = result.get("circular_renames", [])
+        invalid = result.get("invalid_renames", [])
+        long_paths = result.get("long_paths", [])
+
+        broken_links = result.get("broken_links", [])
+        unconfirmed = result.get("unconfirmed_renames", [])
+
+        has_critical = bool(collisions or circular or invalid or long_paths)
+        has_warnings = bool(broken_links or unconfirmed)
+
+        self.has_critical_errors = has_critical
+
+        # Build path sets for tree node highlighting
+        crit_paths = set()
+        for c in collisions:
+            if c.get("path"):
+                crit_paths.add(os.path.normpath(c["path"]))
+            if c.get("source"):
+                crit_paths.add(os.path.normpath(c["source"]))
+            for s in c.get("sources", []):
+                crit_paths.add(os.path.normpath(s))
+        for r in circular:
+            if r.get("path"):
+                crit_paths.add(os.path.normpath(r["path"]))
+            for p in r.get("cycle", []):
+                crit_paths.add(os.path.normpath(p))
+        for inv in invalid:
+            if inv.get("path"):
+                crit_paths.add(os.path.normpath(inv["path"]))
+            if inv.get("source"):
+                crit_paths.add(os.path.normpath(inv["source"]))
+        for lp in long_paths:
+            if lp.get("path"):
+                crit_paths.add(os.path.normpath(lp["path"]))
+            if lp.get("source"):
+                crit_paths.add(os.path.normpath(lp["source"]))
+
+        warn_paths = set()
+        for bl in broken_links:
+            if bl.get("path"):
+                warn_paths.add(os.path.normpath(bl["path"]))
+        for unc in unconfirmed:
+            if unc.get("path"):
+                warn_paths.add(os.path.normpath(unc["path"]))
+            if unc.get("source"):
+                warn_paths.add(os.path.normpath(unc["source"]))
+
+        self.critical_error_paths = crit_paths
+        self.warning_paths = warn_paths
+
+        # Update Execute Button
+        try:
+            btn_exec = self.query_one("#btn-execute", Button)
+            exec_plan = self._get_executable_plan()
+            has_files = self._has_file_nodes(exec_plan)
+
+            if has_critical or not has_files:
+                btn_exec.disabled = True
+                if has_critical:
+                    btn_exec.tooltip = "Execution disabled: Plan contains blocking critical validation errors"
+                else:
+                    btn_exec.tooltip = "Execution disabled: No files selected to execute"
+            else:
+                btn_exec.disabled = False
+                btn_exec.tooltip = "Execute file sorting plan [Ctrl+E]"
+        except Exception:
+            pass
+
+        # Update Alert Banner
+        try:
+            alert_banner = self.query_one("#alert-banner", Static)
+            if has_critical:
+                alert_banner.display = True
+                alert_banner.remove_class("alert-warning")
+                alert_banner.add_class("alert-critical")
+
+                msgs = []
+                if collisions:
+                    msgs.append("⛔ CRITICAL FILE COLLISION(S) DETECTED:")
+                    for c in collisions:
+                        dst_p = c.get("path", "")
+                        if c.get("sources"):
+                            for s_p in c["sources"]:
+                                msgs.append(f"  • Source: {s_p} -> Destination: {dst_p}")
+                        elif c.get("source"):
+                            msgs.append(f"  • Source: {c['source']} -> Destination: {dst_p}")
+                        else:
+                            msgs.append(f"  • Destination: {dst_p} ({c.get('message', 'Collision')})")
+                if circular:
+                    msgs.append("⛔ CIRCULAR RENAMING DEPENDENCY DETECTED:")
+                    for r in circular:
+                        msgs.append(f"  • {r.get('message')}")
+                if invalid:
+                    msgs.append("⛔ INVALID FILENAME / STRUCTURE:")
+                    for inv in invalid:
+                        msgs.append(f"  • {inv.get('message')}")
+                if long_paths:
+                    msgs.append("⛔ EXCEEDS PATH LENGTH LIMIT:")
+                    for lp in long_paths:
+                        msgs.append(f"  • {lp.get('message')}")
+
+                alert_str = "\n".join(msgs)
+                alert_banner.update(alert_str)
+                self.announce(f"Alert Banner: {alert_str}")
+            elif has_warnings:
+                alert_banner.display = True
+                alert_banner.remove_class("alert-critical")
+                alert_banner.add_class("alert-warning")
+
+                msgs = ["⚠️ NON-FATAL WARNING(S) REPORTED (Execution unblocked):"]
+                for bl in broken_links:
+                    msgs.append(f"  • {bl.get('message')}")
+                for unc in unconfirmed:
+                    msgs.append(f"  • {unc.get('message')}")
+
+                alert_str = "\n".join(msgs)
+                alert_banner.update(alert_str)
+            else:
+                alert_banner.display = False
+                alert_banner.update("")
+        except Exception as e:
+            logger.debug(f"Error updating alert banner: {e}")
+
+        # Update node styling in tree view
+        self._apply_tree_node_styles()
+
+    def _apply_tree_node_styles(self) -> None:
+        """Apply red/yellow styling to existing tree nodes based on active error/warning paths."""
+        try:
+            tree = self.query_one("#plan-tree", Tree)
+
+            def _stylize_node(node: TreeNode) -> None:
+                data = getattr(node, "data", None)
+                if not data or not isinstance(data, dict):
+                    for child in node.children:
+                        _stylize_node(child)
+                    return
+
+                filepath = data.get("filepath", "")
+                key = data.get("key", "")
+                norm_fp = os.path.normpath(filepath) if filepath else ""
+                norm_key = os.path.normpath(key) if key else ""
+
+                is_crit = False
+                is_warn = False
+
+                if norm_fp and norm_fp in self.critical_error_paths:
+                    is_crit = True
+                elif norm_key and norm_key in self.critical_error_paths:
+                    is_crit = True
+                elif any(
+                    p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                    for p in self.critical_error_paths
+                ):
+                    is_crit = True
+
+                if not is_crit:
+                    if norm_fp and norm_fp in self.warning_paths:
+                        is_warn = True
+                    elif norm_key and norm_key in self.warning_paths:
+                        is_warn = True
+                    elif any(
+                        p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                        for p in self.warning_paths
+                    ):
+                        is_warn = True
+
+                if isinstance(node.label, Text):
+                    plain_txt = node.label.plain
+                    new_txt = Text(plain_txt)
+                    if is_crit:
+                        new_txt.stylize("bold red")
+                    elif is_warn:
+                        new_txt.stylize("bold yellow")
+                    node.label = new_txt
+
+                for child in node.children:
+                    _stylize_node(child)
+
+            _stylize_node(tree.root)
+        except Exception as e:
+            logger.debug(f"Error applying tree node styles: {e}")
 
     @work(exclusive=True, thread=True)
     def run_execute_worker(self) -> None:
@@ -5596,6 +7217,7 @@ class AutoSorterTUI(A11yMixin, App):
             else:
                 self._build_tree_nodes(self.plan, tree.root, current_folder="")
             tree.root.expand_all()
+            self.run_validation_worker()
         except Exception as e:
             logger.error(f"Error rebuilding tree: {e}")
 
@@ -5700,12 +7322,74 @@ class AutoSorterTUI(A11yMixin, App):
                     )
                     label_parts.append(f"[ARCH: {arch_str}]")
 
+                target_filename = file_info.get("target_filename") or file_key
+                target_path = None
+                if self.base_dir:
+                    target_path = os.path.normpath(
+                        os.path.join(self.base_dir, current_folder, target_filename)
+                    )
+                elif current_folder:
+                    target_path = os.path.normpath(
+                        os.path.join(current_folder, target_filename)
+                    )
+
+                is_collision = (
+                    file_info.get("collision")
+                    or file_info.get("has_collision")
+                    or False
+                )
+                if (
+                    not is_collision
+                    and target_path
+                    and filepath
+                    and os.path.lexists(target_path)
+                ):
+                    try:
+                        is_same = os.path.samefile(target_path, filepath)
+                    except Exception:
+                        is_same = os.path.normpath(
+                            os.path.abspath(target_path)
+                        ) == os.path.normpath(os.path.abspath(filepath))
+                    if not is_same:
+                        is_collision = True
+
+                pol = str(
+                    getattr(self.settings, "CONFLICT_POLICY", "rename")
+                ).lower()
+                if is_collision:
+                    label_parts.append(f"[COLLISION: {pol.upper()}]")
+
                 label_parts.append(file_key)
-                target_filename = file_info.get("target_filename")
                 if target_filename and target_filename != file_key:
                     label_parts.append(f"-> {target_filename}")
 
+                norm_fp = os.path.normpath(filepath) if filepath else ""
+                norm_key = os.path.normpath(file_key) if file_key else ""
+
+                is_crit_node = (
+                    norm_fp in self.critical_error_paths
+                    or norm_key in self.critical_error_paths
+                    or any(
+                        p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                        for p in self.critical_error_paths
+                    )
+                )
+                is_warn_node = (
+                    norm_fp in self.warning_paths
+                    or norm_key in self.warning_paths
+                    or any(
+                        p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                        for p in self.warning_paths
+                    )
+                )
+
                 label_str = cb_str + " 📄 " + " ".join(label_parts[1:])
+                text_obj = Text(label_str)
+                if is_crit_node:
+                    text_obj.stylize("bold red")
+                elif is_warn_node:
+                    text_obj.stylize("bold yellow")
+
                 node_data = {
                     "is_file": True,
                     "key": file_key,
@@ -5716,8 +7400,10 @@ class AutoSorterTUI(A11yMixin, App):
                     "rating": rating,
                     "is_checked": is_checked,
                     "is_excluded": is_excluded,
+                    "is_collision": is_collision,
+                    "conflict_policy": pol,
                 }
-                parent_item.add_leaf(Text(label_str), data=node_data)
+                parent_item.add_leaf(text_obj, data=node_data)
             elif isinstance(v, dict):
                 sub_folder = (
                     (Path(current_folder) / k).as_posix() if current_folder else k
@@ -5812,8 +7498,16 @@ class AutoSorterTUI(A11yMixin, App):
             lock_err = (
                 invalid_locks.get(filepath_str)
                 or invalid_locks.get(key_str)
-                or (invalid_locks.get(filepath_str.replace("\\", "/")) if filepath_str else None)
-                or (invalid_locks.get(os.path.normpath(filepath_str)) if filepath_str else None)
+                or (
+                    invalid_locks.get(filepath_str.replace("\\", "/"))
+                    if filepath_str
+                    else None
+                )
+                or (
+                    invalid_locks.get(os.path.normpath(filepath_str))
+                    if filepath_str
+                    else None
+                )
             )
             if lock_err:
                 lines.append(f"[bold error]Lock Warning:[/bold error] {lock_err}")
@@ -5867,6 +7561,15 @@ class AutoSorterTUI(A11yMixin, App):
                     lines.append(f"[bold]Confidence:[/bold] {float(conf):.2%}")
                 except (ValueError, TypeError):
                     lines.append(f"[bold]Confidence:[/bold] {conf}")
+
+            if data.get("is_collision"):
+                pol_str = str(
+                    data.get("conflict_policy")
+                    or getattr(self.settings, "CONFLICT_POLICY", "rename")
+                ).upper()
+                lines.append(
+                    f"[bold warning]Collision Indicator:[/bold warning] [COLLISION: {pol_str}]"
+                )
 
             self.announce(
                 f"Selected file '{key}' in folder '{folder}'. Locked: {locked}. Rating: {rating}."

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "c3d662f88f0ba59c91cb06245158baa1a1b3fa77f999a1efbd221ad4f14411c0"
+    "checksum": "12cd239ea5dc80212312dceff36b0bafdeadcd4089cf519e135b687381869e25"
   },
   "classes": [
     {
@@ -58,6 +58,11 @@
               "annotation": "bool",
               "default": "False",
               "name": "return_halting"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "is_sorted"
             }
           ],
           "returns": "PolicyEvaluationResult | None | tuple[PolicyEvaluationResult | None, bool]"
@@ -91,6 +96,21 @@
             }
           ],
           "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "sort_policies",
+          "parameters": [
+            {
+              "annotation": "list[dict] | None",
+              "default": null,
+              "name": "policies"
+            }
+          ],
+          "returns": "list[dict]"
         },
         {
           "async": false,

@@ -24,6 +24,30 @@ def test_visitor_catches_sys_frozen_attr():
     assert "Direct 'sys.frozen' usage found" in visitor.errors[0]
 
 
+def test_visitor_catches_meipass():
+    visitor = DuplicatePatternVisitor("app/some_module.py")
+    tree = ast.parse("p = sys._MEIPASS")
+    visitor.visit(tree)
+    assert len(visitor.errors) == 1
+    assert "Direct 'sys._MEIPASS' usage found" in visitor.errors[0]
+
+
+def test_visitor_catches_hasattr_meipass():
+    visitor = DuplicatePatternVisitor("app/some_module.py")
+    tree = ast.parse("is_pkg = hasattr(sys, '_MEIPASS')")
+    visitor.visit(tree)
+    assert len(visitor.errors) == 1
+    assert "Direct hasattr(sys, '_MEIPASS') usage found" in visitor.errors[0]
+
+
+def test_visitor_catches_getattr_meipass():
+    visitor = DuplicatePatternVisitor("app/some_module.py")
+    tree = ast.parse("p = getattr(sys, '_MEIPASS', None)")
+    visitor.visit(tree)
+    assert len(visitor.errors) == 1
+    assert "Direct getattr(sys, '_MEIPASS') usage found" in visitor.errors[0]
+
+
 def test_visitor_catches_autosorter_sessions():
     visitor = DuplicatePatternVisitor("app/some_module.py")
     tree = ast.parse("path = '/tmp/autosorter_sessions/abc'")

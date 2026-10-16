@@ -262,3 +262,51 @@ def test_pydantic_validation_latency_sla():
     assert avg_latency_ms < max_allowed_ms, (
         f"Average validation latency too high: {avg_latency_ms:.4f} ms (max {max_allowed_ms} ms)"
     )
+
+
+def test_domain_contracts_containment_checks():
+    """Verify containment check (__contains__) behavior for all 6 domain contract models without deprecation warnings."""
+    # 1. QuarantineRecordModel
+    q_rec = QuarantineRecordModel(job_id="q1", custom_extra="extra_val")
+    assert "job_id" in q_rec
+    assert "status" in q_rec
+    assert "custom_extra" in q_rec
+    assert "non_existent_key" not in q_rec
+
+    # 2. SortingPlanNodeModel
+    node = SortingPlanNodeModel(routed_by="rule", extra_prop="value")
+    assert "__type__" in node
+    assert "routed_by" in node
+    assert "extra_prop" in node
+    assert "unknown_field" not in node
+
+    # 3. SortingPlanModel
+    plan = SortingPlanModel(nodes={"node1": {}}, model_status="HEALTHY", extra_info="test")
+    assert "node1" in plan
+    assert "nodes" in plan
+    assert "model_status" in plan
+    assert "extra_info" in plan
+    assert "absent_key" not in plan
+
+    # 4. CorpusExampleModel
+    example = CorpusExampleModel(filepath="a/b.txt", extra_tag="tag1")
+    assert "filepath" in example
+    assert "text" in example
+    assert "extra_tag" in example
+    assert "missing" not in example
+
+    # 5. CorpusPreFetchBatchModel
+    batch = CorpusPreFetchBatchModel(custom_meta="val")
+    assert "model_metadata" in batch
+    assert "examples" in batch
+    assert "custom_meta" in batch
+    assert "missing" not in batch
+
+    # 6. VectorBatchPayloadModel
+    vector_payload = VectorBatchPayloadModel(base_dir="/tmp", extra_v="val")
+    assert "base_dir" in vector_payload
+    assert "vectors" in vector_payload
+    assert "metadata" in vector_payload
+    assert "extra_v" in vector_payload
+    assert "missing" not in vector_payload
+

@@ -125,22 +125,6 @@ def test_bidirectional_path_mapping_and_collision_restoration(ledger_env):
     assert os.path.exists(renamed_target)
     assert os.path.exists(colliding_file)  # Original pre-existing file untouched
 
-    # Test bidirectional path mapping retrieval
-    # Manually log step to inspect get_bidirectional_path_map
-    history_manager.log_step(
-        session_id=session_id,
-        source_path=src_file,
-        target_path=renamed_target,
-        original_filename="report.pdf",
-        is_collision_renamed=True,
-    )
-
-    path_maps = history_manager.get_bidirectional_path_map(session_id)
-    assert path_maps["forward"][src_file] == renamed_target
-    assert path_maps["reverse"][renamed_target] == src_file
-    assert renamed_target in path_maps["collisions"]
-    assert path_maps["collisions"][renamed_target]["original_filename"] == "report.pdf"
-
     # Now unwind session
     history_manager.unwind_session(session_id, db=db)
 

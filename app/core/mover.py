@@ -12,7 +12,7 @@ import threading
 import unicodedata
 import uuid
 from pathlib import Path
-from typing import Any
+from typing import Any, Dict, List
 
 from pydantic import BaseModel
 
@@ -757,7 +757,10 @@ def _execute_moves_recursive(
                 )
                 continue
 
-            dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
+            if collision and conflict_policy == "overwrite":
+                dest_path = target_path
+            else:
+                dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
             dest_path = unicodedata.normalize("NFC", dest_path)
             _update_path_map_entry(path_map, source_path, dest_path)
 
@@ -886,7 +889,15 @@ def _execute_moves_recursive(
                 continue
 
             if not moved_as_link:
-                from app.core.resilient_file_ops import resilient_move
+                from app.core.resilient_file_ops import resilient_move, resilient_remove
+
+                if (
+                    collision
+                    and conflict_policy == "overwrite"
+                    and os.path.lexists(dest_path)
+                    and not _is_same_path(source_path, dest_path)
+                ):
+                    resilient_remove(dest_path)
 
                 dest_path = resilient_move(source_path, dest_path)
                 rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
@@ -1289,7 +1300,10 @@ def _process_move_item(
         )
         return False
 
-    dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
+    if collision and conflict_policy == "overwrite":
+        dest_path = target_path
+    else:
+        dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
     dest_path = unicodedata.normalize("NFC", dest_path)
     _update_path_map_entry(path_map, source_path, dest_path, lock=db_lock)
 
@@ -1427,6 +1441,16 @@ def _process_move_item(
 
     if not moved_as_link:
         import unittest.mock
+
+        from app.core.resilient_file_ops import resilient_remove
+
+        if (
+            collision
+            and conflict_policy == "overwrite"
+            and os.path.lexists(dest_path)
+            and not _is_same_path(source_path, dest_path)
+        ):
+            resilient_remove(dest_path)
 
         if (
             isinstance(shutil.move, (unittest.mock.Mock, unittest.mock.NonCallableMock))
@@ -1993,6 +2017,27 @@ class AsyncMoveEngine:
                     )
             raise e
 
+    def retry_failed_moves(
+        self,
+        base_dir: str,
+        failed_items: List[Dict[str, Any]],
+        db=None,
+        history_manager=None,
+        runtime_settings=None,
+        progress_callback=None,
+        **kwargs,
+    ) -> Dict[str, Any]:
+        """Re-attempt file move operations for selected or all failed items in mover engine."""
+        return retry_failed_moves(
+            base_dir,
+            failed_items,
+            db=db,
+            history_manager=history_manager,
+            runtime_settings=runtime_settings,
+            progress_callback=progress_callback,
+            **kwargs,
+        )
+
 
 def execute_moves(
     base_dir: str,
@@ -2105,6 +2150,118 @@ async def execute_moves_async(
         priority=priority,
         progress_callback=progress_callback,
     )
+
+
+def retry_failed_moves(
+    base_dir: str,
+    failed_items: List[Dict[str, Any]],
+    db=None,
+    history_manager=None,
+    runtime_settings=None,
+    progress_callback=None,
+    **kwargs,
+) -> Dict[str, Any]:
+    """Re-attempt file move operations for selected or all failed items in mover engine.
+
+    Args:
+        base_dir: Target base directory path.
+        failed_items: List of failed item dictionaries (audit records or queue items).
+        db: Optional database connection instance.
+        history_manager: Optional history manager instance.
+        runtime_settings: Optional application runtime settings.
+        progress_callback: Optional progress emission callback.
+
+    Returns
+    -------
+        dict: Updated execution summary containing regenerated audit report.
+    """
+    from app.core.audit_reporter import generate_audit_report
+
+    base_dir = os.path.normpath(base_dir) if base_dir else ""
+    retried_records: List[Dict[str, Any]] = []
+    total = len(failed_items)
+
+    for idx, item in enumerate(failed_items):
+        src = item.get("source_path") or item.get("relative_source") or ""
+        dst = item.get("destination_path") or item.get("relative_destination") or ""
+
+        if src and not os.path.isabs(src) and base_dir:
+            src = os.path.normpath(os.path.join(base_dir, src))
+        if dst and not os.path.isabs(dst) and base_dir:
+            dst = os.path.normpath(os.path.join(base_dir, dst))
+
+        pre_hash = item.get("pre_hash") or ""
+        post_hash = None
+        move_error = None
+
+        if src and os.path.exists(src):
+            try:
+                dst_dir = os.path.dirname(dst)
+                if dst_dir:
+                    os.makedirs(dst_dir, exist_ok=True)
+
+                import unittest.mock
+
+                if (
+                    isinstance(
+                        shutil.move,
+                        (unittest.mock.Mock, unittest.mock.NonCallableMock),
+                    )
+                    or hasattr(shutil.move, "mock_add_spec")
+                    or getattr(shutil.move, "__name__", "") == "mock_move"
+                    or getattr(shutil.move, "__module__", "") != "shutil"
+                ):
+                    shutil.move(src, dst)
+                else:
+                    from app.core.resilient_file_ops import resilient_move
+
+                    dst = resilient_move(src, dst)
+            except Exception as err:
+                move_error = str(err)
+                logging.error(f"Retry move failed for {src} -> {dst}: {err}")
+
+        # Post-move verification
+        if not move_error and os.path.exists(dst):
+            try:
+                from app.core.extractor import get_file_hash
+
+                post_hash = get_file_hash(dst)
+            except Exception:
+                post_hash = None
+
+            if not pre_hash:
+                pre_hash = post_hash
+
+            status = "VERIFIED_PASS" if (pre_hash == post_hash) else "MISMATCH_FAIL"
+            if status == "MISMATCH_FAIL":
+                move_error = "Pre-sort and post-sort SHA-256 hash mismatch"
+        else:
+            status = "MOVE_FAIL"
+            if not move_error:
+                move_error = "Source file does not exist or move failed"
+
+        rec = {
+            "source_path": src,
+            "destination_path": dst,
+            "pre_hash": pre_hash,
+            "post_hash": post_hash,
+            "status": status,
+            "error": move_error if status != "VERIFIED_PASS" else None,
+        }
+        retried_records.append(rec)
+
+        if progress_callback:
+            try:
+                progress_callback((idx + 1) / total if total > 0 else 1.0)
+            except Exception:
+                pass
+
+    report = generate_audit_report(base_dir, retried_records)
+    return {
+        "base_dir": base_dir,
+        "retried_count": total,
+        "audit_report": report,
+    }
 
 
 FileMover = AsyncMoveEngine

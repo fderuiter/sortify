@@ -110,6 +110,18 @@ The following parameters are extracted directly from the application's configura
 - **Default**: ``
 - **Required**: `False`
 
+### `SECURITY_ADVISORY_ENDPOINT`
+- **Default**: `https://security.huggingface.co/api/advisories`
+- **Required**: `False`
+
+### `SECURITY_ADVISORY_CACHE_TTL`
+- **Default**: `3600`
+- **Required**: `False`
+
+### `SECURITY_ADVISORY_FALLBACK_POLICY`
+- **Default**: `permissive`
+- **Required**: `False`
+
 ### `OCR_GPU_ENABLED`
 - **Default**: `False`
 - **Required**: `False`

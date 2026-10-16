@@ -166,6 +166,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.resilient_file_ops
 
+## `app.core.rule_importers`
+
+::: app.core.rule_importers
+
 ## `app.core.rule_templates`
 
 ::: app.core.rule_templates
@@ -177,6 +181,10 @@ This document is automatically generated. Do not edit manually.
 ## `app.core.scanner`
 
 ::: app.core.scanner
+
+## `app.core.security_advisory`
+
+::: app.core.security_advisory
 
 ## `app.core.semantic_embeddings`
 

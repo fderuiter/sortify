@@ -159,6 +159,26 @@
       "title": "Proxy",
       "type": "string"
     },
+    "SECURITY_ADVISORY_ENDPOINT": {
+      "default": "https://security.huggingface.co/api/advisories",
+      "title": "Security Advisory Endpoint",
+      "type": "string"
+    },
+    "SECURITY_ADVISORY_CACHE_TTL": {
+      "default": 3600,
+      "minimum": 1,
+      "title": "Security Advisory Cache Ttl",
+      "type": "integer"
+    },
+    "SECURITY_ADVISORY_FALLBACK_POLICY": {
+      "default": "permissive",
+      "enum": [
+        "strict",
+        "permissive"
+      ],
+      "title": "Security Advisory Fallback Policy",
+      "type": "string"
+    },
     "OCR_GPU_ENABLED": {
       "default": false,
       "title": "Ocr Gpu Enabled",
@@ -201,7 +221,8 @@
       "default": "rename",
       "enum": [
         "skip",
-        "rename"
+        "rename",
+        "overwrite"
       ],
       "title": "Conflict Policy",
       "type": "string"

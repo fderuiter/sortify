@@ -269,3 +269,89 @@ async def test_dropzone_empty_queue_blocking(tmp_path):
             status_lbl.render()
         ) or "No ready files to sort" in str(status_lbl.render())
         assert active_modal.processed_result is None
+
+
+@pytest.mark.anyio
+async def test_dropzone_search_filter_and_metadata_preview(tmp_path):
+    """Test interactive search filter input and metadata preview card in DropZoneModal."""
+    from textual.widgets import DataTable, Input, Label
+
+    settings = DummySettings(tmp_path)
+    test_dir = tmp_path / "search_preview_test"
+    test_dir.mkdir()
+
+    file_alpha = test_dir / "alpha_invoice.pdf"
+    file_alpha.write_text("Invoice Alpha content")
+
+    file_beta = test_dir / "beta_report.txt"
+    file_beta.write_text("Report Beta text")
+
+    file_gamma = test_dir / "gamma_invoice.docx"
+    file_gamma.write_text("Docx Gamma content")
+
+    app = ModalTestApp(settings=settings, base_dir=str(test_dir))
+
+    async with app.run_test(size=(100, 50)) as pilot:
+        await pilot.pause()
+        active_modal = app.screen
+        assert isinstance(active_modal, DropZoneModal)
+
+        # Stage all 3 files
+        active_modal.stage_paths(f"{file_alpha}\n{file_beta}\n{file_gamma}")
+        await pilot.pause()
+
+        table = active_modal.query_one("#dropzone-staging-table", DataTable)
+        filter_inp = active_modal.query_one("#input-queue-filter", Input)
+        preview_card = active_modal.query_one("#dropzone-metadata-preview")
+
+        assert table.row_count == 3
+        assert preview_card is not None
+
+        # Verify initial metadata preview for active row (row 0: alpha_invoice.pdf)
+        table.move_cursor(row=0)
+        await pilot.pause()
+
+        lbl_path = active_modal.query_one("#preview-path", Label)
+        lbl_size = active_modal.query_one("#preview-size", Label)
+        lbl_mtime = active_modal.query_one("#preview-mtime", Label)
+        lbl_status = active_modal.query_one("#preview-status", Label)
+
+        assert str(file_alpha) in str(lbl_path.render())
+        assert "Ready" in str(lbl_status.render())
+        assert "Modified:" in str(lbl_mtime.render())
+        assert "N/A" not in str(lbl_mtime.render())
+
+        # Type filter query "invoice"
+        filter_inp.value = "invoice"
+        await pilot.pause()
+
+        # Should show 2 rows (alpha_invoice and gamma_invoice)
+        assert table.row_count == 2
+
+        # Check metadata preview updates on row 1 (gamma_invoice)
+        table.move_cursor(row=1)
+        await pilot.pause()
+        assert str(file_gamma) in str(lbl_path.render())
+
+        # Clear search filter
+        filter_inp.value = ""
+        await pilot.pause()
+
+        # Should restore all 3 rows
+        assert table.row_count == 3
+
+
+@pytest.mark.anyio
+async def test_dropzone_responsive_narrow_layout(tmp_path):
+    """Test that narrow viewport under 80 columns applies narrow CSS class for stacked preview."""
+    settings = DummySettings(tmp_path)
+    app = ModalTestApp(settings=settings, base_dir=str(tmp_path))
+
+    async with app.run_test(size=(75, 40)) as pilot:
+        await pilot.pause()
+        active_modal = app.screen
+        assert isinstance(active_modal, DropZoneModal)
+
+        # Should have .narrow class applied
+        assert active_modal.has_class("narrow")
+
