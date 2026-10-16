@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "25c88e3312afb8c64a3d00f672991508fb4d94ab61679771842d2e5f56235ef4"
+    "checksum": "c6f2996f2fb9dfd931d1aba66db4cb93113a010f98f40dc6b0e63f5e2a3f0ebe"
   },
   "classes": [
     {
@@ -166,6 +166,29 @@
               "annotation": "str",
               "default": "'rename'",
               "name": "conflict_policy"
+            }
+          ],
+          "returns": "list"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "check_escaping_paths",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "list",
+              "default": null,
+              "name": "moves_list"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
             }
           ],
           "returns": "list"

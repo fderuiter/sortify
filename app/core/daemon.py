@@ -180,7 +180,7 @@ class ContinuousWatchdogDaemon:
         self.base_dir = os.path.abspath(base_dir)
         self.observer = None
 
-        self._lock = threading.Lock()
+        self._lock = threading.RLock()
         self._debounce_timer = None
         self._cancel_event = threading.Event()
         self._is_running = False

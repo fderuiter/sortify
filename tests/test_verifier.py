@@ -97,6 +97,7 @@ def test_check_ai_status_florence2_integrity_failure(tmp_path, monkeypatch):
 
     settings = AppSettings()
     settings.AI_ASSISTED_NAMING = True
+    settings.AI_CONSENT_GRANTED = True
 
     # Register expected hashes for florence-2
     SharedModelRegistry._instance = None
