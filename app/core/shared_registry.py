@@ -890,10 +890,12 @@ class SharedModelRegistry:
         if not isinstance(ocr_gpu_enabled, bool):
             ocr_gpu_enabled = False
 
-        from app.core.env_helper import is_cuda_available, is_mps_available
+        if ocr_gpu_enabled:
+            from app.core.env_helper import is_cuda_available, is_mps_available
 
-        gpu_available = is_cuda_available() or is_mps_available()
-        use_gpu = bool(ocr_gpu_enabled and gpu_available)
+            use_gpu = bool(is_cuda_available() or is_mps_available())
+        else:
+            use_gpu = False
 
         current_reader_info = self._models.get("easyocr_info")
         reader = self._models.get(model_id)
