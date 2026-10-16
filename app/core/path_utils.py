@@ -1,6 +1,7 @@
 """Utility functions for handling paths and sanitizing filenames."""
 
 import functools
+import getpass
 import os
 import re
 import sys
@@ -293,14 +294,43 @@ def get_base_path(caller_file_path: str = None) -> str:
         )
 
 
+def get_sanitized_username() -> str:
+    """Get the sanitized operating system username for safe user-isolated directory naming."""
+    raw_user = None
+    try:
+        raw_user = getpass.getuser()
+    except Exception:
+        pass
+
+    if not raw_user:
+        raw_user = (
+            os.environ.get("USER")
+            or os.environ.get("USERNAME")
+            or os.environ.get("LOGNAME")
+            or "unknown_user"
+        )
+
+    # Sanitize for safe directory naming across all supported operating systems
+    sanitized = re.sub(r"[^a-zA-Z0-9_\.\-]", "_", str(raw_user))
+    sanitized = sanitized.strip(". _")
+
+    if not sanitized or sanitized.upper() in RESERVED_NAMES:
+        sanitized = "unknown_user"
+
+    return sanitized
+
+
 def get_session_base_dir() -> Path:
-    """Get the standard base directory for sessions."""
+    """Get the standard base directory for sessions isolated by operating system user."""
+    user_str = get_sanitized_username()
     app_dir_env = os.environ.get("AUTOSORTER_APP_DIR")
     if app_dir_env:
         p = Path(app_dir_env) / "sessions"
         p.mkdir(parents=True, exist_ok=True)
         return p
-    return Path(tempfile.gettempdir()) / "autosorter_sessions"
+    p = Path(tempfile.gettempdir()) / f"autosorter_sessions_{user_str}"
+    p.mkdir(parents=True, exist_ok=True)
+    return p
 
 
 def setup_session_directory(session_id: str = None) -> tuple[str, Path]:
