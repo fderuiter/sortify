@@ -1656,7 +1656,10 @@ class AsyncMoveEngine:
             try:
                 sessions = history_manager.get_sessions()
                 for s in sessions:
-                    if s["base_dir"] == base_dir and s["status"] == "active":
+                    if (
+                        os.path.normpath(s["base_dir"]) == os.path.normpath(base_dir)
+                        and s["status"] == "active"
+                    ):
                         session_id = s["session_id"]
                         break
             except Exception:

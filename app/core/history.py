@@ -158,6 +158,7 @@ class HistoryManager:
             )
 
     def _create_snapshot_internal(self, base_dir: str) -> str:
+        base_dir = os.path.normpath(base_dir)
         session_id = str(uuid.uuid4())
         timestamp = time.time()
 
