@@ -9,6 +9,8 @@ from app.config import AppSettings as Settings
 from app.core.session import AppSession, scan_abandoned_sessions_async
 from app.ui.tui import AutoSorterTUI
 
+pytestmark = pytest.mark.xdist_group(name="tui")
+
 
 @pytest.fixture
 def mock_session_base(tmp_path, monkeypatch):
@@ -122,9 +124,10 @@ def test_trapped_files_redetected_on_subsequent_scan(
 
 
 def test_recovery_completes_and_cleans_up_after_fixing_permissions(
-    tmp_path, mock_session_base
+    tmp_path, mock_session_base, monkeypatch
 ):
     """Test that once permissions are restored, re-running recovery completes and cleans up session and safety storage."""
+    monkeypatch.setattr("app.core.resilient_file_ops.RETRY_DELAY", 0.001)
     base_dir = str(tmp_path / "work_dir")
     os.makedirs(base_dir, exist_ok=True)
 

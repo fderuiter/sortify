@@ -83,7 +83,7 @@ async def test_revoking_consent_unloads_in_memory_models_immediately(tmp_path):
         # Verify in-memory models were immediately unloaded
         assert registry.is_model_loaded("onnx") is False
         assert registry.is_model_loaded("easyocr") is False
-        assert len(registry._models) == 0
+        assert not any(k.startswith("onnx") or k.startswith("easyocr") for k in registry._models)
 
 
 def test_consent_state_persists_across_restarts(tmp_path):

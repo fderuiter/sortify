@@ -141,12 +141,15 @@ class DBWorker:
                     result_q.put(("success", result))
             except Exception as e:
                 if self._active_session is not None:
-                    sess_id = self._active_session.get("session_id")
-                    logger.error(
-                        f"Task exception encountered during transaction session {sess_id}. "
-                        f"Rolling back open session transaction automatically: {e}"
-                    )
-                    self._do_rollback_session(sess_id)
+                    try:
+                        sess_id = self._active_session.get("session_id")
+                        logger.error(
+                            f"Task exception encountered during transaction session {sess_id}. "
+                            f"Rolling back open session transaction automatically: {e}"
+                        )
+                        self._do_rollback_session(sess_id)
+                    except Exception as rollback_err:
+                        logger.error(f"Failed during automatic transaction rollback: {rollback_err}")
                 if result_q is not None:
                     result_q.put(("error", e))
             finally:
