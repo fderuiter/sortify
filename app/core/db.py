@@ -387,11 +387,77 @@ class Database:
             filepath = rel_p
         self.upsert_documents([(base_dir, filepath, file_hash, extracted_text)])
 
+    def _compute_term_frequencies(
+        self, text: str | None, stop_words_list=None
+    ) -> dict[str, int]:
+        """Tokenize text and calculate term frequencies off-lock on concurrent threads."""
+        if not text:
+            return {}
+        from collections import Counter
+
+        from sklearn.feature_extraction.text import TfidfVectorizer
+
+        from app.core.text_utils import sanitize_text
+
+        clean_text = sanitize_text(text or "")
+        if not clean_text:
+            return {}
+
+        if stop_words_list is None:
+            stop_words_list = "english"
+
+        try:
+            vectorizer = TfidfVectorizer(stop_words=stop_words_list)
+            analyzer = vectorizer.build_analyzer()
+            tokens = analyzer(clean_text)
+        except Exception:
+            import re
+            tokens = re.findall(r"\b\w\w+\b", clean_text.lower())
+            from sklearn.feature_extraction import text as sklearn_text
+
+            stops = set(sklearn_text.ENGLISH_STOP_WORDS)
+            if isinstance(stop_words_list, str) and stop_words_list == "english":
+                tokens = [t for t in tokens if t not in stops]
+            elif stop_words_list:
+                tokens = [t for t in tokens if t not in stop_words_list]
+
+        return dict(Counter(tokens))
+
+    compute_term_frequencies = _compute_term_frequencies
+
     def upsert_documents(self, documents):
         """Insert or update multiple documents in the database."""
         if not documents:
             return
         self.invalidate_cache()
+
+        precomputed_term_counts = {}
+
+        def _process_doc(doc):
+            b_dir, f_path, _, ext_text = doc[:4]
+            if "::" in f_path:
+                s_root, rel_p = f_path.split("::", 1)
+                b_dir = s_root
+                f_path = rel_p
+            f_path = f_path.replace("\\", "/")
+            if self._is_tfidf_eligible(f_path, ext_text):
+                try:
+                    counts = self.compute_term_frequencies(ext_text)
+                    return (b_dir, f_path), counts
+                except Exception:
+                    return (b_dir, f_path), {}
+            return (b_dir, f_path), None
+
+        if len(documents) > 1:
+            import concurrent.futures
+
+            with concurrent.futures.ThreadPoolExecutor() as executor:
+                results = list(executor.map(_process_doc, documents))
+                for key, counts in results:
+                    precomputed_term_counts[key] = counts
+        else:
+            key, counts = _process_doc(documents[0])
+            precomputed_term_counts[key] = counts
 
         def _write():
             conn = get_db_connection(self.db_path)
@@ -446,9 +512,16 @@ class Database:
                     row = cursor.fetchone()
                     target_path = row[0] if row else None
                     if target_path:
-                        if self._is_tfidf_eligible(filepath, extracted_text):
+                        key = (base_dir, filepath)
+                        counts = precomputed_term_counts.get(key)
+                        if counts is not None:
                             self._update_tfidf_for_document_conn(
-                                conn, base_dir, filepath, extracted_text, True
+                                conn,
+                                base_dir,
+                                filepath,
+                                None,
+                                True,
+                                term_counts=counts,
                             )
                         else:
                             cursor = conn.execute(
@@ -585,6 +658,28 @@ class Database:
                             new_docs.append(row)
                     self._cached_documents = new_docs
 
+        precomputed_counts_map = {}
+        if target_path:
+            try:
+                conn_read = get_db_connection(self.db_path)
+                cursor = conn_read.execute(
+                    "SELECT filepath, extracted_text FROM documents WHERE base_dir = ? AND file_hash = ?",
+                    (base_dir, file_hash),
+                )
+                rows = cursor.fetchall()
+                for fp, enc_text in rows:
+                    if enc_text:
+                        try:
+                            dec_text = self.crypto.decrypt_text(enc_text)
+                        except Exception:
+                            dec_text = None
+                        if dec_text and self._is_tfidf_eligible(fp, dec_text):
+                            precomputed_counts_map[fp] = (
+                                self.compute_term_frequencies(dec_text)
+                            )
+            except Exception:
+                pass
+
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
@@ -600,7 +695,11 @@ class Database:
                 )
                 for fp in filepaths:
                     self._update_tfidf_on_verified_target_change(
-                        conn, base_dir, fp, target_path
+                        conn,
+                        base_dir,
+                        fp,
+                        target_path,
+                        term_counts=precomputed_counts_map.get(fp),
                     )
 
         self.worker.execute_write_async(_write)
@@ -662,7 +761,19 @@ class Database:
                             new_docs.append(row)
                     self._cached_documents = new_docs
 
+        precomputed_counts = None
+        if new_dir:
+            try:
+                doc = self.get_document(base_dir, old_filepath)
+                if doc and doc.get("extracted_text"):
+                    ext_text = doc["extracted_text"]
+                    if self._is_tfidf_eligible(new_filepath, ext_text):
+                        precomputed_counts = self.compute_term_frequencies(ext_text)
+            except Exception:
+                pass
+
         def _write():
+            counts = precomputed_counts
             conn = get_db_connection(self.db_path)
             with conn:
                 conn.execute(
@@ -697,22 +808,34 @@ class Database:
                         )
                 else:
                     if new_dir:
-                        cursor = conn.execute(
-                            "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
-                            (base_dir, new_filepath),
-                        )
-                        row = cursor.fetchone()
-                        if row and row[0]:
-                            try:
-                                decrypted_text = self.crypto.decrypt_text(row[0])
-                            except Exception:
-                                decrypted_text = None
-                            if decrypted_text and self._is_tfidf_eligible(
-                                new_filepath, decrypted_text
-                            ):
-                                self._update_tfidf_for_document_conn(
-                                    conn, base_dir, new_filepath, decrypted_text, True
-                                )
+                        if counts is None:
+                            cursor = conn.execute(
+                                "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                                (base_dir, new_filepath),
+                            )
+                            row = cursor.fetchone()
+                            if row and row[0]:
+                                try:
+                                    decrypted_text = self.crypto.decrypt_text(
+                                        row[0]
+                                    )
+                                except Exception:
+                                    decrypted_text = None
+                                if decrypted_text and self._is_tfidf_eligible(
+                                    new_filepath, decrypted_text
+                                ):
+                                    counts = (
+                                        self.compute_term_frequencies(decrypted_text)
+                                    )
+                        if counts is not None:
+                            self._update_tfidf_for_document_conn(
+                                conn,
+                                base_dir,
+                                new_filepath,
+                                None,
+                                True,
+                                term_counts=counts,
+                            )
 
         self.worker.execute_write_async(_write)
 
@@ -741,6 +864,17 @@ class Database:
                             new_docs.append(row)
                     self._cached_documents = new_docs
 
+        precomputed_counts = None
+        if target_path:
+            try:
+                doc = self.get_document(base_dir, filepath)
+                if doc and doc.get("extracted_text"):
+                    ext_text = doc["extracted_text"]
+                    if self._is_tfidf_eligible(filepath, ext_text):
+                        precomputed_counts = self.compute_term_frequencies(ext_text)
+            except Exception:
+                pass
+
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
@@ -749,7 +883,11 @@ class Database:
                     (target_path, base_dir, filepath),
                 )
                 self._update_tfidf_on_verified_target_change(
-                    conn, base_dir, filepath, target_path
+                    conn,
+                    base_dir,
+                    filepath,
+                    target_path,
+                    term_counts=precomputed_counts,
                 )
 
         self.worker.execute_write_async(_write)
@@ -767,7 +905,7 @@ class Database:
         return True
 
     def _update_tfidf_on_verified_target_change(
-        self, conn, base_dir, filepath, target_path
+        self, conn, base_dir, filepath, target_path, term_counts: dict[str, int] | None = None
     ):
         filepath = filepath.replace("\\", "/")
         if target_path:
@@ -777,22 +915,25 @@ class Database:
             )
             already_in = cursor.fetchone() is not None
             if not already_in:
-                cursor = conn.execute(
-                    "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
-                    (base_dir, filepath),
-                )
-                row = cursor.fetchone()
-                if row and row[0]:
-                    try:
-                        decrypted_text = self.crypto.decrypt_text(row[0])
-                    except Exception:
-                        decrypted_text = None
-                    if decrypted_text and self._is_tfidf_eligible(
-                        filepath, decrypted_text
-                    ):
-                        self._update_tfidf_for_document_conn(
-                            conn, base_dir, filepath, decrypted_text, True
-                        )
+                if term_counts is None:
+                    cursor = conn.execute(
+                        "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                        (base_dir, filepath),
+                    )
+                    row = cursor.fetchone()
+                    if row and row[0]:
+                        try:
+                            decrypted_text = self.crypto.decrypt_text(row[0])
+                        except Exception:
+                            decrypted_text = None
+                        if decrypted_text and self._is_tfidf_eligible(
+                            filepath, decrypted_text
+                        ):
+                            term_counts = self.compute_term_frequencies(decrypted_text)
+                if term_counts is not None:
+                    self._update_tfidf_for_document_conn(
+                        conn, base_dir, filepath, None, True, term_counts=term_counts
+                    )
         else:
             cursor = conn.execute(
                 "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
@@ -812,6 +953,7 @@ class Database:
         text,
         is_added_or_updated: bool,
         stop_words_list=None,
+        term_counts: dict[str, int] | None = None,
     ):
         filepath = filepath.replace("\\", "/")
         cursor = conn.execute(
@@ -821,34 +963,15 @@ class Database:
         existing_terms = {row[0]: row[1] for row in cursor.fetchall()}
 
         if is_added_or_updated:
-            from collections import Counter
+            if term_counts is None:
+                if text and self._is_tfidf_eligible(filepath, text):
+                    term_counts = self.compute_term_frequencies(
+                        text, stop_words_list
+                    )
+                else:
+                    term_counts = {}
 
-            from sklearn.feature_extraction.text import TfidfVectorizer
-
-            if stop_words_list is None:
-                stop_words_list = "english"
-
-            from app.core.text_utils import sanitize_text
-
-            clean_text = sanitize_text(text or "")
-
-            try:
-                vectorizer = TfidfVectorizer(stop_words=stop_words_list)
-                analyzer = vectorizer.build_analyzer()
-                tokens = analyzer(clean_text)
-            except Exception:
-                import re
-
-                tokens = re.findall(r"\b\w\w+\b", clean_text.lower())
-                from sklearn.feature_extraction import text as sklearn_text
-
-                stops = set(sklearn_text.ENGLISH_STOP_WORDS)
-                if isinstance(stop_words_list, str) and stop_words_list == "english":
-                    tokens = [t for t in tokens if t not in stops]
-                elif stop_words_list:
-                    tokens = [t for t in tokens if t not in stop_words_list]
-
-            new_terms = Counter(tokens)
+            new_terms = term_counts or {}
 
             terms_to_delete = []
             terms_to_insert = []
@@ -980,6 +1103,49 @@ class Database:
             return
         self.invalidate_cache()
 
+        precomputed_updates_map = {}
+        for item in updates:
+            if item["type"] == "verified_target":
+                base_dir, file_hash, target_path = item["args"]
+                if target_path:
+                    try:
+                        conn_read = get_db_connection(self.db_path)
+                        cursor = conn_read.execute(
+                            "SELECT filepath, extracted_text FROM documents WHERE base_dir = ? AND file_hash = ?",
+                            (base_dir, file_hash),
+                        )
+                        rows = cursor.fetchall()
+                        for fp, enc_text in rows:
+                            if enc_text:
+                                try:
+                                    dec_text = self.crypto.decrypt_text(enc_text)
+                                except Exception:
+                                    dec_text = None
+                                if dec_text and self._is_tfidf_eligible(fp, dec_text):
+                                    precomputed_updates_map[(base_dir, fp)] = (
+                                        self.compute_term_frequencies(dec_text)
+                                    )
+                    except Exception:
+                        pass
+            elif item["type"] == "document_path":
+                base_dir, old_filepath, new_filepath = item["args"]
+                old_filepath = old_filepath.replace("\\", "/")
+                new_filepath = new_filepath.replace("\\", "/")
+                import os
+
+                new_dir = os.path.dirname(new_filepath).replace("\\", "/")
+                if new_dir:
+                    try:
+                        doc = self.get_document(base_dir, old_filepath)
+                        if doc and doc.get("extracted_text"):
+                            ext_text = doc["extracted_text"]
+                            if self._is_tfidf_eligible(new_filepath, ext_text):
+                                precomputed_updates_map[(base_dir, new_filepath)] = (
+                                    self.compute_term_frequencies(ext_text)
+                                )
+                    except Exception:
+                        pass
+
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
@@ -997,8 +1163,13 @@ class Database:
                             (target_path, base_dir, file_hash),
                         )
                         for fp in filepaths:
+                            counts = precomputed_updates_map.get((base_dir, fp))
                             self._update_tfidf_on_verified_target_change(
-                                conn, base_dir, fp, target_path
+                                conn,
+                                base_dir,
+                                fp,
+                                target_path,
+                                term_counts=counts,
                             )
                     elif item["type"] == "document_path":
                         base_dir, old_filepath, new_filepath = item["args"]
@@ -1039,28 +1210,37 @@ class Database:
                                 )
                         else:
                             if new_dir:
-                                cursor = conn.execute(
-                                    "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
-                                    (base_dir, new_filepath),
+                                counts = precomputed_updates_map.get(
+                                    (base_dir, new_filepath)
                                 )
-                                row = cursor.fetchone()
-                                if row and row[0]:
-                                    try:
-                                        decrypted_text = self.crypto.decrypt_text(
-                                            row[0]
-                                        )
-                                    except Exception:
-                                        decrypted_text = None
-                                    if decrypted_text and self._is_tfidf_eligible(
-                                        new_filepath, decrypted_text
-                                    ):
-                                        self._update_tfidf_for_document_conn(
-                                            conn,
-                                            base_dir,
-                                            new_filepath,
-                                            decrypted_text,
-                                            True,
-                                        )
+                                if counts is None:
+                                    cursor = conn.execute(
+                                        "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                                        (base_dir, new_filepath),
+                                    )
+                                    row = cursor.fetchone()
+                                    if row and row[0]:
+                                        try:
+                                            decrypted_text = (
+                                                self.crypto.decrypt_text(row[0])
+                                            )
+                                        except Exception:
+                                            decrypted_text = None
+                                        if decrypted_text and self._is_tfidf_eligible(
+                                            new_filepath, decrypted_text
+                                        ):
+                                            counts = self.compute_term_frequencies(
+                                                decrypted_text
+                                            )
+                                if counts is not None:
+                                    self._update_tfidf_for_document_conn(
+                                        conn,
+                                        base_dir,
+                                        new_filepath,
+                                        None,
+                                        True,
+                                        term_counts=counts,
+                                    )
                     elif item["type"] == "transaction_step":
                         (
                             session_id,
