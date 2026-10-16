@@ -3747,14 +3747,14 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 classes="modal-subtitle",
             )
 
-            options = []
+            options = [("All Sessions (Aggregate Audit Log)", "all")]
             for s in self.sessions:
                 sid = s.get("session_id", "unknown")
                 b_dir = s.get("base_dir") or "N/A"
                 status = s.get("status") or "completed"
                 options.append((f"{sid[:8]}... | {status} | {b_dir}", sid))
 
-            if not options:
+            if len(options) == 1 and not self.sessions:
                 options = [("No historical sessions found", "none")]
 
             select_sess = Select(
@@ -5381,7 +5381,7 @@ class AutoSorterTUI(A11yMixin, App):
 
                 export_res = history_mgr.export_audit_log(
                     output_path=output_path,
-                    session_id=session_id if session_id != "none" else None,
+                    session_id=session_id if session_id not in ("none", "all") else None,
                     format=fmt,
                 )
                 cnt = export_res.get("count", 0)
