@@ -1,5 +1,3 @@
-<!-- This document is automatically generated from notebooks/01_ml_analyzer_clustering.ipynb. Do not edit manually. -->
-
 # Stateful ML Analyzer Clustering
 
 ## 1. Context & Overview

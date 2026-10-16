@@ -1,5 +1,3 @@
-<!-- This document is automatically generated from notebooks/03_virtual_sorting_verification.ipynb. Do not edit manually. -->
-
 # Virtual Sorting Verification & Safe Simulation Testing
 
 ## 1. Context & Overview
