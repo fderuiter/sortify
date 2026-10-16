@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -15,7 +16,7 @@ from rich.text import Text
 from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
@@ -1057,6 +1058,7 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     @on(Button.Pressed, "#preset-demo")
     def action_demo(self) -> None:
         """Select sandbox demo workspace preset."""
+        from app.core.sample_corpus import generate_sample_corpus
         from app.ui.notifications import notify
 
         path = os.path.abspath("sandbox/demo_workspace")
@@ -1071,6 +1073,18 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
                 self.announce(err_msg, priority="assertive")
                 notify(err_msg, type="error")
                 return
+
+        try:
+            generate_sample_corpus(path, overwrite=True)
+            sample_msg = f"Generated sample corpus documents in '{path}'."
+            self.announce(sample_msg)
+            notify(sample_msg, type="info")
+        except Exception as exc:
+            logger.error(f"Failed to generate sample corpus in '{path}': {exc}")
+            err_msg = f"Failed to generate sample corpus: {exc}"
+            self.announce(err_msg, priority="assertive")
+            notify(err_msg, type="error")
+
         self.announce(f"Selected demo workspace preset: {path}")
         self.dismiss(path)
 
@@ -1268,6 +1282,191 @@ class ManualPathFallbackModal(A11yMixin, ModalScreen[Optional[str]]):
         """Cancel manual path entry."""
         self.announce("Cancelled manual directory entry.")
         self.dismiss(None)
+
+
+def _get_vector_count(db=None) -> int:
+    """Return stored document vector count from database."""
+    try:
+        if db is not None and hasattr(db, "get_document_vectors_count"):
+            return db.get_document_vectors_count()
+        from app.config import get_app_dir
+        from app.core.db import Database
+        from app.core.db_worker import DBWorker
+
+        db_path = get_app_dir() / "autosorter.db"
+        if db_path.exists():
+            temp_db = Database(db_path, DBWorker())
+            return temp_db.get_document_vectors_count()
+    except Exception:
+        pass
+    return 0
+
+
+def _get_model_cache_footprint_mb() -> float:
+    """Return model cache size on disk in MB."""
+    try:
+        from app.config import get_app_dir
+
+        model_dir = get_app_dir() / "model"
+        if model_dir.exists() and model_dir.is_dir():
+            total_bytes = 0
+            for root, _, files in os.walk(model_dir):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    if os.path.exists(fp):
+                        total_bytes += os.path.getsize(fp)
+            return total_bytes / (1024 * 1024)
+    except Exception:
+        pass
+    return 0.0
+
+
+class ScrubArtifactsModal(A11yMixin, ModalScreen[bool]):
+    """Modal dialog for confirming manual scrubbing of AI vector database rows and model cache files."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    ScrubArtifactsModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .info-label {
+        margin-top: 1;
+        color: $text;
+    }
+    .warning-label {
+        margin-top: 1;
+        margin-bottom: 1;
+        color: $warning;
+        text-style: bold;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    """
+
+    def __init__(self, vector_count: int, cache_size_mb: float):
+        super().__init__()
+        self.vector_count = vector_count
+        self.cache_size_mb = cache_size_mb
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="modal-box"):
+            yield Heading("Scrub AI Artifacts Confirmation", level=1, classes="modal-title")
+            yield Label(f"Stored Document Vectors: {self.vector_count} records", classes="info-label", id="lbl-vector-count")
+            yield Label(f"Model Cache Footprint: {self.cache_size_mb:.2f} MB", classes="info-label", id="lbl-cache-size")
+            yield Label(
+                "Warning: This operation will permanently remove all stored document vector embeddings "
+                "from the SQLite database and purge local model cache files from disk. "
+                "Are you sure you want to scrub AI artifacts?",
+                classes="warning-label",
+            )
+            with Horizontal(classes="button-row"):
+                yield Button("Cancel", id="btn-cancel-scrub", variant="default")
+                yield Button("Scrub AI Artifacts", id="btn-confirm-scrub", variant="error")
+
+    @on(Button.Pressed, "#btn-confirm-scrub")
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#btn-cancel-scrub")
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+
+class ConsentRevocationModal(A11yMixin, ModalScreen[bool]):
+    """Modal dialog for confirming revocation of AI consent and cascading artifact scrubbing."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    ConsentRevocationModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .info-label {
+        margin-top: 1;
+        color: $text;
+    }
+    .warning-label {
+        margin-top: 1;
+        margin-bottom: 1;
+        color: $warning;
+        text-style: bold;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    """
+
+    def __init__(self, vector_count: int, cache_size_mb: float):
+        super().__init__()
+        self.vector_count = vector_count
+        self.cache_size_mb = cache_size_mb
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="modal-box"):
+            yield Heading("Confirm AI Consent Revocation", level=1, classes="modal-title")
+            yield Label(f"Stored Document Vectors: {self.vector_count} records", classes="info-label", id="lbl-vector-count")
+            yield Label(f"Model Cache Footprint: {self.cache_size_mb:.2f} MB", classes="info-label", id="lbl-cache-size")
+            yield Label(
+                "Revoking AI consent will disable AI features, unload models from memory, "
+                "scrub stored document vectors from SQLite tables, and purge model cache files from disk. "
+                "Do you wish to proceed?",
+                classes="warning-label",
+            )
+            with Horizontal(classes="button-row"):
+                yield Button("Keep Consent Active", id="btn-cancel-revoke", variant="default")
+                yield Button("Revoke Consent & Scrub Data", id="btn-confirm-revoke", variant="error")
+
+    @on(Button.Pressed, "#btn-confirm-revoke")
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#btn-cancel-revoke")
+    def action_cancel(self) -> None:
+        self.dismiss(False)
 
 
 class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
@@ -1489,6 +1688,16 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                         tooltip="Toggle AI contextual file renaming",
                     )
 
+                    btn_scrub = Button(
+                        "Scrub AI Artifacts",
+                        id="btn-scrub-artifacts",
+                        variant="warning",
+                    )
+                    btn_scrub.tooltip = (
+                        "Report vector count and cache footprint, and scrub stored vectors and model files"
+                    )
+                    yield btn_scrub
+
                     btn_templates = Button(
                         "Starter Rule Template Gallery",
                         id="btn-open-templates",
@@ -1540,6 +1749,94 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     def action_open_templates(self) -> None:
         """Open starter rule template gallery modal."""
         self.app.push_screen(TemplateGalleryModal(self.settings))
+
+    @on(Button.Pressed, "#btn-scrub-artifacts")
+    def action_scrub_artifacts(self) -> None:
+        """Open Scrub AI Artifacts confirmation modal."""
+        db_inst = getattr(self.app, "db", None) if hasattr(self, "app") else None
+        v_count = _get_vector_count(db_inst)
+        footprint_mb = _get_model_cache_footprint_mb()
+
+        def _on_scrub_modal_result(confirmed: bool) -> None:
+            if confirmed:
+                self._execute_scrub_and_purge()
+
+        if hasattr(self, "app") and self.app:
+            self.app.push_screen(
+                ScrubArtifactsModal(v_count, footprint_mb), _on_scrub_modal_result
+            )
+
+    @on(Switch.Changed, "#switch-ai-consent")
+    def on_ai_consent_changed(self, event: Switch.Changed) -> None:
+        """Prompt user confirmation when AI consent switch is toggled off."""
+        if not event.value:
+            db_inst = getattr(self.app, "db", None) if hasattr(self, "app") else None
+            v_count = _get_vector_count(db_inst)
+            footprint_mb = _get_model_cache_footprint_mb()
+
+            def _on_revoke_modal_result(confirmed: bool) -> None:
+                if confirmed:
+                    if self.settings:
+                        self.settings.AI_CONSENT_GRANTED = False
+                    self._execute_scrub_and_purge()
+                    if hasattr(self, "announce"):
+                        self.announce("AI consent revoked and artifacts scrubbed.", priority="polite")
+                else:
+                    event.switch.value = True
+
+            if hasattr(self, "app") and self.app:
+                self.app.push_screen(
+                    ConsentRevocationModal(v_count, footprint_mb), _on_revoke_modal_result
+                )
+
+    def _execute_scrub_and_purge(self) -> None:
+        """Execute memory model unload, database vector clearing, and background model cache purging."""
+        try:
+            from app.core.shared_registry import SharedModelRegistry
+
+            SharedModelRegistry.get_instance().unload_all_models()
+        except Exception:
+            pass
+
+        try:
+            from app.core.db import Database
+
+            Database.scrub_all_vectors()
+        except Exception:
+            pass
+
+        try:
+            from app.config import get_app_dir
+            from app.core.downloader import DownloadManager
+
+            model_dir = str(get_app_dir() / "model")
+            dm = DownloadManager.get_instance()
+
+            def _on_purge_done(success: bool, err: Optional[Exception]):
+                if success:
+                    if hasattr(self, "announce"):
+                        self.announce(
+                            "AI artifacts scrubbed and model cache purged successfully.",
+                            priority="polite",
+                        )
+                else:
+                    if hasattr(self, "announce"):
+                        self.announce(
+                            f"Model cache purge failed: {err}", priority="assertive"
+                        )
+
+            dm.delete_model_async(model_dir, on_done=_on_purge_done)
+        except Exception as e:
+            logger.error(f"Error purging model cache: {e}")
+
+        try:
+            from app.ui.notifications import notify
+
+            notify("AI artifacts scrubbed and model cache purging started.", type="info")
+        except Exception:
+            pass
+        if hasattr(self, "announce"):
+            self.announce("AI artifacts scrubbed and model cache purging started.")
 
     @on(Button.Pressed, "#btn-save")
     def action_save(self) -> None:
@@ -1601,6 +1898,9 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             ai_consent = self.query_one("#switch-ai-consent", Switch).value
         except Exception:
             ai_consent = bool(getattr(self.settings, "AI_CONSENT_GRANTED", False))
+
+        if ai_consent is False and getattr(self.settings, "AI_CONSENT_GRANTED", None) is True:
+            self._execute_scrub_and_purge()
 
         try:
             conflict_pol = self.query_one("#select-conflict-policy", Select).value
@@ -2937,12 +3237,57 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         color: $text-muted;
         text-align: center;
     }
+    #input-queue-filter {
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+    .dropzone-split-container {
+        height: auto;
+        min-height: 8;
+        layout: horizontal;
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+    .narrow .dropzone-split-container {
+        layout: vertical;
+    }
     #dropzone-staging-table {
-        height: 6;
-        min-height: 4;
+        width: 60%;
+        height: 7;
+        min-height: 5;
         margin-top: 0;
         margin-bottom: 0;
         border: solid $accent;
+    }
+    .narrow #dropzone-staging-table {
+        width: 100%;
+        height: 6;
+    }
+    #dropzone-metadata-preview {
+        width: 40%;
+        height: 7;
+        min-height: 5;
+        border: solid $primary;
+        background: $surface;
+        padding: 0 1;
+        margin-left: 1;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+    .narrow #dropzone-metadata-preview {
+        width: 100%;
+        height: auto;
+        min-height: 4;
+        margin-left: 0;
+        margin-top: 1;
+    }
+    .preview-header {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 0;
+    }
+    .preview-field {
+        color: $text;
     }
     .status-text {
         color: $accent;
@@ -3003,12 +3348,29 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             )
             yield inp
 
-            table = DataTable(id="dropzone-staging-table")
-            table.cursor_type = "row"
-            table.tooltip = (
-                "Interactive staging queue displaying file status and details"
+            filter_inp = Input(
+                placeholder="Filter staged queue...",
+                id="input-queue-filter",
             )
-            yield table
+            filter_inp.tooltip = (
+                "Filter staged queue items by typing keywords (filename, path, status, extension)"
+            )
+            yield filter_inp
+
+            with Container(classes="dropzone-split-container"):
+                table = DataTable(id="dropzone-staging-table")
+                table.cursor_type = "row"
+                table.tooltip = (
+                    "Interactive staging queue displaying file status and details"
+                )
+                yield table
+
+                with Vertical(id="dropzone-metadata-preview"):
+                    yield Label("📋 Metadata Preview", classes="preview-header")
+                    yield Label("Path: N/A", id="preview-path", classes="preview-field")
+                    yield Label("Size: N/A", id="preview-size", classes="preview-field")
+                    yield Label("Modified: N/A", id="preview-mtime", classes="preview-field")
+                    yield Label("Status: N/A", id="preview-status", classes="preview-field")
 
             with Horizontal(classes="queue-row"):
                 btn_filter = Button(
@@ -3091,15 +3453,38 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             return f"{int(size)} B"
         return f"{size:.1f} {units[idx]}"
 
+    def get_filter_query(self) -> str:
+        """Get lowercase trimmed search query from input-queue-filter field."""
+        try:
+            inp = self.query_one("#input-queue-filter", Input)
+            return inp.value.strip().lower()
+        except Exception:
+            return ""
+
+    def get_filtered_items(self) -> List[Dict[str, Any]]:
+        """Return list of staged items filtered by search query."""
+        query = self.get_filter_query()
+        if not query:
+            return list(self.staged_items)
+        return [
+            item
+            for item in self.staged_items
+            if query in item["filename"].lower()
+            or query in item["path"].lower()
+            or query in item["extension"].lower()
+            or query in item["status"].lower()
+        ]
+
     def _refresh_table(self) -> None:
-        """Re-render staging table with items from self.staged_items."""
+        """Re-render staging table with items matching active search filter."""
         try:
             table = self.query_one("#dropzone-staging-table", DataTable)
         except Exception:
             return
         table.clear(columns=True)
         table.add_columns("Status", "Filename", "Extension", "Size", "Full Path")
-        for item in self.staged_items:
+        filtered = self.get_filtered_items()
+        for item in filtered:
             table.add_row(
                 item["status"],
                 item["filename"],
@@ -3107,6 +3492,68 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 item["size_str"],
                 item["path"],
             )
+        self.update_active_metadata_preview()
+
+    def update_metadata_preview(self, item: Optional[Dict[str, Any]] = None) -> None:
+        """Update metadata preview card panel for given staged item."""
+        if item is None:
+            path_str = "N/A"
+            size_str = "N/A"
+            mtime_str = "N/A"
+            status_str = "N/A"
+        else:
+            path_str = item.get("path", "N/A")
+            size_str = item.get("size_str", "N/A")
+            status_str = item.get("status", "N/A")
+            if path_str and path_str != "N/A" and os.path.exists(path_str):
+                try:
+                    mtime = os.path.getmtime(path_str)
+                    mtime_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    mtime_str = "Error reading timestamp"
+            else:
+                mtime_str = "N/A"
+
+        try:
+            self.query_one("#preview-path", Label).update(f"Path: {path_str}")
+            self.query_one("#preview-size", Label).update(f"Size: {size_str}")
+            self.query_one("#preview-mtime", Label).update(f"Modified: {mtime_str}")
+            self.query_one("#preview-status", Label).update(f"Status: {status_str}")
+        except Exception:
+            pass
+
+    def update_active_metadata_preview(self) -> None:
+        """Fetch item corresponding to current table cursor row and update metadata preview."""
+        try:
+            table = self.query_one("#dropzone-staging-table", DataTable)
+            row_idx = table.cursor_row
+            filtered = self.get_filtered_items()
+            if row_idx is not None and 0 <= row_idx < len(filtered):
+                self.update_metadata_preview(filtered[row_idx])
+            else:
+                self.update_metadata_preview(None)
+        except Exception:
+            self.update_metadata_preview(None)
+
+    @on(Input.Changed, "#input-queue-filter")
+    def on_queue_filter_changed(self, event: Input.Changed) -> None:
+        """Handle search filter text changes to dynamically update visible table rows."""
+        self._refresh_table()
+
+    @on(DataTable.RowHighlighted)
+    def _on_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        """Update metadata preview panel on table row focus/highlight."""
+        self.update_active_metadata_preview()
+
+    @on(DataTable.RowSelected)
+    def _on_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Update metadata preview panel on table row selection."""
+        self.update_active_metadata_preview()
+
+    @on(DataTable.CellHighlighted)
+    def _on_table_cell_highlighted(self, event: DataTable.CellHighlighted) -> None:
+        """Update metadata preview panel on cell selection/focus."""
+        self.update_active_metadata_preview()
 
     def stage_paths(self, raw_text: str) -> None:
         """Parse raw input string, expand directories, validate, and stage items."""
@@ -3206,17 +3653,22 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             row_idx = None
 
-        if row_idx is not None and 0 <= row_idx < len(self.staged_items):
-            removed_item = self.staged_items.pop(row_idx)
+        filtered = self.get_filtered_items()
+        if row_idx is not None and 0 <= row_idx < len(filtered):
+            removed_item = filtered[row_idx]
+            if removed_item in self.staged_items:
+                self.staged_items.remove(removed_item)
             self._refresh_table()
             msg = f"Removed '{removed_item['filename']}' from queue. {len(self.staged_items)} item(s) remaining."
             self.update_status_msg(msg)
-            if self.staged_items:
-                new_idx = min(row_idx, len(self.staged_items) - 1)
+            new_filtered = self.get_filtered_items()
+            if new_filtered:
+                new_idx = min(row_idx, len(new_filtered) - 1)
                 try:
                     table.move_cursor(row=new_idx)
                 except Exception:
                     pass
+            self.update_active_metadata_preview()
         else:
             self.update_status_msg("No item selected to remove.")
 
@@ -3228,18 +3680,24 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             row_idx = None
 
-        if row_idx is not None and 0 < row_idx < len(self.staged_items):
-            self.staged_items[row_idx], self.staged_items[row_idx - 1] = (
-                self.staged_items[row_idx - 1],
-                self.staged_items[row_idx],
+        filtered = self.get_filtered_items()
+        if row_idx is not None and 0 < row_idx < len(filtered):
+            item_curr = filtered[row_idx]
+            item_prev = filtered[row_idx - 1]
+            idx_curr = self.staged_items.index(item_curr)
+            idx_prev = self.staged_items.index(item_prev)
+            self.staged_items[idx_curr], self.staged_items[idx_prev] = (
+                self.staged_items[idx_prev],
+                self.staged_items[idx_curr],
             )
             self._refresh_table()
             try:
                 table.move_cursor(row=row_idx - 1)
             except Exception:
                 pass
+            self.update_active_metadata_preview()
             self.update_status_msg(
-                f"Moved '{self.staged_items[row_idx - 1]['filename']}' up in queue priority."
+                f"Moved '{item_curr['filename']}' up in queue priority."
             )
 
     def move_selected_item_down(self) -> None:
@@ -3250,18 +3708,24 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             row_idx = None
 
-        if row_idx is not None and 0 <= row_idx < len(self.staged_items) - 1:
-            self.staged_items[row_idx], self.staged_items[row_idx + 1] = (
-                self.staged_items[row_idx + 1],
-                self.staged_items[row_idx],
+        filtered = self.get_filtered_items()
+        if row_idx is not None and 0 <= row_idx < len(filtered) - 1:
+            item_curr = filtered[row_idx]
+            item_next = filtered[row_idx + 1]
+            idx_curr = self.staged_items.index(item_curr)
+            idx_next = self.staged_items.index(item_next)
+            self.staged_items[idx_curr], self.staged_items[idx_next] = (
+                self.staged_items[idx_next],
+                self.staged_items[idx_curr],
             )
             self._refresh_table()
             try:
                 table.move_cursor(row=row_idx + 1)
             except Exception:
                 pass
+            self.update_active_metadata_preview()
             self.update_status_msg(
-                f"Moved '{self.staged_items[row_idx + 1]['filename']}' down in queue priority."
+                f"Moved '{item_curr['filename']}' down in queue priority."
             )
 
     def clear_queue(self) -> None:
@@ -3359,13 +3823,15 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
         help_url = "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors"
 
-        # Check for blocked or invalid items in staged_items if no items exist or no ready items exist
+        filtered = self.get_filtered_items()
         ready_paths = [
-            item["path"] for item in self.staged_items if item["status"] == "Ready"
+            item["path"] for item in filtered if item["status"] == "Ready"
         ]
 
         if not ready_paths:
             blocked_items = [
+                item for item in filtered if item["status"] == "BLOCKED"
+            ] or [
                 item for item in self.staged_items if item["status"] == "BLOCKED"
             ]
             if blocked_items:
@@ -5057,9 +5523,11 @@ class AutoSorterTUI(A11yMixin, App):
         source_dirs: Optional[List[str]] = None,
         skip_wizard: bool = False,
         non_interactive: bool = False,
+        db: Optional[Any] = None,
     ):
         super().__init__()
         self.settings = settings
+        self.db = db
         if source_dirs:
             self.source_dirs = [
                 d if str(d).startswith("/") else os.path.abspath(d)

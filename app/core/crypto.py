@@ -17,6 +17,7 @@ from app.core.exceptions import CryptoError
 logger = logging.getLogger(__name__)
 
 _key_mgmt_lock = threading.RLock()
+_audit_thread_local = threading.local()
 
 try:
     import numpy as np
@@ -189,11 +190,21 @@ class CryptoManager:
 
     @staticmethod
     def rotate_database_key(
-        db_path: Path | str, key_path: Path | str, new_key_str: str | None = None
+        db_path: Path | str,
+        key_path: Path | str,
+        new_key_str: str | None = None,
+        session_id: str = "system",
+        actor: str = "administrator",
+        caller_metadata: dict[str, Any] | None = None,
     ) -> str:
-        """Rotate database key using SessionCrypto."""
+        """Rotate database key using SessionCrypto and emit a key audit record."""
         crypto = SessionCrypto(Path(key_path), Path(db_path))
-        return crypto.rotate_key(new_key_str=new_key_str)
+        return crypto.rotate_key(
+            new_key_str=new_key_str,
+            session_id=session_id,
+            actor=actor,
+            caller_metadata=caller_metadata,
+        )
 
 
 class SessionCrypto:
@@ -490,134 +501,242 @@ class SessionCrypto:
                     "Database accessed but key file is missing or invalid."
                 ) from e
 
-    def get_raw_key(self) -> str | None:
-        """Get the raw key string for SQLCipher."""
+    def get_raw_key(
+        self,
+        session_id: str = "system",
+        actor: str = "system",
+        caller_context: dict[str, Any] | None = None,
+    ) -> str | None:
+        """Get the raw key string for SQLCipher and emit a KEY_EXPORT audit entry."""
         with _key_mgmt_lock:
-            if hasattr(self, "_key") and self._key:
-                return self._key.decode("utf-8")
-            if self._cipher is None:
-                try:
-                    self.get_cipher()
-                except Exception:
-                    pass
-            if hasattr(self, "_key") and self._key:
-                return self._key.decode("utf-8")
-            # Fallback (same hierarchy)
-            key = None
-            try:
-                key_str = keyring.get_password(self.keyring_service, self.keyring_account)
-                if key_str:
-                    key = key_str.encode("utf-8")
-            except Exception as e:
-                logger.warning(f"Keyring lookup failed in get_raw_key: {e}")
-            if key is None and self.isolated_key_path.exists():
-                try:
-                    with open(self.isolated_key_path, "rb") as f:
-                        key = f.read().strip()
-                except OSError as e:
-                    logger.warning(f"Failed to read isolated key in get_raw_key: {e}")
-            if key is None:
-                try:
-                    legacy_key_str = keyring.get_password(
-                        self.keyring_service, self.legacy_md5_keyring_account
-                    )
-                    if legacy_key_str:
-                        key = legacy_key_str.encode("utf-8")
-                except Exception as e:
-                    logger.warning(f"Legacy keyring lookup failed in get_raw_key: {e}")
-            if key is None and self.legacy_md5_isolated_key_path.exists():
-                try:
-                    with open(self.legacy_md5_isolated_key_path, "rb") as f:
-                        key = f.read().strip()
-                except OSError as e:
-                    logger.warning(
-                        f"Failed to read legacy MD5 isolated key in get_raw_key: {e}"
-                    )
-            if key is None and self.key_path.exists():
-                try:
-                    with open(self.key_path, "rb") as f:
-                        key = f.read().strip()
-                except OSError as e:
-                    logger.warning(f"Failed to read key_path in get_raw_key: {e}")
-            return key.decode("utf-8") if key else None
+            key_val = self._get_raw_key_internal()
 
-    def rotate_key(self, new_key_str: str | None = None) -> str:
+        if not getattr(_audit_thread_local, "in_key_audit_logging", False):
+            try:
+                _audit_thread_local.in_key_audit_logging = True
+                from app.core.ledger import TransactionLedger
+
+                db_hash = CryptoManager.derive_db_hash(self.db_path)
+                meta: dict[str, Any] = {
+                    "actor": actor,
+                    "db_path": str(self.db_path),
+                }
+                if caller_context:
+                    meta.update(caller_context)
+
+                status = "SUCCESS" if key_val is not None else "NOT_FOUND"
+                TransactionLedger().log_key_audit(
+                    event_type="KEY_EXPORT",
+                    db_path_hash=db_hash,
+                    session_id=session_id,
+                    status=status,
+                    metadata=meta,
+                )
+            except Exception as audit_err:
+                logger.error(
+                    f"Failed to record KEY_EXPORT audit log in get_raw_key: {audit_err}",
+                    exc_info=True,
+                )
+            finally:
+                _audit_thread_local.in_key_audit_logging = False
+
+        return key_val
+
+    def _get_raw_key_internal(self) -> str | None:
+        """Resolve raw key bytes from keyring, isolated key file, or legacy locations."""
+        if hasattr(self, "_key") and self._key:
+            return self._key.decode("utf-8")
+        if self._cipher is None:
+            try:
+                self.get_cipher()
+            except Exception:
+                pass
+        if hasattr(self, "_key") and self._key:
+            return self._key.decode("utf-8")
+        # Fallback (same hierarchy)
+        key = None
+        try:
+            key_str = keyring.get_password(self.keyring_service, self.keyring_account)
+            if key_str:
+                key = key_str.encode("utf-8")
+        except Exception as e:
+            logger.warning(f"Keyring lookup failed in get_raw_key: {e}")
+        if key is None and self.isolated_key_path.exists():
+            try:
+                with open(self.isolated_key_path, "rb") as f:
+                    key = f.read().strip()
+            except OSError as e:
+                logger.warning(f"Failed to read isolated key in get_raw_key: {e}")
+        if key is None:
+            try:
+                legacy_key_str = keyring.get_password(
+                    self.keyring_service, self.legacy_md5_keyring_account
+                )
+                if legacy_key_str:
+                    key = legacy_key_str.encode("utf-8")
+            except Exception as e:
+                logger.warning(f"Legacy keyring lookup failed in get_raw_key: {e}")
+        if key is None and self.legacy_md5_isolated_key_path.exists():
+            try:
+                with open(self.legacy_md5_isolated_key_path, "rb") as f:
+                    key = f.read().strip()
+            except OSError as e:
+                logger.warning(
+                    f"Failed to read legacy MD5 isolated key in get_raw_key: {e}"
+                )
+        if key is None and self.key_path.exists():
+            try:
+                with open(self.key_path, "rb") as f:
+                    key = f.read().strip()
+            except OSError as e:
+                logger.warning(f"Failed to read key_path in get_raw_key: {e}")
+        return key.decode("utf-8") if key else None
+
+    def rotate_key(
+        self,
+        new_key_str: str | None = None,
+        session_id: str = "system",
+        actor: str = "administrator",
+        caller_metadata: dict[str, Any] | None = None,
+    ) -> str:
         """Safely rotate the session encryption key and rekey any associated SQLCipher database.
 
         Parameters
         ----------
         new_key_str : str | None
             Optional new key string. If None, a new Fernet key is generated.
+        session_id : str
+            Session identifier for audit ledger recording.
+        actor : str
+            Actor context string for audit record.
+        caller_metadata : dict[str, Any] | None
+            Additional contextual metadata to record in key audit log.
 
         Returns
         -------
         str
             The new raw encryption key string.
         """
+        db_hash = CryptoManager.derive_db_hash(self.db_path)
+        meta: dict[str, Any] = {
+            "actor": actor,
+            "db_path": str(self.db_path),
+        }
+        if caller_metadata:
+            meta.update(caller_metadata)
+
         with _key_mgmt_lock:
-            new_key_bytes = (
-                new_key_str.encode("utf-8") if new_key_str else Fernet.generate_key()
-            )
-            new_raw_key = new_key_bytes.decode("utf-8")
+            try:
+                new_key_bytes = (
+                    new_key_str.encode("utf-8") if new_key_str else Fernet.generate_key()
+                )
+                new_raw_key = new_key_bytes.decode("utf-8")
 
-            # 1. Rekey SQLCipher database if DB file exists
-            if self.db_path.exists() and self.db_path.stat().st_size > 0:
+                # 1. Rekey SQLCipher database if DB file exists
+                if self.db_path.exists() and self.db_path.stat().st_size > 0:
+                    try:
+                        from app.core.db_conn import (
+                            clear_connection_cache,
+                            escape_pragma_key,
+                            get_db_connection,
+                        )
+
+                        clear_connection_cache(only_current_and_inactive=False)
+                        conn = get_db_connection(str(self.db_path))
+                        with conn:
+                            escaped_key = escape_pragma_key(new_raw_key)
+                            conn.execute(f"PRAGMA rekey = '{escaped_key}'")
+                        clear_connection_cache(only_current_and_inactive=False)
+                    except Exception as e:
+                        logger.warning(
+                            f"SQLCipher PRAGMA rekey failed during key rotation: {e}"
+                        )
+
+                # 2. Update OS keyring if available
                 try:
-                    from app.core.db_conn import (
-                        clear_connection_cache,
-                        escape_pragma_key,
-                        get_db_connection,
+                    keyring.set_password(
+                        self.keyring_service, self.keyring_account, new_raw_key
                     )
-
-                    clear_connection_cache(only_current_and_inactive=False)
-                    conn = get_db_connection(str(self.db_path))
-                    with conn:
-                        escaped_key = escape_pragma_key(new_raw_key)
-                        conn.execute(f"PRAGMA rekey = '{escaped_key}'")
-                    clear_connection_cache(only_current_and_inactive=False)
                 except Exception as e:
-                    logger.warning(
-                        f"SQLCipher PRAGMA rekey failed during key rotation: {e}"
-                    )
+                    logger.warning(f"Keyring update failed during key rotation: {e}")
 
-            # 2. Update OS keyring if available
-            try:
-                keyring.set_password(
-                    self.keyring_service, self.keyring_account, new_raw_key
-                )
-            except Exception as e:
-                logger.warning(f"Keyring update failed during key rotation: {e}")
-
-            # 3. Update isolated key file
-            self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-            try:
-                os.chmod(self.isolated_dir, 0o700)
-            except OSError:
-                pass
-
-            try:
-                fd = os.open(
-                    str(self.isolated_key_path),
-                    os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-                    0o600,
-                )
-                with os.fdopen(fd, "wb") as f:
-                    f.write(new_key_bytes)
-            except OSError:
-                with open(self.isolated_key_path, "wb") as f:
-                    f.write(new_key_bytes)
+                # 3. Update isolated key file
+                self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
                 try:
-                    os.chmod(self.isolated_key_path, 0o600)
+                    os.chmod(self.isolated_dir, 0o700)
                 except OSError:
                     pass
 
-            # 4. Update internal cipher state
-            self._key = new_key_bytes
-            try:
-                self._cipher = Fernet(new_key_bytes)
-            except Exception:
-                self._cipher = None
-            return new_raw_key
+                try:
+                    fd = os.open(
+                        str(self.isolated_key_path),
+                        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                        0o600,
+                    )
+                    with os.fdopen(fd, "wb") as f:
+                        f.write(new_key_bytes)
+                except OSError:
+                    with open(self.isolated_key_path, "wb") as f:
+                        f.write(new_key_bytes)
+                    try:
+                        os.chmod(self.isolated_key_path, 0o600)
+                    except OSError:
+                        pass
+
+                # 4. Update internal cipher state
+                self._key = new_key_bytes
+                try:
+                    self._cipher = Fernet(new_key_bytes)
+                except Exception:
+                    self._cipher = None
+
+                # Audit SUCCESS
+                if not getattr(_audit_thread_local, "in_key_audit_logging", False):
+                    try:
+                        _audit_thread_local.in_key_audit_logging = True
+                        from app.core.ledger import TransactionLedger
+
+                        TransactionLedger().log_key_audit(
+                            event_type="KEY_ROTATION",
+                            db_path_hash=db_hash,
+                            session_id=session_id,
+                            status="SUCCESS",
+                            metadata=meta,
+                        )
+                    except Exception as audit_err:
+                        logger.error(
+                            f"Failed to record KEY_ROTATION audit log: {audit_err}",
+                            exc_info=True,
+                        )
+                    finally:
+                        _audit_thread_local.in_key_audit_logging = False
+
+                return new_raw_key
+
+            except Exception as rotation_err:
+                # Audit FAILED
+                if not getattr(_audit_thread_local, "in_key_audit_logging", False):
+                    try:
+                        _audit_thread_local.in_key_audit_logging = True
+                        from app.core.ledger import TransactionLedger
+
+                        fail_meta = dict(meta)
+                        fail_meta["error"] = str(rotation_err)
+                        TransactionLedger().log_key_audit(
+                            event_type="KEY_ROTATION",
+                            db_path_hash=db_hash,
+                            session_id=session_id,
+                            status="FAILED",
+                            metadata=fail_meta,
+                        )
+                    except Exception as audit_err:
+                        logger.error(
+                            f"Failed to record FAILED KEY_ROTATION audit log: {audit_err}",
+                            exc_info=True,
+                        )
+                    finally:
+                        _audit_thread_local.in_key_audit_logging = False
+                raise
 
     def encrypt_text(self, text: str) -> bytes:
         """Encrypt a string and return bytes."""
