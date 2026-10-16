@@ -34,6 +34,8 @@ from textual.widgets import (
 )
 from textual.widgets.tree import TreeNode
 
+from app.ui.heading import Heading
+
 logger = logging.getLogger(__name__)
 
 
@@ -261,6 +263,35 @@ class A11yMixin:
                 }
             )
 
+        try:
+            nodes = list(self.query("*"))
+            if nodes:
+                headings = [
+                    w for w in nodes if isinstance(w, Heading) or hasattr(w, "level")
+                ]
+                if isinstance(self, ModalScreen):
+                    has_h1 = any(getattr(h, "level", None) == 1 for h in headings)
+                    if not has_h1:
+                        violations.append(
+                            {
+                                "rule": "A11Y_MISSING_MODAL_H1_HEADING",
+                                "message": f"Modal screen '{type(self).__name__}' lacks a top-level semantic h1 heading.",
+                            }
+                        )
+                levels = [getattr(h, "level", 1) for h in headings if hasattr(h, "level")]
+                prev_level = 0
+                for lvl in levels:
+                    if lvl > prev_level + 1 and prev_level > 0:
+                        violations.append(
+                            {
+                                "rule": "A11Y_HEADING_HIERARCHY_GAP",
+                                "message": f"Heading hierarchy gap detected in '{type(self).__name__}': jumped from h{prev_level} to h{lvl}.",
+                            }
+                        )
+                    prev_level = lvl
+        except Exception:
+            pass
+
         speech_binary = self._get_speech_binary()
 
         return {
@@ -479,7 +510,12 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
-            yield Label(self.modal_title, classes="modal-title")
+            yield Heading(
+                self.modal_title,
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
             if self.extension:
                 yield Label(
                     f"Extension '{self.extension}' is locked unless modified in template",
@@ -607,7 +643,12 @@ class NewFolderModal(A11yMixin, ModalScreen[Optional[str]]):
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
-            yield Label("Create New Target Folder", classes="modal-title")
+            yield Heading(
+                "Create New Target Folder",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
             inp = Input(
                 placeholder="e.g. Financials, Contracts, Invoices",
                 id="input-folder-name",
@@ -712,14 +753,17 @@ class ReassignModal(A11yMixin, ModalScreen[Optional[str]]):
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
-            yield Label(
-                f"Reassign {self.count} Selected File(s)", classes="modal-title"
+            yield Heading(
+                f"Reassign {self.count} Selected File(s)",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
             )
-            yield Label("Select Existing Target Folder:")
+            yield Heading("Select Existing Target Folder:", level=2)
             options = [(f, f) for f in sorted(self.existing_folders)]
             if options:
                 yield Select(options, prompt="Choose folder...", id="select-folder")
-            yield Label("Or Enter New Target Category Folder Name:")
+            yield Heading("Or Enter New Target Category Folder Name:", level=2)
             inp = Input(
                 placeholder="e.g. Drafts, Financials, Archive",
                 id="input-target-folder",
@@ -858,7 +902,12 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
-            yield Label("Select Target Directory", classes="modal-title")
+            yield Heading(
+                "Select Target Directory",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
             inp = Input(
                 value=self.current_dir,
                 placeholder="Enter absolute directory path...",
@@ -1074,7 +1123,12 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
-            yield Label("Application Settings [Ctrl+O]", classes="modal-title")
+            yield Heading(
+                "Application Settings [Ctrl+O]",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
 
             yield Label(
                 "Protected Directories (comma-separated):", classes="field-label"
@@ -1126,7 +1180,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             inp_conc.tooltip = "Worker concurrency thread limit for processing"
             yield inp_conc
 
-            yield Label("Sorting Strategy:", classes="field-label")
+            yield Heading("Sorting Strategy:", level=2, classes="field-label")
             strat = getattr(self.settings, "SORTING_STRATEGY", "default")
             options = [
                 ("Standard Semantic", "default"),
@@ -1145,7 +1199,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             )
             yield sel_strat
 
-            yield Label("Compliance & Renaming Toggles:", classes="field-label")
+            yield Heading("Compliance & Renaming Toggles:", level=2, classes="field-label")
             for sw_cfg in reg.get_tui_switches():
                 sw_key = sw_cfg.get("key", "")
                 sw_id = sw_cfg.get("id", f"switch-{sw_key.lower()}")
@@ -1394,9 +1448,14 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
-            yield Label("Interactive Model Management [Ctrl+M]", classes="modal-title")
+            yield Heading(
+                "Interactive Model Management [Ctrl+M]",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
 
-            yield Label("Model Status:", classes="field-label")
+            yield Heading("Model Status:", level=2, classes="field-label")
             yield Label(
                 "Status: Checking...", id="lbl-model-status", classes="info-label"
             )
@@ -1408,7 +1467,7 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
                 "Verification: Checking...", id="lbl-model-hash", classes="info-label"
             )
 
-            yield Label("Download Progress & Throughput:", classes="field-label")
+            yield Heading("Download Progress & Throughput:", level=2, classes="field-label")
             pb = ProgressBar(total=100, show_percentage=True, id="progress-bar")
             pb.tooltip = "Active model download percentage progress"
             yield pb
@@ -1417,7 +1476,7 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
             lbl_progress.tooltip = "Current download stage and throughput metrics"
             yield lbl_progress
 
-            yield Label("Network Proxy Options:", classes="field-label")
+            yield Heading("Network Proxy Options:", level=2, classes="field-label")
             proxy_val = getattr(self.settings, "PROXY", "") if self.settings else ""
             inp_proxy = Input(
                 value=proxy_val,
@@ -1705,7 +1764,12 @@ class TemplateGalleryModal(A11yMixin, ModalScreen[None]):
     def compose(self) -> ComposeResult:
         """Compose template gallery children."""
         with Vertical(classes="modal-box"):
-            yield Label("Starter Rule Template Gallery", classes="modal-title")
+            yield Heading(
+                "Starter Rule Template Gallery",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
             yield Label(
                 "Select starter template packs to apply. Template rules merge safely without overwriting custom rules:"
             )
@@ -1861,7 +1925,12 @@ class WizardModal(A11yMixin, ModalScreen[None]):
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
-            yield Label("Model Onboarding Wizard [Ctrl+W]", classes="modal-title")
+            yield Heading(
+                "Model Onboarding Wizard [Ctrl+W]",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
             yield Label("Welcome to Smart AutoSorter AI Pro TUI.")
             yield Label("Enable AI semantic categorization consent below:")
 
@@ -1882,7 +1951,7 @@ class WizardModal(A11yMixin, ModalScreen[None]):
                 tooltip="Toggle generation of sample document corpus in active workspace",
             )
 
-            yield Label("Starter Rule Template Packs:", classes="field-label")
+            yield Heading("Starter Rule Template Packs:", level=2, classes="field-label")
             yield Label(
                 "Select pre-built template packs to populate keyword rules & compliance policies:"
             )
@@ -2042,13 +2111,18 @@ class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
     def compose(self) -> ComposeResult:
         """Compose session recovery modal children."""
         with Vertical(classes="modal-box"):
-            yield Label("Interrupted Session Detected", classes="modal-title")
+            yield Heading(
+                "Interrupted Session Detected",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
             yield Label(f"Session ID: {self.session_info.get('session_id', 'Unknown')}")
             yield Label(
                 f"Target Directory: {self.session_info.get('base_dir', 'Unknown')}"
             )
             yield Label(f"Status: {self.session_info.get('status', 'Unknown')}")
-            yield Label("Select session recovery action:")
+            yield Heading("Select session recovery action:", level=2)
 
             with Horizontal(classes="button-row"):
                 btn_clean = Button("Clean", id="btn-clean", variant="error")
@@ -2177,11 +2251,14 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
     def compose(self) -> ComposeResult:
         """Compose shortcut cheat sheet modal children."""
         with Vertical(classes="modal-box"):
-            yield Label(
-                "Keyboard Shortcuts Cheat Sheet [? / F1]", classes="modal-title"
+            yield Heading(
+                "Keyboard Shortcuts Cheat Sheet [? / F1]",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
             )
 
-            yield Label("Navigation & Tree Controls:", classes="section-title")
+            yield Heading("Navigation & Tree Controls:", level=2, classes="section-title")
             yield Label(
                 "  j / k       - Move selection down / up (Vim motions)",
                 classes="shortcut-row",
@@ -2202,7 +2279,7 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
                 classes="shortcut-row",
             )
 
-            yield Label("Application Operations:", classes="section-title")
+            yield Heading("Application Operations:", level=2, classes="section-title")
             yield Label(
                 "  Ctrl+S      - Scan directory and generate plan",
                 classes="shortcut-row",
@@ -2231,7 +2308,7 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
                 classes="shortcut-row",
             )
 
-            yield Label("Help & System:", classes="section-title")
+            yield Heading("Help & System:", level=2, classes="section-title")
             yield Label(
                 "  ? / F1      - Open shortcut cheat sheet", classes="shortcut-row"
             )
@@ -2362,7 +2439,12 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     def compose(self) -> ComposeResult:
         """Compose floating dropzone modal overlay controls."""
         with Vertical(classes="modal-box"):
-            yield Label("Floating DropZone - Quick File Triage", classes="modal-title")
+            yield Heading(
+                "Floating DropZone - Quick File Triage",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
             with Vertical(classes="dropzone-target"):
                 yield Label(
                     "📥 Drop or Paste File / Folder Paths Here",
@@ -2915,7 +2997,12 @@ class ExportReportModal(A11yMixin, ModalScreen[Optional[Tuple[str, str]]]):
     def compose(self) -> ComposeResult:
         """Compose export report modal widgets."""
         with Vertical(classes="modal-box"):
-            yield Label("Export Simulation Report", classes="modal-title")
+            yield Heading(
+                "Export Simulation Report",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
             yield Label(
                 "Select output file path and report format:",
                 classes="modal-subtitle",
@@ -3080,9 +3167,11 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
     def compose(self) -> ComposeResult:
         """Compose verification audit report modal widgets."""
         with Vertical(classes="audit-modal-box"):
-            yield Label(
+            yield Heading(
                 "Post-Sort File Integrity Verification Audit Report",
+                level=1,
                 classes="audit-title",
+                id="modal-title",
             )
             base_dir_str = self.report_data.get("base_dir", "")
             yield Label(f"Target Directory: {base_dir_str}", classes="audit-subtitle")
@@ -3344,8 +3433,11 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     def compose(self) -> ComposeResult:
         """Compose history view and export modal widgets."""
         with Vertical(classes="modal-box"):
-            yield Label(
-                "Session History & Audit Log Export [Ctrl+H]", classes="modal-title"
+            yield Heading(
+                "Session History & Audit Log Export [Ctrl+H]",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
             )
             yield Label(
                 "Select a session row to export activity audit log:",
@@ -3578,9 +3670,11 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
     def compose(self) -> ComposeResult:
         """Compose quarantine vault modal widgets."""
         with Vertical(classes="quarantine-modal-box"):
-            yield Label(
+            yield Heading(
                 "Quarantine Vault & Compliance Audit Review [Ctrl+U]",
+                level=1,
                 classes="quarantine-title",
+                id="modal-title",
             )
             yield Label(
                 "Inspect staged files, view structured audit logs, release, or re-inspect compliance items:",
@@ -3622,8 +3716,9 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
                     yield dt
 
                 with Vertical(id="quarantine-detail-pane"):
-                    lbl = Label(
+                    lbl = Heading(
                         "Select an item to view audit log & details",
+                        level=2,
                         classes="quarantine-detail-header",
                         id="quarantine-detail-title",
                     )
@@ -4260,13 +4355,13 @@ class AutoSorterTUI(A11yMixin, App):
             tree.tooltip = "Interactive tree view of proposed file organization plan"
             yield tree
             with Vertical(id="right-meta-pane"):
-                yield Label("Node Metadata Inspector", classes="meta-header")
+                yield Heading("Node Metadata Inspector", level=2, classes="meta-header")
                 meta_widget = Static(
                     "Select a node in the tree to inspect details.", id="meta-details"
                 )
                 meta_widget.tooltip = "Metadata inspector panel displaying attributes of selected file or folder"
                 yield meta_widget
-                yield Label("Live Execution Log", classes="meta-header")
+                yield Heading("Live Execution Log", level=2, classes="meta-header")
                 tui_log = Log(id="tui-log", classes="tui-log-area")
                 tui_log.tooltip = "Live operation execution log output feed"
                 yield tui_log
