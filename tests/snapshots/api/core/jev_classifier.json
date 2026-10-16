@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "3afd22fa07d68faadcd665426f2e484d8456829a9996090a98e44c464ef68f34"
+    "checksum": "d0271e2d31cc536f9c6478c64cec711ba9cb44b69bd0e824821fe584e2f90f2e"
   },
   "classes": [
     {
@@ -160,6 +160,19 @@
             }
           ],
           "returns": "JevClassificationResult"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "clear_cache",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
         },
         {
           "async": false,

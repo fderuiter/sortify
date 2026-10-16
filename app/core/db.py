@@ -2,6 +2,7 @@
 
 import os
 from pathlib import Path
+from typing import Optional
 
 from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
@@ -279,8 +280,8 @@ class Database:
             except Exception:
                 pass
 
-    def invalidate_cache(self):
-        """Invalidate the in-memory decrypted documents cache."""
+    def invalidate_cache(self, base_dir: Optional[str] = None):
+        """Invalidate the in-memory decrypted documents cache and matrix LRU cache."""
         with self._cache_lock:
             self._cached_base_dir = None
             if self._cached_documents is not None and hasattr(
@@ -288,6 +289,11 @@ class Database:
             ):
                 self._cached_documents.clear()
             self._cached_documents = None
+        if hasattr(self, "matrix_lru_cache") and self.matrix_lru_cache:
+            try:
+                self.matrix_lru_cache.invalidate(base_dir)
+            except Exception:
+                pass
 
     def _populate_cache_if_needed(self, base_dir):
         """Ensure the decrypted documents cache is populated for the base directory."""
@@ -715,6 +721,32 @@ class Database:
                                 )
 
         self.worker.execute_write_async(_write)
+
+    def get_user_verified_target_path(self, base_dir, filepath) -> Optional[str]:
+        """Retrieve the historical user-verified target path for a specific document."""
+        filepath = filepath.replace("\\", "/")
+        self._populate_cache_if_needed(base_dir)
+        with self._cache_lock:
+            if self._cached_base_dir == base_dir and self._cached_documents is not None:
+                if hasattr(self._cached_documents, "get") and not isinstance(
+                    self._cached_documents, list
+                ):
+                    row = self._cached_documents.get(filepath)
+                    if row is not None and len(row) > 3:
+                        return row[3]
+                elif isinstance(self._cached_documents, list):
+                    for row in self._cached_documents:
+                        if row[0] == filepath and len(row) > 3:
+                            return row[3]
+
+        conn = get_db_connection(self.db_path)
+        with conn:
+            cur = conn.execute(
+                "SELECT user_verified_target_path FROM documents WHERE base_dir = ? AND filepath = ?",
+                (base_dir, filepath),
+            )
+            row = cur.fetchone()
+            return row[0] if row else None
 
     def set_user_verified_target_path(self, base_dir, filepath, target_path):
         """Record the historical folder assignment for a specific document path."""
