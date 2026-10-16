@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "27e847f9b990d50573a96c7fe68c19783d918bd967454e935072ff9772ea8b98"
+    "checksum": "4444bc96d3847643dd6ef53860334ff3273c977615835f0e0316f1c86b5f6c30"
   },
   "classes": [
     {
@@ -41,6 +41,21 @@
             }
           ],
           "returns": "list"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "is_critical_error",
+          "parameters": [
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "result"
+            }
+          ],
+          "returns": "bool"
         },
         {
           "async": false,

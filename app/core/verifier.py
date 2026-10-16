@@ -216,6 +216,20 @@ class VerificationEngine:
     """Engine to verify file operations before execution."""
 
     @staticmethod
+    def is_critical_error(result: dict) -> bool:
+        """Return True if verification result contains any blocking critical errors."""
+        if not result or not isinstance(result, dict):
+            return False
+        if result.get("has_critical_errors") is not None:
+            return bool(result.get("has_critical_errors"))
+        return bool(
+            result.get("collisions")
+            or result.get("circular_renames")
+            or result.get("invalid_renames")
+            or result.get("long_paths")
+        )
+
+    @staticmethod
     def sanitize_plan(plan: dict) -> tuple[dict, list[str]]:
         """Sanitize plan folder keys and file targets, returning (sanitized_plan, warnings)."""
         from app.core.path_utils import sanitize_plan as _sp
@@ -778,8 +792,16 @@ class VirtualFilesystemTracker:
             and len(unconfirmed_renames) == 0
         )
 
+        has_critical_errors = (
+            len(collisions) > 0
+            or len(circular_renames) > 0
+            or len(invalid_renames) > 0
+            or len(long_paths) > 0
+        )
+
         return {
             "success": success,
+            "has_critical_errors": has_critical_errors,
             "collisions": collisions,
             "circular_renames": circular_renames,
             "broken_links": broken_links,
