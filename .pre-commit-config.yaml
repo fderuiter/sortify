@@ -29,7 +29,7 @@ repos:
         name: Validate Documentation
         entry: uv run docs --check --no-build
         language: system
-        files: '^(docs/|notebooks/|scripts/.*\.py|mkdocs\.yml|README\.md|PRIVACY\.md|SECURITY\.md)'
+        files: '^(docs/|notebooks/|scripts/.*\.py|app/cli/.*\.py|mkdocs\.yml|README\.md|PRIVACY\.md|SECURITY\.md)'
         pass_filenames: false
       - id: validate-diagram-artifacts
         name: Validate Diagram Artifacts and Mermaid Compilation

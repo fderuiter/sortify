@@ -48,6 +48,7 @@ def sanitize_svg(svg: str) -> str:
         .replace("&#x2F;", "/")
         .replace("&#x2f;", "/")
     )
+    svg = re.sub(r"<tspan[^>]*>[A-Za-z]:</tspan>", "", svg)
     svg = re.sub(r"(?:[A-Za-z]:)?[/\\]+dummy", "/dummy", svg)
     svg = re.sub(
         r"/dummy([^<\"]*)",

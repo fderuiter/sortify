@@ -841,9 +841,17 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
         self.current_dir = current_dir
         self.added_via_btn = False
         if source_dirs:
-            self.selected_sources = [os.path.abspath(d) for d in source_dirs if d]
+            self.selected_sources = [
+                d if str(d).startswith("/") else os.path.abspath(d)
+                for d in source_dirs
+                if d
+            ]
         elif current_dir:
-            self.selected_sources = [os.path.abspath(current_dir)]
+            self.selected_sources = [
+                current_dir
+                if str(current_dir).startswith("/")
+                else os.path.abspath(current_dir)
+            ]
         else:
             self.selected_sources = []
 
@@ -3617,7 +3625,11 @@ class AutoSorterTUI(A11yMixin, App):
         super().__init__()
         self.settings = settings
         if source_dirs:
-            self.source_dirs = [os.path.abspath(d) for d in source_dirs if d]
+            self.source_dirs = [
+                d if str(d).startswith("/") else os.path.abspath(d)
+                for d in source_dirs
+                if d
+            ]
             self.base_dir = self.source_dirs[0] if self.source_dirs else ""
         elif base_dir and str(base_dir).startswith("/"):
             self.base_dir = str(base_dir)
