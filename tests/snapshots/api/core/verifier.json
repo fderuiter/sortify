@@ -1,12 +1,57 @@
 {
   "_metadata": {
-    "checksum": "c51a2a646af31b4fc55eac9864b3347a20eb917d32a8c1f91d805cc684700a9e"
+    "checksum": "37198bc83154507a1e45b415b306734cb05a0dc331d14d98a1d87be7f3d8e8c0"
   },
   "classes": [
     {
       "class_name": "VerificationEngine",
       "decorators": [],
       "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "apply_deduplication_selections",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "plan"
+            },
+            {
+              "annotation": "dict[str, str]",
+              "default": null,
+              "name": "selections"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "get_duplicate_groups",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "plan"
+            }
+          ],
+          "returns": "list[dict]"
+        },
         {
           "async": false,
           "decorators": [
