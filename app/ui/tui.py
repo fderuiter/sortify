@@ -4793,8 +4793,7 @@ class AutoSorterTUI(A11yMixin, App):
                 if count_val is not None:
                     u_type = unit_type or "items"
                     status_msg = f"[{pct:.0f}%] ({count_val} {u_type}) {stage_text}"
-                sb = self.query_one("#status-bar", Static)
-                sb.update(f"{self._get_ai_status_badge()} {status_msg}")
+                self.update_status(status_msg)
                 try:
                     log_w = self.query_one("#tui-log", Log)
                     log_w.write_line(status_msg)
