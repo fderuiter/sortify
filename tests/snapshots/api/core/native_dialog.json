@@ -1,0 +1,66 @@
+{
+  "_metadata": {
+    "checksum": "6340d65fae4900aed30dd3e4f2647f670cada4a9f857e32968f9e8043c63e7fd"
+  },
+  "classes": [
+    {
+      "class_name": "NativeDialogError",
+      "decorators": [],
+      "methods": []
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "decode_base64_to_path",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base64_str"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "encode_path_to_base64",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "path"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "select_native_directory",
+      "parameters": [
+        {
+          "annotation": "Optional[str]",
+          "default": "None",
+          "name": "initial_dir"
+        }
+      ],
+      "returns": "Optional[str]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "select_native_directory_powershell",
+      "parameters": [
+        {
+          "annotation": "Optional[str]",
+          "default": "None",
+          "name": "initial_dir"
+        }
+      ],
+      "returns": "Optional[str]"
+    }
+  ]
+}

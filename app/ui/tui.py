@@ -884,6 +884,9 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
                 p_docs.tooltip = "Select user Documents folder quick preset"
                 yield p_docs
             with Horizontal(classes="button-row"):
+                btn_browse = Button("Native Browse", id="btn-browse", variant="default")
+                btn_browse.tooltip = "Launch native OS directory browser dialog"
+                yield btn_browse
                 btn_add = Button("Add Path", id="btn-add-dir", variant="default")
                 btn_add.tooltip = "Add current path to multi-root source list"
                 yield btn_add
@@ -1005,6 +1008,129 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     def action_submit(self) -> None:
         """Submit input on Enter key press."""
         self.action_confirm()
+
+    @on(Button.Pressed, "#btn-browse")
+    @work(thread=True)
+    def action_native_browse(self) -> None:
+        """Launch native OS directory browser dialog in background worker thread."""
+        from app.core.native_dialog import NativeDialogError, select_native_directory
+
+        curr_val = ""
+        try:
+            inp = self.query_one("#input-dir", Input)
+            curr_val = inp.value.strip()
+        except Exception:
+            pass
+
+        initial_dir = curr_val or self.current_dir
+
+        try:
+            chosen = select_native_directory(initial_dir)
+            if chosen:
+                self.app.call_from_thread(self._on_native_dir_selected, chosen)
+        except NativeDialogError as exc:
+            self.app.call_from_thread(self._on_native_dir_failed, str(exc))
+        except Exception as exc:
+            self.app.call_from_thread(self._on_native_dir_failed, str(exc))
+
+    def _on_native_dir_selected(self, path: str) -> None:
+        """Handle decoded UTF-8 path string from native folder browser."""
+        abs_p = os.path.abspath(os.path.expanduser(path))
+        try:
+            inp = self.query_one("#input-dir", Input)
+            inp.value = abs_p
+        except Exception:
+            pass
+        if abs_p not in self.selected_sources:
+            self.selected_sources.append(abs_p)
+            self._update_sources_widget()
+        self.announce(f"Selected native folder path: {abs_p}")
+
+    def _on_native_dir_failed(self, reason: str) -> None:
+        """Handle native folder dialog failure by falling back to manual path entry."""
+        from app.ui.notifications import notify
+
+        msg = "Native folder browser failed to launch. Please enter path manually."
+        self.announce(msg, priority="assertive")
+        notify(msg, type="warning")
+        try:
+            inp = self.query_one("#input-dir", Input)
+            inp.focus()
+        except Exception:
+            pass
+
+
+class ManualPathFallbackModal(A11yMixin, ModalScreen[Optional[str]]):
+    """Fallback modal dialog for manual directory path entry when native selection fails."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    ManualPathFallbackModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $warning;
+        width: 80%;
+        max-width: 70;
+        height: auto;
+    }
+    """
+
+    def __init__(self, current_dir: str = "", reason: str = ""):
+        super().__init__()
+        self.current_dir = current_dir
+        self.reason = reason
+
+    def compose(self) -> ComposeResult:
+        """Compose modal fallback UI children."""
+        with Vertical(classes="modal-box"):
+            yield Label("Manual Directory Entry", classes="modal-title")
+            if self.reason:
+                yield Label(f"Native tool notice: {self.reason}", id="lbl-reason")
+            yield Label("Please enter target directory path manually:")
+            inp = Input(
+                value=self.current_dir,
+                placeholder="Enter absolute folder path...",
+                id="input-fallback-dir",
+            )
+            yield inp
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button("Cancel", id="btn-cancel-fallback", variant="default")
+                yield btn_cancel
+                btn_confirm = Button(
+                    "Confirm", id="btn-confirm-fallback", variant="primary"
+                )
+                yield btn_confirm
+
+    def on_mount(self) -> None:
+        """Focus input field on mount and announce screen reader alert."""
+        self.query_one("#input-fallback-dir", Input).focus()
+        self.announce("Opened manual directory entry fallback dialog.")
+
+    @on(Button.Pressed, "#btn-confirm-fallback")
+    @on(Input.Submitted, "#input-fallback-dir")
+    def action_confirm(self) -> None:
+        """Confirm manual path entry."""
+        val = self.query_one("#input-fallback-dir", Input).value.strip()
+        if val:
+            abs_p = os.path.abspath(os.path.expanduser(val))
+            self.announce(f"Confirmed manual directory entry: '{abs_p}'")
+            self.dismiss(abs_p)
+        else:
+            self.announce("Cancelled manual directory entry.")
+            self.dismiss(None)
+
+    @on(Button.Pressed, "#btn-cancel-fallback")
+    def action_cancel(self) -> None:
+        """Cancel manual path entry."""
+        self.announce("Cancelled manual directory entry.")
+        self.dismiss(None)
 
 
 class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):

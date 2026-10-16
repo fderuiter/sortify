@@ -1750,3 +1750,61 @@ def test_directory_select_modal_nonexistent_custom_directory(temp_workspace, tmp
             )
 
     asyncio.run(_test())
+
+
+def test_directory_select_modal_native_browse_success(temp_workspace):
+    """Verify pressing Native Browse populates decoded directory path."""
+    from app.ui.tui import AutoSorterTUI, DirectorySelectModal
+
+    target_path = os.path.join(temp_workspace, "Données_Selection")
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            modal = DirectorySelectModal(current_dir=str(temp_workspace))
+            app.push_screen(modal)
+            await pilot.pause(0.05)
+
+            with patch(
+                "app.core.native_dialog.select_native_directory",
+                return_value=target_path,
+            ):
+                modal._on_native_dir_selected(target_path)
+                await pilot.pause(0.05)
+
+                inp = modal.query_one("#input-dir")
+                assert inp.value == os.path.abspath(target_path)
+
+    asyncio.run(_test())
+
+
+def test_manual_path_fallback_modal(temp_workspace):
+    """Verify ManualPathFallbackModal renders and handles confirmation and cancel."""
+    from app.ui.tui import AutoSorterTUI, ManualPathFallbackModal
+
+    target_path = os.path.join(temp_workspace, "Manual_Fallback_Dir")
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            modal = ManualPathFallbackModal(
+                current_dir=str(temp_workspace), reason="PowerShell execution disabled"
+            )
+            app.push_screen(modal)
+            await pilot.pause(0.05)
+
+            assert app.screen is modal
+            inp = modal.query_one("#input-fallback-dir")
+            inp.value = target_path
+
+            modal.query_one("#btn-confirm-fallback").press()
+            await pilot.pause(0.05)
+
+    asyncio.run(_test())
+
