@@ -3,7 +3,9 @@
 import asyncio
 import contextlib
 import logging
+import multiprocessing
 import os
+import sys
 import threading
 import time
 from dataclasses import dataclass, field
@@ -26,6 +28,68 @@ from app.core.scanner import get_files_recursively
 from app.core.session import AppSession
 
 logger = logging.getLogger("app.daemon")
+
+
+def lower_process_priority() -> None:
+    """Immediately lower the scheduling priority of the current process across Linux, macOS, and Windows upon startup."""
+    try:
+        import psutil
+
+        p = psutil.Process()
+        if sys.platform == "win32":
+            p.nice(psutil.BELOW_NORMAL_PRIORITY_CLASS)
+        else:
+            p.nice(19)
+        return
+    except Exception:
+        pass
+
+    # Standard library fallback if psutil is not available or fails
+    if sys.platform == "win32":
+        try:
+            import ctypes
+
+            BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
+            handle = ctypes.windll.kernel32.GetCurrentProcess()
+            ctypes.windll.kernel32.SetPriorityClass(
+                handle, BELOW_NORMAL_PRIORITY_CLASS
+            )
+        except Exception:
+            pass
+    else:
+        if hasattr(os, "nice"):
+            try:
+                current = os.nice(0)
+                if current < 19:
+                    os.nice(19 - current)
+            except Exception:
+                pass
+
+
+def _run_sorting_process_entry(
+    base_dir: str,
+    config_filepath: Optional[str] = None,
+    cancel_event: Optional[Any] = None,
+):
+    """Entry point for the process-isolated background sorting worker subprocess."""
+    lower_process_priority()
+    try:
+        from app.config import AppSettings
+
+        settings = (
+            AppSettings(filepath=config_filepath)
+            if config_filepath
+            else AppSettings()
+        )
+        settings.load()
+        daemon = ContinuousWatchdogDaemon(settings, base_dir)
+        daemon._is_running = True
+        event_to_pass = (
+            cancel_event if cancel_event is not None else threading.Event()
+        )
+        daemon._run_sorting_sync(event_to_pass)
+    except Exception as e:
+        logger.error(f"Error in process-isolated sorting worker: {e}", exc_info=True)
 
 
 @dataclass
@@ -153,6 +217,11 @@ class ContinuousWatchdogDaemon:
 
         # We run the actual sorting loop on a dedicated background execution thread
         self._execution_thread = None
+
+        # Process-isolated worker management
+        self._sorting_process: Optional[multiprocessing.Process] = None
+        self._proc_cancel_event: Optional[Any] = None
+        self._rerun_pending: bool = False
 
     @property
     def is_paused(self) -> bool:
@@ -1063,6 +1132,9 @@ class ContinuousWatchdogDaemon:
             self._recent_events.clear()
             self._active_path_locks.clear()
             self._active_triage_paths.clear()
+            self._sorting_process = None
+            self._proc_cancel_event = None
+            self._rerun_pending = False
 
         logger.info(f"Starting continuous watchdog daemon for: {self.base_dir}")
 
@@ -1089,13 +1161,43 @@ class ContinuousWatchdogDaemon:
             self._is_running = False
             self._move_ref_count = 0
             self._pending_dirty = False
+            self._rerun_pending = False
             self._active_move_paths.clear()
             self._cancel_event.set()
+            if self._proc_cancel_event is not None:
+                try:
+                    self._proc_cancel_event.set()
+                except Exception:
+                    pass
             self._first_event_time = None
 
             if self._debounce_timer:
                 self._debounce_timer.cancel()
                 self._debounce_timer = None
+
+            proc = self._sorting_process
+            self._sorting_process = None
+            self._proc_cancel_event = None
+
+        if proc is not None:
+            if proc.is_alive():
+                try:
+                    proc.terminate()
+                    proc.join(timeout=3.0)
+                    if proc.is_alive():
+                        proc.kill()
+                        proc.join(timeout=1.0)
+                except Exception as e:
+                    logger.error(f"Error terminating background worker process: {e}")
+            else:
+                try:
+                    proc.join(timeout=1.0)
+                except Exception:
+                    pass
+            try:
+                proc.close()
+            except Exception:
+                pass
 
         if self._ipc_server:
             try:
@@ -1157,6 +1259,11 @@ class ContinuousWatchdogDaemon:
 
             # Interrupt current run immediately by setting the cancel event
             self._cancel_event.set()
+            if self._proc_cancel_event is not None:
+                try:
+                    self._proc_cancel_event.set()
+                except Exception:
+                    pass
 
             # Reset cancel event for the upcoming run
             self._cancel_event = threading.Event()
@@ -1174,20 +1281,76 @@ class ContinuousWatchdogDaemon:
             self._debounce_timer.start()
 
     def _schedule_run(self, cancel_event):
-        """Timer callback that executes the run on a background thread."""
+        """Timer callback that executes or queues the worker subprocess execution."""
         with self._lock:
-            if not self._is_running or cancel_event.is_set():
+            if not self._is_running or (
+                cancel_event is not None and cancel_event.is_set()
+            ):
                 return
             self._first_event_time = None
 
-            from app.core.shared_registry import ContextPropagatingThread
+            if self._sorting_process is not None and self._sorting_process.is_alive():
+                self._rerun_pending = True
+                logger.info(
+                    "Background sorting worker process active; queueing subsequent run."
+                )
+                return
 
-            # Start a background execution thread for sorting
-            # (Ensures we don't block the timer thread or watchdog event handling)
-            thread = ContextPropagatingThread(
-                target=self._run_sorting_sync, args=(cancel_event,), daemon=True
+            self._spawn_sorting_process(cancel_event)
+
+    def _spawn_sorting_process(self, cancel_event=None):
+        """Spawn a process-isolated worker subprocess to execute the sorting routine."""
+        with self._lock:
+            if not self._is_running:
+                return
+            self._rerun_pending = False
+
+            config_filepath = getattr(self.settings, "filepath", None)
+
+            ctx = multiprocessing.get_context("spawn")
+            mp_cancel_event = ctx.Event()
+            self._proc_cancel_event = mp_cancel_event
+
+            proc = ctx.Process(
+                target=_run_sorting_process_entry,
+                args=(self.base_dir, config_filepath, mp_cancel_event),
+                daemon=False,
             )
-            thread.start()
+            self._sorting_process = proc
+            proc.start()
+
+            monitor_thread = threading.Thread(
+                target=self._monitor_sorting_process, args=(proc,), daemon=True
+            )
+            monitor_thread.start()
+
+    def _monitor_sorting_process(self, proc: Any):
+        """Monitor the lifecycle of the worker subprocess and trigger queued runs upon completion."""
+        try:
+            proc.join()
+        except Exception:
+            pass
+
+        try:
+            proc.close()
+        except Exception:
+            pass
+
+        should_rerun = False
+        with self._lock:
+            if self._sorting_process is proc:
+                self._sorting_process = None
+                self._proc_cancel_event = None
+
+            if self._is_running and self._rerun_pending:
+                self._rerun_pending = False
+                should_rerun = True
+
+        if should_rerun:
+            logger.info(
+                "Active sorting process completed. Executing queued sorting run."
+            )
+            self.trigger_recalculation()
 
     def _run_sorting_sync(self, cancel_event):
         """Run the core synchronous sorting runner."""

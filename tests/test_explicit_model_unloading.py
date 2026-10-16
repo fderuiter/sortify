@@ -112,7 +112,8 @@ def test_auto_reinitialization_on_demand(mocker):
     """Test that models automatically re-initialize on demand after prior unload."""
     registry = SharedModelRegistry.get_instance()
 
-    mocker.patch("onnxruntime.InferenceSession", return_value=MagicMock())
+    mock_ort = MagicMock()
+    mocker.patch.dict("sys.modules", {"onnxruntime": mock_ort})
     mocker.patch("os.path.exists", return_value=True)
 
     session1 = registry.get_onnx_session("/fake/path.onnx")
