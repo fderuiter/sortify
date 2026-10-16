@@ -698,6 +698,12 @@ class AppSettings:
                 SharedModelRegistry.get_instance().unload_all_models()
             except Exception as e:
                 logging.debug(f"Failed to unload in-memory models on consent change: {e}")
+            try:
+                from app.core.db import Database
+
+                Database.scrub_all_vectors()
+            except Exception as e:
+                logging.debug(f"Failed to scrub database vectors on consent change: {e}")
 
         callbacks = []
         if hasattr(self, "_observer_lock") and hasattr(self, "_observers"):
@@ -784,7 +790,7 @@ class AppSettings:
 
 
 def _on_ai_consent_changed_core(key: str, value: Any) -> None:
-    """Core observer callback: unload all in-memory AI models when consent is revoked or disabled."""
+    """Core observer callback: unload all in-memory AI models and scrub database vectors when consent is revoked or disabled."""
     if value is not True:
         try:
             from app.core.shared_registry import SharedModelRegistry
@@ -792,6 +798,13 @@ def _on_ai_consent_changed_core(key: str, value: Any) -> None:
             SharedModelRegistry.get_instance().unload_all_models()
         except Exception as e:
             logging.debug(f"Failed to unload in-memory models on consent change: {e}")
+
+        try:
+            from app.core.db import Database
+
+            Database.scrub_all_vectors()
+        except Exception as e:
+            logging.debug(f"Failed to scrub database vectors on consent change: {e}")
 
 
 AppSettings.add_observer("AI_CONSENT_GRANTED", _on_ai_consent_changed_core)
