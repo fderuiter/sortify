@@ -54,16 +54,16 @@ class A11yMixin:
 
     def update_status(self, text: str) -> None:
         """Update visual status region on self or parent application."""
-        if (
-            hasattr(self, "app")
-            and self.app
-            and self.app is not self
-            and hasattr(self.app, "update_status")
-        ):
-            try:
+        try:
+            if (
+                hasattr(self, "app")
+                and self.app
+                and self.app is not self
+                and hasattr(self.app, "update_status")
+            ):
                 self.app.update_status(text)
-            except Exception:
-                pass
+        except Exception:
+            pass
 
     def join_speech_thread(self, timeout: float = 1.0) -> None:
         """Wait for active speech synthesis thread to finish."""
@@ -148,17 +148,17 @@ class A11yMixin:
 
         forwarded = False
         # Forward to parent app if available
-        if (
-            hasattr(self, "app")
-            and self.app
-            and self.app is not self
-            and hasattr(self.app, "announce")
-        ):
-            try:
+        try:
+            if (
+                hasattr(self, "app")
+                and self.app
+                and self.app is not self
+                and hasattr(self.app, "announce")
+            ):
                 self.app.announce(message, priority=priority, help_url=help_url)
                 forwarded = True
-            except Exception:
-                pass
+        except Exception:
+            pass
 
         if not forwarded:
             # Check speech binary presence via _get_speech_binary before launching subprocess
@@ -298,7 +298,9 @@ class A11yMixin:
                                 "message": f"Modal screen '{type(self).__name__}' lacks a top-level semantic h1 heading.",
                             }
                         )
-                levels = [getattr(h, "level", 1) for h in headings if hasattr(h, "level")]
+                levels = [
+                    getattr(h, "level", 1) for h in headings if hasattr(h, "level")
+                ]
                 prev_level = 0
                 for lvl in levels:
                     if lvl > prev_level + 1 and prev_level > 0:
@@ -876,6 +878,10 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
         color: $accent;
         margin-bottom: 1;
     }
+    .error-banner {
+        color: $error;
+        text-style: bold;
+    }
     .preset-row {
         margin-top: 1;
         margin-bottom: 1;
@@ -919,6 +925,54 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
         else:
             self.selected_sources = []
 
+    @staticmethod
+    def _validate_directory_path(path_str: str) -> Optional[str]:
+        """Validate if path_str exists, is a directory, and allows read access.
+
+        Returns error message string if invalid, or None if valid.
+        """
+        if not path_str or not path_str.strip():
+            return "Directory path cannot be empty."
+
+        clean_path = path_str.strip()
+        expanded = os.path.abspath(os.path.expanduser(clean_path))
+
+        try:
+            if not os.path.exists(expanded):
+                return f"Target directory does not exist: {clean_path}"
+
+            if not os.path.isdir(expanded):
+                return f"Path is not a directory: {clean_path}"
+
+            if not os.access(expanded, os.R_OK):
+                return f"Permission denied for directory: {clean_path}"
+        except Exception as exc:
+            return f"Invalid directory path: {exc}"
+
+        return None
+
+    def _show_error(self, message: str) -> None:
+        """Display inline error banner, announce message, and focus input."""
+        try:
+            lbl = self.query_one("#lbl-error", Static)
+            lbl.update(message)
+        except Exception:
+            pass
+        self.announce(message, priority="assertive")
+        try:
+            self.query_one("#input-dir", Input).focus()
+        except Exception:
+            pass
+
+    @on(Input.Changed, "#input-dir")
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Clear error banner when user changes input text."""
+        try:
+            lbl = self.query_one("#lbl-error", Static)
+            lbl.update("")
+        except Exception:
+            pass
+
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
@@ -935,6 +989,7 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
             )
             inp.tooltip = "Enter absolute target directory path to scan"
             yield inp
+            yield Static("", id="lbl-error", classes="error-banner")
             yield Label("Selected Sources:", id="lbl-sources")
             yield Static(
                 self._format_sources_display(),
@@ -999,13 +1054,23 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     def action_add_dir(self) -> None:
         """Add input directory path to selected source list."""
         val = self.query_one("#input-dir", Input).value.strip()
-        if val:
-            abs_p = os.path.abspath(os.path.expanduser(val))
-            if abs_p not in self.selected_sources:
-                self.selected_sources.append(abs_p)
-                self.announce(f"Added directory path: {abs_p}")
-                self._update_sources_widget()
-            self.added_via_btn = True
+        if not val:
+            return
+        err = self._validate_directory_path(val)
+        if err:
+            self._show_error(err)
+            return
+
+        abs_p = os.path.abspath(os.path.expanduser(val))
+        if abs_p not in self.selected_sources:
+            self.selected_sources.append(abs_p)
+            self.announce(f"Added directory path: {abs_p}")
+            self._update_sources_widget()
+        self.added_via_btn = True
+        try:
+            self.query_one("#lbl-error", Static).update("")
+        except Exception:
+            pass
 
     @on(Button.Pressed, "#preset-demo")
     def action_demo(self) -> None:
@@ -1031,6 +1096,10 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     def action_downloads(self) -> None:
         """Select user Downloads directory preset."""
         path = os.path.expanduser("~/Downloads")
+        err = self._validate_directory_path(path)
+        if err:
+            self._show_error(err)
+            return
         self.announce(f"Selected Downloads preset: {path}")
         self.dismiss(path)
 
@@ -1038,6 +1107,10 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     def action_documents(self) -> None:
         """Select user Documents directory preset."""
         path = os.path.expanduser("~/Documents")
+        err = self._validate_directory_path(path)
+        if err:
+            self._show_error(err)
+            return
         self.announce(f"Selected Documents preset: {path}")
         self.dismiss(path)
 
@@ -1046,6 +1119,11 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
         """Confirm directory selection."""
         val = self.query_one("#input-dir", Input).value.strip()
         if val:
+            err = self._validate_directory_path(val)
+            if err:
+                self._show_error(err)
+                return
+
             abs_p = os.path.abspath(os.path.expanduser(val))
             if not self.added_via_btn and len(self.selected_sources) <= 1:
                 self.announce(f"Confirmed directory selection: '{abs_p}'")
@@ -1056,6 +1134,12 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
                 self.selected_sources.append(abs_p)
 
         if self.selected_sources:
+            for source in self.selected_sources:
+                err = self._validate_directory_path(source)
+                if err:
+                    self._show_error(err)
+                    return
+
             self.announce(f"Confirmed directory selection: '{self.selected_sources}'")
             res = (
                 self.selected_sources
@@ -1170,7 +1254,9 @@ class ManualPathFallbackModal(A11yMixin, ModalScreen[Optional[str]]):
             )
             yield inp
             with Horizontal(classes="button-row"):
-                btn_cancel = Button("Cancel", id="btn-cancel-fallback", variant="default")
+                btn_cancel = Button(
+                    "Cancel", id="btn-cancel-fallback", variant="default"
+                )
                 yield btn_cancel
                 btn_confirm = Button(
                     "Confirm", id="btn-confirm-fallback", variant="primary"
@@ -1286,7 +1372,8 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             with TabbedContent(initial="tab-general", id="settings-tabbed-content"):
                 with TabPane("General Settings", id="tab-general"):
                     yield Label(
-                        "Protected Directories (comma-separated):", classes="field-label"
+                        "Protected Directories (comma-separated):",
+                        classes="field-label",
                     )
                     prot = getattr(
                         self.settings,
@@ -1294,23 +1381,31 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                         getattr(self.settings, "PROTECTED_DIRECTORIES", []),
                     )
                     prot_str = (
-                        ", ".join(prot) if isinstance(prot, (list, tuple, set)) else str(prot)
+                        ", ".join(prot)
+                        if isinstance(prot, (list, tuple, set))
+                        else str(prot)
                     )
                     inp_prot = Input(
-                        value=prot_str, placeholder="/path/1, /path/2", id="input-protected"
+                        value=prot_str,
+                        placeholder="/path/1, /path/2",
+                        id="input-protected",
                     )
-                    inp_prot.tooltip = (
-                        "Comma-separated protected directories exempt from automated moves"
-                    )
+                    inp_prot.tooltip = "Comma-separated protected directories exempt from automated moves"
                     yield inp_prot
 
-                    yield Label("Ignored Extensions (comma-separated):", classes="field-label")
+                    yield Label(
+                        "Ignored Extensions (comma-separated):", classes="field-label"
+                    )
                     ign = getattr(self.settings, "IGNORED_EXTENSIONS", [])
                     ign_str = (
-                        ", ".join(ign) if isinstance(ign, (list, tuple, set)) else str(ign)
+                        ", ".join(ign)
+                        if isinstance(ign, (list, tuple, set))
+                        else str(ign)
                     )
                     inp_ign = Input(
-                        value=ign_str, placeholder=".tmp, .bak, .log", id="input-ignored"
+                        value=ign_str,
+                        placeholder=".tmp, .bak, .log",
+                        id="input-ignored",
                     )
                     inp_ign.tooltip = (
                         "Comma-separated file extensions to ignore during scanning"
@@ -1319,8 +1414,12 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
                     yield Label("Max Folders:", classes="field-label")
                     max_f_str = str(getattr(self.settings, "MAX_FOLDERS", 12))
-                    inp_max_f = Input(value=max_f_str, placeholder="12", id="input-max-folders")
-                    inp_max_f.tooltip = "Maximum subdirectories generated during sorting"
+                    inp_max_f = Input(
+                        value=max_f_str, placeholder="12", id="input-max-folders"
+                    )
+                    inp_max_f.tooltip = (
+                        "Maximum subdirectories generated during sorting"
+                    )
                     yield inp_max_f
 
                     yield Label("Worker Concurrency (Threads):", classes="field-label")
@@ -1331,9 +1430,28 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                             getattr(self.settings, "WORKER_CONCURRENCY", 4),
                         )
                     )
-                    inp_conc = Input(value=conc_str, placeholder="4", id="input-concurrency")
+                    inp_conc = Input(
+                        value=conc_str, placeholder="4", id="input-concurrency"
+                    )
                     inp_conc.tooltip = "Worker concurrency thread limit for processing"
                     yield inp_conc
+
+                    yield Label("Conflict Policy:", classes="field-label")
+                    conflict_pol = getattr(self.settings, "CONFLICT_POLICY", "rename")
+                    conflict_options = [
+                        ("Overwrite", "overwrite"),
+                        ("Auto-Rename", "rename"),
+                        ("Skip", "skip"),
+                    ]
+                    sel_conflict = Select(
+                        options=conflict_options,
+                        value=conflict_pol,
+                        id="select-conflict-policy",
+                    )
+                    sel_conflict.tooltip = (
+                        "Select collision handling strategy for conflicting target files"
+                    )
+                    yield sel_conflict
 
                 with TabPane("AI & Privacy Settings", id="tab-ai-privacy"):
                     yield Heading("Sorting Strategy:", level=2, classes="field-label")
@@ -1349,13 +1467,17 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     options.extend(reg.get_tui_strategy_options())
                     if not any(opt[1] == strat for opt in options):
                         options.append((f"Extension ({strat})", strat))
-                    sel_strat = Select(options=options, value=strat, id="select-strategy")
+                    sel_strat = Select(
+                        options=options, value=strat, id="select-strategy"
+                    )
                     sel_strat.tooltip = (
                         "Select sorting strategy engine for document classification"
                     )
                     yield sel_strat
 
-                    yield Heading("Compliance & Renaming Toggles:", level=2, classes="field-label")
+                    yield Heading(
+                        "Compliance & Renaming Toggles:", level=2, classes="field-label"
+                    )
                     for sw_cfg in reg.get_tui_switches():
                         sw_key = sw_cfg.get("key", "")
                         sw_id = sw_cfg.get("id", f"switch-{sw_key.lower()}")
@@ -1378,7 +1500,9 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
                     yield LabeledSwitch(
                         label="AI Contextual Renaming",
-                        value=bool(getattr(self.settings, "CONTEXTUAL_RENAMING", False)),
+                        value=bool(
+                            getattr(self.settings, "CONTEXTUAL_RENAMING", False)
+                        ),
                         switch_id="switch-contextual-renaming",
                         tooltip="Toggle AI contextual file renaming",
                     )
@@ -1484,7 +1608,9 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         try:
             clin_renaming = self.query_one("#switch-clinical-renaming", Switch).value
         except Exception:
-            clin_renaming = bool(getattr(self.settings, "CLINICAL_SMART_RENAMING", False))
+            clin_renaming = bool(
+                getattr(self.settings, "CLINICAL_SMART_RENAMING", False)
+            )
         try:
             ctx_renaming = self.query_one("#switch-contextual-renaming", Switch).value
         except Exception:
@@ -1494,11 +1620,19 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             ai_consent = bool(getattr(self.settings, "AI_CONSENT_GRANTED", False))
 
+        try:
+            conflict_pol = self.query_one("#select-conflict-policy", Select).value
+            if conflict_pol == Select.BLANK:
+                conflict_pol = "rename"
+        except Exception:
+            conflict_pol = getattr(self.settings, "CONFLICT_POLICY", "rename")
+
         res = {
             "PROTECTED_PATHS": p_list,
             "IGNORED_EXTENSIONS": i_list,
             "MAX_WORKERS": conc,
             "MAX_FOLDERS": max_f,
+            "CONFLICT_POLICY": conflict_pol,
             "SORTING_STRATEGY": strat,
             "CLINICAL_SMART_RENAMING": clin_renaming,
             "CONTEXTUAL_RENAMING": ctx_renaming,
@@ -1622,7 +1756,9 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
                 "Verification: Checking...", id="lbl-model-hash", classes="info-label"
             )
 
-            yield Heading("Download Progress & Throughput:", level=2, classes="field-label")
+            yield Heading(
+                "Download Progress & Throughput:", level=2, classes="field-label"
+            )
             pb = ProgressBar(total=100, show_percentage=True, id="progress-bar")
             pb.tooltip = "Active model download percentage progress"
             yield pb
@@ -2132,7 +2268,9 @@ class WizardModal(A11yMixin, ModalScreen[None]):
                 tooltip="Toggle generation of sample document corpus in active workspace",
             )
 
-            yield Heading("Starter Rule Template Packs:", level=2, classes="field-label")
+            yield Heading(
+                "Starter Rule Template Packs:", level=2, classes="field-label"
+            )
             yield Label(
                 "Select pre-built template packs to populate keyword rules & compliance policies:"
             )
@@ -2481,7 +2619,9 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
                 id="modal-title",
             )
 
-            yield Heading("Navigation & Tree Controls:", level=2, classes="section-title")
+            yield Heading(
+                "Navigation & Tree Controls:", level=2, classes="section-title"
+            )
             yield Label(
                 "  j / k       - Move selection down / up (Vim motions)",
                 classes="shortcut-row",
@@ -2564,6 +2704,201 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
     def action_close(self) -> None:
         """Close shortcut cheat sheet modal."""
         self.announce("Closed keyboard shortcut cheat sheet dialog.")
+        self.dismiss(None)
+
+
+class DuplicateReviewModal(A11yMixin, ModalScreen[Optional[Dict[str, str]]]):
+    """Modal dialog for pre-move interactive duplicate cluster review and resolution."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    DuplicateReviewModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.65);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 90;
+        min-width: 40;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .modal-subtitle {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    .duplicate-card {
+        background: $surface;
+        border: solid $accent;
+        padding: 1;
+        margin-bottom: 1;
+    }
+    .card-title {
+        text-style: bold;
+        color: $accent;
+    }
+    .card-subtitle {
+        color: $text-muted;
+    }
+    .source-item {
+        color: $text;
+        margin-left: 2;
+    }
+    .action-select {
+        margin-top: 1;
+        width: 100%;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Select:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(
+        self,
+        duplicate_groups: Optional[List[Dict[str, Any]]] = None,
+    ):
+        super().__init__()
+        self.duplicate_groups = duplicate_groups or []
+        self.user_selections: Dict[str, str] = {
+            g["group_id"]: g.get("default_action", "rename")
+            for g in self.duplicate_groups
+        }
+
+    def compose(self) -> ComposeResult:
+        """Compose duplicate review dialog widgets."""
+        with Vertical(classes="modal-box"):
+            yield Heading(
+                "Duplicate Cluster Review & Resolution",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
+            yield Label(
+                "Review duplicate destination target collisions before physical move execution:",
+                classes="modal-subtitle",
+            )
+
+            with Vertical(id="duplicate-groups-list"):
+                for group in self.duplicate_groups:
+                    gid = group["group_id"]
+                    tf_name = group.get("target_filename", "Collision")
+                    t_dir = group.get("target_dir", "")
+                    items = group.get("items", [])
+                    default_action = group.get("default_action", "rename")
+
+                    with Vertical(classes="duplicate-card", id=f"card-{gid}"):
+                        yield Label(
+                            f"Destination Target: {tf_name} ({t_dir})",
+                            classes="card-title",
+                        )
+                        yield Label(
+                            f"Colliding source files ({len(items)}):",
+                            classes="card-subtitle",
+                        )
+                        for item in items:
+                            rel_src = item.get("relative_source") or item.get(
+                                "source_path", ""
+                            )
+                            yield Label(f"• {rel_src}", classes="source-item")
+
+                        options = [
+                            ("Rename (auto-number duplicates)", "rename"),
+                            ("Keep Primary File Only", "keep"),
+                            ("Skip Moving Duplicates", "skip"),
+                        ]
+                        sel = Select(
+                            options,
+                            value=default_action,
+                            id=f"select-action-{gid}",
+                            classes="action-select",
+                            allow_blank=False,
+                        )
+                        sel.tooltip = (
+                            f"Select deduplication resolution action for {tf_name}"
+                        )
+                        sel.aria_label = (
+                            f"Resolution action for duplicate group {tf_name}"
+                        )
+                        yield sel
+
+            with Horizontal(classes="button-row"):
+                yield Button(
+                    "Apply & Execute Moves",
+                    variant="primary",
+                    id="btn-confirm-duplicates",
+                )
+                yield Button("Cancel", id="btn-cancel-duplicates")
+
+    def _update_layout(self, width: int) -> None:
+        """Update responsiveness based on modal container width."""
+        if width < 60:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal resize event."""
+        self._update_layout(event.size.width)
+
+    def on_mount(self) -> None:
+        """Focus initial widget on mount and announce to screen reader."""
+        self._update_layout(self.size.width)
+        if self.duplicate_groups:
+            first_gid = self.duplicate_groups[0]["group_id"]
+            try:
+                self.query_one(f"#select-action-{first_gid}", Select).focus()
+            except Exception:
+                try:
+                    self.query_one("#btn-confirm-duplicates", Button).focus()
+                except Exception:
+                    pass
+        else:
+            try:
+                self.query_one("#btn-confirm-duplicates", Button).focus()
+            except Exception:
+                pass
+        self.announce("Opened interactive duplicate review modal.")
+
+    @on(Select.Changed)
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Record user selection updates for duplicate groups."""
+        if event.select.id and event.select.id.startswith("select-action-"):
+            gid = event.select.id.replace("select-action-", "")
+            if event.value is not None:
+                self.user_selections[gid] = str(event.value)
+
+    @on(Button.Pressed, "#btn-confirm-duplicates")
+    def action_confirm(self) -> None:
+        """Confirm deduplication selections and dismiss dialog."""
+        self.announce("Applied duplicate resolution selections.")
+        self.dismiss(self.user_selections)
+
+    @on(Button.Pressed, "#btn-cancel-duplicates")
+    def action_cancel(self) -> None:
+        """Cancel duplicate review and abort execution."""
+        self.announce("Cancelled duplicate review dialog.")
         self.dismiss(None)
 
 
@@ -3833,14 +4168,14 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 classes="modal-subtitle",
             )
 
-            options = []
+            options = [("All Sessions (Aggregate Audit Log)", "all")]
             for s in self.sessions:
                 sid = s.get("session_id", "unknown")
                 b_dir = s.get("base_dir") or "N/A"
                 status = s.get("status") or "completed"
                 options.append((f"{sid[:8]}... | {status} | {b_dir}", sid))
 
-            if not options:
+            if len(options) == 1 and not self.sessions:
                 options = [("No historical sessions found", "none")]
 
             select_sess = Select(
@@ -4400,6 +4735,13 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
         def _dir_selected_callback(target_dir: Optional[str]) -> None:
             if not target_dir:
                 self.announce("Release operation cancelled.")
+                return
+            if not os.path.exists(target_dir) or not os.path.isdir(target_dir):
+                from app.ui.notifications import notify
+
+                err_msg = f"Target directory does not exist: {target_dir}"
+                self.announce(err_msg, priority="assertive")
+                notify(err_msg, type="error")
                 return
             dest_file_path = os.path.join(target_dir, os.path.basename(orig_rel))
             self.execute_release_async(record, dest_file_path)
@@ -5085,7 +5427,11 @@ class AutoSorterTUI(A11yMixin, App):
     def _on_ai_consent_changed(self, value: Any = None) -> None:
         """Handle AI_CONSENT_GRANTED setting change notification."""
         self.update_status()
-        consent_val = value if value is not None else getattr(self.settings, "AI_CONSENT_GRANTED", None)
+        consent_val = (
+            value
+            if value is not None
+            else getattr(self.settings, "AI_CONSENT_GRANTED", None)
+        )
         if consent_val is False or consent_val is None:
             try:
                 from app.core.shared_registry import SharedModelRegistry
@@ -5093,7 +5439,10 @@ class AutoSorterTUI(A11yMixin, App):
                 SharedModelRegistry.get_instance().unload_all_models()
             except Exception:
                 pass
-            self.announce("AI processing disabled. In-memory AI models unloaded instantly.", priority="high")
+            self.announce(
+                "AI processing disabled. In-memory AI models unloaded instantly.",
+                priority="high",
+            )
         elif consent_val is True:
             self.announce("AI processing enabled.", priority="high")
 
@@ -5223,6 +5572,8 @@ class AutoSorterTUI(A11yMixin, App):
                     self.settings.CONTEXTUAL_RENAMING = res["CONTEXTUAL_RENAMING"]
                 if "AI_CONSENT_GRANTED" in res:
                     self.settings.AI_CONSENT_GRANTED = res["AI_CONSENT_GRANTED"]
+                if "CONFLICT_POLICY" in res:
+                    self.settings.CONFLICT_POLICY = res["CONFLICT_POLICY"]
                 if hasattr(self.settings, "_save"):
                     self.settings._save()
                 self.update_status()
@@ -5474,7 +5825,7 @@ class AutoSorterTUI(A11yMixin, App):
 
                 export_res = history_mgr.export_audit_log(
                     output_path=output_path,
-                    session_id=session_id if session_id != "none" else None,
+                    session_id=session_id if session_id not in ("none", "all") else None,
                     format=fmt,
                 )
                 cnt = export_res.get("count", 0)
@@ -5498,7 +5849,7 @@ class AutoSorterTUI(A11yMixin, App):
         self.action_execute_sort()
 
     def action_execute_sort(self) -> None:
-        """Trigger sorting plan execution worker."""
+        """Trigger sorting plan execution worker with pre-move duplicate cluster review."""
         if self._is_text_control_focused():
             return
         if not self.plan or not self.app_session:
@@ -5510,12 +5861,38 @@ class AutoSorterTUI(A11yMixin, App):
             self.announce("No checked files in sorting plan to execute.")
             return
 
-        if self.has_critical_errors:
+        if getattr(self, "has_critical_errors", False):
             self.announce("Cannot execute plan: Critical validation errors exist (see Alert Banner).")
             return
 
-        self.announce("Executing file moves according to plan...")
-        self.run_execute_worker()
+        base_dir = self.app_session.base_dir if self.app_session else "."
+        from app.core.verifier import VerificationEngine
+
+        duplicate_groups = VerificationEngine.get_duplicate_groups(base_dir, exec_plan)
+        if duplicate_groups:
+
+            def handle_duplicate_modal_result(
+                selections: Optional[Dict[str, str]],
+            ) -> None:
+                if selections is None:
+                    self.announce("Move execution cancelled during duplicate review.")
+                    return
+
+                VerificationEngine.apply_deduplication_selections(
+                    base_dir, self.plan, selections
+                )
+                self.announce(
+                    "Executing file moves according to plan with deduplication applied..."
+                )
+                self.run_execute_worker()
+
+            self.push_screen(
+                DuplicateReviewModal(duplicate_groups=duplicate_groups),
+                handle_duplicate_modal_result,
+            )
+        else:
+            self.announce("Executing file moves according to plan...")
+            self.run_execute_worker()
 
     @work(group="validation", exclusive=True, thread=True)
     def run_validation_worker(self) -> None:
@@ -5957,8 +6334,44 @@ class AutoSorterTUI(A11yMixin, App):
                     )
                     label_parts.append(f"[ARCH: {arch_str}]")
 
+                target_filename = file_info.get("target_filename") or file_key
+                target_path = None
+                if self.base_dir:
+                    target_path = os.path.normpath(
+                        os.path.join(self.base_dir, current_folder, target_filename)
+                    )
+                elif current_folder:
+                    target_path = os.path.normpath(
+                        os.path.join(current_folder, target_filename)
+                    )
+
+                is_collision = (
+                    file_info.get("collision")
+                    or file_info.get("has_collision")
+                    or False
+                )
+                if (
+                    not is_collision
+                    and target_path
+                    and filepath
+                    and os.path.lexists(target_path)
+                ):
+                    try:
+                        is_same = os.path.samefile(target_path, filepath)
+                    except Exception:
+                        is_same = os.path.normpath(
+                            os.path.abspath(target_path)
+                        ) == os.path.normpath(os.path.abspath(filepath))
+                    if not is_same:
+                        is_collision = True
+
+                pol = str(
+                    getattr(self.settings, "CONFLICT_POLICY", "rename")
+                ).lower()
+                if is_collision:
+                    label_parts.append(f"[COLLISION: {pol.upper()}]")
+
                 label_parts.append(file_key)
-                target_filename = file_info.get("target_filename")
                 if target_filename and target_filename != file_key:
                     label_parts.append(f"-> {target_filename}")
 
@@ -5999,6 +6412,8 @@ class AutoSorterTUI(A11yMixin, App):
                     "rating": rating,
                     "is_checked": is_checked,
                     "is_excluded": is_excluded,
+                    "is_collision": is_collision,
+                    "conflict_policy": pol,
                 }
                 parent_item.add_leaf(text_obj, data=node_data)
             elif isinstance(v, dict):
@@ -6095,8 +6510,16 @@ class AutoSorterTUI(A11yMixin, App):
             lock_err = (
                 invalid_locks.get(filepath_str)
                 or invalid_locks.get(key_str)
-                or (invalid_locks.get(filepath_str.replace("\\", "/")) if filepath_str else None)
-                or (invalid_locks.get(os.path.normpath(filepath_str)) if filepath_str else None)
+                or (
+                    invalid_locks.get(filepath_str.replace("\\", "/"))
+                    if filepath_str
+                    else None
+                )
+                or (
+                    invalid_locks.get(os.path.normpath(filepath_str))
+                    if filepath_str
+                    else None
+                )
             )
             if lock_err:
                 lines.append(f"[bold error]Lock Warning:[/bold error] {lock_err}")
@@ -6150,6 +6573,15 @@ class AutoSorterTUI(A11yMixin, App):
                     lines.append(f"[bold]Confidence:[/bold] {float(conf):.2%}")
                 except (ValueError, TypeError):
                     lines.append(f"[bold]Confidence:[/bold] {conf}")
+
+            if data.get("is_collision"):
+                pol_str = str(
+                    data.get("conflict_policy")
+                    or getattr(self.settings, "CONFLICT_POLICY", "rename")
+                ).upper()
+                lines.append(
+                    f"[bold warning]Collision Indicator:[/bold warning] [COLLISION: {pol_str}]"
+                )
 
             self.announce(
                 f"Selected file '{key}' in folder '{folder}'. Locked: {locked}. Rating: {rating}."

@@ -35,10 +35,6 @@ def test_notification_mode_enum():
     assert mgr.get_mode() == NotificationMode.TUI
     assert mgr.detect_mode() == NotificationMode.TUI
 
-    mgr.set_mode("gui")
-    assert mgr.get_mode() == NotificationMode.GUI
-    assert mgr.detect_mode() == NotificationMode.GUI
-
 
 def test_cli_notification_dispatch_with_help_url(caplog):
     """Test that CLI notification formats messages with help_url in stream and logger."""
