@@ -221,6 +221,20 @@ class VerificationEngine:
     """Engine to verify file operations before execution."""
 
     @staticmethod
+    def is_critical_error(result: dict) -> bool:
+        """Return True if verification result contains any blocking critical errors."""
+        if not result or not isinstance(result, dict):
+            return False
+        if result.get("has_critical_errors") is not None:
+            return bool(result.get("has_critical_errors"))
+        return bool(
+            result.get("collisions")
+            or result.get("circular_renames")
+            or result.get("invalid_renames")
+            or result.get("long_paths")
+        )
+
+    @staticmethod
     def sanitize_plan(plan: dict) -> tuple[dict, list[str]]:
         """Sanitize plan folder keys and file targets, returning (sanitized_plan, warnings)."""
         from app.core.path_utils import sanitize_plan as _sp
@@ -228,7 +242,7 @@ class VerificationEngine:
         return _sp(plan)
 
     @staticmethod
-    def verify_plan_integrity(base_dir: str, plan: Any) -> dict:
+    def verify_plan_integrity(base_dir: str, plan: Any, conflict_policy: str = "skip") -> dict:
         """Run complete virtual filesystem simulation and integrity check."""
         try:
             from app.core.path_utils import sanitize_plan as _sp
@@ -250,7 +264,7 @@ class VerificationEngine:
                 plan_dict = sanitized_plan
 
             tracker = VirtualFilesystemTracker()
-            result = tracker.verify_integrity(base_dir, plan_dict)
+            result = tracker.verify_integrity(base_dir, plan_dict, conflict_policy=conflict_policy)
 
             all_warnings = sanitization_warnings + result.get("warnings", [])
             result["warnings"] = list(dict.fromkeys(all_warnings))
@@ -745,7 +759,7 @@ class VirtualFilesystemTracker:
 
         return broken_links
 
-    def verify_integrity(self, base_dir: str, plan: dict) -> dict:
+    def verify_integrity(self, base_dir: str, plan: dict, conflict_policy: str = "skip") -> dict:
         """Run complete virtual filesystem simulation and integrity check."""
         moves_list = VerificationEngine.get_moves(base_dir, plan)
 
@@ -754,7 +768,7 @@ class VirtualFilesystemTracker:
         self.populate_from_moves(moves_list)
 
         # Trace and analyze issues
-        collisions = self.check_collisions(moves_list, base_dir)
+        collisions = self.check_collisions(moves_list, base_dir, conflict_policy=conflict_policy)
         circular_renames = self.check_circular_renames(moves_list)
 
         # Simulate final VFS state
@@ -815,8 +829,16 @@ class VirtualFilesystemTracker:
             and len(unconfirmed_renames) == 0
         )
 
+        has_critical_errors = (
+            len(collisions) > 0
+            or len(circular_renames) > 0
+            or len(invalid_renames) > 0
+            or len(long_paths) > 0
+        )
+
         return {
             "success": success,
+            "has_critical_errors": has_critical_errors,
             "collisions": collisions,
             "circular_renames": circular_renames,
             "broken_links": broken_links,

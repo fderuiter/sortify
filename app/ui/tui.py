@@ -4439,6 +4439,32 @@ class AutoSorterTUI(A11yMixin, App):
         border: heavy $accent;
         text-style: bold;
     }
+    #alert-banner {
+        width: 100%;
+        height: auto;
+        min-height: 1;
+        max-height: 6;
+        padding: 0 1;
+        margin: 0;
+        display: none;
+    }
+    #alert-banner.alert-critical {
+        background: $error-darken-2;
+        color: $text;
+        border: solid $error;
+        text-style: bold;
+        display: block;
+    }
+    #alert-banner.alert-warning {
+        background: $warning-darken-2;
+        color: $text;
+        border: solid $warning;
+        display: block;
+    }
+    #btn-execute {
+        margin-top: 1;
+        width: 100%;
+    }
     """
 
     def __init__(
@@ -4477,6 +4503,10 @@ class AutoSorterTUI(A11yMixin, App):
         self.visual_select_active: bool = False
         self.visual_selected_nodes: list = []
         self._wizard_dismissed_this_session: bool = False
+        self.verification_result: Dict[str, Any] = {}
+        self.has_critical_errors: bool = False
+        self.critical_error_paths: set = set()
+        self.warning_paths: set = set()
 
     def compose(self) -> ComposeResult:
         """Compose main dual-pane TUI layout."""
@@ -4496,6 +4526,14 @@ class AutoSorterTUI(A11yMixin, App):
                 tui_log = Log(id="tui-log", classes="tui-log-area")
                 tui_log.tooltip = "Live operation execution log output feed"
                 yield tui_log
+                btn_exec = Button(
+                    "Execute Plan [Ctrl+E]", id="btn-execute", variant="primary"
+                )
+                btn_exec.tooltip = "Execute file sorting plan [Ctrl+E]"
+                yield btn_exec
+        alert_banner = Static("", id="alert-banner")
+        alert_banner.tooltip = "Validation alert banner displaying blocking errors or warnings"
+        yield alert_banner
         pb = ProgressBar(total=100, show_percentage=True, id="main-progress-bar")
         pb.tooltip = "Active operation background progress indicator"
         pb.display = False
@@ -5195,6 +5233,11 @@ class AutoSorterTUI(A11yMixin, App):
             handle_history_modal_result,
         )
 
+    @on(Button.Pressed, "#btn-execute")
+    def on_btn_execute_pressed(self) -> None:
+        """Handle Execute Plan button press."""
+        self.action_execute_sort()
+
     def action_execute_sort(self) -> None:
         """Trigger sorting plan execution worker."""
         if self._is_text_control_focused():
@@ -5208,8 +5251,221 @@ class AutoSorterTUI(A11yMixin, App):
             self.announce("No checked files in sorting plan to execute.")
             return
 
+        if self.has_critical_errors:
+            self.announce("Cannot execute plan: Critical validation errors exist (see Alert Banner).")
+            return
+
         self.announce("Executing file moves according to plan...")
         self.run_execute_worker()
+
+    @work(group="validation", exclusive=True, thread=True)
+    def run_validation_worker(self) -> None:
+        """Asynchronously verify plan integrity in background worker thread."""
+        try:
+            from app.core.verifier import VerificationEngine
+
+            exec_plan = self._get_executable_plan()
+            if not self.plan or not self._has_file_nodes(exec_plan):
+                self.call_from_thread(self._update_validation_state, {})
+                return
+
+            base_dir = (
+                self.app_session.base_dir
+                if self.app_session
+                else (self.base_dir or ".")
+            )
+            result = VerificationEngine.verify_plan_integrity(base_dir, exec_plan)
+            self.call_from_thread(self._update_validation_state, result)
+        except Exception as e:
+            logger.error(f"Error running validation worker: {e}")
+
+    def _update_validation_state(self, result: Dict[str, Any]) -> None:
+        """Update UI controls, alert banner, and tree highlights based on validation result."""
+        self.verification_result = result or {}
+
+        collisions = result.get("collisions", [])
+        circular = result.get("circular_renames", [])
+        invalid = result.get("invalid_renames", [])
+        long_paths = result.get("long_paths", [])
+
+        broken_links = result.get("broken_links", [])
+        unconfirmed = result.get("unconfirmed_renames", [])
+
+        has_critical = bool(collisions or circular or invalid or long_paths)
+        has_warnings = bool(broken_links or unconfirmed)
+
+        self.has_critical_errors = has_critical
+
+        # Build path sets for tree node highlighting
+        crit_paths = set()
+        for c in collisions:
+            if c.get("path"):
+                crit_paths.add(os.path.normpath(c["path"]))
+            if c.get("source"):
+                crit_paths.add(os.path.normpath(c["source"]))
+            for s in c.get("sources", []):
+                crit_paths.add(os.path.normpath(s))
+        for r in circular:
+            if r.get("path"):
+                crit_paths.add(os.path.normpath(r["path"]))
+            for p in r.get("cycle", []):
+                crit_paths.add(os.path.normpath(p))
+        for inv in invalid:
+            if inv.get("path"):
+                crit_paths.add(os.path.normpath(inv["path"]))
+            if inv.get("source"):
+                crit_paths.add(os.path.normpath(inv["source"]))
+        for lp in long_paths:
+            if lp.get("path"):
+                crit_paths.add(os.path.normpath(lp["path"]))
+            if lp.get("source"):
+                crit_paths.add(os.path.normpath(lp["source"]))
+
+        warn_paths = set()
+        for bl in broken_links:
+            if bl.get("path"):
+                warn_paths.add(os.path.normpath(bl["path"]))
+        for unc in unconfirmed:
+            if unc.get("path"):
+                warn_paths.add(os.path.normpath(unc["path"]))
+            if unc.get("source"):
+                warn_paths.add(os.path.normpath(unc["source"]))
+
+        self.critical_error_paths = crit_paths
+        self.warning_paths = warn_paths
+
+        # Update Execute Button
+        try:
+            btn_exec = self.query_one("#btn-execute", Button)
+            exec_plan = self._get_executable_plan()
+            has_files = self._has_file_nodes(exec_plan)
+
+            if has_critical or not has_files:
+                btn_exec.disabled = True
+                if has_critical:
+                    btn_exec.tooltip = "Execution disabled: Plan contains blocking critical validation errors"
+                else:
+                    btn_exec.tooltip = "Execution disabled: No files selected to execute"
+            else:
+                btn_exec.disabled = False
+                btn_exec.tooltip = "Execute file sorting plan [Ctrl+E]"
+        except Exception:
+            pass
+
+        # Update Alert Banner
+        try:
+            alert_banner = self.query_one("#alert-banner", Static)
+            if has_critical:
+                alert_banner.display = True
+                alert_banner.remove_class("alert-warning")
+                alert_banner.add_class("alert-critical")
+
+                msgs = []
+                if collisions:
+                    msgs.append("⛔ CRITICAL FILE COLLISION(S) DETECTED:")
+                    for c in collisions:
+                        dst_p = c.get("path", "")
+                        if c.get("sources"):
+                            for s_p in c["sources"]:
+                                msgs.append(f"  • Source: {s_p} -> Destination: {dst_p}")
+                        elif c.get("source"):
+                            msgs.append(f"  • Source: {c['source']} -> Destination: {dst_p}")
+                        else:
+                            msgs.append(f"  • Destination: {dst_p} ({c.get('message', 'Collision')})")
+                if circular:
+                    msgs.append("⛔ CIRCULAR RENAMING DEPENDENCY DETECTED:")
+                    for r in circular:
+                        msgs.append(f"  • {r.get('message')}")
+                if invalid:
+                    msgs.append("⛔ INVALID FILENAME / STRUCTURE:")
+                    for inv in invalid:
+                        msgs.append(f"  • {inv.get('message')}")
+                if long_paths:
+                    msgs.append("⛔ EXCEEDS PATH LENGTH LIMIT:")
+                    for lp in long_paths:
+                        msgs.append(f"  • {lp.get('message')}")
+
+                alert_str = "\n".join(msgs)
+                alert_banner.update(alert_str)
+                self.announce(f"Alert Banner: {alert_str}")
+            elif has_warnings:
+                alert_banner.display = True
+                alert_banner.remove_class("alert-critical")
+                alert_banner.add_class("alert-warning")
+
+                msgs = ["⚠️ NON-FATAL WARNING(S) REPORTED (Execution unblocked):"]
+                for bl in broken_links:
+                    msgs.append(f"  • {bl.get('message')}")
+                for unc in unconfirmed:
+                    msgs.append(f"  • {unc.get('message')}")
+
+                alert_str = "\n".join(msgs)
+                alert_banner.update(alert_str)
+            else:
+                alert_banner.display = False
+                alert_banner.update("")
+        except Exception as e:
+            logger.debug(f"Error updating alert banner: {e}")
+
+        # Update node styling in tree view
+        self._apply_tree_node_styles()
+
+    def _apply_tree_node_styles(self) -> None:
+        """Apply red/yellow styling to existing tree nodes based on active error/warning paths."""
+        try:
+            tree = self.query_one("#plan-tree", Tree)
+
+            def _stylize_node(node: TreeNode) -> None:
+                data = getattr(node, "data", None)
+                if not data or not isinstance(data, dict):
+                    for child in node.children:
+                        _stylize_node(child)
+                    return
+
+                filepath = data.get("filepath", "")
+                key = data.get("key", "")
+                norm_fp = os.path.normpath(filepath) if filepath else ""
+                norm_key = os.path.normpath(key) if key else ""
+
+                is_crit = False
+                is_warn = False
+
+                if norm_fp and norm_fp in self.critical_error_paths:
+                    is_crit = True
+                elif norm_key and norm_key in self.critical_error_paths:
+                    is_crit = True
+                elif any(
+                    p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                    for p in self.critical_error_paths
+                ):
+                    is_crit = True
+
+                if not is_crit:
+                    if norm_fp and norm_fp in self.warning_paths:
+                        is_warn = True
+                    elif norm_key and norm_key in self.warning_paths:
+                        is_warn = True
+                    elif any(
+                        p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                        for p in self.warning_paths
+                    ):
+                        is_warn = True
+
+                if isinstance(node.label, Text):
+                    plain_txt = node.label.plain
+                    new_txt = Text(plain_txt)
+                    if is_crit:
+                        new_txt.stylize("bold red")
+                    elif is_warn:
+                        new_txt.stylize("bold yellow")
+                    node.label = new_txt
+
+                for child in node.children:
+                    _stylize_node(child)
+
+            _stylize_node(tree.root)
+        except Exception as e:
+            logger.debug(f"Error applying tree node styles: {e}")
 
     @work(exclusive=True, thread=True)
     def run_execute_worker(self) -> None:
@@ -5337,6 +5593,7 @@ class AutoSorterTUI(A11yMixin, App):
             else:
                 self._build_tree_nodes(self.plan, tree.root, current_folder="")
             tree.root.expand_all()
+            self.run_validation_worker()
         except Exception as e:
             logger.error(f"Error rebuilding tree: {e}")
 
@@ -5446,7 +5703,33 @@ class AutoSorterTUI(A11yMixin, App):
                 if target_filename and target_filename != file_key:
                     label_parts.append(f"-> {target_filename}")
 
+                norm_fp = os.path.normpath(filepath) if filepath else ""
+                norm_key = os.path.normpath(file_key) if file_key else ""
+
+                is_crit_node = (
+                    norm_fp in self.critical_error_paths
+                    or norm_key in self.critical_error_paths
+                    or any(
+                        p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                        for p in self.critical_error_paths
+                    )
+                )
+                is_warn_node = (
+                    norm_fp in self.warning_paths
+                    or norm_key in self.warning_paths
+                    or any(
+                        p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                        for p in self.warning_paths
+                    )
+                )
+
                 label_str = cb_str + " 📄 " + " ".join(label_parts[1:])
+                text_obj = Text(label_str)
+                if is_crit_node:
+                    text_obj.stylize("bold red")
+                elif is_warn_node:
+                    text_obj.stylize("bold yellow")
+
                 node_data = {
                     "is_file": True,
                     "key": file_key,
@@ -5458,7 +5741,7 @@ class AutoSorterTUI(A11yMixin, App):
                     "is_checked": is_checked,
                     "is_excluded": is_excluded,
                 }
-                parent_item.add_leaf(Text(label_str), data=node_data)
+                parent_item.add_leaf(text_obj, data=node_data)
             elif isinstance(v, dict):
                 sub_folder = (
                     (Path(current_folder) / k).as_posix() if current_folder else k
