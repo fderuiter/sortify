@@ -15,56 +15,10 @@ def get_python_executable():
     return sys.executable
 
 
-def convert_notebook_to_markdown(notebook_path: Path, output_path: Path) -> None:
-    """Convert an ipynb notebook to a rendered markdown tutorial page."""
-    import json
-
-    with open(notebook_path, "r", encoding="utf-8") as f:
-        nb = json.load(f)
-
-    rel_path = Path(notebook_path).as_posix()
-    md_lines = [
-        f"<!-- This document is automatically generated from {rel_path}. Do not edit manually. -->\n\n"
-    ]
-
-    for cell in nb.get("cells", []):
-        cell_type = cell.get("cell_type")
-        source = cell.get("source", [])
-        if isinstance(source, list):
-            text = "".join(source)
-        else:
-            text = str(source)
-
-        text = text.strip()
-        if not text:
-            continue
-
-        if cell_type == "markdown":
-            md_lines.append(f"{text}\n\n")
-        elif cell_type == "code":
-            md_lines.append(f"```python\n{text}\n```\n\n")
-
-    output_path.parent.mkdir(parents=True, exist_ok=True)
-    with open(output_path, "w", encoding="utf-8", newline="\n") as f:
-        f.write("".join(md_lines))
-
-
 def generate_tutorial_docs():
-    """Generate notebooks and convert them to markdown documentation tutorials."""
-    import scripts.generate_notebooks as gen_nb
-
-    # 1. Regenerate notebook .ipynb files
-    gen_nb.main()
-
-    # 2. Convert each notebook in notebooks/ to docs/tutorials/
-    notebooks_dir = Path("notebooks")
+    """Ensure tutorial documentation directory exists."""
     tutorials_dir = Path("docs") / "tutorials"
     tutorials_dir.mkdir(parents=True, exist_ok=True)
-
-    if notebooks_dir.exists():
-        for nb_file in sorted(notebooks_dir.glob("*.ipynb")):
-            md_file = tutorials_dir / f"{nb_file.stem}.md"
-            convert_notebook_to_markdown(nb_file, md_file)
 
 
 def generate_api_docs():
@@ -518,8 +472,6 @@ def get_handwritten_docs():
 
     if os.path.exists("docs"):
         for root, dirs, files in os.walk("docs"):
-            if "tutorials" in dirs:
-                dirs.remove("tutorials")
             for f in sorted(files):
                 if f.endswith(".md"):
                     full_path = Path(root, f).as_posix()
@@ -589,8 +541,7 @@ def audit_handwritten_docs():
 
 
 def validate_mermaid_diagrams():
-    """Validate Mermaid diagrams across all core documentation and notebook tutorial files."""
-    import json
+    """Validate Mermaid diagrams across all core documentation and tutorial files."""
     import re
 
     from scripts.diagram_toolchain import validate_mermaid_syntax
@@ -602,43 +553,19 @@ def validate_mermaid_diagrams():
                 if f.endswith(".md"):
                     doc_files.append(Path(root, f).as_posix())
 
-    if os.path.exists("notebooks"):
-        for root, dirs, files in os.walk("notebooks"):
-            dirs[:] = [d for d in dirs if not d.startswith(".")]
-            for f in sorted(files):
-                if f.endswith(".ipynb"):
-                    doc_files.append(Path(root, f).as_posix())
-
     errors = []
 
     for file_path in sorted(list(set(doc_files))):
         if not os.path.exists(file_path):
             continue
 
-        markdown_texts = []
         try:
-            if file_path.endswith(".ipynb"):
-                with open(file_path, "r", encoding="utf-8") as f:
-                    raw_content = f.read()
-                try:
-                    nb = json.loads(raw_content)
-                    for cell in nb.get("cells", []):
-                        if cell.get("cell_type") == "markdown":
-                            src = cell.get("source", [])
-                            if isinstance(src, list):
-                                markdown_texts.append("".join(src))
-                            else:
-                                markdown_texts.append(str(src))
-                except Exception:
-                    markdown_texts.append(raw_content)
-            else:
-                with open(file_path, "r", encoding="utf-8") as f:
-                    markdown_texts.append(f.read())
+            with open(file_path, "r", encoding="utf-8") as f:
+                full_text = f.read()
         except Exception as e:
             errors.append(f"Could not read file {file_path}: {e}")
             continue
 
-        full_text = "\n\n".join(markdown_texts)
         blocks = re.findall(r"```mermaid\s*([\s\S]*?)```", full_text)
 
         for idx, block in enumerate(blocks, start=1):
@@ -689,26 +616,12 @@ def main():
     args = parser.parse_args()
 
     # 1. Identify files to check
-    notebook_files = [
-        Path("notebooks/01_ml_analyzer_clustering.ipynb").as_posix(),
-        Path("notebooks/02_multi_format_text_extraction.ipynb").as_posix(),
-        Path("notebooks/03_virtual_sorting_verification.ipynb").as_posix(),
+    generated_files = [
+        Path("docs/api_reference.md").as_posix(),
+        Path("docs/ui.md").as_posix(),
+        Path("docs/admin_guide.md").as_posix(),
+        "SECURITY.md",
     ]
-    tutorial_files = [
-        Path("docs/tutorials/01_ml_analyzer_clustering.md").as_posix(),
-        Path("docs/tutorials/02_multi_format_text_extraction.md").as_posix(),
-        Path("docs/tutorials/03_virtual_sorting_verification.md").as_posix(),
-    ]
-    generated_files = (
-        notebook_files
-        + tutorial_files
-        + [
-            Path("docs/api_reference.md").as_posix(),
-            Path("docs/ui.md").as_posix(),
-            Path("docs/admin_guide.md").as_posix(),
-            "SECURITY.md",
-        ]
-    )
 
     initial_contents = {}
     if args.check:
