@@ -37,6 +37,8 @@ from textual.widgets import (
 )
 from textual.widgets.tree import TreeNode
 
+from app.core.path_utils import scrub_user_home_paths
+from app.core.text_utils import sanitize_secret_patterns
 from app.ui.heading import Heading
 
 logger = logging.getLogger(__name__)
@@ -119,6 +121,22 @@ class A11yMixin:
         help_url: Optional[str] = None,
     ) -> str:
         """Emit auditory screen reader announcement and log accessibility event."""
+        if message is None:
+            message = ""
+        else:
+            try:
+                s_msg = str(message)
+                message = (
+                    sanitize_secret_patterns(scrub_user_home_paths(s_msg))
+                    if s_msg
+                    else ""
+                )
+            except Exception:
+                try:
+                    message = str(message)
+                except Exception:
+                    message = ""
+
         full_msg = f"{message} [Help: {help_url}]" if help_url else message
         entry = {
             "message": full_msg,
@@ -132,13 +150,9 @@ class A11yMixin:
         forwarded = False
         # Forward to parent app if available
         try:
-            if (
-                hasattr(self, "app")
-                and self.app
-                and self.app is not self
-                and hasattr(self.app, "announce")
-            ):
-                self.app.announce(message, priority=priority, help_url=help_url)
+            app_obj = getattr(self, "_app", None) or getattr(self, "app", None)
+            if app_obj and app_obj is not self and hasattr(app_obj, "announce"):
+                app_obj.announce(message, priority=priority, help_url=help_url)
                 forwarded = True
         except Exception:
             pass
@@ -2370,6 +2384,13 @@ class TemplateGalleryModal(A11yMixin, ModalScreen[None]):
                 btn_close = Button("Close", id="btn-close-gallery", variant="default")
                 btn_close.tooltip = "Close template gallery"
                 yield btn_close
+                btn_import = Button(
+                    "Import External Rules",
+                    id="btn-import-rules",
+                    variant="primary",
+                )
+                btn_import.tooltip = "Import Hazel (.hazelrules) or DropIt XML/JSON rule files"
+                yield btn_import
                 btn_apply = Button(
                     "Apply Selected Templates",
                     id="btn-apply-templates",
@@ -2457,6 +2478,11 @@ class TemplateGalleryModal(A11yMixin, ModalScreen[None]):
 
         self.dismiss(None)
 
+    @on(Button.Pressed, "#btn-import-rules")
+    def action_import_rules(self) -> None:
+        """Open external rule importer modal."""
+        self.app.push_screen(RuleImportModal(self.settings))
+
     @on(Button.Pressed, "#btn-close-gallery")
     def action_close(self) -> None:
         """Close template gallery dialog."""
@@ -2466,6 +2492,253 @@ class TemplateGalleryModal(A11yMixin, ModalScreen[None]):
     def action_cancel(self) -> None:
         """Cancel on Escape key."""
         self.announce("Closed starter rule template gallery.")
+        self.dismiss(None)
+
+
+class RuleImportModal(A11yMixin, ModalScreen[Optional[Any]]):
+    """Modal screen for selecting, inspecting, and merging external rules (Hazel & DropIt)."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    RuleImportModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 85;
+        min-width: 35;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .input-row {
+        margin-top: 1;
+        margin-bottom: 1;
+        height: auto;
+    }
+    .preview-card {
+        margin-top: 1;
+        margin-bottom: 1;
+        padding: 0 1;
+        border: solid $accent;
+        height: auto;
+        max-height: 12;
+        overflow-y: auto;
+    }
+    .warning-text {
+        color: $warning;
+        margin-top: 1;
+    }
+    .status-text {
+        color: $accent;
+        margin-top: 1;
+        text-style: bold;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Input:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(self, settings: Any):
+        super().__init__()
+        self.settings = settings
+        self.current_result: Optional[Any] = None
+
+    def compose(self) -> ComposeResult:
+        """Compose rule import modal children."""
+        with Vertical(classes="modal-box"):
+            yield Heading(
+                "Import External Rules",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
+            yield Label(
+                "Select a Hazel .hazelrules file or DropIt XML/JSON profile export file to import:"
+            )
+
+            with Horizontal(classes="input-row"):
+                yield Input(
+                    placeholder="/path/to/rules.hazelrules or profile.xml/json",
+                    id="input-rule-file-path",
+                )
+                btn_parse = Button("Parse File", id="btn-parse-rule-file", variant="primary")
+                btn_parse.tooltip = "Parse selected rule file and display preview"
+                yield btn_parse
+
+            yield Label(
+                "Enter file path and click 'Parse File' to preview extracted rules.",
+                id="lbl-import-status",
+                classes="status-text",
+            )
+
+            with Vertical(id="container-rule-preview", classes="preview-card"):
+                yield DataTable(id="dt-imported-keywords")
+                yield DataTable(id="dt-imported-policies")
+                yield Vertical(id="container-import-warnings")
+
+            with Horizontal(classes="button-row"):
+                btn_close = Button("Cancel", id="btn-close-importer", variant="default")
+                btn_close.tooltip = "Close import dialog"
+                yield btn_close
+
+                btn_merge = Button(
+                    "Merge Rules into Settings",
+                    id="btn-merge-imported-rules",
+                    variant="primary",
+                    disabled=True,
+                )
+                btn_merge.tooltip = "Safely merge extracted rules into settings without overwriting custom rules"
+                yield btn_merge
+
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle resize events."""
+        self._update_layout(event.size.width)
+
+    def on_mount(self) -> None:
+        """Focus initial input field on mount and set up preview tables."""
+        self._update_layout(self.size.width)
+        self.query_one("#input-rule-file-path", Input).focus()
+        try:
+            dt_kw = self.query_one("#dt-imported-keywords", DataTable)
+            dt_kw.add_columns("Keyword", "Target Path")
+
+            dt_pol = self.query_one("#dt-imported-policies", DataTable)
+            dt_pol.add_columns("Type", "Expression / Pattern", "Target Path", "Priority")
+        except Exception:
+            pass
+        self.announce("Opened external rule importer modal.")
+
+    @on(Button.Pressed, "#btn-parse-rule-file")
+    @on(Input.Submitted, "#input-rule-file-path")
+    def action_parse_file(self) -> None:
+        """Parse external rule package and render preview tables."""
+        path_str = self.query_one("#input-rule-file-path", Input).value.strip()
+        lbl_status = self.query_one("#lbl-import-status", Label)
+
+        if not path_str:
+            lbl_status.update("Please enter a valid rule file path.")
+            self.announce("Please enter a valid rule file path.")
+            return
+
+        p = Path(path_str)
+        if not p.exists():
+            lbl_status.update(f"File not found: '{path_str}'")
+            self.announce(f"File not found: '{path_str}'")
+            return
+
+        try:
+            from app.core.rule_importers import get_rule_importer
+
+            importer = get_rule_importer(p)
+            self.current_result = importer.parse_file(p)
+        except Exception as exc:
+            lbl_status.update(f"Error parsing rule package: {exc}")
+            self.announce(f"Error parsing rule package: {exc}")
+            return
+
+        res = self.current_result
+        dt_kw = self.query_one("#dt-imported-keywords", DataTable)
+        dt_pol = self.query_one("#dt-imported-policies", DataTable)
+        btn_merge = self.query_one("#btn-merge-imported-rules", Button)
+
+        dt_kw.clear()
+        dt_pol.clear()
+
+        for kw, target_dir in res.keyword_rules.items():
+            dt_kw.add_row(kw, target_dir)
+
+        for pol in res.policies:
+            dt_pol.add_row(
+                pol.get("type", "keyword"),
+                pol.get("expression", ""),
+                pol.get("target_path", ""),
+                str(pol.get("priority", 75)),
+            )
+
+        warn_container = self.query_one("#container-import-warnings", Vertical)
+        warn_container.remove_children()
+        for warn in res.warnings:
+            warn_container.mount(Label(f"⚠️ {warn}", classes="warning-text"))
+
+        total_rules = len(res.keyword_rules) + len(res.policies)
+        lbl_status.update(
+            f"Parsed {res.source_format}: {len(res.keyword_rules)} keyword rules, "
+            f"{len(res.policies)} policies, {len(res.warnings)} warning(s)."
+        )
+
+        if total_rules > 0:
+            btn_merge.disabled = False
+            btn_merge.focus()
+        else:
+            btn_merge.disabled = True
+
+        self.announce(
+            f"Parsed {res.source_format}: {total_rules} rules extracted."
+        )
+
+    @on(Button.Pressed, "#btn-merge-imported-rules")
+    def action_merge_rules(self) -> None:
+        """Merge parsed rules into settings and close modal."""
+        if not self.current_result:
+            try:
+                self.dismiss(None)
+            except Exception:
+                pass
+            return
+
+        new_kw, new_pol = self.current_result.merge_into_settings(self.settings)
+        msg = f"Merged imported rules: {len(self.current_result.keyword_rules)} keyword rules and {len(self.current_result.policies)} policies."
+        self.announce(msg)
+        try:
+            if hasattr(self.app, "notify"):
+                self.app.notify(msg)
+        except Exception:
+            pass
+
+        try:
+            self.dismiss(self.current_result)
+        except Exception:
+            pass
+
+    @on(Button.Pressed, "#btn-close-importer")
+    def action_close(self) -> None:
+        """Close import dialog."""
+        self.announce("Closed external rule importer modal.")
+        self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        """Cancel on Escape key."""
+        self.announce("Closed external rule importer modal.")
         self.dismiss(None)
 
 
@@ -5634,7 +5907,7 @@ class AutoSorterTUI(A11yMixin, App):
         res = super().announce(message, priority=priority, help_url=help_url)
         try:
             log_w = self.query_one("#tui-log", Log)
-            display_msg = f"{message} [Help: {help_url}]" if help_url else message
+            display_msg = f"{res} [Help: {help_url}]" if help_url else res
             log_w.write_line(display_msg)
         except Exception:
             pass
