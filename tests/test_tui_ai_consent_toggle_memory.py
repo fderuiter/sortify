@@ -12,8 +12,9 @@ from app.ui.tui import AutoSorterTUI, SettingsModal, Switch
 
 
 @pytest.fixture(autouse=True)
-def clean_registry():
-    """Ensure SharedModelRegistry is cleared before and after each test."""
+def clean_registry(tmp_path, monkeypatch):
+    """Ensure SharedModelRegistry is cleared and AUTOSORTER_APP_DIR is isolated before and after each test."""
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
     registry = SharedModelRegistry.get_instance()
     registry.unload_all_models()
     yield
