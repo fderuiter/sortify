@@ -1057,6 +1057,7 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     @on(Button.Pressed, "#preset-demo")
     def action_demo(self) -> None:
         """Select sandbox demo workspace preset."""
+        from app.core.sample_corpus import generate_sample_corpus
         from app.ui.notifications import notify
 
         path = os.path.abspath("sandbox/demo_workspace")
@@ -1071,6 +1072,18 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
                 self.announce(err_msg, priority="assertive")
                 notify(err_msg, type="error")
                 return
+
+        try:
+            generate_sample_corpus(path, overwrite=True)
+            sample_msg = f"Generated sample corpus documents in '{path}'."
+            self.announce(sample_msg)
+            notify(sample_msg, type="info")
+        except Exception as exc:
+            logger.error(f"Failed to generate sample corpus in '{path}': {exc}")
+            err_msg = f"Failed to generate sample corpus: {exc}"
+            self.announce(err_msg, priority="assertive")
+            notify(err_msg, type="error")
+
         self.announce(f"Selected demo workspace preset: {path}")
         self.dismiss(path)
 
