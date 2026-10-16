@@ -137,30 +137,33 @@ class DuplicatePatternVisitor(ast.NodeVisitor):
         self.errors = []
 
     def visit_Attribute(self, node):
-        """Visit attribute nodes to look for sys.frozen usage."""
+        """Visit attribute nodes to look for sys.frozen or sys._MEIPASS usage."""
         if self.filepath not in ALLOWED_FOR_FROZEN:
             if (
                 isinstance(node.value, ast.Name)
                 and node.value.id == "sys"
-                and node.attr == "frozen"
+                and node.attr in ("frozen", "_MEIPASS")
             ):
                 self.errors.append(
-                    f"{self.filepath}:{node.lineno}: Direct 'sys.frozen' usage found. "
-                    "Use 'app.core.path_utils.is_packaged()' instead."
+                    f"{self.filepath}:{node.lineno}: Direct 'sys.{node.attr}' usage found. "
+                    "Use 'app.core.path_utils.is_packaged()' or 'get_meipass_dir()' instead."
                 )
         self.generic_visit(node)
 
     def visit_Call(self, node):
-        """Visit function call nodes to look for getattr(sys, 'frozen')."""
+        """Visit function call nodes to look for getattr(sys, 'frozen' / '_MEIPASS') or hasattr(sys, ...)."""
         if self.filepath not in ALLOWED_FOR_FROZEN:
-            if isinstance(node.func, ast.Name) and node.func.id == "getattr":
+            if isinstance(node.func, ast.Name) and node.func.id in ("getattr", "hasattr"):
                 if len(node.args) >= 2:
                     arg0, arg1 = node.args[0], node.args[1]
                     if isinstance(arg0, ast.Name) and arg0.id == "sys":
-                        if isinstance(arg1, ast.Constant) and arg1.value == "frozen":
+                        if isinstance(arg1, ast.Constant) and arg1.value in (
+                            "frozen",
+                            "_MEIPASS",
+                        ):
                             self.errors.append(
-                                f"{self.filepath}:{node.lineno}: Direct getattr(sys, 'frozen') usage found. "
-                                "Use 'app.core.path_utils.is_packaged()' instead."
+                                f"{self.filepath}:{node.lineno}: Direct {node.func.id}(sys, '{arg1.value}') usage found. "
+                                "Use 'app.core.path_utils.is_packaged()' or 'get_meipass_dir()' instead."
                             )
         self.generic_visit(node)
 

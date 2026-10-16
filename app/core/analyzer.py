@@ -465,10 +465,11 @@ class IncrementalAnalyzer:
 
         if self.model_path is _UNSPECIFIED:
             self.model_path = None
-            import sys
+            from app.core.path_utils import get_meipass_dir
 
-            if hasattr(sys, "_MEIPASS"):
-                mei_bundle_path = os.path.join(sys._MEIPASS, "offline_bundle", "model")
+            mei_dir = get_meipass_dir()
+            if mei_dir:
+                mei_bundle_path = os.path.join(mei_dir, "offline_bundle", "model")
                 if os.path.exists(mei_bundle_path):
                     self.model_path = mei_bundle_path
 
