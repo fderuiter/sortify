@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "8d3b607c826a4f7e61cb6fc5ffcde5630a2889b5750a9a06d559ba145316229d"
+    "checksum": "681229a12a13c86f0807ea5f3d1ef2780ea39af1bf5018b698ebb62aaf08ee0f"
   },
   "classes": [
     {
@@ -484,6 +484,29 @@
         {
           "async": false,
           "decorators": [],
+          "name": "get_user_verified_target_path",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "filepath"
+            }
+          ],
+          "returns": "Optional[str]"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "init_db",
           "parameters": [
             {
@@ -503,6 +526,11 @@
               "annotation": null,
               "default": null,
               "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "base_dir"
             }
           ],
           "returns": null

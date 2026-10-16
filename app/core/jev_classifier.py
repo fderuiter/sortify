@@ -420,6 +420,26 @@ class JevClassifierEngine:
             logger.debug(f"Could not calculate stat key for {file_path}: {e}")
             return None
 
+    def clear_cache(self) -> None:
+        """Clear both in-memory and persistent database classification caches."""
+        try:
+            self.memory_cache.clear()
+            if self.db_path:
+
+                def _write_delete_all():
+                    from app.core.db_conn import get_db_connection
+
+                    conn = get_db_connection(self.db_path)
+                    with conn:
+                        conn.execute("DELETE FROM jev_classification_cache")
+
+                if self.worker and hasattr(self.worker, "execute_write_async"):
+                    self.worker.execute_write_async(_write_delete_all)
+                else:
+                    _write_delete_all()
+        except Exception as e:
+            logger.warning(f"Failed to clear classification cache: {e}")
+
     def invalidate(self, file_path: str) -> None:
         """Invalidate both in-memory and persistent database cache entries for a file."""
         try:

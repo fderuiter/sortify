@@ -2258,7 +2258,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                     """
                                     SELECT d.filepath, d.user_verified_target_path, v.vector
                                     FROM documents d
-                                    JOIN document_vectors v ON d.base_dir = v.base_dir AND d.filepath = v.filepath
+                                    JOIN document_vectors v ON d.base_dir = v.base_dir AND (d.filepath = v.filepath OR REPLACE(d.filepath, '\\', '/') = REPLACE(v.filepath, '\\', '/'))
                                     WHERE d.base_dir = ? AND d.user_verified_target_path IS NOT NULL AND d.user_verified_target_path != ''
                                     """,
                                     (base_dir,),
@@ -2740,7 +2740,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                     """
                                     SELECT d.filepath, d.user_verified_target_path, v.vector
                                     FROM documents d
-                                    JOIN document_vectors v ON d.base_dir = v.base_dir AND d.filepath = v.filepath
+                                    JOIN document_vectors v ON d.base_dir = v.base_dir AND (d.filepath = v.filepath OR REPLACE(d.filepath, '\\', '/') = REPLACE(v.filepath, '\\', '/'))
                                     WHERE d.base_dir = ? AND d.user_verified_target_path IS NOT NULL AND d.user_verified_target_path != ''
                                 """,
                                     (base_dir,),
