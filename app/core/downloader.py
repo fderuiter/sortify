@@ -353,20 +353,15 @@ def verify_temp_file_hash(temp_path: str, target_path: str) -> bool:
     registry = SharedModelRegistry.get_instance()
 
     filename = os.path.basename(target_path)
-    expected_hash = None
+    expected_hashes = registry.get_expected_hashes_for_file(filename)
 
-    if "model_download" in registry._expected_hashes:
-        expected_hash = registry._expected_hashes["model_download"].get(filename)
-    if not expected_hash and "generative_naming" in registry._expected_hashes:
-        expected_hash = registry._expected_hashes["generative_naming"].get(filename)
-
-    if not expected_hash:
+    if not expected_hashes:
         raise ModelVerificationError(
             f"No cryptographic hash registered in the central registry for {filename}. "
             "Verification cannot proceed."
         )
 
-    if actual_hash != expected_hash:
+    if actual_hash not in expected_hashes:
         # Requirement 3: Block finalization and immediately discard the temporary file
         if os.path.exists(temp_path):
             try:
@@ -376,9 +371,12 @@ def verify_temp_file_hash(temp_path: str, target_path: str) -> bool:
                     f"Failed to immediately delete temporary file {temp_path}: {e}"
                 )
 
+        expected_str = (
+            ", ".join(expected_hashes) if len(expected_hashes) > 1 else expected_hashes[0]
+        )
         raise ModelVerificationError(
             f"Cryptographic signature verification failed for {filename}.\n"
-            f"Expected: {expected_hash}\n"
+            f"Expected: {expected_str}\n"
             f"Actual: {actual_hash}\n"
             "This file may be corrupted, incomplete, or tampered with."
         )

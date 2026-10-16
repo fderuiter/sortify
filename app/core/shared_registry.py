@@ -718,6 +718,40 @@ class SharedModelRegistry:
         with self._lock:
             self._expected_hashes[model_id] = hashes
 
+    def get_expected_hashes(self, category: str | None = None) -> dict:
+        """Retrieve expected hashes for a specific category or all registered categories."""
+        with self._lock:
+            if category is None:
+                return {k: dict(v) for k, v in self._expected_hashes.items()}
+            if category in self._expected_hashes:
+                return dict(self._expected_hashes[category])
+            return {}
+
+    def get_expected_hashes_for_file(self, filename: str) -> list[str]:
+        """Search across all registered categories to retrieve all expected SHA-256 hashes for a filename."""
+        with self._lock:
+            expected_hashes = []
+            for cat_hashes in self._expected_hashes.values():
+                if filename in cat_hashes:
+                    h = cat_hashes[filename]
+                    if h not in expected_hashes:
+                        expected_hashes.append(h)
+            return expected_hashes
+
+    def get_expected_hash(self, filename: str, category: str | None = None) -> str | None:
+        """Retrieve the expected SHA-256 hash for a filename, optionally scoped to a category."""
+        with self._lock:
+            if category is not None:
+                return self._expected_hashes.get(category, {}).get(filename)
+            for cat_hashes in self._expected_hashes.values():
+                if filename in cat_hashes:
+                    return cat_hashes[filename]
+            return None
+
+    def has_expected_hash_for_file(self, filename: str) -> bool:
+        """Check if any registered category contains an expected hash for the given filename."""
+        return len(self.get_expected_hashes_for_file(filename)) > 0
+
     def verify_integrity(self, model_id: str, model_path: str) -> bool:
         """Verify model files against expected hashes if they are registered."""
         from app.core.exceptions import HashVerificationError
@@ -854,10 +888,12 @@ class SharedModelRegistry:
         if not isinstance(ocr_gpu_enabled, bool):
             ocr_gpu_enabled = False
 
-        from app.core.env_helper import is_cuda_available, is_mps_available
+        if ocr_gpu_enabled:
+            from app.core.env_helper import is_cuda_available, is_mps_available
 
-        gpu_available = is_cuda_available() or is_mps_available()
-        use_gpu = bool(ocr_gpu_enabled and gpu_available)
+            use_gpu = bool(is_cuda_available() or is_mps_available())
+        else:
+            use_gpu = False
 
         current_reader_info = self._models.get("easyocr_info")
         reader = self._models.get(model_id)

@@ -36,25 +36,26 @@ def test_get_db_connection_graceful_fallback_cross_platform(tmp_path, caplog):
         caplog.clear()
         with patch("sys.platform", platform_name):
             with patch("app.core.db_conn.HAS_SQLCIPHER", False):
-                try:
-                    conn = get_db_connection(str(test_db))
-                    assert conn is not None
-                    # Verify security warning logged
-                    assert any(
-                        "SECURITY WARNING" in record.message
-                        for record in caplog.records
-                    )
+                with patch("app.core.db_conn._disable_pytest_win_fallback", False):
+                    try:
+                        conn = get_db_connection(str(test_db))
+                        assert conn is not None
+                        # Verify security warning logged
+                        assert any(
+                            "SECURITY WARNING" in record.message
+                            for record in caplog.records
+                        )
 
-                    # Verify read/write functionality on fallback connection
-                    with conn:
-                        cursor = conn.cursor()
-                        cursor.execute("CREATE TABLE IF NOT EXISTS test_tb (id INT)")
-                        cursor.execute("INSERT INTO test_tb VALUES (100)")
-                        cursor.execute("SELECT id FROM test_tb")
-                        row = cursor.fetchone()
-                        assert row[0] == 100
-                finally:
-                    clear_connection_cache(only_current_and_inactive=False)
+                        # Verify read/write functionality on fallback connection
+                        with conn:
+                            cursor = conn.cursor()
+                            cursor.execute("CREATE TABLE IF NOT EXISTS test_tb (id INT)")
+                            cursor.execute("INSERT INTO test_tb VALUES (100)")
+                            cursor.execute("SELECT id FROM test_tb")
+                            row = cursor.fetchone()
+                            assert row[0] == 100
+                    finally:
+                        clear_connection_cache(only_current_and_inactive=False)
 
 
 def test_bootstrap_binaries_cross_platform_path_injection(tmp_path):
