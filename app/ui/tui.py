@@ -37,6 +37,8 @@ from textual.widgets import (
 )
 from textual.widgets.tree import TreeNode
 
+from app.core.path_utils import scrub_user_home_paths
+from app.core.text_utils import sanitize_secret_patterns
 from app.ui.heading import Heading
 
 logger = logging.getLogger(__name__)
@@ -119,6 +121,22 @@ class A11yMixin:
         help_url: Optional[str] = None,
     ) -> str:
         """Emit auditory screen reader announcement and log accessibility event."""
+        if message is None:
+            message = ""
+        else:
+            try:
+                s_msg = str(message)
+                message = (
+                    sanitize_secret_patterns(scrub_user_home_paths(s_msg))
+                    if s_msg
+                    else ""
+                )
+            except Exception:
+                try:
+                    message = str(message)
+                except Exception:
+                    message = ""
+
         full_msg = f"{message} [Help: {help_url}]" if help_url else message
         entry = {
             "message": full_msg,
@@ -5863,7 +5881,7 @@ class AutoSorterTUI(A11yMixin, App):
         res = super().announce(message, priority=priority, help_url=help_url)
         try:
             log_w = self.query_one("#tui-log", Log)
-            display_msg = f"{message} [Help: {help_url}]" if help_url else message
+            display_msg = f"{res} [Help: {help_url}]" if help_url else res
             log_w.write_line(display_msg)
         except Exception:
             pass
