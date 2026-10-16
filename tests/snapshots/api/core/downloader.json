@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "0206d84bc296e58bd92c947fb4bd52f474db1d8f0f1c66db1a9ea436ba4b4a64"
+    "checksum": "6e7bc91330badf4442bc92299978ed27bd02e63dae98dae1fee7ab75d3d114c7"
   },
   "classes": [
     {
@@ -275,6 +275,21 @@
           "annotation": null,
           "default": "None",
           "name": "download_manager"
+        },
+        {
+          "annotation": "float",
+          "default": "1.0",
+          "name": "initial_delay"
+        },
+        {
+          "annotation": "float",
+          "default": "2.0",
+          "name": "backoff_factor"
+        },
+        {
+          "annotation": "int",
+          "default": "3",
+          "name": "max_retries"
         }
       ],
       "returns": null

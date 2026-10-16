@@ -26,27 +26,10 @@ def is_admin():
 
 
 def register_context_menu(enable: bool):
-    """Register or unregister context menu handles."""
+    """Register or unregister context menu handles in the per-user registry hive."""
     if sys.platform != "win32":
         raise OSError("Context menu integration is only available on Windows.")
 
-    # We will invoke a separate process for elevation if not admin
-    if not is_admin():
-        # Elevate and run the registration script
-        script_path = os.path.abspath(__file__)
-        action = "enable" if enable else "disable"
-
-        # Relaunch with elevation
-        ret = ctypes.windll.shell32.ShellExecuteW(
-            None, "runas", sys.executable, f'"{script_path}" {action}', None, 1
-        )
-        if int(ret) <= 32:
-            raise RuntimeError(
-                f"Failed to elevate privileges. ShellExecuteW returned {ret}"
-            )
-        return True
-
-    # If we are admin, do the registry changes
     from app.core.path_utils import is_packaged
 
     if is_packaged():
@@ -86,18 +69,18 @@ def register_context_menu(enable: bool):
             raise e
 
     try:
-        # Register for directories (Right clicking a folder)
+        # Register for directories (Right clicking a folder) under per-user hive
         _set_keys(
-            winreg.HKEY_CLASSES_ROOT,
-            r"Directory\shell\SmartAutoSorter",
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Classes\Directory\shell\SmartAutoSorter",
             enable,
             command_str,
         )
 
-        # Register for directory background (Right clicking inside an empty space in a folder)
+        # Register for directory background (Right clicking inside an empty space in a folder) under per-user hive
         _set_keys(
-            winreg.HKEY_CLASSES_ROOT,
-            r"Directory\Background\shell\SmartAutoSorter",
+            winreg.HKEY_CURRENT_USER,
+            r"Software\Classes\Directory\Background\shell\SmartAutoSorter",
             enable,
             bg_command_str,
         )
