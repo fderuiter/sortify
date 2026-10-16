@@ -6,7 +6,7 @@ import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from textual.widgets import Button, Input, Static, Switch, Tree
+from textual.widgets import Button, Input, Select, Static, Switch, Tree
 
 from app.config import AppSettings
 from app.ui.tui import (
@@ -845,6 +845,61 @@ def test_tui_expanded_settings_fields(temp_workspace):
     asyncio.run(_test())
 
 
+def test_tui_conflict_policy_settings_and_tree_indicator(temp_workspace):
+    """Verify SettingsModal Conflict Policy dropdown and tree node collision indicator."""
+
+    async def _test():
+        settings = AppSettings()
+        app = AutoSorterTUI(
+            settings=settings, base_dir=temp_workspace, skip_wizard=True
+        )
+
+        with patch.object(AppSettings, "_save", return_value=None):
+            async with app.run_test() as pilot:
+                app.action_open_settings()
+                await pilot.pause(0.1)
+
+                modal = app.screen
+                assert isinstance(modal, SettingsModal)
+
+                select_cp = modal.query_one("#select-conflict-policy", Select)
+                assert select_cp.value == "rename"
+                select_cp.value = "overwrite"
+
+                modal.action_save()
+                await pilot.pause(0.1)
+
+                assert app.settings.CONFLICT_POLICY == "overwrite"
+
+                # Create colliding target file and rebuild tree
+                src_file = os.path.join(temp_workspace, "doc.pdf")
+                with open(src_file, "w") as f:
+                    f.write("src")
+                target_dir = os.path.join(temp_workspace, "Documents")
+                os.makedirs(target_dir, exist_ok=True)
+                target_file = os.path.join(target_dir, "doc.pdf")
+                with open(target_file, "w") as f:
+                    f.write("existing")
+
+                app.plan = {
+                    "Documents": {
+                        "doc.pdf": {
+                            "__type__": "file",
+                            "filepath": src_file,
+                            "target_filename": "doc.pdf",
+                        }
+                    }
+                }
+                app.rebuild_tree()
+                await pilot.pause(0.1)
+
+                tree = app.query_one("#plan-tree", Tree)
+                nodes_labels = [str(leaf.label) for leaf in tree.root.children[0].children]
+                assert any("[COLLISION: OVERWRITE]" in lbl for lbl in nodes_labels)
+
+    asyncio.run(_test())
+
+
 def test_tui_settings_modal_ai_consent_toggle_flow(temp_workspace):
     """Verify toggling AI consent inside SettingsModal updates settings and status bar badge dynamically."""
 
@@ -1667,6 +1722,59 @@ def test_directory_select_modal_demo_preset_auto_creation(
             await pilot.pause(0.05)
 
             assert demo_dir.exists()
+            assert (demo_dir / "demo_finance.txt").exists()
+            assert (demo_dir / "demo_tech.txt").exists()
+            assert (demo_dir / "demo_health.txt").exists()
+            assert (demo_dir / "empty.txt").exists()
+            assert app.base_dir == str(demo_dir)
+            assert len(scan_called) == 1
+
+    asyncio.run(_test())
+
+
+def test_directory_select_modal_demo_preset_existing_directory(
+    temp_workspace, monkeypatch, tmp_path
+):
+    """Verify re-selecting Demo Workspace preset when directory already exists populates sample corpus safely."""
+    from app.ui.tui import AutoSorterTUI, DirectorySelectModal
+
+    demo_dir = tmp_path / "sandbox" / "demo_workspace"
+    demo_dir.mkdir(parents=True, exist_ok=True)
+
+    orig_abspath = os.path.abspath
+
+    def mock_abspath(p):
+        if p == "sandbox/demo_workspace":
+            return str(demo_dir)
+        return orig_abspath(p)
+
+    monkeypatch.setattr(os.path, "abspath", mock_abspath)
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        scan_called = []
+
+        def mock_scan():
+            scan_called.append(True)
+
+        app.action_scan_directory = mock_scan
+
+        async with app.run_test() as pilot:
+            await pilot.press("ctrl+b")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, DirectorySelectModal)
+
+            app.screen.query_one("#preset-demo", Button).press()
+            await pilot.pause(0.05)
+
+            assert demo_dir.exists()
+            assert (demo_dir / "demo_finance.txt").exists()
+            assert (demo_dir / "demo_tech.txt").exists()
+            assert (demo_dir / "demo_health.txt").exists()
+            assert (demo_dir / "empty.txt").exists()
             assert app.base_dir == str(demo_dir)
             assert len(scan_called) == 1
 

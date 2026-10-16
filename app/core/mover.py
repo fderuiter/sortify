@@ -757,7 +757,10 @@ def _execute_moves_recursive(
                 )
                 continue
 
-            dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
+            if collision and conflict_policy == "overwrite":
+                dest_path = target_path
+            else:
+                dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
             dest_path = unicodedata.normalize("NFC", dest_path)
             _update_path_map_entry(path_map, source_path, dest_path)
 
@@ -886,7 +889,15 @@ def _execute_moves_recursive(
                 continue
 
             if not moved_as_link:
-                from app.core.resilient_file_ops import resilient_move
+                from app.core.resilient_file_ops import resilient_move, resilient_remove
+
+                if (
+                    collision
+                    and conflict_policy == "overwrite"
+                    and os.path.lexists(dest_path)
+                    and not _is_same_path(source_path, dest_path)
+                ):
+                    resilient_remove(dest_path)
 
                 dest_path = resilient_move(source_path, dest_path)
                 rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
@@ -1289,7 +1300,10 @@ def _process_move_item(
         )
         return False
 
-    dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
+    if collision and conflict_policy == "overwrite":
+        dest_path = target_path
+    else:
+        dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
     dest_path = unicodedata.normalize("NFC", dest_path)
     _update_path_map_entry(path_map, source_path, dest_path, lock=db_lock)
 
@@ -1425,26 +1439,31 @@ def _process_move_item(
                     pass
         return True
 
-    move_error = None
     if not moved_as_link:
-        try:
-            import unittest.mock
+        import unittest.mock
 
-            if (
-                isinstance(shutil.move, (unittest.mock.Mock, unittest.mock.NonCallableMock))
-                or hasattr(shutil.move, "mock_add_spec")
-                or getattr(shutil.move, "__name__", "") == "mock_move"
-                or getattr(shutil.move, "__module__", "") != "shutil"
-            ):
-                shutil.move(source_path, dest_path)
-            else:
-                from app.core.resilient_file_ops import resilient_move
+        from app.core.resilient_file_ops import resilient_remove
 
-                dest_path = resilient_move(source_path, dest_path)
-                rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
-        except Exception as err:
-            move_error = str(err)
-            logging.error(f"Failed to move file {source_path} to {dest_path}: {err}")
+        if (
+            collision
+            and conflict_policy == "overwrite"
+            and os.path.lexists(dest_path)
+            and not _is_same_path(source_path, dest_path)
+        ):
+            resilient_remove(dest_path)
+
+        if (
+            isinstance(shutil.move, (unittest.mock.Mock, unittest.mock.NonCallableMock))
+            or hasattr(shutil.move, "mock_add_spec")
+            or getattr(shutil.move, "__name__", "") == "mock_move"
+            or getattr(shutil.move, "__module__", "") != "shutil"
+        ):
+            shutil.move(source_path, dest_path)
+        else:
+            from app.core.resilient_file_ops import resilient_move
+
+            dest_path = resilient_move(source_path, dest_path)
+            rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
 
     if ledger and entry_id:
         with db_lock:
@@ -1547,17 +1566,15 @@ def _process_move_item(
                 post_hash = get_file_hash(dest_path)
             except Exception:
                 post_hash = None
-        audit_entry = {
-            "source_path": source_path,
-            "destination_path": dest_path,
-            "pre_hash": pre_hash,
-            "post_hash": post_hash,
-        }
-        if move_error:
-            audit_entry["status"] = "MOVE_FAIL"
-            audit_entry["error"] = move_error
         with db_lock:
-            audit_records.append(audit_entry)
+            audit_records.append(
+                {
+                    "source_path": source_path,
+                    "destination_path": dest_path,
+                    "pre_hash": pre_hash,
+                    "post_hash": post_hash,
+                }
+            )
 
     return True
 
