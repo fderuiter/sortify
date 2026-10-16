@@ -432,3 +432,15 @@ def _get_val(obj: Any, attr: str, default: Any = None) -> Any:
     if isinstance(obj, dict):
         return obj.get(attr, default)
     return default
+
+
+def _set_val(obj: Any, attr: str, val: Any) -> None:
+    """Safely set attribute or key value on dictionary or domain model object."""
+    if isinstance(obj, dict):
+        obj[attr] = val
+    elif hasattr(obj, attr):
+        setattr(obj, attr, val)
+    elif hasattr(obj, "plan") and isinstance(getattr(obj, "plan"), dict):
+        obj.plan[attr] = val
+    elif hasattr(obj, "__dict__"):
+        setattr(obj, attr, val)
