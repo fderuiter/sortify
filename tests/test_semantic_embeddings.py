@@ -1027,6 +1027,7 @@ def test_onnx_central_registry_session_routing_and_unloading(db, temp_dir):
     """Verify that property extraction and asset validation route session loading
     through SharedModelRegistry.get_onnx_session and that unload_all_models clears them.
     """
+    pytest.importorskip("onnxruntime")
     from unittest.mock import MagicMock, patch
 
     from app.core.semantic_embeddings import get_active_model_properties
@@ -1079,6 +1080,7 @@ def test_malformed_model_validation_failure_cleans_up_registry(db, temp_dir):
     """Verify that when asset validation fails during session initialization or shape inspection,
     any created session key is safely unloaded from SharedModelRegistry.
     """
+    pytest.importorskip("onnxruntime")
     from unittest.mock import MagicMock, patch
 
     from app.core.semantic_embeddings import ModelValidationError
