@@ -9,6 +9,7 @@ import pytest
 from app.core.audit_reporter import (
     MISMATCH_FAIL,
     SKIPPED,
+    UNVERIFIED,
     VERIFIED_PASS,
     export_audit_report,
     export_audit_report_csv,
@@ -19,7 +20,7 @@ from app.core.exceptions import AuditExportError
 
 
 def test_generate_audit_report_metrics_and_statuses():
-    """Test generating audit report with pass, fail, and skipped records."""
+    """Test generating audit report with pass, fail, skipped, and unverified records."""
     records = [
         {
             "source_path": "/tmp/a.txt",
@@ -40,15 +41,22 @@ def test_generate_audit_report_metrics_and_statuses():
             "post_hash": "333333333333",
             "skipped": True,
         },
+        {
+            "source_path": "/tmp/d.txt",
+            "destination_path": "/tmp/sorted/d.txt",
+            "pre_hash": None,
+            "post_hash": "444444444444",
+        },
     ]
 
     report = generate_audit_report("/tmp", records)
 
     assert report["base_dir"] == os.path.normpath("/tmp")
-    assert report["total_files"] == 3
+    assert report["total_files"] == 4
     assert report["verified_pass_count"] == 1
     assert report["mismatch_fail_count"] == 1
     assert report["skipped_count"] == 1
+    assert report["unverified_count"] == 1
 
     recs = report["records"]
     assert recs[0]["status"] == VERIFIED_PASS
@@ -59,6 +67,43 @@ def test_generate_audit_report_metrics_and_statuses():
 
     assert recs[2]["status"] == SKIPPED
     assert recs[2]["status_badge"] == "[SKIPPED]"
+
+    assert recs[3]["status"] == UNVERIFIED
+    assert recs[3]["status_badge"] == "[UNVERIFIED]"
+
+
+def test_unverified_file_hash_pairs():
+    """Test classification of records missing pre-hash, post-hash, or both hashes."""
+    records = [
+        {
+            "source_path": "/tmp/no_pre.txt",
+            "destination_path": "/tmp/out/no_pre.txt",
+            "pre_hash": "",
+            "post_hash": "hash_post_only",
+        },
+        {
+            "source_path": "/tmp/no_post.txt",
+            "destination_path": "/tmp/out/no_post.txt",
+            "pre_hash": "hash_pre_only",
+            "post_hash": None,
+        },
+        {
+            "source_path": "/tmp/no_hash.txt",
+            "destination_path": "/tmp/out/no_hash.txt",
+            "pre_hash": None,
+            "post_hash": None,
+        },
+    ]
+
+    report = generate_audit_report("/tmp", records)
+    assert report["total_files"] == 3
+    assert report["unverified_count"] == 3
+    assert report["verified_pass_count"] == 0
+    assert report["mismatch_fail_count"] == 0
+
+    for rec in report["records"]:
+        assert rec["status"] == UNVERIFIED
+        assert rec["status_badge"] == "[UNVERIFIED]"
 
 
 def test_export_audit_report_json(tmp_path):
