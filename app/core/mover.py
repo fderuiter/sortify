@@ -1627,6 +1627,14 @@ class AsyncMoveEngine:
         if not session_id:
             session_id = str(uuid.uuid4())
 
+        if db and hasattr(db, "begin_transaction_session"):
+            try:
+                db.begin_transaction_session(session_id)
+            except Exception as sess_err:
+                logging.warning(
+                    f"Failed to begin explicit database transaction session {session_id}: {sess_err}"
+                )
+
         ledger = getattr(runtime_settings, "transaction_ledger", None)
         if ledger is None:
             try:
@@ -1896,6 +1904,23 @@ class AsyncMoveEngine:
                         db.execute_batch_updates(list(db_updates_batch))
                         db_updates_batch.clear()
 
+            if not summary["cancelled"]:
+                if db and hasattr(db, "commit_transaction_session"):
+                    try:
+                        db.commit_transaction_session(session_id)
+                    except Exception as commit_err:
+                        logging.warning(
+                            f"Failed to commit database transaction session {session_id}: {commit_err}"
+                        )
+            else:
+                if db and hasattr(db, "rollback_transaction_session"):
+                    try:
+                        db.rollback_transaction_session(session_id)
+                    except Exception as rb_err:
+                        logging.warning(
+                            f"Failed to roll back cancelled database transaction session {session_id}: {rb_err}"
+                        )
+
             from app.core.audit_reporter import generate_audit_report
 
             summary["audit_report"] = generate_audit_report(base_dir, audit_records)
@@ -1903,11 +1928,20 @@ class AsyncMoveEngine:
 
         except Exception as e:
             with db_lock:
-                try:
-                    if db_updates_batch and hasattr(db, "execute_batch_updates"):
+                if db_updates_batch and hasattr(db, "execute_batch_updates"):
+                    try:
                         db.execute_batch_updates(list(db_updates_batch))
-                except Exception:
-                    pass
+                        db_updates_batch.clear()
+                    except Exception:
+                        pass
+
+            if db and hasattr(db, "rollback_transaction_session"):
+                try:
+                    db.rollback_transaction_session(session_id)
+                except Exception as rb_err:
+                    logging.warning(
+                        f"Failed to roll back database transaction session {session_id}: {rb_err}"
+                    )
 
             if (
                 session_id

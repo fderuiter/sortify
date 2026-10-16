@@ -1107,7 +1107,12 @@ def is_gguf_model_dir(model_path: str) -> bool:
 
 
 def gguf_worker_main(
-    model_path, input_queue, output_queue, n_threads=None, session_key=None
+    model_path,
+    input_queue,
+    output_queue,
+    n_threads=None,
+    session_key=None,
+    max_grammar_cache_size=None,
 ):
     """Worker process main loop that handles local GGUF model generation.
 
@@ -1123,8 +1128,24 @@ def gguf_worker_main(
         Number of CPU threads to allocate for the model. If None, resolves from the registry thread limit.
     session_key : bytes | str, optional
         Ephemeral session key for decrypting input task and encrypting output results.
+    max_grammar_cache_size : int, optional
+        Maximum entries for the in-memory LRU grammar cache. Defaults to config setting or 16.
     """
+    import hashlib
+    import logging
     import os
+
+    from app.core.cache import BoundedMemoryCache
+
+    if max_grammar_cache_size is None:
+        try:
+            from app.config import Settings
+
+            max_grammar_cache_size = Settings().GRAMMAR_CACHE_SIZE
+        except Exception:
+            max_grammar_cache_size = 16
+
+    grammar_cache = BoundedMemoryCache(max_size=max_grammar_cache_size)
 
     gguf_file = None
     for root, _, files in os.walk(model_path):
@@ -1183,26 +1204,38 @@ def gguf_worker_main(
 
             grammar = None
             if grammar_str:
-                try:
-                    from llama_cpp import LlamaGrammar
-
-                    grammar = LlamaGrammar.from_string(grammar_str)
-                except Exception as e:
-                    import logging
-
-                    logging.error(
-                        f"Failed to compile grammar constraint: {e}. Falling back to default ASCII grammar."
-                    )
+                grammar_hash = hashlib.sha256(grammar_str.encode("utf-8")).hexdigest()
+                grammar = grammar_cache.get(grammar_hash)
+                if grammar is None:
                     try:
                         from llama_cpp import LlamaGrammar
 
-                        default_ascii_grammar = 'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+'
-                        grammar = LlamaGrammar.from_string(default_ascii_grammar)
-                    except Exception as fe:
+                        grammar = LlamaGrammar.from_string(grammar_str)
+                        grammar_cache.set(grammar_hash, grammar)
+                    except Exception as e:
                         logging.error(
-                            f"Failed to compile default ASCII fallback grammar: {fe}"
+                            f"Failed to compile grammar constraint: {e}. Falling back to default ASCII grammar."
                         )
-                        grammar = None
+                        default_ascii_grammar = (
+                            'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+'
+                        )
+                        fallback_hash = hashlib.sha256(
+                            default_ascii_grammar.encode("utf-8")
+                        ).hexdigest()
+                        grammar = grammar_cache.get(fallback_hash)
+                        if grammar is None:
+                            try:
+                                from llama_cpp import LlamaGrammar
+
+                                grammar = LlamaGrammar.from_string(
+                                    default_ascii_grammar
+                                )
+                                grammar_cache.set(fallback_hash, grammar)
+                            except Exception as fe:
+                                logging.error(
+                                    f"Failed to compile default ASCII fallback grammar: {fe}"
+                                )
+                                grammar = None
 
             gen_kwargs = {"max_tokens": max_tokens, "echo": False}
             if stop_seqs is not None:

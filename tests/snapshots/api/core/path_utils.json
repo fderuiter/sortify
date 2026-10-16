@@ -1,8 +1,7 @@
 {
   "_metadata": {
-    "checksum": "2fbbb7cf4339c92579032f7480ff475bf31954e111d6b159f3d66bd06c661f38"
+    "checksum": "e14f1dbd4ae29b8b17a77f9f4e253dd16b9c768544cf37bf0874fd73ba4fe97a"
   },
-  "classes": [],
   "functions": [
     {
       "async": false,
@@ -30,6 +29,13 @@
       "name": "get_meipass_dir",
       "parameters": [],
       "returns": "Optional[str]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_sanitized_username",
+      "parameters": [],
+      "returns": "str"
     },
     {
       "async": false,
