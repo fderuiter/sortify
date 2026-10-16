@@ -409,3 +409,83 @@ def test_spec_file_cli_target_executable():
     assert mock_collect.called
     collect_args = mock_collect.call_args.args
     assert mock_globals["exe_cli"] in collect_args
+
+
+def test_destination_path_normalization_and_assertion():
+    """Verify that destination paths in the spec file are normalized to forward slashes
+    and that inline assertions trigger a build failure when backslashes exist in destination paths."""
+    spec_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "smart-autosorter.spec"
+    )
+    with open(spec_path, "r", encoding="utf-8") as f:
+        spec_content = f.read()
+
+    mock_globals = {
+        "Analysis": MagicMock(),
+        "PYZ": MagicMock(),
+        "EXE": MagicMock(),
+        "COLLECT": MagicMock(),
+        "__file__": spec_path,
+    }
+
+    mock_hooks = MagicMock()
+    mock_hooks.collect_all.return_value = (
+        [("C:\\path\\file.dat", "pkg\\data")],
+        [("C:\\path\\lib.dll", "pkg\\bin")],
+        [],
+    )
+
+    with patch.dict(
+        sys.modules,
+        {
+            "PyInstaller": MagicMock(),
+            "PyInstaller.utils": MagicMock(),
+            "PyInstaller.utils.hooks": mock_hooks,
+        },
+    ):
+        exec(spec_content, mock_globals)
+
+    normalize_dest_path = mock_globals["normalize_dest_path"]
+    normalize_collection = mock_globals["normalize_collection"]
+    assert_no_backslashes_in_dest_paths = mock_globals["assert_no_backslashes_in_dest_paths"]
+
+    # 1. Test normalize_dest_path
+    assert normalize_dest_path("sqlcipher3\\sub") == "sqlcipher3/sub"
+    assert normalize_dest_path("app\\binaries\\windows\\sqlcipher3") == "app/binaries/windows/sqlcipher3"
+    assert normalize_dest_path("folder\\\\sub/") == "folder/sub"
+
+    # 2. Test normalize_collection leaves host paths untouched while fixing dest paths
+    raw_collection = [
+        ("C:\\host\\system\\path\\db.dll", "sqlcipher3\\sub\\db.dll"),
+        ("C:\\host\\system\\path\\lib.so", "app\\binaries\\linux"),
+    ]
+    norm_collection = normalize_collection(raw_collection)
+    assert norm_collection[0] == ("C:\\host\\system\\path\\db.dll", "sqlcipher3/sub/db.dll")
+    assert norm_collection[1] == ("C:\\host\\system\\path\\lib.so", "app/binaries/linux")
+
+    # 3. Test inline assertion behavior
+    # Valid collection with only forward slashes in dest paths
+    valid_collection = [
+        ("C:\\host\\path\\file.dll", "sqlcipher3/sqlite3.dll"),
+        ("C:\\host\\path\\app.so", "app/binaries/linux/lib.so"),
+    ]
+    assert_no_backslashes_in_dest_paths(valid_collection, "valid_test", is_pre_analysis=True)
+
+    # Invalid collection with backslash in dest path must raise ValueError
+    invalid_collection = [
+        ("C:\\host\\path\\file.dll", "sqlcipher3\\sqlite3.dll"),
+    ]
+    with pytest.raises(ValueError, match="Active backslashes detected in destination paths"):
+        assert_no_backslashes_in_dest_paths(invalid_collection, "invalid_test", is_pre_analysis=True)
+
+    # 4. Check Analysis arguments from spec execution to ensure no destination paths contain backslashes
+    analysis_call = mock_globals["Analysis"].call_args
+    assert analysis_call is not None
+    datas_list = analysis_call.kwargs.get("datas", [])
+    binaries_list = analysis_call.kwargs.get("binaries", [])
+
+    for src, dest in datas_list:
+        assert "\\" not in dest, f"Found backslash in destination path for data asset: {dest}"
+    for src, dest in binaries_list:
+        assert "\\" not in dest, f"Found backslash in destination path for binary asset: {dest}"
+
