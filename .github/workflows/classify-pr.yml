@@ -4,6 +4,10 @@ on:
   pull_request:
     types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
 
+concurrency:
+  group: pr-classify-${{ github.event.pull_request.number || github.ref }}
+  cancel-in-progress: true
+
 permissions:
   contents: read
   issues: write
@@ -27,6 +31,9 @@ jobs:
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
+
+      - name: Install dependencies
+        run: uv sync --only-group dev
 
       - name: Extract PR Metadata
         uses: actions/github-script@v9
@@ -89,7 +96,7 @@ jobs:
 
       - name: Run Classifier Script
         run: |
-          python scripts/classify_pr.py --json-input pr_meta.json --output classification_result.json
+          uv run python scripts/classify_pr.py --json-input pr_meta.json --output classification_result.json
 
       - name: Sync PR Labels & Post Status Check
         uses: actions/github-script@v9

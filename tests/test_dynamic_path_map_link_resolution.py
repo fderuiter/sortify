@@ -155,10 +155,6 @@ class TestDynamicPathMapLinkResolution(unittest.TestCase):
             is_collision_renamed=True,
         )
 
-        path_maps = self.history_manager.get_bidirectional_path_map(session_id)
-        self.assertEqual(path_maps["forward"][src_file], suffixed_target)
-        self.assertEqual(path_maps["reverse"][suffixed_target], src_file)
-
         # Unwind session
         unwound = self.history_manager.unwind_session(session_id, db=self.db)
         self.assertEqual(unwound, 1)

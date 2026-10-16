@@ -7,7 +7,7 @@ import platform
 import sys
 
 # Removed customtkinter
-from PyInstaller.utils.hooks import collect_all
+from PyInstaller.utils.hooks import collect_all, collect_data_files
 
 block_cipher = None
 
@@ -43,10 +43,9 @@ for pkg in ml_packages:
 # Bundle jsonschema and rfc3987 syntax data assets
 for schema_pkg in ('jsonschema', 'jsonschema_specifications', 'referencing', 'rfc3987_syntax', 'rfc3987'):
     try:
-        s_datas, s_binaries, s_hiddenimports = collect_all(schema_pkg)
-        datas.extend(s_datas)
-        binaries.extend(s_binaries)
-        hiddenimports.extend(s_hiddenimports)
+        s_datas = collect_data_files(schema_pkg)
+        if s_datas:
+            datas.extend(s_datas)
     except Exception as e:
         print(f"Warning: Could not collect package {schema_pkg}: {e}")
 # Bundle secure database shared libraries directly from the active virtual environment
@@ -459,31 +458,7 @@ if "pytest" not in sys.modules:
             if custom_sqlite3_dll:
                 break
                 
-            for root, dirs, files in os.walk(vd):
-                # Filter out heavy directories in-place to prevent os.walk from recursing into them
-                dirs[:] = [d for d in dirs if d.lower() not in (
-                    "torch", "easyocr", "scipy", "transformers", "numpy", "pandas",
-                    "sklearn", "matplotlib", "jinja2", "anyio", "aiohttp", "pydantic",
-                    "pydantic_core", "mypy", "pytest", "coverage", "docutils", "sphinx",
-                    "reportlab", "sympy", "skimage", "shapely", "pil", "pyzmq", "rich",
-                    "textual", "botocore", "boto3", "google", "grpc", "node_modules"
-                )]
-                # Skip some common heavy directories to make it faster
-                if any(p in root.lower().replace('\\', '/') for p in ('site-packages/torch', 'site-packages/easyocr', 'site-packages/scipy')):
-                    continue
-                for file in files:
-                    if file.lower() == "sqlite3.dll":
-                        candidate_path = os.path.abspath(os.path.join(root, file))
-                        cand_lower = candidate_path.lower().replace('\\', '/')
-                        # Make sure it's not from base_prefix
-                        if base_lower and base_lower in cand_lower and base_lower != prefix_lower:
-                            continue
-                        custom_sqlite3_dll = candidate_path
-                        break
-                if custom_sqlite3_dll:
-                    break
-            if custom_sqlite3_dll:
-                break
+
 
     if not custom_sqlite3_dll:
         # Walk the app/binaries directory to find the custom sqlite3.dll as a reliable fallback

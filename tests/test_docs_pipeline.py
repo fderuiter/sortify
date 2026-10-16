@@ -213,30 +213,6 @@ def test_main_detects_unsynced_files_on_check():
             mock_run.return_value = MagicMock(returncode=0)
 
             file_contents = {
-                Path("notebooks/01_ml_analyzer_clustering.ipynb").as_posix(): [
-                    "nb1",
-                    "nb1",
-                ],
-                Path("notebooks/02_multi_format_text_extraction.ipynb").as_posix(): [
-                    "nb2",
-                    "nb2",
-                ],
-                Path("notebooks/03_virtual_sorting_verification.ipynb").as_posix(): [
-                    "nb3",
-                    "nb3",
-                ],
-                Path("docs/tutorials/01_ml_analyzer_clustering.md").as_posix(): [
-                    "tut1",
-                    "tut1",
-                ],
-                Path("docs/tutorials/02_multi_format_text_extraction.md").as_posix(): [
-                    "tut2",
-                    "tut2",
-                ],
-                Path("docs/tutorials/03_virtual_sorting_verification.md").as_posix(): [
-                    "tut3",
-                    "tut3",
-                ],
                 Path("docs/api_reference.md").as_posix(): ["content1", "content1"],
                 Path("docs/ui.md").as_posix(): ["content2", "different_content2"],
                 Path("docs/admin_guide.md").as_posix(): ["content3", "content3"],
@@ -300,30 +276,6 @@ def test_main_clean_on_check():
             mock_run.return_value = MagicMock(returncode=0)
 
             file_contents = {
-                Path("notebooks/01_ml_analyzer_clustering.ipynb").as_posix(): [
-                    "nb1",
-                    "nb1",
-                ],
-                Path("notebooks/02_multi_format_text_extraction.ipynb").as_posix(): [
-                    "nb2",
-                    "nb2",
-                ],
-                Path("notebooks/03_virtual_sorting_verification.ipynb").as_posix(): [
-                    "nb3",
-                    "nb3",
-                ],
-                Path("docs/tutorials/01_ml_analyzer_clustering.md").as_posix(): [
-                    "tut1",
-                    "tut1",
-                ],
-                Path("docs/tutorials/02_multi_format_text_extraction.md").as_posix(): [
-                    "tut2",
-                    "tut2",
-                ],
-                Path("docs/tutorials/03_virtual_sorting_verification.md").as_posix(): [
-                    "tut3",
-                    "tut3",
-                ],
                 Path("docs/api_reference.md").as_posix(): ["content1", "content1"],
                 Path("docs/ui.md").as_posix(): ["content2", "content2"],
                 Path("docs/admin_guide.md").as_posix(): ["content3", "content3"],
