@@ -757,7 +757,10 @@ def _execute_moves_recursive(
                 )
                 continue
 
-            dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
+            if collision and conflict_policy == "overwrite":
+                dest_path = target_path
+            else:
+                dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
             dest_path = unicodedata.normalize("NFC", dest_path)
             _update_path_map_entry(path_map, source_path, dest_path)
 
@@ -886,7 +889,15 @@ def _execute_moves_recursive(
                 continue
 
             if not moved_as_link:
-                from app.core.resilient_file_ops import resilient_move
+                from app.core.resilient_file_ops import resilient_move, resilient_remove
+
+                if (
+                    collision
+                    and conflict_policy == "overwrite"
+                    and os.path.lexists(dest_path)
+                    and not _is_same_path(source_path, dest_path)
+                ):
+                    resilient_remove(dest_path)
 
                 dest_path = resilient_move(source_path, dest_path)
                 rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
@@ -1289,7 +1300,10 @@ def _process_move_item(
         )
         return False
 
-    dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
+    if collision and conflict_policy == "overwrite":
+        dest_path = target_path
+    else:
+        dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
     dest_path = unicodedata.normalize("NFC", dest_path)
     _update_path_map_entry(path_map, source_path, dest_path, lock=db_lock)
 
@@ -1427,6 +1441,16 @@ def _process_move_item(
 
     if not moved_as_link:
         import unittest.mock
+
+        from app.core.resilient_file_ops import resilient_remove
+
+        if (
+            collision
+            and conflict_policy == "overwrite"
+            and os.path.lexists(dest_path)
+            and not _is_same_path(source_path, dest_path)
+        ):
+            resilient_remove(dest_path)
 
         if (
             isinstance(shutil.move, (unittest.mock.Mock, unittest.mock.NonCallableMock))

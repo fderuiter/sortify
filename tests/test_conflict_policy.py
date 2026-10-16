@@ -21,6 +21,9 @@ def test_conflict_policy_validation():
     settings = Settings(CONFLICT_POLICY="skip")
     assert settings.CONFLICT_POLICY == "skip"
 
+    settings = Settings(CONFLICT_POLICY="overwrite")
+    assert settings.CONFLICT_POLICY == "overwrite"
+
     # Invalid values should raise ValidationError
     with pytest.raises(ValidationError):
         Settings(CONFLICT_POLICY="invalid")
@@ -115,3 +118,47 @@ def test_conflict_policy_rename(tmp_path):
     renamed_file = dest_dir / "test_1.txt"
     assert renamed_file.exists()
     assert renamed_file.read_text() == "source_content"
+
+
+def test_conflict_policy_overwrite(tmp_path):
+    # Set up source and dest files
+    source_dir = tmp_path / "source"
+    source_dir.mkdir()
+    dest_dir = tmp_path / "dest"
+    dest_dir.mkdir()
+
+    source_file = source_dir / "test.txt"
+    source_file.write_text("source_content")
+
+    # Collision destination file already exists with different content
+    collision_file = dest_dir / "test.txt"
+    collision_file.write_text("dest_content")
+
+    plan = {
+        "source/test.txt": {
+            "__type__": "file",
+            "relative_source": "source/test.txt",
+            "target_filename": "test.txt",
+            "status": "To Be Moved",
+        }
+    }
+
+    class DummySettings:
+        CONFLICT_POLICY = "overwrite"
+
+    db = DummyDB()
+
+    # Execute with "overwrite" policy
+    _execute_moves_recursive(
+        base_dir=str(tmp_path),
+        plan=plan,
+        db=db,
+        current_dest="dest",
+        runtime_settings=DummySettings(),
+    )
+
+    # Since policy is overwrite, the source file should be moved and replace destination file
+    assert not source_file.exists()
+    assert collision_file.exists()
+    assert collision_file.read_text() == "source_content"
+
