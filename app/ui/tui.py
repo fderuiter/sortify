@@ -2422,6 +2422,10 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
                 classes="shortcut-row",
             )
             yield Label(
+                "  Ctrl+P / p  - Pause or resume background folder watching",
+                classes="shortcut-row",
+            )
+            yield Label(
                 "  Ctrl+H      - Session history & audit log export",
                 classes="shortcut-row",
             )
@@ -4329,6 +4333,11 @@ class VimTree(Tree):
                 self.app.action_toggle_select_all()
             event.stop()
             event.prevent_default()
+        elif event.key in ("p", "P"):
+            if hasattr(self.app, "action_toggle_watch"):
+                self.app.action_toggle_watch()
+            event.stop()
+            event.prevent_default()
         elif event.key in ("enter", "return"):
             node = self.cursor_node
             if node:
@@ -4369,6 +4378,8 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+e", "execute_sort", "Execute Plan", show=True),
         Binding("ctrl+a", "open_audit_report", "Audit Report", show=True),
         Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
+        Binding("ctrl+p", "toggle_watch", "Pause/Resume Watcher", show=True),
+        Binding("p", "toggle_watch", "Pause/Resume Watcher", show=False),
         Binding("g", "generate_sample_corpus", "Sample Dataset", show=False),
         Binding("question_mark", "open_cheat_sheet", "Help (?)", show=True),
         Binding("f1", "open_cheat_sheet", "Help (F1)", show=False),
@@ -4448,6 +4459,7 @@ class AutoSorterTUI(A11yMixin, App):
         source_dirs: Optional[List[str]] = None,
         skip_wizard: bool = False,
         non_interactive: bool = False,
+        daemon: Optional[Any] = None,
     ):
         super().__init__()
         self.settings = settings
@@ -4469,6 +4481,14 @@ class AutoSorterTUI(A11yMixin, App):
             self.source_dirs = []
         self.skip_wizard = skip_wizard
         self.non_interactive = non_interactive
+        self.daemon = daemon
+        if self.daemon is None and self.base_dir:
+            try:
+                from app.core.daemon import ContinuousWatchdogDaemon
+
+                self.daemon = ContinuousWatchdogDaemon(self.settings, self.base_dir)
+            except Exception:
+                self.daemon = None
         self.plan: Dict[str, Any] = {}
         self.locked_files: Dict[str, str] = {}
         self._ratings_cache: Dict[str, str] = {}
@@ -4500,7 +4520,7 @@ class AutoSorterTUI(A11yMixin, App):
         pb.tooltip = "Active operation background progress indicator"
         pb.display = False
         yield pb
-        initial_status = f"{self._get_ai_status_badge()} Ready. Press [Ctrl+S] to Scan or [Ctrl+B] to select Directory."
+        initial_status = f"{self._get_ai_status_badge()} {self._get_watch_status_badge()} Ready. Press [Ctrl+S] to Scan or [Ctrl+B] to select Directory."
         sb = Static(
             initial_status,
             id="status-bar",
@@ -4625,6 +4645,7 @@ class AutoSorterTUI(A11yMixin, App):
             tree.root.expand()
         except Exception:
             pass
+        self.set_interval(0.5, self._update_daemon_status)
         self.announce("Sortify AI Pro TUI initialized and ready.")
         self.check_abandoned_sessions()
 
@@ -4676,6 +4697,12 @@ class AutoSorterTUI(A11yMixin, App):
             )
         except Exception:
             pass
+        if hasattr(self, "daemon") and self.daemon is not None:
+            try:
+                if getattr(self.daemon, "_is_running", False):
+                    self.daemon.stop()
+            except Exception:
+                pass
 
     @work
     async def check_abandoned_sessions(self) -> None:
@@ -4785,6 +4812,42 @@ class AutoSorterTUI(A11yMixin, App):
         consent = getattr(self.settings, "AI_CONSENT_GRANTED", None)
         return "[AI: Active]" if consent is True else "[AI: Disabled]"
 
+    def _get_watch_status_badge(self) -> str:
+        """Return visual background folder watcher status and queue activity metrics badge string."""
+        if not hasattr(self, "daemon") or self.daemon is None:
+            base = getattr(self, "base_dir", "")
+            folder_name = os.path.basename(os.path.abspath(base)) if base else ""
+            folder_suffix = f" ({folder_name})" if folder_name else ""
+            return f"[Watch: Stopped{folder_suffix} | Queue: 0]"
+        try:
+            telemetry = self.daemon.get_status_telemetry()
+            is_paused = telemetry.get("is_paused", False)
+            is_running = telemetry.get("is_running", False)
+            queue_depth = telemetry.get("queue_depth", 0)
+
+            if is_paused:
+                watch_state = "Paused"
+            elif is_running:
+                watch_state = "Active"
+            else:
+                watch_state = "Stopped"
+
+            base_dir = telemetry.get("base_dir") or getattr(self, "base_dir", "")
+            folder_name = os.path.basename(os.path.abspath(base_dir)) if base_dir else ""
+            folder_suffix = f" ({folder_name})" if folder_name else ""
+
+            return f"[Watch: {watch_state}{folder_suffix} | Queue: {queue_depth}]"
+        except Exception:
+            return "[Watch: Stopped | Queue: 0]"
+
+    def _update_daemon_status(self) -> None:
+        """Periodic callback to refresh status bar with live watch folder indicators and queue metrics."""
+        try:
+            if hasattr(self, "daemon") and self.daemon is not None:
+                self.update_status()
+        except Exception:
+            pass
+
     def _on_ai_consent_changed(self, value: Any = None) -> None:
         """Handle AI_CONSENT_GRANTED setting change notification."""
         self.update_status()
@@ -4801,25 +4864,27 @@ class AutoSorterTUI(A11yMixin, App):
             self.announce("AI processing enabled.", priority="high")
 
     def update_status(self, text: Optional[str] = None) -> None:
-        """Update status bar label with current message and AI consent badge."""
+        """Update status bar label with current message, AI consent badge, and watch status badge."""
         try:
             if text is not None:
                 clean_text = str(text)
-                for badge_str in ("[AI: Active]", "[AI: Disabled]"):
-                    if clean_text.startswith(badge_str):
-                        clean_text = clean_text[len(badge_str) :].lstrip()
+                for _ in range(3):
+                    for badge_str in ("[AI: Active]", "[AI: Disabled]"):
+                        if clean_text.startswith(badge_str):
+                            clean_text = clean_text[len(badge_str) :].lstrip()
+                    if clean_text.startswith("[Watch:") and "]" in clean_text:
+                        idx = clean_text.find("]")
+                        clean_text = clean_text[idx + 1 :].lstrip()
                 self._current_status_text = clean_text
             elif not hasattr(self, "_current_status_text"):
                 self._current_status_text = (
                     "Ready. Press [Ctrl+S] to Scan or [Ctrl+B] to select Directory."
                 )
 
-            badge = self._get_ai_status_badge()
-            full_text = (
-                f"{badge} {self._current_status_text}"
-                if getattr(self, "_current_status_text", "")
-                else badge
-            )
+            badge_ai = self._get_ai_status_badge()
+            badge_watch = self._get_watch_status_badge()
+            status_body = getattr(self, "_current_status_text", "")
+            full_text = f"{badge_ai} {badge_watch} {status_body}".strip() if status_body else f"{badge_ai} {badge_watch}"
             sb = self.query_one("#status-bar", Static)
             sb.update(full_text)
         except Exception:
@@ -4843,6 +4908,62 @@ class AutoSorterTUI(A11yMixin, App):
 
     # --- Actions ---
 
+    def action_toggle_watch(self) -> None:
+        """Toggle background watch folder monitoring pause/resume state."""
+        if self._is_text_control_focused():
+            return
+
+        if not hasattr(self, "daemon") or self.daemon is None:
+            if getattr(self, "base_dir", None):
+                try:
+                    from app.core.daemon import ContinuousWatchdogDaemon
+
+                    self.daemon = ContinuousWatchdogDaemon(self.settings, self.base_dir)
+                except Exception as e:
+                    logger.error(f"Failed to initialize watchdog daemon: {e}")
+                    self.announce(f"Failed to initialize folder watcher: {e}")
+                    return
+            else:
+                self.announce("No watch folder configured. Select a directory first.")
+                return
+
+        if not getattr(self.daemon, "_is_running", False):
+            try:
+                self.daemon.start()
+                msg = "Background folder watching started."
+            except Exception as e:
+                logger.error(f"Error starting watchdog daemon: {e}")
+                msg = f"Failed to start watcher: {e}"
+        elif self.daemon.is_paused:
+            self.daemon.resume()
+            msg = "Background folder watching resumed."
+        else:
+            self.daemon.pause()
+            msg = "Background folder watching paused."
+
+        self.update_status(msg)
+        self.announce(msg)
+
+    def action_pause_watch(self) -> None:
+        """Explicitly pause background folder watcher."""
+        if self._is_text_control_focused():
+            return
+        if hasattr(self, "daemon") and self.daemon is not None:
+            self.daemon.pause()
+            msg = "Background folder watching paused."
+            self.update_status(msg)
+            self.announce(msg)
+
+    def action_resume_watch(self) -> None:
+        """Explicitly resume background folder watcher."""
+        if self._is_text_control_focused():
+            return
+        if hasattr(self, "daemon") and self.daemon is not None:
+            self.daemon.resume()
+            msg = "Background folder watching resumed."
+            self.update_status(msg)
+            self.announce(msg)
+
     def action_select_dir(self) -> None:
         """Open directory selection modal."""
         if self._is_text_control_focused():
@@ -4856,6 +4977,8 @@ class AutoSorterTUI(A11yMixin, App):
             if valid_paths:
                 self.source_dirs = valid_paths
                 self.base_dir = valid_paths[0]
+                if hasattr(self, "daemon") and self.daemon is not None:
+                    self.daemon.base_dir = self.base_dir
                 msg = f"Selected directory: {', '.join(self.source_dirs)}"
                 self.announce(msg)
                 self.action_scan_directory()
