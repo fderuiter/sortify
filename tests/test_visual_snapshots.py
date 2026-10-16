@@ -12,9 +12,11 @@ from app.ui.tui import (
     AutoSorterTUI,
     CROForensicModal,
     DirectorySelectModal,
+    LicenseActivationModal,
     NewFolderModal,
     RenameModal,
     SettingsModal,
+    TierLimitModal,
     WizardModal,
 )
 
@@ -344,5 +346,41 @@ def test_directory_select_modal_snapshot():
                 await pilot.pause()
             svg = app.export_screenshot()
             assert_svg_snapshot("directory_select_modal", svg)
+
+    asyncio.run(_test())
+
+
+@pytest.mark.slow
+def test_tier_limit_modal_snapshot():
+    """Verify visual layout of TierLimitModal screen."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings)
+        async with app.run_test(size=(100, 30)) as pilot:
+            app.push_screen(TierLimitModal(current_count=12, max_folders=12))
+            for _ in range(2):
+                await pilot.pause()
+            svg = app.export_screenshot()
+            assert_svg_snapshot("tier_limit_modal", svg)
+
+    asyncio.run(_test())
+
+
+@pytest.mark.slow
+def test_license_activation_modal_snapshot():
+    """Verify visual layout of LicenseActivationModal screen."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings)
+        async with app.run_test(size=(100, 30)) as pilot:
+            app.push_screen(LicenseActivationModal())
+            for _ in range(2):
+                await pilot.pause()
+            svg = app.export_screenshot()
+            assert_svg_snapshot("license_activation_modal", svg)
 
     asyncio.run(_test())

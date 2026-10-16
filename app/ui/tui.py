@@ -4261,6 +4261,263 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
         self.fetch_records_async()
 
 
+class TierLimitModal(A11yMixin, ModalScreen[Optional[str]]):
+    """Modal callout dialog explaining tier capacity limits and upgrade options."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    TierLimitModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $warning;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $warning;
+        margin-bottom: 1;
+    }
+    .modal-subtitle {
+        color: $text;
+        margin-bottom: 1;
+    }
+    .capacity-banner {
+        color: $accent;
+        text-style: bold;
+        margin-top: 1;
+        margin-bottom: 1;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(
+        self,
+        current_count: int = 0,
+        max_folders: int = 12,
+        message: Optional[str] = None,
+    ):
+        super().__init__()
+        self.current_count = current_count
+        self.max_folders = max_folders
+        self.custom_message = message
+
+    def compose(self) -> ComposeResult:
+        """Compose modal dialog children."""
+        with Vertical(classes="modal-box"):
+            yield Heading(
+                "Tier Capacity Limit Warning",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
+            msg = (
+                self.custom_message
+                or f"You are approaching or exceeding your current tier folder capacity ({self.current_count} / {self.max_folders} Subdirectories used). Upgrade to Sortify Pro for unlimited subdirectories and advanced features."
+            )
+            lbl_msg = Label(msg, classes="modal-subtitle", id="limit-message")
+            lbl_msg.tooltip = "Explanatory message regarding tier capacity limit"
+            yield lbl_msg
+            lbl_cap = Label(
+                f"Capacity Meter: {self.current_count} / {self.max_folders} Subdirectories used",
+                classes="capacity-banner",
+                id="capacity-meter",
+            )
+            lbl_cap.tooltip = "Current folder capacity usage meter"
+            yield lbl_cap
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button("Dismiss", id="btn-cancel", variant="default")
+                btn_cancel.tooltip = "Dismiss tier limit callout"
+                yield btn_cancel
+                btn_upgrade = Button(
+                    "Upgrade / Activate License", id="btn-upgrade", variant="primary"
+                )
+                btn_upgrade.tooltip = "Launch license activation dialog to upgrade tier"
+                yield btn_upgrade
+
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal viewport resize event."""
+        self._update_layout(event.size.width)
+
+    def on_mount(self) -> None:
+        """Focus upgrade button on mount and emit screen reader announcement."""
+        self._update_layout(self.size.width)
+        btn = self.query_one("#btn-upgrade", Button)
+        btn.focus()
+        self.announce(
+            f"Tier limit capacity callout: {self.current_count} of {self.max_folders} subdirectories used. Press Upgrade or Dismiss."
+        )
+
+    @on(Button.Pressed, "#btn-upgrade")
+    def action_upgrade(self) -> None:
+        """Handle upgrade button press by launching LicenseActivationModal."""
+        self.announce("Opening License Activation Modal.")
+        self.dismiss("upgrade")
+        if hasattr(self, "app") and self.app:
+            self.app.push_screen(LicenseActivationModal())
+
+    @on(Button.Pressed, "#btn-cancel")
+    def action_cancel(self) -> None:
+        """Handle dismiss button press or Escape key."""
+        self.announce("Dismissed tier limit callout.")
+        self.dismiss("cancel")
+
+
+class LicenseActivationModal(A11yMixin, ModalScreen[Optional[str]]):
+    """Modal dialog for launching and executing Sortify Pro license activation."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    LicenseActivationModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $accent;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .modal-subtitle {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Input:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def compose(self) -> ComposeResult:
+        """Compose modal dialog children."""
+        with Vertical(classes="modal-box"):
+            yield Heading(
+                "Sortify Pro License Activation",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
+            yield Label(
+                "Enter your Sortify Pro license key to unlock unlimited subdirectories and Pro features:",
+                classes="modal-subtitle",
+            )
+            inp = Input(
+                placeholder="e.g. SORTIFY-PRO-XXXX-YYYY-ZZZZ",
+                id="input-license-key",
+            )
+            inp.tooltip = "Enter your valid Sortify Pro license key"
+            yield inp
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
+                btn_cancel.tooltip = "Cancel license activation and return"
+                yield btn_cancel
+                btn_activate = Button(
+                    "Activate License", id="btn-activate", variant="primary"
+                )
+                btn_activate.tooltip = "Submit license key and activate Sortify Pro"
+                yield btn_activate
+
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal viewport resize event."""
+        self._update_layout(event.size.width)
+
+    def on_mount(self) -> None:
+        """Focus input field on mount and emit screen reader announcement."""
+        self._update_layout(self.size.width)
+        self.query_one("#input-license-key", Input).focus()
+        self.announce(
+            "Opened Sortify Pro License Activation dialog. Enter license key and click Activate."
+        )
+
+    @on(Button.Pressed, "#btn-activate")
+    def action_activate(self) -> None:
+        """Submit license activation."""
+        key = self.query_one("#input-license-key", Input).value.strip()
+        if key:
+            if hasattr(self, "app") and self.app and hasattr(self.app, "settings"):
+                setattr(self.app.settings, "LICENSE_KEY", key)
+                setattr(self.app.settings, "IS_PRO_TIER", True)
+                setattr(self.app.settings, "MAX_FOLDERS", 50)
+                if hasattr(self.app, "rebuild_tree"):
+                    self.app.rebuild_tree()
+            self.announce(
+                f"License activated successfully with key '{key}'. Sortify Pro unlocked."
+            )
+            self.dismiss(key)
+        else:
+            self.announce("Please enter a valid license key.")
+
+    @on(Button.Pressed, "#btn-cancel")
+    def action_cancel(self) -> None:
+        """Cancel license activation dialog."""
+        self.announce("Cancelled license activation.")
+        self.dismiss(None)
+
+    @on(Input.Submitted)
+    def action_submit(self) -> None:
+        """Submit input on Enter key press."""
+        self.action_activate()
+
+
 class VimTree(Tree):
     """Tree control with native vim motion navigation (h, j, k, l)."""
 
@@ -4625,6 +4882,7 @@ class AutoSorterTUI(A11yMixin, App):
             tree.root.expand()
         except Exception:
             pass
+        self.update_capacity_meter()
         self.announce("Sortify AI Pro TUI initialized and ready.")
         self.check_abandoned_sessions()
 
@@ -5311,6 +5569,7 @@ class AutoSorterTUI(A11yMixin, App):
     def rebuild_tree(self) -> None:
         """Rebuild Textual Tree widget from in-memory plan structure."""
         try:
+            self.update_capacity_meter()
             tree = self.query_one("#plan-tree", Tree)
             tree.reset("Proposed Organization Plan")
             if not self._has_file_nodes(self.plan):
@@ -5823,6 +6082,17 @@ class AutoSorterTUI(A11yMixin, App):
                     if file_key in self.plan[old_folder]:
                         self.plan[old_folder].pop(file_key, None)
                     if target_folder not in self.plan:
+                        used = self._get_folder_count()
+                        limit = getattr(self.settings, "MAX_FOLDERS", 12)
+                        if used >= limit:
+                            self.push_screen(
+                                TierLimitModal(
+                                    current_count=used,
+                                    max_folders=limit,
+                                    message=f"Creating target folder '{target_folder}' exceeds tier limit ({used} / {limit} Subdirectories used). Upgrade to Sortify Pro.",
+                                )
+                            )
+                            return
                         self.plan[target_folder] = {}
                     self.plan[target_folder][file_key] = fi
                     fi["folder"] = target_folder
@@ -5838,6 +6108,16 @@ class AutoSorterTUI(A11yMixin, App):
             self.announce(
                 f"Reassigned {reassigned_count} file(s) to folder '{target_folder}'."
             )
+            limit = getattr(self.settings, "MAX_FOLDERS", 12)
+            new_used = self._get_folder_count()
+            if new_used >= limit - 1:
+                self.push_screen(
+                    TierLimitModal(
+                        current_count=new_used,
+                        max_folders=limit,
+                        message=f"Reassigned files to '{target_folder}'. Capacity warning: {new_used} / {limit} Subdirectories used.",
+                    )
+                )
 
         self.push_screen(
             ReassignModal(existing_folders, count=len(target_files)), on_reassigned
@@ -5996,6 +6276,18 @@ class AutoSorterTUI(A11yMixin, App):
         if self._is_text_control_focused():
             return
 
+        used = self._get_folder_count()
+        limit = getattr(self.settings, "MAX_FOLDERS", 12)
+        if used >= limit:
+            self.push_screen(
+                TierLimitModal(
+                    current_count=used,
+                    max_folders=limit,
+                    message=f"You have reached the maximum folder limit ({used} / {limit} Subdirectories used). Upgrade to Sortify Pro to create additional subdirectories.",
+                )
+            )
+            return
+
         def on_created(folder_name: Optional[str]) -> None:
             if not folder_name:
                 return
@@ -6003,10 +6295,59 @@ class AutoSorterTUI(A11yMixin, App):
                 self.plan[folder_name] = {}
                 self.rebuild_tree()
                 self.announce(f"Created new folder category: '{folder_name}'")
+                new_used = self._get_folder_count()
+                if new_used >= limit - 1:
+                    self.push_screen(
+                        TierLimitModal(
+                            current_count=new_used,
+                            max_folders=limit,
+                            message=f"Folder category '{folder_name}' created. Capacity warning: {new_used} / {limit} Subdirectories used.",
+                        )
+                    )
             else:
                 self.announce(f"Folder category '{folder_name}' already exists.")
 
         self.push_screen(NewFolderModal(), on_created)
+
+    def _get_folder_count(self) -> int:
+        """Calculate current number of subdirectories/folder categories in plan."""
+        def _count(node_dict: Dict[str, Any]) -> int:
+            if not isinstance(node_dict, dict):
+                return 0
+            c = 0
+            for k, v in node_dict.items():
+                if isinstance(v, dict) and v.get("__type__") != "file":
+                    c += 1
+                    c += _count(v)
+            return c
+        return _count(self.plan) if isinstance(self.plan, dict) else 0
+
+    def update_capacity_meter(self) -> None:
+        """Update live folder capacity meter displayed in TUI header."""
+        used = self._get_folder_count()
+        limit = getattr(self.settings, "MAX_FOLDERS", 12)
+        self.sub_title = f"{used} / {limit} Subdirectories used"
+
+    def _check_tier_limits(self, custom_message: Optional[str] = None) -> bool:
+        """Check if folder count is approaching or exceeding tier limit and launch callout modal if needed."""
+        used = self._get_folder_count()
+        limit = getattr(self.settings, "MAX_FOLDERS", 12)
+        if used >= limit - 1:
+            self.push_screen(
+                TierLimitModal(
+                    current_count=used,
+                    max_folders=limit,
+                    message=custom_message,
+                )
+            )
+            return True
+        return False
+
+    def action_open_license_activation(self) -> None:
+        """Open license activation modal dialog."""
+        if self._is_text_control_focused():
+            return
+        self.push_screen(LicenseActivationModal())
 
     def action_rate_positive(self) -> None:
         """Set positive ML rating feedback [+] for selected node."""

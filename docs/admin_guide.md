@@ -22,6 +22,14 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `12`
 - **Required**: `False`
 
+### `LICENSE_KEY`
+- **Default**: ``
+- **Required**: `False`
+
+### `IS_PRO_TIER`
+- **Default**: `False`
+- **Required**: `False`
+
 ### `MAX_WORKERS`
 - **Default**: `4`
 - **Required**: `False`

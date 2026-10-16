@@ -23,6 +23,16 @@
       "title": "Max Folders",
       "type": "integer"
     },
+    "LICENSE_KEY": {
+      "default": "",
+      "title": "License Key",
+      "type": "string"
+    },
+    "IS_PRO_TIER": {
+      "default": false,
+      "title": "Is Pro Tier",
+      "type": "boolean"
+    },
     "MAX_WORKERS": {
       "default": 4,
       "exclusiveMinimum": 0,
