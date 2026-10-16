@@ -1386,6 +1386,7 @@ class ScrubArtifactsModal(A11yMixin, ModalScreen[bool]):
         self.cache_size_mb = cache_size_mb
 
     def compose(self) -> ComposeResult:
+        """Compose modal widgets for scrub AI artifacts confirmation."""
         with Vertical(classes="modal-box"):
             yield Heading("Scrub AI Artifacts Confirmation", level=1, classes="modal-title")
             yield Label(f"Stored Document Vectors: {self.vector_count} records", classes="info-label", id="lbl-vector-count")
@@ -1402,10 +1403,12 @@ class ScrubArtifactsModal(A11yMixin, ModalScreen[bool]):
 
     @on(Button.Pressed, "#btn-confirm-scrub")
     def action_confirm(self) -> None:
+        """Confirm scrub AI artifacts action."""
         self.dismiss(True)
 
     @on(Button.Pressed, "#btn-cancel-scrub")
     def action_cancel(self) -> None:
+        """Cancel scrub AI artifacts action."""
         self.dismiss(False)
 
 
@@ -1460,6 +1463,7 @@ class ConsentRevocationModal(A11yMixin, ModalScreen[bool]):
         self.cache_size_mb = cache_size_mb
 
     def compose(self) -> ComposeResult:
+        """Compose modal widgets for consent revocation confirmation."""
         with Vertical(classes="modal-box"):
             yield Heading("Confirm AI Consent Revocation", level=1, classes="modal-title")
             yield Label(f"Stored Document Vectors: {self.vector_count} records", classes="info-label", id="lbl-vector-count")
@@ -1476,10 +1480,12 @@ class ConsentRevocationModal(A11yMixin, ModalScreen[bool]):
 
     @on(Button.Pressed, "#btn-confirm-revoke")
     def action_confirm(self) -> None:
+        """Confirm AI consent revocation action."""
         self.dismiss(True)
 
     @on(Button.Pressed, "#btn-cancel-revoke")
     def action_cancel(self) -> None:
+        """Cancel AI consent revocation action."""
         self.dismiss(False)
 
 
