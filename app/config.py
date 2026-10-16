@@ -674,6 +674,14 @@ class AppSettings:
 
     def _notify_observers(self, key: str, value: Any) -> None:
         """Notify registered setting change observers for `key`."""
+        if key == "AI_CONSENT_GRANTED" and value is not True:
+            try:
+                from app.core.shared_registry import SharedModelRegistry
+
+                SharedModelRegistry.get_instance().unload_all_models()
+            except Exception as e:
+                logging.debug(f"Failed to unload in-memory models on consent change: {e}")
+
         callbacks = []
         if hasattr(self, "_observer_lock") and hasattr(self, "_observers"):
             with self._observer_lock:
@@ -756,3 +764,17 @@ class AppSettings:
             self.revalidate()
             new_val = getattr(self._settings_model, name, value)
             self._notify_observers(name, new_val)
+
+
+def _on_ai_consent_changed_core(key: str, value: Any) -> None:
+    """Core observer callback: unload all in-memory AI models when consent is revoked or disabled."""
+    if value is not True:
+        try:
+            from app.core.shared_registry import SharedModelRegistry
+
+            SharedModelRegistry.get_instance().unload_all_models()
+        except Exception as e:
+            logging.debug(f"Failed to unload in-memory models on consent change: {e}")
+
+
+AppSettings.add_observer("AI_CONSENT_GRANTED", _on_ai_consent_changed_core)
