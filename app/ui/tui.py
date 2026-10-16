@@ -1336,6 +1336,23 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     inp_conc.tooltip = "Worker concurrency thread limit for processing"
                     yield inp_conc
 
+                    yield Label("Conflict Policy:", classes="field-label")
+                    conflict_pol = getattr(self.settings, "CONFLICT_POLICY", "rename")
+                    conflict_options = [
+                        ("Overwrite", "overwrite"),
+                        ("Auto-Rename", "rename"),
+                        ("Skip", "skip"),
+                    ]
+                    sel_conflict = Select(
+                        options=conflict_options,
+                        value=conflict_pol,
+                        id="select-conflict-policy",
+                    )
+                    sel_conflict.tooltip = (
+                        "Select collision handling strategy for conflicting target files"
+                    )
+                    yield sel_conflict
+
                 with TabPane("AI & Privacy Settings", id="tab-ai-privacy"):
                     yield Heading("Sorting Strategy:", level=2, classes="field-label")
                     strat = getattr(self.settings, "SORTING_STRATEGY", "default")
@@ -1503,11 +1520,19 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             ai_consent = bool(getattr(self.settings, "AI_CONSENT_GRANTED", False))
 
+        try:
+            conflict_pol = self.query_one("#select-conflict-policy", Select).value
+            if conflict_pol == Select.BLANK:
+                conflict_pol = "rename"
+        except Exception:
+            conflict_pol = getattr(self.settings, "CONFLICT_POLICY", "rename")
+
         res = {
             "PROTECTED_PATHS": p_list,
             "IGNORED_EXTENSIONS": i_list,
             "MAX_WORKERS": conc,
             "MAX_FOLDERS": max_f,
+            "CONFLICT_POLICY": conflict_pol,
             "SORTING_STRATEGY": strat,
             "CLINICAL_SMART_RENAMING": clin_renaming,
             "CONTEXTUAL_RENAMING": ctx_renaming,
@@ -5440,6 +5465,8 @@ class AutoSorterTUI(A11yMixin, App):
                     self.settings.CONTEXTUAL_RENAMING = res["CONTEXTUAL_RENAMING"]
                 if "AI_CONSENT_GRANTED" in res:
                     self.settings.AI_CONSENT_GRANTED = res["AI_CONSENT_GRANTED"]
+                if "CONFLICT_POLICY" in res:
+                    self.settings.CONFLICT_POLICY = res["CONFLICT_POLICY"]
                 if hasattr(self.settings, "_save"):
                     self.settings._save()
                 self.update_status()
@@ -6200,8 +6227,44 @@ class AutoSorterTUI(A11yMixin, App):
                     )
                     label_parts.append(f"[ARCH: {arch_str}]")
 
+                target_filename = file_info.get("target_filename") or file_key
+                target_path = None
+                if self.base_dir:
+                    target_path = os.path.normpath(
+                        os.path.join(self.base_dir, current_folder, target_filename)
+                    )
+                elif current_folder:
+                    target_path = os.path.normpath(
+                        os.path.join(current_folder, target_filename)
+                    )
+
+                is_collision = (
+                    file_info.get("collision")
+                    or file_info.get("has_collision")
+                    or False
+                )
+                if (
+                    not is_collision
+                    and target_path
+                    and filepath
+                    and os.path.lexists(target_path)
+                ):
+                    try:
+                        is_same = os.path.samefile(target_path, filepath)
+                    except Exception:
+                        is_same = os.path.normpath(
+                            os.path.abspath(target_path)
+                        ) == os.path.normpath(os.path.abspath(filepath))
+                    if not is_same:
+                        is_collision = True
+
+                pol = str(
+                    getattr(self.settings, "CONFLICT_POLICY", "rename")
+                ).lower()
+                if is_collision:
+                    label_parts.append(f"[COLLISION: {pol.upper()}]")
+
                 label_parts.append(file_key)
-                target_filename = file_info.get("target_filename")
                 if target_filename and target_filename != file_key:
                     label_parts.append(f"-> {target_filename}")
 
@@ -6242,6 +6305,8 @@ class AutoSorterTUI(A11yMixin, App):
                     "rating": rating,
                     "is_checked": is_checked,
                     "is_excluded": is_excluded,
+                    "is_collision": is_collision,
+                    "conflict_policy": pol,
                 }
                 parent_item.add_leaf(text_obj, data=node_data)
             elif isinstance(v, dict):
@@ -6401,6 +6466,15 @@ class AutoSorterTUI(A11yMixin, App):
                     lines.append(f"[bold]Confidence:[/bold] {float(conf):.2%}")
                 except (ValueError, TypeError):
                     lines.append(f"[bold]Confidence:[/bold] {conf}")
+
+            if data.get("is_collision"):
+                pol_str = str(
+                    data.get("conflict_policy")
+                    or getattr(self.settings, "CONFLICT_POLICY", "rename")
+                ).upper()
+                lines.append(
+                    f"[bold warning]Collision Indicator:[/bold warning] [COLLISION: {pol_str}]"
+                )
 
             self.announce(
                 f"Selected file '{key}' in folder '{folder}'. Locked: {locked}. Rating: {rating}."

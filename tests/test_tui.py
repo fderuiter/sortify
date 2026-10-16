@@ -6,7 +6,7 @@ import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
-from textual.widgets import Button, Input, Static, Switch, Tree
+from textual.widgets import Button, Input, Select, Static, Switch, Tree
 
 from app.config import AppSettings
 from app.ui.tui import (
@@ -841,6 +841,61 @@ def test_tui_expanded_settings_fields(temp_workspace):
                 assert app.settings.AI_CONSENT_GRANTED is False
                 sb = app.query_one("#status-bar", Static)
                 assert "[AI: Disabled]" in str(sb.render())
+
+    asyncio.run(_test())
+
+
+def test_tui_conflict_policy_settings_and_tree_indicator(temp_workspace):
+    """Verify SettingsModal Conflict Policy dropdown and tree node collision indicator."""
+
+    async def _test():
+        settings = AppSettings()
+        app = AutoSorterTUI(
+            settings=settings, base_dir=temp_workspace, skip_wizard=True
+        )
+
+        with patch.object(AppSettings, "_save", return_value=None):
+            async with app.run_test() as pilot:
+                app.action_open_settings()
+                await pilot.pause(0.1)
+
+                modal = app.screen
+                assert isinstance(modal, SettingsModal)
+
+                select_cp = modal.query_one("#select-conflict-policy", Select)
+                assert select_cp.value == "rename"
+                select_cp.value = "overwrite"
+
+                modal.action_save()
+                await pilot.pause(0.1)
+
+                assert app.settings.CONFLICT_POLICY == "overwrite"
+
+                # Create colliding target file and rebuild tree
+                src_file = os.path.join(temp_workspace, "doc.pdf")
+                with open(src_file, "w") as f:
+                    f.write("src")
+                target_dir = os.path.join(temp_workspace, "Documents")
+                os.makedirs(target_dir, exist_ok=True)
+                target_file = os.path.join(target_dir, "doc.pdf")
+                with open(target_file, "w") as f:
+                    f.write("existing")
+
+                app.plan = {
+                    "Documents": {
+                        "doc.pdf": {
+                            "__type__": "file",
+                            "filepath": src_file,
+                            "target_filename": "doc.pdf",
+                        }
+                    }
+                }
+                app.rebuild_tree()
+                await pilot.pause(0.1)
+
+                tree = app.query_one("#plan-tree", Tree)
+                nodes_labels = [str(leaf.label) for leaf in tree.root.children[0].children]
+                assert any("[COLLISION: OVERWRITE]" in lbl for lbl in nodes_labels)
 
     asyncio.run(_test())
 
