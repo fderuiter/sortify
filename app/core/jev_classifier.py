@@ -484,17 +484,19 @@ class JevClassifierEngine:
             conn = get_db_connection(self.db_path)
             with conn:
                 cursor = conn.execute(
-                    """SELECT category, sensitivity_rating, sensitivity_score,
+                    """SELECT mtime, size, category, sensitivity_rating, sensitivity_score,
                               archival_priority, archival_priority_score, confidence,
                               is_classified, metadata
                        FROM jev_classification_cache
-                       WHERE file_path = ? AND mtime = ? AND size = ?""",
-                    (abs_path, mtime, size),
+                       WHERE file_path = ?""",
+                    (abs_path,),
                 )
                 row = cursor.fetchone()
 
             if row:
                 (
+                    db_mtime,
+                    db_size,
                     category,
                     sens_rat,
                     sens_score,
@@ -504,29 +506,23 @@ class JevClassifierEngine:
                     is_class,
                     meta_json,
                 ) = row
-                try:
-                    metadata = json.loads(meta_json) if meta_json else {}
-                except Exception:
-                    metadata = {}
-                return JevClassificationResult(
-                    category=category,
-                    sensitivity_rating=sens_rat,
-                    sensitivity_score=sens_score,
-                    archival_priority=arch_prio,
-                    archival_priority_score=arch_score,
-                    confidence=conf,
-                    is_classified=bool(is_class),
-                    metadata=metadata,
-                )
-            else:
-                # Check if there is a stale entry for abs_path with old mtime/size
-                with conn:
-                    cursor = conn.execute(
-                        "SELECT 1 FROM jev_classification_cache WHERE file_path = ? LIMIT 1",
-                        (abs_path,),
+                if db_mtime == mtime and db_size == size:
+                    try:
+                        metadata = json.loads(meta_json) if meta_json else {}
+                    except Exception:
+                        metadata = {}
+                    return JevClassificationResult(
+                        category=category,
+                        sensitivity_rating=sens_rat,
+                        sensitivity_score=sens_score,
+                        archival_priority=arch_prio,
+                        archival_priority_score=arch_score,
+                        confidence=conf,
+                        is_classified=bool(is_class),
+                        metadata=metadata,
                     )
-                    if cursor.fetchone():
-                        self.invalidate(abs_path)
+                else:
+                    self.invalidate(abs_path)
         except Exception as e:
             logger.warning(f"Database cache query failed for {abs_path}: {e}")
         return None

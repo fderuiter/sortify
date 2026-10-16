@@ -109,19 +109,12 @@ class PolicyEngine:
             )
         return False
 
-    @classmethod
-    def evaluate_policies(
-        cls,
-        file_path: str,
-        doc_text: str,
-        status_match: str,
-        policies: list[dict],
-        return_halting: bool = False,
-    ) -> PolicyEvaluationResult | None | tuple[PolicyEvaluationResult | None, bool]:
-        """Find the highest priority matching compliance policy rule for a file."""
+    @staticmethod
+    def sort_policies(policies: list[dict] | None) -> list[dict]:
+        """Sort policy rule list by priority descending."""
         if not policies:
-            return (None, False) if return_halting else None
-        sorted_policies = sorted(
+            return []
+        return sorted(
             policies,
             key=lambda x: (
                 x.get("priority", 0)
@@ -130,6 +123,24 @@ class PolicyEngine:
             ),
             reverse=True,
         )
+
+    @classmethod
+    def evaluate_policies(
+        cls,
+        file_path: str,
+        doc_text: str,
+        status_match: str,
+        policies: list[dict],
+        return_halting: bool = False,
+        is_sorted: bool = False,
+    ) -> PolicyEvaluationResult | None | tuple[PolicyEvaluationResult | None, bool]:
+        """Find the highest priority matching compliance policy rule for a file."""
+        if not policies:
+            return (None, False) if return_halting else None
+        if is_sorted:
+            sorted_policies = policies
+        else:
+            sorted_policies = cls.sort_policies(policies)
         matched_policy = None
         halt_evaluation = False
         for rule in sorted_policies:

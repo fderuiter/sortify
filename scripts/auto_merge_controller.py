@@ -9,11 +9,37 @@ from __future__ import annotations
 import logging
 import os
 import sys
+from dataclasses import dataclass
+from enum import Enum
 from typing import Any, Dict, List, Optional
 
 import requests
 
 logger = logging.getLogger(__name__)
+
+
+class AutoMergeAction(str, Enum):
+    """Actions performed by the auto-merge queue processor."""
+
+    MERGED = "MERGED"
+    UPDATED = "UPDATED"
+    NONE = "NONE"
+
+
+@dataclass
+class AutoMergeResult:
+    """Result object returned by process_auto_merge_queue."""
+
+    action: AutoMergeAction
+    pr_id: Optional[int] = None
+
+    @property
+    def pr_number(self) -> Optional[int]:
+        return self.pr_id
+
+    @property
+    def pull_request_id(self) -> Optional[int]:
+        return self.pr_id
 
 
 class GitHubClient:
@@ -137,10 +163,10 @@ def is_pr_eligible_for_automerge(pr: Dict[str, Any]) -> bool:
     return "automerge:eligible" in labels
 
 
-def process_auto_merge_queue(client: GitHubClient) -> Optional[int]:
-    """Process open PRs and attempt to auto-merge the first eligible PR.
+def process_auto_merge_queue(client: GitHubClient) -> AutoMergeResult:
+    """Process open PRs and attempt to auto-merge or update the first eligible PR.
 
-    Returns merged PR number or None.
+    Returns an AutoMergeResult object indicating the action taken and PR ID.
     """
     prs = client.list_open_pull_requests()
     eligible_candidates = [
@@ -149,7 +175,7 @@ def process_auto_merge_queue(client: GitHubClient) -> Optional[int]:
 
     if not eligible_candidates:
         logger.info("No eligible auto-merge PR candidates found.")
-        return None
+        return AutoMergeResult(action=AutoMergeAction.NONE, pr_id=None)
 
     # Sort candidates by PR number (FIFO)
     eligible_candidates.sort(key=lambda x: x["number"])
@@ -201,7 +227,7 @@ def process_auto_merge_queue(client: GitHubClient) -> Optional[int]:
             logger.info(
                 f"Branch updated for PR #{pr_number}. Waiting for required CI on updated SHA..."
             )
-            return pr_number  # Let CI trigger and process after re-validation
+            return AutoMergeResult(action=AutoMergeAction.UPDATED, pr_id=pr_number)
 
         # Verify status checks on head SHA
         check_runs = client.get_check_runs(head_sha)
@@ -231,11 +257,11 @@ def process_auto_merge_queue(client: GitHubClient) -> Optional[int]:
         )
         if merged:
             logger.info(f"Successfully auto-merged PR #{pr_number}!")
-            return pr_number
+            return AutoMergeResult(action=AutoMergeAction.MERGED, pr_id=pr_number)
         else:
             logger.error(f"Failed to execute squash merge for PR #{pr_number}.")
 
-    return None
+    return AutoMergeResult(action=AutoMergeAction.NONE, pr_id=None)
 
 
 def main() -> None:
@@ -259,9 +285,11 @@ def main() -> None:
     owner, repo = parts[0], parts[1]
     client = GitHubClient(token, owner, repo)
 
-    merged_pr = process_auto_merge_queue(client)
-    if merged_pr:
-        print(f"Auto-merged PR #{merged_pr}")
+    result = process_auto_merge_queue(client)
+    if result.action == AutoMergeAction.MERGED:
+        print(f"Auto-merged PR #{result.pr_id}")
+    elif result.action == AutoMergeAction.UPDATED:
+        print(f"Updated branch for PR #{result.pr_id}")
     else:
         print("No PR was auto-merged in this cycle.")
 
