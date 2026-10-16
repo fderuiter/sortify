@@ -886,29 +886,6 @@ class HistoryManager:
                 for r in rows
             ]
 
-    def get_bidirectional_path_map(self, session_id: str) -> Dict[str, Any]:
-        """Retrieve forward and reverse path maps for a session."""
-        steps = self.get_step_ledger(session_id)
-        forward = {}
-        reverse = {}
-        collisions = {}
-        for step in steps:
-            src = step["source_path"]
-            dst = step["target_path"]
-            forward[src] = dst
-            reverse[dst] = src
-            if step["is_collision_renamed"]:
-                collisions[dst] = {
-                    "source_path": src,
-                    "original_filename": step["original_filename"],
-                    "original_path": step["original_path"],
-                }
-        return {
-            "forward": forward,
-            "reverse": reverse,
-            "collisions": collisions,
-        }
-
     def clear_step_ledger(self, session_id: str):
         """Clean up temporary ledger records upon successful completion of a batch move operation."""
         conn = get_db_connection(self.db_path)
@@ -930,88 +907,114 @@ class HistoryManager:
         import json
         from datetime import datetime, timezone
 
-        conn = get_db_connection(self.db_path)
-        sessions = []
-        with conn:
-            if session_id:
-                cur_sess = conn.execute(
-                    "SELECT session_id, timestamp, base_dir, status FROM sessions WHERE session_id = ?",
-                    (session_id,),
-                )
-                row = cur_sess.fetchone()
-                if row:
-                    sessions.append(
-                        {
-                            "session_id": row[0],
-                            "timestamp": row[1],
-                            "base_dir": row[2],
-                            "status": row[3],
-                        }
-                    )
-            else:
-                cur_sess = conn.execute(
-                    "SELECT session_id, timestamp, base_dir, status FROM sessions ORDER BY timestamp DESC"
-                )
-                sessions = [
-                    {
-                        "session_id": r[0],
-                        "timestamp": r[1],
-                        "base_dir": r[2],
-                        "status": r[3],
-                    }
-                    for r in cur_sess.fetchall()
-                ]
+        db_paths: List[str] = []
+        if self.db_path:
+            p_abs = str(Path(self.db_path).resolve())
+            if os.path.exists(p_abs):
+                db_paths.append(p_abs)
 
-        with conn:
-            if session_id:
-                cur_steps = conn.execute(
-                    """
-                    SELECT step_id, session_id, source_path, target_path, original_path,
-                           original_filename, is_cross_volume, is_collision_renamed,
-                           file_hash, timestamp, status
-                    FROM step_ledger
-                    WHERE session_id = ?
-                    ORDER BY step_id ASC
-                    """,
-                    (session_id,),
-                )
-            else:
-                cur_steps = conn.execute(
-                    """
-                    SELECT step_id, session_id, source_path, target_path, original_path,
-                           original_filename, is_cross_volume, is_collision_renamed,
-                           file_hash, timestamp, status
-                    FROM step_ledger
-                    ORDER BY session_id ASC, step_id ASC
-                    """
-                )
-            rows = cur_steps.fetchall()
+        try:
+            from app.main import find_all_history_sessions
 
-        steps = []
-        for r in rows:
-            ts = r[9]
-            ts_iso = ""
-            if ts:
-                try:
-                    ts_iso = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
-                except Exception:
-                    pass
-            steps.append(
-                {
-                    "step_id": r[0],
-                    "session_id": r[1],
-                    "source_path": r[2] or "",
-                    "target_path": r[3] or "",
-                    "original_path": r[4] or "",
-                    "original_filename": r[5] or "",
-                    "is_cross_volume": bool(r[6]),
-                    "is_collision_renamed": bool(r[7]),
-                    "file_hash": r[8] or "",
-                    "timestamp": r[9] or 0.0,
-                    "timestamp_iso": ts_iso,
-                    "status": r[10] or "completed",
-                }
-            )
+            discovered_sessions = find_all_history_sessions()
+            for s in discovered_sessions:
+                hist_path = s.get("history_db_path")
+                if hist_path:
+                    abs_hist = str(Path(hist_path).resolve())
+                    if abs_hist not in db_paths and os.path.exists(abs_hist):
+                        db_paths.append(abs_hist)
+        except Exception:
+            pass
+
+        if not db_paths and self.db_path:
+            db_paths.append(str(Path(self.db_path).resolve()))
+
+        sessions_map: Dict[str, Dict[str, Any]] = {}
+        steps: List[Dict[str, Any]] = []
+        seen_step_keys = set()
+
+        for db_p in db_paths:
+            try:
+                conn = get_db_connection(db_p)
+                with conn:
+                    if session_id:
+                        cur_sess = conn.execute(
+                            "SELECT session_id, timestamp, base_dir, status FROM sessions WHERE session_id = ?",
+                            (session_id,),
+                        )
+                    else:
+                        cur_sess = conn.execute(
+                            "SELECT session_id, timestamp, base_dir, status FROM sessions ORDER BY timestamp DESC"
+                        )
+                    for row in cur_sess.fetchall():
+                        sid = row[0]
+                        if sid and sid not in sessions_map:
+                            sessions_map[sid] = {
+                                "session_id": sid,
+                                "timestamp": row[1],
+                                "base_dir": row[2],
+                                "status": row[3],
+                            }
+
+                    if session_id:
+                        cur_steps = conn.execute(
+                            """
+                            SELECT step_id, session_id, source_path, target_path, original_path,
+                                   original_filename, is_cross_volume, is_collision_renamed,
+                                   file_hash, timestamp, status
+                            FROM step_ledger
+                            WHERE session_id = ?
+                            ORDER BY step_id ASC
+                            """,
+                            (session_id,),
+                        )
+                    else:
+                        cur_steps = conn.execute(
+                            """
+                            SELECT step_id, session_id, source_path, target_path, original_path,
+                                   original_filename, is_cross_volume, is_collision_renamed,
+                                   file_hash, timestamp, status
+                            FROM step_ledger
+                            ORDER BY session_id ASC, step_id ASC
+                            """
+                        )
+                    for r in cur_steps.fetchall():
+                        step_key = (r[1], r[0], r[2], r[3])
+                        if step_key in seen_step_keys:
+                            continue
+                        seen_step_keys.add(step_key)
+
+                        ts = r[9]
+                        ts_iso = ""
+                        if ts:
+                            try:
+                                ts_iso = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+                            except Exception:
+                                pass
+                        steps.append(
+                            {
+                                "step_id": r[0],
+                                "session_id": r[1],
+                                "source_path": r[2] or "",
+                                "target_path": r[3] or "",
+                                "original_path": r[4] or "",
+                                "original_filename": r[5] or "",
+                                "is_cross_volume": bool(r[6]),
+                                "is_collision_renamed": bool(r[7]),
+                                "file_hash": r[8] or "",
+                                "timestamp": r[9] or 0.0,
+                                "timestamp_iso": ts_iso,
+                                "status": r[10] or "completed",
+                            }
+                        )
+            except Exception:
+                pass
+
+        sessions = sorted(
+            sessions_map.values(), key=lambda s: s.get("timestamp") or 0.0, reverse=True
+        )
+
+        steps.sort(key=lambda s: (s.get("timestamp") or 0.0, s.get("step_id") or 0))
 
         if not steps:
             try:
@@ -2080,14 +2083,6 @@ class HistoryManager:
                     logging.warning(f"Failed to delete rollback journal: {ex}")
 
         return
-
-    def resume_rollback(self, session_id: str):
-        """Resume and complete an interrupted rollback session."""
-        self.rollback(session_id, ignore_missing=True)
-
-    def revert_rollback(self, safety_session_id: str):
-        """Revert an interrupted rollback session back to its original state using the safety snapshot."""
-        self.rollback(safety_session_id, ignore_missing=True)
 
     def rollback(self, session_id: str, ignore_missing: bool = False):
         """Revert directory and metadata state using recorded transaction ledger steps or snapshot."""

@@ -1,0 +1,251 @@
+{
+  "_metadata": {
+    "checksum": "d3044aab2245b15d57d3c71e9799c344013a2df361c61a32e494706638cbb3f6"
+  },
+  "classes": [
+    {
+      "class_name": "SecurityAdvisoryClient",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "settings"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "endpoint"
+            },
+            {
+              "annotation": "Optional[float]",
+              "default": "None",
+              "name": "ttl"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "fallback_policy"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "cache_advisory",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": null,
+              "name": "repo_id"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": null,
+              "name": "file_hash"
+            },
+            {
+              "annotation": "SecurityAdvisoryResult",
+              "default": null,
+              "name": "result"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "check_advisory",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "repo_id"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "file_hash"
+            },
+            {
+              "annotation": "float",
+              "default": "MAX_API_TIMEOUT",
+              "name": "timeout"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "fallback_policy"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "raise_on_advisory"
+            }
+          ],
+          "returns": "SecurityAdvisoryResult"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "clear_cache",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "endpoint",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "extract_repo_id",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "url_or_id"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "fallback_policy",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_cached_advisory",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": null,
+              "name": "repo_id"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": null,
+              "name": "file_hash"
+            }
+          ],
+          "returns": "Optional[SecurityAdvisoryResult]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "get_instance",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            }
+          ],
+          "returns": "'SecurityAdvisoryClient'"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "reset_instance",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "ttl",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "float"
+        }
+      ]
+    },
+    {
+      "class_name": "SecurityAdvisoryResult",
+      "decorators": [
+        "@dataclass"
+      ],
+      "methods": []
+    }
+  ],
+  "functions": []
+}
