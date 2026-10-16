@@ -67,6 +67,10 @@ def sync_db_worker():
     from app.core.db_worker import DBWorker
 
     def sync_execute(self, func, *args, **kwargs):
+        import threading
+
+        if threading.current_thread() is getattr(self, "_thread", None):
+            return func(*args, **kwargs)
         return self.execute_write(func, *args, **kwargs)
 
     with patch.object(DBWorker, "execute_write_async", sync_execute):
