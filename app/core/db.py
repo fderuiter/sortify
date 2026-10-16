@@ -1847,17 +1847,22 @@ class Database:
     @classmethod
     def scrub_all_vectors(cls):
         """Scrub document vectors across all active database instances and default database."""
-        active_instances = list(cls._active_instances)
+        active_instances = [
+            inst
+            for inst in list(cls._active_instances)
+            if inst is not None and not getattr(getattr(inst, "worker", None), "_stopped", False)
+        ]
         scrubbed_paths = set()
         for instance in active_instances:
             try:
-                instance.clear_all_document_vectors()
                 scrubbed_paths.add(os.path.abspath(instance.db_path))
+                instance.clear_all_document_vectors()
             except Exception as e:
                 logging.debug(f"Failed to clear document vectors on instance {instance}: {e}")
 
         try:
             from app.config import get_app_dir
+
             default_db_path = os.path.abspath(str(get_app_dir() / "autosorter.db"))
             if default_db_path not in scrubbed_paths and os.path.exists(default_db_path):
                 default_db = cls(Path(default_db_path), DBWorker())

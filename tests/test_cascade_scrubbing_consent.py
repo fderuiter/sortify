@@ -1,14 +1,8 @@
 """Unit and integration tests for cascade scrubbing and interactive TUI consent controls."""
 
-import asyncio
-import os
-import time
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
 import pytest
 
-from app.config import AppSettings, get_app_dir
+from app.config import AppSettings
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.shared_registry import SharedModelRegistry
@@ -26,11 +20,13 @@ from app.ui.tui import (
 
 @pytest.fixture(autouse=True)
 def clean_registry_and_env(tmp_path, monkeypatch):
-    """Ensure SharedModelRegistry is cleared and AUTOSORTER_APP_DIR is isolated before each test."""
+    """Ensure SharedModelRegistry and Database._active_instances are cleared before each test."""
     monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
+    Database._active_instances.clear()
     registry = SharedModelRegistry.get_instance()
     registry.unload_all_models()
     yield
+    Database._active_instances.clear()
     registry.unload_all_models()
 
 
