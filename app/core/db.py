@@ -783,8 +783,8 @@ class Database:
             conn = get_db_connection(self.db_path)
             with conn:
                 conn.execute(
-                    "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
-                    (new_filepath, new_dir, base_dir, old_filepath),
+                    "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                    (new_filepath, new_dir, base_dir, old_filepath, old_filepath),
                 )
                 cursor = conn.execute(
                     "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
@@ -854,19 +854,19 @@ class Database:
                 if hasattr(self._cached_documents, "get") and not isinstance(
                     self._cached_documents, list
                 ):
-                    row = self._cached_documents.get(filepath)
+                    row = self._cached_documents.get(filepath) or self._cached_documents.get(filepath.replace("/", "\\"))
                     if row is not None and len(row) > 3:
                         return row[3]
                 elif isinstance(self._cached_documents, list):
                     for row in self._cached_documents:
-                        if row[0] == filepath and len(row) > 3:
+                        if (row[0] == filepath or row[0].replace("\\", "/") == filepath) and len(row) > 3:
                             return row[3]
 
         conn = get_db_connection(self.db_path)
         with conn:
             cur = conn.execute(
-                "SELECT user_verified_target_path FROM documents WHERE base_dir = ? AND filepath = ?",
-                (base_dir, filepath),
+                "SELECT user_verified_target_path FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                (base_dir, filepath, filepath),
             )
             row = cur.fetchone()
             return row[0] if row else None
@@ -880,7 +880,7 @@ class Database:
                 if hasattr(self._cached_documents, "get") and not isinstance(
                     self._cached_documents, list
                 ):
-                    row = self._cached_documents.get(filepath)
+                    row = self._cached_documents.get(filepath) or self._cached_documents.get(filepath.replace("/", "\\"))
                     if row is not None:
                         self._cached_documents[filepath] = (
                             row[0],
@@ -891,7 +891,7 @@ class Database:
                 elif isinstance(self._cached_documents, list):
                     new_docs = []
                     for row in self._cached_documents:
-                        if row[0] == filepath:
+                        if row[0] == filepath or row[0].replace("\\", "/") == filepath:
                             new_docs.append((row[0], row[1], row[2], target_path))
                         else:
                             new_docs.append(row)
@@ -912,8 +912,8 @@ class Database:
             conn = get_db_connection(self.db_path)
             with conn:
                 conn.execute(
-                    "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
-                    (target_path, base_dir, filepath),
+                    "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                    (target_path, base_dir, filepath, filepath),
                 )
                 self._update_tfidf_on_verified_target_change(
                     conn,
@@ -1193,8 +1193,8 @@ class Database:
 
                 new_dir = os.path.dirname(new_filepath).replace("\\", "/")
                 conn.execute(
-                    "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
-                    (new_filepath, new_dir, base_dir, old_filepath),
+                    "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                    (new_filepath, new_dir, base_dir, old_filepath, old_filepath),
                 )
                 cursor = conn.execute(
                     "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",

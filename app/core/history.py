@@ -304,7 +304,7 @@ class HistoryManager:
                         docs.append(
                             (
                                 session_id,
-                                r[0],
+                                r[0].replace("\\", "/"),
                                 r[1],
                                 r[2],
                                 r[3] if len(r) > 3 else None,
@@ -316,7 +316,7 @@ class HistoryManager:
                         (base_dir,),
                     )
                     for r in cur.fetchall():
-                        docs.append((session_id, r[0], r[1], r[2], None))
+                        docs.append((session_id, r[0].replace("\\", "/"), r[1], r[2], None))
             if docs:
                 try:
                     conn.executemany(
@@ -1600,8 +1600,8 @@ class HistoryManager:
                     )
                     snapshot_docs = cur.fetchall()
                     snapshot_docs_dict = {
-                        r[0]: (
-                            r[0],
+                        r[0].replace("\\", "/"): (
+                            r[0].replace("\\", "/"),
                             r[1],
                             r[2],
                             r[3] if len(r) > 3 else None,
@@ -1615,7 +1615,7 @@ class HistoryManager:
                     )
                     snapshot_docs = cur.fetchall()
                     snapshot_docs_dict = {
-                        r[0]: (r[0], r[1], r[2], None) for r in snapshot_docs
+                        r[0].replace("\\", "/"): (r[0].replace("\\", "/"), r[1], r[2], None) for r in snapshot_docs
                     }
 
                 # Write rollback journal before any modifications or relocations
@@ -1780,7 +1780,12 @@ class HistoryManager:
                                     "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
                                     (base_dir, rel_src, rel_src),
                                 )
-                                snapshot_doc = snapshot_docs_dict.get(rel_dst)
+                                rel_dst_norm = rel_dst.replace("\\", "/")
+                                snapshot_doc = (
+                                    snapshot_docs_dict.get(rel_dst_norm)
+                                    or snapshot_docs_dict.get(rel_dst)
+                                    or snapshot_docs_dict.get(rel_dst.replace("/", "\\"))
+                                )
                                 if snapshot_doc:
                                     verified_target = (
                                         snapshot_doc[3]

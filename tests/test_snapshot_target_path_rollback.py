@@ -200,3 +200,39 @@ def test_ai_categorization_retrieves_restored_exemplars(test_snapshot_env):
     examples_after = corpus_after.get("examples", [])
     assert len(examples_after) == 1
     assert examples_after[0]["user_verified_target_path"] == "Invoices/2026"
+
+
+def test_snapshot_rollback_with_windows_backslash_paths(test_snapshot_env):
+    base_dir, db, cache, history_manager, db_worker = test_snapshot_env
+
+    # 1. Setup file with Windows backslash relative path
+    sub_dir = os.path.join(base_dir, "subfolder")
+    os.makedirs(sub_dir, exist_ok=True)
+    file_abs = os.path.join(sub_dir, "doc1.txt")
+    with open(file_abs, "w") as f:
+        f.write("Windows path content")
+
+    file_rel_win = "subfolder\\doc1.txt"
+    file_rel_norm = "subfolder/doc1.txt"
+
+    db.upsert_document(base_dir, file_rel_win, "hash_win", "Windows path content")
+    db.set_user_verified_target_path(base_dir, file_rel_win, "Target_Folder")
+
+    # Verify target path is set regardless of slash convention
+    assert db.get_user_verified_target_path(base_dir, file_rel_win) == "Target_Folder"
+    assert db.get_user_verified_target_path(base_dir, file_rel_norm) == "Target_Folder"
+
+    # Create snapshot
+    snapshot_id = history_manager.create_snapshot(base_dir)
+
+    # Change target path
+    db.set_user_verified_target_path(base_dir, file_rel_win, "Changed_Folder")
+    assert db.get_user_verified_target_path(base_dir, file_rel_win) == "Changed_Folder"
+
+    # Roll back
+    history_manager.rollback(snapshot_id)
+
+    # Verify target path restored
+    assert db.get_user_verified_target_path(base_dir, file_rel_win) == "Target_Folder"
+    assert db.get_user_verified_target_path(base_dir, file_rel_norm) == "Target_Folder"
+
