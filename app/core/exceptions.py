@@ -37,6 +37,12 @@ class HashVerificationError(OfflineModelLoadError, ValueError):
     pass
 
 
+class ModelVerificationError(DownloaderError, OfflineModelLoadError, ValueError):
+    """Raised when model weight security advisory checks, cryptographic signatures, or integrity validation fails."""
+
+    pass
+
+
 class ModelWeightsNotFoundError(OfflineModelLoadError, FileNotFoundError):
     """Raised when model weights cannot be found in any searched locations."""
 

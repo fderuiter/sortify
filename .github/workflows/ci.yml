@@ -272,7 +272,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --frozen --only-group dev
+        uv sync --frozen --group docs
 
     - name: Deploy Documentation
       if: github.ref == 'refs/heads/main'

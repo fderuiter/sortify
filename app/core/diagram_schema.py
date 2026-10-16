@@ -624,6 +624,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                 nodes=[
                     "core_policy_engine",
                     "core_rule_templates",
+                    "core_rule_importers",
                     "core_quarantine_interceptor",
                     "core_domain_contracts",
                     "core_verifier",
@@ -649,6 +650,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                     "core_domain_contracts",
                     "core_exceptions",
                     "core_sample_corpus",
+                    "core_security_advisory",
                 ],
             ),
         ],
@@ -714,6 +716,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                 id="core_policy_engine", label="app.core.policy_engine", shape="rhombus"
             ),
             DiagramNode(id="core_rule_templates", label="app.core.rule_templates"),
+            DiagramNode(id="core_rule_importers", label="app.core.rule_importers"),
             DiagramNode(
                 id="core_quarantine_interceptor",
                 label="app.core.quarantine_interceptor",
@@ -744,6 +747,9 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramNode(id="core_domain_contracts", label="app.core.domain_contracts"),
             DiagramNode(id="core_exceptions", label="app.core.exceptions"),
             DiagramNode(id="core_sample_corpus", label="app.core.sample_corpus"),
+            DiagramNode(
+                id="core_security_advisory", label="app.core.security_advisory"
+            ),
         ],
         edges=[
             DiagramEdge(source="app_main", target="app_tui"),
