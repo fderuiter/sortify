@@ -86,6 +86,9 @@ def test_downloader_sandboxing_bypass(temp_model_dir):
         with (
             patch("urllib.request.build_opener", return_value=mock_opener),
             patch("shutil.disk_usage", return_value=(10000, 5000, 5000)),
+            patch(
+                "app.core.security_advisory.SecurityAdvisoryClient.check_advisory"
+            ),
         ):
             run_background_download(
                 "http://example.com/model.onnx",

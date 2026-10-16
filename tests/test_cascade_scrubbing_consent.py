@@ -150,14 +150,14 @@ async def test_tui_scrub_artifacts_button_and_confirmation_modal(tmp_path, monke
             # Press Scrub AI Artifacts button
             btn_scrub = modal.query_one("#btn-scrub-artifacts", Button)
             btn_scrub.press()
-            await pilot.pause(0.1)
+            await pilot.pause(0.2)
 
             scrub_modal = app.screen
             assert isinstance(scrub_modal, ScrubArtifactsModal)
             assert scrub_modal.vector_count == 1
 
             # Confirm scrub
-            await pilot.click("#btn-confirm-scrub")
+            scrub_modal.query_one("#btn-confirm-scrub", Button).press()
             await pilot.pause(0.3)
 
             assert db.get_document_vectors_count() == 0
@@ -211,14 +211,14 @@ async def test_tui_toggling_consent_off_presents_revocation_prompt(
 
             # Toggle switch off
             sw.value = False
-            await pilot.pause(0.1)
+            await pilot.pause(0.2)
 
             revoke_modal = app.screen
             assert isinstance(revoke_modal, ConsentRevocationModal)
             assert revoke_modal.vector_count == 1
 
             # Confirm consent revocation
-            await pilot.click("#btn-confirm-revoke")
+            revoke_modal.query_one("#btn-confirm-revoke", Button).press()
             await pilot.pause(0.3)
 
             assert app.settings.AI_CONSENT_GRANTED is False

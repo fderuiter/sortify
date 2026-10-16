@@ -425,7 +425,7 @@ def run_background_download(
             advisory_client.check_advisory(repo_id=url)
         except Exception as adv_err:
             logger.warning(f"Pre-download security advisory check failed: {adv_err}")
-            if isinstance(adv_err, DownloadError):
+            if isinstance(adv_err, (DownloadError, DownloaderError)):
                 err = adv_err
             else:
                 err = ModelVerificationError(str(adv_err))
@@ -646,8 +646,8 @@ def run_background_download(
                     logger.warning(
                         f"Failed to clean up temporary file {temp_path}: {cleanup_err}"
                     )
-            # Wrap as NetworkError if not already a subclass of DownloadError
-            if isinstance(e, DownloadError):
+            # Wrap as NetworkError if not already a subclass of DownloadError or DownloaderError
+            if isinstance(e, (DownloadError, DownloaderError)):
                 err = e
             else:
                 err = NetworkError(str(e))

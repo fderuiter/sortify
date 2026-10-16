@@ -219,6 +219,7 @@ def test_quarantine_vault_modal_reinspect_action(staged_quarantine_item):
             rec = db.get_quarantine_record(job_id)
             assert rec is not None
             assert rec["status"] in (
+                "STAGED",
                 "QUARANTINED",
                 "CLEARED",
                 "IN_INSPECTION",

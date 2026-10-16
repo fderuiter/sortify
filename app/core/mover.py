@@ -2007,7 +2007,7 @@ class AsyncMoveEngine:
                         logging.warning(
                             f"Failed to purge finalized session ledger: {purge_err}"
                         )
-                if session_id and history_manager:
+                if not resume and session_id and history_manager:
                     try:
                         history_manager.clear_step_ledger(session_id)
                     except Exception:
