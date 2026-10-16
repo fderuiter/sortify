@@ -1954,3 +1954,33 @@ def test_manual_path_fallback_modal(temp_workspace):
 
     asyncio.run(_test())
 
+
+def test_tui_generate_sample_corpus_keybindings(temp_workspace):
+    """Verify pressing 'g', 'G', and 'shift+g' triggers action_generate_sample_corpus when tree is focused."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            tree = app.query_one("#plan-tree")
+            tree.focus()
+            await pilot.pause(0.05)
+
+            with patch.object(app, "action_generate_sample_corpus") as mock_action:
+                await pilot.press("g")
+                await pilot.pause(0.05)
+                assert mock_action.call_count == 1
+
+                await pilot.press("G")
+                await pilot.pause(0.05)
+                assert mock_action.call_count == 2
+
+                await pilot.press("shift+g")
+                await pilot.pause(0.05)
+                assert mock_action.call_count == 3
+
+    asyncio.run(_test())
+
+
