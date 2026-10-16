@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -15,7 +16,7 @@ from rich.text import Text
 from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
@@ -2950,12 +2951,57 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         color: $text-muted;
         text-align: center;
     }
+    #input-queue-filter {
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+    .dropzone-split-container {
+        height: auto;
+        min-height: 8;
+        layout: horizontal;
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+    .narrow .dropzone-split-container {
+        layout: vertical;
+    }
     #dropzone-staging-table {
-        height: 6;
-        min-height: 4;
+        width: 60%;
+        height: 7;
+        min-height: 5;
         margin-top: 0;
         margin-bottom: 0;
         border: solid $accent;
+    }
+    .narrow #dropzone-staging-table {
+        width: 100%;
+        height: 6;
+    }
+    #dropzone-metadata-preview {
+        width: 40%;
+        height: 7;
+        min-height: 5;
+        border: solid $primary;
+        background: $surface;
+        padding: 0 1;
+        margin-left: 1;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+    .narrow #dropzone-metadata-preview {
+        width: 100%;
+        height: auto;
+        min-height: 4;
+        margin-left: 0;
+        margin-top: 1;
+    }
+    .preview-header {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 0;
+    }
+    .preview-field {
+        color: $text;
     }
     .status-text {
         color: $accent;
@@ -3016,12 +3062,29 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             )
             yield inp
 
-            table = DataTable(id="dropzone-staging-table")
-            table.cursor_type = "row"
-            table.tooltip = (
-                "Interactive staging queue displaying file status and details"
+            filter_inp = Input(
+                placeholder="Filter staged queue...",
+                id="input-queue-filter",
             )
-            yield table
+            filter_inp.tooltip = (
+                "Filter staged queue items by typing keywords (filename, path, status, extension)"
+            )
+            yield filter_inp
+
+            with Container(classes="dropzone-split-container"):
+                table = DataTable(id="dropzone-staging-table")
+                table.cursor_type = "row"
+                table.tooltip = (
+                    "Interactive staging queue displaying file status and details"
+                )
+                yield table
+
+                with Vertical(id="dropzone-metadata-preview"):
+                    yield Label("📋 Metadata Preview", classes="preview-header")
+                    yield Label("Path: N/A", id="preview-path", classes="preview-field")
+                    yield Label("Size: N/A", id="preview-size", classes="preview-field")
+                    yield Label("Modified: N/A", id="preview-mtime", classes="preview-field")
+                    yield Label("Status: N/A", id="preview-status", classes="preview-field")
 
             with Horizontal(classes="queue-row"):
                 btn_filter = Button(
@@ -3104,15 +3167,38 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             return f"{int(size)} B"
         return f"{size:.1f} {units[idx]}"
 
+    def get_filter_query(self) -> str:
+        """Get lowercase trimmed search query from input-queue-filter field."""
+        try:
+            inp = self.query_one("#input-queue-filter", Input)
+            return inp.value.strip().lower()
+        except Exception:
+            return ""
+
+    def get_filtered_items(self) -> List[Dict[str, Any]]:
+        """Return list of staged items filtered by search query."""
+        query = self.get_filter_query()
+        if not query:
+            return list(self.staged_items)
+        return [
+            item
+            for item in self.staged_items
+            if query in item["filename"].lower()
+            or query in item["path"].lower()
+            or query in item["extension"].lower()
+            or query in item["status"].lower()
+        ]
+
     def _refresh_table(self) -> None:
-        """Re-render staging table with items from self.staged_items."""
+        """Re-render staging table with items matching active search filter."""
         try:
             table = self.query_one("#dropzone-staging-table", DataTable)
         except Exception:
             return
         table.clear(columns=True)
         table.add_columns("Status", "Filename", "Extension", "Size", "Full Path")
-        for item in self.staged_items:
+        filtered = self.get_filtered_items()
+        for item in filtered:
             table.add_row(
                 item["status"],
                 item["filename"],
@@ -3120,6 +3206,68 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 item["size_str"],
                 item["path"],
             )
+        self.update_active_metadata_preview()
+
+    def update_metadata_preview(self, item: Optional[Dict[str, Any]] = None) -> None:
+        """Update metadata preview card panel for given staged item."""
+        if item is None:
+            path_str = "N/A"
+            size_str = "N/A"
+            mtime_str = "N/A"
+            status_str = "N/A"
+        else:
+            path_str = item.get("path", "N/A")
+            size_str = item.get("size_str", "N/A")
+            status_str = item.get("status", "N/A")
+            if path_str and path_str != "N/A" and os.path.exists(path_str):
+                try:
+                    mtime = os.path.getmtime(path_str)
+                    mtime_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    mtime_str = "Error reading timestamp"
+            else:
+                mtime_str = "N/A"
+
+        try:
+            self.query_one("#preview-path", Label).update(f"Path: {path_str}")
+            self.query_one("#preview-size", Label).update(f"Size: {size_str}")
+            self.query_one("#preview-mtime", Label).update(f"Modified: {mtime_str}")
+            self.query_one("#preview-status", Label).update(f"Status: {status_str}")
+        except Exception:
+            pass
+
+    def update_active_metadata_preview(self) -> None:
+        """Fetch item corresponding to current table cursor row and update metadata preview."""
+        try:
+            table = self.query_one("#dropzone-staging-table", DataTable)
+            row_idx = table.cursor_row
+            filtered = self.get_filtered_items()
+            if row_idx is not None and 0 <= row_idx < len(filtered):
+                self.update_metadata_preview(filtered[row_idx])
+            else:
+                self.update_metadata_preview(None)
+        except Exception:
+            self.update_metadata_preview(None)
+
+    @on(Input.Changed, "#input-queue-filter")
+    def on_queue_filter_changed(self, event: Input.Changed) -> None:
+        """Handle search filter text changes to dynamically update visible table rows."""
+        self._refresh_table()
+
+    @on(DataTable.RowHighlighted)
+    def _on_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        """Update metadata preview panel on table row focus/highlight."""
+        self.update_active_metadata_preview()
+
+    @on(DataTable.RowSelected)
+    def _on_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Update metadata preview panel on table row selection."""
+        self.update_active_metadata_preview()
+
+    @on(DataTable.CellHighlighted)
+    def _on_table_cell_highlighted(self, event: DataTable.CellHighlighted) -> None:
+        """Update metadata preview panel on cell selection/focus."""
+        self.update_active_metadata_preview()
 
     def stage_paths(self, raw_text: str) -> None:
         """Parse raw input string, expand directories, validate, and stage items."""
@@ -3219,17 +3367,22 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             row_idx = None
 
-        if row_idx is not None and 0 <= row_idx < len(self.staged_items):
-            removed_item = self.staged_items.pop(row_idx)
+        filtered = self.get_filtered_items()
+        if row_idx is not None and 0 <= row_idx < len(filtered):
+            removed_item = filtered[row_idx]
+            if removed_item in self.staged_items:
+                self.staged_items.remove(removed_item)
             self._refresh_table()
             msg = f"Removed '{removed_item['filename']}' from queue. {len(self.staged_items)} item(s) remaining."
             self.update_status_msg(msg)
-            if self.staged_items:
-                new_idx = min(row_idx, len(self.staged_items) - 1)
+            new_filtered = self.get_filtered_items()
+            if new_filtered:
+                new_idx = min(row_idx, len(new_filtered) - 1)
                 try:
                     table.move_cursor(row=new_idx)
                 except Exception:
                     pass
+            self.update_active_metadata_preview()
         else:
             self.update_status_msg("No item selected to remove.")
 
@@ -3241,18 +3394,24 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             row_idx = None
 
-        if row_idx is not None and 0 < row_idx < len(self.staged_items):
-            self.staged_items[row_idx], self.staged_items[row_idx - 1] = (
-                self.staged_items[row_idx - 1],
-                self.staged_items[row_idx],
+        filtered = self.get_filtered_items()
+        if row_idx is not None and 0 < row_idx < len(filtered):
+            item_curr = filtered[row_idx]
+            item_prev = filtered[row_idx - 1]
+            idx_curr = self.staged_items.index(item_curr)
+            idx_prev = self.staged_items.index(item_prev)
+            self.staged_items[idx_curr], self.staged_items[idx_prev] = (
+                self.staged_items[idx_prev],
+                self.staged_items[idx_curr],
             )
             self._refresh_table()
             try:
                 table.move_cursor(row=row_idx - 1)
             except Exception:
                 pass
+            self.update_active_metadata_preview()
             self.update_status_msg(
-                f"Moved '{self.staged_items[row_idx - 1]['filename']}' up in queue priority."
+                f"Moved '{item_curr['filename']}' up in queue priority."
             )
 
     def move_selected_item_down(self) -> None:
@@ -3263,18 +3422,24 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             row_idx = None
 
-        if row_idx is not None and 0 <= row_idx < len(self.staged_items) - 1:
-            self.staged_items[row_idx], self.staged_items[row_idx + 1] = (
-                self.staged_items[row_idx + 1],
-                self.staged_items[row_idx],
+        filtered = self.get_filtered_items()
+        if row_idx is not None and 0 <= row_idx < len(filtered) - 1:
+            item_curr = filtered[row_idx]
+            item_next = filtered[row_idx + 1]
+            idx_curr = self.staged_items.index(item_curr)
+            idx_next = self.staged_items.index(item_next)
+            self.staged_items[idx_curr], self.staged_items[idx_next] = (
+                self.staged_items[idx_next],
+                self.staged_items[idx_curr],
             )
             self._refresh_table()
             try:
                 table.move_cursor(row=row_idx + 1)
             except Exception:
                 pass
+            self.update_active_metadata_preview()
             self.update_status_msg(
-                f"Moved '{self.staged_items[row_idx + 1]['filename']}' down in queue priority."
+                f"Moved '{item_curr['filename']}' down in queue priority."
             )
 
     def clear_queue(self) -> None:
@@ -3372,13 +3537,15 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
         help_url = "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors"
 
-        # Check for blocked or invalid items in staged_items if no items exist or no ready items exist
+        filtered = self.get_filtered_items()
         ready_paths = [
-            item["path"] for item in self.staged_items if item["status"] == "Ready"
+            item["path"] for item in filtered if item["status"] == "Ready"
         ]
 
         if not ready_paths:
             blocked_items = [
+                item for item in filtered if item["status"] == "BLOCKED"
+            ] or [
                 item for item in self.staged_items if item["status"] == "BLOCKED"
             ]
             if blocked_items:
