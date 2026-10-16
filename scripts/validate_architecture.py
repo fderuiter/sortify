@@ -153,7 +153,10 @@ class DuplicatePatternVisitor(ast.NodeVisitor):
     def visit_Call(self, node):
         """Visit function call nodes to look for getattr(sys, 'frozen' / '_MEIPASS') or hasattr(sys, ...)."""
         if self.filepath not in ALLOWED_FOR_FROZEN:
-            if isinstance(node.func, ast.Name) and node.func.id in ("getattr", "hasattr"):
+            if isinstance(node.func, ast.Name) and node.func.id in (
+                "getattr",
+                "hasattr",
+            ):
                 if len(node.args) >= 2:
                     arg0, arg1 = node.args[0], node.args[1]
                     if isinstance(arg0, ast.Name) and arg0.id == "sys":

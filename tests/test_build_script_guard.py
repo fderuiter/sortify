@@ -381,4 +381,3 @@ def test_verify_scientific_binaries_missing_binaries(tmp_path):
         with pytest.raises(SystemExit):
             verify_scientific_binaries(str(dist_dir))
         mock_exit.assert_called_once_with(1)
-

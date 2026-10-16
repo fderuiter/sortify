@@ -605,4 +605,3 @@ def test_concurrent_bootstrap_binaries(reset_bootstrap_state):
 
         assert len(results) == 10
         assert all(r is True for r in results)
-
