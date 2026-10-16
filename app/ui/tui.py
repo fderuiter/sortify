@@ -4816,7 +4816,11 @@ class AutoSorterTUI(A11yMixin, App):
         """Return visual background folder watcher status and queue activity metrics badge string."""
         if not hasattr(self, "daemon") or self.daemon is None:
             base = getattr(self, "base_dir", "")
-            folder_name = os.path.basename(os.path.abspath(base)) if base else ""
+            if base:
+                norm_base = base if str(base).startswith("/") else os.path.abspath(base)
+                folder_name = os.path.basename(norm_base)
+            else:
+                folder_name = ""
             folder_suffix = f" ({folder_name})" if folder_name else ""
             return f"[Watch: Stopped{folder_suffix} | Queue: 0]"
         try:
@@ -4833,7 +4837,11 @@ class AutoSorterTUI(A11yMixin, App):
                 watch_state = "Stopped"
 
             base_dir = telemetry.get("base_dir") or getattr(self, "base_dir", "")
-            folder_name = os.path.basename(os.path.abspath(base_dir)) if base_dir else ""
+            if base_dir:
+                norm_base = base_dir if str(base_dir).startswith("/") else os.path.abspath(base_dir)
+                folder_name = os.path.basename(norm_base)
+            else:
+                folder_name = ""
             folder_suffix = f" ({folder_name})" if folder_name else ""
 
             return f"[Watch: {watch_state}{folder_suffix} | Queue: {queue_depth}]"
@@ -4868,13 +4876,17 @@ class AutoSorterTUI(A11yMixin, App):
         try:
             if text is not None:
                 clean_text = str(text)
-                for _ in range(3):
+                while True:
+                    old_len = len(clean_text)
                     for badge_str in ("[AI: Active]", "[AI: Disabled]"):
                         if clean_text.startswith(badge_str):
                             clean_text = clean_text[len(badge_str) :].lstrip()
-                    if clean_text.startswith("[Watch:") and "]" in clean_text:
+                    if clean_text.startswith("[Watch:"):
                         idx = clean_text.find("]")
-                        clean_text = clean_text[idx + 1 :].lstrip()
+                        if idx != -1:
+                            clean_text = clean_text[idx + 1 :].lstrip()
+                    if len(clean_text) == old_len:
+                        break
                 self._current_status_text = clean_text
             elif not hasattr(self, "_current_status_text"):
                 self._current_status_text = (

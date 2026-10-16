@@ -177,7 +177,12 @@ class ContinuousWatchdogDaemon:
 
     def __init__(self, settings: AppSettings, base_dir: str):
         self.settings = settings
-        self.base_dir = os.path.abspath(base_dir)
+        if base_dir and str(base_dir).startswith("/"):
+            self.base_dir = str(base_dir)
+        elif base_dir:
+            self.base_dir = os.path.abspath(base_dir)
+        else:
+            self.base_dir = ""
         self.observer = None
 
         self._lock = threading.RLock()
