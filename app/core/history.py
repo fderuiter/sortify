@@ -121,12 +121,19 @@ class HistoryManager:
                     FOREIGN KEY(session_id) REFERENCES sessions(session_id)
                 )
             """)
+            try:
+                conn.execute(
+                    "ALTER TABLE snapshot_documents ADD COLUMN user_verified_target_path TEXT"
+                )
+            except Exception:
+                pass
             conn.execute("""
                 CREATE TABLE IF NOT EXISTS snapshot_documents (
                     session_id TEXT,
                     filepath TEXT,
                     file_hash TEXT,
                     extracted_text TEXT,
+                    user_verified_target_path TEXT,
                     FOREIGN KEY(session_id) REFERENCES sessions(session_id)
                 )
             """)
@@ -288,17 +295,39 @@ class HistoryManager:
             docs = []
             db_conn = get_db_connection(self.db.db_path)
             with db_conn:
-                cur = db_conn.execute(
-                    "SELECT filepath, file_hash, extracted_text FROM documents WHERE base_dir = ?",
-                    (base_dir,),
-                )
-                for r in cur.fetchall():
-                    docs.append((session_id, r[0], r[1], r[2]))
+                try:
+                    cur = db_conn.execute(
+                        "SELECT filepath, file_hash, extracted_text, user_verified_target_path FROM documents WHERE base_dir = ?",
+                        (base_dir,),
+                    )
+                    for r in cur.fetchall():
+                        docs.append(
+                            (
+                                session_id,
+                                r[0].replace("\\", "/"),
+                                r[1],
+                                r[2],
+                                r[3] if len(r) > 3 else None,
+                            )
+                        )
+                except Exception:
+                    cur = db_conn.execute(
+                        "SELECT filepath, file_hash, extracted_text FROM documents WHERE base_dir = ?",
+                        (base_dir,),
+                    )
+                    for r in cur.fetchall():
+                        docs.append((session_id, r[0].replace("\\", "/"), r[1], r[2], None))
             if docs:
-                conn.executemany(
-                    "INSERT INTO snapshot_documents (session_id, filepath, file_hash, extracted_text) VALUES (?, ?, ?, ?)",
-                    docs,
-                )
+                try:
+                    conn.executemany(
+                        "INSERT INTO snapshot_documents (session_id, filepath, file_hash, extracted_text, user_verified_target_path) VALUES (?, ?, ?, ?, ?)",
+                        docs,
+                    )
+                except Exception:
+                    conn.executemany(
+                        "INSERT INTO snapshot_documents (session_id, filepath, file_hash, extracted_text) VALUES (?, ?, ?, ?)",
+                        [d[:4] for d in docs],
+                    )
 
             # Prune expired snapshots based on configured age retention limit
             policies = None
@@ -1564,12 +1593,30 @@ class HistoryManager:
                     for m in moves
                 }
 
-                cur = conn.execute(
-                    "SELECT filepath, file_hash, extracted_text FROM snapshot_documents WHERE session_id = ?",
-                    (session_id,),
-                )
-                snapshot_docs = cur.fetchall()
-                snapshot_docs_dict = {r[0]: r for r in snapshot_docs}
+                try:
+                    cur = conn.execute(
+                        "SELECT filepath, file_hash, extracted_text, user_verified_target_path FROM snapshot_documents WHERE session_id = ?",
+                        (session_id,),
+                    )
+                    snapshot_docs = cur.fetchall()
+                    snapshot_docs_dict = {
+                        r[0].replace("\\", "/"): (
+                            r[0].replace("\\", "/"),
+                            r[1],
+                            r[2],
+                            r[3] if len(r) > 3 else None,
+                        )
+                        for r in snapshot_docs
+                    }
+                except Exception:
+                    cur = conn.execute(
+                        "SELECT filepath, file_hash, extracted_text FROM snapshot_documents WHERE session_id = ?",
+                        (session_id,),
+                    )
+                    snapshot_docs = cur.fetchall()
+                    snapshot_docs_dict = {
+                        r[0].replace("\\", "/"): (r[0].replace("\\", "/"), r[1], r[2], None) for r in snapshot_docs
+                    }
 
                 # Write rollback journal before any modifications or relocations
                 try:
@@ -1598,15 +1645,19 @@ class HistoryManager:
                     docs_to_upsert = []
                     for fp, r in snapshot_docs_dict.items():
                         if fp.lower().replace("\\", "/") not in planned_target_rels:
-                            docs_to_upsert.append((base_dir, r[0], r[1], r[2]))
+                            verified_target = r[3] if len(r) > 3 else None
+                            docs_to_upsert.append(
+                                (base_dir, r[0], r[1], r[2], verified_target)
+                            )
                     if docs_to_upsert:
                         db_conn.executemany(
                             """
-                            INSERT INTO documents (base_dir, filepath, file_hash, extracted_text)
-                        VALUES (?, ?, ?, ?)
+                            INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, user_verified_target_path)
+                        VALUES (?, ?, ?, ?, ?)
                         ON CONFLICT(base_dir, filepath) DO UPDATE SET
                              file_hash=excluded.file_hash,
-                             extracted_text=excluded.extracted_text
+                             extracted_text=excluded.extracted_text,
+                             user_verified_target_path=excluded.user_verified_target_path
                             """,
                             docs_to_upsert,
                         )
@@ -1729,21 +1780,33 @@ class HistoryManager:
                                     "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
                                     (base_dir, rel_src, rel_src),
                                 )
-                                snapshot_doc = snapshot_docs_dict.get(rel_dst)
+                                rel_dst_norm = rel_dst.replace("\\", "/")
+                                snapshot_doc = (
+                                    snapshot_docs_dict.get(rel_dst_norm)
+                                    or snapshot_docs_dict.get(rel_dst)
+                                    or snapshot_docs_dict.get(rel_dst.replace("/", "\\"))
+                                )
                                 if snapshot_doc:
+                                    verified_target = (
+                                        snapshot_doc[3]
+                                        if len(snapshot_doc) > 3
+                                        else None
+                                    )
                                     db_conn.execute(
                                         """
-                                        INSERT INTO documents (base_dir, filepath, file_hash, extracted_text)
-                            VALUES (?, ?, ?, ?)
+                                        INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, user_verified_target_path)
+                            VALUES (?, ?, ?, ?, ?)
                             ON CONFLICT(base_dir, filepath) DO UPDATE SET
                                 file_hash=excluded.file_hash,
-                                extracted_text=excluded.extracted_text
+                                extracted_text=excluded.extracted_text,
+                                user_verified_target_path=excluded.user_verified_target_path
                                         """,
                                         (
                                             base_dir,
                                             rel_dst,
                                             snapshot_doc[1],
                                             snapshot_doc[2],
+                                            verified_target,
                                         ),
                                     )
                         except Exception as move_err:
@@ -1992,7 +2055,17 @@ class HistoryManager:
                     "UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?",
                     (session_id,),
                 )
-                self.db.invalidate_cache()
+                self.db.invalidate_cache(base_dir)
+                try:
+                    from app.core.shared_registry import SharedModelRegistry
+
+                    jev_engine = (
+                        SharedModelRegistry.get_instance().get_jev_classifier()
+                    )
+                    if jev_engine and hasattr(jev_engine, "clear_cache"):
+                        jev_engine.clear_cache()
+                except Exception:
+                    pass
 
                 # Clean delete of rollback journal file
                 try:
