@@ -1372,6 +1372,7 @@ class ScrubArtifactsModal(A11yMixin, ModalScreen[bool]):
         self.cache_size_mb = cache_size_mb
 
     def compose(self) -> ComposeResult:
+        """Compose the modal layout for scrubbing AI artifacts."""
         with Vertical(classes="modal-box"):
             yield Heading("Scrub AI Artifacts Confirmation", level=1, classes="modal-title")
             yield Label(f"Stored Document Vectors: {self.vector_count} records", classes="info-label", id="lbl-vector-count")
@@ -1388,10 +1389,12 @@ class ScrubArtifactsModal(A11yMixin, ModalScreen[bool]):
 
     @on(Button.Pressed, "#btn-confirm-scrub")
     def action_confirm(self) -> None:
+        """Confirm scrubbing AI artifacts."""
         self.dismiss(True)
 
     @on(Button.Pressed, "#btn-cancel-scrub")
     def action_cancel(self) -> None:
+        """Cancel scrubbing AI artifacts."""
         self.dismiss(False)
 
 
@@ -1446,6 +1449,7 @@ class ConsentRevocationModal(A11yMixin, ModalScreen[bool]):
         self.cache_size_mb = cache_size_mb
 
     def compose(self) -> ComposeResult:
+        """Compose the modal layout for confirming consent revocation."""
         with Vertical(classes="modal-box"):
             yield Heading("Confirm AI Consent Revocation", level=1, classes="modal-title")
             yield Label(f"Stored Document Vectors: {self.vector_count} records", classes="info-label", id="lbl-vector-count")
@@ -1462,10 +1466,12 @@ class ConsentRevocationModal(A11yMixin, ModalScreen[bool]):
 
     @on(Button.Pressed, "#btn-confirm-revoke")
     def action_confirm(self) -> None:
+        """Confirm consent revocation and scrubbing."""
         self.dismiss(True)
 
     @on(Button.Pressed, "#btn-cancel-revoke")
     def action_cancel(self) -> None:
+        """Cancel consent revocation."""
         self.dismiss(False)
 
 
@@ -1778,6 +1784,8 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 if confirmed:
                     if self.settings:
                         self.settings.AI_CONSENT_GRANTED = False
+                    if hasattr(self, "app") and self.app and hasattr(self.app, "settings") and self.app.settings:
+                        self.app.settings.AI_CONSENT_GRANTED = False
                     self._execute_scrub_and_purge()
                     if hasattr(self, "announce"):
                         self.announce("AI consent revoked and artifacts scrubbed.", priority="polite")

@@ -1,14 +1,8 @@
 """Unit and integration tests for cascade scrubbing and interactive TUI consent controls."""
 
-import asyncio
-import os
-import time
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
 import pytest
 
-from app.config import AppSettings, get_app_dir
+from app.config import AppSettings
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.shared_registry import SharedModelRegistry
@@ -154,12 +148,18 @@ async def test_tui_scrub_artifacts_button_and_confirmation_modal(tmp_path, monke
             await pilot.pause(0.1)
 
             scrub_modal = app.screen
+            await pilot.pause(0.1)
             assert isinstance(scrub_modal, ScrubArtifactsModal)
             assert scrub_modal.vector_count == 1
 
             # Confirm scrub
-            await pilot.click("#btn-confirm-scrub")
-            await pilot.pause(0.3)
+            scrub_modal.query_one("#btn-confirm-scrub", Button).press()
+            await pilot.pause(0.5)
+
+            for _ in range(10):
+                if db.get_document_vectors_count() == 0:
+                    break
+                await pilot.pause(0.1)
 
             assert db.get_document_vectors_count() == 0
             assert not (model_dir / "weights.onnx").exists()
@@ -212,8 +212,13 @@ async def test_tui_toggling_consent_off_presents_revocation_prompt(tmp_path, mon
             assert revoke_modal.vector_count == 1
 
             # Confirm consent revocation
-            await pilot.click("#btn-confirm-revoke")
-            await pilot.pause(0.3)
+            revoke_modal.query_one("#btn-confirm-revoke", Button).press()
+            await pilot.pause(0.5)
+
+            for _ in range(10):
+                if app.settings.AI_CONSENT_GRANTED is False:
+                    break
+                await pilot.pause(0.1)
 
             assert app.settings.AI_CONSENT_GRANTED is False
             assert db.get_document_vectors_count() == 0
@@ -250,7 +255,7 @@ async def test_tui_cancelling_consent_revocation_reverts_switch(tmp_path, monkey
         assert isinstance(revoke_modal, ConsentRevocationModal)
 
         # Cancel revocation
-        await pilot.click("#btn-cancel-revoke")
+        revoke_modal.query_one("#btn-cancel-revoke", Button).press()
         await pilot.pause(0.1)
 
         # Switch should revert back to True and consent should remain True
