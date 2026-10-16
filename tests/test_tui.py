@@ -854,7 +854,9 @@ def test_tui_conflict_policy_settings_and_tree_indicator(temp_workspace):
             settings=settings, base_dir=temp_workspace, skip_wizard=True
         )
 
-        with patch.object(AppSettings, "_save", return_value=None):
+        with patch.object(AppSettings, "_save", return_value=None), patch.object(
+            app, "action_scan_directory"
+        ):
             async with app.run_test() as pilot:
                 app.action_open_settings()
                 await pilot.pause(0.1)
