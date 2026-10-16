@@ -1064,24 +1064,8 @@ def test_vector_buffer_comprehensive_operations(monkeypatch):
     with pytest.raises(IndexError, match="Vector index out of range"):
         _ = vb_list[-10]
 
-    # 3. NumPy conversion
-    np_res = vb_list.to_numpy()
-    assert np.allclose(np_res, np.array([1.0, 2.0, 3.0], dtype=np.float32))
-
-    empty_np = vb_empty.to_numpy()
-    assert len(empty_np) == 0
-
-    # NumPy missing exception
-    monkeypatch.setattr("app.core.crypto.np", None)
-    with pytest.raises(RuntimeError, match="NumPy is not installed"):
-        vb_list.to_numpy()
-
-    # Restore np
-    monkeypatch.setattr("app.core.crypto.np", np)
-
-    # 4. Zero fill & cleared indexing error
+    # 3. Zero fill & cleared indexing error
     vb_list.zero_fill()
-    assert vb_list.is_zeroed()
     with pytest.raises(IndexError, match="Vector buffer has been zeroed/cleared"):
         _ = vb_list[0]
 

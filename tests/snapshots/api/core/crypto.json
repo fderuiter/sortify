@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "94aef8aba7154be92c359b5a64e6a7634f9991d52ed340a8d176fd2972eda232"
+    "checksum": "644da98e9fd7df074ad2837017a2a1ebc5d434e97b9f64b2ab1be8e5648924ba"
   },
   "classes": [
     {
@@ -429,19 +429,6 @@
         {
           "async": false,
           "decorators": [],
-          "name": "is_zeroed",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            }
-          ],
-          "returns": "bool"
-        },
-        {
-          "async": false,
-          "decorators": [],
           "name": "to_list",
           "parameters": [
             {
@@ -451,19 +438,6 @@
             }
           ],
           "returns": "list[float]"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "to_numpy",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            }
-          ],
-          "returns": "Any"
         },
         {
           "async": false,

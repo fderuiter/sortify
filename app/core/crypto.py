@@ -740,14 +740,6 @@ class VectorBuffer:
             return []
         return list(struct.unpack(f"{self._dim}f", self._buffer))
 
-    def to_numpy(self) -> Any:
-        """Convert byte buffer to NumPy float32 array."""
-        if np is None:
-            raise RuntimeError("NumPy is not installed")
-        if self._buffer is None or len(self._buffer) == 0:
-            return np.array([], dtype=np.float32)
-        return np.frombuffer(bytes(self._buffer), dtype=np.float32)
-
     def zero_fill(self) -> None:
         """Overwrite the mutable byte buffer with null bytes before clearing reference."""
         if self._buffer is not None:
@@ -755,10 +747,6 @@ class VectorBuffer:
                 self._buffer[i] = 0
             self._buffer = None
             self._dim = 0
-
-    def is_zeroed(self) -> bool:
-        """Return True if backing buffer has been zeroed and cleared."""
-        return self._buffer is None
 
 
 def zero_vector_buffer(target: Any) -> None:
