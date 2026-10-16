@@ -1466,7 +1466,6 @@ def _process_move_item(
                 dest_path = resilient_move(source_path, dest_path)
                 rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
         except Exception as err:
-            move_error = str(err)
             logging.error(f"Failed to move file {source_path} to {dest_path}: {err}")
             raise
 
