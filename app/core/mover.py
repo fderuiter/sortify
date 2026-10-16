@@ -1425,7 +1425,6 @@ def _process_move_item(
                     pass
         return True
 
-    move_error = None
     if not moved_as_link:
         try:
             import unittest.mock
@@ -1443,8 +1442,19 @@ def _process_move_item(
                 dest_path = resilient_move(source_path, dest_path)
                 rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
         except Exception as err:
-            move_error = str(err)
             logging.error(f"Failed to move file {source_path} to {dest_path}: {err}")
+            if audit_records is not None:
+                audit_entry = {
+                    "source_path": source_path,
+                    "destination_path": dest_path,
+                    "pre_hash": pre_hash,
+                    "post_hash": None,
+                    "status": "MOVE_FAIL",
+                    "error": str(err),
+                }
+                with db_lock:
+                    audit_records.append(audit_entry)
+            raise
 
     if ledger and entry_id:
         with db_lock:
@@ -1553,9 +1563,6 @@ def _process_move_item(
             "pre_hash": pre_hash,
             "post_hash": post_hash,
         }
-        if move_error:
-            audit_entry["status"] = "MOVE_FAIL"
-            audit_entry["error"] = move_error
         with db_lock:
             audit_records.append(audit_entry)
 
