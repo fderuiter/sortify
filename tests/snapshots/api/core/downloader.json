@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "6e7bc91330badf4442bc92299978ed27bd02e63dae98dae1fee7ab75d3d114c7"
+    "checksum": "7be8d76bc7b9905595d6fe82730ffeb207d8944707588ef7e5f0aa712dbdcbaa"
   },
   "classes": [
     {
@@ -171,11 +171,6 @@
           "returns": null
         }
       ]
-    },
-    {
-      "class_name": "ModelVerificationError",
-      "decorators": [],
-      "methods": []
     },
     {
       "class_name": "NetworkError",
