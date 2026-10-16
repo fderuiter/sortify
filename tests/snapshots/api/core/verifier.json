@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "6491114fef6c90b62790fe5e6d9e965122d2dcb9ff50439a4b2e627c8d824438"
+    "checksum": "37198bc83154507a1e45b415b306734cb05a0dc331d14d98a1d87be7f3d8e8c0"
   },
   "classes": [
     {
@@ -92,6 +92,21 @@
           "decorators": [
             "@staticmethod"
           ],
+          "name": "is_critical_error",
+          "parameters": [
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "result"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
           "name": "sanitize_plan",
           "parameters": [
             {
@@ -118,6 +133,11 @@
               "annotation": "Any",
               "default": null,
               "name": "plan"
+            },
+            {
+              "annotation": "str",
+              "default": "'skip'",
+              "name": "conflict_policy"
             }
           ],
           "returns": "dict"
@@ -334,6 +354,11 @@
               "annotation": "dict",
               "default": null,
               "name": "plan"
+            },
+            {
+              "annotation": "str",
+              "default": "'skip'",
+              "name": "conflict_policy"
             }
           ],
           "returns": "dict"
