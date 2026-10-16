@@ -1184,6 +1184,191 @@ class ManualPathFallbackModal(A11yMixin, ModalScreen[Optional[str]]):
         self.dismiss(None)
 
 
+def _get_vector_count(db=None) -> int:
+    """Return stored document vector count from database."""
+    try:
+        if db is not None and hasattr(db, "get_document_vectors_count"):
+            return db.get_document_vectors_count()
+        from app.config import get_app_dir
+        from app.core.db import Database
+        from app.core.db_worker import DBWorker
+
+        db_path = get_app_dir() / "autosorter.db"
+        if db_path.exists():
+            temp_db = Database(db_path, DBWorker())
+            return temp_db.get_document_vectors_count()
+    except Exception:
+        pass
+    return 0
+
+
+def _get_model_cache_footprint_mb() -> float:
+    """Return model cache size on disk in MB."""
+    try:
+        from app.config import get_app_dir
+
+        model_dir = get_app_dir() / "model"
+        if model_dir.exists() and model_dir.is_dir():
+            total_bytes = 0
+            for root, _, files in os.walk(model_dir):
+                for f in files:
+                    fp = os.path.join(root, f)
+                    if os.path.exists(fp):
+                        total_bytes += os.path.getsize(fp)
+            return total_bytes / (1024 * 1024)
+    except Exception:
+        pass
+    return 0.0
+
+
+class ScrubArtifactsModal(A11yMixin, ModalScreen[bool]):
+    """Modal dialog for confirming manual scrubbing of AI vector database rows and model cache files."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    ScrubArtifactsModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .info-label {
+        margin-top: 1;
+        color: $text;
+    }
+    .warning-label {
+        margin-top: 1;
+        margin-bottom: 1;
+        color: $warning;
+        text-style: bold;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    """
+
+    def __init__(self, vector_count: int, cache_size_mb: float):
+        super().__init__()
+        self.vector_count = vector_count
+        self.cache_size_mb = cache_size_mb
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="modal-box"):
+            yield Heading("Scrub AI Artifacts Confirmation", level=1, classes="modal-title")
+            yield Label(f"Stored Document Vectors: {self.vector_count} records", classes="info-label", id="lbl-vector-count")
+            yield Label(f"Model Cache Footprint: {self.cache_size_mb:.2f} MB", classes="info-label", id="lbl-cache-size")
+            yield Label(
+                "Warning: This operation will permanently remove all stored document vector embeddings "
+                "from the SQLite database and purge local model cache files from disk. "
+                "Are you sure you want to scrub AI artifacts?",
+                classes="warning-label",
+            )
+            with Horizontal(classes="button-row"):
+                yield Button("Cancel", id="btn-cancel-scrub", variant="default")
+                yield Button("Scrub AI Artifacts", id="btn-confirm-scrub", variant="error")
+
+    @on(Button.Pressed, "#btn-confirm-scrub")
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#btn-cancel-scrub")
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+
+class ConsentRevocationModal(A11yMixin, ModalScreen[bool]):
+    """Modal dialog for confirming revocation of AI consent and cascading artifact scrubbing."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    ConsentRevocationModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .info-label {
+        margin-top: 1;
+        color: $text;
+    }
+    .warning-label {
+        margin-top: 1;
+        margin-bottom: 1;
+        color: $warning;
+        text-style: bold;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    """
+
+    def __init__(self, vector_count: int, cache_size_mb: float):
+        super().__init__()
+        self.vector_count = vector_count
+        self.cache_size_mb = cache_size_mb
+
+    def compose(self) -> ComposeResult:
+        with Vertical(classes="modal-box"):
+            yield Heading("Confirm AI Consent Revocation", level=1, classes="modal-title")
+            yield Label(f"Stored Document Vectors: {self.vector_count} records", classes="info-label", id="lbl-vector-count")
+            yield Label(f"Model Cache Footprint: {self.cache_size_mb:.2f} MB", classes="info-label", id="lbl-cache-size")
+            yield Label(
+                "Revoking AI consent will disable AI features, unload models from memory, "
+                "scrub stored document vectors from SQLite tables, and purge model cache files from disk. "
+                "Do you wish to proceed?",
+                classes="warning-label",
+            )
+            with Horizontal(classes="button-row"):
+                yield Button("Keep Consent Active", id="btn-cancel-revoke", variant="default")
+                yield Button("Revoke Consent & Scrub Data", id="btn-confirm-revoke", variant="error")
+
+    @on(Button.Pressed, "#btn-confirm-revoke")
+    def action_confirm(self) -> None:
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#btn-cancel-revoke")
+    def action_cancel(self) -> None:
+        self.dismiss(False)
+
+
 class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     """Modal dialog for modifying application settings."""
 
@@ -1365,6 +1550,16 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                         tooltip="Toggle AI contextual file renaming",
                     )
 
+                    btn_scrub = Button(
+                        "Scrub AI Artifacts",
+                        id="btn-scrub-artifacts",
+                        variant="warning",
+                    )
+                    btn_scrub.tooltip = (
+                        "Report vector count and cache footprint, and scrub stored vectors and model files"
+                    )
+                    yield btn_scrub
+
                     btn_templates = Button(
                         "Starter Rule Template Gallery",
                         id="btn-open-templates",
@@ -1416,6 +1611,94 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     def action_open_templates(self) -> None:
         """Open starter rule template gallery modal."""
         self.app.push_screen(TemplateGalleryModal(self.settings))
+
+    @on(Button.Pressed, "#btn-scrub-artifacts")
+    def action_scrub_artifacts(self) -> None:
+        """Open Scrub AI Artifacts confirmation modal."""
+        db_inst = getattr(self.app, "db", None) if hasattr(self, "app") else None
+        v_count = _get_vector_count(db_inst)
+        footprint_mb = _get_model_cache_footprint_mb()
+
+        def _on_scrub_modal_result(confirmed: bool) -> None:
+            if confirmed:
+                self._execute_scrub_and_purge()
+
+        if hasattr(self, "app") and self.app:
+            self.app.push_screen(
+                ScrubArtifactsModal(v_count, footprint_mb), _on_scrub_modal_result
+            )
+
+    @on(Switch.Changed, "#switch-ai-consent")
+    def on_ai_consent_changed(self, event: Switch.Changed) -> None:
+        """Prompt user confirmation when AI consent switch is toggled off."""
+        if not event.value:
+            db_inst = getattr(self.app, "db", None) if hasattr(self, "app") else None
+            v_count = _get_vector_count(db_inst)
+            footprint_mb = _get_model_cache_footprint_mb()
+
+            def _on_revoke_modal_result(confirmed: bool) -> None:
+                if confirmed:
+                    if self.settings:
+                        self.settings.AI_CONSENT_GRANTED = False
+                    self._execute_scrub_and_purge()
+                    if hasattr(self, "announce"):
+                        self.announce("AI consent revoked and artifacts scrubbed.", priority="polite")
+                else:
+                    event.switch.value = True
+
+            if hasattr(self, "app") and self.app:
+                self.app.push_screen(
+                    ConsentRevocationModal(v_count, footprint_mb), _on_revoke_modal_result
+                )
+
+    def _execute_scrub_and_purge(self) -> None:
+        """Execute memory model unload, database vector clearing, and background model cache purging."""
+        try:
+            from app.core.shared_registry import SharedModelRegistry
+
+            SharedModelRegistry.get_instance().unload_all_models()
+        except Exception:
+            pass
+
+        try:
+            from app.core.db import Database
+
+            Database.scrub_all_vectors()
+        except Exception:
+            pass
+
+        try:
+            from app.config import get_app_dir
+            from app.core.downloader import DownloadManager
+
+            model_dir = str(get_app_dir() / "model")
+            dm = DownloadManager.get_instance()
+
+            def _on_purge_done(success: bool, err: Optional[Exception]):
+                if success:
+                    if hasattr(self, "announce"):
+                        self.announce(
+                            "AI artifacts scrubbed and model cache purged successfully.",
+                            priority="polite",
+                        )
+                else:
+                    if hasattr(self, "announce"):
+                        self.announce(
+                            f"Model cache purge failed: {err}", priority="assertive"
+                        )
+
+            dm.delete_model_async(model_dir, on_done=_on_purge_done)
+        except Exception as e:
+            logger.error(f"Error purging model cache: {e}")
+
+        try:
+            from app.ui.notifications import notify
+
+            notify("AI artifacts scrubbed and model cache purging started.", type="info")
+        except Exception:
+            pass
+        if hasattr(self, "announce"):
+            self.announce("AI artifacts scrubbed and model cache purging started.")
 
     @on(Button.Pressed, "#btn-save")
     def action_save(self) -> None:
@@ -1475,6 +1758,9 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             ai_consent = self.query_one("#switch-ai-consent", Switch).value
         except Exception:
             ai_consent = bool(getattr(self.settings, "AI_CONSENT_GRANTED", False))
+
+        if ai_consent is False and getattr(self.settings, "AI_CONSENT_GRANTED", None) is True:
+            self._execute_scrub_and_purge()
 
         res = {
             "PROTECTED_PATHS": p_list,
@@ -4640,9 +4926,11 @@ class AutoSorterTUI(A11yMixin, App):
         source_dirs: Optional[List[str]] = None,
         skip_wizard: bool = False,
         non_interactive: bool = False,
+        db: Optional[Any] = None,
     ):
         super().__init__()
         self.settings = settings
+        self.db = db
         if source_dirs:
             self.source_dirs = [
                 d if str(d).startswith("/") else os.path.abspath(d)
