@@ -71,8 +71,21 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
         (target_dir / "dbapi2.py").write_text(saved_dbapi2, encoding="utf-8")
 
     if system_platform == "win32":
-        # Ensure all required Windows DLLs (sqlite3, OpenSSL) are copied to the binaries directory if not already copied
-        dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher", "sqlite3"]
+        # Ensure all required Windows DLLs (sqlite3, OpenSSL, MSVC Redist, UCRT) are copied to the binaries directory if not already copied
+        dll_patterns = [
+            "libcrypto",
+            "libssl",
+            "sqlcipher",
+            "libsqlcipher",
+            "sqlite3",
+            "msvcp140",
+            "vcruntime140",
+            "vcruntime140_1",
+            "concrt140",
+            "vcomp140",
+            "ucrtbase",
+            "api-ms-win-crt-",
+        ]
 
         # We will build a list of missing patterns to search for
         for pat in dll_patterns:
@@ -266,7 +279,7 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                             except Exception:
                                 pass
 
-                # Search standard OpenSSL installation paths on Windows as fallback
+                # Search standard OpenSSL, MSVC Redist, and UCRT installation paths on Windows as fallback
                 if not found_for_pattern:
                     common_openssl_dirs = [
                         Path("C:/Program Files/OpenSSL-Win64/bin"),
@@ -276,14 +289,46 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
                         Path("C:/OpenSSL-Win64/bin"),
                         Path("C:/OpenSSL-Win64"),
                         Path("C:/Program Files/Common Files/SSL"),
+                        Path(
+                            "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Redist/MSVC"
+                        ),
+                        Path(
+                            "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Redist/MSVC"
+                        ),
+                        Path(
+                            "C:/Program Files/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC"
+                        ),
+                        Path(
+                            "C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Redist/MSVC"
+                        ),
+                        Path(
+                            "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Redist/MSVC"
+                        ),
+                        Path(
+                            "C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Redist/MSVC"
+                        ),
+                        Path("C:/Program Files (x86)/Windows Kits/10/Redist"),
+                        Path("C:/Program Files/Windows Kits/10/Redist"),
+                        Path("C:/Windows/System32"),
+                        Path("C:/Windows/SysWOW64"),
                     ]
+                    vc_redist_env = os.environ.get("VCToolsRedistDir")
+                    if vc_redist_env and Path(vc_redist_env).exists():
+                        common_openssl_dirs.append(Path(vc_redist_env))
+
                     for cd in common_openssl_dirs:
                         if cd.exists():
                             try:
-                                for f in os.listdir(cd):
-                                    if f.lower().endswith(".dll") and pat in f.lower():
-                                        dll_srcs.append(cd / f)
-                                        found_for_pattern = True
+                                for root, dirs, files in os.walk(cd):
+                                    for f in files:
+                                        if (
+                                            f.lower().endswith(".dll")
+                                            and pat in f.lower()
+                                        ):
+                                            dll_srcs.append(Path(root) / f)
+                                            found_for_pattern = True
+                                    if found_for_pattern:
+                                        break
                             except Exception:
                                 continue
                             if found_for_pattern:
@@ -606,6 +651,18 @@ def main():
         print(
             f"Warning: Standalone bundle directory {dist_dir} not found for post-build verification."
         )
+
+    print("Executing post-build PE binary dependency verification...")
+    from pathlib import Path
+
+    from scripts.verify_pe_dependencies import verify_pe_dependencies
+
+    pe_success, _ = verify_pe_dependencies(
+        Path("dist") / "smart-autosorter", allow_empty=True
+    )
+    if not pe_success:
+        print("Error: Post-build PE binary dependency verification failed!")
+        sys.exit(1)
 
     if is_cpu:
         print("Scanning standalone package for GPU/CUDA/cuDNN binaries...")

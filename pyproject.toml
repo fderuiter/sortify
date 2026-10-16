@@ -123,6 +123,7 @@ dev = [
     "mkdocs-material>=9.7.7",
     "mkdocstrings[python]>=1.0.6",
     "mypy>=2.3.1",
+    "pefile>=2023.2.7",
     "pre-commit>=4.6.2",
     "pytest>=8.4.2",
     "pytest-cov>=7.1.0",
@@ -138,6 +139,7 @@ dev = [
 
 build = [
     "pyinstaller",
+    "pefile>=2023.2.7",
     "sqlcipher3-wheels==0.5.7",
 ]
 

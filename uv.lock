@@ -4911,6 +4911,7 @@ ml = [
 
 [package.dev-dependencies]
 build = [
+    { name = "pefile" },
     { name = "pyinstaller" },
     { name = "sqlcipher3-wheels" },
 ]
@@ -4923,6 +4924,7 @@ dev = [
     { name = "mkdocstrings", extra = ["python"] },
     { name = "mypy" },
     { name = "notebook" },
+    { name = "pefile" },
     { name = "pre-commit" },
     { name = "pytest" },
     { name = "pytest-cov" },
@@ -4966,6 +4968,7 @@ provides-extras = ["ml"]
 
 [package.metadata.requires-dev]
 build = [
+    { name = "pefile", specifier = ">=2023.2.7" },
     { name = "pyinstaller" },
     { name = "sqlcipher3-wheels", specifier = "==0.5.7" },
 ]
@@ -4978,6 +4981,7 @@ dev = [
     { name = "mkdocstrings", extras = ["python"], specifier = ">=1.0.6" },
     { name = "mypy", specifier = ">=2.3.1" },
     { name = "notebook", specifier = ">=7.6.3" },
+    { name = "pefile", specifier = ">=2023.2.7" },
     { name = "pre-commit", specifier = ">=4.6.2" },
     { name = "pytest", specifier = ">=8.4.2" },
     { name = "pytest-cov", specifier = ">=7.1.0" },
