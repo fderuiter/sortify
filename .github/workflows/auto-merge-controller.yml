@@ -16,7 +16,7 @@ permissions:
 
 concurrency:
   group: auto-merge-controller
-  cancel-in-progress: false
+  cancel-in-progress: true
 
 jobs:
   auto-merge:
