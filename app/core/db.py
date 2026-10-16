@@ -874,6 +874,7 @@ class Database:
     def set_user_verified_target_path(self, base_dir, filepath, target_path):
         """Record the historical folder assignment for a specific document path."""
         filepath = filepath.replace("\\", "/")
+        self._populate_cache_if_needed(base_dir)
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
                 if hasattr(self._cached_documents, "get") and not isinstance(
@@ -922,7 +923,7 @@ class Database:
                     term_counts=precomputed_counts,
                 )
 
-        self.worker.execute_write_async(_write)
+        self.worker.execute_write(_write)
 
     def _is_tfidf_eligible(self, filepath: str, extracted_text: str | None) -> bool:
         if not filepath or not extracted_text:
