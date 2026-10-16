@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "681229a12a13c86f0807ea5f3d1ef2780ea39af1bf5018b698ebb62aaf08ee0f"
+    "checksum": "3f9049228be218192ae2e2eaf1de8ff431ce5e99d8e144c9d5be48d3a6ecf224"
   },
   "classes": [
     {
@@ -315,6 +315,19 @@
         {
           "async": false,
           "decorators": [],
+          "name": "get_document_vectors_count",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "get_documents_by_filepaths",
           "parameters": [
             {
@@ -625,6 +638,21 @@
               "annotation": "str",
               "default": null,
               "name": "session_id"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "scrub_all_vectors",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
             }
           ],
           "returns": null
