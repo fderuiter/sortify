@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "9b1fe6aaabec75b73976e6cf514f163056774d0de05ae76513ff99aac5e2f5fb"
+    "checksum": "58742f6cc7e52b38e8e45b77ce5c159ee7605883b01752fef0bb15dced2d3ff0"
   },
   "classes": [
     {
@@ -124,12 +124,12 @@
         },
         {
           "annotation": null,
-          "default": null,
+          "default": "None",
           "name": "db"
         },
         {
           "annotation": null,
-          "default": null,
+          "default": "None",
           "name": "history_manager"
         },
         {
@@ -207,12 +207,12 @@
         },
         {
           "annotation": null,
-          "default": null,
+          "default": "None",
           "name": "db"
         },
         {
           "annotation": null,
-          "default": null,
+          "default": "None",
           "name": "history_manager"
         },
         {

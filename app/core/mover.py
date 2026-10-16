@@ -720,16 +720,28 @@ def _execute_moves_recursive(
             )
 
             active_dest = current_dest
+            dest_override = (
+                _get_val(content, "destination_override")
+                or _get_val(content, "override_destination")
+                or _get_val(content, "custom_destination")
+                or _get_val(content, "user_target_folder")
+            )
+            if dest_override:
+                active_dest = dest_override
+
             if sens_rating_str in auto_ratings:
                 logging.warning(
                     f"Downstream Barrier Interception: File {source_path} has sensitivity rating {sens_rating_str}. "
-                    f"Blocking move to '{current_dest}' and redirecting to '{quarantine_dir_name}'."
+                    f"Blocking move to '{active_dest}' and redirecting to '{quarantine_dir_name}'."
                 )
                 active_dest = quarantine_dir_name
 
             import unicodedata
 
-            dest_dir = os.path.normpath(os.path.join(base_dir, active_dest))
+            if os.path.isabs(active_dest):
+                dest_dir = os.path.normpath(active_dest)
+            else:
+                dest_dir = os.path.normpath(os.path.join(base_dir, active_dest))
             dest_dir = unicodedata.normalize("NFC", dest_dir)
 
             if not os.path.exists(dest_dir):
@@ -1170,13 +1182,23 @@ def _collect_move_items(
             else:
                 filename = os.path.basename(key)
 
+            dest_override = (
+                _get_val(content, "destination_override")
+                or _get_val(content, "override_destination")
+                or _get_val(content, "custom_destination")
+                or _get_val(content, "user_target_folder")
+            )
+            effective_dest = (
+                dest_override if dest_override is not None else current_dest
+            )
+
             items.append(
                 {
                     "key": key,
                     "content": content,
                     "source_path": source_path,
                     "filename": filename,
-                    "current_dest": current_dest,
+                    "current_dest": effective_dest,
                     "active_parent_path": active_parent_path,
                     "depth": depth,
                 }
@@ -1254,14 +1276,26 @@ def _process_move_item(
     )
 
     active_dest = current_dest
+    dest_override = (
+        _get_val(content, "destination_override")
+        or _get_val(content, "override_destination")
+        or _get_val(content, "custom_destination")
+        or _get_val(content, "user_target_folder")
+    )
+    if dest_override:
+        active_dest = dest_override
+
     if sens_rating_str in auto_ratings:
         logging.warning(
             f"Downstream Barrier Interception: File {source_path} has sensitivity rating {sens_rating_str}. "
-            f"Blocking move to '{current_dest}' and redirecting to '{quarantine_dir_name}'."
+            f"Blocking move to '{active_dest}' and redirecting to '{quarantine_dir_name}'."
         )
         active_dest = quarantine_dir_name
 
-    dest_dir = os.path.normpath(os.path.join(base_dir, active_dest))
+    if os.path.isabs(active_dest):
+        dest_dir = os.path.normpath(active_dest)
+    else:
+        dest_dir = os.path.normpath(os.path.join(base_dir, active_dest))
     dest_dir = unicodedata.normalize("NFC", dest_dir)
 
     if not os.path.exists(dest_dir):
@@ -1997,8 +2031,8 @@ class AsyncMoveEngine:
 def execute_moves(
     base_dir: str,
     plan: dict,
-    db,
-    history_manager,
+    db=None,
+    history_manager=None,
     runtime_settings=None,
     resume: bool = False,
     batch_size: int = 50,
@@ -2053,8 +2087,8 @@ def execute_moves(
 async def execute_moves_async(
     base_dir: str,
     plan: dict,
-    db,
-    history_manager,
+    db=None,
+    history_manager=None,
     runtime_settings=None,
     resume: bool = False,
     batch_size: int = 50,

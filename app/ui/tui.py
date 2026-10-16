@@ -599,6 +599,142 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
         self.action_confirm()
 
 
+class DestinationOverrideModal(A11yMixin, ModalScreen[Optional[str]]):
+    """Modal dialog for entering a custom target destination folder path override for a file."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    DestinationOverrideModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .modal-subtitle {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    .token-help {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Input:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(
+        self,
+        title: str = "Override Destination Path",
+        file_key: str = "",
+        current_path: str = "",
+    ):
+        super().__init__()
+        self.modal_title = title
+        self.file_key = file_key
+        self.current_path = current_path
+
+    def compose(self) -> ComposeResult:
+        """Compose modal dialog children."""
+        with Vertical(classes="modal-box"):
+            yield Heading(
+                self.modal_title,
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
+            if self.file_key:
+                yield Label(
+                    f"File: '{self.file_key}'",
+                    classes="modal-subtitle",
+                )
+            yield Label(
+                "Enter custom target folder path (relative or absolute):",
+                classes="token-help",
+            )
+            inp = Input(
+                value=self.current_path,
+                placeholder="e.g. Finance/Invoices/2024 or /custom/target/folder...",
+                id="input-destination-path",
+            )
+            inp.tooltip = "Enter custom target destination folder path"
+            yield inp
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
+                btn_cancel.tooltip = "Cancel destination override and close dialog"
+                yield btn_cancel
+                btn_confirm = Button("Confirm", id="btn-confirm", variant="primary")
+                btn_confirm.tooltip = "Confirm target destination path override"
+                yield btn_confirm
+
+    def _update_layout(self, width: int) -> None:
+        """Update modal layout based on viewport width breakpoint."""
+        if width < 80:
+            self.add_class("narrow")
+        else:
+            self.remove_class("narrow")
+
+    def on_resize(self, event: events.Resize) -> None:
+        """Handle modal viewport resize event."""
+        self._update_layout(event.size.width)
+
+    def on_mount(self) -> None:
+        """Focus input field on mount and emit screen reader announcement."""
+        self._update_layout(self.size.width)
+        self.query_one("#input-destination-path", Input).focus()
+        self.announce(
+            f"Opened destination path override dialog for '{self.file_key or self.modal_title}'. Enter target folder path and press Enter or click Confirm."
+        )
+
+    @on(Button.Pressed, "#btn-confirm")
+    def action_confirm(self) -> None:
+        """Confirm destination override action."""
+        val = self.query_one("#input-destination-path", Input).value.strip()
+        if val:
+            self.announce(f"Confirmed destination path override to '{val}'.")
+        else:
+            self.announce("Cancelled destination path override.")
+        self.dismiss(val if val else None)
+
+    @on(Button.Pressed, "#btn-cancel")
+    def action_cancel(self) -> None:
+        """Cancel destination override action."""
+        self.announce("Cancelled destination path override.")
+        self.dismiss(None)
+
+    @on(Input.Submitted)
+    def action_submit(self) -> None:
+        """Submit input on Enter key press."""
+        self.action_confirm()
+
+
 class NewFolderModal(A11yMixin, ModalScreen[Optional[str]]):
     """Modal dialog for creating a new folder node in the plan."""
 
@@ -2408,6 +2544,9 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
                 "  Ctrl+L      - Toggle file lock state", classes="shortcut-row"
             )
             yield Label("  Ctrl+R      - Rename selected node", classes="shortcut-row")
+            yield Label(
+                "  Ctrl+P / d  - Override destination target folder path", classes="shortcut-row"
+            )
             yield Label(
                 "  Ctrl+N      - Create new target folder", classes="shortcut-row"
             )
@@ -4319,6 +4458,11 @@ class VimTree(Tree):
                 self.app.action_reassign_selected()
             event.stop()
             event.prevent_default()
+        elif event.key in ("d", "D", "ctrl+p"):
+            if hasattr(self.app, "action_override_destination"):
+                self.app.action_override_destination()
+            event.stop()
+            event.prevent_default()
         elif event.key in ("v", "V"):
             if hasattr(self.app, "action_visual_range_select"):
                 self.app.action_visual_range_select()
@@ -4355,6 +4499,7 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("a", "toggle_select_all", "Select/Deselect All", show=True),
         Binding("ctrl+l", "toggle_lock", "Lock/Unlock", show=True),
         Binding("ctrl+r", "rename_node", "Rename Node", show=True),
+        Binding("ctrl+p", "override_destination", "Override Destination", show=True),
         Binding("ctrl+n", "new_folder", "New Folder", show=True),
         Binding("plus", "rate_positive", "Rating (+)", show=True),
         Binding("minus", "rate_negative", "Rating (-)", show=True),
@@ -5990,6 +6135,101 @@ class AutoSorterTUI(A11yMixin, App):
                     )
 
             self.push_screen(modal, on_folder_renamed)
+
+    def action_override_destination(self) -> None:
+        """Override target destination folder path for selected file node [Ctrl+P]."""
+        if self._is_text_control_focused():
+            return
+        node = self._get_active_node()
+        if not node or not node.data:
+            self.announce(
+                "Select a file node to override target destination folder path [Ctrl+P]."
+            )
+            return
+
+        data = node.data
+        if not data.get("is_file"):
+            self.announce("Destination path override is supported on file nodes.")
+            return
+
+        file_key = data.get("key", "")
+        file_info = data.get("info", {})
+        current_dest = (
+            file_info.get("destination_override")
+            or file_info.get("target_folder")
+            or data.get("folder", "")
+        )
+
+        modal = DestinationOverrideModal(
+            title=f"Override Destination: {file_key}",
+            file_key=file_key,
+            current_path=current_dest,
+        )
+
+        def on_destination_overridden(new_path: Optional[str]) -> None:
+            if not new_path:
+                return
+
+            new_path = new_path.strip()
+            if not new_path:
+                return
+
+            old_folder = data.get("folder", "")
+            file_info["destination_override"] = new_path
+            file_info["target_folder"] = new_path
+            file_info["folder"] = new_path
+            file_info["is_locked"] = True
+            file_info["is_overridden"] = True
+            data["is_locked"] = True
+            data["folder"] = new_path
+
+            plan_dict = (
+                self.plan.plan
+                if hasattr(self.plan, "plan") and isinstance(self.plan.plan, dict)
+                else self.plan
+            )
+
+            if isinstance(plan_dict, dict):
+                if old_folder in plan_dict and isinstance(plan_dict[old_folder], dict):
+                    plan_dict[old_folder].pop(file_key, None)
+                else:
+
+                    def _pop_key(d: dict, k: str) -> bool:
+                        if (
+                            k in d
+                            and isinstance(d[k], dict)
+                            and d[k].get("__type__") == "file"
+                        ):
+                            d.pop(k, None)
+                            return True
+                        for sub in d.values():
+                            if (
+                                isinstance(sub, dict)
+                                and sub.get("__type__") != "file"
+                            ):
+                                if _pop_key(sub, k):
+                                    return True
+                        return False
+
+                    _pop_key(plan_dict, file_key)
+
+                if new_path not in plan_dict:
+                    plan_dict[new_path] = {}
+                if isinstance(plan_dict[new_path], dict):
+                    plan_dict[new_path][file_key] = file_info
+
+            self.locked_files[file_key] = new_path
+            if self.app_session:
+                self.app_session.db.set_user_verified_target_path(
+                    self.base_dir, file_key, new_path
+                )
+
+            self.rebuild_tree()
+            self.announce(
+                f"Overrode target destination folder path for '{file_key}' -> '{new_path}' [Locked]"
+            )
+
+        self.push_screen(modal, on_destination_overridden)
 
     def action_new_folder(self) -> None:
         """Create a new folder category node [Ctrl+N]."""

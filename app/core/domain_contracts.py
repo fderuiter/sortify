@@ -81,6 +81,10 @@ class SortingPlanNodeModel(BaseModel):
     archival_priority_score: Optional[float] = None
     confidence: Optional[float] = None
     target_filename: Optional[str] = None
+    destination_override: Optional[str] = None
+    override_destination: Optional[str] = None
+    custom_destination: Optional[str] = None
+    user_target_folder: Optional[str] = None
     is_locked: Optional[bool] = None
     confirmed: Optional[bool] = None
     is_confirmed: Optional[bool] = None

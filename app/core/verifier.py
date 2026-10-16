@@ -338,7 +338,20 @@ class VerificationEngine:
                 else:
                     filename = re.split(r"[/\\]+", key)[-1]
 
-                dest_dir = os.path.join(base_dir, current_dest)
+                dest_override = (
+                    _get_val(content, "destination_override")
+                    or _get_val(content, "override_destination")
+                    or _get_val(content, "custom_destination")
+                    or _get_val(content, "user_target_folder")
+                )
+                effective_dest = (
+                    dest_override if dest_override is not None else current_dest
+                )
+
+                if os.path.isabs(effective_dest):
+                    dest_dir = effective_dest
+                else:
+                    dest_dir = os.path.join(base_dir, effective_dest)
                 dest_path = os.path.normpath(os.path.join(dest_dir, filename))
                 moves.append((key, source_path, dest_path))
             else:
