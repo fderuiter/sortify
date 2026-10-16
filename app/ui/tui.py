@@ -860,6 +860,10 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
         color: $accent;
         margin-bottom: 1;
     }
+    .error-banner {
+        color: $error;
+        text-style: bold;
+    }
     .preset-row {
         margin-top: 1;
         margin-bottom: 1;
@@ -903,6 +907,54 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
         else:
             self.selected_sources = []
 
+    @staticmethod
+    def _validate_directory_path(path_str: str) -> Optional[str]:
+        """Validate if path_str exists, is a directory, and allows read access.
+
+        Returns error message string if invalid, or None if valid.
+        """
+        if not path_str or not path_str.strip():
+            return "Directory path cannot be empty."
+
+        clean_path = path_str.strip()
+        expanded = os.path.abspath(os.path.expanduser(clean_path))
+
+        try:
+            if not os.path.exists(expanded):
+                return f"Target directory does not exist: {clean_path}"
+
+            if not os.path.isdir(expanded):
+                return f"Path is not a directory: {clean_path}"
+
+            if not os.access(expanded, os.R_OK):
+                return f"Permission denied for directory: {clean_path}"
+        except Exception as exc:
+            return f"Invalid directory path: {exc}"
+
+        return None
+
+    def _show_error(self, message: str) -> None:
+        """Display inline error banner, announce message, and focus input."""
+        try:
+            lbl = self.query_one("#lbl-error", Static)
+            lbl.update(message)
+        except Exception:
+            pass
+        self.announce(message, priority="assertive")
+        try:
+            self.query_one("#input-dir", Input).focus()
+        except Exception:
+            pass
+
+    @on(Input.Changed, "#input-dir")
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Clear error banner when user changes input text."""
+        try:
+            lbl = self.query_one("#lbl-error", Static)
+            lbl.update("")
+        except Exception:
+            pass
+
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
@@ -919,6 +971,7 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
             )
             inp.tooltip = "Enter absolute target directory path to scan"
             yield inp
+            yield Static("", id="lbl-error", classes="error-banner")
             yield Label("Selected Sources:", id="lbl-sources")
             yield Static(
                 self._format_sources_display(),
@@ -983,13 +1036,23 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     def action_add_dir(self) -> None:
         """Add input directory path to selected source list."""
         val = self.query_one("#input-dir", Input).value.strip()
-        if val:
-            abs_p = os.path.abspath(os.path.expanduser(val))
-            if abs_p not in self.selected_sources:
-                self.selected_sources.append(abs_p)
-                self.announce(f"Added directory path: {abs_p}")
-                self._update_sources_widget()
-            self.added_via_btn = True
+        if not val:
+            return
+        err = self._validate_directory_path(val)
+        if err:
+            self._show_error(err)
+            return
+
+        abs_p = os.path.abspath(os.path.expanduser(val))
+        if abs_p not in self.selected_sources:
+            self.selected_sources.append(abs_p)
+            self.announce(f"Added directory path: {abs_p}")
+            self._update_sources_widget()
+        self.added_via_btn = True
+        try:
+            self.query_one("#lbl-error", Static).update("")
+        except Exception:
+            pass
 
     @on(Button.Pressed, "#preset-demo")
     def action_demo(self) -> None:
@@ -1015,6 +1078,10 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     def action_downloads(self) -> None:
         """Select user Downloads directory preset."""
         path = os.path.expanduser("~/Downloads")
+        err = self._validate_directory_path(path)
+        if err:
+            self._show_error(err)
+            return
         self.announce(f"Selected Downloads preset: {path}")
         self.dismiss(path)
 
@@ -1022,6 +1089,10 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     def action_documents(self) -> None:
         """Select user Documents directory preset."""
         path = os.path.expanduser("~/Documents")
+        err = self._validate_directory_path(path)
+        if err:
+            self._show_error(err)
+            return
         self.announce(f"Selected Documents preset: {path}")
         self.dismiss(path)
 
@@ -1030,6 +1101,11 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
         """Confirm directory selection."""
         val = self.query_one("#input-dir", Input).value.strip()
         if val:
+            err = self._validate_directory_path(val)
+            if err:
+                self._show_error(err)
+                return
+
             abs_p = os.path.abspath(os.path.expanduser(val))
             if not self.added_via_btn and len(self.selected_sources) <= 1:
                 self.announce(f"Confirmed directory selection: '{abs_p}'")
@@ -1040,6 +1116,12 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
                 self.selected_sources.append(abs_p)
 
         if self.selected_sources:
+            for source in self.selected_sources:
+                err = self._validate_directory_path(source)
+                if err:
+                    self._show_error(err)
+                    return
+
             self.announce(f"Confirmed directory selection: '{self.selected_sources}'")
             res = (
                 self.selected_sources
@@ -4635,6 +4717,13 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
         def _dir_selected_callback(target_dir: Optional[str]) -> None:
             if not target_dir:
                 self.announce("Release operation cancelled.")
+                return
+            if not os.path.exists(target_dir) or not os.path.isdir(target_dir):
+                from app.ui.notifications import notify
+
+                err_msg = f"Target directory does not exist: {target_dir}"
+                self.announce(err_msg, priority="assertive")
+                notify(err_msg, type="error")
                 return
             dest_file_path = os.path.join(target_dir, os.path.basename(orig_rel))
             self.execute_release_async(record, dest_file_path)
