@@ -1,5 +1,3 @@
-<!-- This document is automatically generated from notebooks/02_multi_format_text_extraction.ipynb. Do not edit manually. -->
-
 # Multi-Format Text Extraction & Local Session Management
 
 ## 1. Context & Overview

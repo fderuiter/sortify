@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 import shutil
 import time
 import uuid
@@ -22,17 +23,22 @@ from app.core.resilient_file_ops import (
     atomic_quarantine_relocation,
     resilient_file_hash,
 )
+from app.core.text_utils import sanitize_secret_patterns
 
 logger = logging.getLogger(__name__)
+
+SSN_PATTERN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
+CREDIT_CARD_PATTERN = re.compile(r"\b(?:\d[ -]*?){13,16}\b")
+EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
+CLINICAL_PII_PATTERN = re.compile(
+    r"(?i)(Confidential Medical Report|Subject \d+|Diagnosis:[^\n]*)"
+)
 
 
 def scrub_pii_from_text(text: Any) -> str:
     """Scrub PII, sensitive keywords, and cryptographic tokens from document text."""
     if not text:
         return ""
-    import re
-
-    from app.core.text_utils import sanitize_secret_patterns
 
     text_str = str(text)
 
@@ -40,21 +46,13 @@ def scrub_pii_from_text(text: Any) -> str:
     redacted = redact_sensitive_text(text_str)
 
     # SSN pattern
-    redacted = re.sub(r"\b\d{3}-\d{2}-\d{4}\b", "[REDACTED_SSN]", redacted)
+    redacted = SSN_PATTERN.sub("[REDACTED_SSN]", redacted)
     # Credit Card pattern
-    redacted = re.sub(r"\b(?:\d[ -]*?){13,16}\b", "[REDACTED_CARD]", redacted)
+    redacted = CREDIT_CARD_PATTERN.sub("[REDACTED_CARD]", redacted)
     # Email pattern
-    redacted = re.sub(
-        r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b",
-        "[REDACTED_EMAIL]",
-        redacted,
-    )
+    redacted = EMAIL_PATTERN.sub("[REDACTED_EMAIL]", redacted)
     # Clinical/PII Sensitive phrases
-    redacted = re.sub(
-        r"(?i)(Confidential Medical Report|Subject \d+|Diagnosis:[^\n]*)",
-        "[REDACTED_PII]",
-        redacted,
-    )
+    redacted = CLINICAL_PII_PATTERN.sub("[REDACTED_PII]", redacted)
 
     # Centralized secret pattern redaction (API keys, JWT tokens, Bearer tokens, private keys, high-entropy secrets)
     redacted = sanitize_secret_patterns(redacted, replacement="[REDACTED_SECRET]")
@@ -78,7 +76,7 @@ class QuarantineInterceptorService:
         runtime_settings: Optional[Any] = None,
     ):
         self.db = db
-        self.policies = policies or []
+        self.policies = PolicyEngine.sort_policies(policies)
         self.worker_timeout = worker_timeout
         self.forensic_scanner = ForensicScanner()
         self.dlq_records: List[Dict[str, Any]] = []
@@ -344,6 +342,7 @@ class QuarantineInterceptorService:
                 doc_text=extracted_text,
                 status_match="",
                 policies=self.policies,
+                is_sorted=True,
             )
 
             action = (

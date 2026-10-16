@@ -99,6 +99,7 @@ def test_spec_file_partitioning():
 
     mock_hooks = MagicMock()
     mock_hooks.collect_all.return_value = ([], [], [])
+    mock_hooks.collect_data_files.return_value = []
 
     real_exists = os.path.exists
 
@@ -230,6 +231,7 @@ def test_is_standard_sqlite_binary():
 
     mock_hooks = MagicMock()
     mock_hooks.collect_all.return_value = ([], [], [])
+    mock_hooks.collect_data_files.return_value = []
 
     with patch.dict(
         sys.modules,
@@ -388,6 +390,7 @@ def test_spec_file_cli_target_executable():
 
     mock_hooks = MagicMock()
     mock_hooks.collect_all.return_value = ([], [], [])
+    mock_hooks.collect_data_files.return_value = []
 
     with patch.dict(
         sys.modules,
@@ -439,6 +442,7 @@ def test_destination_path_normalization_and_assertion():
         [("C:\\path\\lib.dll", "pkg\\bin")],
         [],
     )
+    mock_hooks.collect_data_files.return_value = [("C:\\path\\file.dat", "pkg\\data")]
 
     with patch.dict(
         sys.modules,
