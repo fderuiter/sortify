@@ -35,26 +35,31 @@ def test_config_safeguard_bounds():
     assert settings.IMAGE_SKIP_THRESHOLD == 2500
 
 
-def test_image_skipping_rules(caplog):
-    """Verify that extremely large images exceeding the skip threshold are skipped and logged."""
-    # Create a mock PIL image
+def test_image_downscaling_oversized_resolution(caplog):
+    """Verify that high-resolution images exceeding max dimension are downscaled and processed instead of skipped."""
     mock_image = MagicMock()
-    mock_image.size = (3500, 2000)  # Exceeds skip threshold of 3000
+    mock_image.size = (3500, 2000)  # Exceeds max dimension of 1000
 
     settings = Settings(IMAGE_SKIP_THRESHOLD=3000, IMAGE_MAX_DIMENSION=1000)
 
-    # Mock get_ocr_reader to return a dummy reader
-    with patch(
-        "app.core.extractor_strategies.get_ocr_reader", return_value=MagicMock()
+    mock_reader = MagicMock()
+    mock_reader.readtext.return_value = [
+        ("box", "Extracted text from oversized image", 0.99)
+    ]
+
+    with (
+        patch("app.core.extractor_strategies.get_ocr_reader", return_value=mock_reader),
+        patch("numpy.array") as mock_np_arr,
     ):
-        with caplog.at_level(logging.WARNING):
+        mock_np_arr.return_value = "np_image"
+        with caplog.at_level(logging.INFO):
             result = extract_text_from_image(
                 mock_image, settings=settings, file_path="very_large.jpg"
             )
 
-    assert result == "[STATUS:SKIPPED]"
-    assert "Skipping OCR for very_large.jpg" in caplog.text
-    assert "exceed the skip threshold of 3000" in caplog.text
+    assert result == "Extracted text from oversized image"
+    assert "Status flag [DOWNSCALED]" in caplog.text
+    assert "Downscaling high-resolution image very_large.jpg" in caplog.text
 
 
 def test_image_downscaling_aspect_ratio():

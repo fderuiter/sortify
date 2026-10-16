@@ -258,10 +258,12 @@ def test_socket_sandbox_case_insensitivity_and_local_suffixes(socket_mock):
 
 def test_check_ai_status_corrupt_or_missing(tmp_path, monkeypatch):
     """Verify check_ai_status correctly warns when models are corrupt/missing."""
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
     from app.config import AppSettings
     from app.core.verifier import check_ai_status
 
     settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = True
     settings.AI_ASSISTED_NAMING = True
 
     # Case 1: missing/uninstalled dependencies -> mock is_ml_available returning False
@@ -641,11 +643,13 @@ def test_get_ocr_reader_fallback(monkeypatch):
 
 def test_check_ai_status_local_offline_bundle(tmp_path, monkeypatch):
     """Verify that check_ai_status and get_ocr_reader can locate and verify easyocr and model files in the offline_bundle directory."""
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
     from app.config import AppSettings
     from app.core.shared_registry import SharedModelRegistry
     from app.core.verifier import check_ai_status
 
     settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = True
     settings.AI_ASSISTED_NAMING = True
 
     # Setup directories
