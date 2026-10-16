@@ -222,7 +222,8 @@ async def test_dropzone_remove_and_clear_queue(tmp_path):
 
         # Select first row and move down
         table.move_cursor(row=0)
-        active_modal.query_one("#btn-move-down", Button).press()
+        await pilot.pause()
+        await pilot.click("#btn-move-down")
         await pilot.pause()
 
         assert active_modal.staged_items[0]["filename"] == "doc2.csv"
@@ -230,7 +231,8 @@ async def test_dropzone_remove_and_clear_queue(tmp_path):
 
         # Remove item at cursor (row 1)
         table.move_cursor(row=1)
-        active_modal.query_one("#btn-remove-item", Button).press()
+        await pilot.pause()
+        await pilot.click("#btn-remove-item")
         await pilot.pause()
 
         assert len(active_modal.staged_items) == 2
