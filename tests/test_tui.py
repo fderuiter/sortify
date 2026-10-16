@@ -1722,6 +1722,59 @@ def test_directory_select_modal_demo_preset_auto_creation(
             await pilot.pause(0.05)
 
             assert demo_dir.exists()
+            assert (demo_dir / "demo_finance.txt").exists()
+            assert (demo_dir / "demo_tech.txt").exists()
+            assert (demo_dir / "demo_health.txt").exists()
+            assert (demo_dir / "empty.txt").exists()
+            assert app.base_dir == str(demo_dir)
+            assert len(scan_called) == 1
+
+    asyncio.run(_test())
+
+
+def test_directory_select_modal_demo_preset_existing_directory(
+    temp_workspace, monkeypatch, tmp_path
+):
+    """Verify re-selecting Demo Workspace preset when directory already exists populates sample corpus safely."""
+    from app.ui.tui import AutoSorterTUI, DirectorySelectModal
+
+    demo_dir = tmp_path / "sandbox" / "demo_workspace"
+    demo_dir.mkdir(parents=True, exist_ok=True)
+
+    orig_abspath = os.path.abspath
+
+    def mock_abspath(p):
+        if p == "sandbox/demo_workspace":
+            return str(demo_dir)
+        return orig_abspath(p)
+
+    monkeypatch.setattr(os.path, "abspath", mock_abspath)
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        scan_called = []
+
+        def mock_scan():
+            scan_called.append(True)
+
+        app.action_scan_directory = mock_scan
+
+        async with app.run_test() as pilot:
+            await pilot.press("ctrl+b")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, DirectorySelectModal)
+
+            app.screen.query_one("#preset-demo", Button).press()
+            await pilot.pause(0.05)
+
+            assert demo_dir.exists()
+            assert (demo_dir / "demo_finance.txt").exists()
+            assert (demo_dir / "demo_tech.txt").exists()
+            assert (demo_dir / "demo_health.txt").exists()
+            assert (demo_dir / "empty.txt").exists()
             assert app.base_dir == str(demo_dir)
             assert len(scan_called) == 1
 
@@ -1774,7 +1827,9 @@ def test_directory_select_modal_preset_creation_error_graceful_handling(
 
 
 def test_directory_select_modal_nonexistent_custom_directory(temp_workspace, tmp_path):
-    """Verify entering a non-existent custom path displays an explicit error notification."""
+    """Verify entering a non-existent custom path keeps modal open and displays inline error."""
+    from textual.widgets import Static
+
     from app.ui.tui import AutoSorterTUI, DirectorySelectModal
 
     non_existent_path = str(tmp_path / "non_existent_dir_12345")
@@ -1797,12 +1852,156 @@ def test_directory_select_modal_nonexistent_custom_directory(temp_workspace, tmp
             app.screen.query_one("#btn-confirm", Button).press()
             await pilot.pause(0.05)
 
+            assert isinstance(app.screen, DirectorySelectModal)
+            lbl = app.screen.query_one("#lbl-error", Static)
+            assert "Target directory does not exist" in str(lbl.render())
+
             assert app.base_dir == str(temp_workspace)
             assert len(scan_called) == 0
             assert any(
                 "Target directory does not exist" in a["message"]
-                for a in app.announcements
+                for a in app.screen.announcements + app.announcements
             )
+
+    asyncio.run(_test())
+
+
+def test_directory_select_modal_file_path_validation(temp_workspace, tmp_path):
+    """Verify entering a file path instead of directory displays inline error and keeps modal open."""
+    from textual.widgets import Static
+
+    from app.ui.tui import AutoSorterTUI, DirectorySelectModal
+
+    test_file = tmp_path / "sample_file.txt"
+    test_file.write_text("hello world")
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            await pilot.press("ctrl+b")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, DirectorySelectModal)
+
+            inp = app.screen.query_one("#input-dir")
+            inp.value = str(test_file)
+            app.screen.query_one("#btn-confirm", Button).press()
+            await pilot.pause(0.05)
+
+            assert isinstance(app.screen, DirectorySelectModal)
+            lbl = app.screen.query_one("#lbl-error", Static)
+            assert "Path is not a directory" in str(lbl.render())
+
+    asyncio.run(_test())
+
+
+def test_directory_select_modal_permission_error_validation(
+    temp_workspace, tmp_path, monkeypatch
+):
+    """Verify entering a directory path with permission denied displays inline error and keeps modal open."""
+    from textual.widgets import Static
+
+    from app.ui.tui import AutoSorterTUI, DirectorySelectModal
+
+    restricted_dir = tmp_path / "restricted_dir"
+    restricted_dir.mkdir()
+
+    orig_access = os.access
+
+    def mock_access(path, mode):
+        if str(restricted_dir) in str(path):
+            return False
+        return orig_access(path, mode)
+
+    monkeypatch.setattr(os, "access", mock_access)
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            await pilot.press("ctrl+b")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, DirectorySelectModal)
+
+            inp = app.screen.query_one("#input-dir")
+            inp.value = str(restricted_dir)
+            app.screen.query_one("#btn-confirm", Button).press()
+            await pilot.pause(0.05)
+
+            assert isinstance(app.screen, DirectorySelectModal)
+            lbl = app.screen.query_one("#lbl-error", Static)
+            assert "Permission denied" in str(lbl.render())
+
+    asyncio.run(_test())
+
+
+def test_directory_select_modal_error_banner_clearance_on_input_changed(
+    temp_workspace, tmp_path
+):
+    """Verify inline error banner clears when input text changes."""
+    from textual.widgets import Static
+
+    from app.ui.tui import AutoSorterTUI, DirectorySelectModal
+
+    non_existent_path = str(tmp_path / "invalid_path_xyz")
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            await pilot.press("ctrl+b")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, DirectorySelectModal)
+
+            inp = app.screen.query_one("#input-dir")
+            inp.value = non_existent_path
+            app.screen.query_one("#btn-confirm", Button).press()
+            await pilot.pause(0.05)
+
+            lbl = app.screen.query_one("#lbl-error", Static)
+            assert str(lbl.render()) != ""
+
+            inp.value = str(temp_workspace)
+            await pilot.pause(0.05)
+
+            assert str(lbl.render()) == ""
+
+    asyncio.run(_test())
+
+
+def test_directory_select_modal_add_invalid_dir(temp_workspace, tmp_path):
+    """Verify clicking Add Path with an invalid path shows error and does not add to selected_sources."""
+    from textual.widgets import Static
+
+    from app.ui.tui import AutoSorterTUI, DirectorySelectModal
+
+    non_existent_path = str(tmp_path / "invalid_add_dir")
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            await pilot.press("ctrl+b")
+            await pilot.pause(0.05)
+            modal = app.screen
+            assert isinstance(modal, DirectorySelectModal)
+
+            inp = modal.query_one("#input-dir")
+            inp.value = non_existent_path
+            modal.query_one("#btn-add-dir", Button).press()
+            await pilot.pause(0.05)
+
+            lbl = modal.query_one("#lbl-error", Static)
+            assert "Target directory does not exist" in str(lbl.render())
+            assert os.path.abspath(non_existent_path) not in modal.selected_sources
 
     asyncio.run(_test())
 
