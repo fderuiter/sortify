@@ -799,3 +799,23 @@ def test_policy_loading_rejects_invalid_path_segments():
             ]
         )
     assert "trailing space or period" in str(exc_info2.value).lower()
+
+
+def test_pyproject_build_system_hatchling_constraint():
+    """Verify that build-system.requires in pyproject.toml restricts hatchling to >=1.27.0, <2.0.0."""
+    import tomllib
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent
+    pyproject_path = repo_root / "pyproject.toml"
+    assert pyproject_path.exists()
+
+    with open(pyproject_path, "rb") as f:
+        pyproject_data = tomllib.load(f)
+
+    requires = pyproject_data.get("build-system", {}).get("requires", [])
+    hatchling_req = next((req for req in requires if "hatchling" in req), None)
+
+    assert hatchling_req is not None, "hatchling must be in build-system.requires"
+    assert ">=1.27.0" in hatchling_req, "hatchling must specify lower bound >=1.27.0"
+    assert "<2.0.0" in hatchling_req, "hatchling must specify upper bound <2.0.0"

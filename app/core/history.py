@@ -886,29 +886,6 @@ class HistoryManager:
                 for r in rows
             ]
 
-    def get_bidirectional_path_map(self, session_id: str) -> Dict[str, Any]:
-        """Retrieve forward and reverse path maps for a session."""
-        steps = self.get_step_ledger(session_id)
-        forward = {}
-        reverse = {}
-        collisions = {}
-        for step in steps:
-            src = step["source_path"]
-            dst = step["target_path"]
-            forward[src] = dst
-            reverse[dst] = src
-            if step["is_collision_renamed"]:
-                collisions[dst] = {
-                    "source_path": src,
-                    "original_filename": step["original_filename"],
-                    "original_path": step["original_path"],
-                }
-        return {
-            "forward": forward,
-            "reverse": reverse,
-            "collisions": collisions,
-        }
-
     def clear_step_ledger(self, session_id: str):
         """Clean up temporary ledger records upon successful completion of a batch move operation."""
         conn = get_db_connection(self.db_path)
@@ -2106,14 +2083,6 @@ class HistoryManager:
                     logging.warning(f"Failed to delete rollback journal: {ex}")
 
         return
-
-    def resume_rollback(self, session_id: str):
-        """Resume and complete an interrupted rollback session."""
-        self.rollback(session_id, ignore_missing=True)
-
-    def revert_rollback(self, safety_session_id: str):
-        """Revert an interrupted rollback session back to its original state using the safety snapshot."""
-        self.rollback(safety_session_id, ignore_missing=True)
 
     def rollback(self, session_id: str, ignore_missing: bool = False):
         """Revert directory and metadata state using recorded transaction ledger steps or snapshot."""
