@@ -113,8 +113,9 @@ class ExtractionResult(BaseModel):
 def get_file_hash(file_path: str) -> str:
     """Calculate the SHA-256 hash of a file.
 
-    For MP3 and M4A files, skips metadata headers and structural atoms
-    to isolate the raw audio payload, ensuring stable hashes after tag edits.
+    For MP3 and M4A files, skips metadata headers and structural atoms to isolate
+    the raw audio payload. For Word (.docx) and Excel (.xlsx) files, skips metadata
+    stream headers (core document properties) to ensure stable payload digests.
     """
     from app.core.resilient_file_ops import resilient_file_hash
 

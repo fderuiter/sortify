@@ -215,8 +215,8 @@ def resilient_move(src: str, dst: str) -> str:
                 raise e
 
             gc.collect()
-            if RETRY_DELAY > 0:
-                time.sleep(RETRY_DELAY)
+            retry_delay = RETRY_DELAY if RETRY_DELAY > 0 else 0.05
+            time.sleep(retry_delay)
 
     return current_dst
 
@@ -424,75 +424,93 @@ def resilient_file_hash(
                             hasher.update(chunk)
                     success = True
             elif skip_media_tags:
-                offset = 0
-                size_to_hash = -1  # -1 means hash to EOF
                 ext = os.path.splitext(str_path)[1].lower()
 
-                if ext == ".mp3":
-                    with open(str_path, "rb") as f:
-                        while True:
-                            header = f.read(10)
-                            if len(header) >= 10 and header[:3] == b"ID3":
-                                flags = header[5]
-                                size = (
-                                    (header[6] << 21)
-                                    | (header[7] << 14)
-                                    | (header[8] << 7)
-                                    | header[9]
-                                )
-                                has_footer = (flags & 0x10) != 0
-                                tag_size = 10 + size + (10 if has_footer else 0)
-                                offset += tag_size
-                                f.seek(tag_size - 10, 1)
-                            else:
-                                break
-                elif ext == ".m4a":
-                    with open(str_path, "rb") as f:
-                        while True:
-                            header = f.read(8)
-                            if len(header) < 8:
-                                break
-                            box_size, box_type = struct.unpack(">I4s", header)
-                            header_size = 8
+                if ext in (".docx", ".xlsx"):
+                    import zipfile
 
-                            if box_size == 1:
-                                box_size = struct.unpack(">Q", f.read(8))[0]
-                                header_size = 16
-                            elif box_size == 0:
+                    with zipfile.ZipFile(str_path, "r") as zf:
+                        entries = [
+                            info
+                            for info in zf.infolist()
+                            if not info.is_dir()
+                            and not info.filename.replace("\\", "/").lower().lstrip("/").startswith("docprops/")
+                            and info.filename.replace("\\", "/").lower().lstrip("/") != "docprops"
+                        ]
+                        entries.sort(key=lambda x: x.filename)
+                        for info in entries:
+                            hasher.update(info.filename.encode("utf-8"))
+                            hasher.update(zf.read(info.filename))
+                    success = True
+                else:
+                    offset = 0
+                    size_to_hash = -1  # -1 means hash to EOF
+
+                    if ext == ".mp3":
+                        with open(str_path, "rb") as f:
+                            while True:
+                                header = f.read(10)
+                                if len(header) >= 10 and header[:3] == b"ID3":
+                                    flags = header[5]
+                                    size = (
+                                        (header[6] << 21)
+                                        | (header[7] << 14)
+                                        | (header[8] << 7)
+                                        | header[9]
+                                    )
+                                    has_footer = (flags & 0x10) != 0
+                                    tag_size = 10 + size + (10 if has_footer else 0)
+                                    offset += tag_size
+                                    f.seek(tag_size - 10, 1)
+                                else:
+                                    break
+                    elif ext == ".m4a":
+                        with open(str_path, "rb") as f:
+                            while True:
+                                header = f.read(8)
+                                if len(header) < 8:
+                                    break
+                                box_size, box_type = struct.unpack(">I4s", header)
+                                header_size = 8
+
+                                if box_size == 1:
+                                    box_size = struct.unpack(">Q", f.read(8))[0]
+                                    header_size = 16
+                                elif box_size == 0:
+                                    if box_type == b"mdat":
+                                        offset = f.tell()
+                                        size_to_hash = -1
+                                    break
+
                                 if box_type == b"mdat":
                                     offset = f.tell()
-                                    size_to_hash = -1
+                                    size_to_hash = box_size - header_size
+                                    break
+
+                                f.seek(box_size - header_size, os.SEEK_CUR)
+
+                    with open(str_path, "rb") as f:
+                        if offset > 0:
+                            f.seek(offset)
+
+                        bytes_remaining = size_to_hash
+
+                        while True:
+                            if bytes_remaining != -1:
+                                read_size = min(chunk_size, bytes_remaining)
+                                if read_size <= 0:
+                                    break
+                            else:
+                                read_size = chunk_size
+
+                            chunk = f.read(read_size)
+                            if not chunk:
                                 break
 
-                            if box_type == b"mdat":
-                                offset = f.tell()
-                                size_to_hash = box_size - header_size
-                                break
-
-                            f.seek(box_size - header_size, os.SEEK_CUR)
-
-                with open(str_path, "rb") as f:
-                    if offset > 0:
-                        f.seek(offset)
-
-                    bytes_remaining = size_to_hash
-
-                    while True:
-                        if bytes_remaining != -1:
-                            read_size = min(chunk_size, bytes_remaining)
-                            if read_size <= 0:
-                                break
-                        else:
-                            read_size = chunk_size
-
-                        chunk = f.read(read_size)
-                        if not chunk:
-                            break
-
-                        hasher.update(chunk)
-                        if bytes_remaining != -1:
-                            bytes_remaining -= len(chunk)
-                success = True
+                            hasher.update(chunk)
+                            if bytes_remaining != -1:
+                                bytes_remaining -= len(chunk)
+                    success = True
             else:
                 with open(str_path, "rb") as f:
                     while True:
