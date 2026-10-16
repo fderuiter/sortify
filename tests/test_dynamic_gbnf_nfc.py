@@ -113,8 +113,8 @@ def test_dynamic_gbnf_nfc_normalization_in_sanitize_name():
     assert sanitized == "Eink\u00e4ufe"
 
 
-def test_gguf_worker_main_compilation_fallback_ascii():
-    """Verify gguf_worker_main falls back to default ASCII grammar if dynamic grammar compilation fails."""
+def test_gguf_worker_main_compilation_fail_fast():
+    """Verify gguf_worker_main halts and returns error payload over IPC if grammar compilation fails."""
     input_queue = queue.Queue()
     output_queue = queue.Queue()
 
@@ -132,15 +132,7 @@ def test_gguf_worker_main_compilation_fallback_ascii():
 
     with patch.dict("sys.modules", {"llama_cpp": mock_llama_module}):
         with patch("llama_cpp.LlamaGrammar.from_string") as mock_from_string:
-            mock_compiled_grammar = MagicMock()
-
-            def from_string_side_effect(grammar_str):
-                # Raise exception on dynamic grammar, but succeed on fallback ASCII
-                if "dynamic" in grammar_str:
-                    raise Exception("Dynamic Grammar Compile error")
-                return mock_compiled_grammar
-
-            mock_from_string.side_effect = from_string_side_effect
+            mock_from_string.side_effect = Exception("Dynamic Grammar Compile error")
 
             input_queue.put(task)
             input_queue.put(None)  # Sentinel to break loop
@@ -151,17 +143,13 @@ def test_gguf_worker_main_compilation_fallback_ascii():
             # Get status message
             assert output_queue.get() == {"status": "ready"}
 
-            # Get task result
-            assert output_queue.get() == {"text": "OK"}
+            # Get task result error payload
+            res = output_queue.get()
+            assert "error" in res
+            assert "Grammar compilation failed" in res["error"]
 
-            # Verify that from_string was called for both, and llm was run with compiled default grammar
-            mock_from_string.assert_any_call("some dynamic invalid grammar")
-            mock_from_string.assert_any_call(
-                'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+'
-            )
-            mock_llm.assert_any_call(
-                "Test Prompt", max_tokens=5, echo=False, grammar=mock_compiled_grammar
-            )
+            mock_from_string.assert_called_once_with("some dynamic invalid grammar")
+            mock_llm.assert_not_called()
 
 
 def test_word_boundary_preservation():
