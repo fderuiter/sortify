@@ -227,32 +227,70 @@ def test_verify_temp_file_hash_mismatch_raises_error(temp_model_dir):
 
 
 def test_verify_temp_file_hash_no_hash_registered(temp_model_dir):
-    temp_path = os.path.join(temp_model_dir, "model.onnx.tmp")
-    target_path = os.path.join(temp_model_dir, "model.onnx")
+    temp_path = os.path.join(temp_model_dir, "unregistered_model.bin.tmp")
+    target_path = os.path.join(temp_model_dir, "unregistered_model.bin")
 
     with open(temp_path, "wb") as f:
         f.write(b"some model content")
 
-    # Reset registry or clear expected hashes for model_download / generative_naming
-    registry = SharedModelRegistry.get_instance()
-    if "model_download" in registry._expected_hashes:
-        del registry._expected_hashes["model_download"]
-    if "generative_naming" in registry._expected_hashes:
-        # Save old one to restore later
-        old_hashes = registry._expected_hashes["generative_naming"]
-        del registry._expected_hashes["generative_naming"]
-    else:
-        old_hashes = None
+    with pytest.raises(
+        ModelVerificationError, match="No cryptographic hash registered"
+    ):
+        verify_temp_file_hash(temp_path, target_path)
 
-    try:
-        with pytest.raises(
-            ModelVerificationError, match="No cryptographic hash registered"
-        ):
-            verify_temp_file_hash(temp_path, target_path)
-    finally:
-        # Restore old hashes if deleted
-        if old_hashes:
-            registry.register_expected_hashes("generative_naming", old_hashes)
+
+def test_verify_temp_file_hash_easyocr_category(temp_model_dir):
+    temp_path = os.path.join(temp_model_dir, "english_g2.pth.tmp")
+    target_path = os.path.join(temp_model_dir, "english_g2.pth")
+
+    content = b"easyocr weights content data"
+    with open(temp_path, "wb") as f:
+        f.write(content)
+
+    expected_hash = hashlib.sha256(content).hexdigest()
+    registry = SharedModelRegistry.get_instance()
+    registry.register_expected_hashes("easyocr", {"english_g2.pth": expected_hash})
+
+    assert verify_temp_file_hash(temp_path, target_path) is True
+    assert os.path.exists(temp_path)
+
+
+def test_verify_temp_file_hash_florence2_category(temp_model_dir):
+    temp_path = os.path.join(temp_model_dir, "model.safetensors.tmp")
+    target_path = os.path.join(temp_model_dir, "model.safetensors")
+
+    content = b"florence2 safetensors content stream"
+    with open(temp_path, "wb") as f:
+        f.write(content)
+
+    expected_hash = hashlib.sha256(content).hexdigest()
+    registry = SharedModelRegistry.get_instance()
+    registry.register_expected_hashes("florence-2", {"model.safetensors": expected_hash})
+
+    assert verify_temp_file_hash(temp_path, target_path) is True
+    assert os.path.exists(temp_path)
+
+
+def test_verify_temp_file_hash_corrupted_non_generative_purged(temp_model_dir):
+    temp_path = os.path.join(temp_model_dir, "craft_mlt_25k.pth.tmp")
+    target_path = os.path.join(temp_model_dir, "craft_mlt_25k.pth")
+
+    corrupted_content = b"corrupted craft model content"
+    with open(temp_path, "wb") as f:
+        f.write(corrupted_content)
+
+    registry = SharedModelRegistry.get_instance()
+    registry.register_expected_hashes(
+        "easyocr", {"craft_mlt_25k.pth": "expected_valid_sha256_hash_value"}
+    )
+
+    with pytest.raises(
+        ModelVerificationError, match="Cryptographic signature verification failed"
+    ):
+        verify_temp_file_hash(temp_path, target_path)
+
+    # Temporary download file MUST be purged on verification failure
+    assert not os.path.exists(temp_path)
 
 
 def test_downloader_fails_on_hash_mismatch(temp_model_dir):

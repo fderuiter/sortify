@@ -836,3 +836,41 @@ def test_per_model_lock_cleanup_on_unload():
         assert len(registry._models) == 0
         assert len(registry._per_model_locks) == 0
 
+
+def test_encapsulated_expected_hash_lookups():
+    """Verify encapsulated expected hash lookup methods on SharedModelRegistry."""
+    SharedModelRegistry._instance = None
+    registry = SharedModelRegistry.get_instance()
+
+    registry.register_expected_hashes("cat_a", {"file1.bin": "hash_a1", "common.txt": "hash_common_a"})
+    registry.register_expected_hashes("cat_b", {"file2.bin": "hash_b2", "common.txt": "hash_common_b"})
+
+    # Test get_expected_hashes()
+    all_hashes = registry.get_expected_hashes()
+    assert "cat_a" in all_hashes and "cat_b" in all_hashes
+    assert all_hashes["cat_a"]["file1.bin"] == "hash_a1"
+
+    cat_a_hashes = registry.get_expected_hashes("cat_a")
+    assert cat_a_hashes == {"file1.bin": "hash_a1", "common.txt": "hash_common_a"}
+
+    nonexistent_hashes = registry.get_expected_hashes("nonexistent")
+    assert nonexistent_hashes == {}
+
+    # Test get_expected_hashes_for_file()
+    assert registry.get_expected_hashes_for_file("file1.bin") == ["hash_a1"]
+    assert registry.get_expected_hashes_for_file("file2.bin") == ["hash_b2"]
+    common_hashes = registry.get_expected_hashes_for_file("common.txt")
+    assert "hash_common_a" in common_hashes and "hash_common_b" in common_hashes
+    assert len(common_hashes) == 2
+    assert registry.get_expected_hashes_for_file("missing.bin") == []
+
+    # Test get_expected_hash()
+    assert registry.get_expected_hash("file1.bin") == "hash_a1"
+    assert registry.get_expected_hash("common.txt", category="cat_a") == "hash_common_a"
+    assert registry.get_expected_hash("common.txt", category="cat_b") == "hash_common_b"
+    assert registry.get_expected_hash("missing.bin") is None
+
+    # Test has_expected_hash_for_file()
+    assert registry.has_expected_hash_for_file("file1.bin") is True
+    assert registry.has_expected_hash_for_file("missing.bin") is False
+

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "976f2ba00cb480aebbccc1dc7bc24669b292f2e58f0381d11f5e32c729c6b930"
+    "checksum": "230a6503af5f05890bbe007e6427d05f3852f97e34b18cb95a530df2d5c8881d"
   },
   "classes": [
     {
@@ -312,6 +312,65 @@
         {
           "async": false,
           "decorators": [],
+          "name": "get_expected_hash",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filename"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "category"
+            }
+          ],
+          "returns": "str | None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_expected_hashes",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "category"
+            }
+          ],
+          "returns": "dict"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_expected_hashes_for_file",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filename"
+            }
+          ],
+          "returns": "list[str]"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "get_florence_processor",
           "parameters": [
             {
@@ -434,6 +493,24 @@
             }
           ],
           "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "has_expected_hash_for_file",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filename"
+            }
+          ],
+          "returns": "bool"
         },
         {
           "async": false,

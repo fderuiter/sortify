@@ -175,7 +175,7 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     from app.core.shared_registry import SharedModelRegistry
 
     registry = SharedModelRegistry.get_instance()
-    if "easyocr" in registry._expected_hashes:
+    if registry.get_expected_hashes("easyocr"):
         try:
             registry.verify_integrity("easyocr", easyocr_dir)
         except Exception as e:
@@ -188,7 +188,7 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
                 f"OCR vision model integrity check failed: {str(e)}. Visual text extraction is unavailable.",
             )
 
-    if "florence-2" in registry._expected_hashes:
+    if registry.get_expected_hashes("florence-2"):
         from app.core.offline_loader import (
             ModelWeightsNotFoundError,
             OfflineModelLoader,
