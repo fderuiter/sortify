@@ -27,7 +27,7 @@ if is_lite:
 else:
     ml_packages = [
         'torch', 'easyocr', 'transformers', 'sklearn', 'llama_cpp',
-        'onnxruntime', 'numpy', 'pandas', 'PIL'
+        'onnxruntime', 'numpy', 'pandas', 'PIL', 'scipy'
     ]
 
 # Collect all dynamic libraries, weights, and hidden imports for ML packages
@@ -280,7 +280,7 @@ def is_prunable_asset(name):
     parts = name_lower.split('/')
     
     # Safety Rule: Core weights, model files, and crucial bin targets must NEVER be pruned.
-    safety_keywords = ("weight", "bin", "model", "checkpoint", "offline_bundle", "easyocr", "user_guide")
+    safety_keywords = ("weight", "bin", "model", "checkpoint", "offline_bundle", "easyocr", "user_guide", "scipy")
     if any(sk in name_lower for sk in safety_keywords):
         return False
         
