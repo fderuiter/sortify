@@ -6,13 +6,13 @@ import tempfile
 from pathlib import Path
 
 import pytest
+
 from app.config import AppSettings
 from app.core.rule_importers import (
     DropItRuleImporter,
     HazelRuleImporter,
     ImportResult,
     get_rule_importer,
-    import_and_merge_rules,
 )
 
 

@@ -7,13 +7,12 @@ rule definitions and safely translate them into Sortify KEYWORD_RULES and POLICI
 import abc
 import json
 import logging
-import os
 import plistlib
 import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Tuple, Union
 
 logger = logging.getLogger(__name__)
 
@@ -36,7 +35,8 @@ class ImportResult:
         Args:
             settings: The AppSettings configuration object.
 
-        Returns:
+        Returns
+        -------
             Tuple of updated (KEYWORD_RULES dict, POLICIES list).
         """
         existing_keywords = dict(getattr(settings, "KEYWORD_RULES", {}) or {})
@@ -168,7 +168,7 @@ class HazelRuleImporter(BaseRuleImporter):
             result.warnings.append(f"Hazel rule package '{p.name}' is empty.")
             return result
 
-        rules_list = []
+        rules_list: List[Any] = []
         if isinstance(plist_data, dict):
             rules_list = (
                 plist_data.get("Rules")
@@ -291,7 +291,7 @@ class HazelRuleImporter(BaseRuleImporter):
                     or ""
                 ).lower()
 
-                operator = str(
+                _operator = str(
                     cond.get("operator")
                     or cond.get("qualifier")
                     or cond.get("NSRuleConditionOperator")
@@ -582,15 +582,17 @@ class DropItRuleImporter(BaseRuleImporter):
 
 
 def get_rule_importer(file_path: Union[str, Path]) -> BaseRuleImporter:
-    """Factory function to auto-detect and instantiate rule importer strategy.
+    """Return auto-detected rule importer strategy for the given file path.
 
     Args:
         file_path: Path to rule package file.
 
-    Returns:
+    Returns
+    -------
         An instance of BaseRuleImporter strategy class.
 
-    Raises:
+    Raises
+    ------
         ValueError: If file format is not supported.
     """
     p = Path(file_path)
@@ -618,13 +620,14 @@ def get_rule_importer(file_path: Union[str, Path]) -> BaseRuleImporter:
 def import_and_merge_rules(
     file_path: Union[str, Path], settings: Any
 ) -> ImportResult:
-    """Convenience function to parse external rule package and merge into settings.
+    """Parse external rule package and merge into settings.
 
     Args:
         file_path: Path to external rule package.
         settings: Application settings object.
 
-    Returns:
+    Returns
+    -------
         ImportResult object containing parsed rules and merge outcome.
     """
     importer = get_rule_importer(file_path)
