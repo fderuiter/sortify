@@ -201,3 +201,89 @@ def test_run_execute_worker_opens_audit_modal(tmp_path):
             assert isinstance(app.screen, AuditReportModal)
 
     asyncio.run(_test())
+
+
+def test_audit_report_modal_failed_queue_table_and_retry(tmp_path):
+    """Test AuditReportModal failed items table rendering and interactive retry actions."""
+
+    async def _test():
+        from app.core.extractor import get_file_hash
+
+        src_file = tmp_path / "failed_doc.txt"
+        src_file.write_text("retry content", encoding="utf-8")
+        dst_file = tmp_path / "Sorted" / "failed_doc.txt"
+        file_hash = get_file_hash(str(src_file))
+
+        records = [
+            {
+                "source_path": str(src_file),
+                "destination_path": str(dst_file),
+                "pre_hash": file_hash,
+                "post_hash": None,
+                "status": "MOVE_FAIL",
+                "error": "Permission denied / file lock",
+            }
+        ]
+        audit_rep = generate_audit_report(str(tmp_path), records)
+        modal = AuditReportModal(audit_rep)
+
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings)
+
+        async with app.run_test() as pilot:
+            await app.push_screen(modal)
+            await pilot.pause()
+
+            # Verify Failed Items queue table exists and lists the failed item
+            failed_table = modal.query_one("#failed-items-table", DataTable)
+            assert failed_table is not None
+            assert failed_table.row_count == 1
+
+            # Test Retry All action
+            btn_retry_all = modal.query_one("#btn-retry-all", Button)
+            btn_retry_all.press()
+            await pilot.pause()
+
+            # Verify file was moved to destination
+            assert dst_file.exists()
+            assert dst_file.read_text(encoding="utf-8") == "retry content"
+
+            # Verify modal report metrics updated after retry
+            assert modal.report_data.get("mismatch_fail_count") == 0
+            assert modal.report_data.get("verified_pass_count") == 1
+
+    asyncio.run(_test())
+
+
+def test_mover_retry_failed_moves(tmp_path):
+    """Test mover engine retry_failed_moves re-attempting file moves."""
+    from app.core.mover import retry_failed_moves
+
+    src_file = tmp_path / "item_to_retry.pdf"
+    src_file.write_text("pdf bytes content", encoding="utf-8")
+    dst_file = tmp_path / "Output" / "item_to_retry.pdf"
+
+    from app.core.extractor import get_file_hash
+    file_hash = get_file_hash(str(src_file))
+
+    failed_items = [
+        {
+            "source_path": str(src_file),
+            "destination_path": str(dst_file),
+            "pre_hash": file_hash,
+            "status": "MOVE_FAIL",
+            "error": "Temporary lock failure",
+        }
+    ]
+
+    res = retry_failed_moves(str(tmp_path), failed_items)
+
+    assert res is not None
+    assert dst_file.exists()
+    assert dst_file.read_text(encoding="utf-8") == "pdf bytes content"
+
+    rep = res.get("audit_report", {})
+    assert rep.get("verified_pass_count") == 1
+    assert rep.get("mismatch_fail_count") == 0
+

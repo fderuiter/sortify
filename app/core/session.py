@@ -377,6 +377,20 @@ class AppSession:
             **kwargs,
         )
 
+    def retry_failed_moves(self, failed_items, progress_callback=None, **kwargs):
+        """Re-attempt move operations for failed items."""
+        from app.core.mover import retry_failed_moves
+
+        return retry_failed_moves(
+            self.base_dir,
+            failed_items,
+            db=self.db,
+            history_manager=self.history_manager,
+            runtime_settings=self.settings,
+            progress_callback=progress_callback,
+            **kwargs,
+        )
+
     def close(self):
         """Cleanup session directory."""
         if hasattr(self, "analyzer") and self.analyzer:

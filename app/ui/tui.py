@@ -3211,6 +3211,8 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Close verification dialog", show=True),
+        Binding("ctrl+r", "retry_selected", "Retry Selected Failed Item", show=True),
+        Binding("ctrl+t", "retry_all", "Retry All Failed Items", show=True),
         Binding("ctrl+j", "export_json", "Export JSON Report", show=True),
         Binding("ctrl+c", "export_csv", "Export CSV Report", show=True),
     ]
@@ -3225,7 +3227,7 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
         background: $panel;
         border: thick $primary;
         width: 95%;
-        max-width: 100;
+        max-width: 105;
         min-width: 50;
         height: 85%;
         min-height: 20;
@@ -3282,10 +3284,14 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
     #audit-status-filter {
         width: 38%;
     }
-    #audit-table {
+    #audit-table, #failed-items-table {
         height: 1fr;
         margin-bottom: 1;
         border: solid $accent;
+    }
+    #audit-tabs {
+        height: 1fr;
+        margin-bottom: 1;
     }
     .button-row {
         height: 3;
@@ -3329,35 +3335,59 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
                     classes="stat-card stat-unverified",
                 )
 
-            with Horizontal(classes="filter-row"):
-                inp = Input(
-                    placeholder="Search by filename or path...",
-                    id="audit-search-input",
-                )
-                inp.tooltip = "Filter verification results by filename or path"
-                yield inp
+            with TabbedContent(initial="tab-all-records", id="audit-tabs"):
+                with TabPane("All Verification Records", id="tab-all-records"):
+                    with Horizontal(classes="filter-row"):
+                        inp = Input(
+                            placeholder="Search by filename or path...",
+                            id="audit-search-input",
+                        )
+                        inp.tooltip = "Filter verification results by filename or path"
+                        yield inp
 
-                status_sel = Select(
-                    [
-                        ("All Statuses", "ALL"),
-                        ("Verified Pass [PASS]", "VERIFIED_PASS"),
-                        ("Mismatch Fail [FAIL]", "MISMATCH_FAIL"),
-                        ("Skipped [SKIPPED]", "SKIPPED"),
-                        ("Unverified [UNVERIFIED]", "UNVERIFIED"),
-                    ],
-                    value="ALL",
-                    id="audit-status-filter",
-                    allow_blank=False,
-                )
-                status_sel.tooltip = "Filter results by verification status"
-                yield status_sel
+                        status_sel = Select(
+                            [
+                                ("All Statuses", "ALL"),
+                                ("Verified Pass [PASS]", "VERIFIED_PASS"),
+                                ("Mismatch Fail [FAIL]", "MISMATCH_FAIL"),
+                                ("Skipped [SKIPPED]", "SKIPPED"),
+                                ("Unverified [UNVERIFIED]", "UNVERIFIED"),
+                            ],
+                            value="ALL",
+                            id="audit-status-filter",
+                            allow_blank=False,
+                        )
+                        status_sel.tooltip = "Filter results by verification status"
+                        yield status_sel
 
-            table = DataTable(id="audit-table")
-            table.cursor_type = "row"
-            table.tooltip = "Audit report tabular verification tree"
-            yield table
+                    table = DataTable(id="audit-table")
+                    table.cursor_type = "row"
+                    table.tooltip = "Audit report tabular verification tree"
+                    yield table
+
+                with TabPane("Failed Items Queue", id="tab-failed-queue"):
+                    failed_table = DataTable(id="failed-items-table")
+                    failed_table.cursor_type = "row"
+                    failed_table.tooltip = "Dedicated Failed Items queue table"
+                    yield failed_table
 
             with Horizontal(classes="button-row"):
+                btn_retry_sel = Button(
+                    "Retry Selected", id="btn-retry-selected", variant="warning"
+                )
+                btn_retry_sel.tooltip = (
+                    "Re-attempt file move operation for selected failed item"
+                )
+                yield btn_retry_sel
+
+                btn_retry_all = Button(
+                    "Retry All", id="btn-retry-all", variant="error"
+                )
+                btn_retry_all.tooltip = (
+                    "Re-attempt file move operations for all failed items in queue"
+                )
+                yield btn_retry_all
+
                 btn_json = Button(
                     "Export JSON", id="btn-export-json", variant="primary"
                 )
@@ -3445,6 +3475,43 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
 
             table.add_row(badge, filename, pre_trunc, post_trunc, rel_dst)
 
+        self._populate_failed_table()
+
+    def _populate_failed_table(self) -> None:
+        """Populate dedicated Failed Items queue table with error descriptions."""
+        table = self.query_one("#failed-items-table", DataTable)
+        table.clear(columns=True)
+        table.add_columns(
+            "Filename",
+            "Status",
+            "Error Description",
+            "Source Path",
+            "Destination Path",
+        )
+
+        failed_records = self._get_failed_records()
+
+        for rec in failed_records:
+            fn = rec.get("filename", "")
+            st = rec.get("status_badge", rec.get("status", ""))
+            err = rec.get("error") or rec.get("error_description") or "Operation failed"
+            src = rec.get("relative_source") or rec.get("source_path", "")
+            dst = rec.get("relative_destination") or rec.get("destination_path", "")
+            table.add_row(fn, st, err, src, dst)
+
+    def _get_failed_records(self) -> List[Dict[str, Any]]:
+        """Get list of failed item records from report data."""
+        failed = self.report_data.get("failed_items", [])
+        if not failed:
+            records = self.report_data.get("records", [])
+            failed = [
+                r
+                for r in records
+                if r.get("status") in ("MISMATCH_FAIL", "MOVE_FAIL")
+                or r.get("error")
+            ]
+        return failed
+
     @on(Input.Changed, "#audit-search-input")
     def on_search_changed(self, event: Input.Changed) -> None:
         """Handle search input filter update."""
@@ -3456,6 +3523,105 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
         """Handle status filter dropdown update."""
         search_val = self.query_one("#audit-search-input", Input).value
         self._populate_table(search_query=search_val, status_filter=str(event.value))
+
+    def action_retry_selected(self) -> None:
+        """Retry move operation for selected failed item."""
+        failed_table = self.query_one("#failed-items-table", DataTable)
+        selected_record = None
+
+        if failed_table.cursor_row is not None and failed_table.row_count > 0:
+            failed_records = self._get_failed_records()
+            if 0 <= failed_table.cursor_row < len(failed_records):
+                selected_record = failed_records[failed_table.cursor_row]
+
+        if not selected_record:
+            audit_table = self.query_one("#audit-table", DataTable)
+            if audit_table.cursor_row is not None and audit_table.row_count > 0:
+                records = self.report_data.get("records", [])
+                if 0 <= audit_table.cursor_row < len(records):
+                    rec = records[audit_table.cursor_row]
+                    if rec.get("status") in ("MISMATCH_FAIL", "MOVE_FAIL") or rec.get("error"):
+                        selected_record = rec
+
+        if not selected_record:
+            msg = "No failed item selected to retry."
+            self.announce(msg)
+            self.notify(msg, severity="warning")
+            return
+
+        self._execute_retry([selected_record])
+
+    def action_retry_all(self) -> None:
+        """Retry move operations for all failed items in queue."""
+        failed_records = self._get_failed_records()
+        if not failed_records:
+            msg = "No failed items to retry."
+            self.announce(msg)
+            self.notify(msg, severity="warning")
+            return
+
+        self._execute_retry(failed_records)
+
+    def _execute_retry(self, items_to_retry: List[Dict[str, Any]]) -> None:
+        """Execute mover retry for selected failed items and refresh UI."""
+        from app.core.mover import retry_failed_moves
+
+        base_dir = self.report_data.get("base_dir", "")
+        retry_res = retry_failed_moves(base_dir, items_to_retry)
+        new_audit = retry_res.get("audit_report", {})
+
+        retried_map = {
+            r.get("source_path"): r
+            for r in new_audit.get("records", [])
+        }
+
+        records = self.report_data.get("records", [])
+        for idx, rec in enumerate(records):
+            src = rec.get("source_path")
+            if src in retried_map:
+                records[idx] = retried_map[src]
+
+        from app.core.audit_reporter import generate_audit_report
+
+        self.report_data = generate_audit_report(base_dir, records)
+
+        self._populate_table()
+        self._update_stats_cards()
+
+        pass_cnt = self.report_data.get("verified_pass_count", 0)
+        fail_cnt = self.report_data.get("mismatch_fail_count", 0)
+        msg = f"Retried {len(items_to_retry)} item(s). Overall status: {pass_cnt} passed, {fail_cnt} failed."
+        self.announce(msg)
+        self.notify(msg, severity="information")
+
+    def _update_stats_cards(self) -> None:
+        """Update stat card labels with current metrics."""
+        total = self.report_data.get("total_files", 0)
+        pass_cnt = self.report_data.get("verified_pass_count", 0)
+        fail_cnt = self.report_data.get("mismatch_fail_count", 0)
+        skip_cnt = self.report_data.get("skipped_count", 0)
+        unverified_cnt = self.report_data.get("unverified_count", 0)
+
+        try:
+            cards = self.query(".stat-card")
+            if len(cards) >= 5:
+                cards[0].update(f"Total: {total}")
+                cards[1].update(f"[PASS]: {pass_cnt}")
+                cards[2].update(f"[FAIL]: {fail_cnt}")
+                cards[3].update(f"[SKIPPED]: {skip_cnt}")
+                cards[4].update(f"[UNVERIFIED]: {unverified_cnt}")
+        except Exception:
+            pass
+
+    @on(Button.Pressed, "#btn-retry-selected")
+    def on_btn_retry_selected(self) -> None:
+        """Handle Retry Selected button press."""
+        self.action_retry_selected()
+
+    @on(Button.Pressed, "#btn-retry-all")
+    def on_btn_retry_all(self) -> None:
+        """Handle Retry All button press."""
+        self.action_retry_all()
 
     def action_export_json(self) -> None:
         """Export audit report to JSON format."""
