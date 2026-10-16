@@ -548,6 +548,45 @@ def package_sidecar_models():
     print(f"Successfully packaged sidecar model archive: {zip_path}")
 
 
+def verify_scientific_binaries(dist_dir: str) -> bool:
+    """Statically verify that SciPy package files and native C-extensions exist in the bundle folder."""
+    print("Executing post-build static inspection for scientific computing C-extensions...")
+    if not os.path.exists(dist_dir):
+        print(
+            f"Error: Standalone bundle directory {dist_dir} not found for static scientific inspection."
+        )
+        sys.exit(1)
+
+    scipy_dir_found = False
+    scipy_binaries = []
+
+    for root, dirs, files in os.walk(dist_dir):
+        rel_root = os.path.relpath(root, dist_dir).replace("\\", "/")
+        parts = rel_root.lower().split("/")
+        if "scipy" in parts:
+            scipy_dir_found = True
+            for file in files:
+                if file.lower().endswith((".pyd", ".so", ".dylib", ".dll")):
+                    scipy_binaries.append(os.path.join(root, file))
+
+    if not scipy_dir_found:
+        print(
+            f"Error: Static inspection failed. SciPy package directory is missing in {dist_dir}!"
+        )
+        sys.exit(1)
+
+    if not scipy_binaries:
+        print(
+            f"Error: Static inspection failed. No compiled scientific C-extension binaries (.pyd, .so, .dylib, .dll) found in SciPy package within {dist_dir}!"
+        )
+        sys.exit(1)
+
+    print(
+        f"Static post-build verification passed: Verified SciPy package and found {len(scipy_binaries)} native C-extension binaries in {dist_dir}."
+    )
+    return True
+
+
 def main():
     """Build the standalone executable."""
     import importlib.util
@@ -589,6 +628,7 @@ def main():
             ("NumPy", "numpy"),
             ("Pandas", "pandas"),
             ("Pillow", "PIL"),
+            ("SciPy", "scipy"),
         ]
         for name, imp in ml_packages:
             try:
@@ -653,6 +693,9 @@ def main():
         print(
             f"Verification passed: Verified executable target (smart-autosorter{exe_ext}) in {dist_dir}"
         )
+
+        if not is_lite:
+            verify_scientific_binaries(dist_dir)
     else:
         print(
             f"Warning: Standalone bundle directory {dist_dir} not found for post-build verification."
