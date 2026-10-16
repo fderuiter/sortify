@@ -165,3 +165,130 @@ def test_safe_fallback_on_db_failure(tmp_path: Path):
     res = engine.classify(str(test_file))
     assert res.is_classified is True
     assert "Legal" in res.category
+
+
+def test_single_query_cache_miss(tmp_path: Path):
+    """Verify _get_from_db executes only a single query on a cache miss."""
+    db_path = str(tmp_path / "autosorter.db")
+    engine = JevClassifierEngine(db_path=db_path)
+
+    test_file = tmp_path / "uncached_doc.txt"
+    test_file.write_text("Some uncached content.")
+    stat_key = engine._get_file_stat_key(str(test_file))
+    assert stat_key is not None
+
+    from app.core.db_conn import get_db_connection
+
+    real_conn = get_db_connection(db_path)
+
+    class ProxyConnection:
+        def __init__(self, conn):
+            self._conn = conn
+            self.executed_queries = []
+
+        def execute(self, sql, *args, **kwargs):
+            self.executed_queries.append(str(sql))
+            return self._conn.execute(sql, *args, **kwargs)
+
+        def __enter__(self):
+            self._conn.__enter__()
+            return self
+
+        def __exit__(self, exc_type, exc_val, exc_tb):
+            return self._conn.__exit__(exc_type, exc_val, exc_tb)
+
+        def __getattr__(self, name):
+            return getattr(self._conn, name)
+
+    proxy_conn = ProxyConnection(real_conn)
+
+    with patch("app.core.db_conn.get_db_connection", return_value=proxy_conn):
+        res = engine._get_from_db(stat_key)
+
+    assert res is None
+    # Confirm exactly 1 SELECT query was executed during DB lookup
+    select_queries = [q for q in proxy_conn.executed_queries if "SELECT" in q.upper()]
+    assert len(select_queries) == 1
+    assert "WHERE file_path = ?" in select_queries[0]
+
+
+def test_stale_entry_invalidation_and_corrupted_metadata(tmp_path: Path):
+    """Verify stale entry with mismatched mtime/size invalidates via single lookup and handles bad metadata gracefully."""
+    db_path = str(tmp_path / "autosorter.db")
+    engine = JevClassifierEngine(db_path=db_path)
+
+    test_file = tmp_path / "stale_doc.txt"
+    test_file.write_text("Fresh content.")
+    stat_key = engine._get_file_stat_key(str(test_file))
+    assert stat_key is not None
+    abs_path, mtime, size = stat_key
+
+    from app.core.db_conn import get_db_connection
+
+    conn = get_db_connection(db_path)
+
+    # Insert a stale row with old mtime and size
+    with conn:
+        conn.execute(
+            """INSERT INTO jev_classification_cache (
+                file_path, mtime, size, category, sensitivity_rating,
+                sensitivity_score, archival_priority, archival_priority_score,
+                confidence, is_classified, metadata, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                abs_path,
+                mtime - 100.0,
+                size + 50,
+                "Old Category",
+                "LOW",
+                0.1,
+                5,
+                0.1,
+                0.5,
+                1,
+                "{invalid json",
+                time.time(),
+            ),
+        )
+
+    # _get_from_db should perform single query lookup, detect stale mtime/size, and invalidate
+    res = engine._get_from_db(stat_key)
+    assert res is None
+
+    # Verify stale row was deleted from DB
+    with conn:
+        cursor = conn.execute(
+            "SELECT COUNT(*) FROM jev_classification_cache WHERE file_path = ?",
+            (abs_path,),
+        )
+        assert cursor.fetchone()[0] == 0
+
+    # Insert a valid row with matching stat key but corrupted metadata JSON
+    with conn:
+        conn.execute(
+            """INSERT INTO jev_classification_cache (
+                file_path, mtime, size, category, sensitivity_rating,
+                sensitivity_score, archival_priority, archival_priority_score,
+                confidence, is_classified, metadata, updated_at
+            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)""",
+            (
+                abs_path,
+                mtime,
+                size,
+                "Financial Reports",
+                "HIGH",
+                0.85,
+                1,
+                0.90,
+                0.95,
+                1,
+                "{corrupted json metadata",
+                time.time(),
+            ),
+        )
+
+    res2 = engine._get_from_db(stat_key)
+    assert res2 is not None
+    assert res2.category == "Financial Reports"
+    assert res2.metadata == {}  # Graceful fallback to empty dict
+
