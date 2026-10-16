@@ -155,8 +155,8 @@ if (platform.system().lower() == "windows" or sys.platform == "win32") and "pyte
         if path_dir not in search_dirs:
             search_dirs.append(path_dir)
             
-    # Also add common/standard Windows OpenSSL installation directories
-    common_openssl_dirs = [
+    # Also add common/standard Windows OpenSSL, MSVC Redist, and UCRT installation directories
+    common_redist_dirs = [
         "C:\\Program Files\\OpenSSL-Win64\\bin",
         "C:\\Program Files\\OpenSSL\\bin",
         "C:\\Program Files\\OpenSSL-Win64",
@@ -164,14 +164,38 @@ if (platform.system().lower() == "windows" or sys.platform == "win32") and "pyte
         "C:\\OpenSSL-Win64\\bin",
         "C:\\OpenSSL-Win64",
         "C:\\Program Files\\Common Files\\SSL",
+        "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\VC\\Redist\\MSVC",
+        "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Redist\\MSVC",
+        "C:\\Program Files\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Redist\\MSVC",
+        "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Enterprise\\VC\\Redist\\MSVC",
+        "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Redist\\MSVC",
+        "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\BuildTools\\VC\\Redist\\MSVC",
+        "C:\\Program Files (x86)\\Windows Kits\\10\\Redist",
+        "C:\\Program Files\\Windows Kits\\10\\Redist",
+        "C:\\Windows\\System32",
+        "C:\\Windows\\SysWOW64",
     ]
-    for cod in common_openssl_dirs:
-        if os.path.isdir(cod) and cod not in search_dirs:
-            search_dirs.append(cod)
-                
+    vc_redist_env = os.environ.get("VCToolsRedistDir")
+    if vc_redist_env and os.path.isdir(vc_redist_env):
+        common_redist_dirs.append(vc_redist_env)
+
+    for cod in common_redist_dirs:
+        if os.path.isdir(cod):
+            if cod not in search_dirs:
+                search_dirs.append(cod)
+            # Recursively append candidate CRT subdirectories (e.g. x64, ucrt/DLLs)
+            for root, dirs, files in os.walk(cod):
+                if any(f.lower().endswith(".dll") for f in files):
+                    if root not in search_dirs:
+                        search_dirs.append(root)
+
     found_dll_names = set()
     found_dlls = set()
-    dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher", "sqlite3"]
+    dll_patterns = [
+        "libcrypto", "libssl", "sqlcipher", "libsqlcipher", "sqlite3",
+        "msvcp140", "vcruntime140", "vcruntime140_1", "concrt140", "vcomp140",
+        "ucrtbase", "api-ms-win-crt-"
+    ]
     
     # 1. Check recursively inside the installed sqlcipher3 package directory itself for any DLLs
     if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
