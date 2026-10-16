@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "80acbb92d0bb489edb2adfdc1e672a2fffc4ff5a3c06926181943249fc5fd183"
+    "checksum": "9cf7dd5133ca1f742db1e8639f7edc1a16f6ea28e0b75bfa15016ac1f05dd3bd"
   },
   "classes": [
     {
@@ -35,6 +35,11 @@
     },
     {
       "class_name": "HashVerificationError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "ModelVerificationError",
       "decorators": [],
       "methods": []
     },

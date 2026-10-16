@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "355548066845168ce8484d8b422ddc318c9adffcfd5cc3bc38160577abe208a0"
+    "checksum": "9e982101beb6d3835a398248a59d76805b2cee5fa2ae7b24dbf48da8ccf5965d"
   },
   "classes": [
     {
@@ -56,19 +56,6 @@
         {
           "async": false,
           "decorators": [],
-          "name": "get_quarantine_scan_hooks",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            }
-          ],
-          "returns": "List[Callable]"
-        },
-        {
-          "async": false,
-          "decorators": [],
           "name": "get_tui_strategy_options",
           "parameters": [
             {
@@ -109,24 +96,6 @@
             }
           ],
           "returns": "Optional[Any]"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "has_tui_view",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "view_name"
-            }
-          ],
-          "returns": "bool"
         },
         {
           "async": false,

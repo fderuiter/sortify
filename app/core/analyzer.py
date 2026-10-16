@@ -777,12 +777,12 @@ class IncrementalAnalyzer:
                 if runtime_settings
                 else {}
             )
+            from app.core.policy_engine import PolicyEngine
+
             policies = (
                 getattr(runtime_settings, "POLICIES", []) if runtime_settings else []
             )
-            sorted_policies = sorted(
-                policies, key=lambda x: x.get("priority", 0), reverse=True
-            )
+            sorted_policies = PolicyEngine.sort_policies(policies)
 
             ai_filenames = []
             ai_documents = []
@@ -830,10 +830,13 @@ class IncrementalAnalyzer:
                     target = locked_files[f]
 
                 # Check against unified policies first!
-                from app.core.policy_engine import PolicyEngine
-
                 matched_policy, halt_evaluation = PolicyEngine.evaluate_policies(
-                    f, doc, status_match, sorted_policies, return_halting=True
+                    f,
+                    doc,
+                    status_match,
+                    sorted_policies,
+                    return_halting=True,
+                    is_sorted=True,
                 )
 
                 if matched_policy:
