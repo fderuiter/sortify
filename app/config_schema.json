@@ -191,7 +191,8 @@
       "default": "rename",
       "enum": [
         "skip",
-        "rename"
+        "rename",
+        "overwrite"
       ],
       "title": "Conflict Policy",
       "type": "string"
