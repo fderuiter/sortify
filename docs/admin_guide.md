@@ -22,6 +22,14 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `12`
 - **Required**: `False`
 
+### `LICENSE_KEY`
+- **Default**: ``
+- **Required**: `False`
+
+### `IS_PRO_TIER`
+- **Default**: `False`
+- **Required**: `False`
+
 ### `MAX_WORKERS`
 - **Default**: `4`
 - **Required**: `False`
@@ -100,6 +108,18 @@ The following parameters are extracted directly from the application's configura
 
 ### `PROXY`
 - **Default**: ``
+- **Required**: `False`
+
+### `SECURITY_ADVISORY_ENDPOINT`
+- **Default**: `https://security.huggingface.co/api/advisories`
+- **Required**: `False`
+
+### `SECURITY_ADVISORY_CACHE_TTL`
+- **Default**: `3600`
+- **Required**: `False`
+
+### `SECURITY_ADVISORY_FALLBACK_POLICY`
+- **Default**: `permissive`
 - **Required**: `False`
 
 ### `OCR_GPU_ENABLED`

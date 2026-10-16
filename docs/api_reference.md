@@ -182,6 +182,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.scanner
 
+## `app.core.security_advisory`
+
+::: app.core.security_advisory
+
 ## `app.core.semantic_embeddings`
 
 ::: app.core.semantic_embeddings

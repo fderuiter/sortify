@@ -1,14 +1,9 @@
 """Unit and integration tests for cascade scrubbing and interactive TUI consent controls."""
 
-import asyncio
-import os
-import time
-from pathlib import Path
-from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.config import AppSettings, get_app_dir
+from app.config import AppSettings
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.shared_registry import SharedModelRegistry
