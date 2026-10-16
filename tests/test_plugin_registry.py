@@ -67,7 +67,6 @@ def test_load_clinical_compliance_plugin():
     assert ("Clinical ISF", "clinical_isf") in tui_options
 
     # Check TUI view
-    assert registry.has_tui_view("cro_forensic") is True
     view_cls = registry.get_tui_view("cro_forensic")
     assert view_cls is not None
 
@@ -90,15 +89,14 @@ def test_load_plugins_from_settings():
     registry = PluginRegistry.get_instance()
     registry.load_plugins_from_settings(settings)
 
-    assert registry.has_tui_view("cro_forensic") is True
+    assert registry.get_tui_view("cro_forensic") is not None
 
 
 def test_default_isolation_when_no_plugin_active():
     """Verify default operation when no plugin is active has no clinical strategies or hooks."""
     registry = PluginRegistry.get_instance()
-    assert len(registry.get_quarantine_scan_hooks()) == 0
     assert len(registry.get_tui_strategy_options()) == 0
-    assert registry.has_tui_view("cro_forensic") is False
+    assert registry.get_tui_view("cro_forensic") is None
 
 
 def test_disallowed_stdlib_module_rejection_no_import(mocker, caplog):

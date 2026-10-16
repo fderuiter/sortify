@@ -860,6 +860,10 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
         color: $accent;
         margin-bottom: 1;
     }
+    .error-banner {
+        color: $error;
+        text-style: bold;
+    }
     .preset-row {
         margin-top: 1;
         margin-bottom: 1;
@@ -903,6 +907,54 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
         else:
             self.selected_sources = []
 
+    @staticmethod
+    def _validate_directory_path(path_str: str) -> Optional[str]:
+        """Validate if path_str exists, is a directory, and allows read access.
+
+        Returns error message string if invalid, or None if valid.
+        """
+        if not path_str or not path_str.strip():
+            return "Directory path cannot be empty."
+
+        clean_path = path_str.strip()
+        expanded = os.path.abspath(os.path.expanduser(clean_path))
+
+        try:
+            if not os.path.exists(expanded):
+                return f"Target directory does not exist: {clean_path}"
+
+            if not os.path.isdir(expanded):
+                return f"Path is not a directory: {clean_path}"
+
+            if not os.access(expanded, os.R_OK):
+                return f"Permission denied for directory: {clean_path}"
+        except Exception as exc:
+            return f"Invalid directory path: {exc}"
+
+        return None
+
+    def _show_error(self, message: str) -> None:
+        """Display inline error banner, announce message, and focus input."""
+        try:
+            lbl = self.query_one("#lbl-error", Static)
+            lbl.update(message)
+        except Exception:
+            pass
+        self.announce(message, priority="assertive")
+        try:
+            self.query_one("#input-dir", Input).focus()
+        except Exception:
+            pass
+
+    @on(Input.Changed, "#input-dir")
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Clear error banner when user changes input text."""
+        try:
+            lbl = self.query_one("#lbl-error", Static)
+            lbl.update("")
+        except Exception:
+            pass
+
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
@@ -919,6 +971,7 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
             )
             inp.tooltip = "Enter absolute target directory path to scan"
             yield inp
+            yield Static("", id="lbl-error", classes="error-banner")
             yield Label("Selected Sources:", id="lbl-sources")
             yield Static(
                 self._format_sources_display(),
@@ -983,13 +1036,23 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     def action_add_dir(self) -> None:
         """Add input directory path to selected source list."""
         val = self.query_one("#input-dir", Input).value.strip()
-        if val:
-            abs_p = os.path.abspath(os.path.expanduser(val))
-            if abs_p not in self.selected_sources:
-                self.selected_sources.append(abs_p)
-                self.announce(f"Added directory path: {abs_p}")
-                self._update_sources_widget()
-            self.added_via_btn = True
+        if not val:
+            return
+        err = self._validate_directory_path(val)
+        if err:
+            self._show_error(err)
+            return
+
+        abs_p = os.path.abspath(os.path.expanduser(val))
+        if abs_p not in self.selected_sources:
+            self.selected_sources.append(abs_p)
+            self.announce(f"Added directory path: {abs_p}")
+            self._update_sources_widget()
+        self.added_via_btn = True
+        try:
+            self.query_one("#lbl-error", Static).update("")
+        except Exception:
+            pass
 
     @on(Button.Pressed, "#preset-demo")
     def action_demo(self) -> None:
@@ -1015,6 +1078,10 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     def action_downloads(self) -> None:
         """Select user Downloads directory preset."""
         path = os.path.expanduser("~/Downloads")
+        err = self._validate_directory_path(path)
+        if err:
+            self._show_error(err)
+            return
         self.announce(f"Selected Downloads preset: {path}")
         self.dismiss(path)
 
@@ -1022,6 +1089,10 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     def action_documents(self) -> None:
         """Select user Documents directory preset."""
         path = os.path.expanduser("~/Documents")
+        err = self._validate_directory_path(path)
+        if err:
+            self._show_error(err)
+            return
         self.announce(f"Selected Documents preset: {path}")
         self.dismiss(path)
 
@@ -1030,6 +1101,11 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
         """Confirm directory selection."""
         val = self.query_one("#input-dir", Input).value.strip()
         if val:
+            err = self._validate_directory_path(val)
+            if err:
+                self._show_error(err)
+                return
+
             abs_p = os.path.abspath(os.path.expanduser(val))
             if not self.added_via_btn and len(self.selected_sources) <= 1:
                 self.announce(f"Confirmed directory selection: '{abs_p}'")
@@ -1040,6 +1116,12 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
                 self.selected_sources.append(abs_p)
 
         if self.selected_sources:
+            for source in self.selected_sources:
+                err = self._validate_directory_path(source)
+                if err:
+                    self._show_error(err)
+                    return
+
             self.announce(f"Confirmed directory selection: '{self.selected_sources}'")
             res = (
                 self.selected_sources
@@ -1336,6 +1418,23 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     inp_conc.tooltip = "Worker concurrency thread limit for processing"
                     yield inp_conc
 
+                    yield Label("Conflict Policy:", classes="field-label")
+                    conflict_pol = getattr(self.settings, "CONFLICT_POLICY", "rename")
+                    conflict_options = [
+                        ("Overwrite", "overwrite"),
+                        ("Auto-Rename", "rename"),
+                        ("Skip", "skip"),
+                    ]
+                    sel_conflict = Select(
+                        options=conflict_options,
+                        value=conflict_pol,
+                        id="select-conflict-policy",
+                    )
+                    sel_conflict.tooltip = (
+                        "Select collision handling strategy for conflicting target files"
+                    )
+                    yield sel_conflict
+
                 with TabPane("AI & Privacy Settings", id="tab-ai-privacy"):
                     yield Heading("Sorting Strategy:", level=2, classes="field-label")
                     strat = getattr(self.settings, "SORTING_STRATEGY", "default")
@@ -1503,11 +1602,19 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             ai_consent = bool(getattr(self.settings, "AI_CONSENT_GRANTED", False))
 
+        try:
+            conflict_pol = self.query_one("#select-conflict-policy", Select).value
+            if conflict_pol == Select.BLANK:
+                conflict_pol = "rename"
+        except Exception:
+            conflict_pol = getattr(self.settings, "CONFLICT_POLICY", "rename")
+
         res = {
             "PROTECTED_PATHS": p_list,
             "IGNORED_EXTENSIONS": i_list,
             "MAX_WORKERS": conc,
             "MAX_FOLDERS": max_f,
+            "CONFLICT_POLICY": conflict_pol,
             "SORTING_STRATEGY": strat,
             "CLINICAL_SMART_RENAMING": clin_renaming,
             "CONTEXTUAL_RENAMING": ctx_renaming,
@@ -4043,14 +4150,14 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 classes="modal-subtitle",
             )
 
-            options = []
+            options = [("All Sessions (Aggregate Audit Log)", "all")]
             for s in self.sessions:
                 sid = s.get("session_id", "unknown")
                 b_dir = s.get("base_dir") or "N/A"
                 status = s.get("status") or "completed"
                 options.append((f"{sid[:8]}... | {status} | {b_dir}", sid))
 
-            if not options:
+            if len(options) == 1 and not self.sessions:
                 options = [("No historical sessions found", "none")]
 
             select_sess = Select(
@@ -4610,6 +4717,13 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
         def _dir_selected_callback(target_dir: Optional[str]) -> None:
             if not target_dir:
                 self.announce("Release operation cancelled.")
+                return
+            if not os.path.exists(target_dir) or not os.path.isdir(target_dir):
+                from app.ui.notifications import notify
+
+                err_msg = f"Target directory does not exist: {target_dir}"
+                self.announce(err_msg, priority="assertive")
+                notify(err_msg, type="error")
                 return
             dest_file_path = os.path.join(target_dir, os.path.basename(orig_rel))
             self.execute_release_async(record, dest_file_path)
@@ -5440,6 +5554,8 @@ class AutoSorterTUI(A11yMixin, App):
                     self.settings.CONTEXTUAL_RENAMING = res["CONTEXTUAL_RENAMING"]
                 if "AI_CONSENT_GRANTED" in res:
                     self.settings.AI_CONSENT_GRANTED = res["AI_CONSENT_GRANTED"]
+                if "CONFLICT_POLICY" in res:
+                    self.settings.CONFLICT_POLICY = res["CONFLICT_POLICY"]
                 if hasattr(self.settings, "_save"):
                     self.settings._save()
                 self.update_status()
@@ -5691,7 +5807,7 @@ class AutoSorterTUI(A11yMixin, App):
 
                 export_res = history_mgr.export_audit_log(
                     output_path=output_path,
-                    session_id=session_id if session_id != "none" else None,
+                    session_id=session_id if session_id not in ("none", "all") else None,
                     format=fmt,
                 )
                 cnt = export_res.get("count", 0)
@@ -6200,8 +6316,44 @@ class AutoSorterTUI(A11yMixin, App):
                     )
                     label_parts.append(f"[ARCH: {arch_str}]")
 
+                target_filename = file_info.get("target_filename") or file_key
+                target_path = None
+                if self.base_dir:
+                    target_path = os.path.normpath(
+                        os.path.join(self.base_dir, current_folder, target_filename)
+                    )
+                elif current_folder:
+                    target_path = os.path.normpath(
+                        os.path.join(current_folder, target_filename)
+                    )
+
+                is_collision = (
+                    file_info.get("collision")
+                    or file_info.get("has_collision")
+                    or False
+                )
+                if (
+                    not is_collision
+                    and target_path
+                    and filepath
+                    and os.path.lexists(target_path)
+                ):
+                    try:
+                        is_same = os.path.samefile(target_path, filepath)
+                    except Exception:
+                        is_same = os.path.normpath(
+                            os.path.abspath(target_path)
+                        ) == os.path.normpath(os.path.abspath(filepath))
+                    if not is_same:
+                        is_collision = True
+
+                pol = str(
+                    getattr(self.settings, "CONFLICT_POLICY", "rename")
+                ).lower()
+                if is_collision:
+                    label_parts.append(f"[COLLISION: {pol.upper()}]")
+
                 label_parts.append(file_key)
-                target_filename = file_info.get("target_filename")
                 if target_filename and target_filename != file_key:
                     label_parts.append(f"-> {target_filename}")
 
@@ -6242,6 +6394,8 @@ class AutoSorterTUI(A11yMixin, App):
                     "rating": rating,
                     "is_checked": is_checked,
                     "is_excluded": is_excluded,
+                    "is_collision": is_collision,
+                    "conflict_policy": pol,
                 }
                 parent_item.add_leaf(text_obj, data=node_data)
             elif isinstance(v, dict):
@@ -6401,6 +6555,15 @@ class AutoSorterTUI(A11yMixin, App):
                     lines.append(f"[bold]Confidence:[/bold] {float(conf):.2%}")
                 except (ValueError, TypeError):
                     lines.append(f"[bold]Confidence:[/bold] {conf}")
+
+            if data.get("is_collision"):
+                pol_str = str(
+                    data.get("conflict_policy")
+                    or getattr(self.settings, "CONFLICT_POLICY", "rename")
+                ).upper()
+                lines.append(
+                    f"[bold warning]Collision Indicator:[/bold warning] [COLLISION: {pol_str}]"
+                )
 
             self.announce(
                 f"Selected file '{key}' in folder '{folder}'. Locked: {locked}. Rating: {rating}."
