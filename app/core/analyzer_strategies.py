@@ -1274,7 +1274,12 @@ def _build_gguf_logit_biases(llm) -> dict[int, float]:
 
 
 def gguf_worker_main(
-    model_path, input_queue, output_queue, n_threads=None, session_key=None
+    model_path,
+    input_queue,
+    output_queue,
+    n_threads=None,
+    session_key=None,
+    max_grammar_cache_size=None,
 ):
     """Worker process main loop that handles local GGUF model generation.
 
@@ -1290,8 +1295,24 @@ def gguf_worker_main(
         Number of CPU threads to allocate for the model. If None, resolves from the registry thread limit.
     session_key : bytes | str, optional
         Ephemeral session key for decrypting input task and encrypting output results.
+    max_grammar_cache_size : int, optional
+        Maximum entries for the in-memory LRU grammar cache. Defaults to config setting or 16.
     """
+    import hashlib
+    import logging
     import os
+
+    from app.core.cache import BoundedMemoryCache
+
+    if max_grammar_cache_size is None:
+        try:
+            from app.config import Settings
+
+            max_grammar_cache_size = Settings().GRAMMAR_CACHE_SIZE
+        except Exception:
+            max_grammar_cache_size = 16
+
+    grammar_cache = BoundedMemoryCache(max_size=max_grammar_cache_size)
 
     gguf_file = None
     for root, _, files in os.walk(model_path):
@@ -1351,22 +1372,26 @@ def gguf_worker_main(
 
             grammar = None
             if grammar_str:
-                try:
-                    from llama_cpp import LlamaGrammar
+                grammar_hash = hashlib.sha256(grammar_str.encode("utf-8")).hexdigest()
+                grammar = grammar_cache.get(grammar_hash)
+                if grammar is None:
+                    try:
+                        from llama_cpp import LlamaGrammar
 
-                    grammar = LlamaGrammar.from_string(grammar_str)
-                except Exception as e:
-                    import logging
+                        grammar = LlamaGrammar.from_string(grammar_str)
+                        grammar_cache.set(grammar_hash, grammar)
+                    except Exception as e:
+                        import logging
 
-                    logging.error(
-                        f"Failed to compile grammar constraint in worker: {e}"
-                    )
-                    err_obj = {"error": f"Grammar compilation failed: {e}"}
-                    if session_key is not None and isinstance(raw_task, bytes):
-                        output_queue.put(encrypt_ipc_payload(err_obj, session_key))
-                    else:
-                        output_queue.put(err_obj)
-                    continue
+                        logging.error(
+                            f"Failed to compile grammar constraint in worker: {e}"
+                        )
+                        err_obj = {"error": f"Grammar compilation failed: {e}"}
+                        if session_key is not None and isinstance(raw_task, bytes):
+                            output_queue.put(encrypt_ipc_payload(err_obj, session_key))
+                        else:
+                            output_queue.put(err_obj)
+                        continue
 
             gen_kwargs = {"max_tokens": max_tokens, "echo": False}
             if stop_seqs is not None:
