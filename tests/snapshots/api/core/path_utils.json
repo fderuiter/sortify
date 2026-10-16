@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "c13d2693ee749943aed8c40e86a8baa680fa04179c2e8e21c3dfd150a52d6977"
+    "checksum": "37a92d071e75dfa49229721b38957a43529c8be57e0f3e9db77c447d80da5a4e"
   },
   "classes": [],
   "functions": [
@@ -125,6 +125,19 @@
         }
       ],
       "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "sanitize_filename",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "name"
+        }
+      ],
+      "returns": "tuple[str, bool]"
     },
     {
       "async": false,

@@ -564,6 +564,11 @@ def _execute_moves_recursive(
             dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
             dest_path = unicodedata.normalize("NFC", dest_path)
 
+            if not is_subpath_or_equal(dest_path, base_dir):
+                msg = f"Runtime boundary violation: Destination path '{dest_path}' attempts to escape target base directory '{base_dir}'."
+                logging.error(msg)
+                raise ValueError(msg)
+
             source_rel_path = safe_relpath(source_path, base_dir).replace("\\", "/")
             rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
             if sens_rating_str in auto_ratings and db:
@@ -1186,6 +1191,11 @@ def _process_move_item(
     dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
     dest_path = unicodedata.normalize("NFC", dest_path)
 
+    if not is_subpath_or_equal(dest_path, base_dir):
+        msg = f"Runtime boundary violation: Destination path '{dest_path}' attempts to escape target base directory '{base_dir}'."
+        logging.error(msg)
+        raise ValueError(msg)
+
     source_rel_path = safe_relpath(source_path, base_dir).replace("\\", "/")
     rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
 
@@ -1599,6 +1609,7 @@ class AsyncMoveEngine:
             integrity_result.get("invalid_renames")
             or integrity_result.get("unconfirmed_renames")
             or integrity_result.get("circular_renames")
+            or integrity_result.get("escaping_paths")
         ):
             warn_text = (
                 "; ".join(integrity_result.get("warnings", []))

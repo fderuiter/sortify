@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "27e847f9b990d50573a96c7fe68c19783d918bd967454e935072ff9772ea8b98"
+    "checksum": "a91e9309200057cd875f9469594677a14c6e3765110ef88f468d3eb2a1d19a33"
   },
   "classes": [
     {
@@ -146,6 +146,29 @@
           "async": false,
           "decorators": [],
           "name": "check_collisions",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "list",
+              "default": null,
+              "name": "moves_list"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": "list"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "check_escaping_paths",
           "parameters": [
             {
               "annotation": null,
