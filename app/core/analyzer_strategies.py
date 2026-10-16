@@ -1543,10 +1543,11 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         self.model_path = model_path
         if not self.model_path:
-            import sys
+            from app.core.path_utils import get_meipass_dir
 
-            if hasattr(sys, "_MEIPASS"):
-                mei_bundle_path = os.path.join(sys._MEIPASS, "offline_bundle", "model")
+            mei_dir = get_meipass_dir()
+            if mei_dir:
+                mei_bundle_path = os.path.join(mei_dir, "offline_bundle", "model")
                 if os.path.exists(mei_bundle_path):
                     self.model_path = mei_bundle_path
 
@@ -1731,8 +1732,11 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if not self.model_path or not os.path.exists(
             os.path.join(self.model_path, "config.json")
         ):
-            if hasattr(sys, "_MEIPASS"):
-                mei_bundle_path = os.path.join(sys._MEIPASS, "offline_bundle", "model")
+            from app.core.path_utils import get_meipass_dir
+
+            mei_dir = get_meipass_dir()
+            if mei_dir:
+                mei_bundle_path = os.path.join(mei_dir, "offline_bundle", "model")
                 if os.path.exists(mei_bundle_path):
                     self.model_path = mei_bundle_path
 

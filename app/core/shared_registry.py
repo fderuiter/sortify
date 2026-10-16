@@ -801,7 +801,6 @@ class SharedModelRegistry:
     def get_ocr_reader(self):
         """Lazily load and return the EasyOCR Reader from registry."""
         model_id = "easyocr"
-        import sys
 
         # Resolve easyocr_dir
         try:
@@ -809,9 +808,12 @@ class SharedModelRegistry:
 
             easyocr_dir = OfflineModelLoader.resolve_model_path("easyocr")
         except Exception:
-            if hasattr(sys, "_MEIPASS"):
+            from app.core.path_utils import get_meipass_dir
+
+            mei_dir = get_meipass_dir()
+            if mei_dir:
                 easyocr_dir = os.path.join(
-                    sys._MEIPASS, "offline_bundle", "easyocr"
+                    mei_dir, "offline_bundle", "easyocr"
                 )
             else:
                 try:

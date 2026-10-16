@@ -264,9 +264,12 @@ def inject_bootstrap_paths(platform_binaries_dir: Path = None):
             sys.path.insert(0, platform_binaries_dir_str)
 
         paths = [platform_binaries_dir_str, str(sqlcipher3_path)]
-        if hasattr(sys, "_MEIPASS"):
-            paths.append(sys._MEIPASS)
-            internal_dir = os.path.join(sys._MEIPASS, "_internal")
+        from app.core.path_utils import get_meipass_dir
+
+        mei_dir = get_meipass_dir()
+        if mei_dir:
+            paths.append(mei_dir)
+            internal_dir = os.path.join(mei_dir, "_internal")
             if os.path.isdir(internal_dir):
                 paths.append(internal_dir)
                 paths.append(os.path.join(internal_dir, "sqlcipher3"))
@@ -283,12 +286,12 @@ def inject_bootstrap_paths(platform_binaries_dir: Path = None):
                 )
 
         if sys.platform == "win32":
-            if hasattr(sys, "_MEIPASS"):
+            if mei_dir:
                 try:
-                    os.add_dll_directory(sys._MEIPASS)
+                    os.add_dll_directory(mei_dir)
                 except Exception:
                     pass
-                internal_dir = os.path.join(sys._MEIPASS, "_internal")
+                internal_dir = os.path.join(mei_dir, "_internal")
                 if os.path.isdir(internal_dir):
                     try:
                         os.add_dll_directory(internal_dir)
@@ -369,9 +372,11 @@ def inject_bootstrap_paths(platform_binaries_dir: Path = None):
 
 def bootstrap_binaries(force_download: bool = False) -> bool:
     """Identify host platform, verify and load local precompiled SQLCipher libraries directly from the installation path."""
+    from app.core.path_utils import get_meipass_dir, is_packaged
+
     # 0. Check if sqlcipher3 is already fully functional in the host environment without bootstrapping
     if not force_download:
-        if sys.platform == "win32" and not hasattr(sys, "_MEIPASS"):
+        if sys.platform == "win32" and not is_packaged():
             _resolve_platform_driver_paths()
             if verify_sqlcipher_encryption():
                 logger.info(
@@ -395,7 +400,7 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
             except Exception:
                 pass
             return True
-        elif not hasattr(sys, "_MEIPASS"):
+        elif not is_packaged():
             _resolve_platform_driver_paths()
             if verify_sqlcipher_encryption():
                 logger.info(
@@ -410,13 +415,14 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                 return True
 
     # 1. Locate the packaged binaries directory (installation path)
-    if hasattr(sys, "_MEIPASS"):
+    mei_dir = get_meipass_dir()
+    if mei_dir:
         # Support PyInstaller 6+ where data files are bundled in the _internal subdirectory
-        internal_bin_root = Path(sys._MEIPASS) / "_internal" / "app" / "binaries"
+        internal_bin_root = Path(mei_dir) / "_internal" / "app" / "binaries"
         if internal_bin_root.exists():
             local_binaries_root = internal_bin_root
         else:
-            local_binaries_root = Path(sys._MEIPASS) / "app" / "binaries"
+            local_binaries_root = Path(mei_dir) / "app" / "binaries"
     else:
         local_binaries_root = Path(__file__).resolve().parent.parent / "binaries"
 
@@ -465,9 +471,10 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
     for rel_path_str, expected_hash in expected_files.items():
         file_path = platform_binaries_dir / rel_path_str
         if not file_path.exists():
-            if hasattr(sys, "_MEIPASS"):
+            mei_dir = get_meipass_dir()
+            if mei_dir:
                 # Check candidate locations in PyInstaller bundle
-                meipass = Path(sys._MEIPASS)
+                meipass = Path(mei_dir)
                 rel_base = rel_path_str.replace("sqlcipher3/", "")
                 candidates = [
                     meipass / "_internal" / rel_path_str,

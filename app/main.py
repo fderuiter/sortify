@@ -135,7 +135,9 @@ if sys.platform == "win32" and is_packaged():
     if sys.stdin is None:
         sys.stdin = NullReader()
 
-    base_dir = getattr(sys, "_MEIPASS", None)
+    from app.core.path_utils import get_meipass_dir
+
+    base_dir = get_meipass_dir()
     if base_dir:
         base_dir = os.path.abspath(base_dir)
         try:

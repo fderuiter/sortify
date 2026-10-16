@@ -228,10 +228,11 @@ class AppSession:
         user_model_path = str(get_app_dir() / "model")
 
         active_model_path = None
-        import sys
+        from app.core.path_utils import get_meipass_dir
 
-        if hasattr(sys, "_MEIPASS"):
-            mei_bundle_path = os.path.join(sys._MEIPASS, "offline_bundle", "model")
+        mei_dir = get_meipass_dir()
+        if mei_dir:
+            mei_bundle_path = os.path.join(mei_dir, "offline_bundle", "model")
             if os.path.exists(mei_bundle_path):
                 active_model_path = mei_bundle_path
 
