@@ -180,7 +180,7 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     from app.core.shared_registry import SharedModelRegistry
 
     registry = SharedModelRegistry.get_instance()
-    if "easyocr" in registry._expected_hashes:
+    if registry.get_expected_hashes("easyocr"):
         try:
             registry.verify_integrity("easyocr", easyocr_dir)
         except Exception as e:
@@ -193,7 +193,7 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
                 f"OCR vision model integrity check failed: {str(e)}. Visual text extraction is unavailable.",
             )
 
-    if "florence-2" in registry._expected_hashes:
+    if registry.get_expected_hashes("florence-2"):
         from app.core.offline_loader import (
             ModelWeightsNotFoundError,
             OfflineModelLoader,
@@ -234,6 +234,11 @@ class VerificationEngine:
             from app.core.path_utils import sanitize_plan as _sp
 
             sanitized_plan, sanitization_warnings = _sp(plan)
+            import logging
+
+            for warn in sanitization_warnings:
+                logging.info(f"Pre-flight plan sanitization adjustment: {warn}")
+
             if isinstance(plan, dict):
                 plan.clear()
                 plan.update(sanitized_plan)
@@ -772,6 +777,9 @@ class VirtualFilesystemTracker:
                     }
                 )
 
+        # Check escaping target paths
+        escaping_paths = self.check_escaping_paths(moves_list, base_dir)
+
         # Check rename proposals
         invalid_renames, unconfirmed_renames = self.check_rename_proposals(
             base_dir, plan
@@ -787,6 +795,8 @@ class VirtualFilesystemTracker:
             warnings.append(link["message"])
         for lp in long_paths:
             warnings.append(lp["message"])
+        for ep in escaping_paths:
+            warnings.append(ep["message"])
         for inv in invalid_renames:
             warnings.append(inv["message"])
         for unc in unconfirmed_renames:
@@ -800,6 +810,7 @@ class VirtualFilesystemTracker:
             and len(circular_renames) == 0
             and len(broken_links) == 0
             and len(long_paths) == 0
+            and len(escaping_paths) == 0
             and len(invalid_renames) == 0
             and len(unconfirmed_renames) == 0
         )
@@ -810,10 +821,33 @@ class VirtualFilesystemTracker:
             "circular_renames": circular_renames,
             "broken_links": broken_links,
             "long_paths": long_paths,
+            "escaping_paths": escaping_paths,
             "invalid_renames": invalid_renames,
             "unconfirmed_renames": unconfirmed_renames,
             "warnings": unique_warnings,
         }
+
+    def check_escaping_paths(self, moves_list: list, base_dir: str) -> list:
+        """Validate that all destination target paths resolve strictly within base_dir."""
+        from app.core.mover import is_subpath_or_equal
+
+        escaping_paths = []
+        base_dir_abs = os.path.abspath(base_dir) if base_dir else ""
+
+        for rel_path, src, dst in moves_list:
+            abs_dst = os.path.abspath(dst)
+            if not is_subpath_or_equal(abs_dst, base_dir_abs):
+                message = f"Destination path '{abs_dst}' attempts to escape target base directory '{base_dir_abs}'."
+                escaping_paths.append(
+                    {
+                        "path": abs_dst,
+                        "source": os.path.abspath(src),
+                        "type": "escaping_path",
+                        "message": message,
+                    }
+                )
+
+        return escaping_paths
 
     def check_rename_proposals(self, base_dir: str, plan: dict) -> tuple[list, list]:
         """Check all rename proposals in plan for OS character safety, extension preservation, and user confirmation."""

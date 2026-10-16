@@ -69,6 +69,8 @@ def _cross_volume_atomic_move(src: str, dst: str) -> None:
     try:
         if os.path.isdir(src) and not os.path.islink(src):
             shutil.copytree(src, stage_path)
+        elif os.path.islink(src):
+            shutil.copy2(src, stage_path, follow_symlinks=False)
         else:
             shutil.copy2(src, stage_path)
 

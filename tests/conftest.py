@@ -1,103 +1,5 @@
 import os
 import sys
-
-os.environ.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
-
-if sys.platform == "win32":
-    # Inject DLL directory paths for Windows to allow direct import of sqlcipher3
-    import importlib.util
-
-    try:
-        # 1. Add sqlcipher3 package directory
-        spec = importlib.util.find_spec("sqlcipher3")
-        if spec and spec.submodule_search_locations:
-            pkg_dir = spec.submodule_search_locations[0]
-            if os.path.isdir(pkg_dir):
-                try:
-                    os.add_dll_directory(pkg_dir)
-                except Exception:
-                    pass
-
-        # 2. Collect other potential DLL directories
-        dirs_to_add = []
-
-        # Add virtualenv paths
-        venv_dirs = []
-        v_env = os.environ.get("VIRTUAL_ENV")
-        if v_env:
-            venv_dirs.append(v_env)
-        if sys.prefix and sys.prefix not in venv_dirs:
-            venv_dirs.append(sys.prefix)
-
-        for vd in venv_dirs:
-            for sub in [
-                ".",
-                "Library/bin",
-                "Scripts",
-                "DLLs",
-                "Lib/site-packages/sqlcipher3",
-            ]:
-                try:
-                    p = os.path.abspath(os.path.join(vd, sub))
-                    if os.path.isdir(p) and p not in dirs_to_add:
-                        dirs_to_add.append(p)
-                except Exception:
-                    pass
-
-        # Add common OpenSSL paths
-        common_openssl_dirs = [
-            "C:\\Program Files\\OpenSSL-Win64\\bin",
-            "C:\\Program Files\\OpenSSL\\bin",
-            "C:\\Program Files\\OpenSSL-Win64",
-            "C:\\Program Files\\OpenSSL",
-            "C:\\OpenSSL-Win64\\bin",
-            "C:\\OpenSSL-Win64",
-            "C:\\Program Files\\Common Files\\SSL",
-        ]
-        for cod in common_openssl_dirs:
-            try:
-                if os.path.isdir(cod) and cod not in dirs_to_add:
-                    dirs_to_add.append(cod)
-            except Exception:
-                pass
-
-        # Register all these paths via os.add_dll_directory and prepending to PATH
-        for p in dirs_to_add:
-            try:
-                os.add_dll_directory(p)
-            except Exception:
-                pass
-
-        # Update PATH environment variable without duplicating entries
-        current_path_dirs = [
-            d.strip().strip('"')
-            for d in os.environ.get("PATH", "").replace(os.pathsep, ";").split(";")
-            if d.strip()
-        ]
-        current_path_dirs_normalized = set()
-        for d in current_path_dirs:
-            try:
-                current_path_dirs_normalized.add(os.path.abspath(d).lower())
-            except Exception:
-                pass
-        new_path_dirs = []
-        for p in dirs_to_add:
-            try:
-                abs_p = os.path.abspath(p)
-                if (
-                    abs_p.lower() not in current_path_dirs_normalized
-                    and abs_p.lower() not in [np.lower() for np in new_path_dirs]
-                ):
-                    new_path_dirs.append(abs_p)
-            except Exception:
-                pass
-        if new_path_dirs:
-            os.environ["PATH"] = (
-                ";".join(new_path_dirs) + ";" + os.environ.get("PATH", "")
-            )
-    except Exception:
-        pass
-
 import tempfile
 from pathlib import Path
 from unittest.mock import patch
@@ -107,6 +9,27 @@ import pytest
 from keyring.backend import KeyringBackend
 
 from app.core.db_conn import clear_connection_cache
+
+os.environ.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
+
+# Clear pre-loaded standard database modules to prevent library collision
+for mod_name in list(sys.modules.keys()):
+    if (
+        mod_name in ("sqlcipher3", "_sqlite3", "sqlite3", "pysqlcipher3")
+        or mod_name.startswith("sqlcipher3.")
+        or mod_name.startswith("sqlite3.")
+        or mod_name.startswith("pysqlcipher3.")
+    ):
+        sys.modules.pop(mod_name, None)
+
+if sys.platform == "win32":
+    # Automatically resolve and register platform-specific native library paths for Windows
+    try:
+        from app.core.user_space_bootstrap import _resolve_platform_driver_paths
+
+        _resolve_platform_driver_paths()
+    except Exception:
+        pass
 
 
 class MemoryKeyring(KeyringBackend):

@@ -571,29 +571,49 @@ def _merge_plan_dicts(target_dict: dict, source_dict: dict) -> list[str]:
     return warnings
 
 
+def sanitize_filename(name: str) -> tuple[str, bool]:
+    """Sanitize a proposed target filename entry.
+
+    Strips absolute path prefixes, path separators, and directory traversal operators ('..', '.'),
+    and sanitizes secret patterns / PII expressions, converting filenames strictly into safe
+    basename entries within target folders.
+
+    Returns (safe_filename, transformed).
+    """
+    if not isinstance(name, str) or not name:
+        return "Unnamed_safe", True
+
+    from app.core.text_utils import contains_secrets
+
+    orig = name
+    # Strip drive letter prefixes (e.g. C: or C:\)
+    s = re.sub(r"^[a-zA-Z]:[\/\\]*", "", name)
+    # Split by slashes
+    parts = re.split(r"[/\\]+", s)
+    # Filter out directory traversal operators and empty segments
+    clean_parts = [p for p in parts if p not in ("..", ".", "")]
+
+    if not clean_parts:
+        leaf = "Unnamed_safe"
+    else:
+        leaf = clean_parts[-1]
+
+    if contains_secrets(leaf) or scrub_pii_from_filename(leaf) != leaf:
+        leaf = sanitize_name(leaf)
+
+    transformed = leaf != orig
+    return leaf, transformed
+
+
 def _sanitize_plan_key(key: str, is_file: bool = False) -> tuple[str, bool]:
-    """Sanitize a plan dictionary key, handling relative paths with slashes segment-by-segment."""
+    """Sanitize a plan dictionary key, handling file targets and folder keys safely."""
     if not isinstance(key, str) or not key:
         return "Unnamed_safe", True
 
-    if "/" in key or "\\" in key:
-        delim = "/" if "/" in key else "\\"
-        parts = key.replace("\\", "/").split("/")
-        clean_parts = []
-        for i, part in enumerate(parts):
-            if i == len(parts) - 1 and is_file:
-                clean_parts.append(sanitize_name(part))
-            else:
-                k, _ = sanitize_folder_key(part)
-                clean_parts.append(k)
-        res = delim.join(clean_parts)
-        return res, res != key
+    if is_file:
+        return sanitize_filename(key)
     else:
-        if is_file:
-            res = sanitize_name(key)
-            return res, res != key
-        else:
-            return sanitize_folder_key(key)
+        return sanitize_folder_key(key)
 
 
 def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
@@ -608,8 +628,6 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
 
     if not isinstance(plan, dict):
         return plan, []
-
-    from app.core.text_utils import contains_secrets
 
     sanitized_plan = {}
     warnings = []
@@ -654,29 +672,22 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
 
             file_content = dict(content) if isinstance(content, dict) else content
             if isinstance(file_content, dict):
-                if transformed:
-                    file_content["confirmed"] = True
-                    if "target_filename" in file_content:
-                        file_content["target_filename"] = re.split(
-                            r"[/\\]+", safe_file_key
-                        )[-1]
                 if (
                     "target_filename" in file_content
                     and file_content["target_filename"]
                 ):
                     old_tf = file_content["target_filename"]
-                    if (
-                        contains_secrets(old_tf)
-                        or scrub_pii_from_filename(old_tf) != old_tf
-                    ):
-                        leaf_tf = re.split(r"[/\\]+", old_tf)[-1]
-                        new_tf = sanitize_name(leaf_tf)
-                        if new_tf != old_tf:
-                            file_content["target_filename"] = new_tf
-                            file_content["confirmed"] = True
-                            warnings.append(
-                                f"Sanitized target filename '{old_tf}' to '{new_tf}'"
-                            )
+                    safe_tf, tf_transformed = sanitize_filename(old_tf)
+                    if tf_transformed:
+                        file_content["target_filename"] = safe_tf
+                        file_content["confirmed"] = True
+                        warnings.append(
+                            f"Sanitized target filename '{old_tf}' to '{safe_tf}'"
+                        )
+                else:
+                    if transformed:
+                        file_content["confirmed"] = True
+                        file_content["target_filename"] = safe_file_key
 
             if safe_file_key in sanitized_plan:
                 safe_file_key = _disambiguate_key(
