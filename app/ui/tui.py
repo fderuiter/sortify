@@ -17,7 +17,10 @@ from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
+from textual.message import Message
+from textual.reactive import reactive
 from textual.screen import ModalScreen
+from textual.widget import Widget
 from textual.widgets import (
     Button,
     Checkbox,
@@ -427,6 +430,102 @@ class LabeledSwitch(Horizontal):
             event.stop()
         else:
             self.switch.focus()
+
+
+class DensitySlider(Widget):
+    """Interactive slider widget for text density threshold adjustment."""
+
+    can_focus = True
+    value = reactive(50)
+
+    DEFAULT_CSS = """
+    DensitySlider {
+        width: 100%;
+        height: 1;
+        margin-top: 1;
+        margin-bottom: 1;
+    }
+    DensitySlider:focus {
+        color: $accent;
+        text-style: bold;
+    }
+    """
+
+    class Changed(Message):
+        """Event posted when slider value changes."""
+
+        def __init__(self, slider: "DensitySlider", value: int) -> None:
+            self.slider = slider
+            self.value = value
+            super().__init__()
+
+        @property
+        def control(self) -> Widget:
+            """Return control widget associated with this message."""
+            return self.slider
+
+    def __init__(
+        self,
+        value: int = 50,
+        min_value: int = 0,
+        max_value: int = 500,
+        step: int = 5,
+        *,
+        name: str | None = None,
+        id: str | None = None,
+        classes: str | None = None,
+        disabled: bool = False,
+    ) -> None:
+        super().__init__(name=name, id=id, classes=classes, disabled=disabled)
+        self.min_value = min_value
+        self.max_value = max_value
+        self.step = step
+        self.value = max(min_value, min(max_value, value))
+
+    def watch_value(self, new_value: int) -> None:
+        """Emit Changed event on value change."""
+        self.post_message(self.Changed(self, new_value))
+
+    def on_key(self, event: events.Key) -> None:
+        """Handle keyboard key events to update slider position."""
+        if event.key in ("left", "down"):
+            self.value = max(self.min_value, self.value - self.step)
+            event.stop()
+        elif event.key in ("right", "up"):
+            self.value = min(self.max_value, self.value + self.step)
+            event.stop()
+        elif event.key == "page_down":
+            self.value = max(self.min_value, self.value - self.step * 5)
+            event.stop()
+        elif event.key == "page_up":
+            self.value = min(self.max_value, self.value + self.step * 5)
+            event.stop()
+        elif event.key == "home":
+            self.value = self.min_value
+            event.stop()
+        elif event.key == "end":
+            self.value = self.max_value
+            event.stop()
+
+    def on_click(self, event: events.Click) -> None:
+        """Handle mouse click to jump slider to position."""
+        width = self.size.width
+        if width > 0:
+            pct = max(0.0, min(1.0, event.x / float(width)))
+            new_val = self.min_value + int(pct * (self.max_value - self.min_value))
+            rem = new_val % self.step
+            if rem != 0:
+                new_val = new_val - rem + (self.step if rem >= self.step / 2 else 0)
+            self.value = max(self.min_value, min(self.max_value, new_val))
+
+    def render(self) -> str:
+        """Render visual slider bar string representation."""
+        width = max(10, self.size.width - 8) if self.size.width > 8 else 20
+        pct = (self.value - self.min_value) / max(1, (self.max_value - self.min_value))
+        pos = int(pct * (width - 1))
+        pos = max(0, min(width - 1, pos))
+        bar = "━" * pos + "●" + "─" * (width - 1 - pos)
+        return f"[{bar}] {self.value}"
 
 
 class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
@@ -1386,6 +1485,7 @@ class ScrubArtifactsModal(A11yMixin, ModalScreen[bool]):
         self.cache_size_mb = cache_size_mb
 
     def compose(self) -> ComposeResult:
+        """Compose modal layout with warning labels and action buttons."""
         with Vertical(classes="modal-box"):
             yield Heading("Scrub AI Artifacts Confirmation", level=1, classes="modal-title")
             yield Label(f"Stored Document Vectors: {self.vector_count} records", classes="info-label", id="lbl-vector-count")
@@ -1402,10 +1502,12 @@ class ScrubArtifactsModal(A11yMixin, ModalScreen[bool]):
 
     @on(Button.Pressed, "#btn-confirm-scrub")
     def action_confirm(self) -> None:
+        """Confirm artifact scrubbing and dismiss modal with True."""
         self.dismiss(True)
 
     @on(Button.Pressed, "#btn-cancel-scrub")
     def action_cancel(self) -> None:
+        """Cancel artifact scrubbing and dismiss modal with False."""
         self.dismiss(False)
 
 
@@ -1460,6 +1562,7 @@ class ConsentRevocationModal(A11yMixin, ModalScreen[bool]):
         self.cache_size_mb = cache_size_mb
 
     def compose(self) -> ComposeResult:
+        """Compose modal layout with warning labels and consent revocation action buttons."""
         with Vertical(classes="modal-box"):
             yield Heading("Confirm AI Consent Revocation", level=1, classes="modal-title")
             yield Label(f"Stored Document Vectors: {self.vector_count} records", classes="info-label", id="lbl-vector-count")
@@ -1476,10 +1579,12 @@ class ConsentRevocationModal(A11yMixin, ModalScreen[bool]):
 
     @on(Button.Pressed, "#btn-confirm-revoke")
     def action_confirm(self) -> None:
+        """Confirm consent revocation and dismiss modal with True."""
         self.dismiss(True)
 
     @on(Button.Pressed, "#btn-cancel-revoke")
     def action_cancel(self) -> None:
+        """Cancel consent revocation and dismiss modal with False."""
         self.dismiss(False)
 
 
@@ -1722,6 +1827,31 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     )
                     yield btn_templates
 
+                with TabPane("Extraction & OCR", id="tab-extraction"):
+                    yield Label(
+                        "PDF Text Density Threshold (chars/page):", classes="field-label"
+                    )
+                    density_val = getattr(self.settings, "PDF_TEXT_DENSITY_THRESHOLD", 50)
+                    inp_density = Input(
+                        value=str(density_val),
+                        placeholder="50",
+                        id="input-pdf-density-threshold",
+                    )
+                    inp_density.tooltip = (
+                        "Pages with fewer embedded characters trigger EasyOCR rasterization fallback"
+                    )
+                    yield inp_density
+
+                    slider_density = DensitySlider(
+                        value=int(density_val),
+                        min_value=0,
+                        max_value=500,
+                        step=5,
+                        id="slider-pdf-density-threshold",
+                    )
+                    slider_density.tooltip = "Adjust PDF text density threshold slider"
+                    yield slider_density
+
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel settings modification and close dialog"
@@ -1764,6 +1894,25 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         """Open starter rule template gallery modal."""
         self.app.push_screen(TemplateGalleryModal(self.settings))
 
+    @on(DensitySlider.Changed, "#slider-pdf-density-threshold")
+    def _on_density_slider_changed(self, event: DensitySlider.Changed) -> None:
+        try:
+            inp = self.query_one("#input-pdf-density-threshold", Input)
+            if inp.value != str(event.value):
+                inp.value = str(event.value)
+        except Exception:
+            pass
+
+    @on(Input.Changed, "#input-pdf-density-threshold")
+    def _on_density_input_changed(self, event: Input.Changed) -> None:
+        try:
+            val = int(event.value.strip())
+            slider = self.query_one("#slider-pdf-density-threshold", DensitySlider)
+            if slider.value != val and slider.min_value <= val <= slider.max_value:
+                slider.value = val
+        except Exception:
+            pass
+
     @on(Button.Pressed, "#btn-scrub-artifacts")
     def action_scrub_artifacts(self) -> None:
         """Open Scrub AI Artifacts confirmation modal."""
@@ -1792,6 +1941,8 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 if confirmed:
                     if self.settings:
                         self.settings.AI_CONSENT_GRANTED = False
+                    if hasattr(self, "app") and hasattr(self.app, "settings") and self.app.settings:
+                        self.app.settings.AI_CONSENT_GRANTED = False
                     self._execute_scrub_and_purge()
                     if hasattr(self, "announce"):
                         self.announce("AI consent revoked and artifacts scrubbed.", priority="polite")
@@ -1809,6 +1960,12 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             from app.core.shared_registry import SharedModelRegistry
 
             SharedModelRegistry.get_instance().unload_all_models()
+        except Exception:
+            pass
+
+        try:
+            if hasattr(self, "app") and hasattr(self.app, "db") and self.app.db:
+                self.app.db.clear_all_document_vectors()
         except Exception:
             pass
 
@@ -1851,7 +2008,6 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             pass
         if hasattr(self, "announce"):
             self.announce("AI artifacts scrubbed and model cache purging started.")
-
     @on(Button.Pressed, "#btn-save")
     def action_save(self) -> None:
         """Save settings and dismiss modal."""
@@ -1894,6 +2050,21 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             self.announce(f"Settings error: {e}", help_url=help_url)
             return
 
+        try:
+            density_val_str = self.query_one(
+                "#input-pdf-density-threshold", Input
+            ).value.strip()
+            pdf_density = int(density_val_str)
+            if pdf_density < 0:
+                raise ValueError("PDF text density threshold must be non-negative.")
+        except ValueError as e:
+            self._show_help_button(help_url)
+            from app.ui.notifications import notify
+
+            notify(f"Settings error: {e}", type="error", help_url=help_url)
+            self.announce(f"Settings error: {e}", help_url=help_url)
+            return
+
         strat = self.query_one("#select-strategy", Select).value
         if strat == Select.BLANK:
             strat = "default"
@@ -1928,6 +2099,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             "IGNORED_EXTENSIONS": i_list,
             "MAX_WORKERS": conc,
             "MAX_FOLDERS": max_f,
+            "PDF_TEXT_DENSITY_THRESHOLD": pdf_density,
             "CONFLICT_POLICY": conflict_pol,
             "SORTING_STRATEGY": strat,
             "CLINICAL_SMART_RENAMING": clin_renaming,
@@ -1961,6 +2133,199 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         """Open model manager modal."""
         if hasattr(self, "app") and self.app:
             self.app.push_screen(ModelManagerModal(self.settings))
+
+
+class ExtractionPreviewModal(A11yMixin, ModalScreen[Optional[int]]):
+    """Modal dialog for interactive visual inspection of PDF page extraction decisions."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    ExtractionPreviewModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .preview-modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 84;
+        min-width: 40;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .file-path-label {
+        color: $text-muted;
+        margin-bottom: 1;
+    }
+    .preview-table {
+        height: 10;
+        margin-top: 1;
+        margin-bottom: 1;
+        border: solid $primary-lighten-2;
+    }
+    .threshold-row {
+        height: 3;
+        align: left middle;
+    }
+    .narrow-input {
+        width: 12;
+        margin-right: 1;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    """
+
+    def __init__(self, file_path: str, settings: Any) -> None:
+        super().__init__()
+        self.file_path = file_path
+        self.settings = settings
+        self.initial_threshold = getattr(settings, "PDF_TEXT_DENSITY_THRESHOLD", 50)
+        self.current_threshold = self.initial_threshold
+        self.page_data: list[dict] = []
+
+    def compose(self) -> ComposeResult:
+        """Compose modal dialog children widgets."""
+        with Vertical(classes="preview-modal-box"):
+            yield Heading(
+                "PDF Extraction Strategy Preview",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
+            yield Label(
+                f"File: {os.path.basename(self.file_path)}",
+                classes="file-path-label",
+            )
+
+            yield Label("Density Threshold (chars/page):", classes="field-label")
+            with Horizontal(classes="threshold-row"):
+                yield Input(
+                    value=str(self.current_threshold),
+                    id="preview-input-threshold",
+                    classes="narrow-input",
+                )
+                yield DensitySlider(
+                    value=self.current_threshold,
+                    min_value=0,
+                    max_value=500,
+                    step=5,
+                    id="preview-slider-threshold",
+                )
+
+            yield DataTable(id="preview-table", classes="preview-table")
+            yield Label("", id="preview-summary-label")
+
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button("Cancel", id="btn-preview-cancel", variant="default")
+                btn_cancel.tooltip = "Close preview dialog without saving settings"
+                yield btn_cancel
+                btn_save = Button("Save & Apply", id="btn-preview-save", variant="primary")
+                btn_save.tooltip = "Save density threshold to settings and apply"
+                yield btn_save
+
+    def on_mount(self) -> None:
+        """Handle modal mount event and populate initial preview data."""
+        self.announce("Opened PDF extraction strategy preview modal.")
+        table = self.query_one("#preview-table", DataTable)
+        table.add_columns("Page", "Embedded Chars", "Vector Paths", "Predicted Status")
+
+        from app.core.extractor_strategies import PdfExtractor
+
+        extractor = PdfExtractor()
+        # Light structural analysis without EasyOCR model passes
+        self.page_data = extractor.preview_pdf_density(
+            self.file_path, density_threshold=self.current_threshold
+        )
+        self._update_table()
+
+    def _update_table(self) -> None:
+        """Re-evaluate page extraction decisions and update table display."""
+        table = self.query_one("#preview-table", DataTable)
+        table.clear()
+        std_count = 0
+        rast_count = 0
+
+        for page in self.page_data:
+            char_count = page["char_count"]
+            has_vector = page["has_vector"]
+            if char_count >= self.current_threshold and not has_vector:
+                status_text = Text("STANDARD", style="bold green")
+                std_count += 1
+            else:
+                status_text = Text("RASTERIZED", style="bold yellow")
+                rast_count += 1
+
+            vector_str = "Yes" if has_vector else "No"
+            table.add_row(
+                f"Page {page['page_index']}",
+                str(char_count),
+                vector_str,
+                status_text,
+            )
+
+        summary_label = self.query_one("#preview-summary-label", Label)
+        summary_label.update(
+            f"Total Pages: {len(self.page_data)} | Standard: {std_count} | Rasterized (OCR): {rast_count}"
+        )
+
+    @on(DensitySlider.Changed, "#preview-slider-threshold")
+    def _on_slider_changed(self, event: DensitySlider.Changed) -> None:
+        """Handle slider value changes by updating input and re-evaluating preview table."""
+        if self.current_threshold != event.value:
+            self.current_threshold = event.value
+            try:
+                inp = self.query_one("#preview-input-threshold", Input)
+                if inp.value != str(event.value):
+                    inp.value = str(event.value)
+            except Exception:
+                pass
+            self._update_table()
+
+    @on(Input.Changed, "#preview-input-threshold")
+    def _on_input_changed(self, event: Input.Changed) -> None:
+        """Handle input text changes by updating slider and re-evaluating preview table."""
+        try:
+            val = int(event.value.strip())
+            if val >= 0 and self.current_threshold != val:
+                self.current_threshold = val
+                try:
+                    slider = self.query_one("#preview-slider-threshold", DensitySlider)
+                    if slider.value != val and slider.min_value <= val <= slider.max_value:
+                        slider.value = val
+                except Exception:
+                    pass
+                self._update_table()
+        except Exception:
+            pass
+
+    @on(Button.Pressed, "#btn-preview-save")
+    def action_save_threshold(self) -> None:
+        """Save updated density threshold to settings and dismiss modal."""
+        if hasattr(self.settings, "PDF_TEXT_DENSITY_THRESHOLD"):
+            self.settings.PDF_TEXT_DENSITY_THRESHOLD = self.current_threshold
+        if hasattr(self.settings, "_save"):
+            self.settings._save()
+        self.announce(f"Saved PDF text density threshold: {self.current_threshold}")
+        self.dismiss(self.current_threshold)
+
+    @on(Button.Pressed, "#btn-preview-cancel")
+    def action_cancel(self) -> None:
+        """Cancel preview dialog and dismiss modal."""
+        self.announce("Cancelled PDF extraction preview.")
+        self.dismiss(None)
 
 
 class ModelManagerModal(A11yMixin, ModalScreen[None]):
@@ -3220,6 +3585,10 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
             )
             yield Label(
                 "  Ctrl+W      - Open model onboarding wizard", classes="shortcut-row"
+            )
+            yield Label(
+                "  Ctrl+P      - Launch PDF extraction strategy preview",
+                classes="shortcut-row",
             )
             yield Label(
                 "  Ctrl+C      - Open CRO multi-study forensic ingestion",
@@ -5688,6 +6057,7 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+u", "open_quarantine_vault", "Quarantine Vault", show=True),
         Binding("ctrl+e", "execute_sort", "Execute Plan", show=True),
         Binding("ctrl+a", "open_audit_report", "Audit Report", show=True),
+        Binding("ctrl+p", "open_extraction_preview", "Extraction Preview", show=True),
         Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
         Binding("g", "generate_sample_corpus", "Sample Dataset", show=False),
         Binding("G", "generate_sample_corpus", "Sample Dataset", show=False),
@@ -6295,6 +6665,10 @@ class AutoSorterTUI(A11yMixin, App):
                     self.settings.CONTEXTUAL_RENAMING = res["CONTEXTUAL_RENAMING"]
                 if "AI_CONSENT_GRANTED" in res:
                     self.settings.AI_CONSENT_GRANTED = res["AI_CONSENT_GRANTED"]
+                if "PDF_TEXT_DENSITY_THRESHOLD" in res:
+                    self.settings.PDF_TEXT_DENSITY_THRESHOLD = res[
+                        "PDF_TEXT_DENSITY_THRESHOLD"
+                    ]
                 if "CONFLICT_POLICY" in res:
                     self.settings.CONFLICT_POLICY = res["CONFLICT_POLICY"]
                 if hasattr(self.settings, "_save"):
@@ -6305,6 +6679,49 @@ class AutoSorterTUI(A11yMixin, App):
                     self.action_scan_directory()
 
         self.push_screen(SettingsModal(self.settings), on_saved)
+
+    def action_open_extraction_preview(self) -> None:
+        """Open visual extraction preview modal for active or selected PDF document [Ctrl+P]."""
+        if self._is_text_control_focused():
+            return
+
+        pdf_path: Optional[str] = None
+
+        active_node = self._get_active_node()
+        if active_node and active_node.data:
+            data = active_node.data
+            if data.get("is_file"):
+                fp = (
+                    data.get("filepath")
+                    or data.get("info", {}).get("src_path")
+                    or data.get("info", {}).get("path")
+                )
+                if fp and str(fp).lower().endswith(".pdf"):
+                    pdf_path = str(fp)
+
+        if not pdf_path:
+            target_files = self._get_target_file_infos()
+            for tf in target_files:
+                fp = tf.get("src_path") or tf.get("path") or tf.get("filepath")
+                if fp and str(fp).lower().endswith(".pdf"):
+                    pdf_path = str(fp)
+                    break
+
+        if not pdf_path:
+            self.announce(
+                "Please select a PDF document to preview extraction strategies [Ctrl+P]."
+            )
+            return
+
+        def on_preview_closed(saved_val: Optional[int]) -> None:
+            if saved_val is not None:
+                self.announce(
+                    f"Updated extraction density threshold to {saved_val}."
+                )
+
+        self.push_screen(
+            ExtractionPreviewModal(pdf_path, self.settings), on_preview_closed
+        )
 
     def action_open_model_manager(self) -> None:
         """Open model manager modal screen."""

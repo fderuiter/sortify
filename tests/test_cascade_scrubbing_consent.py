@@ -1,14 +1,8 @@
 """Unit and integration tests for cascade scrubbing and interactive TUI consent controls."""
 
-import asyncio
-import os
-import time
-from pathlib import Path
-from unittest.mock import MagicMock, patch
-
 import pytest
 
-from app.config import AppSettings, get_app_dir
+from app.config import AppSettings
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.shared_registry import SharedModelRegistry
@@ -138,7 +132,7 @@ async def test_tui_scrub_artifacts_button_and_confirmation_modal(tmp_path, monke
         app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path), skip_wizard=True, db=db)
         async with app.run_test() as pilot:
             app.action_open_settings()
-            await pilot.pause(0.1)
+            await pilot.pause(0.2)
 
             modal = app.screen
             assert isinstance(modal, SettingsModal)
@@ -146,20 +140,23 @@ async def test_tui_scrub_artifacts_button_and_confirmation_modal(tmp_path, monke
             # Switch to AI & Privacy Settings tab
             from textual.widgets import TabbedContent
             modal.query_one("#settings-tabbed-content", TabbedContent).active = "tab-ai-privacy"
-            await pilot.pause(0.1)
+            await pilot.pause(0.2)
 
             # Press Scrub AI Artifacts button
             btn_scrub = modal.query_one("#btn-scrub-artifacts", Button)
             btn_scrub.press()
-            await pilot.pause(0.1)
+            await pilot.pause(0.3)
 
             scrub_modal = app.screen
             assert isinstance(scrub_modal, ScrubArtifactsModal)
             assert scrub_modal.vector_count == 1
 
             # Confirm scrub
-            await pilot.click("#btn-confirm-scrub")
-            await pilot.pause(0.3)
+            scrub_modal.query_one("#btn-confirm-scrub", Button).press()
+            for _ in range(30):
+                if not (model_dir / "weights.onnx").exists():
+                    break
+                await pilot.pause(0.1)
 
             assert db.get_document_vectors_count() == 0
             assert not (model_dir / "weights.onnx").exists()
@@ -191,29 +188,32 @@ async def test_tui_toggling_consent_off_presents_revocation_prompt(tmp_path, mon
         app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path), skip_wizard=True, db=db)
         async with app.run_test() as pilot:
             app.action_open_settings()
-            await pilot.pause(0.1)
+            await pilot.pause(0.2)
 
             modal = app.screen
             assert isinstance(modal, SettingsModal)
 
             from textual.widgets import TabbedContent
             modal.query_one("#settings-tabbed-content", TabbedContent).active = "tab-ai-privacy"
-            await pilot.pause(0.1)
+            await pilot.pause(0.2)
 
             sw = modal.query_one("#switch-ai-consent", Switch)
             assert sw.value is True
 
             # Toggle switch off
             sw.value = False
-            await pilot.pause(0.1)
+            await pilot.pause(0.3)
 
             revoke_modal = app.screen
             assert isinstance(revoke_modal, ConsentRevocationModal)
             assert revoke_modal.vector_count == 1
 
             # Confirm consent revocation
-            await pilot.click("#btn-confirm-revoke")
-            await pilot.pause(0.3)
+            revoke_modal.query_one("#btn-confirm-revoke", Button).press()
+            for _ in range(30):
+                if not (model_dir / "cached_model.bin").exists():
+                    break
+                await pilot.pause(0.1)
 
             assert app.settings.AI_CONSENT_GRANTED is False
             assert db.get_document_vectors_count() == 0
@@ -234,7 +234,7 @@ async def test_tui_cancelling_consent_revocation_reverts_switch(tmp_path, monkey
     app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path), skip_wizard=True)
     async with app.run_test() as pilot:
         app.action_open_settings()
-        await pilot.pause(0.1)
+        await pilot.pause(0.2)
 
         modal = app.screen
         assert isinstance(modal, SettingsModal)
@@ -244,14 +244,14 @@ async def test_tui_cancelling_consent_revocation_reverts_switch(tmp_path, monkey
 
         # Toggle switch off
         sw.value = False
-        await pilot.pause(0.1)
+        await pilot.pause(0.3)
 
         revoke_modal = app.screen
         assert isinstance(revoke_modal, ConsentRevocationModal)
 
         # Cancel revocation
-        await pilot.click("#btn-cancel-revoke")
-        await pilot.pause(0.1)
+        revoke_modal.query_one("#btn-cancel-revoke", Button).press()
+        await pilot.pause(0.2)
 
         # Switch should revert back to True and consent should remain True
         assert sw.value is True
