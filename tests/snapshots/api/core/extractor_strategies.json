@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "8113e57df3728d7e8f143c32eb2fad91eb6d85cef6adcc080fb085deeb26ca32"
+    "checksum": "c321e8d3e9fc878ee824d216ce01c48597cf9ca6e6716414366ff55384cbefaa"
   },
   "classes": [
     {
@@ -264,6 +264,11 @@
               "annotation": null,
               "default": "None",
               "name": "progress_callback"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_check"
             }
           ],
           "returns": "str"

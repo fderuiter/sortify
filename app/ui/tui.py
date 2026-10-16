@@ -3740,9 +3740,7 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
         except Exception as e:
             logger.exception(f"Failed to fetch quarantine records: {e}")
             self._call_ui(self._on_records_loaded, [])
-            self._call_ui(
-                self.announce, f"Error loading quarantine records: {e}"
-            )
+            self._call_ui(self.announce, f"Error loading quarantine records: {e}")
 
     def _on_records_loaded(self, records: List[Dict[str, Any]]) -> None:
         self.records = records
@@ -3759,9 +3757,7 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
         status_term = "ALL"
         try:
             search_term = (
-                self.query_one("#quarantine-search-input", Input)
-                .value.strip()
-                .lower()
+                self.query_one("#quarantine-search-input", Input).value.strip().lower()
             )
             status_term = str(
                 self.query_one("#quarantine-status-filter", Select).value or "ALL"
@@ -4023,9 +4019,7 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
             self._call_ui(self._on_reinspect_success, job_id, res)
         except Exception as e:
             logger.error(f"Failed to re-inspect quarantine job {job_id}: {e}")
-            self._call_ui(
-                self.announce, f"Re-inspection failed for {job_id}: {e}"
-            )
+            self._call_ui(self.announce, f"Re-inspection failed for {job_id}: {e}")
 
     def _on_reinspect_success(self, job_id: str, res: dict) -> None:
         new_st = res.get("status", "UPDATED")

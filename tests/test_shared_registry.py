@@ -741,7 +741,9 @@ def test_fast_path_read_does_not_block_on_global_lock():
         assert res_onnx is mock_onnx
         assert res_ocr is mock_ocr
         assert res_gen is mock_gen
-        assert elapsed < 0.5, f"Fast path getter blocked on global lock! Elapsed: {elapsed}s"
+        assert elapsed < 0.5, (
+            f"Fast path getter blocked on global lock! Elapsed: {elapsed}s"
+        )
     finally:
         release_lock.set()
         t.join()
@@ -772,10 +774,14 @@ def test_verify_integrity_runs_outside_global_lock(tmp_path):
             registry._lock.release()
         return orig_hash_fn(path)
 
-    with patch("app.core.resilient_file_ops.resilient_file_hash", side_effect=mock_file_hash):
+    with patch(
+        "app.core.resilient_file_ops.resilient_file_hash", side_effect=mock_file_hash
+    ):
         assert registry.verify_integrity("test_model", str(tmp_path)) is True
 
-    assert lock_state_during_hash is True, "global registry lock was held during file hashing!"
+    assert lock_state_during_hash is True, (
+        "global registry lock was held during file hashing!"
+    )
 
 
 def test_parallel_model_initialization():
@@ -790,9 +796,10 @@ def test_parallel_model_initialization():
         time.sleep(0.2)
         return MagicMock()
 
-    with patch("app.core.jev_classifier.JevClassifierEngine", side_effect=init_jev), \
-         patch("app.core.offline_loader.Florence2VisualProcessor") as mock_florence_cls:
-
+    with (
+        patch("app.core.jev_classifier.JevClassifierEngine", side_effect=init_jev),
+        patch("app.core.offline_loader.Florence2VisualProcessor") as mock_florence_cls,
+    ):
         mock_proc = MagicMock()
         mock_proc.load.side_effect = lambda: time.sleep(0.01)
         mock_florence_cls.return_value = mock_proc
@@ -835,4 +842,3 @@ def test_per_model_lock_cleanup_on_unload():
         registry.unload_all_models()
         assert len(registry._models) == 0
         assert len(registry._per_model_locks) == 0
-
