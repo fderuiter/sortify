@@ -7,6 +7,11 @@ from pathlib import Path
 
 from pydantic import ValidationError
 
+# Resolve repository root and bootstrap sys.path
+repo_root = Path(__file__).resolve().parent.parent
+if str(repo_root) not in sys.path:
+    sys.path.insert(0, str(repo_root))
+
 try:
     from app.config import Settings
 
@@ -21,7 +26,7 @@ try:
     ):
         schema["properties"]["LOG_FILE"]["default"] = "autosorter.log"
 
-    schema_path = Path("app/config_schema.json")
+    schema_path = repo_root / "app" / "config_schema.json"
 
     existing_schema = None
     if schema_path.exists():
