@@ -1409,19 +1409,18 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         if strat == Select.BLANK:
             strat = "default"
 
-        clin_sw = self.query(Switch).filter("#switch-clinical-renaming")
-        clin_renaming = (
-            clin_sw.first().value
-            if clin_sw
-            else bool(getattr(self.settings, "CLINICAL_SMART_RENAMING", False))
-        )
-        ctx_renaming = self.query_one("#switch-contextual-renaming", Switch).value
-        ai_consent_sw = self.query(Switch).filter("#switch-ai-consent")
-        ai_consent = (
-            ai_consent_sw.first().value
-            if ai_consent_sw
-            else bool(getattr(self.settings, "AI_CONSENT_GRANTED", False))
-        )
+        try:
+            clin_renaming = self.query_one("#switch-clinical-renaming", Switch).value
+        except Exception:
+            clin_renaming = bool(getattr(self.settings, "CLINICAL_SMART_RENAMING", False))
+        try:
+            ctx_renaming = self.query_one("#switch-contextual-renaming", Switch).value
+        except Exception:
+            ctx_renaming = bool(getattr(self.settings, "CONTEXTUAL_RENAMING", False))
+        try:
+            ai_consent = self.query_one("#switch-ai-consent", Switch).value
+        except Exception:
+            ai_consent = bool(getattr(self.settings, "AI_CONSENT_GRANTED", False))
 
         res = {
             "PROTECTED_PATHS": p_list,
