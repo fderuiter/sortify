@@ -784,6 +784,18 @@ def main():
 
     # 4. Run MkDocs build (and preserve strict build flags)
     if not args.no_build:
+        try:
+            import mkdocs  # noqa: F401
+        except ModuleNotFoundError:
+            sys.stderr.write(
+                "\nError: 'mkdocs' is not installed in the current environment.\n"
+                "To build documentation with MkDocs, run with the docs dependency group:\n"
+                "  uv run --group docs python scripts/generate_docs.py\n"
+                "  or: uv run --group docs mkdocs build\n"
+                "or pass '--no-build' / '--skip-build' when running without optional documentation dependencies.\n\n"
+            )
+            sys.exit(1)
+
         build_cmd = [sys.executable, "-m", "mkdocs", "build"]
         if args.strict:
             build_cmd.append("--strict")
