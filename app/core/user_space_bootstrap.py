@@ -172,6 +172,10 @@ def _resolve_platform_driver_paths() -> list:
             "C:\\OpenSSL-Win64\\bin",
             "C:\\OpenSSL-Win64",
             "C:\\Program Files\\Common Files\\SSL",
+            "C:\\Program Files\\Git\\mingw64\\bin",
+            "C:\\Program Files\\Git\\usr\\bin",
+            "C:\\Program Files (x86)\\Git\\mingw64\\bin",
+            "C:\\ProgramData\\chocolatey\\bin",
         ]
 
     for sd in system_dirs:
@@ -209,6 +213,15 @@ def _resolve_platform_driver_paths() -> list:
                 if is_candidate_dir and not is_sys_dir and os.path.isdir(cleaned):
                     if cleaned not in dirs_to_add:
                         dirs_to_add.append(cleaned)
+                    if "git" in cleaned_lower:
+                        try:
+                            git_root = Path(cleaned).parent
+                            for sub_bin in ("mingw64/bin", "usr/bin", "bin"):
+                                git_bin_dir = str((git_root / sub_bin).resolve())
+                                if os.path.isdir(git_bin_dir) and git_bin_dir not in dirs_to_add:
+                                    dirs_to_add.append(git_bin_dir)
+                        except Exception:
+                            pass
             except Exception:
                 pass
 
