@@ -16,14 +16,14 @@ def test_is_system_dll_whitelist():
     assert is_system_dll("user32.dll") is True
     assert is_system_dll("advapi32.dll") is True
     assert is_system_dll("api-ms-win-core-synch-l1-1-0.dll") is True
+    assert is_system_dll("api-ms-win-crt-runtime-l1-1-0.dll") is True
     assert is_system_dll("ext-ms-win-gdi-desktop-l1-1-0.dll") is True
 
-    # MSVC and UCRT libraries must NOT be whitelisted as system DLLs
+    # Physical MSVC and UCRT runtime DLLs must NOT be whitelisted as system DLLs
     assert is_system_dll("msvcp140.dll") is False
     assert is_system_dll("vcruntime140.dll") is False
     assert is_system_dll("vcruntime140_1.dll") is False
     assert is_system_dll("ucrtbase.dll") is False
-    assert is_system_dll("api-ms-win-crt-runtime-l1-1-0.dll") is False
     assert is_system_dll("sqlite3.dll") is False
 
 

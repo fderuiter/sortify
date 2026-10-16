@@ -370,7 +370,7 @@ jobs:
 
     - name: Verify Application Import in Offline Environment
       run: |
-        .venv/bin/python -c "import app, app.main, app.config, app.core; print('Application modules successfully imported from offline bundle environment!')"
+        uv run python -c "import app, app.main, app.config, app.core; print('Application modules successfully imported from offline bundle environment!')"
 
   required-ci:
     name: Required CI
