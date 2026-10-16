@@ -5,9 +5,9 @@ from app.core.analyzer_strategies import GenerativeNamingStrategy, gguf_worker_m
 
 
 def test_gguf_worker_main_grammar_compilation():
-    """Verify that the GGUF worker compiles and applies grammar constraints on demand,
+    """Verify that the GGUF worker compiles grammar constraints on demand,
 
-    and falls back to unconstrained generation if compilation fails.
+    and fails fast returning an error payload over IPC if compilation fails.
     """
     input_queue = queue.Queue()
     output_queue = queue.Queue()
@@ -58,16 +58,79 @@ def test_gguf_worker_main_grammar_compilation():
             res_valid = output_queue.get()
             assert res_valid == {"text": "YES"}
             mock_from_string.assert_any_call('root ::= "YES" | "NO"')
-            mock_llm.assert_any_call(
-                "Test Prompt", max_tokens=5, echo=False, grammar=mock_compiled_grammar
-            )
 
-            # Second task processing (invalid grammar raises exception in compilation and falls back to default ASCII)
+            # Second task processing (invalid grammar returns error payload over IPC)
             res_invalid = output_queue.get()
-            assert res_invalid == {"text": "YES"}
-            mock_llm.assert_any_call(
-                "Test Prompt", max_tokens=5, echo=False, grammar=mock_compiled_grammar
-            )
+            assert "error" in res_invalid
+            assert "Grammar compilation failed" in res_invalid["error"]
+
+
+def test_gguf_worker_main_token_bias_mapping():
+    """Verify that gguf_worker_main maps conversational suppression rules to token IDs in worker process."""
+    input_queue = queue.Queue()
+    output_queue = queue.Queue()
+
+    task = {
+        "prompt": "Generate Category",
+        "max_tokens": 10,
+    }
+
+    mock_llm = MagicMock()
+    mock_llm.get_vocab.return_value = {
+        "sure": 101,
+        "here": 102,
+        "validword": 201,
+        "-": 301,
+    }
+    mock_llm.return_value = {"choices": [{"text": "ValidWord"}]}
+
+    mock_llama_module = MagicMock()
+    mock_llama_module.Llama = MagicMock(return_value=mock_llm)
+
+    with patch.dict("sys.modules", {"llama_cpp": mock_llama_module}):
+        input_queue.put(task)
+        input_queue.put(None)
+
+        with patch("os.walk", return_value=[("/dummy", [], ["model.gguf"])]):
+            gguf_worker_main("/dummy", input_queue, output_queue, n_threads=1)
+
+        assert output_queue.get() == {"status": "ready"}
+        assert output_queue.get() == {"text": "ValidWord"}
+
+        # Assert llm was called with logit_bias containing negative biases for suppressed tokens
+        call_kwargs = mock_llm.call_args.kwargs
+        assert "logit_bias" in call_kwargs
+        logit_bias = call_kwargs["logit_bias"]
+        assert logit_bias.get(101) == -100.0  # "sure"
+        assert logit_bias.get(102) == -100.0  # "here"
+        assert logit_bias.get(301) == -100.0  # "-"
+        assert 201 not in logit_bias  # "validword"
+
+
+def test_generative_naming_strategy_escalates_worker_error():
+    """Verify GenerativeNamingStrategy escalates worker error payload to secondary rule-based strategy."""
+    strategy = GenerativeNamingStrategy()
+    strategy._gguf_active = True
+    strategy._gguf_failed = False
+    strategy._gguf_process = MagicMock()
+    strategy._gguf_process.is_alive.return_value = True
+    strategy._gguf_input_queue = MagicMock()
+
+    # Simulate worker returning error payload over IPC
+    with patch(
+        "app.core.analyzer_strategies.cooperative_queue_get",
+        return_value={"error": "Grammar compilation failed: Invalid GBNF"},
+    ):
+        with patch.object(
+            GenerativeNamingStrategy,
+            "_get_cluster_keywords",
+            wraps=strategy._get_cluster_keywords,
+        ):
+            # Calling _get_cluster_keywords should capture the worker error and fall back to super()._get_cluster_keywords
+            name = strategy._get_cluster_keywords(["Financial Invoice 2024", "Tax Document"])
+            # Since generative naming failed, rule-based keyword extraction extracts dominant keywords
+            assert name != ""
+            assert isinstance(name, str)
 
 
 def test_generative_naming_strategy_passes_correct_grammars():

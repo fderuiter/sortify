@@ -1106,6 +1106,173 @@ def is_gguf_model_dir(model_path: str) -> bool:
     return False
 
 
+def _should_bias_token(token_str: str) -> bool:
+    """Check if token matches conversational suppression rules or punctuation."""
+    if not isinstance(token_str, str) or not token_str:
+        return False
+    clean_str = (
+        token_str.replace("Ġ", "").replace(" ", "").replace("<unk>", "").strip()
+    )
+    if not clean_str:
+        return False
+
+    import string
+
+    if any(c in string.punctuation for c in clean_str):
+        return True
+
+    lower_str = clean_str.lower()
+    if lower_str in {
+        "sure",
+        "here",
+        "is",
+        "a",
+        "an",
+        "the",
+        "this",
+        "these",
+        "it",
+        "they",
+        "them",
+        "there",
+        "are",
+        "of",
+        "some",
+        "document",
+        "documents",
+        "file",
+        "files",
+        "folder",
+        "folders",
+        "containing",
+        "about",
+        "for",
+        "named",
+        "associated",
+        "with",
+        "relating",
+        "to",
+        "and",
+        "in",
+        "at",
+        "by",
+        "from",
+        "or",
+        "as",
+        "but",
+        "so",
+        "if",
+        "then",
+        "else",
+        "under",
+        "below",
+        "above",
+        "following",
+        "list",
+        "items",
+        "content",
+        "contents",
+        "yes",
+        "no",
+        "ok",
+        "okay",
+        "hello",
+        "hi",
+        "hey",
+        "please",
+        "find",
+        "attached",
+        "generated",
+        "name",
+        "names",
+        "title",
+        "titles",
+    }:
+        return True
+
+    return False
+
+
+def _build_gguf_logit_biases(llm) -> dict[int, float]:
+    """Map conversational suppression rules directly to local model vocabulary token IDs."""
+    if hasattr(llm, "token_biases") and isinstance(getattr(llm, "token_biases"), dict):
+        return getattr(llm, "token_biases")
+
+    token_biases: dict[int, float] = {}
+    try:
+        vocab = None
+        if hasattr(llm, "get_vocab") and callable(getattr(llm, "get_vocab")):
+            try:
+                vocab = llm.get_vocab()
+            except Exception:
+                vocab = None
+        elif hasattr(llm, "vocab"):
+            vocab = getattr(llm, "vocab")
+
+        if isinstance(vocab, dict):
+            for token_str, token_id in vocab.items():
+                tok_text = (
+                    token_str.decode("utf-8", errors="ignore")
+                    if isinstance(token_str, bytes)
+                    else str(token_str)
+                )
+                if _should_bias_token(tok_text):
+                    token_biases[token_id] = -100.0
+        elif isinstance(vocab, (list, tuple)):
+            for token_id, token_str in enumerate(vocab):
+                tok_text = (
+                    token_str.decode("utf-8", errors="ignore")
+                    if isinstance(token_str, bytes)
+                    else str(token_str)
+                )
+                if _should_bias_token(tok_text):
+                    token_biases[token_id] = -100.0
+        else:
+            vocab_size = None
+            if hasattr(llm, "n_vocab"):
+                n_v = getattr(llm, "n_vocab")
+                vocab_size = n_v() if callable(n_v) else n_v
+            elif hasattr(llm, "vocab_size"):
+                v_s = getattr(llm, "vocab_size")
+                vocab_size = v_s() if callable(v_s) else v_s
+
+            if isinstance(vocab_size, int):
+                for token_id in range(vocab_size):
+                    token_str = None
+                    if hasattr(llm, "token_to_piece") and callable(
+                        getattr(llm, "token_to_piece")
+                    ):
+                        try:
+                            token_str = llm.token_to_piece(token_id)
+                        except Exception:
+                            pass
+                    elif hasattr(llm, "detokenize") and callable(
+                        getattr(llm, "detokenize")
+                    ):
+                        try:
+                            token_bytes = llm.detokenize([token_id])
+                            token_str = (
+                                token_bytes.decode("utf-8", errors="ignore")
+                                if isinstance(token_bytes, bytes)
+                                else str(token_bytes)
+                            )
+                        except Exception:
+                            pass
+                    if token_str is not None:
+                        tok_text = (
+                            token_str.decode("utf-8", errors="ignore")
+                            if isinstance(token_str, bytes)
+                            else str(token_str)
+                        )
+                        if _should_bias_token(tok_text):
+                            token_biases[token_id] = -100.0
+    except Exception as e:
+        import logging
+
+        logging.error(f"Failed to build GGUF logit biases in worker: {e}")
+    return token_biases
+
+
 def gguf_worker_main(
     model_path,
     input_queue,
@@ -1176,6 +1343,7 @@ def gguf_worker_main(
         llm = Llama(
             model_path=gguf_file, n_ctx=2048, verbose=False, n_threads=n_threads
         )
+        worker_token_biases = _build_gguf_logit_biases(llm)
         output_queue.put({"status": "ready"})
     except Exception as e:
         output_queue.put({"error": str(e)})
@@ -1213,44 +1381,39 @@ def gguf_worker_main(
                         grammar = LlamaGrammar.from_string(grammar_str)
                         grammar_cache.set(grammar_hash, grammar)
                     except Exception as e:
-                        logging.error(
-                            f"Failed to compile grammar constraint: {e}. Falling back to default ASCII grammar."
-                        )
-                        default_ascii_grammar = (
-                            'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+'
-                        )
-                        fallback_hash = hashlib.sha256(
-                            default_ascii_grammar.encode("utf-8")
-                        ).hexdigest()
-                        grammar = grammar_cache.get(fallback_hash)
-                        if grammar is None:
-                            try:
-                                from llama_cpp import LlamaGrammar
+                        import logging
 
-                                grammar = LlamaGrammar.from_string(
-                                    default_ascii_grammar
-                                )
-                                grammar_cache.set(fallback_hash, grammar)
-                            except Exception as fe:
-                                logging.error(
-                                    f"Failed to compile default ASCII fallback grammar: {fe}"
-                                )
-                                grammar = None
+                        logging.error(
+                            f"Failed to compile grammar constraint in worker: {e}"
+                        )
+                        err_obj = {"error": f"Grammar compilation failed: {e}"}
+                        if session_key is not None and isinstance(raw_task, bytes):
+                            output_queue.put(encrypt_ipc_payload(err_obj, session_key))
+                        else:
+                            output_queue.put(err_obj)
+                        continue
 
             gen_kwargs = {"max_tokens": max_tokens, "echo": False}
             if stop_seqs is not None:
                 gen_kwargs["stop"] = stop_seqs
+            if worker_token_biases:
+                gen_kwargs["logit_bias"] = worker_token_biases
 
-            if grammar:
-                try:
+            try:
+                if grammar:
                     res = llm(prompt, grammar=grammar, **gen_kwargs)
-                except Exception as e:
-                    import logging
-
-                    logging.error(f"Generation with grammar failed: {e}")
+                else:
                     res = llm(prompt, **gen_kwargs)
-            else:
-                res = llm(prompt, **gen_kwargs)
+            except Exception as e:
+                import logging
+
+                logging.error(f"Generation with model failed in worker: {e}")
+                err_obj = {"error": f"Generation failed: {e}"}
+                if session_key is not None and isinstance(raw_task, bytes):
+                    output_queue.put(encrypt_ipc_payload(err_obj, session_key))
+                else:
+                    output_queue.put(err_obj)
+                continue
 
             generated_text = res["choices"][0]["text"].strip()
             res_obj = {"text": generated_text}
@@ -1864,15 +2027,16 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     else:
                         res = raw_res
                     if not isinstance(res, dict) or "error" in res or "text" not in res:
-                        raise Exception(
+                        err_msg = (
                             res.get("error")
                             if isinstance(res, dict)
                             else "Null or incomplete response"
                         )
+                        raise RuntimeError(f"Worker constraint failure: {err_msg}")
                     return res["text"]
                 except Exception as e:
                     logging.error(f"GGUF worker failed: {e}")
-                    self._fallback_to_pytorch()
+                    raise RuntimeError(f"Generative naming worker failure: {e}") from e
 
         if self.generator is None:
             return ""
@@ -1925,90 +2089,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         return res[0]["generated_text"]
 
     def _should_bias_token(self, token_str: str) -> bool:
-        # Clean token of special tokenizer characters representing spaces or unk
-        clean_str = (
-            token_str.replace("Ġ", "").replace(" ", "").replace("<unk>", "").strip()
-        )
-        if not clean_str:
-            return False
-
-        # Hyphen and punctuation check
-        import string
-
-        if any(c in string.punctuation for c in clean_str):
-            return True
-
-        # Conversational filler words
-        lower_str = clean_str.lower()
-        if lower_str in {
-            "sure",
-            "here",
-            "is",
-            "a",
-            "an",
-            "the",
-            "this",
-            "these",
-            "it",
-            "they",
-            "them",
-            "there",
-            "are",
-            "of",
-            "some",
-            "document",
-            "documents",
-            "file",
-            "files",
-            "folder",
-            "folders",
-            "containing",
-            "about",
-            "for",
-            "named",
-            "associated",
-            "with",
-            "relating",
-            "to",
-            "and",
-            "in",
-            "at",
-            "by",
-            "from",
-            "or",
-            "as",
-            "but",
-            "so",
-            "if",
-            "then",
-            "else",
-            "under",
-            "below",
-            "above",
-            "following",
-            "list",
-            "items",
-            "content",
-            "contents",
-            "yes",
-            "no",
-            "ok",
-            "okay",
-            "hello",
-            "hi",
-            "hey",
-            "please",
-            "find",
-            "attached",
-            "generated",
-            "name",
-            "names",
-            "title",
-            "titles",
-        }:
-            return True
-
-        return False
+        return _should_bias_token(token_str)
 
     def _build_logit_biases(self, tokenizer):
         token_biases = {}

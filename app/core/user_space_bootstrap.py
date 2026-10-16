@@ -9,9 +9,13 @@ import logging
 import os
 import socket
 import sys
+import threading
 from pathlib import Path
 
 logger = logging.getLogger(__name__)
+
+_bootstrap_lock = threading.Lock()
+_is_bootstrapped = False
 
 
 def get_bootstrap_bin_dir() -> Path:
@@ -374,11 +378,32 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
     """Identify host platform, verify and load local precompiled SQLCipher libraries directly from the installation path."""
     from app.core.path_utils import get_meipass_dir, is_packaged
 
-    # 0. Check if sqlcipher3 is already fully functional in the host environment without bootstrapping
-    if not force_download:
-        if sys.platform == "win32" and not is_packaged():
-            _resolve_platform_driver_paths()
-            if verify_sqlcipher_encryption():
+    global _is_bootstrapped
+
+    if _is_bootstrapped and not force_download:
+        return True
+
+    with _bootstrap_lock:
+        if _is_bootstrapped and not force_download:
+            return True
+
+        # 0. Check if sqlcipher3 is already fully functional in the host environment without bootstrapping
+        if not force_download:
+            if sys.platform == "win32" and not is_packaged():
+                _resolve_platform_driver_paths()
+                if verify_sqlcipher_encryption():
+                    logger.info(
+                        "Host environment has fully functional SQLCipher active. Skipping bootstrapping."
+                    )
+                    try:
+                        from sqlcipher3 import dbapi2 as sqlite3
+
+                        sys.modules["sqlite3"] = sqlite3
+                    except Exception:
+                        pass
+                    _is_bootstrapped = True
+                    return True
+            elif verify_sqlcipher_encryption():
                 logger.info(
                     "Host environment has fully functional SQLCipher active. Skipping bootstrapping."
                 )
@@ -388,160 +413,152 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
                     sys.modules["sqlite3"] = sqlite3
                 except Exception:
                     pass
+                _is_bootstrapped = True
                 return True
-        elif verify_sqlcipher_encryption():
-            logger.info(
-                "Host environment has fully functional SQLCipher active. Skipping bootstrapping."
+            elif not is_packaged():
+                _resolve_platform_driver_paths()
+                if verify_sqlcipher_encryption():
+                    logger.info(
+                        "Host environment has fully functional SQLCipher active after driver path resolution."
+                    )
+                    try:
+                        from sqlcipher3 import dbapi2 as sqlite3
+
+                        sys.modules["sqlite3"] = sqlite3
+                    except Exception:
+                        pass
+                    _is_bootstrapped = True
+                    return True
+
+        # 1. Locate the packaged binaries directory (installation path)
+        mei_dir = get_meipass_dir()
+        if mei_dir:
+            # Support PyInstaller 6+ where data files are bundled in the _internal subdirectory
+            internal_bin_root = Path(mei_dir) / "_internal" / "app" / "binaries"
+            if internal_bin_root.exists():
+                local_binaries_root = internal_bin_root
+            else:
+                local_binaries_root = Path(mei_dir) / "app" / "binaries"
+        else:
+            local_binaries_root = Path(__file__).resolve().parent.parent / "binaries"
+
+        # 2. Determine current platform
+        system_platform = sys.platform
+        if system_platform == "win32":
+            platform_key = "windows"
+        elif system_platform == "darwin":
+            platform_key = "macos"
+        else:
+            platform_key = "linux"
+
+        # 3. Read and verify manifest
+        manifest_path = local_binaries_root / "manifest.json"
+        if not manifest_path.exists():
+            raise RuntimeError(
+                "Startup validation failed: local binaries manifest is missing."
             )
+
+        try:
+            import json
+
+            with open(manifest_path, "r", encoding="utf-8") as f:
+                manifest = json.load(f)
+        except Exception as e:
+            raise RuntimeError(
+                f"Startup validation failed: manifest could not be read. Error: {e}"
+            )
+
+        # 4. Verify all files for this platform are present and unmodified
+        platform_binaries_dir = local_binaries_root / platform_key
+        if not platform_binaries_dir.exists():
+            raise RuntimeError(
+                f"Startup validation failed: local precompiled libraries for {platform_key} are missing."
+            )
+
+        expected_files = manifest.get(platform_key, {})
+        if not expected_files:
+            raise RuntimeError(
+                f"Startup validation failed: manifest has no entries for platform {platform_key}."
+            )
+
+        # Inject paths directly from the installation directory first so DLLs are accessible
+        inject_bootstrap_paths(platform_binaries_dir)
+
+        for rel_path_str, expected_hash in expected_files.items():
+            file_path = platform_binaries_dir / rel_path_str
+            if not file_path.exists():
+                mei_dir = get_meipass_dir()
+                if mei_dir:
+                    # Check candidate locations in PyInstaller bundle
+                    meipass = Path(mei_dir)
+                    rel_base = rel_path_str.replace("sqlcipher3/", "")
+                    candidates = [
+                        meipass / "_internal" / rel_path_str,
+                        meipass / rel_path_str,
+                        meipass / "_internal" / "sqlcipher3" / rel_base,
+                        meipass / "sqlcipher3" / rel_base,
+                        meipass / "_internal" / rel_base,
+                        meipass / rel_base,
+                        meipass
+                        / "_internal"
+                        / "app"
+                        / "binaries"
+                        / platform_key
+                        / rel_path_str,
+                        meipass / "app" / "binaries" / platform_key / rel_path_str,
+                    ]
+                    found = False
+                    for cand in candidates:
+                        if cand.exists():
+                            file_path = cand
+                            found = True
+                            break
+                    if not found:
+                        raise RuntimeError(
+                            f"Startup validation failed: local packaged binary file {rel_path_str} is missing."
+                        )
+                else:
+                    raise RuntimeError(
+                        f"Startup validation failed: local packaged binary file {rel_path_str} is missing."
+                    )
+
+            # Calculate SHA256 of the file
+            from app.core.resilient_file_ops import resilient_file_hash
+
+            try:
+                is_text_file = file_path.suffix in (".py", ".pyi", ".typed")
+                actual_hash = resilient_file_hash(file_path, normalize_text=is_text_file)
+            except Exception as e:
+                raise RuntimeError(
+                    f"Startup validation failed: could not verify integrity of {rel_path_str}. Error: {e}"
+                )
+
+            if actual_hash != expected_hash:
+                raise RuntimeError(
+                    f"Startup validation failed: local packaged binary file {rel_path_str} has been modified."
+                )
+
+        # 6. Clear sys.modules of sqlcipher3, _sqlite3, and sqlite3 to force reload from the newly injected paths
+        for k in list(sys.modules.keys()):
+            if (
+                k in ("sqlcipher3", "_sqlite3", "sqlite3")
+                or k.startswith("sqlcipher3.")
+                or k.startswith("sqlite3.")
+            ):
+                sys.modules.pop(k, None)
+
+        # 7. Execute pre-flight verification
+        if verify_sqlcipher_encryption():
+            logger.info("Startup pre-flight database encryption verification successful!")
             try:
                 from sqlcipher3 import dbapi2 as sqlite3
 
                 sys.modules["sqlite3"] = sqlite3
             except Exception:
                 pass
+            _is_bootstrapped = True
             return True
-        elif not is_packaged():
-            _resolve_platform_driver_paths()
-            if verify_sqlcipher_encryption():
-                logger.info(
-                    "Host environment has fully functional SQLCipher active after driver path resolution."
-                )
-                try:
-                    from sqlcipher3 import dbapi2 as sqlite3
-
-                    sys.modules["sqlite3"] = sqlite3
-                except Exception:
-                    pass
-                return True
-
-    # 1. Locate the packaged binaries directory (installation path)
-    mei_dir = get_meipass_dir()
-    if mei_dir:
-        # Support PyInstaller 6+ where data files are bundled in the _internal subdirectory
-        internal_bin_root = Path(mei_dir) / "_internal" / "app" / "binaries"
-        if internal_bin_root.exists():
-            local_binaries_root = internal_bin_root
         else:
-            local_binaries_root = Path(mei_dir) / "app" / "binaries"
-    else:
-        local_binaries_root = Path(__file__).resolve().parent.parent / "binaries"
-
-    # 2. Determine current platform
-    system_platform = sys.platform
-    if system_platform == "win32":
-        platform_key = "windows"
-    elif system_platform == "darwin":
-        platform_key = "macos"
-    else:
-        platform_key = "linux"
-
-    # 3. Read and verify manifest
-    manifest_path = local_binaries_root / "manifest.json"
-    if not manifest_path.exists():
-        raise RuntimeError(
-            "Startup validation failed: local binaries manifest is missing."
-        )
-
-    try:
-        import json
-
-        with open(manifest_path, "r", encoding="utf-8") as f:
-            manifest = json.load(f)
-    except Exception as e:
-        raise RuntimeError(
-            f"Startup validation failed: manifest could not be read. Error: {e}"
-        )
-
-    # 4. Verify all files for this platform are present and unmodified
-    platform_binaries_dir = local_binaries_root / platform_key
-    if not platform_binaries_dir.exists():
-        raise RuntimeError(
-            f"Startup validation failed: local precompiled libraries for {platform_key} are missing."
-        )
-
-    expected_files = manifest.get(platform_key, {})
-    if not expected_files:
-        raise RuntimeError(
-            f"Startup validation failed: manifest has no entries for platform {platform_key}."
-        )
-
-    # Inject paths directly from the installation directory first so DLLs are accessible
-    inject_bootstrap_paths(platform_binaries_dir)
-
-    for rel_path_str, expected_hash in expected_files.items():
-        file_path = platform_binaries_dir / rel_path_str
-        if not file_path.exists():
-            mei_dir = get_meipass_dir()
-            if mei_dir:
-                # Check candidate locations in PyInstaller bundle
-                meipass = Path(mei_dir)
-                rel_base = rel_path_str.replace("sqlcipher3/", "")
-                candidates = [
-                    meipass / "_internal" / rel_path_str,
-                    meipass / rel_path_str,
-                    meipass / "_internal" / "sqlcipher3" / rel_base,
-                    meipass / "sqlcipher3" / rel_base,
-                    meipass / "_internal" / rel_base,
-                    meipass / rel_base,
-                    meipass
-                    / "_internal"
-                    / "app"
-                    / "binaries"
-                    / platform_key
-                    / rel_path_str,
-                    meipass / "app" / "binaries" / platform_key / rel_path_str,
-                ]
-                found = False
-                for cand in candidates:
-                    if cand.exists():
-                        file_path = cand
-                        found = True
-                        break
-                if not found:
-                    raise RuntimeError(
-                        f"Startup validation failed: local packaged binary file {rel_path_str} is missing."
-                    )
-            else:
-                raise RuntimeError(
-                    f"Startup validation failed: local packaged binary file {rel_path_str} is missing."
-                )
-
-        # Calculate SHA256 of the file
-        from app.core.resilient_file_ops import resilient_file_hash
-
-        try:
-            is_text_file = file_path.suffix in (".py", ".pyi", ".typed")
-            actual_hash = resilient_file_hash(file_path, normalize_text=is_text_file)
-        except Exception as e:
             raise RuntimeError(
-                f"Startup validation failed: could not verify integrity of {rel_path_str}. Error: {e}"
+                "Startup verification failed: pre-flight database encryption is not active or error-free."
             )
-
-        if actual_hash != expected_hash:
-            raise RuntimeError(
-                f"Startup validation failed: local packaged binary file {rel_path_str} has been modified."
-            )
-
-    # 6. Clear sys.modules of sqlcipher3, _sqlite3, and sqlite3 to force reload from the newly injected paths
-    for k in list(sys.modules.keys()):
-        if (
-            k in ("sqlcipher3", "_sqlite3", "sqlite3")
-            or k.startswith("sqlcipher3.")
-            or k.startswith("sqlite3.")
-        ):
-            sys.modules.pop(k, None)
-
-    # 7. Execute pre-flight verification
-    if verify_sqlcipher_encryption():
-        logger.info("Startup pre-flight database encryption verification successful!")
-        try:
-            from sqlcipher3 import dbapi2 as sqlite3
-
-            sys.modules["sqlite3"] = sqlite3
-        except Exception:
-            pass
-        return True
-    else:
-        raise RuntimeError(
-            "Startup verification failed: pre-flight database encryption is not active or error-free."
-        )
