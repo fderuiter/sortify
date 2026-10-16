@@ -4495,6 +4495,11 @@ class VimTree(Tree):
                 self.app.action_toggle_select_all()
             event.stop()
             event.prevent_default()
+        elif event.key in ("g", "G", "shift+g"):
+            if hasattr(self.app, "action_generate_sample_corpus"):
+                self.app.action_generate_sample_corpus()
+            event.stop()
+            event.prevent_default()
         elif event.key in ("enter", "return"):
             node = self.cursor_node
             if node:
@@ -4536,6 +4541,8 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+a", "open_audit_report", "Audit Report", show=True),
         Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
         Binding("g", "generate_sample_corpus", "Sample Dataset", show=False),
+        Binding("G", "generate_sample_corpus", "Sample Dataset", show=False),
+        Binding("shift+g", "generate_sample_corpus", "Sample Dataset", show=False),
         Binding("question_mark", "open_cheat_sheet", "Help (?)", show=True),
         Binding("f1", "open_cheat_sheet", "Help (F1)", show=False),
         Binding("ctrl+q", "quit", "Quit", show=True),
