@@ -30,7 +30,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --all-groups
+          uv sync --frozen --all-groups
 
       - name: Run Dependency Audit
         id: audit

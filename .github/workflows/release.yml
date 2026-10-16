@@ -41,7 +41,7 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --group build
+          uv sync --frozen --group build
 
       - name: Build executable
         run: |

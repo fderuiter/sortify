@@ -181,7 +181,7 @@ async def test_dropzone_staging_table_population_and_filtering(tmp_path):
         assert "Ready" in statuses
         assert "Unsupported" in statuses
 
-        # Click Filter Unsupported button
+        # Press Filter Unsupported button
         active_modal.query_one("#btn-filter-unsupported", Button).press()
         await pilot.pause()
 
