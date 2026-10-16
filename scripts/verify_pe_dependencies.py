@@ -74,12 +74,27 @@ STANDARD_SYSTEM_DLLS: Set[str] = {
     "sfc_os.dll",
     "propsys.dll",
     "clbcatq.dll",
+    "mswsock.dll",
+    "dhcpcsvc.dll",
+    "secur32.dll",
+    "authz.dll",
+    "schannel.dll",
+    "cryptnet.dll",
+    "sensapi.dll",
+    "credui.dll",
+    "gpapi.dll",
+    "cabinet.dll",
 }
 
 
 def is_system_dll(dll_name: str) -> bool:
-    """Check if a DLL name matches standard Windows system whitelist."""
-    return dll_name.lower() in STANDARD_SYSTEM_DLLS
+    """Check if a DLL name matches standard Windows system whitelist or OS API sets."""
+    name_lower = dll_name.lower()
+    if name_lower in STANDARD_SYSTEM_DLLS:
+        return True
+    if (name_lower.startswith("api-ms-win-") or name_lower.startswith("ext-ms-win-")) and not name_lower.startswith("api-ms-win-crt-"):
+        return True
+    return False
 
 
 def extract_pe_imports(pe_path: Path) -> List[str]:

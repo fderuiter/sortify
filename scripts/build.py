@@ -71,7 +71,7 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
         (target_dir / "dbapi2.py").write_text(saved_dbapi2, encoding="utf-8")
 
     if system_platform == "win32":
-        # Ensure all required Windows DLLs (sqlite3, OpenSSL, MSVC Redist, UCRT) are copied to the binaries directory if not already copied
+        # Ensure all required Windows DLLs (sqlite3, OpenSSL, MSVC Redist, UCRT) are copied to the binaries directory
         dll_patterns = [
             "libcrypto",
             "libssl",
@@ -87,307 +87,124 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
             "api-ms-win-crt-",
         ]
 
-        # We will build a list of missing patterns to search for
-        for pat in dll_patterns:
-            # Check if we already have a copied DLL file containing this pattern (case-insensitive)
-            if pat in ("sqlcipher", "libsqlcipher", "sqlite3"):
-                already_copied = any(
-                    f.lower().endswith(".dll")
-                    and any(
-                        k in f.lower() for k in ("sqlcipher", "sqlite3", "libsqlcipher")
-                    )
-                    for f in copied_files
-                )
-            else:
-                already_copied = any(
-                    f.lower().endswith(".dll") and pat in f.lower()
-                    for f in copied_files
-                )
+        def matches_any_pattern(fname: str) -> bool:
+            f_lower = fname.lower()
+            if not f_lower.endswith(".dll"):
+                return False
+            return any(pat in f_lower for pat in dll_patterns)
 
-            if not already_copied:
-                # We need to search for a DLL matching this pattern
-                # Let's find all matching DLLs in the prioritized search paths
-                dll_srcs = []
+        # Build list of search directories
+        search_dirs = []
+        venv_dirs = []
+        v_env = os.environ.get("VIRTUAL_ENV")
+        if v_env:
+            venv_dirs.append(Path(v_env))
+        if "pytest" not in sys.modules:
+            local_venv = Path(__file__).resolve().parent.parent / ".venv"
+            if local_venv.exists() and local_venv not in venv_dirs:
+                venv_dirs.append(local_venv)
+        if sys.prefix and Path(sys.prefix) not in venv_dirs:
+            venv_dirs.append(Path(sys.prefix))
 
-                def matches_pat(fname: str) -> bool:
-                    f_lower = fname.lower()
-                    if not f_lower.endswith(".dll"):
-                        return False
-                    if pat in ("sqlcipher", "libsqlcipher", "sqlite3"):
-                        return any(
-                            k in f_lower
-                            for k in ("sqlcipher", "sqlite3", "libsqlcipher")
+        for vd in venv_dirs:
+            for sub in [
+                Path("."),
+                Path("Library") / "bin",
+                Path("DLLs"),
+                Path("Scripts"),
+                Path("Lib") / "site-packages" / "sqlcipher3",
+                Path("Lib") / "site-packages" / "sqlcipher3" / ".libs",
+                Path("Lib") / "site-packages" / "sqlcipher3.libs",
+                Path("app") / "binaries" / "windows" / "sqlcipher3",
+            ]:
+                candidate_dir = vd / sub
+                if candidate_dir.exists() and candidate_dir not in search_dirs:
+                    search_dirs.append(candidate_dir)
+
+        if sys.base_prefix and Path(sys.base_prefix) not in search_dirs:
+            for sub in [
+                Path("."),
+                Path("Library") / "bin",
+                Path("DLLs"),
+                Path("Scripts"),
+            ]:
+                candidate_dir = Path(sys.base_prefix) / sub
+                if candidate_dir.exists() and candidate_dir not in search_dirs:
+                    search_dirs.append(candidate_dir)
+
+        if sys.executable:
+            exe_dir = Path(os.path.dirname(sys.executable))
+            for sub in [Path("."), Path("Library") / "bin", Path("DLLs")]:
+                candidate_dir = exe_dir / sub
+                if candidate_dir.exists() and candidate_dir not in search_dirs:
+                    search_dirs.append(candidate_dir)
+
+        common_redist_dirs = [
+            Path("C:/Program Files/OpenSSL-Win64/bin"),
+            Path("C:/Program Files/OpenSSL/bin"),
+            Path(
+                "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Redist/MSVC"
+            ),
+            Path(
+                "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Redist/MSVC"
+            ),
+            Path(
+                "C:/Program Files/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC"
+            ),
+            Path(
+                "C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Redist/MSVC"
+            ),
+            Path(
+                "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Redist/MSVC"
+            ),
+            Path(
+                "C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Redist/MSVC"
+            ),
+            Path("C:/Program Files (x86)/Windows Kits/10/Redist"),
+            Path("C:/Program Files/Windows Kits/10/Redist"),
+            Path("C:/Windows/System32"),
+            Path("C:/Windows/SysWOW64"),
+        ]
+        vc_redist_env = os.environ.get("VCToolsRedistDir")
+        if vc_redist_env and Path(vc_redist_env).exists():
+            common_redist_dirs.append(Path(vc_redist_env))
+
+        for cd in common_redist_dirs:
+            if cd.exists() and cd not in search_dirs:
+                search_dirs.append(cd)
+
+        for s_dir in search_dirs:
+            try:
+                if not s_dir.exists():
+                    continue
+                for root, dirs, files in os.walk(s_dir):
+                    dirs[:] = [
+                        d
+                        for d in dirs
+                        if d.lower()
+                        not in (
+                            "torch",
+                            "easyocr",
+                            "scipy",
+                            "transformers",
+                            "numpy",
+                            "pandas",
+                            "node_modules",
                         )
-                    return pat in f_lower
-
-                # List of search paths
-                venv_dirs = []
-                v_env = os.environ.get("VIRTUAL_ENV")
-                if v_env:
-                    venv_dirs.append(Path(v_env))
-                if "pytest" not in sys.modules:
-                    local_venv = Path(__file__).resolve().parent.parent / ".venv"
-                    if local_venv.exists() and local_venv not in venv_dirs:
-                        venv_dirs.append(local_venv)
-                if sys.prefix and Path(sys.prefix) not in venv_dirs:
-                    venv_dirs.append(Path(sys.prefix))
-
-                found_for_pattern = False
-
-                # Check candidate locations in prioritized venv directories
-                for vd in venv_dirs:
-                    for sub in [
-                        Path("."),
-                        Path("Library") / "bin",
-                        Path("DLLs"),
-                        Path("Scripts"),
-                        Path("Lib") / "site-packages" / "sqlcipher3",
-                        Path("Lib") / "site-packages" / "sqlcipher3" / ".libs",
-                        Path("Lib") / "site-packages" / "sqlcipher3.libs",
-                        Path("Lib") / "site-packages" / "pysqlcipher3",
-                        Path("Lib") / "site-packages" / "pysqlcipher3.libs",
-                        Path("Lib") / "site-packages" / "pysqlcipher3" / "dlls",
-                        Path("Lib") / "site-packages" / "pysqlcipher3" / "bin",
-                        Path("Lib") / "site-packages" / "cryptography",
-                        Path("Lib")
-                        / "site-packages"
-                        / "cryptography"
-                        / "hazmat"
-                        / "bindings",
-                        Path("Lib") / "site-packages" / "cryptography.libs",
-                        Path("Lib") / "site-packages" / "OpenSSL",
-                        Path("app") / "binaries" / "windows" / "sqlcipher3",
-                    ]:
-                        candidate_dir = vd / sub
-                        if candidate_dir.exists():
-                            try:
-                                for f in os.listdir(candidate_dir):
-                                    if matches_pat(f):
-                                        dll_srcs.append(candidate_dir / f)
-                                        found_for_pattern = True
-                            except Exception:
-                                pass
-                    if found_for_pattern:
-                        break
-
-                    # If not found in candidate paths, walk the venv directory recursively (excluding heavy package subtrees)
-                    for root, dirs, files in os.walk(vd):
-                        # Filter out heavy directories in-place to prevent os.walk from recursing into them
-                        dirs[:] = [
-                            d
-                            for d in dirs
-                            if d.lower()
-                            not in (
-                                "torch",
-                                "easyocr",
-                                "scipy",
-                                "transformers",
-                                "numpy",
-                                "pandas",
-                                "sklearn",
-                                "matplotlib",
-                                "jinja2",
-                                "anyio",
-                                "aiohttp",
-                                "pydantic",
-                                "pydantic_core",
-                                "mypy",
-                                "pytest",
-                                "coverage",
-                                "docutils",
-                                "sphinx",
-                                "reportlab",
-                                "sympy",
-                                "skimage",
-                                "shapely",
-                                "pil",
-                                "pyzmq",
-                                "rich",
-                                "textual",
-                                "botocore",
-                                "boto3",
-                                "google",
-                                "grpc",
-                                "node_modules",
-                            )
-                        ]
-
-                        root_normalized = root.lower().replace("\\", "/")
-                        if any(
-                            p in root_normalized
-                            for p in (
-                                "site-packages/torch",
-                                "site-packages/easyocr",
-                                "site-packages/scipy",
-                            )
-                        ):
-                            continue
-                        for file in files:
-                            if matches_pat(file):
-                                dll_srcs.append(Path(root) / file)
-                                found_for_pattern = True
-                        if found_for_pattern:
-                            break
-                    if found_for_pattern:
-                        break
-
-                # Search sys.base_prefix candidate directories as a fallback if different
-                if (
-                    not found_for_pattern
-                    and sys.base_prefix
-                    and sys.base_prefix != sys.prefix
-                ):
-                    for sub in [
-                        Path("."),
-                        Path("Library") / "bin",
-                        Path("DLLs"),
-                        Path("Scripts"),
-                    ]:
-                        candidate_dir = Path(sys.base_prefix) / sub
-                        if candidate_dir.exists():
-                            try:
-                                for f in os.listdir(candidate_dir):
-                                    if matches_pat(f):
-                                        dll_srcs.append(candidate_dir / f)
-                                        found_for_pattern = True
-                            except Exception:
-                                pass
-
-                # Search directory of python executable
-                if not found_for_pattern and sys.executable:
-                    exe_dir = os.path.dirname(sys.executable)
-                    if exe_dir:
-                        for sub in [Path("."), Path("Library") / "bin", Path("DLLs")]:
-                            candidate_dir = Path(exe_dir) / sub
-                            if candidate_dir.exists():
-                                try:
-                                    for f in os.listdir(candidate_dir):
-                                        if (
-                                            f.lower().endswith(".dll")
-                                            and pat in f.lower()
-                                        ):
-                                            dll_srcs.append(candidate_dir / f)
-                                            found_for_pattern = True
-                                except Exception:
-                                    pass
-                        if not found_for_pattern:
-                            try:
-                                for f in os.listdir(exe_dir):
-                                    if f.lower().endswith(".dll") and pat in f.lower():
-                                        dll_srcs.append(Path(exe_dir) / f)
-                                        found_for_pattern = True
-                            except Exception:
-                                pass
-
-                # Search standard OpenSSL, MSVC Redist, and UCRT installation paths on Windows as fallback
-                if not found_for_pattern:
-                    common_openssl_dirs = [
-                        Path("C:/Program Files/OpenSSL-Win64/bin"),
-                        Path("C:/Program Files/OpenSSL/bin"),
-                        Path("C:/Program Files/OpenSSL-Win64"),
-                        Path("C:/Program Files/OpenSSL"),
-                        Path("C:/OpenSSL-Win64/bin"),
-                        Path("C:/OpenSSL-Win64"),
-                        Path("C:/Program Files/Common Files/SSL"),
-                        Path(
-                            "C:/Program Files/Microsoft Visual Studio/2022/Enterprise/VC/Redist/MSVC"
-                        ),
-                        Path(
-                            "C:/Program Files/Microsoft Visual Studio/2022/Community/VC/Redist/MSVC"
-                        ),
-                        Path(
-                            "C:/Program Files/Microsoft Visual Studio/2022/BuildTools/VC/Redist/MSVC"
-                        ),
-                        Path(
-                            "C:/Program Files (x86)/Microsoft Visual Studio/2019/Enterprise/VC/Redist/MSVC"
-                        ),
-                        Path(
-                            "C:/Program Files (x86)/Microsoft Visual Studio/2019/Community/VC/Redist/MSVC"
-                        ),
-                        Path(
-                            "C:/Program Files (x86)/Microsoft Visual Studio/2019/BuildTools/VC/Redist/MSVC"
-                        ),
-                        Path("C:/Program Files (x86)/Windows Kits/10/Redist"),
-                        Path("C:/Program Files/Windows Kits/10/Redist"),
-                        Path("C:/Windows/System32"),
-                        Path("C:/Windows/SysWOW64"),
                     ]
-                    vc_redist_env = os.environ.get("VCToolsRedistDir")
-                    if vc_redist_env and Path(vc_redist_env).exists():
-                        common_openssl_dirs.append(Path(vc_redist_env))
-
-                    for cd in common_openssl_dirs:
-                        if cd.exists():
-                            try:
-                                for root, dirs, files in os.walk(cd):
-                                    for f in files:
-                                        if (
-                                            f.lower().endswith(".dll")
-                                            and pat in f.lower()
-                                        ):
-                                            dll_srcs.append(Path(root) / f)
-                                            found_for_pattern = True
-                                    if found_for_pattern:
-                                        break
-                            except Exception:
-                                continue
-                            if found_for_pattern:
-                                break
-
-                # Search system PATH as a fallback (excluding standard system directories)
-                if not found_for_pattern:
-                    path_dirs = []
-                    for d in os.environ.get("PATH", "").split(os.pathsep):
-                        cleaned = d.strip().strip('"')
-                        if cleaned:
-                            try:
-                                cleaned_lower = cleaned.lower()
-                                is_candidate_dir = (
-                                    "openssl" in cleaned_lower
-                                    or "ssl" in cleaned_lower
-                                    or "sqlcipher" in cleaned_lower
-                                    or "sqlite" in cleaned_lower
-                                    or "git" in cleaned_lower
-                                    or "python" in cleaned_lower
-                                    or "venv" in cleaned_lower
-                                    or "site-packages" in cleaned_lower
+                    for f in files:
+                        if matches_any_pattern(f):
+                            src_file = Path(root) / f
+                            dest_file = target_dir / f
+                            if not dest_file.exists():
+                                shutil.copy2(src_file, dest_file)
+                                if f not in copied_files:
+                                    copied_files.append(f)
+                                print(
+                                    f"Harvested Windows dependency DLL {f} from {src_file} to {dest_file}"
                                 )
-                                p_abs = (
-                                    os.path.abspath(cleaned).lower().replace("\\", "/")
-                                )
-                                is_sys_dir = (
-                                    "system32" in p_abs
-                                    or "syswow64" in p_abs
-                                    or p_abs == "c:/windows"
-                                    or p_abs.startswith("c:/windows/")
-                                )
-                                if (
-                                    is_candidate_dir
-                                    and not is_sys_dir
-                                    and os.path.isdir(cleaned)
-                                ):
-                                    path_dirs.append(cleaned)
-                            except Exception:
-                                pass
-                    for path_dir in path_dirs:
-                        try:
-                            for f in os.listdir(path_dir):
-                                if f.lower().endswith(".dll") and pat in f.lower():
-                                    dll_srcs.append(Path(path_dir) / f)
-                                    found_for_pattern = True
-                        except Exception:
-                            continue
-                        if found_for_pattern:
-                            break
-
-                for src in dll_srcs:
-                    if src.exists():
-                        dest_path = target_dir / src.name
-                        shutil.copy2(src, dest_path)
-                        copied_files.append(src.name)
-                        print(
-                            f"Manually copied required Windows dependency {src.name} from {src} to {dest_path}"
-                        )
+            except Exception as scan_err:
+                print(f"Warning: Exception scanning {s_dir}: {scan_err}")
 
     manifest_path = Path("app") / "binaries" / "manifest.json"
     if manifest_path.exists():
