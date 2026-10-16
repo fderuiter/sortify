@@ -30,6 +30,7 @@ dependencies = [
     "numpy",
     "pydantic",
     "nicegui",
+    "psutil",
 ]
 
 [project.optional-dependencies]
