@@ -215,8 +215,8 @@ def resilient_move(src: str, dst: str) -> str:
                 raise e
 
             gc.collect()
-            if RETRY_DELAY > 0:
-                time.sleep(RETRY_DELAY)
+            retry_delay = RETRY_DELAY if RETRY_DELAY > 0 else 0.05
+            time.sleep(retry_delay)
 
     return current_dst
 

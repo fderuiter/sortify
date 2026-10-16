@@ -4515,6 +4515,7 @@ class AutoSorterTUI(A11yMixin, App):
 
         base_dir = session_info.get("base_dir") or self.base_dir
         session_id = session_info.get("session_id")
+        rollback_success = False
         if base_dir and session_id:
             try:
                 temp_session = AppSession(
@@ -4527,14 +4528,20 @@ class AutoSorterTUI(A11yMixin, App):
                         session_id, temp_session.db
                     )
                 temp_session.close()
+                rollback_success = True
             except Exception as e:
                 logger.error(f"Error during session rollback: {e}")
 
         session_dir = session_info.get("session_dir")
-        if session_dir and os.path.exists(session_dir):
-            shutil.rmtree(session_dir, ignore_errors=True)
+        if rollback_success:
+            if session_dir and os.path.exists(session_dir):
+                shutil.rmtree(session_dir, ignore_errors=True)
+            self.announce(f"Rolled back session '{session_id}'.")
+        else:
+            self.announce(
+                f"Session recovery failed for '{session_id}': write/permission error. Session files and safety storage preserved."
+            )
 
-        self.announce(f"Rolled back session '{session_id}'.")
         if self.base_dir:
             self.action_scan_directory()
 
