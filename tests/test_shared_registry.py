@@ -853,8 +853,12 @@ def test_encapsulated_expected_hash_lookups():
     SharedModelRegistry._instance = None
     registry = SharedModelRegistry.get_instance()
 
-    registry.register_expected_hashes("cat_a", {"file1.bin": "hash_a1", "common.txt": "hash_common_a"})
-    registry.register_expected_hashes("cat_b", {"file2.bin": "hash_b2", "common.txt": "hash_common_b"})
+    registry.register_expected_hashes(
+        "cat_a", {"file1.bin": "hash_a1", "common.txt": "hash_common_a"}
+    )
+    registry.register_expected_hashes(
+        "cat_b", {"file2.bin": "hash_b2", "common.txt": "hash_common_b"}
+    )
 
     # Test get_expected_hashes()
     all_hashes = registry.get_expected_hashes()
@@ -884,4 +888,3 @@ def test_encapsulated_expected_hash_lookups():
     # Test has_expected_hash_for_file()
     assert registry.has_expected_hash_for_file("file1.bin") is True
     assert registry.has_expected_hash_for_file("missing.bin") is False
-

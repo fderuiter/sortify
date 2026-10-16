@@ -412,7 +412,9 @@ def package_sidecar_models():
 
 def verify_scientific_binaries(dist_dir: str) -> bool:
     """Statically verify that SciPy package files and native C-extensions exist in the bundle folder."""
-    print("Executing post-build static inspection for scientific computing C-extensions...")
+    print(
+        "Executing post-build static inspection for scientific computing C-extensions..."
+    )
     if not os.path.exists(dist_dir):
         print(
             f"Error: Standalone bundle directory {dist_dir} not found for static scientific inspection."

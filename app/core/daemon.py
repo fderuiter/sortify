@@ -51,9 +51,7 @@ def lower_process_priority() -> None:
 
             BELOW_NORMAL_PRIORITY_CLASS = 0x00004000
             handle = ctypes.windll.kernel32.GetCurrentProcess()
-            ctypes.windll.kernel32.SetPriorityClass(
-                handle, BELOW_NORMAL_PRIORITY_CLASS
-            )
+            ctypes.windll.kernel32.SetPriorityClass(handle, BELOW_NORMAL_PRIORITY_CLASS)
         except Exception:
             pass
     else:
@@ -77,16 +75,12 @@ def _run_sorting_process_entry(
         from app.config import AppSettings
 
         settings = (
-            AppSettings(filepath=config_filepath)
-            if config_filepath
-            else AppSettings()
+            AppSettings(filepath=config_filepath) if config_filepath else AppSettings()
         )
         settings.load()
         daemon = ContinuousWatchdogDaemon(settings, base_dir)
         daemon._is_running = True
-        event_to_pass = (
-            cancel_event if cancel_event is not None else threading.Event()
-        )
+        event_to_pass = cancel_event if cancel_event is not None else threading.Event()
         daemon._run_sorting_sync(event_to_pass)
     except Exception as e:
         logger.error(f"Error in process-isolated sorting worker: {e}", exc_info=True)

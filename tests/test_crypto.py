@@ -1292,4 +1292,3 @@ def test_concurrent_key_lookup_and_generation(tmp_path):
 
     assert len(results) == 10
     assert len(set(results)) == 1
-

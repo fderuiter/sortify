@@ -265,6 +265,7 @@ def test_mover_retry_failed_moves(tmp_path):
     dst_file = tmp_path / "Output" / "item_to_retry.pdf"
 
     from app.core.extractor import get_file_hash
+
     file_hash = get_file_hash(str(src_file))
 
     failed_items = [
@@ -286,4 +287,3 @@ def test_mover_retry_failed_moves(tmp_path):
     rep = res.get("audit_report", {})
     assert rep.get("verified_pass_count") == 1
     assert rep.get("mismatch_fail_count") == 0
-

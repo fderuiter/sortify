@@ -131,7 +131,9 @@ async def test_tui_scrub_artifacts_button_and_confirmation_modal(tmp_path, monke
         assert db.get_document_vectors_count() == 1
         assert (model_dir / "weights.onnx").exists()
 
-        app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path), skip_wizard=True, db=db)
+        app = AutoSorterTUI(
+            settings=settings, base_dir=str(tmp_path), skip_wizard=True, db=db
+        )
         async with app.run_test() as pilot:
             app.action_open_settings()
             await pilot.pause(0.1)
@@ -141,7 +143,10 @@ async def test_tui_scrub_artifacts_button_and_confirmation_modal(tmp_path, monke
 
             # Switch to AI & Privacy Settings tab
             from textual.widgets import TabbedContent
-            modal.query_one("#settings-tabbed-content", TabbedContent).active = "tab-ai-privacy"
+
+            modal.query_one(
+                "#settings-tabbed-content", TabbedContent
+            ).active = "tab-ai-privacy"
             await pilot.pause(0.1)
 
             # Press Scrub AI Artifacts button
@@ -164,7 +169,9 @@ async def test_tui_scrub_artifacts_button_and_confirmation_modal(tmp_path, monke
 
 
 @pytest.mark.anyio
-async def test_tui_toggling_consent_off_presents_revocation_prompt(tmp_path, monkeypatch):
+async def test_tui_toggling_consent_off_presents_revocation_prompt(
+    tmp_path, monkeypatch
+):
     """Verify toggling off AI consent switch in TUI Settings presents ConsentRevocationModal and scrub options."""
     monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
 
@@ -184,7 +191,9 @@ async def test_tui_toggling_consent_off_presents_revocation_prompt(tmp_path, mon
 
         assert db.get_document_vectors_count() == 1
 
-        app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path), skip_wizard=True, db=db)
+        app = AutoSorterTUI(
+            settings=settings, base_dir=str(tmp_path), skip_wizard=True, db=db
+        )
         async with app.run_test() as pilot:
             app.action_open_settings()
             await pilot.pause(0.1)
@@ -193,7 +202,10 @@ async def test_tui_toggling_consent_off_presents_revocation_prompt(tmp_path, mon
             assert isinstance(modal, SettingsModal)
 
             from textual.widgets import TabbedContent
-            modal.query_one("#settings-tabbed-content", TabbedContent).active = "tab-ai-privacy"
+
+            modal.query_one(
+                "#settings-tabbed-content", TabbedContent
+            ).active = "tab-ai-privacy"
             await pilot.pause(0.1)
 
             sw = modal.query_one("#switch-ai-consent", Switch)
