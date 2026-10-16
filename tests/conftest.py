@@ -69,7 +69,7 @@ def sync_db_worker():
     def sync_execute(self, func, *args, **kwargs):
         import threading
 
-        if threading.current_thread() is getattr(self, "_thread", None):
+        if threading.current_thread() is getattr(self, "thread", None):
             return func(*args, **kwargs)
         return self.execute_write(func, *args, **kwargs)
 
