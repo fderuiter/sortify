@@ -1,8 +1,10 @@
 name: CI Pipeline
 
 on:
-  # push / pull_request triggers temporarily disabled during rapid development.
-  # Run manually via workflow_dispatch.
+  push:
+    branches: [ main ]
+  pull_request:
+    branches: [ main ]
   workflow_dispatch:
 
 permissions:
@@ -270,7 +272,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --frozen --only-group dev
+        uv sync --frozen --group docs
 
     - name: Deploy Documentation
       if: github.ref == 'refs/heads/main'
@@ -323,10 +325,57 @@ jobs:
           exit 1
         fi
 
+  verify-offline-bundle:
+    name: Verify Offline Bundle
+    runs-on: ubuntu-latest
+    steps:
+    - uses: actions/checkout@v7
+
+    - name: Cache Offline Wheel Downloads
+      uses: actions/cache@v6
+      with:
+        path: |
+          ~/.cache/uv
+          ~/.cache/pip
+          offline_bundle/wheels
+        key: offline-wheels-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'offline_bundle/requirements.txt') }}
+        restore-keys: |
+          offline-wheels-${{ runner.os }}-
+
+    - name: Install uv
+      uses: astral-sh/setup-uv@v7
+      with:
+        version: "latest"
+        enable-cache: true
+
+    - name: Set up Python
+      uses: actions/setup-python@v7
+      with:
+        python-version: "3.12"
+
+    - name: Prepare Offline Bundle
+      run: |
+        uv run python scripts/prepare_offline.py --cpu
+
+    - name: Verify Offline Bundle Archive Exists
+      run: |
+        if [ ! -f offline_bundle.zip ]; then
+          echo "Error: offline_bundle.zip was not produced by scripts/prepare_offline.py"
+          exit 1
+        fi
+
+    - name: Install Offline Bundle
+      run: |
+        uv run python scripts/install_offline.py offline-install
+
+    - name: Verify Application Import in Offline Environment
+      run: |
+        .venv/bin/python -c "import app, app.main, app.config, app.core; print('Application modules successfully imported from offline bundle environment!')"
+
   required-ci:
     name: Required CI
     runs-on: ubuntu-latest
-    needs: [security-and-audit, type-check, static-checks, build-and-test, heavy-tests]
+    needs: [security-and-audit, type-check, static-checks, build-and-test, heavy-tests, verify-offline-bundle]
     if: ${{ always() }}
     steps:
       - name: Verify Required Gates
