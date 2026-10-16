@@ -56,6 +56,12 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
 
     from app.core.path_utils import get_base_path, get_meipass_dir, is_packaged
 
+    if settings is not None and getattr(settings, "AI_CONSENT_GRANTED", None) is False:
+        return (
+            False,
+            "AI processing is disabled because AI consent has been revoked.",
+        )
+
     is_sandboxed = is_packaged() or getattr(settings, "SANDBOXED", False)
 
     if not is_ml_available():
@@ -517,7 +523,9 @@ class VirtualFilesystemTracker:
 
         return final_nodes
 
-    def check_collisions(self, moves_list: list, base_dir: str) -> list:
+    def check_collisions(
+        self, moves_list: list, base_dir: str, conflict_policy: str = "rename"
+    ) -> list:
         """Detect duplicate destination target collisions and blocked parent directory/ancestor paths."""
         collisions = []
         base_dir_abs = os.path.abspath(base_dir) if base_dir else ""
@@ -528,17 +536,18 @@ class VirtualFilesystemTracker:
             abs_dst = os.path.abspath(dst)
             dest_to_srcs.setdefault(abs_dst, []).append(abs_src)
 
-        # 1. Duplicate target collision
-        for dst, srcs in dest_to_srcs.items():
-            if len(srcs) > 1:
-                collisions.append(
-                    {
-                        "path": dst,
-                        "type": "duplicate_target",
-                        "sources": srcs,
-                        "message": f"Multiple files are planned to be moved to the same destination: {dst}",
-                    }
-                )
+        # 1. Duplicate target collision (exempt if dynamic rename policy is active)
+        if conflict_policy == "skip":
+            for dst, srcs in dest_to_srcs.items():
+                if len(srcs) > 1:
+                    collisions.append(
+                        {
+                            "path": dst,
+                            "type": "duplicate_target",
+                            "sources": srcs,
+                            "message": f"Multiple files are planned to be moved to the same destination: {dst}",
+                        }
+                    )
 
         # 2. Parent directory / target structure collisions
         for rel_path, src, dst in moves_list:
@@ -653,7 +662,13 @@ class VirtualFilesystemTracker:
         base_dir_abs = os.path.abspath(base_dir) if base_dir else ""
 
         path_map = {
-            os.path.abspath(src): os.path.abspath(dst) for _, src, dst in moves_list
+            os.path.normcase(os.path.abspath(src)): os.path.abspath(dst)
+            for _, src, dst in moves_list
+        }
+
+        # Case-normalization map for final nodes
+        final_nodes_norm = {
+            os.path.normcase(p): p for p in final_nodes
         }
 
         for abs_path, node in final_nodes.items():
@@ -673,7 +688,7 @@ class VirtualFilesystemTracker:
             # Determine original absolute target path before moves
             orig_src = None
             for rel_path, src, dst in moves_list:
-                if os.path.abspath(dst) == abs_path:
+                if os.path.normcase(os.path.abspath(dst)) == os.path.normcase(abs_path):
                     orig_src = os.path.abspath(src)
                     break
 
@@ -688,15 +703,27 @@ class VirtualFilesystemTracker:
                 )
 
             # Final absolute target path after moves
-            abs_target_final = path_map.get(abs_target_orig, abs_target_orig)
+            norm_target_orig = os.path.normcase(abs_target_orig)
+            abs_target_final = path_map.get(norm_target_orig)
+            if not abs_target_final:
+                for src_norm, dst_path in path_map.items():
+                    if norm_target_orig.startswith(src_norm + os.sep):
+                        from app.core.path_utils import safe_relpath
+                        rel = safe_relpath(abs_target_orig, src_norm)
+                        abs_target_final = os.path.normpath(os.path.join(dst_path, rel))
+                        break
+            if not abs_target_final:
+                abs_target_final = abs_target_orig
 
-            # Verify target existence
+            # Verify target existence using case-normalized lookup
             is_inside_base = (
-                abs_target_final.startswith(base_dir_abs) if base_dir_abs else False
+                os.path.normcase(abs_target_final).startswith(os.path.normcase(base_dir_abs))
+                if base_dir_abs
+                else False
             )
 
             if is_inside_base:
-                target_exists = abs_target_final in final_nodes
+                target_exists = os.path.normcase(abs_target_final) in final_nodes_norm
             else:
                 target_exists = os.path.exists(abs_target_final)
 

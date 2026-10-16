@@ -1068,13 +1068,15 @@ class SharedModelRegistry:
             elif model_id == "onnx":
                 keys_to_remove = [
                     k
-                    for k in set(self._models.keys()) | set(self._per_model_locks.keys())
+                    for k in set(self._models.keys())
+                    | set(self._per_model_locks.keys())
                     if k.startswith("onnx_") or k.startswith("tokenizer_")
                 ]
             else:
                 keys_to_remove = [
                     k
-                    for k in set(self._models.keys()) | set(self._per_model_locks.keys())
+                    for k in set(self._models.keys())
+                    | set(self._per_model_locks.keys())
                     if k == model_id or k.startswith(f"{model_id}_")
                 ]
 
