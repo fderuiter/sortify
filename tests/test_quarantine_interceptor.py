@@ -527,3 +527,49 @@ def test_quarantine_cli_release_db_failure_rollback():
     # Verify physical file was rolled back to staged_path
     assert os.path.exists(staged_path)
     assert not os.path.exists(released_dest)
+
+
+def test_quarantine_interceptor_presorted_policies():
+    """Test that QuarantineInterceptorService pre-sorts policy rules and preserves rule precedence."""
+    unsorted_policies = [
+        {
+            "type": "keyword",
+            "expression": "confidential",
+            "action": "retain",
+            "target_path": "Low_Priority_Retention",
+            "priority": 10,
+        },
+        {
+            "type": "keyword",
+            "expression": "confidential",
+            "action": "redact",
+            "target_path": "High_Priority_Redaction",
+            "priority": 100,
+        },
+    ]
+
+    service = QuarantineInterceptorService(db=db, policies=unsorted_policies)
+
+    # Verify policies were pre-sorted on init
+    assert len(service.policies) == 2
+    assert service.policies[0]["priority"] == 100
+    assert service.policies[0]["action"] == "redact"
+
+    sample_dir = os.path.join(_test_dir, "presorted_interceptor_test")
+    os.makedirs(sample_dir, exist_ok=True)
+    sample_file = os.path.join(sample_dir, "confidential_memo.txt")
+    with open(sample_file, "w", encoding="utf-8") as f:
+        f.write("confidential internal memo content")
+
+    staged_info = service.stage_incoming_file(
+        source_path=sample_file, base_dir=sample_dir
+    )
+    result = service.process_quarantine_job(staged_info["job_id"])
+
+    # High priority redact rule (priority 100) should be applied over low priority retain rule (priority 10)
+    assert result["policy_action"] == "redact"
+    released_path = os.path.join(
+        sample_dir, "High_Priority_Redaction", "confidential_memo.txt"
+    )
+    assert os.path.exists(released_path)
+

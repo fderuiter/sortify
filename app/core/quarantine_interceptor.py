@@ -78,7 +78,7 @@ class QuarantineInterceptorService:
         runtime_settings: Optional[Any] = None,
     ):
         self.db = db
-        self.policies = policies or []
+        self.policies = PolicyEngine.sort_policies(policies)
         self.worker_timeout = worker_timeout
         self.forensic_scanner = ForensicScanner()
         self.dlq_records: List[Dict[str, Any]] = []
@@ -344,6 +344,7 @@ class QuarantineInterceptorService:
                 doc_text=extracted_text,
                 status_match="",
                 policies=self.policies,
+                is_sorted=True,
             )
 
             action = (
