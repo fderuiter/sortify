@@ -1226,6 +1226,7 @@ def test_tui_vim_tree_navigation(temp_workspace):
 
             # Test unfocused tree ignores vim keys
             tree.blur()
+            app.set_focus(None)
             await pilot.pause(0.05)
             assert not tree.has_focus
 

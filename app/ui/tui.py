@@ -4369,6 +4369,7 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+e", "execute_sort", "Execute Plan", show=True),
         Binding("ctrl+a", "open_audit_report", "Audit Report", show=True),
         Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
+        Binding("ctrl+f", "focus_search", "Search Tree", show=True),
         Binding("g", "generate_sample_corpus", "Sample Dataset", show=False),
         Binding("question_mark", "open_cheat_sheet", "Help (?)", show=True),
         Binding("f1", "open_cheat_sheet", "Help (F1)", show=False),
@@ -4388,15 +4389,28 @@ class AutoSorterTUI(A11yMixin, App):
     #main-dual-pane.narrow {
         layout: vertical;
     }
-    #left-tree-pane, #plan-tree {
+    #left-tree-pane {
         width: 50%;
         height: 100%;
         border: solid $primary;
         padding: 0;
     }
-    #main-dual-pane.narrow #left-tree-pane, #main-dual-pane.narrow #plan-tree {
+    #main-dual-pane.narrow #left-tree-pane {
         width: 100%;
         height: 1fr;
+    }
+    #tree-search-input {
+        width: 100%;
+        height: auto;
+        border: none;
+        border-bottom: solid $primary;
+        margin: 0;
+    }
+    #plan-tree {
+        width: 100%;
+        height: 1fr;
+        border: none;
+        padding: 0;
     }
     #right-meta-pane {
         width: 50%;
@@ -4435,7 +4449,7 @@ class AutoSorterTUI(A11yMixin, App):
     .meta-line {
         margin-bottom: 1;
     }
-    Tree:focus, Static:focus, Log:focus {
+    Tree:focus, Static:focus, Log:focus, Input:focus {
         border: heavy $accent;
         text-style: bold;
     }
@@ -4482,9 +4496,20 @@ class AutoSorterTUI(A11yMixin, App):
         """Compose main dual-pane TUI layout."""
         yield Header(show_clock=True)
         with Horizontal(id="main-dual-pane"):
-            tree = VimTree("Proposed Organization Plan", id="plan-tree")
-            tree.tooltip = "Interactive tree view of proposed file organization plan"
-            yield tree
+            with Vertical(id="left-tree-pane"):
+                search_input = Input(
+                    placeholder="Search tree nodes...",
+                    id="tree-search-input",
+                )
+                search_input.tooltip = (
+                    "Real-time search input field to filter preview tree nodes"
+                )
+                yield search_input
+                tree = VimTree("Proposed Organization Plan", id="plan-tree")
+                tree.tooltip = (
+                    "Interactive tree view of proposed file organization plan"
+                )
+                yield tree
             with Vertical(id="right-meta-pane"):
                 yield Heading("Node Metadata Inspector", level=2, classes="meta-header")
                 meta_widget = Static(
@@ -4623,6 +4648,7 @@ class AutoSorterTUI(A11yMixin, App):
             tree = self.query_one("#plan-tree", Tree)
             tree.show_root = True
             tree.root.expand()
+            tree.focus()
         except Exception:
             pass
         self.announce("Sortify AI Pro TUI initialized and ready.")
@@ -4836,16 +4862,20 @@ class AutoSorterTUI(A11yMixin, App):
             pass
         return None
 
-    def _is_text_control_focused(self) -> bool:
+    def _is_text_control_focused(self, is_global_ctrl: bool = False) -> bool:
         """Check if a text input or selection control currently holds focus."""
         focused = self.focused
-        return focused is not None and isinstance(focused, (Input, Select))
+        if focused is None or not isinstance(focused, (Input, Select)):
+            return False
+        if getattr(focused, "id", None) == "tree-search-input" and is_global_ctrl:
+            return False
+        return True
 
     # --- Actions ---
 
     def action_select_dir(self) -> None:
         """Open directory selection modal."""
-        if self._is_text_control_focused():
+        if self._is_text_control_focused(is_global_ctrl=True):
             return
 
         def on_selected(path: Optional[Union[str, List[str]]]) -> None:
@@ -4894,7 +4924,7 @@ class AutoSorterTUI(A11yMixin, App):
 
     def action_open_settings(self) -> None:
         """Open settings modal screen."""
-        if self._is_text_control_focused():
+        if self._is_text_control_focused(is_global_ctrl=True):
             return
 
         def on_saved(res: Optional[Dict[str, Any]]) -> None:
@@ -4937,19 +4967,19 @@ class AutoSorterTUI(A11yMixin, App):
 
     def action_open_model_manager(self) -> None:
         """Open model manager modal screen."""
-        if self._is_text_control_focused():
+        if self._is_text_control_focused(is_global_ctrl=True):
             return
         self.push_screen(ModelManagerModal(self.settings))
 
     def action_open_wizard(self) -> None:
         """Open model onboarding wizard modal screen."""
-        if self._is_text_control_focused():
+        if self._is_text_control_focused(is_global_ctrl=True):
             return
         self.push_screen(WizardModal(self.settings))
 
     def action_open_cro_forensic(self) -> None:
         """Open CRO multi-study forensic ingestion modal screen."""
-        if self._is_text_control_focused():
+        if self._is_text_control_focused(is_global_ctrl=True):
             return
         from app.core.plugin_registry import PluginRegistry
 
@@ -4963,13 +4993,13 @@ class AutoSorterTUI(A11yMixin, App):
 
     def action_open_cheat_sheet(self) -> None:
         """Open keyboard shortcut cheat sheet modal screen."""
-        if self._is_text_control_focused():
+        if self._is_text_control_focused(is_global_ctrl=True):
             return
         self.push_screen(ShortcutCheatSheetModal())
 
     def action_open_dropzone(self) -> None:
         """Open floating dropzone overlay modal screen."""
-        if self._is_text_control_focused():
+        if self._is_text_control_focused(is_global_ctrl=True):
             return
 
         def on_drop_done(res: Optional[Dict[str, Any]]) -> None:
@@ -4986,7 +5016,7 @@ class AutoSorterTUI(A11yMixin, App):
 
     def action_scan_directory(self) -> None:
         """Trigger directory scanning background worker."""
-        if self._is_text_control_focused():
+        if self._is_text_control_focused(is_global_ctrl=True):
             return
         if not getattr(self, "source_dirs", None) and self.base_dir:
             self.source_dirs = [self.base_dir]
@@ -5103,7 +5133,7 @@ class AutoSorterTUI(A11yMixin, App):
 
     def action_export_simulation_report(self) -> None:
         """Trigger dry-run simulation report export modal screen."""
-        if self._is_text_control_focused():
+        if self._is_text_control_focused(is_global_ctrl=True):
             return
         if not self.plan or not self.base_dir:
             self.announce("No plan available to export. Run [Ctrl+S] Scan first.")
@@ -5140,7 +5170,7 @@ class AutoSorterTUI(A11yMixin, App):
 
     def action_open_history(self) -> None:
         """Trigger session history view and audit log export modal screen."""
-        if self._is_text_control_focused():
+        if self._is_text_control_focused(is_global_ctrl=True):
             return
         from app.main import find_all_history_sessions
 
@@ -5197,7 +5227,7 @@ class AutoSorterTUI(A11yMixin, App):
 
     def action_execute_sort(self) -> None:
         """Trigger sorting plan execution worker."""
-        if self._is_text_control_focused():
+        if self._is_text_control_focused(is_global_ctrl=True):
             return
         if not self.plan or not self.app_session:
             self.announce("No plan available to execute. Run [Ctrl+S] Scan first.")
@@ -5308,11 +5338,20 @@ class AutoSorterTUI(A11yMixin, App):
                 return True
         return False
 
-    def rebuild_tree(self) -> None:
+    def rebuild_tree(self, search_query: Optional[str] = None) -> None:
         """Rebuild Textual Tree widget from in-memory plan structure."""
         try:
             tree = self.query_one("#plan-tree", Tree)
             tree.reset("Proposed Organization Plan")
+            if search_query is None:
+                try:
+                    search_input = self.query_one("#tree-search-input", Input)
+                    search_query = search_input.value
+                except Exception:
+                    search_query = ""
+
+            query = search_query.strip().lower() if search_query else ""
+
             if not self._has_file_nodes(self.plan):
                 tree.root.add_leaf(
                     "💡 Empty Workspace: No documents found in target directory",
@@ -5335,7 +5374,14 @@ class AutoSorterTUI(A11yMixin, App):
                     },
                 )
             else:
-                self._build_tree_nodes(self.plan, tree.root, current_folder="")
+                nodes_added = self._build_tree_nodes(
+                    self.plan, tree.root, current_folder="", query=query
+                )
+                if query and nodes_added == 0:
+                    tree.root.add_leaf(
+                        f"🔍 No matching tree nodes found for '{search_query}'",
+                        data={"is_empty_state": True, "action": "info"},
+                    )
             tree.root.expand_all()
         except Exception as e:
             logger.error(f"Error rebuilding tree: {e}")
@@ -5353,9 +5399,52 @@ class AutoSorterTUI(A11yMixin, App):
                     files.extend(self._collect_file_nodes_from_dict(val))
         return files
 
+    def _node_matches_query(
+        self, key: str, val: Dict[str, Any], current_folder: str, query: str
+    ) -> bool:
+        """Check if a node (file or directory) or any of its descendants match the search query."""
+        if not query:
+            return True
+
+        if isinstance(val, dict) and val.get("__type__") == "file":
+            filepath = str(
+                val.get(
+                    "filepath",
+                    (Path(self.base_dir) / current_folder / key).as_posix()
+                    if self.base_dir
+                    else (Path(current_folder) / key).as_posix(),
+                )
+            )
+            target_filename = str(val.get("target_filename", ""))
+            return (
+                query in key.lower()
+                or query in filepath.lower()
+                or query in target_filename.lower()
+            )
+        elif isinstance(val, dict):
+            sub_folder = (
+                (Path(current_folder) / key).as_posix() if current_folder else key
+            )
+            if query in key.lower() or query in sub_folder.lower():
+                return True
+            for child_k, child_v in val.items():
+                if isinstance(child_v, dict) and self._node_matches_query(
+                    child_k, child_v, sub_folder, query
+                ):
+                    return True
+            return False
+        return False
+
     def _build_tree_nodes(
-        self, node_dict: Dict[str, Any], parent_item: TreeNode, current_folder: str
-    ) -> None:
+        self,
+        node_dict: Dict[str, Any],
+        parent_item: TreeNode,
+        current_folder: str,
+        query: str = "",
+        parent_folder_matches: bool = False,
+    ) -> int:
+        """Recursively build tree nodes, filtering by search query if specified. Returns count of nodes added."""
+        added_count = 0
         for k, v in sorted(
             node_dict.items(),
             key=lambda x: (
@@ -5372,6 +5461,16 @@ class AutoSorterTUI(A11yMixin, App):
                     if self.base_dir
                     else (Path(current_folder) / file_key).as_posix(),
                 )
+                target_filename = file_info.get("target_filename", "")
+
+                if query and not parent_folder_matches:
+                    file_matches = (
+                        query in file_key.lower()
+                        or query in str(filepath).lower()
+                        or query in str(target_filename).lower()
+                    )
+                    if not file_matches:
+                        continue
 
                 is_locked = (
                     file_key in self.locked_files
@@ -5442,7 +5541,6 @@ class AutoSorterTUI(A11yMixin, App):
                     label_parts.append(f"[ARCH: {arch_str}]")
 
                 label_parts.append(file_key)
-                target_filename = file_info.get("target_filename")
                 if target_filename and target_filename != file_key:
                     label_parts.append(f"-> {target_filename}")
 
@@ -5459,10 +5557,24 @@ class AutoSorterTUI(A11yMixin, App):
                     "is_excluded": is_excluded,
                 }
                 parent_item.add_leaf(Text(label_str), data=node_data)
+                added_count += 1
             elif isinstance(v, dict):
                 sub_folder = (
                     (Path(current_folder) / k).as_posix() if current_folder else k
                 )
+                folder_matches = (
+                    (query in k.lower() or query in sub_folder.lower())
+                    if query
+                    else True
+                )
+
+                if query and not (
+                    parent_folder_matches
+                    or folder_matches
+                    or self._node_matches_query(k, v, current_folder, query)
+                ):
+                    continue
+
                 node_data = {
                     "is_file": False,
                     "key": k,
@@ -5488,7 +5600,16 @@ class AutoSorterTUI(A11yMixin, App):
                 child_tree_node = parent_item.add(
                     Text(f"{folder_cb}📁 {k}"), data=node_data, expand=True
                 )
-                self._build_tree_nodes(v, child_tree_node, current_folder=sub_folder)
+                child_added = self._build_tree_nodes(
+                    v,
+                    child_tree_node,
+                    current_folder=sub_folder,
+                    query=query,
+                    parent_folder_matches=parent_folder_matches or folder_matches,
+                )
+                added_count += 1 + child_added
+
+        return added_count
 
     def _update_inspector(self, node_or_data: Any = None) -> str:
         """Update and return formatted metadata text for the inspector panel."""
@@ -5643,6 +5764,20 @@ class AutoSorterTUI(A11yMixin, App):
                     self.action_generate_sample_corpus()
                 elif action == "select_dir":
                     self.action_select_dir()
+
+    @on(Input.Changed, "#tree-search-input")
+    def on_tree_search_changed(self, event: Input.Changed) -> None:
+        """Handle real-time search input field change to dynamically filter preview tree nodes."""
+        self.rebuild_tree(search_query=event.value)
+
+    def action_focus_search(self) -> None:
+        """Focus the real-time tree filter search input bar."""
+        try:
+            inp = self.query_one("#tree-search-input", Input)
+            inp.focus()
+            self.announce("Focused tree search input bar.")
+        except Exception:
+            pass
 
     # --- Checkbox Selection & Bulk Action Handlers ---
 
@@ -5894,7 +6029,7 @@ class AutoSorterTUI(A11yMixin, App):
 
     def action_toggle_lock(self) -> None:
         """Toggle node lock state [Ctrl+L]."""
-        if self._is_text_control_focused():
+        if self._is_text_control_focused(is_global_ctrl=True):
             return
         node = self._get_active_node()
         if not node or not node.data or not node.data.get("is_file"):
@@ -5929,7 +6064,7 @@ class AutoSorterTUI(A11yMixin, App):
 
     def action_rename_node(self) -> None:
         """Rename file or folder category node [Ctrl+R]."""
-        if self._is_text_control_focused():
+        if self._is_text_control_focused(is_global_ctrl=True):
             return
         node = self._get_active_node()
         if not node or not node.data:
@@ -5993,7 +6128,7 @@ class AutoSorterTUI(A11yMixin, App):
 
     def action_new_folder(self) -> None:
         """Create a new folder category node [Ctrl+N]."""
-        if self._is_text_control_focused():
+        if self._is_text_control_focused(is_global_ctrl=True):
             return
 
         def on_created(folder_name: Optional[str]) -> None:
@@ -6022,7 +6157,7 @@ class AutoSorterTUI(A11yMixin, App):
 
     def action_quit(self) -> None:
         """Quit application [Ctrl+Q]."""
-        if self._is_text_control_focused():
+        if self._is_text_control_focused(is_global_ctrl=True):
             return
         super().action_quit()
 
