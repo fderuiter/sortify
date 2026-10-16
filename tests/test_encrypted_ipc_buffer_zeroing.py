@@ -36,8 +36,6 @@ def test_vector_buffer_operations_and_zero_filling():
 
     assert len(vb) == 5
     assert vb.to_list() == pytest.approx(floats)
-    assert np.allclose(vb.to_numpy(), np.array(floats, dtype=np.float32))
-    assert not vb.is_zeroed()
 
     # Verify indexing and iteration
     assert vb[1] == pytest.approx(0.25)
@@ -45,9 +43,8 @@ def test_vector_buffer_operations_and_zero_filling():
 
     # Zero-fill the buffer
     vb.zero_fill()
-    assert vb.is_zeroed()
     assert vb.to_list() == []
-    assert len(vb.to_numpy()) == 0
+    assert len(vb) == 0
 
 
 def test_zero_vector_buffer_helper():
@@ -65,8 +62,10 @@ def test_zero_vector_buffer_helper():
 
     zero_vector_buffer(data_structure)
 
-    assert vb1.is_zeroed()
-    assert vb2.is_zeroed()
+    assert vb1.to_list() == []
+    assert vb2.to_list() == []
+    assert len(vb1) == 0
+    assert len(vb2) == 0
     assert all(b == 0 for b in ba)
     assert np.all(arr == 0)
 

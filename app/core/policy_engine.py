@@ -1,7 +1,7 @@
 """Policy Engine module for evaluating compliance policies and validating lock paths."""
 
 import os
-from typing import Any, Dict
+from typing import Any, Dict, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict
 
@@ -161,17 +161,37 @@ class PolicyEngine:
         return matched_result
 
     @staticmethod
-    def validate_lock_path(lock_path: str, file_path: str = None) -> None:
+    def validate_lock_path_safe(
+        lock_path: Any, file_path: Optional[str] = None
+    ) -> Tuple[bool, Optional[str]]:
+        """Validate a folder lock path safely without raising exceptions.
+
+        Returns
+        -------
+            Tuple[bool, Optional[str]]: (is_valid, error_message)
+            (True, None) if valid, (False, error_message) if invalid.
+        """
+        if not isinstance(lock_path, str):
+            return False, f"Lock path must be a string. Got {type(lock_path)}"
+        try:
+            validate_target_path(
+                lock_path, keyword=os.path.basename(file_path) if file_path else None
+            )
+            return True, None
+        except Exception as err:
+            return False, str(err)
+
+    @staticmethod
+    def validate_lock_path(lock_path: str, file_path: Optional[str] = None) -> None:
         """Validate a folder lock path against the established policy schema (path rules).
 
         Raises ValueError if invalid.
         """
-        if not isinstance(lock_path, str):
-            raise ValueError(f"Lock path must be a string. Got {type(lock_path)}")
-        # Use established target path validator
-        validate_target_path(
-            lock_path, keyword=os.path.basename(file_path) if file_path else None
+        is_valid, error_msg = PolicyEngine.validate_lock_path_safe(
+            lock_path, file_path=file_path
         )
+        if not is_valid:
+            raise ValueError(error_msg)
 
 
 def is_masked_by(higher_rule: Any, lower_rule: Any) -> bool:
