@@ -105,6 +105,7 @@ class Settings(BaseSettings):
     IMAGE_MAX_DIMENSION: int = Field(default=1000, gt=0)
     IMAGE_SKIP_THRESHOLD: int = Field(default=3000, gt=0)
     MODEL_THREADS: int = Field(default=2, ge=1, le=32)
+    GRAMMAR_CACHE_SIZE: int = Field(default=16, gt=0, le=256)
     SNAPSHOT_RETENTION_DAYS: int = Field(default=30, gt=0)
     PROTECTED_PATHS: list[str] = Field(default_factory=list)
     AUTO_QUARANTINE_RATINGS: list[str] = Field(default=["CRITICAL", "HIGH"])

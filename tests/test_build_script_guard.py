@@ -46,6 +46,7 @@ def test_build_script_standard_all_present():
             patch("importlib.util.find_spec") as mock_find_spec,
             patch("sys.exit", side_effect=SystemExit) as mock_exit,
             patch("scripts.build.download_and_prepare_weights") as mock_download,
+            patch("scripts.build.verify_scientific_binaries") as mock_verify_sci,
         ):
             # All find_spec calls return a valid spec
             mock_spec = MagicMock()
@@ -54,9 +55,10 @@ def test_build_script_standard_all_present():
 
             main()
 
-            # Let's verify that 'torch' and other ML libraries were checked
+            # Let's verify that 'torch', 'scipy', and other ML libraries were checked
             checked_modules = [call.args[0] for call in mock_find_spec.call_args_list]
             assert "torch" in checked_modules
+            assert "scipy" in checked_modules
             assert "sklearn" in checked_modules
             assert "llama_cpp" in checked_modules
 
@@ -114,7 +116,11 @@ def test_build_script_cpu_profile_success():
             patch("scripts.build.update_binaries_and_manifest") as mock_update_bin,
             patch("os.path.exists", return_value=True),
             patch(
-                "os.walk", return_value=[("dist/smart-autosorter", [], [])]
+                "os.walk",
+                return_value=[
+                    ("dist/smart-autosorter", [], []),
+                    ("dist/smart-autosorter/scipy", [], ["_sparsetools.so"]),
+                ],
             ),  # No GPU binaries
         ):
             # Setup sqlcipher3 and torch mock
@@ -189,7 +195,10 @@ def test_build_script_cpu_profile_scan_fails_if_gpu_binaries_exist():
             patch("os.path.exists", return_value=True),
             patch(
                 "os.walk",
-                return_value=[("dist/smart-autosorter", [], ["libcudart.so"])],
+                return_value=[
+                    ("dist/smart-autosorter", [], ["libcudart.so"]),
+                    ("dist/smart-autosorter/scipy", [], ["_sparsetools.so"]),
+                ],
             ),
             patch("builtins.print") as mock_print,
         ):
@@ -331,3 +340,45 @@ def test_package_sidecar_models(tmp_path):
             )
     finally:
         os.chdir(original_cwd)
+
+
+def test_verify_scientific_binaries_success(tmp_path):
+    """Verify verify_scientific_binaries returns True when SciPy package and binaries exist."""
+    from scripts.build import verify_scientific_binaries
+
+    dist_dir = tmp_path / "dist" / "smart-autosorter"
+    scipy_dir = dist_dir / "scipy" / "sparse"
+    scipy_dir.mkdir(parents=True, exist_ok=True)
+    (scipy_dir / "_sparsetools.so").write_bytes(b"mock_so_data")
+
+    res = verify_scientific_binaries(str(dist_dir))
+    assert res is True
+
+
+def test_verify_scientific_binaries_missing_dir(tmp_path):
+    """Verify verify_scientific_binaries fails if SciPy directory is missing."""
+    from scripts.build import verify_scientific_binaries
+
+    dist_dir = tmp_path / "dist" / "smart-autosorter"
+    dist_dir.mkdir(parents=True, exist_ok=True)
+
+    with patch("sys.exit", side_effect=SystemExit) as mock_exit:
+        with pytest.raises(SystemExit):
+            verify_scientific_binaries(str(dist_dir))
+        mock_exit.assert_called_once_with(1)
+
+
+def test_verify_scientific_binaries_missing_binaries(tmp_path):
+    """Verify verify_scientific_binaries fails if SciPy directory exists but contains no native C-extensions."""
+    from scripts.build import verify_scientific_binaries
+
+    dist_dir = tmp_path / "dist" / "smart-autosorter"
+    scipy_dir = dist_dir / "scipy" / "sparse"
+    scipy_dir.mkdir(parents=True, exist_ok=True)
+    (scipy_dir / "__init__.py").write_text("print('hello')", encoding="utf-8")
+
+    with patch("sys.exit", side_effect=SystemExit) as mock_exit:
+        with pytest.raises(SystemExit):
+            verify_scientific_binaries(str(dist_dir))
+        mock_exit.assert_called_once_with(1)
+
