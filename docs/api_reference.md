@@ -6,6 +6,10 @@ This document is automatically generated. Do not edit manually.
 
 ![Core Architecture Diagram](assets/diagrams/core_architecture.svg)
 
+## `app.cli.generate_docs`
+
+::: app.cli.generate_docs
+
 ## `app.cli.ledger_cli`
 
 ::: app.cli.ledger_cli

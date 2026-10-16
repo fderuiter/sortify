@@ -33,7 +33,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --only-group dev --no-install-project
+        uv sync --frozen --only-group dev --no-install-project
 
     - name: Run Dependency Audit
       run: |
@@ -66,7 +66,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --only-group dev
+        uv sync --frozen --only-group dev
 
     - name: Run MyPy Type Check
       run: |
@@ -91,7 +91,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --frozen --all-groups
 
     - name: Lint with Ruff
       run: |
@@ -131,6 +131,9 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    defaults:
+      run:
+        shell: bash
     env:
       PYTHON_KEYRING_BACKEND: keyring.backends.fail.Keyring
     steps:
@@ -149,7 +152,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --frozen --all-groups
 
     - name: Terminal Interface Snapshot Validation
       run: |
@@ -199,16 +202,15 @@ jobs:
         retention-days: 14
 
     - name: Build executable (Lite)
-      if: matrix.os == 'windows-latest'
       run: |
         uv run python scripts/build.py --lite
 
-    - name: Verify compiled executable (Windows Smoke Test)
-      if: matrix.os == 'windows-latest'
+    - name: Verify compiled executable (Smoke Test)
       shell: python
       run: |
         import subprocess, sys, os
-        cli_exe = r"dist/smart-autosorter/smart-autosorter.exe"
+        exe_ext = ".exe" if sys.platform == "win32" else ""
+        cli_exe = os.path.join("dist", "smart-autosorter", f"smart-autosorter{exe_ext}")
         if not os.path.exists(cli_exe):
             print(f"Missing CLI executable target: {cli_exe}")
             sys.exit(1)
@@ -216,7 +218,7 @@ jobs:
         if res.returncode != 0:
             print(f"Smoke test failed with exit code {res.returncode}")
             found_log = False
-            for path in ["smoke_test_error.txt", r"dist/smart-autosorter/smoke_test_error.txt"]:
+            for path in ["smoke_test_error.txt", os.path.join("dist", "smart-autosorter", "smoke_test_error.txt")]:
                 if os.path.exists(path):
                     with open(path, "r", encoding="utf-8") as f:
                         print("=== smoke_test_error.txt ===")
@@ -265,7 +267,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --only-group dev
+        uv sync --frozen --only-group dev
 
     - name: Deploy Documentation
       if: github.ref == 'refs/heads/main'
@@ -302,12 +304,12 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --all-groups
+        uv sync --frozen --all-groups
 
     - name: Heavy ML and Integration Tests
       shell: bash
       run: |
-        uv sync --all-groups --extra ml
+        uv sync --frozen --all-groups --extra ml
         if ! uv run pytest -m "slow" -n auto --cov --cov-report=term tests/; then
           if [ -f pytest_failures.txt ]; then
             echo "=== PYTEST FAILURES ==="

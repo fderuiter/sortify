@@ -179,7 +179,7 @@ class DaemonIPCServer:
                 if not line_str:
                     continue
 
-                response = self._process_rpc_line(line_str)
+                response = await self._process_rpc_line(line_str)
                 response_bytes = (json.dumps(response) + "\n").encode("utf-8")
                 writer.write(response_bytes)
                 await writer.drain()
@@ -195,7 +195,7 @@ class DaemonIPCServer:
         except Exception:
             pass
 
-    def _process_rpc_line(self, line_str: str) -> Dict[str, Any]:
+    async def _process_rpc_line(self, line_str: str) -> Dict[str, Any]:
         """Parse line string as JSON-RPC 2.0 and return response dictionary."""
         try:
             data = json.loads(line_str)
@@ -225,7 +225,7 @@ class DaemonIPCServer:
             }
 
         try:
-            result = self._dispatch_method(method.lower(), params)
+            result = await self._dispatch_method(method.lower(), params)
             return {"jsonrpc": "2.0", "id": req_id, "result": result}
         except Exception as e:
             logger.error(f"Method '{method}' execution failed: {e}")
@@ -235,7 +235,7 @@ class DaemonIPCServer:
                 "error": {"code": -32603, "message": f"Internal error: {str(e)}"},
             }
 
-    def _dispatch_method(self, method: str, params: dict) -> Dict[str, Any]:
+    async def _dispatch_method(self, method: str, params: dict) -> Dict[str, Any]:
         """Dispatch JSON-RPC method to corresponding daemon telemetry/control handler."""
         if method == "status":
             return self.daemon.get_status_telemetry()
@@ -250,7 +250,7 @@ class DaemonIPCServer:
             self.daemon.resume()
             return {"status": "resumed", "message": "Daemon triage pipeline resumed"}
         elif method == "drop":
-            return self._handle_drop_rpc(params)
+            return await self._handle_drop_rpc(params)
         elif method == "stop":
             # Schedule daemon shutdown after response is sent
             loop = asyncio.get_running_loop()
@@ -259,7 +259,7 @@ class DaemonIPCServer:
         else:
             raise ValueError(f"Method '{method}' not found")
 
-    def _handle_drop_rpc(self, params: dict) -> Dict[str, Any]:
+    async def _handle_drop_rpc(self, params: dict) -> Dict[str, Any]:
         """Handle 'drop' JSON-RPC method request forwarding payloads to active triage pipeline."""
         if not isinstance(params, dict):
             raise ValueError("Invalid parameters: params must be a JSON object")
@@ -326,8 +326,11 @@ class DaemonIPCServer:
             raise ValueError(f"Path validation failed: {reasons_str}")
 
         if hasattr(self.daemon, "process_dropped_items"):
-            res = self.daemon.process_dropped_items(
-                validated_paths, dry_run=dry_run, dest_dir=dest_dir
+            res = await asyncio.to_thread(
+                self.daemon.process_dropped_items,
+                validated_paths,
+                dry_run=dry_run,
+                dest_dir=dest_dir,
             )
             res["validated_paths"] = validated_paths
             return res
@@ -381,7 +384,7 @@ class DaemonIPCClient:
         self.base_dir = os.path.abspath(base_dir)
 
     async def send_command(
-        self, method: str, params: Optional[dict] = None, timeout: float = 5.0
+        self, method: str, params: Optional[dict] = None, timeout: float = 15.0
     ) -> Dict[str, Any]:
         """Send a JSON-RPC method request to the daemon IPC server and return result dict."""
         pid_info = read_pid_file(self.base_dir)

@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.generate_docs import convert_notebook_to_markdown, main
+from app.cli.generate_docs import convert_notebook_to_markdown, main
 
 pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
@@ -71,10 +71,10 @@ def test_notebook_drift_detection_fails_on_drift(tmp_path):
     # Run generate_docs with --check and verify sys.exit(1) when a generated notebook file is unsynced
     with patch("sys.argv", ["generate_docs.py", "--check"]):
         with (
-            patch("scripts.generate_docs.generate_api_docs"),
-            patch("scripts.generate_docs.generate_ui_docs"),
-            patch("scripts.generate_docs.generate_admin_guide"),
-            patch("scripts.generate_docs.update_security_md"),
+            patch("app.cli.generate_docs.generate_api_docs"),
+            patch("app.cli.generate_docs.generate_ui_docs"),
+            patch("app.cli.generate_docs.generate_admin_guide"),
+            patch("app.cli.generate_docs.update_security_md"),
             patch("subprocess.run") as mock_run,
             patch("sys.exit") as mock_exit,
         ):

@@ -40,6 +40,16 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
 
     target_dir = Path("app") / "binaries" / platform_key / "sqlcipher3"
 
+    saved_dbapi2 = None
+    existing_dbapi2 = target_dir / "dbapi2.py"
+    if existing_dbapi2.exists():
+        try:
+            txt = existing_dbapi2.read_text(encoding="utf-8")
+            if "_load_sqlcipher_native_libraries" in txt:
+                saved_dbapi2 = txt
+        except Exception:
+            pass
+
     if target_dir.exists():
         from app.core.resilient_file_ops import resilient_rmtree
 
@@ -56,6 +66,9 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
             dest_path.parent.mkdir(parents=True, exist_ok=True)
             shutil.copy2(path, dest_path)
             copied_files.append(rel_path.as_posix())
+
+    if saved_dbapi2 is not None:
+        (target_dir / "dbapi2.py").write_text(saved_dbapi2, encoding="utf-8")
 
     if system_platform == "win32":
         # Ensure all required Windows DLLs (sqlite3, OpenSSL) are copied to the binaries directory if not already copied

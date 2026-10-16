@@ -123,9 +123,10 @@ def test_settings_modal_labeled_switch_click_label(tmp_path):
             modal.query_one(".modal-box").scroll_to_widget(
                 ls_ai, center=True, animate=False
             )
-            await pilot.pause(0.05)
+            await pilot.pause()
+            await pilot.pause(0.1)
             await pilot.click(ls_ai.label_widget)
-            await pilot.pause(0.05)
+            await pilot.pause(0.1)
 
             assert sw_ai.value is True
             assert app.focused == sw_ai
@@ -140,7 +141,7 @@ def test_wizard_modal_labeled_switch_click_label(tmp_path):
         settings = AppSettings()
         app = AutoSorterTUI(settings=settings, base_dir=tmp_path)
 
-        async with app.run_test() as pilot:
+        async with app.run_test(size=(100, 50)) as pilot:
             app.push_screen(WizardModal(app.settings))
             await pilot.pause(0.1)
 
@@ -153,7 +154,11 @@ def test_wizard_modal_labeled_switch_click_label(tmp_path):
             assert isinstance(ls_sample, LabeledSwitch)
             assert sw_sample.value is False
 
-            # Click the label text for sample documents
+            # Scroll to center switch in scroll container before clicking label
+            modal.query_one(".modal-box").scroll_to_widget(
+                ls_sample, center=True, animate=False
+            )
+            await pilot.pause(0.05)
             await pilot.click(ls_sample.label_widget)
             await pilot.pause(0.05)
 

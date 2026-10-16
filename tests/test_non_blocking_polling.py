@@ -1,6 +1,5 @@
 import queue
 import threading
-import time
 
 import pytest
 
@@ -24,12 +23,14 @@ def test_cooperative_queue_get_timeout():
 
 def test_cooperative_join_thread():
     """Verify cooperative_join joins a thread successfully."""
+    stop_event = threading.Event()
 
     def dummy():
-        time.sleep(0.01)
+        stop_event.wait(timeout=2.0)
 
     t = threading.Thread(target=dummy)
     t.start()
     assert t.is_alive()
+    stop_event.set()
     cooperative_join(t, timeout=1.0)
     assert not t.is_alive()

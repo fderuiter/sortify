@@ -1,0 +1,230 @@
+{
+  "_metadata": {
+    "checksum": "3dbfc83ce6fc58fbac662a6e47b1ecfbef3264315e46eacf4ffebc1346e359ae"
+  },
+  "cli": [
+    {
+      "args": [
+        "quarantine"
+      ],
+      "caller": "subparsers",
+      "keywords": {
+        "help": "Manage compliance quarantine staging, inspection, and release"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "list"
+      ],
+      "caller": "quarantine_subparsers",
+      "keywords": {
+        "help": "List staged and quarantined compliance items"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "--status"
+      ],
+      "caller": "p_list",
+      "keywords": {
+        "default": null,
+        "help": "Filter items by quarantine status (e.g. STAGED, QUARANTINED, IN_INSPECTION, RELEASED, DEAD_LETTER_QUEUE)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--base-dir"
+      ],
+      "caller": "p_list",
+      "keywords": {
+        "default": null,
+        "help": "Filter items by base directory",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "inspect"
+      ],
+      "caller": "quarantine_subparsers",
+      "keywords": {
+        "help": "Inspect a specific quarantine job record and audit trail"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "job_id_pos"
+      ],
+      "caller": "p_inspect",
+      "keywords": {
+        "default": null,
+        "help": "Quarantine job ID",
+        "metavar": "JOB_ID",
+        "nargs": "?"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--job-id"
+      ],
+      "caller": "p_inspect",
+      "keywords": {
+        "default": null,
+        "help": "Quarantine job ID",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "process"
+      ],
+      "caller": "quarantine_subparsers",
+      "keywords": {
+        "help": "Trigger forensic scanning and policy evaluation for a quarantine job"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "job_id_pos"
+      ],
+      "caller": "p_process",
+      "keywords": {
+        "default": null,
+        "help": "Quarantine job ID",
+        "metavar": "JOB_ID",
+        "nargs": "?"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--job-id"
+      ],
+      "caller": "p_process",
+      "keywords": {
+        "default": null,
+        "help": "Quarantine job ID",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--timeout"
+      ],
+      "caller": "p_process",
+      "keywords": {
+        "default": 300.0,
+        "help": "Forensic scan timeout in seconds (default 300.0)",
+        "type": "float"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "release"
+      ],
+      "caller": "quarantine_subparsers",
+      "keywords": {
+        "help": "Release a quarantined item to its destination directory"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "job_id_pos"
+      ],
+      "caller": "p_release",
+      "keywords": {
+        "default": null,
+        "help": "Quarantine job ID",
+        "metavar": "JOB_ID",
+        "nargs": "?"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--job-id"
+      ],
+      "caller": "p_release",
+      "keywords": {
+        "default": null,
+        "help": "Quarantine job ID",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--dest-dir"
+      ],
+      "caller": "p_release",
+      "keywords": {
+        "default": null,
+        "help": "Target destination directory for released file",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--db-path"
+      ],
+      "caller": "p",
+      "keywords": {
+        "default": null,
+        "help": "Path to database file",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "-q",
+        "--quiet"
+      ],
+      "caller": "p",
+      "keywords": {
+        "action": "store_true",
+        "default": "argparse.SUPPRESS",
+        "dest": "quiet",
+        "help": "Suppress informational prints"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--no-color"
+      ],
+      "caller": "p",
+      "keywords": {
+        "action": "store_true",
+        "default": "argparse.SUPPRESS",
+        "dest": "no_color",
+        "help": "Disable ANSI color formatting"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--json"
+      ],
+      "caller": "p",
+      "keywords": {
+        "action": "store_true",
+        "help": "Output response in structured JSON format"
+      },
+      "method": "add_argument"
+    }
+  ]
+}

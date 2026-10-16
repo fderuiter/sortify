@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "28ba53b634db491300870436c54fc8c5fb57d80ed2ddca219ee776b31c657186"
+    "checksum": "ae25699bb613b4074278b0df7ef5e4a44a572c5441e94320ad3ad3bb37a9be03"
   },
   "classes": [
     {
@@ -47,7 +47,7 @@
             },
             {
               "annotation": "float",
-              "default": "5.0",
+              "default": "15.0",
               "name": "timeout"
             }
           ],

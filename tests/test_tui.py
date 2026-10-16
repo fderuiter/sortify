@@ -354,7 +354,7 @@ def test_tui_returning_launch_bypasses_wizard(temp_workspace):
 
 
 def test_tui_wizard_modal_cancel_preserves_defaults(temp_workspace):
-    """Verify canceling WizardModal maintains defaults and emits announcement."""
+    """Verify canceling WizardModal maintains None consent state, sets session suppression flag, and triggers again on restart."""
 
     async def _test():
         settings = AppSettings()
@@ -369,8 +369,22 @@ def test_tui_wizard_modal_cancel_preserves_defaults(temp_workspace):
             modal.action_cancel()
             await pilot.pause(0.1)
 
-            assert app.settings.AI_CONSENT_GRANTED is False
+            assert app.settings.AI_CONSENT_GRANTED is None
+            assert app._wizard_dismissed_this_session is True
             assert not isinstance(app.screen, WizardModal)
+
+            # Re-running on_mount in same session should not reopen wizard modal
+            app.on_mount()
+            await pilot.pause(0.1)
+            assert not isinstance(app.screen, WizardModal)
+
+        # Simulating app restart with unconfigured settings opens wizard modal again
+        restarted_app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        assert restarted_app._wizard_dismissed_this_session is False
+
+        async with restarted_app.run_test() as pilot:
+            await pilot.pause(0.2)
+            assert isinstance(restarted_app.screen, WizardModal)
 
     asyncio.run(_test())
 
@@ -431,7 +445,8 @@ def test_tui_cro_forensic_modal(temp_workspace):
                 mock_run.return_value = mock_res
 
                 modal.action_run()
-                await pilot.pause(0.2)
+                await app.workers.wait_for_complete()
+                await pilot.pause(0.05)
 
                 assert mock_run.called
 
@@ -697,7 +712,7 @@ def test_tui_session_recovery_modal_actions(temp_workspace):
 
             app.push_screen(modal, on_dismiss)
             await pilot.pause(0.05)
-            await pilot.click("#btn-resume")
+            modal.query_one("#btn-resume", Button).press()
             await pilot.pause(0.05)
             assert res == "resume"
 
@@ -713,7 +728,7 @@ def test_tui_session_recovery_modal_actions(temp_workspace):
 
             app.push_screen(modal, on_dismiss)
             await pilot.pause(0.05)
-            await pilot.click("#btn-rollback")
+            modal.query_one("#btn-rollback", Button).press()
             await pilot.pause(0.05)
             assert res == "rollback"
 
@@ -729,7 +744,7 @@ def test_tui_session_recovery_modal_actions(temp_workspace):
 
             app.push_screen(modal, on_dismiss)
             await pilot.pause(0.05)
-            await pilot.click("#btn-clean")
+            modal.query_one("#btn-clean", Button).press()
             await pilot.pause(0.05)
             assert res == "clean"
 
@@ -1434,7 +1449,8 @@ def test_tui_cro_forensic_modal_help_button_and_error(temp_workspace):
             # Set invalid source path to trigger worker error
             modal.query_one("#input-source", Input).value = "/nonexistent/invalid/path"
             modal.action_run()
-            await pilot.pause(0.1)
+            await app.workers.wait_for_complete()
+            await pilot.pause(0.05)
 
             assert not btn_help.has_class("hidden")
             assert (
@@ -1647,7 +1663,7 @@ def test_directory_select_modal_demo_preset_auto_creation(
             await pilot.pause(0.05)
             assert isinstance(app.screen, DirectorySelectModal)
 
-            await pilot.click("#preset-demo")
+            app.screen.query_one("#preset-demo", Button).press()
             await pilot.pause(0.05)
 
             assert demo_dir.exists()
@@ -1690,7 +1706,7 @@ def test_directory_select_modal_preset_creation_error_graceful_handling(
             modal = app.screen
             announcements_before = len(modal.announcements)
 
-            await pilot.click("#preset-demo")
+            modal.query_one("#preset-demo", Button).press()
             await pilot.pause(0.05)
 
             assert any(
@@ -1723,7 +1739,7 @@ def test_directory_select_modal_nonexistent_custom_directory(temp_workspace, tmp
 
             inp = app.screen.query_one("#input-dir")
             inp.value = non_existent_path
-            await pilot.click("#btn-confirm")
+            app.screen.query_one("#btn-confirm", Button).press()
             await pilot.pause(0.05)
 
             assert app.base_dir == str(temp_workspace)

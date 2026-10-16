@@ -90,6 +90,17 @@ class GitHubClient:
             check_runs[run["name"]] = run["conclusion"] or run["status"]
         return check_runs
 
+    def get_commit_verification(self, sha: str) -> Dict[str, Any]:
+        """Fetch signature verification metadata for a given commit SHA."""
+        data = self._get(f"commits/{sha}")
+        if isinstance(data, dict):
+            commit_obj = data.get("commit", {})
+            if isinstance(commit_obj, dict):
+                verification = commit_obj.get("verification", {})
+                if isinstance(verification, dict):
+                    return verification
+        return {}
+
     def merge_pull_request(
         self, pr_number: int, head_sha: str, commit_title: str, commit_message: str
     ) -> bool:
@@ -163,6 +174,16 @@ def process_auto_merge_queue(client: GitHubClient) -> Optional[int]:
                 f"PR #{pr_number} has merge conflicts. Applying 'automerge:conflict'."
             )
             client.add_labels(pr_number, ["automerge:conflict", "automerge:blocked"])
+            continue
+
+        # Verify commit signature on head SHA
+        verification = client.get_commit_verification(head_sha)
+        if not verification.get("verified", False):
+            reason = verification.get("reason", "unverified")
+            logger.warning(
+                f"Head commit {head_sha[:8]} signature verification failed ({reason}) for PR #{pr_number}. Blocking auto-merge."
+            )
+            client.add_labels(pr_number, ["automerge:blocked", "risk:high"])
             continue
 
         # Check if branch is behind main
