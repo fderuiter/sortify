@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "4444bc96d3847643dd6ef53860334ff3273c977615835f0e0316f1c86b5f6c30"
+    "checksum": "d411f555f153db7a5476e66ba5adad0a6d7f410610f88316b11da30c7e07fffb"
   },
   "classes": [
     {
@@ -176,6 +176,11 @@
               "annotation": "str",
               "default": null,
               "name": "base_dir"
+            },
+            {
+              "annotation": "str",
+              "default": "'rename'",
+              "name": "conflict_policy"
             }
           ],
           "returns": "list"
