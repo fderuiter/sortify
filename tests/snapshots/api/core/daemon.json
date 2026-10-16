@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "c8ad509898d9bc4f26ac9ae24252e62d2be87162d6567fe1a4aac3459830c1d2"
+    "checksum": "dce5db50c837eb1891988cd823f4fd20702c27ad43327e24cf354d200ddd697b"
   },
   "classes": [
     {
@@ -352,6 +352,13 @@
     }
   ],
   "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "lower_process_priority",
+      "parameters": [],
+      "returns": "None"
+    },
     {
       "async": false,
       "decorators": [],
