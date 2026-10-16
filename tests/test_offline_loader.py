@@ -303,14 +303,22 @@ def test_florence2_visual_processor_mock_load_and_run(mocker):
     """Verify the local Florence-2 loading pipeline and process_image method with fully mocked model layers."""
     mock_model = MagicMock()
     mock_processor = MagicMock()
+    mock_transformers = MagicMock()
+    mock_torch = MagicMock()
 
     # Mock from_pretrained on native HF classes
-    mock_from_pretrained_model = mocker.patch(
-        "transformers.Florence2ForConditionalGeneration.from_pretrained",
-        return_value=mock_model,
+    mock_from_pretrained_model = (
+        mock_transformers.Florence2ForConditionalGeneration.from_pretrained
     )
-    mock_from_pretrained_processor = mocker.patch(
-        "transformers.Florence2Processor.from_pretrained", return_value=mock_processor
+    mock_from_pretrained_model.return_value = mock_model
+    mock_from_pretrained_processor = (
+        mock_transformers.Florence2Processor.from_pretrained
+    )
+    mock_from_pretrained_processor.return_value = mock_processor
+
+    mocker.patch.dict(
+        "sys.modules",
+        {"transformers": mock_transformers, "torch": mock_torch},
     )
 
     # Mock file path resolution
@@ -414,12 +422,21 @@ def test_florence2_pre_execution_integrity_valid_bundle(tmp_path, mocker):
     )
     mock_model = MagicMock()
     mock_processor = MagicMock()
-    mock_from_model = mocker.patch(
-        "transformers.Florence2ForConditionalGeneration.from_pretrained",
-        return_value=mock_model,
+    mock_transformers = MagicMock()
+    mock_torch = MagicMock()
+
+    mock_from_model = (
+        mock_transformers.Florence2ForConditionalGeneration.from_pretrained
     )
-    mock_from_processor = mocker.patch(
-        "transformers.Florence2Processor.from_pretrained", return_value=mock_processor
+    mock_from_model.return_value = mock_model
+    mock_from_processor = (
+        mock_transformers.Florence2Processor.from_pretrained
+    )
+    mock_from_processor.return_value = mock_processor
+
+    mocker.patch.dict(
+        "sys.modules",
+        {"transformers": mock_transformers, "torch": mock_torch},
     )
 
     processor = Florence2VisualProcessor()
@@ -459,11 +476,19 @@ def test_florence2_pre_execution_integrity_tampered_bundle_aborts(tmp_path, mock
         "app.core.offline_loader.OfflineModelLoader.resolve_model_path",
         return_value=str(tmp_path),
     )
-    mock_from_model = mocker.patch(
-        "transformers.Florence2ForConditionalGeneration.from_pretrained"
+    mock_transformers = MagicMock()
+    mock_torch = MagicMock()
+
+    mock_from_model = (
+        mock_transformers.Florence2ForConditionalGeneration.from_pretrained
     )
-    mock_from_processor = mocker.patch(
-        "transformers.Florence2Processor.from_pretrained"
+    mock_from_processor = (
+        mock_transformers.Florence2Processor.from_pretrained
+    )
+
+    mocker.patch.dict(
+        "sys.modules",
+        {"transformers": mock_transformers, "torch": mock_torch},
     )
 
     processor = Florence2VisualProcessor()

@@ -42,7 +42,7 @@ class QuarantineRecordModel(BaseModel):
 
     def __contains__(self, item: str) -> bool:
         """Provide in containment check for dictionary backward compatibility."""
-        return item in self.model_fields or (
+        return item in type(self).model_fields or (
             self.__pydantic_extra__ is not None and item in self.__pydantic_extra__
         )
 
@@ -135,7 +135,7 @@ class SortingPlanNodeModel(BaseModel):
         """Provide in containment check for dictionary backward compatibility."""
         if item == "__type__":
             return True
-        return item in self.model_fields or (
+        return item in type(self).model_fields or (
             self.__pydantic_extra__ is not None and item in self.__pydantic_extra__
         )
 
@@ -176,7 +176,7 @@ class SortingPlanModel(BaseModel):
 
     def __contains__(self, item: str) -> bool:
         """Provide in containment check for plan nodes."""
-        if item in self.nodes or item in self.model_fields:
+        if item in self.nodes or item in type(self).model_fields:
             return True
         return self.__pydantic_extra__ is not None and item in self.__pydantic_extra__
 
@@ -220,7 +220,7 @@ class CorpusExampleModel(BaseModel):
 
     def __contains__(self, item: str) -> bool:
         """Provide in containment check for dictionary backward compatibility."""
-        return item in self.model_fields or (
+        return item in type(self).model_fields or (
             self.__pydantic_extra__ is not None and item in self.__pydantic_extra__
         )
 
@@ -265,7 +265,7 @@ class CorpusPreFetchBatchModel(BaseModel):
         """Provide in containment check for batch attributes."""
         if item in ("model_metadata", "examples"):
             return True
-        return item in self.model_fields or (
+        return item in type(self).model_fields or (
             self.__pydantic_extra__ is not None and item in self.__pydantic_extra__
         )
 
@@ -302,7 +302,7 @@ class VectorBatchPayloadModel(BaseModel):
         """Provide in containment check for vector payload keys."""
         if item in ("base_dir", "vectors", "metadata"):
             return True
-        return item in self.model_fields or (
+        return item in type(self).model_fields or (
             self.__pydantic_extra__ is not None and item in self.__pydantic_extra__
         )
 
@@ -436,3 +436,15 @@ def _get_val(obj: Any, attr: str, default: Any = None) -> Any:
     if isinstance(obj, dict):
         return obj.get(attr, default)
     return default
+
+
+def _set_val(obj: Any, attr: str, val: Any) -> None:
+    """Safely set attribute or key value on dictionary or domain model object."""
+    if isinstance(obj, dict):
+        obj[attr] = val
+    elif hasattr(obj, attr):
+        setattr(obj, attr, val)
+    elif hasattr(obj, "plan") and isinstance(getattr(obj, "plan"), dict):
+        obj.plan[attr] = val
+    elif hasattr(obj, "__dict__"):
+        setattr(obj, attr, val)

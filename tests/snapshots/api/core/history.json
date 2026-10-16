@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "d7c765f42bd61bce6699c8e2ab4c3981ee74d2c37f7b998cc82bebb38544d2be"
+    "checksum": "5afd369162c7e02dc81fcdd66566505ce8d23123199710246f90756e4ffda0aa"
   },
   "classes": [
     {
@@ -120,24 +120,6 @@
         {
           "async": false,
           "decorators": [],
-          "name": "get_bidirectional_path_map",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
-            }
-          ],
-          "returns": "Dict[str, Any]"
-        },
-        {
-          "async": false,
-          "decorators": [],
           "name": "get_sessions",
           "parameters": [
             {
@@ -218,42 +200,6 @@
             }
           ],
           "returns": "int"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "resume_rollback",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "revert_rollback",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "safety_session_id"
-            }
-          ],
-          "returns": null
         },
         {
           "async": false,

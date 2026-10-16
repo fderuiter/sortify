@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "58742f6cc7e52b38e8e45b77ce5c159ee7605883b01752fef0bb15dced2d3ff0"
+    "checksum": "a2e51ca398dde6692651bb7edf809d2f2d76801c281d1ed4ef06b425e84a0c1d"
   },
   "classes": [
     {
@@ -102,6 +102,54 @@
             }
           ],
           "returns": "dict"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "retry_failed_moves",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "List[Dict[str, Any]]",
+              "default": null,
+              "name": "failed_items"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "db"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "history_manager"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "runtime_settings"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "Dict[str, Any]"
         }
       ]
     }
@@ -326,6 +374,49 @@
         }
       ],
       "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "retry_failed_moves",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "List[Dict[str, Any]]",
+          "default": null,
+          "name": "failed_items"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "db"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "history_manager"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "runtime_settings"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "progress_callback"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "**kwargs"
+        }
+      ],
+      "returns": "Dict[str, Any]"
     }
   ]
 }
