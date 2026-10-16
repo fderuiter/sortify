@@ -29,6 +29,7 @@ MODULE_TO_PACKAGE_MAP = {
     "pydantic_settings": "pydantic-settings",
     "pylnk3": "pylnk3",
     "pypdf": "pypdf",
+    "pypdfium2": "pypdfium2",
     "openpyxl": "openpyxl",
     "cryptography": "cryptography",
     "keyring": "keyring",

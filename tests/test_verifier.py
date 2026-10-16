@@ -143,6 +143,7 @@ def test_check_ai_status_florence2_integrity_failure(tmp_path, monkeypatch):
 
 def test_check_ai_status_packaged_lite_build_marker(tmp_path, monkeypatch):
     """Verify check_ai_status honors LITE_BUILD marker under _internal directory in packaged mode."""
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
     import sys
     from unittest.mock import patch
 
@@ -150,6 +151,7 @@ def test_check_ai_status_packaged_lite_build_marker(tmp_path, monkeypatch):
     from app.core.verifier import check_ai_status
 
     settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = True
 
     internal_dir = tmp_path / "_internal"
     internal_dir.mkdir()
