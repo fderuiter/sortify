@@ -13,6 +13,7 @@ DBAPI2_PATH = str(REPO_ROOT / "app" / "binaries" / "linux" / "sqlcipher3" / "dba
 
 class DummyRow:
     """Dummy Row class for ABC registration testing."""
+
     pass
 
 
@@ -23,7 +24,13 @@ def create_mock_sqlite3():
     mod.Row = DummyRow
     mod.register_adapter = MagicMock()
     mod.register_converter = MagicMock()
-    mod.__all__ = ["version", "sqlite_version", "Row", "register_adapter", "register_converter"]
+    mod.__all__ = [
+        "version",
+        "sqlite_version",
+        "Row",
+        "register_adapter",
+        "register_converter",
+    ]
     return mod
 
 
@@ -38,7 +45,9 @@ def test_load_sqlcipher_native_libraries_failure():
     mock_sqlite3 = create_mock_sqlite3()
 
     with (
-        patch("ctypes.cdll.LoadLibrary", side_effect=OSError("libsqlcipher.so not found")),
+        patch(
+            "ctypes.cdll.LoadLibrary", side_effect=OSError("libsqlcipher.so not found")
+        ),
         patch.dict("sys.modules", {"sqlcipher3._sqlite3": mock_sqlite3}),
     ):
         spec.loader.exec_module(dbapi2)
@@ -60,7 +69,9 @@ def test_dbapi2_fallback_to_standard_sqlite3_on_loadlibrary_failure():
 
     with (
         patch("ctypes.cdll.LoadLibrary", side_effect=OSError("Shared library missing")),
-        patch.dict("sys.modules", {"sqlcipher3._sqlite3": None, "_sqlite3": mock_sqlite3}),
+        patch.dict(
+            "sys.modules", {"sqlcipher3._sqlite3": None, "_sqlite3": mock_sqlite3}
+        ),
     ):
         spec.loader.exec_module(module)
         assert module.apilevel == "2.0"
@@ -78,10 +89,16 @@ def test_dbapi2_raises_descriptive_importerror_on_missing_dependencies():
     module = importlib.util.module_from_spec(spec)
 
     with (
-        patch("ctypes.cdll.LoadLibrary", side_effect=OSError("libsqlcipher.so.0: cannot open shared object file")),
+        patch(
+            "ctypes.cdll.LoadLibrary",
+            side_effect=OSError("libsqlcipher.so.0: cannot open shared object file"),
+        ),
         patch.dict("sys.modules", {"sqlcipher3._sqlite3": None, "_sqlite3": None}),
     ):
-        with pytest.raises(ImportError, match="Failed to load SQLCipher native extension or shared library dependencies"):
+        with pytest.raises(
+            ImportError,
+            match="Failed to load SQLCipher native extension or shared library dependencies",
+        ):
             spec.loader.exec_module(module)
 
 
@@ -90,13 +107,18 @@ def test_database_wrapper_setup_exception_propagation():
     from app.core.user_space_bootstrap import verify_sqlcipher_encryption
 
     mock_dbapi2 = MagicMock()
-    mock_dbapi2.connect.side_effect = ImportError("Failed to load SQLCipher native extension")
+    mock_dbapi2.connect.side_effect = ImportError(
+        "Failed to load SQLCipher native extension"
+    )
     mock_sqlcipher = MagicMock()
     mock_sqlcipher.dbapi2 = mock_dbapi2
 
     with (
         patch("sys.platform", "linux"),
-        patch.dict("sys.modules", {"sqlcipher3": mock_sqlcipher, "sqlcipher3.dbapi2": mock_dbapi2}),
+        patch.dict(
+            "sys.modules",
+            {"sqlcipher3": mock_sqlcipher, "sqlcipher3.dbapi2": mock_dbapi2},
+        ),
     ):
         result = verify_sqlcipher_encryption()
         assert result is False
