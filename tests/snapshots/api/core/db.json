@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "d173f27aad83756e021e10900fbe8a936a8221ca8928b7fb8fe96793f721ae96"
+    "checksum": "b4af5b2234efa5c497bd97a13401fb68ef796a0650c575f1ff3adb646167c0fe"
   },
   "classes": [
     {
@@ -26,6 +26,29 @@
               "annotation": "DBWorker",
               "default": null,
               "name": "worker"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "begin_transaction_session",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "float",
+              "default": "300.0",
+              "name": "timeout"
             }
           ],
           "returns": null
@@ -80,6 +103,24 @@
               "annotation": "list[str]",
               "default": null,
               "name": "filepaths"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "commit_transaction_session",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
             }
           ],
           "returns": null
@@ -573,6 +614,24 @@
         {
           "async": false,
           "decorators": [],
+          "name": "rollback_transaction_session",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "set_document_rating",
           "parameters": [
             {
@@ -773,6 +832,31 @@
         },
         {
           "async": false,
+          "decorators": [
+            "@contextmanager"
+          ],
+          "name": "transaction_scope",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "float",
+              "default": "300.0",
+              "name": "timeout"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
           "decorators": [],
           "name": "update_document_path",
           "parameters": [
@@ -936,6 +1020,5 @@
         }
       ]
     }
-  ],
-  "functions": []
+  ]
 }

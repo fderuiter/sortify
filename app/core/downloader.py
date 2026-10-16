@@ -414,6 +414,9 @@ def run_background_download(
     on_failure=None,
     cancel_event=None,
     download_manager=None,
+    initial_delay: float = 1.0,
+    backoff_factor: float = 2.0,
+    max_retries: int = 3,
 ):
     """Run model download in a dedicated background thread that bypasses sandboxing."""
     if cancel_event is None:
@@ -462,32 +465,27 @@ def run_background_download(
             bytes_downloaded = 0
             total_size = 0
             chunk_size = 1024 * 64
-            max_retries = 3
             retries = 0
 
             while True:
                 try:
+                    if cancel_event.is_set():
+                        raise DownloadCancelledError(
+                            "Download was cancelled by the user."
+                        )
+
                     opener = get_current_opener()
                     req = urllib.request.Request(
                         url, headers={"User-Agent": "Smart-AutoSorter/1.0"}
                     )
-                    if bytes_downloaded > 0:
-                        req.add_header("Range", f"bytes={bytes_downloaded}-")
 
-                    mode = "ab" if bytes_downloaded > 0 else "wb"
+                    mode = "wb"
+                    bytes_downloaded = 0
                     with opener.open(req, timeout=15) as response:
-                        if response.status == 206:
-                            content_range = response.info().get("Content-Range")
-                            if content_range and "/" in content_range:
-                                total_size = int(content_range.split("/")[-1])
-                        else:
-                            if mode == "ab":
-                                mode = "wb"
-                                bytes_downloaded = 0
-                            total_size = int(response.info().get("Content-Length", 0))
+                        total_size = int(response.info().get("Content-Length", 0))
 
                         # Proactive disk space check
-                        if total_size > 0 and bytes_downloaded == 0:
+                        if total_size > 0:
                             try:
                                 _, _, free = shutil.disk_usage(model_dir)
                                 if free < total_size:
@@ -557,14 +555,28 @@ def run_background_download(
                         net_err, NetworkError
                     ):
                         raise
+                    if isinstance(net_err, NetworkError) and "Invalid proxy configuration" in str(net_err):
+                        raise net_err
+
                     retries += 1
                     if retries > max_retries:
                         if isinstance(net_err, DownloadError):
                             raise net_err
                         raise NetworkError(str(net_err)) from net_err
+
+                    delay = initial_delay * (backoff_factor ** (retries - 1))
                     logger.info(
-                        f"Retrying download operation ({retries}/{max_retries}) using updated proxy opener: {net_err}"
+                        f"Retrying download operation ({retries}/{max_retries}) after {delay:.2f}s delay: {net_err}"
                     )
+
+                    # Wait for backoff delay or until cancelled
+                    if cancel_event.wait(delay) or cancel_event.is_set():
+                        raise DownloadCancelledError(
+                            "Download was cancelled by the user."
+                        )
+
+                    # Reset bytes_downloaded for standard download stream restart
+                    bytes_downloaded = 0
 
             # Requirement 3 & Zero-Trust File Finalization: Calculate and verify cryptographic hash before moving to final destination
             verify_temp_file_hash(temp_path, target_path)

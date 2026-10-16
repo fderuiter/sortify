@@ -1006,6 +1006,147 @@ class Database:
             row = cursor.fetchone()
             return row[0] if row else None
 
+    def begin_transaction_session(self, session_id: str, timeout: float = 300.0):
+        """Begin an explicit background database transaction session."""
+        if self.worker:
+            self.worker.begin_session(session_id, db_path=self.db_path, timeout=timeout)
+
+    def commit_transaction_session(self, session_id: str):
+        """Commit an active background database transaction session."""
+        if self.worker:
+            self.worker.commit_session(session_id)
+
+    def rollback_transaction_session(self, session_id: str):
+        """Roll back an active background database transaction session."""
+        if self.worker:
+            self.worker.rollback_session(session_id)
+
+    from contextlib import contextmanager
+
+    @contextmanager
+    def transaction_scope(self, session_id: str, timeout: float = 300.0):
+        """Context manager providing an explicit database transaction session scope."""
+        self.begin_transaction_session(session_id, timeout=timeout)
+        try:
+            yield
+            self.commit_transaction_session(session_id)
+        except Exception:
+            self.rollback_transaction_session(session_id)
+            raise
+
+    def _apply_batch_updates_on_conn(self, conn, updates):
+        for item in updates:
+            if item["type"] == "verified_target":
+                base_dir, file_hash, target_path = item["args"]
+                cursor = conn.execute(
+                    "SELECT filepath FROM documents WHERE base_dir = ? AND file_hash = ?",
+                    (base_dir, file_hash),
+                )
+                filepaths = [row[0] for row in cursor.fetchall()]
+
+                conn.execute(
+                    "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
+                    (target_path, base_dir, file_hash),
+                )
+                for fp in filepaths:
+                    self._update_tfidf_on_verified_target_change(
+                        conn, base_dir, fp, target_path
+                    )
+            elif item["type"] == "document_path":
+                base_dir, old_filepath, new_filepath = item["args"]
+                old_filepath = old_filepath.replace("\\", "/")
+                new_filepath = new_filepath.replace("\\", "/")
+                import os
+
+                new_dir = os.path.dirname(new_filepath).replace("\\", "/")
+                conn.execute(
+                    "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
+                    (new_filepath, new_dir, base_dir, old_filepath),
+                )
+                cursor = conn.execute(
+                    "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
+                    (base_dir, old_filepath),
+                )
+                was_in = cursor.fetchone() is not None
+                if was_in:
+                    cursor = conn.execute(
+                        "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                        (base_dir, new_filepath),
+                    )
+                    row = cursor.fetchone()
+                    decrypted_text = None
+                    if row and row[0]:
+                        try:
+                            decrypted_text = self.crypto.decrypt_text(row[0])
+                        except Exception:
+                            decrypted_text = None
+                    if self._is_tfidf_eligible(new_filepath, decrypted_text):
+                        conn.execute(
+                            "UPDATE tfidf_doc_terms SET filepath = ? WHERE base_dir = ? AND filepath = ?",
+                            (new_filepath, base_dir, old_filepath),
+                        )
+                    else:
+                        self._update_tfidf_for_document_conn(
+                            conn, base_dir, old_filepath, None, False
+                        )
+                else:
+                    if new_dir:
+                        cursor = conn.execute(
+                            "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                            (base_dir, new_filepath),
+                        )
+                        row = cursor.fetchone()
+                        if row and row[0]:
+                            try:
+                                decrypted_text = self.crypto.decrypt_text(
+                                    row[0]
+                                )
+                            except Exception:
+                                decrypted_text = None
+                            if decrypted_text and self._is_tfidf_eligible(
+                                new_filepath, decrypted_text
+                            ):
+                                self._update_tfidf_for_document_conn(
+                                    conn,
+                                    base_dir,
+                                    new_filepath,
+                                    decrypted_text,
+                                    True,
+                                )
+            elif item["type"] == "transaction_step":
+                (
+                    session_id,
+                    step_number,
+                    base_dir,
+                    source_path,
+                    destination_path,
+                    file_hash,
+                    item_type,
+                    metadata,
+                ) = item["args"]
+                session_id = str(session_id)
+                import time
+
+                conn.execute(
+                    """
+                    INSERT INTO transaction_ledger (
+                        session_id, step_number, base_dir, source_path, destination_path,
+                        file_hash, item_type, metadata, timestamp
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        session_id,
+                        step_number,
+                        base_dir,
+                        source_path.replace("\\", "/"),
+                        destination_path.replace("\\", "/"),
+                        file_hash,
+                        item_type,
+                        metadata,
+                        time.time(),
+                    ),
+                )
+
     def execute_batch_updates(self, updates):
         """Execute all collected database updates in a single unified database transaction."""
         if not updates:
@@ -1014,118 +1155,13 @@ class Database:
 
         def _write():
             conn = get_db_connection(self.db_path)
-            with conn:
-                for item in updates:
-                    if item["type"] == "verified_target":
-                        base_dir, file_hash, target_path = item["args"]
-                        cursor = conn.execute(
-                            "SELECT filepath FROM documents WHERE base_dir = ? AND file_hash = ?",
-                            (base_dir, file_hash),
-                        )
-                        filepaths = [row[0] for row in cursor.fetchall()]
-
-                        conn.execute(
-                            "UPDATE documents SET user_verified_target_path = ? WHERE base_dir = ? AND file_hash = ?",
-                            (target_path, base_dir, file_hash),
-                        )
-                        for fp in filepaths:
-                            self._update_tfidf_on_verified_target_change(
-                                conn, base_dir, fp, target_path
-                            )
-                    elif item["type"] == "document_path":
-                        base_dir, old_filepath, new_filepath = item["args"]
-                        old_filepath = old_filepath.replace("\\", "/")
-                        new_filepath = new_filepath.replace("\\", "/")
-                        import os
-
-                        new_dir = os.path.dirname(new_filepath).replace("\\", "/")
-                        conn.execute(
-                            "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
-                            (new_filepath, new_dir, base_dir, old_filepath),
-                        )
-                        cursor = conn.execute(
-                            "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
-                            (base_dir, old_filepath),
-                        )
-                        was_in = cursor.fetchone() is not None
-                        if was_in:
-                            cursor = conn.execute(
-                                "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
-                                (base_dir, new_filepath),
-                            )
-                            row = cursor.fetchone()
-                            decrypted_text = None
-                            if row and row[0]:
-                                try:
-                                    decrypted_text = self.crypto.decrypt_text(row[0])
-                                except Exception:
-                                    decrypted_text = None
-                            if self._is_tfidf_eligible(new_filepath, decrypted_text):
-                                conn.execute(
-                                    "UPDATE tfidf_doc_terms SET filepath = ? WHERE base_dir = ? AND filepath = ?",
-                                    (new_filepath, base_dir, old_filepath),
-                                )
-                            else:
-                                self._update_tfidf_for_document_conn(
-                                    conn, base_dir, old_filepath, None, False
-                                )
-                        else:
-                            if new_dir:
-                                cursor = conn.execute(
-                                    "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
-                                    (base_dir, new_filepath),
-                                )
-                                row = cursor.fetchone()
-                                if row and row[0]:
-                                    try:
-                                        decrypted_text = self.crypto.decrypt_text(
-                                            row[0]
-                                        )
-                                    except Exception:
-                                        decrypted_text = None
-                                    if decrypted_text and self._is_tfidf_eligible(
-                                        new_filepath, decrypted_text
-                                    ):
-                                        self._update_tfidf_for_document_conn(
-                                            conn,
-                                            base_dir,
-                                            new_filepath,
-                                            decrypted_text,
-                                            True,
-                                        )
-                    elif item["type"] == "transaction_step":
-                        (
-                            session_id,
-                            step_number,
-                            base_dir,
-                            source_path,
-                            destination_path,
-                            file_hash,
-                            item_type,
-                            metadata,
-                        ) = item["args"]
-                        session_id = str(session_id)
-                        import time
-
-                        conn.execute(
-                            """
-                            INSERT INTO transaction_ledger (
-                                session_id, step_number, base_dir, source_path, destination_path,
-                                file_hash, item_type, metadata, timestamp
-                            ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                            """,
-                            (
-                                session_id,
-                                step_number,
-                                base_dir,
-                                source_path.replace("\\", "/"),
-                                destination_path.replace("\\", "/"),
-                                file_hash,
-                                item_type,
-                                metadata,
-                                time.time(),
-                            ),
-                        )
+            if self.worker and self.worker.is_in_session():
+                if self.worker._active_session and self.worker._active_session.get("conn") is None:
+                    self.worker._active_session["conn"] = conn
+                self._apply_batch_updates_on_conn(conn, updates)
+            else:
+                with conn:
+                    self._apply_batch_updates_on_conn(conn, updates)
             self.invalidate_cache()
 
         self.worker.execute_write(_write)
@@ -1146,7 +1182,9 @@ class Database:
 
         def _write():
             conn = get_db_connection(self.db_path)
-            with conn:
+            if self.worker and self.worker.is_in_session():
+                if self.worker._active_session and self.worker._active_session.get("conn") is None:
+                    self.worker._active_session["conn"] = conn
                 conn.execute(
                     """
                     INSERT INTO transaction_ledger (
@@ -1155,7 +1193,7 @@ class Database:
                     ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
                     """,
                     (
-                        session_id,
+                        str(session_id),
                         step_number,
                         base_dir,
                         source_path.replace("\\", "/"),
@@ -1166,6 +1204,27 @@ class Database:
                         time.time(),
                     ),
                 )
+            else:
+                with conn:
+                    conn.execute(
+                        """
+                        INSERT INTO transaction_ledger (
+                            session_id, step_number, base_dir, source_path, destination_path,
+                            file_hash, item_type, metadata, timestamp
+                        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
+                        """,
+                        (
+                            str(session_id),
+                            step_number,
+                            base_dir,
+                            source_path.replace("\\", "/"),
+                            destination_path.replace("\\", "/"),
+                            file_hash,
+                            item_type,
+                            metadata,
+                            time.time(),
+                        ),
+                    )
 
         return self.worker.execute_write(_write)
 
