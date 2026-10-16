@@ -1862,7 +1862,6 @@ class Database:
 
         try:
             from app.config import get_app_dir
-
             default_db_path = os.path.abspath(str(get_app_dir() / "autosorter.db"))
             if default_db_path not in scrubbed_paths and os.path.exists(default_db_path):
                 default_db = cls(Path(default_db_path), DBWorker())
