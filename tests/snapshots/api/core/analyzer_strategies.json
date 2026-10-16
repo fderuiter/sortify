@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "6ffbd156c0b084ab3f9b64af2e2a0b9c046d5eb672cfc2bf0367899b5743ab93"
+    "checksum": "7ba55a0604bace110db3ce95fc484b779584e6e12cd36f5e078a97188d0312ec"
   },
   "classes": [
     {
@@ -562,6 +562,11 @@
           "annotation": null,
           "default": "None",
           "name": "session_key"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "max_grammar_cache_size"
         }
       ],
       "returns": null
