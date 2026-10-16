@@ -1,4 +1,4 @@
-"""Unified context-aware notification bus for Textual TUI, CLI, and GUI runtime environments."""
+"""Unified context-aware notification bus for Textual TUI and CLI runtime environments."""
 
 import logging
 import sys
@@ -16,7 +16,6 @@ class NotificationMode(str, Enum):
     """Runtime environment modes for notification dispatching."""
 
     AUTO = "auto"
-    GUI = "gui"
     TUI = "tui"
     CLI = "cli"
 
@@ -85,9 +84,6 @@ class NotificationManager:
         if tui_app is not None:
             return NotificationMode.TUI
 
-        if self._is_nicegui_active():
-            return NotificationMode.GUI
-
         return NotificationMode.CLI
 
     def _get_active_tui_app(self) -> Optional[Any]:
@@ -102,22 +98,6 @@ class NotificationManager:
         except Exception:
             pass
         return None
-
-    def _is_nicegui_active(self) -> bool:
-        try:
-            if "nicegui" in sys.modules:
-                from unittest.mock import MagicMock
-
-                import nicegui.ui as nicegui_ui
-
-                if not isinstance(nicegui_ui, MagicMock):
-                    if getattr(nicegui_ui, "context", None) and getattr(
-                        nicegui_ui.context, "client", None
-                    ):
-                        return True
-        except Exception:
-            pass
-        return False
 
     def notify(
         self,
@@ -162,16 +142,7 @@ class NotificationManager:
             except Exception as e:
                 logger.debug(f"Error in custom notification handler: {e}")
 
-        if mode == NotificationMode.GUI:
-            self._dispatch_gui(
-                msg_str,
-                type=type,
-                caption=caption,
-                timeout=timeout,
-                help_url=help_url,
-                **kwargs,
-            )
-        elif mode == NotificationMode.TUI:
+        if mode == NotificationMode.TUI:
             self._dispatch_tui(
                 msg_str,
                 type=type,
@@ -186,32 +157,6 @@ class NotificationManager:
             )
 
         return event
-
-    def _dispatch_gui(
-        self,
-        message: str,
-        type: str = "info",
-        caption: Optional[str] = None,
-        timeout: Optional[int] = None,
-        help_url: Optional[str] = None,
-        **kwargs: Any,
-    ) -> None:
-        try:
-            import nicegui.ui as nicegui_ui
-
-            display_msg = f"{message} [Help: {help_url}]" if help_url else message
-            nicegui_ui.notify(
-                display_msg,
-                type=type,
-                caption=caption,
-                timeout=timeout,
-                **kwargs,
-            )
-        except Exception as e:
-            logger.warning(f"GUI notification fallback due to error: {e}")
-            self._dispatch_cli(
-                message, type=type, caption=caption, help_url=help_url, **kwargs
-            )
 
     def _dispatch_tui(
         self,
