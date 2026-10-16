@@ -188,7 +188,7 @@ class Settings(BaseSettings):
 
     OCR_LANGUAGES: str = Field(default="en")
     VISION_ENGINE: Literal["easyocr", "florence-2"] = Field(default="easyocr")
-    CONFLICT_POLICY: Literal["skip", "rename"] = Field(default="rename")
+    CONFLICT_POLICY: Literal["skip", "rename", "overwrite"] = Field(default="rename")
     SORTING_STRATEGY: str = Field(default="default")
     CLINICAL_SMART_RENAMING: bool = Field(default=False)
     CLINICAL_GENERATE_AUDIT_REPORT: bool = Field(default=True)
@@ -252,11 +252,11 @@ class Settings(BaseSettings):
     @field_validator("CONFLICT_POLICY")
     @classmethod
     def validate_conflict_policy(cls, v: str) -> str:
-        """Validate that CONFLICT_POLICY is either 'skip' or 'rename'."""
+        """Validate that CONFLICT_POLICY is 'skip', 'rename', or 'overwrite'."""
         if not isinstance(v, str):
             raise ValueError("CONFLICT_POLICY must be a string.")
-        if v not in ("skip", "rename"):
-            raise ValueError("CONFLICT_POLICY must be either 'skip' or 'rename'.")
+        if v not in ("skip", "rename", "overwrite"):
+            raise ValueError("CONFLICT_POLICY must be 'skip', 'rename', or 'overwrite'.")
         return v
 
     @field_validator("VISION_ENGINE", mode="before")

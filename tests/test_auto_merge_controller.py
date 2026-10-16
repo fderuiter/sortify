@@ -5,6 +5,8 @@ from __future__ import annotations
 from unittest.mock import MagicMock
 
 from scripts.auto_merge_controller import (
+    AutoMergeAction,
+    AutoMergeResult,
     GitHubClient,
     is_pr_eligible_for_automerge,
     process_auto_merge_queue,
@@ -43,7 +45,10 @@ def test_process_queue_no_eligible_prs():
     ]
 
     res = process_auto_merge_queue(client)
-    assert res is None
+    assert res.action == AutoMergeAction.NONE
+    assert res.pr_id is None
+    assert res.pr_number is None
+    assert res.pull_request_id is None
 
 
 def test_get_commit_verification():
@@ -90,8 +95,11 @@ def test_process_queue_merges_eligible_pr():
     client.get_commit_status_checks.return_value = {}
     client.merge_pull_request.return_value = True
 
-    merged = process_auto_merge_queue(client)
-    assert merged == 200
+    res = process_auto_merge_queue(client)
+    assert res.action == AutoMergeAction.MERGED
+    assert res.pr_id == 200
+    assert res.pr_number == 200
+    assert res.pull_request_id == 200
     client.merge_pull_request.assert_called_once_with(
         200,
         "sha12345",
@@ -122,7 +130,10 @@ def test_process_queue_updates_behind_branch():
     client.update_branch.return_value = True
 
     res = process_auto_merge_queue(client)
-    assert res == 201
+    assert res.action == AutoMergeAction.UPDATED
+    assert res.pr_id == 201
+    assert res.pr_number == 201
+    assert res.pull_request_id == 201
     client.update_branch.assert_called_once_with(201, "sha67890")
     client.merge_pull_request.assert_not_called()
 
@@ -150,7 +161,8 @@ def test_process_queue_does_not_update_blocked_mergeable_state():
     client.get_commit_status_checks.return_value = {}
 
     res = process_auto_merge_queue(client)
-    assert res is None
+    assert res.action == AutoMergeAction.NONE
+    assert res.pr_id is None
     client.update_branch.assert_not_called()
     client.merge_pull_request.assert_not_called()
 
@@ -177,7 +189,8 @@ def test_process_queue_handles_branch_update_conflict():
     client.update_branch.return_value = False  # Conflict on update
 
     res = process_auto_merge_queue(client)
-    assert res is None
+    assert res.action == AutoMergeAction.NONE
+    assert res.pr_id is None
     client.add_labels.assert_called_once_with(
         202, ["automerge:conflict", "automerge:blocked"]
     )
@@ -205,7 +218,8 @@ def test_process_queue_blocks_unverified_head_commit():
     }
 
     res = process_auto_merge_queue(client)
-    assert res is None
+    assert res.action == AutoMergeAction.NONE
+    assert res.pr_id is None
     client.add_labels.assert_called_once_with(204, ["automerge:blocked", "risk:high"])
     client.merge_pull_request.assert_not_called()
 
@@ -232,6 +246,46 @@ def test_process_queue_bot_commit_verification():
     }
 
     res = process_auto_merge_queue(client)
-    assert res is None
+    assert res.action == AutoMergeAction.NONE
+    assert res.pr_id is None
     client.add_labels.assert_called_once_with(205, ["automerge:blocked", "risk:high"])
     client.merge_pull_request.assert_not_called()
+
+
+def test_main_cli_output_merge(monkeypatch, capsys):
+    monkeypatch.setenv("GITHUB_TOKEN", "fake_token")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "fderuiter/sortify")
+    monkeypatch.setattr(
+        "scripts.auto_merge_controller.process_auto_merge_queue",
+        lambda client: AutoMergeResult(action=AutoMergeAction.MERGED, pr_id=123),
+    )
+    from scripts.auto_merge_controller import main
+    main()
+    captured = capsys.readouterr()
+    assert "Auto-merged PR #123" in captured.out
+
+
+def test_main_cli_output_update(monkeypatch, capsys):
+    monkeypatch.setenv("GITHUB_TOKEN", "fake_token")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "fderuiter/sortify")
+    monkeypatch.setattr(
+        "scripts.auto_merge_controller.process_auto_merge_queue",
+        lambda client: AutoMergeResult(action=AutoMergeAction.UPDATED, pr_id=456),
+    )
+    from scripts.auto_merge_controller import main
+    main()
+    captured = capsys.readouterr()
+    assert "Updated branch for PR #456" in captured.out
+
+
+def test_main_cli_output_none(monkeypatch, capsys):
+    monkeypatch.setenv("GITHUB_TOKEN", "fake_token")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "fderuiter/sortify")
+    monkeypatch.setattr(
+        "scripts.auto_merge_controller.process_auto_merge_queue",
+        lambda client: AutoMergeResult(action=AutoMergeAction.NONE, pr_id=None),
+    )
+    from scripts.auto_merge_controller import main
+    main()
+    captured = capsys.readouterr()
+    assert "No PR was auto-merged in this cycle." in captured.out
