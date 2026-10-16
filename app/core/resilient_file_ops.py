@@ -80,18 +80,14 @@ def _cross_volume_atomic_move(src: str, dst: str) -> None:
         if IS_WINDOWS:
             os.rename(stage_path, dst)
         else:
-            if (os.path.isdir(stage_path) and not os.path.islink(stage_path)) or os.path.islink(stage_path):
+            try:
                 os.rename(stage_path, dst)
-            else:
-                try:
-                    os.link(stage_path, dst)
-                    resilient_remove(stage_path)
-                except FileExistsError:
-                    raise
-                except OSError:
-                    if os.path.lexists(dst):
-                        raise FileExistsError(f"Target path already exists: {dst}")
-                    os.rename(stage_path, dst)
+            except FileExistsError:
+                raise
+            except OSError:
+                if os.path.lexists(dst):
+                    raise FileExistsError(f"Target path already exists: {dst}")
+                os.rename(stage_path, dst)
 
         # Verify target availability and integrity before finalizing source file deletion
         if not os.path.lexists(dst):
@@ -132,35 +128,14 @@ def atomic_move_non_clobber(src: str, dst: str) -> None:
     if dst_dir and not os.path.exists(dst_dir):
         os.makedirs(dst_dir, exist_ok=True)
 
-    if IS_WINDOWS:
-        try:
-            os.rename(src, dst)
-            return
-        except FileExistsError:
-            raise
-        except OSError:
-            _cross_volume_atomic_move(src, dst)
-            return
-    else:
-        if (os.path.isdir(src) and not os.path.islink(src)) or os.path.islink(src):
-            try:
-                os.rename(src, dst)
-                return
-            except FileExistsError:
-                raise
-            except OSError:
-                _cross_volume_atomic_move(src, dst)
-                return
-        else:
-            try:
-                os.link(src, dst)
-                resilient_remove(src)
-                return
-            except FileExistsError:
-                raise
-            except OSError:
-                _cross_volume_atomic_move(src, dst)
-                return
+    try:
+        os.rename(src, dst)
+        return
+    except FileExistsError:
+        raise
+    except OSError:
+        _cross_volume_atomic_move(src, dst)
+        return
 
 
 def resilient_move(src: str, dst: str) -> str:
