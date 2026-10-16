@@ -235,6 +235,12 @@ class DBWorker:
 
     def execute_write(self, func, *args, **kwargs):
         """Submit a database write operation and synchronously block until it completes."""
+        if (
+            hasattr(self, "thread")
+            and threading.current_thread() == self.thread
+        ) or threading.current_thread().name.startswith("DBWorker"):
+            return func(*args, **kwargs)
+
         result_q = self.submit_write(func, *args, **kwargs)
         status, result = result_q.get()
         if status == "error":
@@ -243,6 +249,12 @@ class DBWorker:
 
     def execute_write_async(self, func, *args, **kwargs):
         """Submit a database write operation to the queue asynchronously and return immediately."""
+        if (
+            hasattr(self, "thread")
+            and threading.current_thread() == self.thread
+        ) or threading.current_thread().name.startswith("DBWorker"):
+            return func(*args, **kwargs)
+
         with self._lock:
             if self._stopped:
                 return
