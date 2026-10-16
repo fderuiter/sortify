@@ -84,7 +84,8 @@ def test_settings_modal_extraction_tab(tmp_path):
     """Verify SettingsModal contains Extraction & OCR tab with density controls."""
 
     async def _test():
-        settings = AppSettings()
+        settings_file = str(tmp_path / "settings.json")
+        settings = AppSettings(filepath=settings_file)
         settings._settings_model.AI_CONSENT_GRANTED = True
         settings.PDF_TEXT_DENSITY_THRESHOLD = 75
         app = AutoSorterTUI(settings=settings)
@@ -112,7 +113,8 @@ def test_extraction_preview_modal_interactive_slider(tmp_path):
 
     async def _test():
         pdf_path = create_multi_page_pdf(tmp_path)
-        settings = AppSettings()
+        settings_file = str(tmp_path / "settings.json")
+        settings = AppSettings(filepath=settings_file)
         settings._settings_model.AI_CONSENT_GRANTED = True
         settings.PDF_TEXT_DENSITY_THRESHOLD = 50
 
