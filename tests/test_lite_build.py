@@ -111,6 +111,7 @@ def test_spec_file_partitioning():
             return False
 
     with (
+        patch.dict("os.environ", {"LITE_BUILD": "0"}),
         patch("importlib.util.find_spec", mock_find_spec),
         patch("os.walk", side_effect=mock_walk_spec),
         patch("os.path.exists", side_effect=mock_exists),
@@ -126,6 +127,9 @@ def test_spec_file_partitioning():
         # Execute the spec file in our mock global context
         exec(spec_content, mock_globals)
 
+        # Verify scipy is in ml_packages
+        assert "scipy" in mock_globals["ml_packages"]
+
         # Test asset pruning logic
         is_prunable = mock_globals["is_prunable_asset"]
         assert is_prunable("/some/path/to/pytorch/tests/test_module.py") is True
@@ -133,6 +137,7 @@ def test_spec_file_partitioning():
         assert is_prunable("/some/path/to/pytorch/model/weights.bin") is False
         assert is_prunable("/some/path/to/pytorch/checkpoint_step_100.pt") is False
         assert is_prunable("/some/path/to/pytorch/some_other_file.py") is False
+        assert is_prunable("/some/path/to/scipy/sparse/_sparsetools.pyd") is False
 
         # Now let's inspect the `datas` and `binaries` that were passed to `Analysis`
         # Analysis is called as Analysis(...)

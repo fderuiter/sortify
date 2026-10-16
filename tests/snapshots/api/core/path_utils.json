@@ -1,8 +1,7 @@
 {
   "_metadata": {
-    "checksum": "37a92d071e75dfa49229721b38957a43529c8be57e0f3e9db77c447d80da5a4e"
+    "checksum": "0b2ceb9bb38c5188b9e15deff860aab8bb4afbcdf11766d654a8e93c16e78baf"
   },
-  "classes": [],
   "functions": [
     {
       "async": false,
@@ -22,6 +21,13 @@
           "name": "caller_file_path"
         }
       ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_sanitized_username",
+      "parameters": [],
       "returns": "str"
     },
     {
