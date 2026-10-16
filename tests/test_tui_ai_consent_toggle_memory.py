@@ -1,6 +1,5 @@
 """Unit and integration tests for AI Consent Toggle Switch with Memory Unload."""
 
-import asyncio
 from unittest.mock import MagicMock
 
 import pytest
@@ -21,76 +20,70 @@ def clean_registry(tmp_path, monkeypatch):
     registry.unload_all_models()
 
 
-def test_settings_modal_has_ai_consent_toggle(tmp_path):
+@pytest.mark.anyio
+async def test_settings_modal_has_ai_consent_toggle(tmp_path):
     """Verify Users can view their current AI consent status via a toggle switch in SettingsModal."""
+    settings_file = str(tmp_path / "settings.json")
+    settings = AppSettings(filepath=settings_file)
+    settings.AI_CONSENT_GRANTED = True
 
-    async def _test():
-        settings_file = str(tmp_path / "settings.json")
-        settings = AppSettings(filepath=settings_file)
-        settings.AI_CONSENT_GRANTED = True
+    app = AutoSorterTUI(
+        settings=settings, base_dir=str(tmp_path), skip_wizard=True
+    )
+    async with app.run_test() as pilot:
+        app.action_open_settings()
+        await pilot.pause(0.1)
 
-        app = AutoSorterTUI(
-            settings=settings, base_dir=str(tmp_path), skip_wizard=True
-        )
-        async with app.run_test() as pilot:
-            app.action_open_settings()
-            await pilot.pause(0.1)
+        modal = app.screen
+        assert isinstance(modal, SettingsModal)
 
-            modal = app.screen
-            assert isinstance(modal, SettingsModal)
-
-            sw = modal.query_one("#switch-ai-consent", Switch)
-            assert sw.value is True
-
-    asyncio.run(_test())
+        sw = modal.query_one("#switch-ai-consent", Switch)
+        assert sw.value is True
 
 
-def test_revoking_consent_unloads_in_memory_models_immediately(tmp_path):
+@pytest.mark.anyio
+async def test_revoking_consent_unloads_in_memory_models_immediately(tmp_path):
     """Verify toggling AI consent switch off unloads all loaded AI models from RAM/VRAM immediately."""
+    settings_file = str(tmp_path / "settings.json")
+    settings = AppSettings(filepath=settings_file)
+    settings.AI_CONSENT_GRANTED = True
 
-    async def _test():
-        settings_file = str(tmp_path / "settings.json")
-        settings = AppSettings(filepath=settings_file)
-        settings.AI_CONSENT_GRANTED = True
+    registry = SharedModelRegistry.get_instance()
+    # Pre-populate active mock model instances in SharedModelRegistry
+    mock_onnx = MagicMock()
+    mock_ocr = MagicMock()
+    registry._models["onnx_/fake/path.onnx"] = mock_onnx
+    registry._models["easyocr"] = mock_ocr
+    registry._models["easyocr_info"] = (["en"], False)
 
-        registry = SharedModelRegistry.get_instance()
-        # Pre-populate active mock model instances in SharedModelRegistry
-        mock_onnx = MagicMock()
-        mock_ocr = MagicMock()
-        registry._models["onnx_/fake/path.onnx"] = mock_onnx
-        registry._models["easyocr"] = mock_ocr
-        registry._models["easyocr_info"] = (["en"], False)
+    assert registry.is_model_loaded("onnx") is True
+    assert registry.is_model_loaded("easyocr") is True
 
-        assert registry.is_model_loaded("onnx") is True
-        assert registry.is_model_loaded("easyocr") is True
+    app = AutoSorterTUI(
+        settings=settings, base_dir=str(tmp_path), skip_wizard=True
+    )
+    async with app.run_test() as pilot:
+        # Open settings and revoke AI consent
+        app.action_open_settings()
+        await pilot.pause(0.1)
 
-        app = AutoSorterTUI(
-            settings=settings, base_dir=str(tmp_path), skip_wizard=True
-        )
-        async with app.run_test() as pilot:
-            # Open settings and revoke AI consent
-            app.action_open_settings()
-            await pilot.pause(0.1)
+        modal = app.screen
+        assert isinstance(modal, SettingsModal)
 
-            modal = app.screen
-            assert isinstance(modal, SettingsModal)
+        sw = modal.query_one("#switch-ai-consent", Switch)
+        assert sw.value is True
+        sw.value = False
 
-            sw = modal.query_one("#switch-ai-consent", Switch)
-            assert sw.value is True
-            sw.value = False
+        modal.action_save()
+        await pilot.pause(0.2)
 
-            modal.action_save()
-            await pilot.pause(0.1)
+        # Verify settings state updated
+        assert app.settings.AI_CONSENT_GRANTED is False
 
-            # Verify settings state updated
-            assert app.settings.AI_CONSENT_GRANTED is False
-
-            # Verify in-memory models were immediately unloaded
-            assert registry.is_model_loaded("onnx") is False
-            assert registry.is_model_loaded("easyocr") is False
-            assert len(registry._models) == 0
-
-    asyncio.run(_test())
+        # Verify in-memory models were immediately unloaded
+        assert registry.is_model_loaded("onnx") is False
+        assert registry.is_model_loaded("easyocr") is False
+        assert len(registry._models) == 0
 
 
 def test_consent_state_persists_across_restarts(tmp_path):
@@ -170,33 +163,30 @@ def test_disabling_consent_leaves_cached_model_files_on_disk_untouched(tmp_path)
     assert weight_file.read_bytes() == b"dummy binary weights content"
 
 
-def test_changing_consent_state_updates_status_bar_badge_and_announcements(tmp_path):
+@pytest.mark.anyio
+async def test_changing_consent_state_updates_status_bar_badge_and_announcements(tmp_path):
     """Verify changing consent state immediately updates header warning labels and status notifications."""
+    settings_file = str(tmp_path / "settings.json")
+    settings = AppSettings(filepath=settings_file)
+    settings.AI_CONSENT_GRANTED = False
 
-    async def _test():
-        settings_file = str(tmp_path / "settings.json")
-        settings = AppSettings(filepath=settings_file)
-        settings.AI_CONSENT_GRANTED = False
+    app = AutoSorterTUI(
+        settings=settings, base_dir=str(tmp_path), skip_wizard=True
+    )
+    async with app.run_test() as pilot:
+        from textual.widgets import Static
 
-        app = AutoSorterTUI(
-            settings=settings, base_dir=str(tmp_path), skip_wizard=True
-        )
-        async with app.run_test() as pilot:
-            from textual.widgets import Static
+        sb = app.query_one("#status-bar", Static)
+        assert "[AI: Disabled]" in str(sb.render())
 
-            sb = app.query_one("#status-bar", Static)
-            assert "[AI: Disabled]" in str(sb.render())
+        # Update settings consent to True
+        app.settings.AI_CONSENT_GRANTED = True
+        await pilot.pause(0.1)
 
-            # Update settings consent to True
-            app.settings.AI_CONSENT_GRANTED = True
-            await pilot.pause(0.1)
+        assert "[AI: Active]" in str(sb.render())
 
-            assert "[AI: Active]" in str(sb.render())
+        # Update settings consent back to False
+        app.settings.AI_CONSENT_GRANTED = False
+        await pilot.pause(0.1)
 
-            # Update settings consent back to False
-            app.settings.AI_CONSENT_GRANTED = False
-            await pilot.pause(0.1)
-
-            assert "[AI: Disabled]" in str(sb.render())
-
-    asyncio.run(_test())
+        assert "[AI: Disabled]" in str(sb.render())
