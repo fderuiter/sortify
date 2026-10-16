@@ -1,10 +1,9 @@
 name: CI Pipeline
 
 on:
-  push:
-    branches: [ "main" ]
-  pull_request:
-    branches: [ "main" ]
+  # push / pull_request triggers temporarily disabled during rapid development.
+  # Run manually via workflow_dispatch.
+  workflow_dispatch:
 
 permissions:
   contents: read
