@@ -1979,6 +1979,32 @@ class TemplateGalleryModal(A11yMixin, ModalScreen[None]):
                 pass
         self.announce("Opened starter rule template gallery.")
 
+    @on(Checkbox.Changed)
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Announce starter template gallery checkbox selection state changes."""
+        chk_id = getattr(event.checkbox, "id", None) or getattr(
+            event.control, "id", None
+        )
+        if not chk_id:
+            return
+
+        prefix = ""
+        if chk_id.startswith("chk-gallery-"):
+            prefix = "chk-gallery-"
+        elif chk_id.startswith("chk-template-"):
+            prefix = "chk-template-"
+        else:
+            return
+
+        pack_id = chk_id[len(prefix) :]
+        from app.core.rule_templates import get_starter_templates
+
+        for pack in get_starter_templates():
+            if pack.id == pack_id:
+                state = "selected" if event.value else "deselected"
+                self.announce(f"{pack.title} template pack {state}.")
+                break
+
     @on(Button.Pressed, "#btn-apply-templates")
     def action_apply_templates(self) -> None:
         """Apply selected starter template packs to settings."""
@@ -2151,6 +2177,48 @@ class WizardModal(A11yMixin, ModalScreen[None]):
         except Exception:
             pass
         self.announce("Opened model onboarding wizard dialog.")
+
+    @on(Switch.Changed)
+    def on_switch_changed(self, event: Switch.Changed) -> None:
+        """Announce switch state changes for screen reader accessibility."""
+        switch_id = getattr(event.switch, "id", None) or getattr(
+            event.control, "id", None
+        )
+        if not switch_id:
+            return
+
+        if switch_id == "switch-consent":
+            state = "enabled" if event.value else "disabled"
+            self.announce(f"AI consent {state}.")
+        elif switch_id == "switch-sample-corpus":
+            state = "enabled" if event.value else "disabled"
+            self.announce(f"Sample document corpus generation {state}.")
+
+    @on(Checkbox.Changed)
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Announce starter template checkbox selection state changes."""
+        chk_id = getattr(event.checkbox, "id", None) or getattr(
+            event.control, "id", None
+        )
+        if not chk_id:
+            return
+
+        prefix = ""
+        if chk_id.startswith("chk-template-"):
+            prefix = "chk-template-"
+        elif chk_id.startswith("chk-gallery-"):
+            prefix = "chk-gallery-"
+        else:
+            return
+
+        pack_id = chk_id[len(prefix) :]
+        from app.core.rule_templates import get_starter_templates
+
+        for pack in get_starter_templates():
+            if pack.id == pack_id:
+                state = "selected" if event.value else "deselected"
+                self.announce(f"{pack.title} template pack {state}.")
+                break
 
     @on(Button.Pressed, "#btn-finish")
     def action_finish(self) -> None:
@@ -4513,6 +4581,11 @@ class VimTree(Tree):
                 self.app.action_toggle_select_all()
             event.stop()
             event.prevent_default()
+        elif event.key in ("g", "G", "shift+g"):
+            if hasattr(self.app, "action_generate_sample_corpus"):
+                self.app.action_generate_sample_corpus()
+            event.stop()
+            event.prevent_default()
         elif event.key in ("enter", "return"):
             node = self.cursor_node
             if node:
@@ -4554,6 +4627,8 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+a", "open_audit_report", "Audit Report", show=True),
         Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
         Binding("g", "generate_sample_corpus", "Sample Dataset", show=False),
+        Binding("G", "generate_sample_corpus", "Sample Dataset", show=False),
+        Binding("shift+g", "generate_sample_corpus", "Sample Dataset", show=False),
         Binding("question_mark", "open_cheat_sheet", "Help (?)", show=True),
         Binding("f1", "open_cheat_sheet", "Help (F1)", show=False),
         Binding("ctrl+q", "quit", "Quit", show=True),
