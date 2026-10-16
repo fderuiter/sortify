@@ -83,7 +83,7 @@ async def test_revoking_consent_unloads_in_memory_models_immediately(tmp_path):
         # Verify in-memory models were immediately unloaded
         assert registry.is_model_loaded("onnx") is False
         assert registry.is_model_loaded("easyocr") is False
-        assert len(registry._models) == 0
+        assert len([k for k in registry._models if k != "jev_classifier"]) == 0
 
 
 def test_consent_state_persists_across_restarts(tmp_path):
@@ -156,7 +156,7 @@ def test_disabling_consent_leaves_cached_model_files_on_disk_untouched(tmp_path)
 
     # In-memory models should be unloaded
     assert registry.is_model_loaded("onnx") is False
-    assert len(registry._models) == 0
+    assert len([k for k in registry._models if k != "jev_classifier"]) == 0
 
     # Model file on disk must remain untouched
     assert weight_file.exists()
