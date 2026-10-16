@@ -1286,3 +1286,26 @@ def test_key_rotation_with_single_quote_escaping(tmp_path):
     assert row3 is not None
     assert row3[0] == "initial"
     clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_concurrent_key_lookup_and_generation(tmp_path):
+    """Verify that concurrent thread access to key generation and lookup is thread-safe."""
+    import concurrent.futures
+
+    key_path = tmp_path / "concurrent_secret.key"
+    db_path = tmp_path / "concurrent_autosorter.db"
+    crypto = SessionCrypto(key_path, db_path)
+
+    results = []
+
+    def worker():
+        return crypto.get_raw_key()
+
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        futures = [executor.submit(worker) for _ in range(10)]
+        for f in concurrent.futures.as_completed(futures):
+            results.append(f.result())
+
+    assert len(results) == 10
+    assert len(set(results)) == 1
+

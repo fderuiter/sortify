@@ -13,6 +13,15 @@ from app.core.user_space_bootstrap import (
 )
 
 
+@pytest.fixture(autouse=True)
+def reset_bootstrap_state():
+    import app.core.user_space_bootstrap as usb
+
+    usb._is_bootstrapped = False
+    yield
+    usb._is_bootstrapped = False
+
+
 def test_get_bootstrap_bin_dir():
     """Verify that the bootstrap bin dir is correctly placed within the app configuration directory."""
     from app.config import get_app_dir
@@ -571,3 +580,26 @@ def test_bootstrap_binaries_pyinstaller_alternate_candidate_locations(tmp_path):
         res = bootstrap_binaries(force_download=True)
         assert res is True
         mock_inject.assert_called_once()
+
+
+def test_concurrent_bootstrap_binaries():
+    """Verify that concurrent thread calls to bootstrap_binaries execute safely without race conditions."""
+    import concurrent.futures
+
+    with patch(
+        "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+        return_value=True,
+    ):
+        results = []
+
+        def worker():
+            return bootstrap_binaries(force_download=False)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(worker) for _ in range(10)]
+            for f in concurrent.futures.as_completed(futures):
+                results.append(f.result())
+
+        assert len(results) == 10
+        assert all(r is True for r in results)
+
