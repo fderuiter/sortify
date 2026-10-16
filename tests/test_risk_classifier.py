@@ -213,5 +213,6 @@ def test_bot_commit_signature_verification_paths():
     assert res_unverified.eligible is False
     assert res_unverified.risk_level == "high"
     assert "automerge:blocked" in res_unverified.labels_to_add
-    assert any("unverified commit signatures" in r for r in res_unverified.blocking_reasons)
-
+    assert any(
+        "unverified commit signatures" in r for r in res_unverified.blocking_reasons
+    )

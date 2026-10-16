@@ -162,7 +162,9 @@ def test_write_smoke_test_error_fallback_scrubs_diagnostic_file(tmp_path, monkey
     assert "<USER_HOME>/user_data" in content
 
 
-def test_write_smoke_test_error_sys_temp_fallback_scrubs_diagnostic_file(tmp_path, monkeypatch):
+def test_write_smoke_test_error_sys_temp_fallback_scrubs_diagnostic_file(
+    tmp_path, monkeypatch
+):
     from app.main import write_smoke_test_error
 
     home = Path.home()
@@ -176,7 +178,9 @@ def test_write_smoke_test_error_sys_temp_fallback_scrubs_diagnostic_file(tmp_pat
     monkeypatch.setattr("builtins.open", restricted_open)
     monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
 
-    err_msg = f"Sys temp failure with {home}/sensitive_data and enc:SecretSysTempToken999"
+    err_msg = (
+        f"Sys temp failure with {home}/sensitive_data and enc:SecretSysTempToken999"
+    )
     write_smoke_test_error(err_msg, include_traceback=False)
 
     created_files = list(tmp_path.glob("smoke_test_error_*.txt"))
