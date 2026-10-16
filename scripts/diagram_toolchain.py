@@ -427,7 +427,9 @@ def parse_and_validate_click_directives(mmd_content: str) -> List[str]:
                     # Check relative file path target existence if not an absolute URI scheme or hash-only
                     lower_url = url_candidate.lower()
                     if not (
-                        lower_url.startswith(("http://", "https://", "mailto:", "file:", "#"))
+                        lower_url.startswith(
+                            ("http://", "https://", "mailto:", "file:", "#")
+                        )
                         or "://" in lower_url
                     ):
                         file_part = url_candidate.split("#")[0].strip()

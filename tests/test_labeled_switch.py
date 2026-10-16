@@ -113,6 +113,10 @@ def test_settings_modal_labeled_switch_click_label(tmp_path):
             modal = app.screen
             assert isinstance(modal, SettingsModal)
 
+            # Switch to AI & Privacy tab where switches reside
+            await pilot.click("Tab#--content-tab-tab-ai-privacy")
+            await pilot.pause(0.2)
+
             # Query the AI consent LabeledSwitch row and its components
             sw_ai = modal.query_one("#switch-ai-consent", Switch)
             ls_ai = sw_ai.parent
@@ -181,6 +185,10 @@ def test_modal_tab_navigation_focuses_switches(tmp_path):
 
             modal = app.screen
             assert isinstance(modal, SettingsModal)
+
+            # Switch to AI & Privacy tab where switches reside
+            await pilot.click("Tab#--content-tab-tab-ai-privacy")
+            await pilot.pause(0.2)
 
             focused_widgets = []
             # Press Tab repeatedly to cycle through interactive controls in modal

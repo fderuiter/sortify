@@ -30,6 +30,8 @@ from textual.widgets import (
     Select,
     Static,
     Switch,
+    TabbedContent,
+    TabPane,
     Tree,
 )
 from textual.widgets.tree import TreeNode
@@ -884,6 +886,9 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
                 p_docs.tooltip = "Select user Documents folder quick preset"
                 yield p_docs
             with Horizontal(classes="button-row"):
+                btn_browse = Button("Native Browse", id="btn-browse", variant="default")
+                btn_browse.tooltip = "Launch native OS directory browser dialog"
+                yield btn_browse
                 btn_add = Button("Add Path", id="btn-add-dir", variant="default")
                 btn_add.tooltip = "Add current path to multi-root source list"
                 yield btn_add
@@ -1006,6 +1011,129 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
         """Submit input on Enter key press."""
         self.action_confirm()
 
+    @on(Button.Pressed, "#btn-browse")
+    @work(thread=True)
+    def action_native_browse(self) -> None:
+        """Launch native OS directory browser dialog in background worker thread."""
+        from app.core.native_dialog import NativeDialogError, select_native_directory
+
+        curr_val = ""
+        try:
+            inp = self.query_one("#input-dir", Input)
+            curr_val = inp.value.strip()
+        except Exception:
+            pass
+
+        initial_dir = curr_val or self.current_dir
+
+        try:
+            chosen = select_native_directory(initial_dir)
+            if chosen:
+                self.app.call_from_thread(self._on_native_dir_selected, chosen)
+        except NativeDialogError as exc:
+            self.app.call_from_thread(self._on_native_dir_failed, str(exc))
+        except Exception as exc:
+            self.app.call_from_thread(self._on_native_dir_failed, str(exc))
+
+    def _on_native_dir_selected(self, path: str) -> None:
+        """Handle decoded UTF-8 path string from native folder browser."""
+        abs_p = os.path.abspath(os.path.expanduser(path))
+        try:
+            inp = self.query_one("#input-dir", Input)
+            inp.value = abs_p
+        except Exception:
+            pass
+        if abs_p not in self.selected_sources:
+            self.selected_sources.append(abs_p)
+            self._update_sources_widget()
+        self.announce(f"Selected native folder path: {abs_p}")
+
+    def _on_native_dir_failed(self, reason: str) -> None:
+        """Handle native folder dialog failure by falling back to manual path entry."""
+        from app.ui.notifications import notify
+
+        msg = "Native folder browser failed to launch. Please enter path manually."
+        self.announce(msg, priority="assertive")
+        notify(msg, type="warning")
+        try:
+            inp = self.query_one("#input-dir", Input)
+            inp.focus()
+        except Exception:
+            pass
+
+
+class ManualPathFallbackModal(A11yMixin, ModalScreen[Optional[str]]):
+    """Fallback modal dialog for manual directory path entry when native selection fails."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    ManualPathFallbackModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $warning;
+        width: 80%;
+        max-width: 70;
+        height: auto;
+    }
+    """
+
+    def __init__(self, current_dir: str = "", reason: str = ""):
+        super().__init__()
+        self.current_dir = current_dir
+        self.reason = reason
+
+    def compose(self) -> ComposeResult:
+        """Compose modal fallback UI children."""
+        with Vertical(classes="modal-box"):
+            yield Label("Manual Directory Entry", classes="modal-title")
+            if self.reason:
+                yield Label(f"Native tool notice: {self.reason}", id="lbl-reason")
+            yield Label("Please enter target directory path manually:")
+            inp = Input(
+                value=self.current_dir,
+                placeholder="Enter absolute folder path...",
+                id="input-fallback-dir",
+            )
+            yield inp
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button("Cancel", id="btn-cancel-fallback", variant="default")
+                yield btn_cancel
+                btn_confirm = Button(
+                    "Confirm", id="btn-confirm-fallback", variant="primary"
+                )
+                yield btn_confirm
+
+    def on_mount(self) -> None:
+        """Focus input field on mount and announce screen reader alert."""
+        self.query_one("#input-fallback-dir", Input).focus()
+        self.announce("Opened manual directory entry fallback dialog.")
+
+    @on(Button.Pressed, "#btn-confirm-fallback")
+    @on(Input.Submitted, "#input-fallback-dir")
+    def action_confirm(self) -> None:
+        """Confirm manual path entry."""
+        val = self.query_one("#input-fallback-dir", Input).value.strip()
+        if val:
+            abs_p = os.path.abspath(os.path.expanduser(val))
+            self.announce(f"Confirmed manual directory entry: '{abs_p}'")
+            self.dismiss(abs_p)
+        else:
+            self.announce("Cancelled manual directory entry.")
+            self.dismiss(None)
+
+    @on(Button.Pressed, "#btn-cancel-fallback")
+    def action_cancel(self) -> None:
+        """Cancel manual path entry."""
+        self.announce("Cancelled manual directory entry.")
+        self.dismiss(None)
+
 
 class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     """Modal dialog for modifying application settings."""
@@ -1062,6 +1190,13 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     Button.hidden {
         display: none;
     }
+    SettingsModal TabbedContent {
+        height: auto;
+    }
+    SettingsModal TabPane {
+        height: auto;
+        padding: 0;
+    }
     """
 
     def __init__(self, settings):
@@ -1076,112 +1211,115 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         with Vertical(classes="modal-box"):
             yield Label("Application Settings [Ctrl+O]", classes="modal-title")
 
-            yield Label(
-                "Protected Directories (comma-separated):", classes="field-label"
-            )
-            prot = getattr(
-                self.settings,
-                "PROTECTED_PATHS",
-                getattr(self.settings, "PROTECTED_DIRECTORIES", []),
-            )
-            prot_str = (
-                ", ".join(prot) if isinstance(prot, (list, tuple, set)) else str(prot)
-            )
-            inp_prot = Input(
-                value=prot_str, placeholder="/path/1, /path/2", id="input-protected"
-            )
-            inp_prot.tooltip = (
-                "Comma-separated protected directories exempt from automated moves"
-            )
-            yield inp_prot
+            with TabbedContent(initial="tab-general", id="settings-tabbed-content"):
+                with TabPane("General Settings", id="tab-general"):
+                    yield Label(
+                        "Protected Directories (comma-separated):", classes="field-label"
+                    )
+                    prot = getattr(
+                        self.settings,
+                        "PROTECTED_PATHS",
+                        getattr(self.settings, "PROTECTED_DIRECTORIES", []),
+                    )
+                    prot_str = (
+                        ", ".join(prot) if isinstance(prot, (list, tuple, set)) else str(prot)
+                    )
+                    inp_prot = Input(
+                        value=prot_str, placeholder="/path/1, /path/2", id="input-protected"
+                    )
+                    inp_prot.tooltip = (
+                        "Comma-separated protected directories exempt from automated moves"
+                    )
+                    yield inp_prot
 
-            yield Label("Ignored Extensions (comma-separated):", classes="field-label")
-            ign = getattr(self.settings, "IGNORED_EXTENSIONS", [])
-            ign_str = (
-                ", ".join(ign) if isinstance(ign, (list, tuple, set)) else str(ign)
-            )
-            inp_ign = Input(
-                value=ign_str, placeholder=".tmp, .bak, .log", id="input-ignored"
-            )
-            inp_ign.tooltip = (
-                "Comma-separated file extensions to ignore during scanning"
-            )
-            yield inp_ign
+                    yield Label("Ignored Extensions (comma-separated):", classes="field-label")
+                    ign = getattr(self.settings, "IGNORED_EXTENSIONS", [])
+                    ign_str = (
+                        ", ".join(ign) if isinstance(ign, (list, tuple, set)) else str(ign)
+                    )
+                    inp_ign = Input(
+                        value=ign_str, placeholder=".tmp, .bak, .log", id="input-ignored"
+                    )
+                    inp_ign.tooltip = (
+                        "Comma-separated file extensions to ignore during scanning"
+                    )
+                    yield inp_ign
 
-            yield Label("Max Folders:", classes="field-label")
-            max_f_str = str(getattr(self.settings, "MAX_FOLDERS", 12))
-            inp_max_f = Input(value=max_f_str, placeholder="12", id="input-max-folders")
-            inp_max_f.tooltip = "Maximum subdirectories generated during sorting"
-            yield inp_max_f
+                    yield Label("Max Folders:", classes="field-label")
+                    max_f_str = str(getattr(self.settings, "MAX_FOLDERS", 12))
+                    inp_max_f = Input(value=max_f_str, placeholder="12", id="input-max-folders")
+                    inp_max_f.tooltip = "Maximum subdirectories generated during sorting"
+                    yield inp_max_f
 
-            yield Label("Worker Concurrency (Threads):", classes="field-label")
-            conc_str = str(
-                getattr(
-                    self.settings,
-                    "MAX_WORKERS",
-                    getattr(self.settings, "WORKER_CONCURRENCY", 4),
-                )
-            )
-            inp_conc = Input(value=conc_str, placeholder="4", id="input-concurrency")
-            inp_conc.tooltip = "Worker concurrency thread limit for processing"
-            yield inp_conc
+                    yield Label("Worker Concurrency (Threads):", classes="field-label")
+                    conc_str = str(
+                        getattr(
+                            self.settings,
+                            "MAX_WORKERS",
+                            getattr(self.settings, "WORKER_CONCURRENCY", 4),
+                        )
+                    )
+                    inp_conc = Input(value=conc_str, placeholder="4", id="input-concurrency")
+                    inp_conc.tooltip = "Worker concurrency thread limit for processing"
+                    yield inp_conc
 
-            yield Label("Sorting Strategy:", classes="field-label")
-            strat = getattr(self.settings, "SORTING_STRATEGY", "default")
-            options = [
-                ("Standard Semantic", "default"),
-                ("Generative AI", "generative"),
-            ]
-            from app.core.plugin_registry import PluginRegistry
+                with TabPane("AI & Privacy Settings", id="tab-ai-privacy"):
+                    yield Label("Sorting Strategy:", classes="field-label")
+                    strat = getattr(self.settings, "SORTING_STRATEGY", "default")
+                    options = [
+                        ("Standard Semantic", "default"),
+                        ("Generative AI", "generative"),
+                    ]
+                    from app.core.plugin_registry import PluginRegistry
 
-            reg = PluginRegistry.get_instance()
-            reg.load_plugins_from_settings(self.settings)
-            options.extend(reg.get_tui_strategy_options())
-            if not any(opt[1] == strat for opt in options):
-                options.append((f"Extension ({strat})", strat))
-            sel_strat = Select(options=options, value=strat, id="select-strategy")
-            sel_strat.tooltip = (
-                "Select sorting strategy engine for document classification"
-            )
-            yield sel_strat
+                    reg = PluginRegistry.get_instance()
+                    reg.load_plugins_from_settings(self.settings)
+                    options.extend(reg.get_tui_strategy_options())
+                    if not any(opt[1] == strat for opt in options):
+                        options.append((f"Extension ({strat})", strat))
+                    sel_strat = Select(options=options, value=strat, id="select-strategy")
+                    sel_strat.tooltip = (
+                        "Select sorting strategy engine for document classification"
+                    )
+                    yield sel_strat
 
-            yield Label("Compliance & Renaming Toggles:", classes="field-label")
-            for sw_cfg in reg.get_tui_switches():
-                sw_key = sw_cfg.get("key", "")
-                sw_id = sw_cfg.get("id", f"switch-{sw_key.lower()}")
-                sw_lbl = sw_cfg.get("label", f" {sw_key}")
-                sw_tip = sw_cfg.get("tooltip", "")
-                sw_val = bool(getattr(self.settings, sw_key, False))
-                yield LabeledSwitch(
-                    label=sw_lbl,
-                    value=sw_val,
-                    switch_id=sw_id,
-                    tooltip=sw_tip,
-                )
+                    yield Label("Compliance & Renaming Toggles:", classes="field-label")
+                    for sw_cfg in reg.get_tui_switches():
+                        sw_key = sw_cfg.get("key", "")
+                        sw_id = sw_cfg.get("id", f"switch-{sw_key.lower()}")
+                        sw_lbl = sw_cfg.get("label", f" {sw_key}")
+                        sw_tip = sw_cfg.get("tooltip", "")
+                        sw_val = bool(getattr(self.settings, sw_key, False))
+                        yield LabeledSwitch(
+                            label=sw_lbl,
+                            value=sw_val,
+                            switch_id=sw_id,
+                            tooltip=sw_tip,
+                        )
 
-            yield LabeledSwitch(
-                label="AI Consent Granted",
-                value=bool(getattr(self.settings, "AI_CONSENT_GRANTED", False)),
-                switch_id="switch-ai-consent",
-                tooltip="Toggle AI consent for semantic document classification",
-            )
+                    yield LabeledSwitch(
+                        label="AI Consent Granted",
+                        value=bool(getattr(self.settings, "AI_CONSENT_GRANTED", False)),
+                        switch_id="switch-ai-consent",
+                        tooltip="Toggle AI consent for semantic document classification and processing",
+                    )
 
-            yield LabeledSwitch(
-                label="AI Contextual Renaming",
-                value=bool(getattr(self.settings, "CONTEXTUAL_RENAMING", False)),
-                switch_id="switch-contextual-renaming",
-                tooltip="Toggle AI contextual file renaming",
-            )
+                    yield LabeledSwitch(
+                        label="AI Contextual Renaming",
+                        value=bool(getattr(self.settings, "CONTEXTUAL_RENAMING", False)),
+                        switch_id="switch-contextual-renaming",
+                        tooltip="Toggle AI contextual file renaming",
+                    )
 
-            btn_templates = Button(
-                "Starter Rule Template Gallery",
-                id="btn-open-templates",
-                variant="primary",
-            )
-            btn_templates.tooltip = (
-                "View and apply pre-configured starter rule template packs"
-            )
-            yield btn_templates
+                    btn_templates = Button(
+                        "Starter Rule Template Gallery",
+                        id="btn-open-templates",
+                        variant="primary",
+                    )
+                    btn_templates.tooltip = (
+                        "View and apply pre-configured starter rule template packs"
+                    )
+                    yield btn_templates
 
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
@@ -3740,9 +3878,7 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
         except Exception as e:
             logger.exception(f"Failed to fetch quarantine records: {e}")
             self._call_ui(self._on_records_loaded, [])
-            self._call_ui(
-                self.announce, f"Error loading quarantine records: {e}"
-            )
+            self._call_ui(self.announce, f"Error loading quarantine records: {e}")
 
     def _on_records_loaded(self, records: List[Dict[str, Any]]) -> None:
         self.records = records
@@ -3759,9 +3895,7 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
         status_term = "ALL"
         try:
             search_term = (
-                self.query_one("#quarantine-search-input", Input)
-                .value.strip()
-                .lower()
+                self.query_one("#quarantine-search-input", Input).value.strip().lower()
             )
             status_term = str(
                 self.query_one("#quarantine-status-filter", Select).value or "ALL"
@@ -4023,9 +4157,7 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
             self._call_ui(self._on_reinspect_success, job_id, res)
         except Exception as e:
             logger.error(f"Failed to re-inspect quarantine job {job_id}: {e}")
-            self._call_ui(
-                self.announce, f"Re-inspection failed for {job_id}: {e}"
-            )
+            self._call_ui(self.announce, f"Re-inspection failed for {job_id}: {e}")
 
     def _on_reinspect_success(self, job_id: str, res: dict) -> None:
         new_st = res.get("status", "UPDATED")
@@ -4515,6 +4647,7 @@ class AutoSorterTUI(A11yMixin, App):
 
         base_dir = session_info.get("base_dir") or self.base_dir
         session_id = session_info.get("session_id")
+        rollback_success = False
         if base_dir and session_id:
             try:
                 temp_session = AppSession(
@@ -4527,14 +4660,20 @@ class AutoSorterTUI(A11yMixin, App):
                         session_id, temp_session.db
                     )
                 temp_session.close()
+                rollback_success = True
             except Exception as e:
                 logger.error(f"Error during session rollback: {e}")
 
         session_dir = session_info.get("session_dir")
-        if session_dir and os.path.exists(session_dir):
-            shutil.rmtree(session_dir, ignore_errors=True)
+        if rollback_success:
+            if session_dir and os.path.exists(session_dir):
+                shutil.rmtree(session_dir, ignore_errors=True)
+            self.announce(f"Rolled back session '{session_id}'.")
+        else:
+            self.announce(
+                f"Session recovery failed for '{session_id}': write/permission error. Session files and safety storage preserved."
+            )
 
-        self.announce(f"Rolled back session '{session_id}'.")
         if self.base_dir:
             self.action_scan_directory()
 
@@ -4555,6 +4694,17 @@ class AutoSorterTUI(A11yMixin, App):
     def _on_ai_consent_changed(self, value: Any = None) -> None:
         """Handle AI_CONSENT_GRANTED setting change notification."""
         self.update_status()
+        consent_val = value if value is not None else getattr(self.settings, "AI_CONSENT_GRANTED", None)
+        if consent_val is False or consent_val is None:
+            try:
+                from app.core.shared_registry import SharedModelRegistry
+
+                SharedModelRegistry.get_instance().unload_all_models()
+            except Exception:
+                pass
+            self.announce("AI processing disabled. In-memory AI models unloaded instantly.", priority="high")
+        elif consent_val is True:
+            self.announce("AI processing enabled.", priority="high")
 
     def update_status(self, text: Optional[str] = None) -> None:
         """Update status bar label with current message and AI consent badge."""

@@ -258,10 +258,12 @@ def test_socket_sandbox_case_insensitivity_and_local_suffixes(socket_mock):
 
 def test_check_ai_status_corrupt_or_missing(tmp_path, monkeypatch):
     """Verify check_ai_status correctly warns when models are corrupt/missing."""
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
     from app.config import AppSettings
     from app.core.verifier import check_ai_status
 
     settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = True
     settings.AI_ASSISTED_NAMING = True
 
     # Case 1: missing/uninstalled dependencies -> mock is_ml_available returning False
@@ -641,11 +643,13 @@ def test_get_ocr_reader_fallback(monkeypatch):
 
 def test_check_ai_status_local_offline_bundle(tmp_path, monkeypatch):
     """Verify that check_ai_status and get_ocr_reader can locate and verify easyocr and model files in the offline_bundle directory."""
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
     from app.config import AppSettings
     from app.core.shared_registry import SharedModelRegistry
     from app.core.verifier import check_ai_status
 
     settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = True
     settings.AI_ASSISTED_NAMING = True
 
     # Setup directories
@@ -741,7 +745,9 @@ def test_fast_path_read_does_not_block_on_global_lock():
         assert res_onnx is mock_onnx
         assert res_ocr is mock_ocr
         assert res_gen is mock_gen
-        assert elapsed < 0.5, f"Fast path getter blocked on global lock! Elapsed: {elapsed}s"
+        assert elapsed < 0.5, (
+            f"Fast path getter blocked on global lock! Elapsed: {elapsed}s"
+        )
     finally:
         release_lock.set()
         t.join()
@@ -772,10 +778,14 @@ def test_verify_integrity_runs_outside_global_lock(tmp_path):
             registry._lock.release()
         return orig_hash_fn(path)
 
-    with patch("app.core.resilient_file_ops.resilient_file_hash", side_effect=mock_file_hash):
+    with patch(
+        "app.core.resilient_file_ops.resilient_file_hash", side_effect=mock_file_hash
+    ):
         assert registry.verify_integrity("test_model", str(tmp_path)) is True
 
-    assert lock_state_during_hash is True, "global registry lock was held during file hashing!"
+    assert lock_state_during_hash is True, (
+        "global registry lock was held during file hashing!"
+    )
 
 
 def test_parallel_model_initialization():
@@ -790,9 +800,10 @@ def test_parallel_model_initialization():
         time.sleep(0.2)
         return MagicMock()
 
-    with patch("app.core.jev_classifier.JevClassifierEngine", side_effect=init_jev), \
-         patch("app.core.offline_loader.Florence2VisualProcessor") as mock_florence_cls:
-
+    with (
+        patch("app.core.jev_classifier.JevClassifierEngine", side_effect=init_jev),
+        patch("app.core.offline_loader.Florence2VisualProcessor") as mock_florence_cls,
+    ):
         mock_proc = MagicMock()
         mock_proc.load.side_effect = lambda: time.sleep(0.01)
         mock_florence_cls.return_value = mock_proc
