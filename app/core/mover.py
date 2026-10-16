@@ -198,12 +198,20 @@ def resolve_new_target(abs_target: str, path_map: dict) -> str:
     if norm_target in path_map:
         return path_map[norm_target]
 
+    target_clean = abs_target.replace("\\", "/").lower()
+
     for src_path, dst_path in path_map.items():
         src_clean = (
             src_path[4:] if src_path.startswith(("\\\\?\\", "\\??\\")) else src_path
         )
         src_norm = os.path.normcase(os.path.abspath(src_clean))
-        if norm_target.startswith(src_norm + os.sep):
+        if norm_target == src_norm:
+            return dst_path
+        if src_clean.replace("\\", "/").lower() == target_clean:
+            return dst_path
+        if norm_target.startswith(src_norm + os.sep) or target_clean.startswith(
+            src_clean.replace("\\", "/").lower() + "/"
+        ):
             rel = safe_relpath(abs_target, src_clean)
             return os.path.normpath(os.path.join(dst_path, rel))
 
@@ -212,15 +220,200 @@ def resolve_new_target(abs_target: str, path_map: dict) -> str:
             src_file[4:] if src_file.startswith(("\\\\?\\", "\\??\\")) else src_file
         )
         src_file_norm = os.path.normcase(os.path.abspath(src_file_clean))
-        if src_file_norm.startswith(norm_target + os.sep):
+        if src_file_norm.startswith(norm_target + os.sep) or src_file_clean.replace(
+            "\\", "/"
+        ).lower().startswith(target_clean + "/"):
             rel = safe_relpath(src_file_clean, abs_target)
             dst_file_str = str(dst_file)
-            if dst_file_str.replace("\\", "/").endswith(rel.replace("\\", "/")):
+            if dst_file_str.replace("\\", "/").lower().endswith(
+                rel.replace("\\", "/").lower()
+            ):
                 inferred = dst_file_str[: -len(rel)].rstrip("\\/")
                 if inferred:
                     return os.path.normpath(inferred)
 
     return abs_target
+
+
+def _update_path_map_entry(
+    path_map: dict, source_path: str, dest_path: str, lock=None
+) -> None:
+    """Immediately update path_map with actual final dest_path, preserving subpath entries."""
+    if path_map is None or not source_path or not dest_path:
+        return
+
+    def _apply():
+        src_clean = (
+            source_path[4:]
+            if source_path.startswith(("\\\\?\\", "\\??\\"))
+            else source_path
+        )
+        src_key = os.path.normcase(os.path.abspath(src_clean))
+        abs_dest = os.path.abspath(dest_path)
+        old_dest = path_map.get(src_key)
+        path_map[src_key] = abs_dest
+
+        if old_dest and os.path.normcase(os.path.abspath(old_dest)) != os.path.normcase(abs_dest):
+            for k in list(path_map.keys()):
+                if k.startswith(src_key + os.sep):
+                    rel = safe_relpath(k, src_key)
+                    path_map[k] = os.path.normpath(os.path.join(abs_dest, rel))
+
+    if lock:
+        with lock:
+            _apply()
+    else:
+        _apply()
+
+
+def _resolve_pending_links(
+    base_dir: str,
+    pending_links: list,
+    path_map: dict,
+    db=None,
+    session_id: str = None,
+    ledger=None,
+    history_manager=None,
+    db_updates_batch: list = None,
+    db_lock=None,
+    step_counter: list = None,
+) -> None:
+    """Secondary pass: resolve and update shortcut/link targets after all physical moves in batch complete."""
+    if not pending_links:
+        return
+
+    for item in pending_links:
+        dest_path = item["dest_path"]
+        source_path = item["source_path"]
+        link_info = item["link_info"]
+
+        if not link_info:
+            continue
+
+        original_target = link_info["target"]
+        abs_target = original_target
+        if not os.path.isabs(original_target):
+            abs_target = os.path.normpath(
+                os.path.join(os.path.dirname(source_path), original_target)
+            )
+
+        new_abs_target = resolve_new_target(abs_target, path_map)
+
+        needs_update = not _is_same_path(dest_path, source_path) or not _is_same_path(
+            new_abs_target, abs_target
+        )
+
+        if needs_update and (os.path.lexists(dest_path) or os.path.lexists(source_path)):
+            shadow_name = f"{dest_path}.shadow_{uuid.uuid4().hex}"
+            dest_dir = os.path.dirname(dest_path)
+            if not os.path.exists(dest_dir):
+                os.makedirs(dest_dir, exist_ok=True)
+
+            if link_info["type"] == "symlink":
+                if not os.path.isabs(original_target):
+                    final_target = safe_relpath(new_abs_target, dest_dir)
+                else:
+                    final_target = new_abs_target
+
+                try:
+                    os.symlink(final_target, shadow_name)
+                    if not os.path.lexists(shadow_name):
+                        raise RuntimeError("Shadow link creation failed validation.")
+                    _safe_replace_link(shadow_name, dest_path)
+                    if not _is_same_path(dest_path, source_path) and os.path.lexists(source_path):
+                        from app.core.resilient_file_ops import resilient_remove
+
+                        resilient_remove(source_path)
+                except Exception as e:
+                    if os.path.lexists(shadow_name):
+                        from app.core.resilient_file_ops import resilient_remove
+
+                        resilient_remove(shadow_name)
+                    if os.path.lexists(dest_path) and not _is_same_path(dest_path, source_path):
+                        from app.core.resilient_file_ops import resilient_remove
+
+                        try:
+                            resilient_remove(dest_path)
+                        except OSError:
+                            pass
+                    logging.error(
+                        f"Failed to atomically update symlink {dest_path}: {e}",
+                        exc_info=True,
+                    )
+                    raise
+
+            elif link_info["type"] == "junction":
+                try:
+                    _create_junction(new_abs_target, shadow_name)
+                    if not (
+                        os.path.lexists(shadow_name) or is_junction_path(shadow_name)
+                    ):
+                        raise RuntimeError("Shadow junction creation failed validation.")
+                    _safe_replace_link(shadow_name, dest_path)
+                    if not _is_same_path(dest_path, source_path) and os.path.lexists(source_path):
+                        from app.core.resilient_file_ops import resilient_remove
+
+                        resilient_remove(source_path)
+                except Exception as e:
+                    if os.path.lexists(shadow_name) or is_junction_path(shadow_name):
+                        from app.core.resilient_file_ops import resilient_remove
+
+                        resilient_remove(shadow_name)
+                    if os.path.lexists(dest_path) and not _is_same_path(dest_path, source_path):
+                        from app.core.resilient_file_ops import resilient_remove
+
+                        try:
+                            resilient_remove(dest_path)
+                        except OSError:
+                            pass
+                    logging.error(
+                        f"Failed to atomically update junction {dest_path}: {e}",
+                        exc_info=True,
+                    )
+                    raise
+
+            elif link_info["type"] == "lnk" and pylnk3:
+                try:
+                    parsed = None
+                    lnk_candidate = dest_path if (dest_path and os.path.exists(dest_path)) else source_path
+                    if lnk_candidate and os.path.exists(lnk_candidate):
+                        parsed = pylnk3.parse(lnk_candidate)
+                    kwargs = {}
+                    if parsed:
+                        kwargs = {
+                            "arguments": getattr(parsed, "arguments", None),
+                            "description": getattr(parsed, "description", None),
+                            "icon_file": getattr(parsed, "icon", None),
+                            "icon_index": getattr(parsed, "icon_index", 0),
+                            "work_dir": getattr(parsed, "work_dir", None),
+                            "window_mode": getattr(parsed, "window_mode", None),
+                        }
+
+                    pylnk3.for_file(new_abs_target, lnk_name=shadow_name, **kwargs)
+                    if not os.path.lexists(shadow_name):
+                        raise RuntimeError("Shadow link creation failed validation.")
+                    _safe_replace_link(shadow_name, dest_path)
+                    if not _is_same_path(dest_path, source_path) and os.path.lexists(source_path):
+                        from app.core.resilient_file_ops import resilient_remove
+
+                        resilient_remove(source_path)
+                except Exception as e:
+                    if os.path.lexists(shadow_name):
+                        from app.core.resilient_file_ops import resilient_remove
+
+                        resilient_remove(shadow_name)
+                    if os.path.lexists(dest_path) and not _is_same_path(dest_path, source_path):
+                        from app.core.resilient_file_ops import resilient_remove
+
+                        try:
+                            resilient_remove(dest_path)
+                        except OSError:
+                            pass
+                    logging.error(
+                        f"Failed to atomically update Windows shortcut {dest_path}: {e}",
+                        exc_info=True,
+                    )
+                    raise
 
 
 def _remove_empty_dirs(path: str, protected_paths: list[str] = None):
@@ -446,6 +639,7 @@ def _execute_moves_recursive(
     ledger=None,
     history_manager=None,
     audit_records: list = None,
+    pending_links: list = None,
 ) -> None:
     """Recursively move files according to the plan."""
     base_dir = os.path.normpath(base_dir)
@@ -455,6 +649,8 @@ def _execute_moves_recursive(
         moved_counter = [0]
     if step_counter is None:
         step_counter = [1]
+    if pending_links is None:
+        pending_links = []
 
     curr_plan = (
         plan.plan if hasattr(plan, "plan") and isinstance(plan.plan, dict) else plan
@@ -563,6 +759,7 @@ def _execute_moves_recursive(
 
             dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
             dest_path = unicodedata.normalize("NFC", dest_path)
+            _update_path_map_entry(path_map, source_path, dest_path)
 
             source_rel_path = safe_relpath(source_path, base_dir).replace("\\", "/")
             rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
@@ -650,119 +847,13 @@ def _execute_moves_recursive(
             moved_as_link = False
 
             if link_info:
-                original_target = link_info["target"]
-                abs_target = original_target
-                if not os.path.isabs(original_target):
-                    abs_target = os.path.normpath(
-                        os.path.join(os.path.dirname(source_path), original_target)
-                    )
-
-                new_abs_target = resolve_new_target(abs_target, path_map)
-
-                # Check if we need to update the link
-                needs_update = not _is_same_path(
-                    dest_path, source_path
-                ) or not _is_same_path(new_abs_target, abs_target)
-
-                if needs_update:
-                    shadow_name = f"{dest_path}.shadow_{uuid.uuid4().hex}"
-
-                    if link_info["type"] == "symlink":
-                        if not os.path.isabs(original_target):
-                            final_target = safe_relpath(new_abs_target, dest_dir)
-                        else:
-                            final_target = new_abs_target
-
-                        try:
-                            os.symlink(final_target, shadow_name)
-                            if not os.path.lexists(shadow_name):
-                                raise RuntimeError(
-                                    "Shadow link creation failed validation."
-                                )
-
-                            _safe_replace_link(shadow_name, dest_path)
-                            if not _is_same_path(dest_path, source_path):
-                                from app.core.resilient_file_ops import resilient_remove
-
-                                resilient_remove(source_path)
-                            moved_as_link = True
-                        except Exception as e:
-                            if os.path.lexists(shadow_name):
-                                from app.core.resilient_file_ops import resilient_remove
-
-                                resilient_remove(shadow_name)
-                            logging.error(
-                                f"Failed to atomically update symlink {source_path}: {e}",
-                                exc_info=True,
-                            )
-                            raise
-
-                    elif link_info["type"] == "junction":
-                        try:
-                            _create_junction(new_abs_target, shadow_name)
-                            if not (
-                                os.path.lexists(shadow_name)
-                                or is_junction_path(shadow_name)
-                            ):
-                                raise RuntimeError(
-                                    "Shadow junction creation failed validation."
-                                )
-
-                            _safe_replace_link(shadow_name, dest_path)
-                            if not _is_same_path(dest_path, source_path):
-                                from app.core.resilient_file_ops import resilient_remove
-
-                                resilient_remove(source_path)
-                            moved_as_link = True
-                        except Exception as e:
-                            if os.path.lexists(shadow_name) or is_junction_path(
-                                shadow_name
-                            ):
-                                from app.core.resilient_file_ops import resilient_remove
-
-                                resilient_remove(shadow_name)
-                            logging.error(
-                                f"Failed to atomically update junction {source_path}: {e}",
-                                exc_info=True,
-                            )
-                            raise
-
-                    elif link_info["type"] == "lnk" and pylnk3:
-                        try:
-                            parsed = pylnk3.parse(source_path)
-                            kwargs = {
-                                "arguments": parsed.arguments,
-                                "description": parsed.description,
-                                "icon_file": parsed.icon,
-                                "icon_index": getattr(parsed, "icon_index", 0),
-                                "work_dir": parsed.work_dir,
-                                "window_mode": parsed.window_mode,
-                            }
-
-                            pylnk3.for_file(
-                                new_abs_target, lnk_name=shadow_name, **kwargs
-                            )
-                            if not os.path.lexists(shadow_name):
-                                raise RuntimeError(
-                                    "Shadow link creation failed validation."
-                                )
-
-                            _safe_replace_link(shadow_name, dest_path)
-                            if not _is_same_path(dest_path, source_path):
-                                from app.core.resilient_file_ops import resilient_remove
-
-                                resilient_remove(source_path)
-                            moved_as_link = True
-                        except Exception as e:
-                            if os.path.lexists(shadow_name):
-                                from app.core.resilient_file_ops import resilient_remove
-
-                                resilient_remove(shadow_name)
-                            logging.error(
-                                f"Failed to atomically update Windows shortcut {source_path}: {e}",
-                                exc_info=True,
-                            )
-                            raise
+                pending_links.append(
+                    {
+                        "source_path": source_path,
+                        "dest_path": dest_path,
+                        "link_info": link_info,
+                    }
+                )
 
             if dest_path == source_path:
                 # Still record user verified target if needed even if not moving
@@ -865,13 +956,9 @@ def _execute_moves_recursive(
                 link_meta = None
                 if link_info:
                     link_meta = {
-                        "target": new_abs_target
-                        if "new_abs_target" in locals()
-                        else link_info.get("target"),
+                        "target": link_info.get("target"),
                         "type": link_info["type"],
                     }
-                    if link_info["type"] == "lnk" and "kwargs" in locals():
-                        link_meta.update(kwargs)
                 import json
 
                 step_hash = None
@@ -935,7 +1022,21 @@ def _execute_moves_recursive(
                 step_counter=step_counter,
                 ledger=ledger,
                 history_manager=history_manager,
+                pending_links=pending_links,
             )
+
+    if depth == 0 and pending_links:
+        _resolve_pending_links(
+            base_dir=base_dir,
+            pending_links=pending_links,
+            path_map=path_map,
+            db=db,
+            session_id=session_id,
+            ledger=ledger,
+            history_manager=history_manager,
+            db_updates_batch=db_updates_batch,
+            step_counter=step_counter,
+        )
 
 
 def _is_cancelled(token) -> bool:
@@ -1118,13 +1219,13 @@ def _process_move_item(
     step_counter: list,
     db_updates_batch: list,
     audit_records: list = None,
+    pending_links: list = None,
 ) -> bool:
     """Execute a single physical move and SHA-256 hash calculation off-thread."""
     source_path = item["source_path"]
     if not os.path.lexists(source_path):
         return False
 
-    key = item["key"]
     content = item["content"]
     filename = item["filename"]
     current_dest = item["current_dest"]
@@ -1185,6 +1286,7 @@ def _process_move_item(
 
     dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
     dest_path = unicodedata.normalize("NFC", dest_path)
+    _update_path_map_entry(path_map, source_path, dest_path, lock=db_lock)
 
     source_rel_path = safe_relpath(source_path, base_dir).replace("\\", "/")
     rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
@@ -1283,110 +1385,15 @@ def _process_move_item(
 
     moved_as_link = False
 
-    if link_info:
-        original_target = link_info["target"]
-        abs_target = original_target
-        if not os.path.isabs(original_target):
-            abs_target = os.path.normpath(
-                os.path.join(os.path.dirname(source_path), original_target)
+    if link_info and pending_links is not None:
+        with db_lock:
+            pending_links.append(
+                {
+                    "source_path": source_path,
+                    "dest_path": dest_path,
+                    "link_info": link_info,
+                }
             )
-
-        new_abs_target = resolve_new_target(abs_target, path_map)
-
-        needs_update = not _is_same_path(dest_path, source_path) or not _is_same_path(
-            new_abs_target, abs_target
-        )
-
-        if needs_update:
-            shadow_name = f"{dest_path}.shadow_{uuid.uuid4().hex}"
-
-            if link_info["type"] == "symlink":
-                if not os.path.isabs(original_target):
-                    final_target = safe_relpath(new_abs_target, dest_dir)
-                else:
-                    final_target = new_abs_target
-
-                try:
-                    os.symlink(final_target, shadow_name)
-                    if not os.path.lexists(shadow_name):
-                        raise RuntimeError("Shadow link creation failed validation.")
-
-                    _safe_replace_link(shadow_name, dest_path)
-                    if not _is_same_path(dest_path, source_path):
-                        from app.core.resilient_file_ops import resilient_remove
-
-                        resilient_remove(source_path)
-                    moved_as_link = True
-                except Exception as e:
-                    if os.path.lexists(shadow_name):
-                        from app.core.resilient_file_ops import resilient_remove
-
-                        resilient_remove(shadow_name)
-                    logging.error(
-                        f"Failed to atomically update symlink {source_path}: {e}",
-                        exc_info=True,
-                    )
-                    raise
-
-            elif link_info["type"] == "junction":
-                try:
-                    _create_junction(new_abs_target, shadow_name)
-                    if not (
-                        os.path.lexists(shadow_name) or is_junction_path(shadow_name)
-                    ):
-                        raise RuntimeError(
-                            "Shadow junction creation failed validation."
-                        )
-
-                    _safe_replace_link(shadow_name, dest_path)
-                    if not _is_same_path(dest_path, source_path):
-                        from app.core.resilient_file_ops import resilient_remove
-
-                        resilient_remove(source_path)
-                    moved_as_link = True
-                except Exception as e:
-                    if os.path.lexists(shadow_name) or is_junction_path(shadow_name):
-                        from app.core.resilient_file_ops import resilient_remove
-
-                        resilient_remove(shadow_name)
-                    logging.error(
-                        f"Failed to atomically update junction {source_path}: {e}",
-                        exc_info=True,
-                    )
-                    raise
-
-            elif link_info["type"] == "lnk" and pylnk3:
-                try:
-                    parsed = pylnk3.parse(source_path)
-                    kwargs = {
-                        "arguments": parsed.arguments,
-                        "description": parsed.description,
-                        "icon_file": parsed.icon,
-                        "icon_index": getattr(parsed, "icon_index", 0),
-                        "work_dir": parsed.work_dir,
-                        "window_mode": parsed.window_mode,
-                    }
-
-                    pylnk3.for_file(new_abs_target, lnk_name=shadow_name, **kwargs)
-                    if not os.path.lexists(shadow_name):
-                        raise RuntimeError("Shadow link creation failed validation.")
-
-                    _safe_replace_link(shadow_name, dest_path)
-                    if not _is_same_path(dest_path, source_path):
-                        from app.core.resilient_file_ops import resilient_remove
-
-                        resilient_remove(source_path)
-                    moved_as_link = True
-                except Exception as e:
-                    if os.path.lexists(shadow_name):
-                        from app.core.resilient_file_ops import resilient_remove
-
-                        resilient_remove(shadow_name)
-                    logging.error(
-                        f"Failed to atomically update Windows shortcut {source_path}: {e}",
-                        exc_info=True,
-                    )
-                    raise
 
     if dest_path == source_path:
         with db_lock:
@@ -1489,13 +1496,9 @@ def _process_move_item(
             link_meta = None
             if link_info:
                 link_meta = {
-                    "target": new_abs_target
-                    if "new_abs_target" in locals()
-                    else link_info.get("target"),
+                    "target": link_info.get("target"),
                     "type": link_info["type"],
                 }
-                if link_info["type"] == "lnk" and "kwargs" in locals():
-                    link_meta.update(kwargs)
 
             step_entry = {
                 "type": "transaction_step",
@@ -1697,6 +1700,7 @@ class AsyncMoveEngine:
         db_lock = threading.Lock()
         db_updates_batch: list[Any] = []
         audit_records: list[dict] = []
+        pending_links: list = []
         step_counter = [1]
         has_flushed_db = False
         summary: dict[str, Any] = {
@@ -1732,6 +1736,7 @@ class AsyncMoveEngine:
                     ledger=ledger,
                     history_manager=history_manager,
                     audit_records=audit_records,
+                    pending_links=pending_links,
                 )
                 emit_progress(
                     effective_progress_cb,
@@ -1767,6 +1772,7 @@ class AsyncMoveEngine:
                             step_counter,
                             db_updates_batch,
                             audit_records,
+                            pending_links,
                         )
                         for item in chunk
                     ]
@@ -1802,6 +1808,19 @@ class AsyncMoveEngine:
                         break
 
             if not summary["cancelled"]:
+                if pending_links:
+                    _resolve_pending_links(
+                        base_dir=base_dir,
+                        pending_links=pending_links,
+                        path_map=path_map,
+                        db=db,
+                        session_id=session_id,
+                        ledger=ledger,
+                        history_manager=history_manager,
+                        db_updates_batch=db_updates_batch,
+                        db_lock=db_lock,
+                        step_counter=step_counter,
+                    )
                 cleanup_enabled = (
                     getattr(runtime_settings, "CLEANUP_EMPTY_FOLDERS", True)
                     if runtime_settings
