@@ -624,6 +624,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                 nodes=[
                     "core_policy_engine",
                     "core_rule_templates",
+                    "core_rule_importers",
                     "core_quarantine_interceptor",
                     "core_domain_contracts",
                     "core_verifier",
@@ -715,6 +716,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                 id="core_policy_engine", label="app.core.policy_engine", shape="rhombus"
             ),
             DiagramNode(id="core_rule_templates", label="app.core.rule_templates"),
+            DiagramNode(id="core_rule_importers", label="app.core.rule_importers"),
             DiagramNode(
                 id="core_quarantine_interceptor",
                 label="app.core.quarantine_interceptor",
