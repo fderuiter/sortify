@@ -25,6 +25,19 @@ def temp_model_dir():
     shutil.rmtree(dir_path, ignore_errors=True)
 
 
+@pytest.fixture(autouse=True)
+def mock_security_advisory():
+    with patch(
+        "app.core.security_advisory.SecurityAdvisoryClient.check_advisory"
+    ) as mock_check:
+        from app.core.security_advisory import SecurityAdvisoryResult
+
+        mock_check.return_value = SecurityAdvisoryResult(
+            has_advisory=False, details="Clean mock advisory for downloader tests"
+        )
+        yield mock_check
+
+
 def test_verify_downloaded_model(temp_model_dir):
     # Setup files
     onnx_file = os.path.join(temp_model_dir, "model.onnx")
