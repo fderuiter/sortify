@@ -1,0 +1,23 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="400" viewBox="0 0 800 400">
+  <rect width="100%" height="100%" fill="#f8fafc" rx="8" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="20" y="40" font-family="sans-serif" font-size="18" font-weight="bold" fill="#0f172a">SharedWorkerPool Multi-Threaded Concurrency Model</text>
+  <text x="20" y="70" font-family="sans-serif" font-size="12" fill="#64748b">Mermaid Diagram Specification (Fallback View):</text>
+  <foreignObject x="20" y="90" width="760" height="210">
+    <pre xmlns="http://www.w3.org/1999/xhtml" style="font-family: monospace; font-size: 12px; color: #334155; background: #ffffff; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; overflow: auto; height: 180px;">flowchart TD
+subgraph pool_singleton ["Shared Singleton (app.core.shared_registry)"]
+shared_worker_pool(["SharedWorkerPool Singleton"])
+end
+subgraph pool_tasks ["Concurrent Execution Callers"]
+session_tasks["app.core.session (Lifecycle Management)"]
+mover_tasks["app.core.mover (Parallel File Relocation)"]
+db_worker_tasks["app.core.db_worker (Background Heavy Tasks)"]
+extractor_tasks["app.core.extractor (Parallel Text Ingestion)"]
+analyzer_tasks["app.core.analyzer_strategies (Parallel NLP)"]
+end
+session_tasks --&gt;|get_instance() / shutdown()| shared_worker_pool
+mover_tasks --&gt;|submit() relocation tasks| shared_worker_pool
+db_worker_tasks --&gt;|offload VLM/OCR/GGUF| shared_worker_pool
+extractor_tasks --&gt;|parallel document extraction| shared_worker_pool</pre>
+  </foreignObject>
+
+</svg>

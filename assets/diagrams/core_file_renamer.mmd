@@ -1,0 +1,12 @@
+flowchart TD
+    rename["Target File Rename Spec"]
+    fmt[["Pattern Formatter Engine"]]
+    sanitizer{Filename Path Sanitizer}
+    ops["Resilient File Operation"]
+    rename --> fmt
+    fmt -->|Formatted Name| sanitizer
+    sanitizer -->|Sanitized Target| ops
+    click rename "docs/api_reference.md#appcorefile_renamer" "Rename Task Spec"
+    click fmt "docs/api_reference.md#appcorepattern_formatter" "Pattern Formatter"
+    click sanitizer "docs/api_reference.md#appcorepath_utils" "Path Sanitizer"
+    click ops "docs/api_reference.md#appcoreresilient_file_ops" "Resilient Move Exec"

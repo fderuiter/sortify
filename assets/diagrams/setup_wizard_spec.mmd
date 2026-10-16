@@ -1,0 +1,6 @@
+graph TD
+    init["Model Init Prompt"]
+    download["Model Weight Download"]
+    complete["Engine Ready"]
+    init -->|Accept| download
+    download --> complete

@@ -1,0 +1,16 @@
+flowchart TD
+    subgraph pool_singleton ["Shared Singleton (app.core.shared_registry)"]
+        shared_worker_pool(["SharedWorkerPool Singleton"])
+    end
+    subgraph pool_tasks ["Concurrent Execution Callers"]
+        session_tasks["app.core.session (Lifecycle Management)"]
+        mover_tasks["app.core.mover (Parallel File Relocation)"]
+        db_worker_tasks["app.core.db_worker (Background Heavy Tasks)"]
+        extractor_tasks["app.core.extractor (Parallel Text Ingestion)"]
+        analyzer_tasks["app.core.analyzer_strategies (Parallel NLP)"]
+    end
+    session_tasks -->|get_instance() / shutdown()| shared_worker_pool
+    mover_tasks -->|submit() relocation tasks| shared_worker_pool
+    db_worker_tasks -->|offload VLM/OCR/GGUF| shared_worker_pool
+    extractor_tasks -->|parallel document extraction| shared_worker_pool
+    analyzer_tasks -->|offload embedding vector calculations| shared_worker_pool

@@ -1,0 +1,14 @@
+flowchart TD
+    A["Clone Repository"]
+    B["Sync Environment: uv sync"]
+    C["Install Hooks: uv run pre-commit install"]
+    D["Run Test Suite: uv run pytest"]
+    E["Run CLI Demo: uv run smart-autosorter --demo"]
+    F["Run Docs Check: uv run docs --check"]
+    G["Submit Pull Request"]
+    A --> B
+    B --> C
+    C --> D
+    D --> E
+    E --> F
+    F --> G

@@ -1,0 +1,30 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="800" height="484" viewBox="0 0 800 484">
+  <rect width="100%" height="100%" fill="#f8fafc" rx="8" stroke="#cbd5e1" stroke-width="2"/>
+  <text x="20" y="40" font-family="sans-serif" font-size="18" font-weight="bold" fill="#0f172a">UI Component Catalog Structure</text>
+  <text x="20" y="70" font-family="sans-serif" font-size="12" fill="#64748b">Mermaid Diagram Specification (Fallback View):</text>
+  <foreignObject x="20" y="90" width="760" height="210">
+    <pre xmlns="http://www.w3.org/1999/xhtml" style="font-family: monospace; font-size: 12px; color: #334155; background: #ffffff; padding: 12px; border-radius: 6px; border: 1px solid #e2e8f0; overflow: auto; height: 180px;">graph LR
+subgraph nav ["Navigation Components"]
+header_bar["Application Header Bar"]
+toolbar["Top Action Toolbar"]
+end
+subgraph inputs ["Selection &amp; Controls"]
+directory_selection["Directory Selection Card"]
+settings_modal["Settings Dialog View"]
+setup_wizard["AI Model Setup Wizard"]
+end
+subgraph views ["Display &amp; Audits"]
+plan_treeview["Proposed Reorganization Plan"]
+cro_forensic_dialog["CRO Forensic View"]
+status_progress_panel["Status &amp; Progress Panel"]
+end</pre>
+  </foreignObject>
+    <a href="docs/ui.md#appuiheader_bar" style="color: #2563eb; text-decoration: underline;"><text x="20" y="320" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node header_bar -&gt; Header Bar Component</text></a>
+    <a href="docs/ui.md" style="color: #2563eb; text-decoration: underline;"><text x="20" y="338" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node toolbar -&gt; Top Action Toolbar</text></a>
+    <a href="docs/ui.md#appuidirectory_selection" style="color: #2563eb; text-decoration: underline;"><text x="20" y="356" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node directory_selection -&gt; Directory Selection Component</text></a>
+    <a href="docs/ui.md#appuisettings_modal" style="color: #2563eb; text-decoration: underline;"><text x="20" y="374" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node settings_modal -&gt; Settings Dialog View Component</text></a>
+    <a href="docs/ui.md#appuisetup_wizard" style="color: #2563eb; text-decoration: underline;"><text x="20" y="392" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node setup_wizard -&gt; AI Model Setup Wizard Component</text></a>
+    <a href="docs/ui.md#appuiplan_treeview" style="color: #2563eb; text-decoration: underline;"><text x="20" y="410" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node plan_treeview -&gt; Proposed Reorganization Plan Component</text></a>
+    <a href="docs/ui.md#appuicro_forensic_dialog" style="color: #2563eb; text-decoration: underline;"><text x="20" y="428" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node cro_forensic_dialog -&gt; CRO Forensic View Component</text></a>
+    <a href="docs/ui.md#appuistatus_progress_panel" style="color: #2563eb; text-decoration: underline;"><text x="20" y="446" font-family="sans-serif" font-size="11" fill="#2563eb">🔗 Node status_progress_panel -&gt; Status &amp; Progress Panel Component</text></a>
+</svg>
