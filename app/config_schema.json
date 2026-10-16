@@ -102,6 +102,13 @@
       "title": "Model Threads",
       "type": "integer"
     },
+    "GRAMMAR_CACHE_SIZE": {
+      "default": 16,
+      "exclusiveMinimum": 0,
+      "maximum": 256,
+      "title": "Grammar Cache Size",
+      "type": "integer"
+    },
     "SNAPSHOT_RETENTION_DAYS": {
       "default": 30,
       "exclusiveMinimum": 0,
