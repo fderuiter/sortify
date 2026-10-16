@@ -21,6 +21,22 @@ class NotificationMode(str, Enum):
     CLI = "cli"
 
 
+def _sanitize_notification_text(val: Any) -> Optional[str]:
+    """Scrub secrets and user home paths safely from notification text."""
+    if val is None:
+        return None
+    try:
+        s = str(val)
+        if not s:
+            return ""
+        return sanitize_secret_patterns(scrub_user_home_paths(s))
+    except Exception:
+        try:
+            return str(val)
+        except Exception:
+            return ""
+
+
 class NotificationManager:
     """Central dispatcher for environment-aware notifications."""
 
@@ -142,13 +158,14 @@ class NotificationManager:
         -------
             Dict containing event summary details.
         """
-        msg_str = str(message) if message is not None else ""
+        msg_str = _sanitize_notification_text(message) or ""
+        caption_str = _sanitize_notification_text(caption)
         mode = self.detect_mode()
 
         event = {
             "message": msg_str,
             "type": type,
-            "caption": caption,
+            "caption": caption_str,
             "timeout": timeout,
             "help_url": help_url,
             "mode": mode.value,
@@ -166,7 +183,7 @@ class NotificationManager:
             self._dispatch_gui(
                 msg_str,
                 type=type,
-                caption=caption,
+                caption=caption_str,
                 timeout=timeout,
                 help_url=help_url,
                 **kwargs,
@@ -175,14 +192,14 @@ class NotificationManager:
             self._dispatch_tui(
                 msg_str,
                 type=type,
-                caption=caption,
+                caption=caption_str,
                 timeout=timeout,
                 help_url=help_url,
                 **kwargs,
             )
         else:
             self._dispatch_cli(
-                msg_str, type=type, caption=caption, help_url=help_url, **kwargs
+                msg_str, type=type, caption=caption_str, help_url=help_url, **kwargs
             )
 
         return event
