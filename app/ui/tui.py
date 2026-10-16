@@ -4915,6 +4915,11 @@ class AutoSorterTUI(A11yMixin, App):
             self.plan = self.app_session.generate_sorting_plan()
             self.call_from_thread(self.rebuild_tree)
             model_status = getattr(self.plan, "model_status", "HEALTHY")
+            invalid_locks = getattr(self.plan, "invalid_locks", {}) or {}
+            if not invalid_locks and isinstance(self.plan, dict):
+                invalid_locks = self.plan.get("invalid_locks", {}) or {}
+            num_invalid = len(invalid_locks)
+
             if model_status == "DEGRADED_FALLBACK" or (
                 isinstance(self.plan, dict)
                 and self.plan.get("model_status") == "DEGRADED_FALLBACK"
@@ -4932,6 +4937,14 @@ class AutoSorterTUI(A11yMixin, App):
                 msg = f"Scan complete (DEGRADED FALLBACK MODE: {reason}. Suggested action: {rec_action}). Analyzed {len(files)} files."
             else:
                 msg = f"Scan complete. Analyzed {len(files)} files into proposed plan."
+
+            if num_invalid > 0:
+                lock_str = (
+                    "1 bad lock path was skipped"
+                    if num_invalid == 1
+                    else f"{num_invalid} bad lock paths were skipped"
+                )
+                msg += f" ({lock_str})."
             self.call_from_thread(self.announce, msg)
         except Exception as e:
             logger.error(f"Error in run_scan_worker: {e}")
@@ -5218,6 +5231,17 @@ class AutoSorterTUI(A11yMixin, App):
                 )
                 rating = self._ratings_cache.get(filepath) or file_info.get("rating")
 
+                invalid_locks = getattr(self.plan, "invalid_locks", {}) or {}
+                if not invalid_locks and isinstance(self.plan, dict):
+                    invalid_locks = self.plan.get("invalid_locks", {}) or {}
+
+                is_invalid_lock = (
+                    filepath in invalid_locks
+                    or file_key in invalid_locks
+                    or (bool(filepath) and filepath.replace("\\", "/") in invalid_locks)
+                    or (bool(filepath) and os.path.normpath(filepath) in invalid_locks)
+                )
+
                 is_excluded = file_info.get("is_excluded", False)
                 if "is_checked" not in file_info:
                     is_checked = not is_excluded
@@ -5230,7 +5254,9 @@ class AutoSorterTUI(A11yMixin, App):
 
                 cb_str = "[x]" if is_checked else "[ ]"
                 label_parts = [cb_str]
-                if is_locked:
+                if is_invalid_lock:
+                    label_parts.append("[LOCK WARNING]")
+                elif is_locked:
                     label_parts.append("[LOCKED]")
                 if is_excluded:
                     label_parts.append("[EXCLUDED]")
@@ -5369,6 +5395,20 @@ class AutoSorterTUI(A11yMixin, App):
 
             lines.append(f"[bold]Locked:[/bold] {locked}")
             lines.append(f"[bold]ML Rating:[/bold] {rating}")
+
+            invalid_locks = getattr(self.plan, "invalid_locks", {}) or {}
+            if not invalid_locks and isinstance(self.plan, dict):
+                invalid_locks = self.plan.get("invalid_locks", {}) or {}
+            filepath_str = data.get("filepath", "")
+            key_str = data.get("key", "")
+            lock_err = (
+                invalid_locks.get(filepath_str)
+                or invalid_locks.get(key_str)
+                or (invalid_locks.get(filepath_str.replace("\\", "/")) if filepath_str else None)
+                or (invalid_locks.get(os.path.normpath(filepath_str)) if filepath_str else None)
+            )
+            if lock_err:
+                lines.append(f"[bold error]Lock Warning:[/bold error] {lock_err}")
 
             routing_src = info.get("routed_by")
             if routing_src:

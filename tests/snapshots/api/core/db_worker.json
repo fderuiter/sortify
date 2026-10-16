@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "ae18ccdd106a56be1d8b1d7d5694873c1e673adb5aa0d5c9c43d0f138ee987ac"
+    "checksum": "8c39998409478fb63cc88995ef1ba5c953d1332125a05a3e50cfefbcb69bad07"
   },
   "classes": [
     {
@@ -16,6 +16,52 @@
               "annotation": null,
               "default": null,
               "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "begin_session",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "db_path"
+            },
+            {
+              "annotation": "float",
+              "default": "300.0",
+              "name": "timeout"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "commit_session",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
             }
           ],
           "returns": null
@@ -79,6 +125,32 @@
         {
           "async": false,
           "decorators": [],
+          "name": "get_active_session_id",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "str | None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_in_session",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "notify_listeners",
           "parameters": [
             {
@@ -113,6 +185,54 @@
               "annotation": null,
               "default": null,
               "name": "callback"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "rollback_session",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@contextmanager"
+          ],
+          "name": "session_scope",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "db_path"
+            },
+            {
+              "annotation": "float",
+              "default": "300.0",
+              "name": "timeout"
             }
           ],
           "returns": null
