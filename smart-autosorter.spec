@@ -57,7 +57,11 @@ if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
         for file in files:
             abs_file_path = os.path.join(root, file)
             rel_path = os.path.relpath(abs_file_path, sqlcipher_dir)
-            dest_dir = os.path.join('sqlcipher3', os.path.dirname(rel_path))
+            rel_dir = os.path.dirname(rel_path).replace('\\', '/')
+            if rel_dir in ('.', ''):
+                dest_dir = 'sqlcipher3'
+            else:
+                dest_dir = f'sqlcipher3/{rel_dir}'
             
             # Identify platform-specific binary extensions (.dll, .dylib, .so, .pyd)
             file_lower = file.lower()
@@ -76,10 +80,11 @@ if os.path.exists(app_binaries_src):
             abs_file_path = os.path.abspath(os.path.join(root, file))
             # Determine destination subdirectory in the package (under app/binaries)
             rel_sub = os.path.relpath(root, app_binaries_src)
-            if rel_sub == '.':
-                dest_dir = os.path.join('app', 'binaries')
+            rel_sub_posix = rel_sub.replace('\\', '/')
+            if rel_sub_posix in ('.', ''):
+                dest_dir = 'app/binaries'
             else:
-                dest_dir = os.path.join('app', 'binaries', rel_sub)
+                dest_dir = f'app/binaries/{rel_sub_posix}'
             datas.append((abs_file_path, dest_dir))
 
 # Note: offline_bundle model weights are excluded from embedded datas and packaged into sidecar smart-autosorter-models.zip
@@ -150,8 +155,8 @@ if (platform.system().lower() == "windows" or sys.platform == "win32") and "pyte
         if path_dir not in search_dirs:
             search_dirs.append(path_dir)
             
-    # Also add common/standard Windows OpenSSL installation directories
-    common_openssl_dirs = [
+    # Also add common/standard Windows OpenSSL, MSVC Redist, and UCRT installation directories
+    common_redist_dirs = [
         "C:\\Program Files\\OpenSSL-Win64\\bin",
         "C:\\Program Files\\OpenSSL\\bin",
         "C:\\Program Files\\OpenSSL-Win64",
@@ -159,14 +164,38 @@ if (platform.system().lower() == "windows" or sys.platform == "win32") and "pyte
         "C:\\OpenSSL-Win64\\bin",
         "C:\\OpenSSL-Win64",
         "C:\\Program Files\\Common Files\\SSL",
+        "C:\\Program Files\\Microsoft Visual Studio\\2022\\Enterprise\\VC\\Redist\\MSVC",
+        "C:\\Program Files\\Microsoft Visual Studio\\2022\\Community\\VC\\Redist\\MSVC",
+        "C:\\Program Files\\Microsoft Visual Studio\\2022\\BuildTools\\VC\\Redist\\MSVC",
+        "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Enterprise\\VC\\Redist\\MSVC",
+        "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\Community\\VC\\Redist\\MSVC",
+        "C:\\Program Files (x86)\\Microsoft Visual Studio\\2019\\BuildTools\\VC\\Redist\\MSVC",
+        "C:\\Program Files (x86)\\Windows Kits\\10\\Redist",
+        "C:\\Program Files\\Windows Kits\\10\\Redist",
+        "C:\\Windows\\System32",
+        "C:\\Windows\\SysWOW64",
     ]
-    for cod in common_openssl_dirs:
-        if os.path.isdir(cod) and cod not in search_dirs:
-            search_dirs.append(cod)
-                
+    vc_redist_env = os.environ.get("VCToolsRedistDir")
+    if vc_redist_env and os.path.isdir(vc_redist_env):
+        common_redist_dirs.append(vc_redist_env)
+
+    for cod in common_redist_dirs:
+        if os.path.isdir(cod):
+            if cod not in search_dirs:
+                search_dirs.append(cod)
+            # Recursively append candidate CRT subdirectories (e.g. x64, ucrt/DLLs)
+            for root, dirs, files in os.walk(cod):
+                if any(f.lower().endswith(".dll") for f in files):
+                    if root not in search_dirs:
+                        search_dirs.append(root)
+
     found_dll_names = set()
     found_dlls = set()
-    dll_patterns = ["libcrypto", "libssl", "sqlcipher", "libsqlcipher", "sqlite3"]
+    dll_patterns = [
+        "libcrypto", "libssl", "sqlcipher", "libsqlcipher", "sqlite3",
+        "msvcp140", "vcruntime140", "vcruntime140_1", "concrt140", "vcomp140",
+        "ucrtbase", "api-ms-win-crt-"
+    ]
     
     # 1. Check recursively inside the installed sqlcipher3 package directory itself for any DLLs
     if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
@@ -216,6 +245,68 @@ if is_lite:
         'sklearn', 'scikit-learn', 'pandas', 'cv2', 'numpy', 'skimage',
         'scikit-image', 'sympy', 'lxml', 'mypy', 'matplotlib'
     ])
+
+# Path normalization and inline path assertion helpers for executable packaging
+def normalize_dest_path(path_str):
+    """Normalize target destination paths inside the virtual environment to use forward slashes."""
+    if not path_str:
+        return path_str
+    norm = str(path_str).replace('\\', '/')
+    while '//' in norm:
+        norm = norm.replace('//', '/')
+    if len(norm) > 1 and norm.endswith('/'):
+        norm = norm.rstrip('/')
+    return norm
+
+
+def normalize_collection(items):
+    """Normalize destination paths in datas and binaries prior to Analysis."""
+    normalized = []
+    for item in items:
+        if isinstance(item, (tuple, list)) and len(item) >= 2:
+            src = item[0]
+            dest = normalize_dest_path(item[1])
+            rest = list(item[2:])
+            normalized.append((src, dest, *rest))
+        else:
+            normalized.append(item)
+    return normalized
+
+
+def normalize_toc(toc_list):
+    """Normalize destination paths in Analysis outputs (a.binaries, a.datas, a.zipfiles)."""
+    new_toc = []
+    for item in toc_list:
+        if isinstance(item, (tuple, list)) and len(item) >= 2:
+            dest_name = normalize_dest_path(item[0])
+            src_path = item[1]  # Host filesystem path left untouched
+            rest = list(item[2:])
+            new_toc.append((dest_name, src_path, *rest))
+        else:
+            new_toc.append(item)
+    return new_toc
+
+
+def assert_no_backslashes_in_dest_paths(collection, name, is_pre_analysis=False):
+    """Inline path assertion: verify that no destination path contains active backslashes."""
+    invalid = []
+    for item in collection:
+        if isinstance(item, (tuple, list)) and len(item) >= (2 if is_pre_analysis else 1):
+            dest = item[1] if is_pre_analysis else item[0]
+            if isinstance(dest, str) and '\\' in dest:
+                invalid.append(dest)
+    if invalid:
+        raise ValueError(
+            f"Packaging build failure: Active backslashes detected in destination paths for '{name}':\n"
+            + "\n".join(f"  - {p}" for p in invalid[:10])
+        )
+
+
+datas = normalize_collection(datas)
+binaries = normalize_collection(binaries)
+
+assert_no_backslashes_in_dest_paths(datas, "datas", is_pre_analysis=True)
+assert_no_backslashes_in_dest_paths(binaries, "binaries", is_pre_analysis=True)
 
 a = Analysis(
     ['app/main.py'],
@@ -442,8 +533,13 @@ for x in a.binaries:
         
     new_binaries.append(x)
 
-a.binaries = new_binaries
-a.datas = [x for x in a.datas if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0]) and not is_web_asset(x[0])]
+a.binaries = normalize_toc(new_binaries)
+a.datas = normalize_toc([x for x in a.datas if not is_tcl_tk_asset(x[0]) and not is_prunable_asset(x[0]) and not is_web_asset(x[0])])
+a.zipfiles = normalize_toc(a.zipfiles)
+
+assert_no_backslashes_in_dest_paths(a.binaries, "a.binaries")
+assert_no_backslashes_in_dest_paths(a.datas, "a.datas")
+assert_no_backslashes_in_dest_paths(a.zipfiles, "a.zipfiles")
 
 pyz = PYZ(a.pure, a.zipped_data, cipher=block_cipher)
 

@@ -687,6 +687,7 @@ class HistoryManager:
 
         db_conn = get_db_connection(self.db.db_path)
 
+        failed_steps = []
         for step in reverse_steps:
             source_path = step["source_path"]
             destination_path = step["destination_path"]
@@ -697,104 +698,116 @@ class HistoryManager:
             curr_abs = os.path.normpath(os.path.join(base_dir, destination_path))
             orig_abs = os.path.normpath(os.path.join(base_dir, source_path))
 
-            # Pre-step content integrity check
-            if item_type == "file" and file_hash:
-                if os.path.exists(curr_abs):
-                    if not verify_hash(curr_abs, file_hash):
+            try:
+                # Pre-step content integrity check
+                if item_type == "file" and file_hash:
+                    if os.path.exists(curr_abs):
+                        if not verify_hash(curr_abs, file_hash):
+                            logging.error(
+                                f"Pre-step file hash mismatch for {destination_path}. Halting step replay and restoring state from safety snapshot."
+                            )
+                            self._rollback_from_snapshot_internal(
+                                safety_session_id, ignore_missing=True
+                            )
+                            raise ValueError(
+                                f"Rollback halted: file hash mismatch detected for {destination_path}. Disk state restored from safety snapshot."
+                            )
+                    elif not ignore_missing:
                         logging.error(
-                            f"Pre-step file hash mismatch for {destination_path}. Halting step replay and restoring state from safety snapshot."
+                            f"Pre-step file missing at {destination_path}. Halting step replay and restoring state from safety snapshot."
                         )
                         self._rollback_from_snapshot_internal(
                             safety_session_id, ignore_missing=True
                         )
                         raise ValueError(
-                            f"Rollback halted: file hash mismatch detected for {destination_path}. Disk state restored from safety snapshot."
+                            f"Rollback halted: file missing at {destination_path}. Disk state restored from safety snapshot."
                         )
-                elif not ignore_missing:
-                    logging.error(
-                        f"Pre-step file missing at {destination_path}. Halting step replay and restoring state from safety snapshot."
-                    )
-                    self._rollback_from_snapshot_internal(
-                        safety_session_id, ignore_missing=True
-                    )
-                    raise ValueError(
-                        f"Rollback halted: file missing at {destination_path}. Disk state restored from safety snapshot."
-                    )
 
-            # Replay step reversal
-            if item_type == "file":
-                if curr_abs != orig_abs and os.path.exists(curr_abs):
+                # Replay step reversal
+                if item_type == "file":
+                    if curr_abs != orig_abs and os.path.exists(curr_abs):
+                        os.makedirs(os.path.dirname(orig_abs), exist_ok=True)
+                        if os.path.exists(orig_abs) and not os.path.samefile(
+                            curr_abs, orig_abs
+                        ):
+                            from app.core.mover import get_safe_path
+
+                            safe_orig = get_safe_path(
+                                os.path.dirname(orig_abs), os.path.basename(orig_abs)
+                            )
+                            _robust_move(orig_abs, safe_orig)
+                        _robust_move(curr_abs, orig_abs)
+
+                elif item_type in ("symlink", "junction"):
+                    if os.path.lexists(curr_abs) or is_junction_path(curr_abs):
+                        try:
+                            resilient_remove(curr_abs)
+                        except OSError:
+                            pass
+                    target_link = meta.get("target") if meta else None
+                    if target_link:
+                        os.makedirs(os.path.dirname(orig_abs), exist_ok=True)
+                        if item_type == "junction":
+                            from app.core.mover import _create_junction
+
+                            _create_junction(target_link, orig_abs)
+                        else:
+                            os.symlink(target_link, orig_abs)
+
+                elif item_type == "lnk":
+                    if os.path.lexists(curr_abs):
+                        try:
+                            resilient_remove(curr_abs)
+                        except OSError:
+                            pass
                     os.makedirs(os.path.dirname(orig_abs), exist_ok=True)
-                    if os.path.exists(orig_abs) and not os.path.samefile(
-                        curr_abs, orig_abs
-                    ):
-                        from app.core.mover import get_safe_path
+                    target_link = meta.get("target") if meta else None
+                    if pylnk3 and target_link:
+                        kwargs = {
+                            k: v
+                            for k, v in meta.items()
+                            if k
+                            in (
+                                "arguments",
+                                "description",
+                                "icon_file",
+                                "icon_index",
+                                "work_dir",
+                                "window_mode",
+                            )
+                        }
+                        pylnk3.for_file(target_link, lnk_name=orig_abs, **kwargs)
 
-                        safe_orig = get_safe_path(
-                            os.path.dirname(orig_abs), os.path.basename(orig_abs)
+                # Post-step content integrity check
+                if item_type == "file" and file_hash:
+                    if not verify_hash(orig_abs, file_hash):
+                        logging.error(
+                            f"Post-step file hash mismatch for {source_path}. Halting step replay and restoring state from safety snapshot."
                         )
-                        _robust_move(orig_abs, safe_orig)
-                    _robust_move(curr_abs, orig_abs)
-
-            elif item_type in ("symlink", "junction"):
-                if os.path.lexists(curr_abs) or is_junction_path(curr_abs):
-                    try:
-                        resilient_remove(curr_abs)
-                    except OSError:
-                        pass
-                target_link = meta.get("target") if meta else None
-                if target_link:
-                    os.makedirs(os.path.dirname(orig_abs), exist_ok=True)
-                    if item_type == "junction":
-                        from app.core.mover import _create_junction
-
-                        _create_junction(target_link, orig_abs)
-                    else:
-                        os.symlink(target_link, orig_abs)
-
-            elif item_type == "lnk":
-                if os.path.lexists(curr_abs):
-                    try:
-                        resilient_remove(curr_abs)
-                    except OSError:
-                        pass
-                os.makedirs(os.path.dirname(orig_abs), exist_ok=True)
-                target_link = meta.get("target") if meta else None
-                if pylnk3 and target_link:
-                    kwargs = {
-                        k: v
-                        for k, v in meta.items()
-                        if k
-                        in (
-                            "arguments",
-                            "description",
-                            "icon_file",
-                            "icon_index",
-                            "work_dir",
-                            "window_mode",
+                        self._rollback_from_snapshot_internal(
+                            safety_session_id, ignore_missing=True
                         )
-                    }
-                    pylnk3.for_file(target_link, lnk_name=orig_abs, **kwargs)
+                        raise ValueError(
+                            f"Rollback halted: post-step file hash mismatch for {source_path}. Disk state restored from safety snapshot."
+                        )
 
-            # Post-step content integrity check
-            if item_type == "file" and file_hash:
-                if not verify_hash(orig_abs, file_hash):
-                    logging.error(
-                        f"Post-step file hash mismatch for {source_path}. Halting step replay and restoring state from safety snapshot."
+                # Update core database
+                with db_conn:
+                    db_conn.execute(
+                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                        (source_path, base_dir, destination_path, destination_path),
                     )
-                    self._rollback_from_snapshot_internal(
-                        safety_session_id, ignore_missing=True
-                    )
-                    raise ValueError(
-                        f"Rollback halted: post-step file hash mismatch for {source_path}. Disk state restored from safety snapshot."
-                    )
+            except Exception as step_err:
+                logging.error(f"Failed step reversal: {step_err}")
+                failed_steps.append((step, step_err))
 
-            # Update core database
-            with db_conn:
-                db_conn.execute(
-                    "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                    (source_path, base_dir, destination_path, destination_path),
-                )
+        if failed_steps:
+            first_err = failed_steps[0][1]
+            if isinstance(first_err, ValueError):
+                raise first_err
+            raise PermissionError(
+                f"Recovery incomplete: {len(failed_steps)} step(s) failed during rollback. Error: {first_err}"
+            )
 
     def log_step(
         self,
@@ -1125,6 +1138,7 @@ class HistoryManager:
 
         target_dirs_to_clean = set()
 
+        failed_unwinds = []
         if steps:
             # Exact reverse chronological order
             steps_reverse = sorted(steps, key=lambda s: s["step_id"], reverse=True)
@@ -1138,33 +1152,44 @@ class HistoryManager:
                     target_dirs_to_clean.add(os.path.dirname(target_path))
                     os.makedirs(os.path.dirname(source_path), exist_ok=True)
 
-                    if os.path.lexists(source_path):
-                        from app.core.resilient_file_ops import resilient_remove
+                    try:
+                        if os.path.lexists(source_path):
+                            from app.core.resilient_file_ops import resilient_remove
 
-                        resilient_remove(target_path)
-                    else:
-                        resilient_move(target_path, source_path)
-                    unwound_count += 1
+                            resilient_remove(target_path)
+                        else:
+                            resilient_move(target_path, source_path)
+                        unwound_count += 1
 
-                    if file_hash and os.path.exists(source_path):
-                        try:
-                            from app.core.extractor import get_file_hash
+                        if file_hash and os.path.exists(source_path):
+                            try:
+                                from app.core.extractor import get_file_hash
 
-                            _ = get_file_hash(source_path)
-                        except Exception:
-                            pass
+                                _ = get_file_hash(source_path)
+                            except Exception:
+                                pass
 
-                    if db and base_dir:
-                        try:
-                            rel_target = safe_relpath(target_path, base_dir).replace(
-                                "\\", "/"
-                            )
-                            rel_source = safe_relpath(source_path, base_dir).replace(
-                                "\\", "/"
-                            )
-                            db.update_document_path(base_dir, rel_target, rel_source)
-                        except Exception:
-                            pass
+                        if db and base_dir:
+                            try:
+                                rel_target = safe_relpath(target_path, base_dir).replace(
+                                    "\\", "/"
+                                )
+                                rel_source = safe_relpath(source_path, base_dir).replace(
+                                    "\\", "/"
+                                )
+                                db.update_document_path(base_dir, rel_target, rel_source)
+                            except Exception:
+                                pass
+                    except Exception as move_err:
+                        import logging
+                        logging.error(f"Failed to unwind step {step['step_id']}: {move_err}")
+                        failed_unwinds.append((step, move_err))
+
+        if failed_unwinds:
+            first_err = failed_unwinds[0][1]
+            raise PermissionError(
+                f"Recovery incomplete: {len(failed_unwinds)} step(s) failed to unwind. Error: {first_err}"
+            )
 
         if snapshot_files and base_dir and os.path.exists(base_dir):
             for root, dirs, files in os.walk(base_dir):
@@ -1639,142 +1664,156 @@ class HistoryManager:
 
                 # Execute moves safely to avoid overwriting during cyclic renames
                 try:
+                    failed_moves = []
                     for src, dst in moves:
-                        from app.core.mover import get_safe_path
-
-                        db_conn = get_db_connection(self.db.db_path)
-
-                        # Fix parent directory collisions
-                        parts = (
-                            safe_relpath(dst, base_dir).replace("\\", "/").split("/")
-                        )
-                        current = base_dir
-                        for part in parts[:-1]:
-                            current = os.path.join(current, part)
-                            if os.path.exists(current) and not os.path.isdir(current):
-                                safe_current = get_safe_path(
-                                    os.path.dirname(current), os.path.basename(current)
-                                )
-                                _robust_move(current, safe_current)
-                                rel_current = safe_relpath(current, base_dir).replace(
-                                    "\\", "/"
-                                )
-                                rel_safe = safe_relpath(safe_current, base_dir).replace(
-                                    "\\", "/"
-                                )
-                                with db_conn:
-                                    db_conn.execute(
-                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                        (rel_safe, base_dir, rel_current, rel_current),
-                                    )
-                                    db_conn.execute(
-                                        "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
-                                        (
-                                            rel_safe,
-                                            len(rel_current) + 1,
-                                            base_dir,
-                                            rel_current + "/%",
-                                            rel_current + "/%",
-                                        ),
-                                    )
-
-                        os.makedirs(os.path.dirname(dst), exist_ok=True)
-                        if os.path.islink(dst):
-                            try:
-                                from app.core.resilient_file_ops import resilient_remove
-
-                                resilient_remove(dst)
-                            except OSError:
-                                pass
-
-                        rel_src = safe_relpath(src, base_dir).replace("\\", "/")
-                        rel_dst = safe_relpath(dst, base_dir).replace("\\", "/")
-
-                        if os.path.exists(dst) and not os.path.samefile(src, dst):
-                            is_cyclic = False
-                            for m_src, m_dst in moves:
-                                if m_src == dst:
-                                    is_cyclic = True
-                                    break
-
-                            if is_cyclic:
-                                # Cyclic rename conflict -> isolate to safe transient path
-                                branch_rel_temp = os.path.join(
-                                    ".branches", safety_session_id, rel_dst
-                                ).replace("\\", "/")
-                                temp_dst = os.path.join(base_dir, branch_rel_temp)
-                                os.makedirs(os.path.dirname(temp_dst), exist_ok=True)
-                                _robust_move(dst, temp_dst)
-
-                                with db_conn:
-                                    db_conn.execute(
-                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                        (branch_rel_temp, base_dir, rel_dst, rel_dst),
-                                    )
-
-                                for i, (m_src, m_dst) in enumerate(moves):
-                                    if m_src == dst:
-                                        moves[i] = (temp_dst, m_dst)
-                            else:
-                                # Non-cyclic inline rename (Requirement 2)
-                                safe_dst = get_safe_path(
-                                    os.path.dirname(dst), os.path.basename(dst)
-                                )
-                                _robust_move(dst, safe_dst)
-
-                                safe_rel = safe_relpath(safe_dst, base_dir).replace(
-                                    "\\", "/"
-                                )
-                                with db_conn:
-                                    db_conn.execute(
-                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                        (safe_rel, base_dir, rel_dst, rel_dst),
-                                    )
-                                    db_conn.execute(
-                                        "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
-                                        (
-                                            safe_rel,
-                                            len(rel_dst) + 1,
-                                            base_dir,
-                                            rel_dst + "/%",
-                                            rel_dst + "/%",
-                                        ),
-                                    )
-
-                            _robust_move(src, dst)
-                        else:
-                            if not os.path.exists(dst):
-                                _robust_move(src, dst)
-
-                        with db_conn:
-                            db_conn.execute(
-                                "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                (base_dir, rel_src, rel_src),
+                        try:
+                            from app.core.mover import get_safe_path
+    
+                            db_conn = get_db_connection(self.db.db_path)
+    
+                            # Fix parent directory collisions
+                            parts = (
+                                safe_relpath(dst, base_dir).replace("\\", "/").split("/")
                             )
-                            snapshot_doc = snapshot_docs_dict.get(rel_dst)
-                            if snapshot_doc:
-                                verified_target = (
-                                    snapshot_doc[3]
-                                    if len(snapshot_doc) > 3
-                                    else None
-                                )
+                            current = base_dir
+                            for part in parts[:-1]:
+                                current = os.path.join(current, part)
+                                if os.path.exists(current) and not os.path.isdir(current):
+                                    safe_current = get_safe_path(
+                                        os.path.dirname(current), os.path.basename(current)
+                                    )
+                                    _robust_move(current, safe_current)
+                                    rel_current = safe_relpath(current, base_dir).replace(
+                                        "\\", "/"
+                                    )
+                                    rel_safe = safe_relpath(safe_current, base_dir).replace(
+                                        "\\", "/"
+                                    )
+                                    with db_conn:
+                                        db_conn.execute(
+                                            "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                            (rel_safe, base_dir, rel_current, rel_current),
+                                        )
+                                        db_conn.execute(
+                                            "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
+                                            (
+                                                rel_safe,
+                                                len(rel_current) + 1,
+                                                base_dir,
+                                                rel_current + "/%",
+                                                rel_current + "/%",
+                                            ),
+                                        )
+    
+                            os.makedirs(os.path.dirname(dst), exist_ok=True)
+                            if os.path.islink(dst):
+                                try:
+                                    from app.core.resilient_file_ops import (
+                                        resilient_remove,
+                                    )
+    
+                                    resilient_remove(dst)
+                                except OSError:
+                                    pass
+    
+                            rel_src = safe_relpath(src, base_dir).replace("\\", "/")
+                            rel_dst = safe_relpath(dst, base_dir).replace("\\", "/")
+    
+                            if os.path.exists(dst) and not os.path.samefile(src, dst):
+                                is_cyclic = False
+                                for m_src, m_dst in moves:
+                                    if m_src == dst:
+                                        is_cyclic = True
+                                        break
+    
+                                if is_cyclic:
+                                    # Cyclic rename conflict -> isolate to safe transient path
+                                    branch_rel_temp = os.path.join(
+                                        ".branches", safety_session_id, rel_dst
+                                    ).replace("\\", "/")
+                                    temp_dst = os.path.join(base_dir, branch_rel_temp)
+                                    os.makedirs(os.path.dirname(temp_dst), exist_ok=True)
+                                    _robust_move(dst, temp_dst)
+    
+                                    with db_conn:
+                                        db_conn.execute(
+                                            "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                            (branch_rel_temp, base_dir, rel_dst, rel_dst),
+                                        )
+    
+                                    for i, (m_src, m_dst) in enumerate(moves):
+                                        if m_src == dst:
+                                            moves[i] = (temp_dst, m_dst)
+                                else:
+                                    # Non-cyclic inline rename (Requirement 2)
+                                    safe_dst = get_safe_path(
+                                        os.path.dirname(dst), os.path.basename(dst)
+                                    )
+                                    _robust_move(dst, safe_dst)
+    
+                                    safe_rel = safe_relpath(safe_dst, base_dir).replace(
+                                        "\\", "/"
+                                    )
+                                    with db_conn:
+                                        db_conn.execute(
+                                            "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                            (safe_rel, base_dir, rel_dst, rel_dst),
+                                        )
+                                        db_conn.execute(
+                                            "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
+                                            (
+                                                safe_rel,
+                                                len(rel_dst) + 1,
+                                                base_dir,
+                                                rel_dst + "/%",
+                                                rel_dst + "/%",
+                                            ),
+                                        )
+    
+                                _robust_move(src, dst)
+                            else:
+                                if not os.path.exists(dst):
+                                    _robust_move(src, dst)
+    
+                            with db_conn:
                                 db_conn.execute(
-                                    """
-                                    INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, user_verified_target_path)
-                        VALUES (?, ?, ?, ?, ?)
-                        ON CONFLICT(base_dir, filepath) DO UPDATE SET
-                            file_hash=excluded.file_hash,
-                            extracted_text=excluded.extracted_text,
-                            user_verified_target_path=excluded.user_verified_target_path
-                                    """,
-                                    (
-                                        base_dir,
-                                        rel_dst,
-                                        snapshot_doc[1],
-                                        snapshot_doc[2],
-                                        verified_target,
-                                    ),
+                                    "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                    (base_dir, rel_src, rel_src),
                                 )
+                                snapshot_doc = snapshot_docs_dict.get(rel_dst)
+                                if snapshot_doc:
+                                    verified_target = (
+                                        snapshot_doc[3]
+                                        if len(snapshot_doc) > 3
+                                        else None
+                                    )
+                                    db_conn.execute(
+                                        """
+                                        INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, user_verified_target_path)
+                            VALUES (?, ?, ?, ?, ?)
+                            ON CONFLICT(base_dir, filepath) DO UPDATE SET
+                                file_hash=excluded.file_hash,
+                                extracted_text=excluded.extracted_text,
+                                user_verified_target_path=excluded.user_verified_target_path
+                                        """,
+                                        (
+                                            base_dir,
+                                            rel_dst,
+                                            snapshot_doc[1],
+                                            snapshot_doc[2],
+                                            verified_target,
+                                        ),
+                                    )
+                        except Exception as move_err:
+                            import logging
+                            logging.error(f"Failed to move {src} to {dst} during recovery: {move_err}")
+                            failed_moves.append((src, dst, move_err))
+
+                    if failed_moves:
+                        first_err = failed_moves[0][2]
+                        raise PermissionError(
+                            f"Recovery incomplete: {len(failed_moves)} file(s) failed to restore. Safety storage preserved. Error: {first_err}"
+                        )
 
                     # Restore symlinks and junctions after standard files
                     for target_abs, symlink_target, l_type in symlinks_to_restore:
