@@ -83,10 +83,6 @@ class PluginRegistry:
         if callable(hook_fn) and hook_fn not in self._quarantine_scan_hooks:
             self._quarantine_scan_hooks.append(hook_fn)
 
-    def get_quarantine_scan_hooks(self) -> List[Callable]:
-        """Retrieve registered quarantine scan hooks."""
-        return list(self._quarantine_scan_hooks)
-
     def trigger_quarantine_scan(
         self, orig_rel_path: str, extracted_text: str, base_dir: str
     ) -> None:
@@ -135,10 +131,6 @@ class PluginRegistry:
     def get_tui_view(self, view_name: str) -> Optional[Any]:
         """Retrieve registered TUI view component by name."""
         return self._tui_views.get(view_name)
-
-    def has_tui_view(self, view_name: str) -> bool:
-        """Check if TUI view component is registered."""
-        return view_name in self._tui_views
 
     def register_tui_switch(self, switch_config: Dict[str, Any]) -> None:
         """Register a settings switch configuration for TUI Settings modal."""
