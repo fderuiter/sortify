@@ -13,6 +13,7 @@ def mock_winreg_and_ctypes():
     """Mock winreg and ctypes modules for platform-independent testing."""
     mock_winreg = MagicMock()
     mock_winreg.HKEY_CLASSES_ROOT = "HKEY_CLASSES_ROOT"
+    mock_winreg.HKEY_CURRENT_USER = "HKEY_CURRENT_USER"
     mock_winreg.REG_SZ = 1
 
     mock_shell32 = MagicMock()
@@ -74,41 +75,21 @@ def test_is_admin_on_windows_false(mock_winreg_and_ctypes):
         assert is_admin() is False
 
 
-def test_windows_admin_escalation(mock_winreg_and_ctypes):
-    """Verify that calling register_context_menu attempts standard OS privilege escalation if not admin."""
-    _, mock_ctypes = mock_winreg_and_ctypes
-    mock_ctypes.windll.shell32.IsUserAnAdmin.return_value = False
-
-    with patch("sys.platform", "win32"):
-        # Calling register_context_menu should trigger ShellExecuteW
-        res = register_context_menu(enable=True)
-        assert res is True
-        mock_ctypes.windll.shell32.ShellExecuteW.assert_called_once()
-
-        args = mock_ctypes.windll.shell32.ShellExecuteW.call_args[0]
-        assert args[1] == "runas"
-        assert sys.executable in args[2]
-        assert "enable" in args[3]
-
-
-def test_windows_admin_escalation_failure(mock_winreg_and_ctypes):
-    """Verify that register_context_menu raises RuntimeError if ShellExecuteW fails (returns <= 32)."""
-    _, mock_ctypes = mock_winreg_and_ctypes
-    mock_ctypes.windll.shell32.IsUserAnAdmin.return_value = False
-    mock_ctypes.windll.shell32.ShellExecuteW.return_value = (
-        5  # Failure return code <= 32
-    )
-
-    with patch("sys.platform", "win32"):
-        with pytest.raises(RuntimeError) as excinfo:
-            register_context_menu(enable=True)
-        assert "Failed to elevate privileges" in str(excinfo.value)
-
-
-def test_windows_admin_registry_operations_enable_packaged(mock_winreg_and_ctypes):
-    """Verify registry keys creation under both Directory and Directory\\Background when enable is True (packaged)."""
+def test_windows_user_no_elevation(mock_winreg_and_ctypes):
+    """Verify that calling register_context_menu does not attempt privilege escalation even for non-admin users."""
     mock_winreg, mock_ctypes = mock_winreg_and_ctypes
-    mock_ctypes.windll.shell32.IsUserAnAdmin.return_value = True
+    mock_ctypes.windll.shell32.IsUserAnAdmin.return_value = False
+
+    with patch("sys.platform", "win32"):
+        register_context_menu(enable=True)
+        # ShellExecuteW must NOT be called because per-user registry updates require no elevation
+        mock_ctypes.windll.shell32.ShellExecuteW.assert_not_called()
+
+
+def test_windows_registry_operations_enable_packaged(mock_winreg_and_ctypes):
+    """Verify registry keys creation under per-user HKEY_CURRENT_USER when enable is True (packaged)."""
+    mock_winreg, mock_ctypes = mock_winreg_and_ctypes
+    mock_ctypes.windll.shell32.IsUserAnAdmin.return_value = False
 
     # We mock CreateKey to return fake key handles
     mock_key_dir = MagicMock()
@@ -135,13 +116,14 @@ def test_windows_admin_registry_operations_enable_packaged(mock_winreg_and_ctype
     ):
         register_context_menu(enable=True)
 
-        # Verify winreg.CreateKey was called for directory and background and commands
+        # Verify winreg.CreateKey was called for directory and background and commands under HKEY_CURRENT_USER
         mock_winreg.CreateKey.assert_any_call(
-            "HKEY_CLASSES_ROOT", r"Directory\shell\SmartAutoSorter"
+            "HKEY_CURRENT_USER", r"Software\Classes\Directory\shell\SmartAutoSorter"
         )
         mock_winreg.CreateKey.assert_any_call(mock_key_dir, "command")
         mock_winreg.CreateKey.assert_any_call(
-            "HKEY_CLASSES_ROOT", r"Directory\Background\shell\SmartAutoSorter"
+            "HKEY_CURRENT_USER",
+            r"Software\Classes\Directory\Background\shell\SmartAutoSorter",
         )
         mock_winreg.CreateKey.assert_any_call(mock_key_bg, "command")
 
@@ -160,10 +142,9 @@ def test_windows_admin_registry_operations_enable_packaged(mock_winreg_and_ctype
         mock_winreg.SetValue.assert_any_call(mock_key_bg_cmd, "", 1, expected_bg_cmd)
 
 
-def test_windows_admin_registry_operations_enable_unpackaged(mock_winreg_and_ctypes):
-    """Verify registry keys creation under both paths when enable is True (unpackaged script)."""
+def test_windows_registry_operations_enable_unpackaged(mock_winreg_and_ctypes):
+    """Verify registry keys creation under HKEY_CURRENT_USER when enable is True (unpackaged script)."""
     mock_winreg, mock_ctypes = mock_winreg_and_ctypes
-    mock_ctypes.windll.shell32.IsUserAnAdmin.return_value = True
 
     with (
         patch("sys.platform", "win32"),
@@ -182,26 +163,28 @@ def test_windows_admin_registry_operations_enable_unpackaged(mock_winreg_and_cty
         assert any("main.py" in cmd and "%V" in cmd for cmd in commands_set)
 
 
-def test_windows_admin_registry_operations_disable(mock_winreg_and_ctypes):
-    """Verify registry keys deletion under both Directory and Directory\\Background when enable is False."""
+def test_windows_registry_operations_disable(mock_winreg_and_ctypes):
+    """Verify registry keys deletion under HKEY_CURRENT_USER when enable is False."""
     mock_winreg, mock_ctypes = mock_winreg_and_ctypes
-    mock_ctypes.windll.shell32.IsUserAnAdmin.return_value = True
 
     with patch("sys.platform", "win32"):
         register_context_menu(enable=False)
 
-        # Verify DeleteKey was called for both keys and their commands
+        # Verify DeleteKey was called for both keys and their commands under HKEY_CURRENT_USER
         mock_winreg.DeleteKey.assert_any_call(
-            "HKEY_CLASSES_ROOT", r"Directory\shell\SmartAutoSorter\command"
+            "HKEY_CURRENT_USER",
+            r"Software\Classes\Directory\shell\SmartAutoSorter\command",
         )
         mock_winreg.DeleteKey.assert_any_call(
-            "HKEY_CLASSES_ROOT", r"Directory\shell\SmartAutoSorter"
+            "HKEY_CURRENT_USER", r"Software\Classes\Directory\shell\SmartAutoSorter"
         )
         mock_winreg.DeleteKey.assert_any_call(
-            "HKEY_CLASSES_ROOT", r"Directory\Background\shell\SmartAutoSorter\command"
+            "HKEY_CURRENT_USER",
+            r"Software\Classes\Directory\Background\shell\SmartAutoSorter\command",
         )
         mock_winreg.DeleteKey.assert_any_call(
-            "HKEY_CLASSES_ROOT", r"Directory\Background\shell\SmartAutoSorter"
+            "HKEY_CURRENT_USER",
+            r"Software\Classes\Directory\Background\shell\SmartAutoSorter",
         )
 
 
