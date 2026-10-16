@@ -361,7 +361,7 @@ class VerificationEngine:
             return []
 
         base_dir_abs = os.path.abspath(base_dir) if base_dir else ""
-        dest_to_moves = {}
+        dest_to_moves: dict[str, list[tuple[str, str]]] = {}
         for rel_path, src, dst in moves_list:
             abs_src = os.path.normpath(os.path.abspath(src))
             abs_dst = os.path.normpath(os.path.abspath(dst))
