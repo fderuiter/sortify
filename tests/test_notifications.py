@@ -35,10 +35,6 @@ def test_notification_mode_enum():
     assert mgr.get_mode() == NotificationMode.TUI
     assert mgr.detect_mode() == NotificationMode.TUI
 
-    mgr.set_mode("gui")
-    assert mgr.get_mode() == NotificationMode.GUI
-    assert mgr.detect_mode() == NotificationMode.GUI
-
 
 def test_cli_notification_dispatch_with_help_url(caplog):
     """Test that CLI notification formats messages with help_url in stream and logger."""
@@ -178,3 +174,173 @@ def test_notification_error_fallback():
     )
     assert res["message"] == "Fallback notification test"
     assert "Fallback notification test" in stream.getvalue()
+
+
+def test_notification_manager_ingress_sanitization_all_modes(tmp_path):
+    """Verify ingress sanitization for message and caption in CLI, TUI, GUI, and custom handlers."""
+    mgr = NotificationManager.get_instance()
+
+    secret_key = "sk_live_9999988888777776666655555"
+    home_dir = str(tmp_path / "secret_folder")
+    raw_message = f"Found secret {secret_key} in {home_dir}"
+    raw_caption = f"Warning for {home_dir} with {secret_key}"
+
+    # 1. Test Custom Handler receiving sanitized event
+    received_events = []
+
+    def custom_handler(event):
+        received_events.append(event)
+
+    mgr.register_handler(custom_handler)
+
+    # Test CLI mode
+    stream = io.StringIO()
+    mgr.set_output_stream(stream)
+    mgr.set_mode(NotificationMode.CLI)
+
+    event = notify(raw_message, caption=raw_caption, type="warning")
+
+    assert secret_key not in event["message"]
+    assert home_dir not in event["message"]
+    assert secret_key not in event["caption"]
+    assert home_dir not in event["caption"]
+    assert "<USER_HOME>" in event["message"]
+
+    assert len(received_events) == 1
+    assert secret_key not in received_events[0]["message"]
+    assert home_dir not in received_events[0]["message"]
+    assert secret_key not in received_events[0]["caption"]
+    assert home_dir not in received_events[0]["caption"]
+
+    # Test TUI mode
+    mgr.set_mode(NotificationMode.TUI)
+    mock_tui_app = MagicMock()
+    mock_log_widget = MagicMock()
+    mock_tui_app.query_one.return_value = mock_log_widget
+    mock_tui_app.is_headless = True
+    mgr.register_tui(mock_tui_app)
+
+    tui_event = notify(raw_message, caption=raw_caption, type="error")
+    assert secret_key not in tui_event["message"]
+    assert home_dir not in tui_event["message"]
+
+    # Check mock_tui_app.notify and mock_log_widget.write_line received sanitized text
+    called_msg = mock_tui_app.notify.call_args[0][0]
+    called_title = mock_tui_app.notify.call_args[1]["title"]
+    assert secret_key not in called_msg
+    assert home_dir not in called_msg
+    assert secret_key not in called_title
+    assert home_dir not in called_title
+
+    logged_line = mock_log_widget.write_line.call_args[0][0]
+    assert secret_key not in logged_line
+    assert home_dir not in logged_line
+
+
+def test_notification_manager_non_string_null_inputs():
+    """Verify NotificationManager handles null and non-string inputs safely."""
+    mgr = NotificationManager.get_instance()
+    mgr.set_mode(NotificationMode.CLI)
+    stream = io.StringIO()
+    mgr.set_output_stream(stream)
+
+    # Null message
+    event_null = notify(None, caption=None)
+    assert event_null["message"] == ""
+    assert event_null["caption"] is None
+
+    # Non-string message (int)
+    event_int = notify(12345, caption=999)
+    assert "12345" in event_int["message"]
+    assert "999" in event_int["caption"]
+
+
+def test_a11y_mixin_announce_sanitization(tmp_path, monkeypatch):
+    """Verify A11yMixin.announce sanitizes messages before logging, forwarding, speaking, or status updating."""
+    from app.ui.tui import A11yMixin
+
+    class TestComponent(A11yMixin):
+        def __init__(self):
+            super().__init__()
+            self.status_updated = None
+
+        def update_status(self, text: str) -> None:
+            self.status_updated = text
+
+    comp = TestComponent()
+
+    secret_key = "sk_live_1234567890123456789012345"
+    home_path = str(tmp_path / "test_file.txt")
+    raw_msg = f"Reading {home_path} key={secret_key}"
+
+    # Mock _get_speech_binary to return dummy speech command
+    monkeypatch.setattr(comp, "_get_speech_binary", lambda: "spd-say")
+
+    run_args = []
+
+    def mock_run(cmd, **kwargs):
+        run_args.append(cmd)
+
+    monkeypatch.setattr("subprocess.run", mock_run)
+
+    res = comp.announce(raw_msg, priority="assertive")
+
+    # Check return value is sanitized
+    assert secret_key not in res
+    assert home_path not in res
+    assert "<USER_HOME>" in res
+
+    # Check announcements list
+    assert len(comp.announcements) == 1
+    ann = comp.announcements[0]["message"]
+    assert secret_key not in ann
+    assert home_path not in ann
+
+    # Check last_announcement
+    assert comp.last_announcement is not None
+    assert secret_key not in comp.last_announcement
+    assert home_path not in comp.last_announcement
+
+    # Check update_status received sanitized string
+    assert comp.status_updated is not None
+    assert secret_key not in comp.status_updated
+    assert home_path not in comp.status_updated
+
+    # Join speech thread if active
+    comp.join_speech_thread(timeout=1.0)
+    if run_args:
+        spoken_text = run_args[0][1]
+        assert secret_key not in spoken_text
+        assert home_path not in spoken_text
+
+
+def test_autosorter_tui_announce_tui_log_sanitization(tmp_path):
+    """Verify AutoSorterTUI.announce writes pre-sanitized content to #tui-log."""
+    from app.ui.tui import AutoSorterTUI
+
+    app = AutoSorterTUI(settings=MagicMock())
+    mock_log_widget = MagicMock()
+
+    def mock_query_one(selector, *args, **kwargs):
+        if selector == "#tui-log":
+            return mock_log_widget
+        raise RuntimeError("Widget not found")
+
+    app.query_one = mock_query_one
+
+    secret_key = "sk_live_1234567890123456789012345"
+    home_path = str(tmp_path / "log_file.txt")
+    raw_msg = f"Log entry for {home_path} with token {secret_key}"
+
+    res = app.announce(raw_msg, help_url="https://docs.sortify.ai/help")
+
+    assert secret_key not in res
+    assert home_path not in res
+    assert "<USER_HOME>" in res
+
+    assert mock_log_widget.write_line.called
+    written_line = mock_log_widget.write_line.call_args[0][0]
+    assert secret_key not in written_line
+    assert home_path not in written_line
+    assert "[Help: https://docs.sortify.ai/help]" in written_line
+

@@ -6,7 +6,7 @@ from typing import Any
 
 from pydantic import BaseModel
 
-from app.core.domain_contracts import _get_val
+from app.core.domain_contracts import _get_val, _set_val
 from app.core.link_manager import LinkManager
 
 try:
@@ -54,7 +54,7 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     """
     import sys
 
-    from app.core.path_utils import is_packaged
+    from app.core.path_utils import get_base_path, get_meipass_dir, is_packaged
 
     if settings is not None and getattr(settings, "AI_CONSENT_GRANTED", None) is False:
         return (
@@ -65,9 +65,7 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     is_sandboxed = is_packaged() or getattr(settings, "SANDBOXED", False)
 
     if not is_ml_available():
-        from app.core.path_utils import get_base_path
-
-        mei = getattr(sys, "_MEIPASS", "")
+        mei = get_meipass_dir() or ""
         try:
             base = get_base_path(__file__)
         except Exception:
@@ -113,8 +111,9 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
         user_bundle_path = os.path.expanduser("~/.smart-autosorter/model")
 
     model_dir = None
-    if hasattr(sys, "_MEIPASS"):
-        mei_bundle_path = os.path.join(sys._MEIPASS, "offline_bundle", "model")
+    mei_dir = get_meipass_dir()
+    if mei_dir:
+        mei_bundle_path = os.path.join(mei_dir, "offline_bundle", "model")
         if os.path.exists(mei_bundle_path):
             model_dir = mei_bundle_path
     if not model_dir:
@@ -123,8 +122,8 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
         elif os.path.exists(user_bundle_path):
             model_dir = user_bundle_path
 
-    if hasattr(sys, "_MEIPASS"):
-        easyocr_dir = os.path.join(sys._MEIPASS, "offline_bundle", "easyocr")
+    if mei_dir:
+        easyocr_dir = os.path.join(mei_dir, "offline_bundle", "easyocr")
     else:
         local_easyocr_path = os.path.join(base_path, "offline_bundle", "easyocr")
         cwd_easyocr_path = os.path.join(os.getcwd(), "offline_bundle", "easyocr")
@@ -222,6 +221,20 @@ class VerificationEngine:
     """Engine to verify file operations before execution."""
 
     @staticmethod
+    def is_critical_error(result: dict) -> bool:
+        """Return True if verification result contains any blocking critical errors."""
+        if not result or not isinstance(result, dict):
+            return False
+        if result.get("has_critical_errors") is not None:
+            return bool(result.get("has_critical_errors"))
+        return bool(
+            result.get("collisions")
+            or result.get("circular_renames")
+            or result.get("invalid_renames")
+            or result.get("long_paths")
+        )
+
+    @staticmethod
     def sanitize_plan(plan: dict) -> tuple[dict, list[str]]:
         """Sanitize plan folder keys and file targets, returning (sanitized_plan, warnings)."""
         from app.core.path_utils import sanitize_plan as _sp
@@ -229,7 +242,7 @@ class VerificationEngine:
         return _sp(plan)
 
     @staticmethod
-    def verify_plan_integrity(base_dir: str, plan: Any) -> dict:
+    def verify_plan_integrity(base_dir: str, plan: Any, conflict_policy: str = "skip") -> dict:
         """Run complete virtual filesystem simulation and integrity check."""
         try:
             from app.core.path_utils import sanitize_plan as _sp
@@ -251,7 +264,7 @@ class VerificationEngine:
                 plan_dict = sanitized_plan
 
             tracker = VirtualFilesystemTracker()
-            result = tracker.verify_integrity(base_dir, plan_dict)
+            result = tracker.verify_integrity(base_dir, plan_dict, conflict_policy=conflict_policy)
 
             all_warnings = sanitization_warnings + result.get("warnings", [])
             result["warnings"] = list(dict.fromkeys(all_warnings))
@@ -352,6 +365,176 @@ class VerificationEngine:
                     )
                 )
         return moves
+
+    @staticmethod
+    def get_duplicate_groups(base_dir: str, plan: Any) -> list[dict]:
+        """Detect duplicate destination target collisions and return grouped duplicate clusters."""
+        moves_list = VerificationEngine.get_moves(base_dir, plan)
+        if not moves_list:
+            return []
+
+        base_dir_abs = os.path.abspath(base_dir) if base_dir else ""
+        dest_to_moves: dict[str, list[tuple[str, str]]] = {}
+        for rel_path, src, dst in moves_list:
+            abs_src = os.path.normpath(os.path.abspath(src))
+            abs_dst = os.path.normpath(os.path.abspath(dst))
+            dest_to_moves.setdefault(abs_dst, []).append((rel_path, abs_src))
+
+        groups = []
+        group_counter = 1
+
+        for dst_path, sources in dest_to_moves.items():
+            existing_on_disk = os.path.exists(dst_path)
+            is_existing_collision = False
+            if existing_on_disk:
+                for rel_p, src_p in sources:
+                    if src_p != dst_path:
+                        try:
+                            if not (
+                                os.path.exists(src_p)
+                                and os.path.samefile(dst_path, src_p)
+                            ):
+                                is_existing_collision = True
+                                break
+                        except OSError:
+                            is_existing_collision = True
+                            break
+
+            if len(sources) > 1 or is_existing_collision:
+                items = []
+                for rel_p, src_p in sources:
+                    rel_src = (
+                        os.path.relpath(src_p, base_dir_abs)
+                        if base_dir_abs and src_p.startswith(base_dir_abs)
+                        else src_p
+                    )
+                    items.append(
+                        {
+                            "node_key": rel_p,
+                            "source_path": src_p,
+                            "relative_source": rel_src,
+                            "target_filename": os.path.basename(dst_path),
+                            "target_path": dst_path,
+                        }
+                    )
+
+                group_id = f"group_{group_counter}"
+                group_counter += 1
+                groups.append(
+                    {
+                        "group_id": group_id,
+                        "target_path": dst_path,
+                        "target_filename": os.path.basename(dst_path),
+                        "target_dir": os.path.dirname(dst_path),
+                        "existing_file_on_disk": existing_on_disk,
+                        "items": items,
+                        "default_action": "rename",
+                    }
+                )
+
+        return groups
+
+    @staticmethod
+    def apply_deduplication_selections(
+        base_dir: str, plan: Any, selections: dict[str, str]
+    ) -> Any:
+        """Apply user deduplication selections (keep, rename, skip) to move plan items."""
+        groups = VerificationEngine.get_duplicate_groups(base_dir, plan)
+        if not groups or not selections:
+            return plan
+
+        action_map = {}
+        for group in groups:
+            gid = group["group_id"]
+            t_path = group["target_path"]
+            action = (
+                selections.get(gid)
+                or selections.get(t_path)
+                or group.get("default_action", "rename")
+            )
+            action_map[t_path] = (group, action)
+
+        if not action_map:
+            return plan
+
+        def _traverse_and_update(node, current_dest=""):
+            curr_dict = (
+                node.plan
+                if hasattr(node, "plan") and isinstance(node.plan, dict)
+                else node
+            )
+            if not isinstance(curr_dict, dict):
+                return
+
+            for key, content in curr_dict.items():
+                node_type = _get_val(content, "node_type") or _get_val(
+                    content, "__type__"
+                )
+                is_file_or_dir = (
+                    content is None
+                    or node_type in ("file", "directory")
+                    or isinstance(content, BaseModel)
+                )
+                if is_file_or_dir:
+                    if node_type == "directory":
+                        continue
+
+                    rel_src = _get_val(content, "relative_source") or key
+                    source_path = os.path.normpath(os.path.join(base_dir, rel_src))
+                    raw_tf = _get_val(content, "target_filename") or key
+                    filename = re.split(r"[/\\]+", raw_tf)[-1]
+                    dest_dir = os.path.normpath(os.path.join(base_dir, current_dest))
+                    dest_path = os.path.normpath(os.path.join(dest_dir, filename))
+
+                    if dest_path in action_map:
+                        group_info, action = action_map[dest_path]
+                        items = group_info["items"]
+                        item_index = -1
+                        for idx, item in enumerate(items):
+                            if (
+                                item["source_path"] == source_path
+                                or item["node_key"] == key
+                            ):
+                                item_index = idx
+                                break
+
+                        if item_index >= 0:
+                            if action == "skip":
+                                _set_val(content, "is_excluded", True)
+                                _set_val(content, "is_checked", False)
+                                _set_val(content, "status", "Skipped")
+                            elif action == "rename":
+                                if (
+                                    item_index > 0
+                                    or group_info["existing_file_on_disk"]
+                                ):
+                                    stem, ext = os.path.splitext(filename)
+                                    counter = (
+                                        item_index
+                                        if group_info["existing_file_on_disk"]
+                                        else item_index
+                                    )
+                                    if counter == 0:
+                                        counter = 1
+                                    new_name = f"{stem}_{counter}{ext}"
+                                    _set_val(content, "target_filename", new_name)
+                                _set_val(content, "confirmed", True)
+                                _set_val(content, "is_confirmed", True)
+                                _set_val(content, "status", "Confirmed")
+                            elif action == "keep":
+                                if item_index == 0:
+                                    _set_val(content, "confirmed", True)
+                                    _set_val(content, "is_confirmed", True)
+                                    _set_val(content, "status", "Confirmed")
+                                else:
+                                    _set_val(content, "is_excluded", True)
+                                    _set_val(content, "is_checked", False)
+                                    _set_val(content, "status", "Skipped")
+                else:
+                    _traverse_and_update(content, os.path.join(current_dest, key))
+
+        _traverse_and_update(plan)
+        return plan
 
 
 class VirtualNode:
@@ -543,7 +726,7 @@ class VirtualFilesystemTracker:
             dest_to_srcs.setdefault(abs_dst, []).append(abs_src)
 
         # 1. Duplicate target collision (exempt if dynamic rename policy is active)
-        if conflict_policy == "skip":
+        if conflict_policy in ("skip", "overwrite"):
             for dst, srcs in dest_to_srcs.items():
                 if len(srcs) > 1:
                     collisions.append(
@@ -673,9 +856,7 @@ class VirtualFilesystemTracker:
         }
 
         # Case-normalization map for final nodes
-        final_nodes_norm = {
-            os.path.normcase(p): p for p in final_nodes
-        }
+        final_nodes_norm = {os.path.normcase(p): p for p in final_nodes}
 
         for abs_path, node in final_nodes.items():
             target_path = None
@@ -715,6 +896,7 @@ class VirtualFilesystemTracker:
                 for src_norm, dst_path in path_map.items():
                     if norm_target_orig.startswith(src_norm + os.sep):
                         from app.core.path_utils import safe_relpath
+
                         rel = safe_relpath(abs_target_orig, src_norm)
                         abs_target_final = os.path.normpath(os.path.join(dst_path, rel))
                         break
@@ -723,7 +905,9 @@ class VirtualFilesystemTracker:
 
             # Verify target existence using case-normalized lookup
             is_inside_base = (
-                os.path.normcase(abs_target_final).startswith(os.path.normcase(base_dir_abs))
+                os.path.normcase(abs_target_final).startswith(
+                    os.path.normcase(base_dir_abs)
+                )
                 if base_dir_abs
                 else False
             )
@@ -746,7 +930,7 @@ class VirtualFilesystemTracker:
 
         return broken_links
 
-    def verify_integrity(self, base_dir: str, plan: dict) -> dict:
+    def verify_integrity(self, base_dir: str, plan: dict, conflict_policy: str = "skip") -> dict:
         """Run complete virtual filesystem simulation and integrity check."""
         moves_list = VerificationEngine.get_moves(base_dir, plan)
 
@@ -755,7 +939,7 @@ class VirtualFilesystemTracker:
         self.populate_from_moves(moves_list)
 
         # Trace and analyze issues
-        collisions = self.check_collisions(moves_list, base_dir)
+        collisions = self.check_collisions(moves_list, base_dir, conflict_policy=conflict_policy)
         circular_renames = self.check_circular_renames(moves_list)
 
         # Simulate final VFS state
@@ -816,8 +1000,16 @@ class VirtualFilesystemTracker:
             and len(unconfirmed_renames) == 0
         )
 
+        has_critical_errors = (
+            len(collisions) > 0
+            or len(circular_renames) > 0
+            or len(invalid_renames) > 0
+            or len(long_paths) > 0
+        )
+
         return {
             "success": success,
+            "has_critical_errors": has_critical_errors,
             "collisions": collisions,
             "circular_renames": circular_renames,
             "broken_links": broken_links,

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["hatchling"]
+requires = ["hatchling>=1.27.0, <2.0.0"]
 build-backend = "hatchling.build"
 
 [project]
@@ -121,9 +121,6 @@ ignore_errors = true
 [dependency-groups]
 dev = [
     "deptry",
-    "mkdocs>=1.6.1",
-    "mkdocs-material>=9.7.7",
-    "mkdocstrings[python]>=1.0.6",
     "mypy>=2.3.1",
     "pefile>=2023.2.7",
     "pre-commit>=4.6.2",
@@ -134,6 +131,15 @@ dev = [
     "pytest-xdist>=3.8.0",
     "reportlab>=5.0.0",
     "ruff>=0.16.9",
+]
+
+docs = [
+    "mkdocs>=1.6.1",
+    "mkdocs-material>=9.7.7",
+    "mkdocstrings[python]>=1.0.6",
+]
+
+notebooks = [
     "jupyter>=1.1.1",
     "ipykernel>=7.3.0",
     "notebook>=7.6.3",

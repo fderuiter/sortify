@@ -112,6 +112,9 @@ class Settings(BaseSettings):
     AUTO_QUARANTINE_RATINGS: list[str] = Field(default=["CRITICAL", "HIGH"])
     QUARANTINE_DIR_NAME: str = Field(default="_Compliance_Quarantine")
     PROXY: str = Field(default="")
+    SECURITY_ADVISORY_ENDPOINT: str = Field(default="https://security.huggingface.co/api/advisories")
+    SECURITY_ADVISORY_CACHE_TTL: int = Field(default=3600, ge=1)
+    SECURITY_ADVISORY_FALLBACK_POLICY: Literal["strict", "permissive"] = Field(default="permissive")
     OCR_GPU_ENABLED: bool = Field(default=False)
     AUDIO_GPU_ENABLED: bool = Field(default=False)
     AUDIO_MAX_WORKERS: int = Field(default=2, gt=0, le=64)
@@ -188,7 +191,7 @@ class Settings(BaseSettings):
 
     OCR_LANGUAGES: str = Field(default="en")
     VISION_ENGINE: Literal["easyocr", "florence-2"] = Field(default="easyocr")
-    CONFLICT_POLICY: Literal["skip", "rename"] = Field(default="rename")
+    CONFLICT_POLICY: Literal["skip", "rename", "overwrite"] = Field(default="rename")
     SORTING_STRATEGY: str = Field(default="default")
     CLINICAL_SMART_RENAMING: bool = Field(default=False)
     CLINICAL_GENERATE_AUDIT_REPORT: bool = Field(default=True)
@@ -252,12 +255,25 @@ class Settings(BaseSettings):
     @field_validator("CONFLICT_POLICY")
     @classmethod
     def validate_conflict_policy(cls, v: str) -> str:
-        """Validate that CONFLICT_POLICY is either 'skip' or 'rename'."""
+        """Validate that CONFLICT_POLICY is 'skip', 'rename', or 'overwrite'."""
         if not isinstance(v, str):
             raise ValueError("CONFLICT_POLICY must be a string.")
-        if v not in ("skip", "rename"):
-            raise ValueError("CONFLICT_POLICY must be either 'skip' or 'rename'.")
+        if v not in ("skip", "rename", "overwrite"):
+            raise ValueError("CONFLICT_POLICY must be 'skip', 'rename', or 'overwrite'.")
         return v
+
+    @field_validator("SECURITY_ADVISORY_FALLBACK_POLICY")
+    @classmethod
+    def validate_advisory_fallback_policy(cls, v: str) -> str:
+        """Validate that SECURITY_ADVISORY_FALLBACK_POLICY is either 'strict' or 'permissive'."""
+        if not isinstance(v, str):
+            raise ValueError("SECURITY_ADVISORY_FALLBACK_POLICY must be a string.")
+        v_clean = v.strip().lower()
+        if v_clean not in ("strict", "permissive"):
+            raise ValueError(
+                "SECURITY_ADVISORY_FALLBACK_POLICY must be either 'strict' or 'permissive'."
+            )
+        return v_clean
 
     @field_validator("VISION_ENGINE", mode="before")
     @classmethod
@@ -682,6 +698,12 @@ class AppSettings:
                 SharedModelRegistry.get_instance().unload_all_models()
             except Exception as e:
                 logging.debug(f"Failed to unload in-memory models on consent change: {e}")
+            try:
+                from app.core.db import Database
+
+                Database.scrub_all_vectors()
+            except Exception as e:
+                logging.debug(f"Failed to scrub database vectors on consent change: {e}")
 
         callbacks = []
         if hasattr(self, "_observer_lock") and hasattr(self, "_observers"):
@@ -768,7 +790,7 @@ class AppSettings:
 
 
 def _on_ai_consent_changed_core(key: str, value: Any) -> None:
-    """Core observer callback: unload all in-memory AI models when consent is revoked or disabled."""
+    """Core observer callback: unload all in-memory AI models and scrub database vectors when consent is revoked or disabled."""
     if value is not True:
         try:
             from app.core.shared_registry import SharedModelRegistry
@@ -776,6 +798,13 @@ def _on_ai_consent_changed_core(key: str, value: Any) -> None:
             SharedModelRegistry.get_instance().unload_all_models()
         except Exception as e:
             logging.debug(f"Failed to unload in-memory models on consent change: {e}")
+
+        try:
+            from app.core.db import Database
+
+            Database.scrub_all_vectors()
+        except Exception as e:
+            logging.debug(f"Failed to scrub database vectors on consent change: {e}")
 
 
 AppSettings.add_observer("AI_CONSENT_GRANTED", _on_ai_consent_changed_core)

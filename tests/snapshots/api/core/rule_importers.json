@@ -1,0 +1,196 @@
+{
+  "_metadata": {
+    "checksum": "f9244cd8b80bda70dfb53c957b28d2a68d257ead31c02d1c4d96fe3798ed5eaf"
+  },
+  "classes": [
+    {
+      "class_name": "BaseRuleImporter",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@abc.abstractmethod"
+          ],
+          "name": "can_import",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Union[str, Path]",
+              "default": null,
+              "name": "file_path"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@abc.abstractmethod"
+          ],
+          "name": "parse_file",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Union[str, Path]",
+              "default": null,
+              "name": "file_path"
+            }
+          ],
+          "returns": "ImportResult"
+        }
+      ]
+    },
+    {
+      "class_name": "DropItRuleImporter",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "can_import",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Union[str, Path]",
+              "default": null,
+              "name": "file_path"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "parse_file",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Union[str, Path]",
+              "default": null,
+              "name": "file_path"
+            }
+          ],
+          "returns": "ImportResult"
+        }
+      ]
+    },
+    {
+      "class_name": "HazelRuleImporter",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "can_import",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Union[str, Path]",
+              "default": null,
+              "name": "file_path"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "parse_file",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Union[str, Path]",
+              "default": null,
+              "name": "file_path"
+            }
+          ],
+          "returns": "ImportResult"
+        }
+      ]
+    },
+    {
+      "class_name": "ImportResult",
+      "decorators": [
+        "@dataclass"
+      ],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "merge_into_settings",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "settings"
+            }
+          ],
+          "returns": "Tuple[Dict[str, str], List[Dict[str, Any]]]"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_rule_importer",
+      "parameters": [
+        {
+          "annotation": "Union[str, Path]",
+          "default": null,
+          "name": "file_path"
+        }
+      ],
+      "returns": "BaseRuleImporter"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "import_and_merge_rules",
+      "parameters": [
+        {
+          "annotation": "Union[str, Path]",
+          "default": null,
+          "name": "file_path"
+        },
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "settings"
+        }
+      ],
+      "returns": "ImportResult"
+    }
+  ]
+}

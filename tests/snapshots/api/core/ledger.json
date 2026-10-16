@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "67c8958a2763b5ca6cba1f8393a8b1cae291fe0a635547dd1930e6133c3fd369"
+    "checksum": "9f1bef8bb4f316801d1c45b747122b312d3aa61f9c29189a2b652b4c3b5607b6"
   },
   "classes": [
     {
@@ -24,6 +24,54 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_key_audit_events",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "session_id"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "event_type"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "db_path_hash"
+            },
+            {
+              "annotation": "Optional[Any]",
+              "default": "None",
+              "name": "db_path"
+            },
+            {
+              "annotation": "Optional[float]",
+              "default": "None",
+              "name": "start_time"
+            },
+            {
+              "annotation": "Optional[float]",
+              "default": "None",
+              "name": "end_time"
+            },
+            {
+              "annotation": "Optional[int]",
+              "default": "None",
+              "name": "limit"
+            }
+          ],
+          "returns": "List[Dict[str, Any]]"
         },
         {
           "async": false,
@@ -97,6 +145,54 @@
               "annotation": "Optional[str]",
               "default": "None",
               "name": "entry_id"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "log_key_audit",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "event_type"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "db_path_hash"
+            },
+            {
+              "annotation": "str",
+              "default": "'system'",
+              "name": "session_id"
+            },
+            {
+              "annotation": "str",
+              "default": "'SUCCESS'",
+              "name": "status"
+            },
+            {
+              "annotation": "Optional[Dict[str, Any]]",
+              "default": "None",
+              "name": "metadata"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "event_id"
+            },
+            {
+              "annotation": "Optional[float]",
+              "default": "None",
+              "name": "created_at"
             }
           ],
           "returns": "str"
@@ -183,6 +279,19 @@
       "name": "get_default_ledger_path",
       "parameters": [],
       "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "sanitize_audit_metadata",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "metadata"
+        }
+      ],
+      "returns": "Dict[str, Any]"
     }
   ]
 }

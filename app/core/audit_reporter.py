@@ -14,12 +14,14 @@ logger = logging.getLogger(__name__)
 
 VERIFIED_PASS = "VERIFIED_PASS"
 MISMATCH_FAIL = "MISMATCH_FAIL"
+MOVE_FAIL = "MOVE_FAIL"
 SKIPPED = "SKIPPED"
 UNVERIFIED = "UNVERIFIED"
 
 STATUS_BADGES = {
     VERIFIED_PASS: "[PASS]",
     MISMATCH_FAIL: "[FAIL]",
+    MOVE_FAIL: "[MOVE FAIL]",
     SKIPPED: "[SKIPPED]",
     UNVERIFIED: "[UNVERIFIED]",
 }
@@ -39,13 +41,15 @@ def generate_audit_report(
             - pre_hash (Optional[str])
             - post_hash (Optional[str])
             - status (Optional[str]) - if omitted, computed from pre/post hashes.
+            - error / error_message (Optional[str]) - error description for failed items.
 
     Returns
     -------
-        Dict[str, Any]: Complete audit report containing metrics and detailed records.
+        Dict[str, Any]: Complete audit report containing metrics, detailed records, and failed items.
     """
     base_dir = os.path.normpath(base_dir) if base_dir else ""
     processed_records: List[Dict[str, Any]] = []
+    failed_items: List[Dict[str, Any]] = []
 
     pass_count = 0
     fail_count = 0
@@ -58,9 +62,17 @@ def generate_audit_report(
         pre_hash = item.get("pre_hash") or item.get("original_hash")
         post_hash = item.get("post_hash") or item.get("new_hash")
         override_status = item.get("status")
+        err_msg = (
+            item.get("error")
+            or item.get("error_message")
+            or item.get("error_description")
+            or ""
+        )
 
-        if override_status in (VERIFIED_PASS, MISMATCH_FAIL, SKIPPED, UNVERIFIED):
+        if override_status in (VERIFIED_PASS, MISMATCH_FAIL, MOVE_FAIL, SKIPPED, UNVERIFIED):
             status = override_status
+        elif err_msg or item.get("move_failed"):
+            status = MOVE_FAIL
         elif not dst or src == dst or item.get("skipped"):
             status = SKIPPED
         elif pre_hash and post_hash:
@@ -71,10 +83,16 @@ def generate_audit_report(
         else:
             status = UNVERIFIED
 
-        if status == VERIFIED_PASS:
-            pass_count += 1
-        elif status == MISMATCH_FAIL:
+        if not err_msg:
+            if status == MISMATCH_FAIL:
+                err_msg = "Pre-sort and post-sort SHA-256 hash mismatch"
+            elif status == MOVE_FAIL:
+                err_msg = "File relocation operation failed"
+
+        if status in (MISMATCH_FAIL, MOVE_FAIL):
             fail_count += 1
+        elif status == VERIFIED_PASS:
+            pass_count += 1
         elif status == SKIPPED:
             skipped_count += 1
         elif status == UNVERIFIED:
@@ -88,19 +106,22 @@ def generate_audit_report(
         )
         filename = os.path.basename(dst or src)
 
-        processed_records.append(
-            {
-                "filename": filename,
-                "relative_source": rel_src,
-                "relative_destination": rel_dst,
-                "source_path": src,
-                "destination_path": dst,
-                "pre_hash": pre_hash or "",
-                "post_hash": post_hash or "",
-                "status": status,
-                "status_badge": STATUS_BADGES.get(status, f"[{status}]"),
-            }
-        )
+        rec = {
+            "filename": filename,
+            "relative_source": rel_src,
+            "relative_destination": rel_dst,
+            "source_path": src,
+            "destination_path": dst,
+            "pre_hash": pre_hash or "",
+            "post_hash": post_hash or "",
+            "status": status,
+            "status_badge": STATUS_BADGES.get(status, f"[{status}]"),
+            "error": err_msg,
+            "error_description": err_msg,
+        }
+        processed_records.append(rec)
+        if status in (MISMATCH_FAIL, MOVE_FAIL) or err_msg:
+            failed_items.append(rec)
 
     total_files = len(processed_records)
 
@@ -113,6 +134,7 @@ def generate_audit_report(
         "skipped_count": skipped_count,
         "unverified_count": unverified_count,
         "records": processed_records,
+        "failed_items": failed_items,
     }
 
 

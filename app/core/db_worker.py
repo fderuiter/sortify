@@ -141,12 +141,15 @@ class DBWorker:
                     result_q.put(("success", result))
             except Exception as e:
                 if self._active_session is not None:
-                    sess_id = self._active_session.get("session_id")
-                    logger.error(
-                        f"Task exception encountered during transaction session {sess_id}. "
-                        f"Rolling back open session transaction automatically: {e}"
-                    )
-                    self._do_rollback_session(sess_id)
+                    try:
+                        sess_id = self._active_session.get("session_id")
+                        logger.error(
+                            f"Task exception encountered during transaction session {sess_id}. "
+                            f"Rolling back open session transaction automatically: {e}"
+                        )
+                        self._do_rollback_session(sess_id)
+                    except Exception as rollback_err:
+                        logger.error(f"Failed during automatic transaction rollback: {rollback_err}")
                 if result_q is not None:
                     result_q.put(("error", e))
             finally:
@@ -235,7 +238,7 @@ class DBWorker:
 
     def execute_write(self, func, *args, **kwargs):
         """Submit a database write operation and synchronously block until it completes."""
-        if threading.current_thread() == self.thread:
+        if threading.current_thread() is getattr(self, "thread", None):
             return func(*args, **kwargs)
         result_q = self.submit_write(func, *args, **kwargs)
         status, result = result_q.get()
@@ -245,6 +248,9 @@ class DBWorker:
 
     def execute_write_async(self, func, *args, **kwargs):
         """Submit a database write operation to the queue asynchronously and return immediately."""
+        if threading.current_thread() is getattr(self, "thread", None):
+            func(*args, **kwargs)
+            return
         with self._lock:
             if self._stopped:
                 return

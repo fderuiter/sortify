@@ -16,6 +16,7 @@ from typing import Any, Callable, Dict, List, Optional, Tuple
 from app.core.exceptions import (
     ArchiveCorruptionError,
     HashVerificationError,
+    ModelVerificationError,
     ModelWeightsNotFoundError,
     OfflineModelLoadError,
 )
@@ -64,14 +65,15 @@ class OfflineModelLoader:
             if p:
                 candidates.append(p)
 
-        from app.core.path_utils import get_base_path, is_packaged
+        from app.core.path_utils import get_base_path, get_meipass_dir, is_packaged
 
         if is_packaged() and hasattr(sys, "executable"):
             exe_dir = os.path.dirname(sys.executable)
             candidates.append(os.path.join(exe_dir, "smart-autosorter-models.zip"))
 
-        if hasattr(sys, "_MEIPASS"):
-            candidates.append(os.path.join(sys._MEIPASS, "smart-autosorter-models.zip"))
+        mei_dir = get_meipass_dir()
+        if mei_dir:
+            candidates.append(os.path.join(mei_dir, "smart-autosorter-models.zip"))
 
         candidates.append(os.path.join(os.getcwd(), "smart-autosorter-models.zip"))
         candidates.append(
@@ -266,10 +268,11 @@ class OfflineModelLoader:
             searched_paths.append(env_path)
 
         # Precedence 2: PyInstaller temporary execution directory
-        from app.core.path_utils import is_packaged
+        from app.core.path_utils import get_meipass_dir
 
-        if is_packaged() and hasattr(sys, "_MEIPASS"):
-            meipass_path = os.path.join(sys._MEIPASS, "offline_bundle", folder_name)
+        mei_dir = get_meipass_dir()
+        if mei_dir:
+            meipass_path = os.path.join(mei_dir, "offline_bundle", folder_name)
             searched_paths.append(meipass_path)
 
         # Precedence 3: Local workspace directory
@@ -420,7 +423,43 @@ class OfflineModelLoader:
         if not args:
             args = (model_path,)
 
-        # 4. Enforce sandboxed loading
+        # 4. Verify advisory status for target model files before loading model weights into memory
+        from app.core.security_advisory import SecurityAdvisoryClient
+
+        advisory_client = SecurityAdvisoryClient.get_instance()
+        file_hash = None
+        if os.path.isdir(model_path):
+            from app.core.resilient_file_ops import resilient_file_hash
+
+            for cand in ("model.onnx", "model.safetensors", "pytorch_model.bin"):
+                cand_p = os.path.join(model_path, cand)
+                if os.path.isfile(cand_p):
+                    try:
+                        file_hash = resilient_file_hash(cand_p)
+                        break
+                    except Exception:
+                        pass
+        elif os.path.isfile(model_path):
+            try:
+                from app.core.resilient_file_ops import resilient_file_hash
+
+                file_hash = resilient_file_hash(model_path)
+            except Exception:
+                pass
+
+        try:
+            advisory_client.check_advisory(
+                repo_id=model_id,
+                file_hash=file_hash,
+                fallback_policy="permissive",  # For offline loader when network is unavailable, check cached status or permissive fallback
+            )
+        except ModelVerificationError as adv_err:
+            logger.critical(
+                f"Security advisory flag blocked offline model loading for '{model_id}': {adv_err}"
+            )
+            raise
+
+        # 5. Enforce sandboxed loading
         try:
             with block_external_network(reason=f"loading offline model {model_id}"):
                 return loader_fn(*args, **kwargs)

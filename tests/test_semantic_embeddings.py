@@ -1,4 +1,5 @@
 import shutil
+import sys
 import tempfile
 import time
 from pathlib import Path
@@ -1048,8 +1049,10 @@ def test_onnx_central_registry_session_routing_and_unloading(db, temp_dir):
     out_node.shape = [1, 3, 384]
     mock_session.get_outputs.return_value = [out_node]
 
-    # Patch InferenceSession inside SharedModelRegistry.get_onnx_session
-    with patch("onnxruntime.InferenceSession", return_value=mock_session):
+    # Patch InferenceSession inside SharedModelRegistry.get_onnx_session via sys.modules
+    mock_ort = MagicMock()
+    mock_ort.InferenceSession.return_value = mock_session
+    with patch.dict(sys.modules, {"onnxruntime": mock_ort}):
         # 1. Property extraction uses central registry
         props = get_active_model_properties(str(model_dir))
         assert props[1] == 384
@@ -1107,8 +1110,11 @@ def test_malformed_model_validation_failure_cleans_up_registry(db, temp_dir):
     expected_hash = HASHES["generative_naming"]["model.onnx"]
     expected_key = f"onnx_{onnx_file}"
 
+    mock_ort = MagicMock()
+    mock_ort.InferenceSession.return_value = mock_session
+
     with (
-        patch("onnxruntime.InferenceSession", return_value=mock_session),
+        patch.dict(sys.modules, {"onnxruntime": mock_ort}),
         patch(
             "app.core.resilient_file_ops.resilient_file_hash",
             return_value=expected_hash,

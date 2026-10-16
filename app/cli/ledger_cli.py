@@ -260,8 +260,6 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
                     if s.get("session_id") == session_id:
                         target_db_path = s.get("history_db_path")
                         break
-            if not target_db_path and all_sessions:
-                target_db_path = all_sessions[0].get("history_db_path")
             if not target_db_path:
                 target_db_path = str(get_app_dir() / "history.db")
 
