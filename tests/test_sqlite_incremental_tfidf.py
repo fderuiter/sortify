@@ -1,5 +1,6 @@
 import math
 import tempfile
+from contextlib import contextmanager
 from pathlib import Path
 
 import numpy as np
@@ -12,14 +13,23 @@ from app.core.db_conn import clear_connection_cache
 from app.core.db_worker import DBWorker
 
 
+@contextmanager
+def managed_sqlite_db(tmp_dir, db_filename="test.db"):
+    """Context manager to reliably manage and teardown SQLite test database connections and workers."""
+    db_worker = DBWorker()
+    try:
+        db_path = Path(tmp_dir) / db_filename
+        db = Database(db_path, db_worker)
+        yield db, db_path, db_worker
+    finally:
+        db_worker.stop()
+        clear_connection_cache(only_current_and_inactive=False)
+
+
 def test_sqlite_incremental_tfidf_lifecycle():
     """Test the full lifecycle of the incremental TF-IDF engine."""
     with tempfile.TemporaryDirectory() as tmp_dir:
-        db_worker = DBWorker()
-        try:
-            db_path = Path(tmp_dir) / "test_tfidf.db"
-            db = Database(db_path, db_worker)
-
+        with managed_sqlite_db(tmp_dir, "test_tfidf.db") as (db, db_path, db_worker):
             base_dir = "my_base"
             filepath = "folder/doc1.txt"
             doc_content = "baking delicious chocolate cakes and sweet cupcakes"
@@ -100,19 +110,11 @@ def test_sqlite_incremental_tfidf_lifecycle():
             assert len(top_terms) == 0
             assert len(doc_terms) == 0
 
-        finally:
-            db_worker.stop()
-            clear_connection_cache(only_current_and_inactive=False)
-
 
 def test_mathematical_equivalence():
     """Verify that incremental TF-IDF and traditional TfidfVectorizer produce identical mathematical results."""
     with tempfile.TemporaryDirectory() as tmp_dir:
-        db_worker = DBWorker()
-        try:
-            db_path = Path(tmp_dir) / "test_math.db"
-            db = Database(db_path, db_worker)
-
+        with managed_sqlite_db(tmp_dir, "test_math.db") as (db, db_path, db_worker):
             base_dir = "math_base"
 
             # Simple 3-document corpus
@@ -202,6 +204,5 @@ def test_mathematical_equivalence():
             # Let's check that the matched examples appear in the prompt context.
             assert "file3.txt" in prompt or "sheets of baking finance" in prompt
 
-        finally:
-            db_worker.stop()
-            clear_connection_cache(only_current_and_inactive=False)
+
+

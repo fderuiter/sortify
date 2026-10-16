@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "644da98e9fd7df074ad2837017a2a1ebc5d434e97b9f64b2ab1be8e5648924ba"
+    "checksum": "91525c8f817343e9ac973841101f20012834c4295e270be9d24bc90d948b992b"
   },
   "classes": [
     {
@@ -162,6 +162,21 @@
               "annotation": "str | None",
               "default": "None",
               "name": "new_key_str"
+            },
+            {
+              "annotation": "str",
+              "default": "'system'",
+              "name": "session_id"
+            },
+            {
+              "annotation": "str",
+              "default": "'administrator'",
+              "name": "actor"
+            },
+            {
+              "annotation": "dict[str, Any] | None",
+              "default": "None",
+              "name": "caller_metadata"
             }
           ],
           "returns": "str"
@@ -380,6 +395,21 @@
               "annotation": null,
               "default": null,
               "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": "'system'",
+              "name": "session_id"
+            },
+            {
+              "annotation": "str",
+              "default": "'system'",
+              "name": "actor"
+            },
+            {
+              "annotation": "dict[str, Any] | None",
+              "default": "None",
+              "name": "caller_context"
             }
           ],
           "returns": "str | None"
@@ -398,6 +428,21 @@
               "annotation": "str | None",
               "default": "None",
               "name": "new_key_str"
+            },
+            {
+              "annotation": "str",
+              "default": "'system'",
+              "name": "session_id"
+            },
+            {
+              "annotation": "str",
+              "default": "'administrator'",
+              "name": "actor"
+            },
+            {
+              "annotation": "dict[str, Any] | None",
+              "default": "None",
+              "name": "caller_metadata"
             }
           ],
           "returns": "str"

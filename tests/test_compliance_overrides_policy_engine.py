@@ -237,3 +237,51 @@ def test_invalid_lock_path_recorded_in_invalid_locks_during_plan_generation():
     )
     assert isinstance(plan, SortingPlan)
     assert "file.txt" in plan.invalid_locks
+
+
+def test_policy_engine_sort_policies():
+    """Test PolicyEngine.sort_policies static helper method."""
+    assert PolicyEngine.sort_policies([]) == []
+    assert PolicyEngine.sort_policies(None) == []
+
+    unsorted = [
+        {"expression": "low", "priority": 10},
+        {"expression": "high", "priority": 100},
+        {"expression": "medium", "priority": 50},
+    ]
+    sorted_policies = PolicyEngine.sort_policies(unsorted)
+    assert [p["priority"] for p in sorted_policies] == [100, 50, 10]
+
+
+def test_policy_engine_presorted_evaluation():
+    """Test PolicyEngine.evaluate_policies works correctly for both pre-sorted and unsorted inputs."""
+    unsorted_policies = [
+        {
+            "type": "keyword",
+            "expression": "doc",
+            "target_path": "Low_Priority",
+            "priority": 10,
+        },
+        {
+            "type": "keyword",
+            "expression": "doc",
+            "target_path": "High_Priority",
+            "priority": 100,
+        },
+    ]
+
+    res_unsorted = PolicyEngine.evaluate_policies(
+        "doc.txt", "some text doc", None, unsorted_policies, is_sorted=False
+    )
+    assert res_unsorted is not None
+    assert res_unsorted.target_path == "High_Priority"
+
+    presorted_policies = PolicyEngine.sort_policies(unsorted_policies)
+    assert presorted_policies[0]["priority"] == 100
+
+    res_presorted = PolicyEngine.evaluate_policies(
+        "doc.txt", "some text doc", None, presorted_policies, is_sorted=True
+    )
+    assert res_presorted is not None
+    assert res_presorted.target_path == "High_Priority"
+
