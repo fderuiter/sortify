@@ -56,6 +56,12 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
 
     from app.core.path_utils import is_packaged
 
+    if settings is not None and getattr(settings, "AI_CONSENT_GRANTED", None) is False:
+        return (
+            False,
+            "AI processing is disabled because AI consent has been revoked.",
+        )
+
     is_sandboxed = is_packaged() or getattr(settings, "SANDBOXED", False)
 
     if not is_ml_available():
