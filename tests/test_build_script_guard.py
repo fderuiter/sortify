@@ -46,6 +46,7 @@ def test_build_script_standard_all_present():
             patch("importlib.util.find_spec") as mock_find_spec,
             patch("sys.exit", side_effect=SystemExit) as mock_exit,
             patch("scripts.build.download_and_prepare_weights") as mock_download,
+            patch("scripts.build.verify_scientific_binaries") as mock_verify_sci,
         ):
             # All find_spec calls return a valid spec
             mock_spec = MagicMock()
