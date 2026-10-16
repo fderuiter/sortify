@@ -5,6 +5,7 @@ import json
 import logging
 import os
 import struct
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -14,6 +15,8 @@ from cryptography.fernet import Fernet
 from app.core.exceptions import CryptoError
 
 logger = logging.getLogger(__name__)
+
+_key_mgmt_lock = threading.RLock()
 
 try:
     import numpy as np
@@ -234,214 +237,113 @@ class SessionCrypto:
         if self._cipher is not None:
             return self._cipher
 
-        key = None
+        with _key_mgmt_lock:
+            if self._cipher is not None:
+                return self._cipher
 
-        # 1. OS Keyring Lookup (SHA-256)
-        try:
-            key_str = keyring.get_password(self.keyring_service, self.keyring_account)
-            if key_str:
-                key = key_str.encode("utf-8")
-        except Exception as e:
-            logger.warning(
-                f"Keyring lookup failed for account '{self.keyring_account}': {e}"
-            )
+            key = None
 
-        # 2. Centralized Fallback Key Lookup (SHA-256 file)
-        if key is None and self.isolated_key_path.exists():
+            # 1. OS Keyring Lookup (SHA-256)
             try:
-                with open(self.isolated_key_path, "rb") as f:
-                    key = f.read().strip()
-            except OSError as e:
-                logger.warning(
-                    f"Failed to read isolated key at '{self.isolated_key_path}': {e}"
-                )
-
-        # 3. Legacy Fallback Migration and Cleanup
-        legacy_key = None
-
-        # 3a. Legacy MD5 Keyring Lookup
-        if key is None:
-            try:
-                legacy_key_str = keyring.get_password(
-                    self.keyring_service, self.legacy_md5_keyring_account
-                )
-                if legacy_key_str:
-                    legacy_key = legacy_key_str.encode("utf-8")
+                key_str = keyring.get_password(self.keyring_service, self.keyring_account)
+                if key_str:
+                    key = key_str.encode("utf-8")
             except Exception as e:
                 logger.warning(
-                    f"Legacy MD5 keyring lookup failed for account '{self.legacy_md5_keyring_account}': {e}"
+                    f"Keyring lookup failed for account '{self.keyring_account}': {e}"
                 )
 
-        # 3b. Legacy MD5 Isolated Key File
-        if (
-            key is None
-            and legacy_key is None
-            and self.legacy_md5_isolated_key_path.exists()
-        ):
-            try:
-                with open(self.legacy_md5_isolated_key_path, "rb") as f:
-                    legacy_key = f.read().strip()
-            except OSError as e:
-                logger.warning(
-                    f"Failed to read legacy MD5 isolated key at '{self.legacy_md5_isolated_key_path}': {e}"
-                )
-
-        # 3c. Legacy .keys directory
-        if (
-            key is None
-            and legacy_key is None
-            and self.legacy_isolated_key_path.exists()
-        ):
-            try:
-                with open(self.legacy_isolated_key_path, "rb") as f:
-                    legacy_key = f.read().strip()
-            except OSError as e:
-                logger.warning(
-                    f"Failed to read legacy isolated key at '{self.legacy_isolated_key_path}': {e}"
-                )
-
-        if (
-            key is None
-            and legacy_key is None
-            and self.legacy_isolated_dir.exists()
-            and self.legacy_isolated_dir.is_dir()
-        ):
-            try:
-                for p in self.legacy_isolated_dir.iterdir():
-                    if p.is_file() and p.suffix == ".key":
-                        try:
-                            with open(p, "rb") as f:
-                                legacy_key = f.read().strip()
-                                if legacy_key:
-                                    break
-                        except OSError as e:
-                            logger.debug(
-                                f"Failed to read legacy key candidate '{p}': {e}"
-                            )
-            except OSError as e:
-                logger.warning(
-                    f"Failed to iterate legacy isolated key directory '{self.legacy_isolated_dir}': {e}"
-                )
-
-        # 3d. Legacy secret.key in db directory
-        if key is None and legacy_key is None and self.key_path.exists():
-            try:
-                with open(self.key_path, "rb") as f:
-                    legacy_key = f.read().strip()
-            except OSError as e:
-                logger.warning(f"Failed to read key path '{self.key_path}': {e}")
-
-        if legacy_key:
-            # If we didn't find a key in the primary keyring or centralized store, use the legacy key.
-            if key is None:
-                key = legacy_key
-
-            # Write/copy to the centralized SHA-256 fallback key path
-            self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-            try:
-                os.chmod(self.isolated_dir, 0o700)
-            except OSError as chmod_err:
-                logger.debug(
-                    f"Failed to set permissions on isolated directory '{self.isolated_dir}': {chmod_err}"
-                )
-
-            try:
-                fd = os.open(
-                    str(self.isolated_key_path),
-                    os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-                    0o600,
-                )
-                with os.fdopen(fd, "wb") as f:
-                    f.write(legacy_key)
-            except OSError as e:
-                logger.warning(
-                    f"fdopen failed writing key to '{self.isolated_key_path}', falling back to open: {e}"
-                )
-                with open(self.isolated_key_path, "wb") as f:
-                    f.write(legacy_key)
+            # 2. Centralized Fallback Key Lookup (SHA-256 file)
+            if key is None and self.isolated_key_path.exists():
                 try:
-                    os.chmod(self.isolated_key_path, 0o600)
-                except OSError as chmod_err:
-                    logger.debug(
-                        f"Failed to set permissions on key file '{self.isolated_key_path}': {chmod_err}"
+                    with open(self.isolated_key_path, "rb") as f:
+                        key = f.read().strip()
+                except OSError as e:
+                    logger.warning(
+                        f"Failed to read isolated key at '{self.isolated_key_path}': {e}"
                     )
 
-            # Try to migrate to SHA-256 keyring
-            try:
-                keyring.set_password(
-                    self.keyring_service,
-                    self.keyring_account,
-                    legacy_key.decode("utf-8"),
-                )
-            except Exception as e:
-                logger.warning(
-                    f"Failed to set keyring password during legacy migration: {e}"
-                )
+            # 3. Legacy Fallback Migration and Cleanup
+            legacy_key = None
 
-        # Always clean up legacy fallback keys if they exist (even if they weren't used to load the key)
-        if self.legacy_isolated_dir.exists():
-            try:
-                secure_delete_dir(self.legacy_isolated_dir)
-            except Exception as e:
-                logger.warning(
-                    f"Failed to clean up legacy key directory '{self.legacy_isolated_dir}': {e}"
-                )
+            # 3a. Legacy MD5 Keyring Lookup
+            if key is None:
+                try:
+                    legacy_key_str = keyring.get_password(
+                        self.keyring_service, self.legacy_md5_keyring_account
+                    )
+                    if legacy_key_str:
+                        legacy_key = legacy_key_str.encode("utf-8")
+                except Exception as e:
+                    logger.warning(
+                        f"Legacy MD5 keyring lookup failed for account '{self.legacy_md5_keyring_account}': {e}"
+                    )
 
-        # 4. Database Guard Check
-        if key is None:
+            # 3b. Legacy MD5 Isolated Key File
             if (
-                self.db_path.exists()
-                and self.db_path.stat().st_size > 0
-                and self.db_path.suffix.lower()
-                not in (
-                    ".json",
-                    ".txt",
-                    ".log",
-                )
+                key is None
+                and legacy_key is None
+                and self.legacy_md5_isolated_key_path.exists()
             ):
                 try:
-                    from contextlib import closing
-
-                    has_docs = False
-                    with closing(sqlite3.connect(str(self.db_path))) as conn:
-                        with closing(conn.cursor()) as cursor:
-                            cursor.execute(
-                                "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='documents'"
-                            )
-                            row = cursor.fetchone()
-                            if row and row[0] > 0:
-                                cursor.execute("SELECT count(*) FROM documents")
-                                d_row = cursor.fetchone()
-                                if d_row and d_row[0] > 0:
-                                    has_docs = True
-                    if has_docs:
-                        raise CryptoError("Database accessed but key file is missing.")
-                except sqlite3.DatabaseError:
-                    # If it's encrypted with SQLCipher, sqlite3 will fail with "file is not a database"
-                    # which means it's an existing DB! We cannot read it without a key.
-                    raise CryptoError("Database accessed but key file is missing.")
-                except sqlite3.Error as e:
-                    logger.debug(
-                        f"SQLite error checking unencrypted database guard: {e}"
+                    with open(self.legacy_md5_isolated_key_path, "rb") as f:
+                        legacy_key = f.read().strip()
+                except OSError as e:
+                    logger.warning(
+                        f"Failed to read legacy MD5 isolated key at '{self.legacy_md5_isolated_key_path}': {e}"
                     )
 
-            # 5. New Key Generation
-            key = Fernet.generate_key()
-            saved_to_keyring = False
-            try:
-                keyring.set_password(
-                    self.keyring_service, self.keyring_account, key.decode("utf-8")
-                )
-                verify_str = keyring.get_password(
-                    self.keyring_service, self.keyring_account
-                )
-                if verify_str and verify_str.encode("utf-8") == key:
-                    saved_to_keyring = True
-            except Exception as e:
-                logger.warning(f"Failed to store generated key in OS keyring: {e}")
+            # 3c. Legacy .keys directory
+            if (
+                key is None
+                and legacy_key is None
+                and self.legacy_isolated_key_path.exists()
+            ):
+                try:
+                    with open(self.legacy_isolated_key_path, "rb") as f:
+                        legacy_key = f.read().strip()
+                except OSError as e:
+                    logger.warning(
+                        f"Failed to read legacy isolated key at '{self.legacy_isolated_key_path}': {e}"
+                    )
 
-            if not saved_to_keyring:
-                # Fallback to isolated fallback key path with secure permissions
+            if (
+                key is None
+                and legacy_key is None
+                and self.legacy_isolated_dir.exists()
+                and self.legacy_isolated_dir.is_dir()
+            ):
+                try:
+                    for p in self.legacy_isolated_dir.iterdir():
+                        if p.is_file() and p.suffix == ".key":
+                            try:
+                                with open(p, "rb") as f:
+                                    legacy_key = f.read().strip()
+                                    if legacy_key:
+                                        break
+                            except OSError as e:
+                                logger.debug(
+                                    f"Failed to read legacy key candidate '{p}': {e}"
+                                )
+                except OSError as e:
+                    logger.warning(
+                        f"Failed to iterate legacy isolated key directory '{self.legacy_isolated_dir}': {e}"
+                    )
+
+            # 3d. Legacy secret.key in db directory
+            if key is None and legacy_key is None and self.key_path.exists():
+                try:
+                    with open(self.key_path, "rb") as f:
+                        legacy_key = f.read().strip()
+                except OSError as e:
+                    logger.warning(f"Failed to read key path '{self.key_path}': {e}")
+
+            if legacy_key:
+                # If we didn't find a key in the primary keyring or centralized store, use the legacy key.
+                if key is None:
+                    key = legacy_key
+
+                # Write/copy to the centralized SHA-256 fallback key path
                 self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
                 try:
                     os.chmod(self.isolated_dir, 0o700)
@@ -457,13 +359,13 @@ class SessionCrypto:
                         0o600,
                     )
                     with os.fdopen(fd, "wb") as f:
-                        f.write(key)
+                        f.write(legacy_key)
                 except OSError as e:
                     logger.warning(
-                        f"fdopen failed writing generated key to '{self.isolated_key_path}', falling back to open: {e}"
+                        f"fdopen failed writing key to '{self.isolated_key_path}', falling back to open: {e}"
                     )
                     with open(self.isolated_key_path, "wb") as f:
-                        f.write(key)
+                        f.write(legacy_key)
                     try:
                         os.chmod(self.isolated_key_path, 0o600)
                     except OSError as chmod_err:
@@ -471,67 +373,173 @@ class SessionCrypto:
                             f"Failed to set permissions on key file '{self.isolated_key_path}': {chmod_err}"
                         )
 
-        if key is None:
-            raise CryptoError("Database accessed but key file is missing.")
+                # Try to migrate to SHA-256 keyring
+                try:
+                    keyring.set_password(
+                        self.keyring_service,
+                        self.keyring_account,
+                        legacy_key.decode("utf-8"),
+                    )
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to set keyring password during legacy migration: {e}"
+                    )
 
-        try:
-            self._key = key
-            self._cipher = Fernet(key)
-            return self._cipher
-        except Exception as e:
-            raise CryptoError(
-                "Database accessed but key file is missing or invalid."
-            ) from e
+            # Always clean up legacy fallback keys if they exist (even if they weren't used to load the key)
+            if self.legacy_isolated_dir.exists():
+                try:
+                    secure_delete_dir(self.legacy_isolated_dir)
+                except Exception as e:
+                    logger.warning(
+                        f"Failed to clean up legacy key directory '{self.legacy_isolated_dir}': {e}"
+                    )
+
+            # 4. Database Guard Check
+            if key is None:
+                if (
+                    self.db_path.exists()
+                    and self.db_path.stat().st_size > 0
+                    and self.db_path.suffix.lower()
+                    not in (
+                        ".json",
+                        ".txt",
+                        ".log",
+                    )
+                ):
+                    try:
+                        from contextlib import closing
+
+                        has_docs = False
+                        with closing(sqlite3.connect(str(self.db_path))) as conn:
+                            with closing(conn.cursor()) as cursor:
+                                cursor.execute(
+                                    "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='documents'"
+                                )
+                                row = cursor.fetchone()
+                                if row and row[0] > 0:
+                                    cursor.execute("SELECT count(*) FROM documents")
+                                    d_row = cursor.fetchone()
+                                    if d_row and d_row[0] > 0:
+                                        has_docs = True
+                        if has_docs:
+                            raise CryptoError("Database accessed but key file is missing.")
+                    except sqlite3.DatabaseError:
+                        # If it's encrypted with SQLCipher, sqlite3 will fail with "file is not a database"
+                        # which means it's an existing DB! We cannot read it without a key.
+                        raise CryptoError("Database accessed but key file is missing.")
+                    except sqlite3.Error as e:
+                        logger.debug(
+                            f"SQLite error checking unencrypted database guard: {e}"
+                        )
+
+                # 5. New Key Generation
+                key = Fernet.generate_key()
+                saved_to_keyring = False
+                try:
+                    keyring.set_password(
+                        self.keyring_service, self.keyring_account, key.decode("utf-8")
+                    )
+                    verify_str = keyring.get_password(
+                        self.keyring_service, self.keyring_account
+                    )
+                    if verify_str and verify_str.encode("utf-8") == key:
+                        saved_to_keyring = True
+                except Exception as e:
+                    logger.warning(f"Failed to store generated key in OS keyring: {e}")
+
+                if not saved_to_keyring:
+                    # Fallback to isolated fallback key path with secure permissions
+                    self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+                    try:
+                        os.chmod(self.isolated_dir, 0o700)
+                    except OSError as chmod_err:
+                        logger.debug(
+                            f"Failed to set permissions on isolated directory '{self.isolated_dir}': {chmod_err}"
+                        )
+
+                    try:
+                        fd = os.open(
+                            str(self.isolated_key_path),
+                            os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                            0o600,
+                        )
+                        with os.fdopen(fd, "wb") as f:
+                            f.write(key)
+                    except OSError as e:
+                        logger.warning(
+                            f"fdopen failed writing generated key to '{self.isolated_key_path}', falling back to open: {e}"
+                        )
+                        with open(self.isolated_key_path, "wb") as f:
+                            f.write(key)
+                        try:
+                            os.chmod(self.isolated_key_path, 0o600)
+                        except OSError as chmod_err:
+                            logger.debug(
+                                f"Failed to set permissions on key file '{self.isolated_key_path}': {chmod_err}"
+                            )
+
+            if key is None:
+                raise CryptoError("Database accessed but key file is missing.")
+
+            try:
+                self._key = key
+                self._cipher = Fernet(key)
+                return self._cipher
+            except Exception as e:
+                raise CryptoError(
+                    "Database accessed but key file is missing or invalid."
+                ) from e
 
     def get_raw_key(self) -> str | None:
         """Get the raw key string for SQLCipher."""
-        if hasattr(self, "_key") and self._key:
-            return self._key.decode("utf-8")
-        if self._cipher is None:
+        with _key_mgmt_lock:
+            if hasattr(self, "_key") and self._key:
+                return self._key.decode("utf-8")
+            if self._cipher is None:
+                try:
+                    self.get_cipher()
+                except Exception:
+                    pass
+            if hasattr(self, "_key") and self._key:
+                return self._key.decode("utf-8")
+            # Fallback (same hierarchy)
+            key = None
             try:
-                self.get_cipher()
-            except Exception:
-                pass
-        if hasattr(self, "_key") and self._key:
-            return self._key.decode("utf-8")
-        # Fallback (same hierarchy)
-        key = None
-        try:
-            key_str = keyring.get_password(self.keyring_service, self.keyring_account)
-            if key_str:
-                key = key_str.encode("utf-8")
-        except Exception as e:
-            logger.warning(f"Keyring lookup failed in get_raw_key: {e}")
-        if key is None and self.isolated_key_path.exists():
-            try:
-                with open(self.isolated_key_path, "rb") as f:
-                    key = f.read().strip()
-            except OSError as e:
-                logger.warning(f"Failed to read isolated key in get_raw_key: {e}")
-        if key is None:
-            try:
-                legacy_key_str = keyring.get_password(
-                    self.keyring_service, self.legacy_md5_keyring_account
-                )
-                if legacy_key_str:
-                    key = legacy_key_str.encode("utf-8")
+                key_str = keyring.get_password(self.keyring_service, self.keyring_account)
+                if key_str:
+                    key = key_str.encode("utf-8")
             except Exception as e:
-                logger.warning(f"Legacy keyring lookup failed in get_raw_key: {e}")
-        if key is None and self.legacy_md5_isolated_key_path.exists():
-            try:
-                with open(self.legacy_md5_isolated_key_path, "rb") as f:
-                    key = f.read().strip()
-            except OSError as e:
-                logger.warning(
-                    f"Failed to read legacy MD5 isolated key in get_raw_key: {e}"
-                )
-        if key is None and self.key_path.exists():
-            try:
-                with open(self.key_path, "rb") as f:
-                    key = f.read().strip()
-            except OSError as e:
-                logger.warning(f"Failed to read key_path in get_raw_key: {e}")
-        return key.decode("utf-8") if key else None
+                logger.warning(f"Keyring lookup failed in get_raw_key: {e}")
+            if key is None and self.isolated_key_path.exists():
+                try:
+                    with open(self.isolated_key_path, "rb") as f:
+                        key = f.read().strip()
+                except OSError as e:
+                    logger.warning(f"Failed to read isolated key in get_raw_key: {e}")
+            if key is None:
+                try:
+                    legacy_key_str = keyring.get_password(
+                        self.keyring_service, self.legacy_md5_keyring_account
+                    )
+                    if legacy_key_str:
+                        key = legacy_key_str.encode("utf-8")
+                except Exception as e:
+                    logger.warning(f"Legacy keyring lookup failed in get_raw_key: {e}")
+            if key is None and self.legacy_md5_isolated_key_path.exists():
+                try:
+                    with open(self.legacy_md5_isolated_key_path, "rb") as f:
+                        key = f.read().strip()
+                except OSError as e:
+                    logger.warning(
+                        f"Failed to read legacy MD5 isolated key in get_raw_key: {e}"
+                    )
+            if key is None and self.key_path.exists():
+                try:
+                    with open(self.key_path, "rb") as f:
+                        key = f.read().strip()
+                except OSError as e:
+                    logger.warning(f"Failed to read key_path in get_raw_key: {e}")
+            return key.decode("utf-8") if key else None
 
     def rotate_key(self, new_key_str: str | None = None) -> str:
         """Safely rotate the session encryption key and rekey any associated SQLCipher database.
@@ -546,69 +554,70 @@ class SessionCrypto:
         str
             The new raw encryption key string.
         """
-        new_key_bytes = (
-            new_key_str.encode("utf-8") if new_key_str else Fernet.generate_key()
-        )
-        new_raw_key = new_key_bytes.decode("utf-8")
+        with _key_mgmt_lock:
+            new_key_bytes = (
+                new_key_str.encode("utf-8") if new_key_str else Fernet.generate_key()
+            )
+            new_raw_key = new_key_bytes.decode("utf-8")
 
-        # 1. Rekey SQLCipher database if DB file exists
-        if self.db_path.exists() and self.db_path.stat().st_size > 0:
+            # 1. Rekey SQLCipher database if DB file exists
+            if self.db_path.exists() and self.db_path.stat().st_size > 0:
+                try:
+                    from app.core.db_conn import (
+                        clear_connection_cache,
+                        escape_pragma_key,
+                        get_db_connection,
+                    )
+
+                    clear_connection_cache(only_current_and_inactive=False)
+                    conn = get_db_connection(str(self.db_path))
+                    with conn:
+                        escaped_key = escape_pragma_key(new_raw_key)
+                        conn.execute(f"PRAGMA rekey = '{escaped_key}'")
+                    clear_connection_cache(only_current_and_inactive=False)
+                except Exception as e:
+                    logger.warning(
+                        f"SQLCipher PRAGMA rekey failed during key rotation: {e}"
+                    )
+
+            # 2. Update OS keyring if available
             try:
-                from app.core.db_conn import (
-                    clear_connection_cache,
-                    escape_pragma_key,
-                    get_db_connection,
+                keyring.set_password(
+                    self.keyring_service, self.keyring_account, new_raw_key
                 )
-
-                clear_connection_cache(only_current_and_inactive=False)
-                conn = get_db_connection(str(self.db_path))
-                with conn:
-                    escaped_key = escape_pragma_key(new_raw_key)
-                    conn.execute(f"PRAGMA rekey = '{escaped_key}'")
-                clear_connection_cache(only_current_and_inactive=False)
             except Exception as e:
-                logger.warning(
-                    f"SQLCipher PRAGMA rekey failed during key rotation: {e}"
-                )
+                logger.warning(f"Keyring update failed during key rotation: {e}")
 
-        # 2. Update OS keyring if available
-        try:
-            keyring.set_password(
-                self.keyring_service, self.keyring_account, new_raw_key
-            )
-        except Exception as e:
-            logger.warning(f"Keyring update failed during key rotation: {e}")
-
-        # 3. Update isolated key file
-        self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-        try:
-            os.chmod(self.isolated_dir, 0o700)
-        except OSError:
-            pass
-
-        try:
-            fd = os.open(
-                str(self.isolated_key_path),
-                os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-                0o600,
-            )
-            with os.fdopen(fd, "wb") as f:
-                f.write(new_key_bytes)
-        except OSError:
-            with open(self.isolated_key_path, "wb") as f:
-                f.write(new_key_bytes)
+            # 3. Update isolated key file
+            self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
             try:
-                os.chmod(self.isolated_key_path, 0o600)
+                os.chmod(self.isolated_dir, 0o700)
             except OSError:
                 pass
 
-        # 4. Update internal cipher state
-        self._key = new_key_bytes
-        try:
-            self._cipher = Fernet(new_key_bytes)
-        except Exception:
-            self._cipher = None
-        return new_raw_key
+            try:
+                fd = os.open(
+                    str(self.isolated_key_path),
+                    os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                    0o600,
+                )
+                with os.fdopen(fd, "wb") as f:
+                    f.write(new_key_bytes)
+            except OSError:
+                with open(self.isolated_key_path, "wb") as f:
+                    f.write(new_key_bytes)
+                try:
+                    os.chmod(self.isolated_key_path, 0o600)
+                except OSError:
+                    pass
+
+            # 4. Update internal cipher state
+            self._key = new_key_bytes
+            try:
+                self._cipher = Fernet(new_key_bytes)
+            except Exception:
+                self._cipher = None
+            return new_raw_key
 
     def encrypt_text(self, text: str) -> bytes:
         """Encrypt a string and return bytes."""

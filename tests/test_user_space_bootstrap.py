@@ -13,6 +13,18 @@ from app.core.user_space_bootstrap import (
 )
 
 
+@pytest.fixture
+def reset_bootstrap_state():
+    import app.core.user_space_bootstrap as usb
+
+    prev_state = usb._is_bootstrapped
+    usb._is_bootstrapped = False
+    try:
+        yield
+    finally:
+        usb._is_bootstrapped = prev_state
+
+
 def test_get_bootstrap_bin_dir():
     """Verify that the bootstrap bin dir is correctly placed within the app configuration directory."""
     from app.config import get_app_dir
@@ -134,7 +146,7 @@ def test_inject_bootstrap_paths(tmp_path):
             assert str(bin_dir) in os.environ["PATH"]
 
 
-def test_bootstrap_binaries_bypass_if_cached(tmp_path):
+def test_bootstrap_binaries_bypass_if_cached(tmp_path, reset_bootstrap_state):
     """Verify that if binaries are cached and verified, we bypass all download and fallback steps."""
 
     mock_app_dir = tmp_path / ".autosorter"
@@ -461,7 +473,7 @@ def test_sqlite3_mock_fallback_on_import_error():
         importlib.reload(app.core.db_conn)
 
 
-def test_bootstrap_binaries_windows_direct_import_fallback():
+def test_bootstrap_binaries_windows_direct_import_fallback(reset_bootstrap_state):
     """Verify that on Windows, if not frozen, bootstrap_binaries discovers and injects DLL search paths before verification."""
     mock_add_dll = MagicMock()
     mock_spec = MagicMock()
@@ -571,3 +583,26 @@ def test_bootstrap_binaries_pyinstaller_alternate_candidate_locations(tmp_path):
         res = bootstrap_binaries(force_download=True)
         assert res is True
         mock_inject.assert_called_once()
+
+
+def test_concurrent_bootstrap_binaries(reset_bootstrap_state):
+    """Verify that concurrent thread calls to bootstrap_binaries execute safely without race conditions."""
+    import concurrent.futures
+
+    with patch(
+        "app.core.user_space_bootstrap.verify_sqlcipher_encryption",
+        return_value=True,
+    ):
+        results = []
+
+        def worker():
+            return bootstrap_binaries(force_download=False)
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(worker) for _ in range(10)]
+            for f in concurrent.futures.as_completed(futures):
+                results.append(f.result())
+
+        assert len(results) == 10
+        assert all(r is True for r in results)
+

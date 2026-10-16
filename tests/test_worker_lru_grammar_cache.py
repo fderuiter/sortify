@@ -131,11 +131,8 @@ def test_grammar_cache_lru_eviction():
             assert mock_from_string.call_count == 4
 
 
-def test_grammar_compilation_fallback_ascii_cached():
-    """Verify invalid grammar strings gracefully fall back to default ASCII rule,
-
-    and subsequent fallback uses the cached default ASCII grammar.
-    """
+def test_grammar_compilation_fail_fast_cached():
+    """Verify invalid grammar strings fail fast returning error payloads over IPC."""
     input_queue = queue.Queue()
     output_queue = queue.Queue()
 
@@ -143,27 +140,13 @@ def test_grammar_compilation_fallback_ascii_cached():
     task_invalid_2 = {"prompt": "T2", "grammar": "invalid 2"}
 
     mock_llm = MagicMock()
-    mock_llm.return_value = {"choices": [{"text": "FALLBACK"}]}
 
     mock_llama_module = MagicMock()
     mock_llama_module.Llama = MagicMock(return_value=mock_llm)
 
-    default_ascii_grammar = (
-        'root ::= word (" " word)? (" " word)? (" " word)?\nword ::= [a-zA-Z0-9]+'
-    )
-
     with patch.dict("sys.modules", {"llama_cpp": mock_llama_module}):
         with patch("llama_cpp.LlamaGrammar.from_string") as mock_from_string:
-            mock_ascii_compiled = MagicMock(name="DefaultAsciiGrammar")
-
-            def side_effect(grammar_str):
-                if "invalid" in grammar_str:
-                    raise Exception("Syntax error in grammar")
-                if grammar_str == default_ascii_grammar:
-                    return mock_ascii_compiled
-                raise Exception("Unknown grammar")
-
-            mock_from_string.side_effect = side_effect
+            mock_from_string.side_effect = Exception("Syntax error in grammar")
 
             input_queue.put(task_invalid_1)
             input_queue.put(task_invalid_2)
@@ -173,15 +156,13 @@ def test_grammar_compilation_fallback_ascii_cached():
                 gguf_worker_main("/dummy", input_queue, output_queue, n_threads=1)
 
             assert output_queue.get() == {"status": "ready"}
-            assert output_queue.get() == {"text": "FALLBACK"}
-            assert output_queue.get() == {"text": "FALLBACK"}
-
-            # Default ASCII grammar should be compiled ONLY ONCE on first fallback
-            ascii_compile_calls = [
-                call for call in mock_from_string.call_args_list
-                if call.args and call.args[0] == default_ascii_grammar
-            ]
-            assert len(ascii_compile_calls) == 1
+            res1 = output_queue.get()
+            res2 = output_queue.get()
+            assert "error" in res1
+            assert "Grammar compilation failed" in res1["error"]
+            assert "error" in res2
+            assert "Grammar compilation failed" in res2["error"]
+            mock_llm.assert_not_called()
 
 
 def test_grammar_content_hash_uniqueness():
