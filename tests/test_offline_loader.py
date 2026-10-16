@@ -301,6 +301,7 @@ def test_florence2_parse_empty_label_fallback():
 
 def test_florence2_visual_processor_mock_load_and_run(mocker):
     """Verify the local Florence-2 loading pipeline and process_image method with fully mocked model layers."""
+    pytest.importorskip("transformers")
     mock_model = MagicMock()
     mock_processor = MagicMock()
 
@@ -387,6 +388,7 @@ def test_florence2_hashes_registry_registration():
 
 def test_florence2_pre_execution_integrity_valid_bundle(tmp_path, mocker):
     """Verify that loading an unmodified Florence-2 bundle passes integrity checks and loads the model."""
+    pytest.importorskip("transformers")
     import hashlib
 
     f1_content = b'{"model_type": "florence2"}'
@@ -433,6 +435,7 @@ def test_florence2_pre_execution_integrity_valid_bundle(tmp_path, mocker):
 
 def test_florence2_pre_execution_integrity_tampered_bundle_aborts(tmp_path, mocker):
     """Verify that a tampered Florence-2 bundle fails integrity check before code execution."""
+    pytest.importorskip("transformers")
     import hashlib
 
     f1_content = b'{"model_type": "florence2"}'

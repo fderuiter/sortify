@@ -9,8 +9,10 @@ from pydantic import ValidationError
 
 # Resolve repository root and bootstrap sys.path
 repo_root = Path(__file__).resolve().parent.parent
-if str(repo_root) not in sys.path:
-    sys.path.insert(0, str(repo_root))
+str_repo_root = str(repo_root)
+if str_repo_root in sys.path:
+    sys.path.remove(str_repo_root)
+sys.path.insert(0, str_repo_root)
 
 try:
     from app.config import Settings
@@ -34,7 +36,7 @@ try:
             existing_schema = json.load(f)
 
     if existing_schema != schema:
-        with open(schema_path, "w", encoding="utf-8") as f:
+        with open(schema_path, "w", encoding="utf-8", newline="\n") as f:
             json.dump(schema, f, indent=2)
             f.write("\n")
         print(
