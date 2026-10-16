@@ -418,6 +418,7 @@ class Database:
             tokens = analyzer(clean_text)
         except Exception:
             import re
+
             tokens = re.findall(r"\b\w\w+\b", clean_text.lower())
             from sklearn.feature_extraction import text as sklearn_text
 
@@ -680,8 +681,8 @@ class Database:
                         except Exception:
                             dec_text = None
                         if dec_text and self._is_tfidf_eligible(fp, dec_text):
-                            precomputed_counts_map[fp] = (
-                                self.compute_term_frequencies(dec_text)
+                            precomputed_counts_map[fp] = self.compute_term_frequencies(
+                                dec_text
                             )
             except Exception:
                 pass
@@ -822,16 +823,14 @@ class Database:
                             row = cursor.fetchone()
                             if row and row[0]:
                                 try:
-                                    decrypted_text = self.crypto.decrypt_text(
-                                        row[0]
-                                    )
+                                    decrypted_text = self.crypto.decrypt_text(row[0])
                                 except Exception:
                                     decrypted_text = None
                                 if decrypted_text and self._is_tfidf_eligible(
                                     new_filepath, decrypted_text
                                 ):
-                                    counts = (
-                                        self.compute_term_frequencies(decrypted_text)
+                                    counts = self.compute_term_frequencies(
+                                        decrypted_text
                                     )
                         if counts is not None:
                             self._update_tfidf_for_document_conn(
@@ -854,12 +853,16 @@ class Database:
                 if hasattr(self._cached_documents, "get") and not isinstance(
                     self._cached_documents, list
                 ):
-                    row = self._cached_documents.get(filepath) or self._cached_documents.get(filepath.replace("/", "\\"))
+                    row = self._cached_documents.get(
+                        filepath
+                    ) or self._cached_documents.get(filepath.replace("/", "\\"))
                     if row is not None and len(row) > 3:
                         return row[3]
                 elif isinstance(self._cached_documents, list):
                     for row in self._cached_documents:
-                        if (row[0] == filepath or row[0].replace("\\", "/") == filepath) and len(row) > 3:
+                        if (
+                            row[0] == filepath or row[0].replace("\\", "/") == filepath
+                        ) and len(row) > 3:
                             return row[3]
 
         conn = get_db_connection(self.db_path)
@@ -880,7 +883,9 @@ class Database:
                 if hasattr(self._cached_documents, "get") and not isinstance(
                     self._cached_documents, list
                 ):
-                    row = self._cached_documents.get(filepath) or self._cached_documents.get(filepath.replace("/", "\\"))
+                    row = self._cached_documents.get(
+                        filepath
+                    ) or self._cached_documents.get(filepath.replace("/", "\\"))
                     if row is not None:
                         self._cached_documents[filepath] = (
                             row[0],
@@ -938,7 +943,12 @@ class Database:
         return True
 
     def _update_tfidf_on_verified_target_change(
-        self, conn, base_dir, filepath, target_path, term_counts: dict[str, int] | None = None
+        self,
+        conn,
+        base_dir,
+        filepath,
+        target_path,
+        term_counts: dict[str, int] | None = None,
     ):
         filepath = filepath.replace("\\", "/")
         if target_path:
@@ -998,9 +1008,7 @@ class Database:
         if is_added_or_updated:
             if term_counts is None:
                 if text and self._is_tfidf_eligible(filepath, text):
-                    term_counts = self.compute_term_frequencies(
-                        text, stop_words_list
-                    )
+                    term_counts = self.compute_term_frequencies(text, stop_words_list)
                 else:
                     term_counts = {}
 
@@ -1158,9 +1166,7 @@ class Database:
             self.rollback_transaction_session(session_id)
             raise
 
-    def _apply_batch_updates_on_conn(
-        self, conn, updates, precomputed_updates_map=None
-    ):
+    def _apply_batch_updates_on_conn(self, conn, updates, precomputed_updates_map=None):
         if precomputed_updates_map is None:
             precomputed_updates_map = {}
         for item in updates:
@@ -1224,9 +1230,7 @@ class Database:
                         )
                 else:
                     if new_dir:
-                        counts = precomputed_updates_map.get(
-                            (base_dir, new_filepath)
-                        )
+                        counts = precomputed_updates_map.get((base_dir, new_filepath))
                         if counts is None:
                             cursor = conn.execute(
                                 "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
@@ -1235,9 +1239,7 @@ class Database:
                             row = cursor.fetchone()
                             if row and row[0]:
                                 try:
-                                    decrypted_text = (
-                                        self.crypto.decrypt_text(row[0])
-                                    )
+                                    decrypted_text = self.crypto.decrypt_text(row[0])
                                 except Exception:
                                     decrypted_text = None
                                 if decrypted_text and self._is_tfidf_eligible(
@@ -1375,7 +1377,10 @@ class Database:
         def _write():
             conn = get_db_connection(self.db_path)
             if self.worker and self.worker.is_in_session():
-                if self.worker._active_session and self.worker._active_session.get("conn") is None:
+                if (
+                    self.worker._active_session
+                    and self.worker._active_session.get("conn") is None
+                ):
                     self.worker._active_session["conn"] = conn
                 conn.execute(
                     """

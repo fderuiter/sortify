@@ -112,9 +112,13 @@ class Settings(BaseSettings):
     AUTO_QUARANTINE_RATINGS: list[str] = Field(default=["CRITICAL", "HIGH"])
     QUARANTINE_DIR_NAME: str = Field(default="_Compliance_Quarantine")
     PROXY: str = Field(default="")
-    SECURITY_ADVISORY_ENDPOINT: str = Field(default="https://security.huggingface.co/api/advisories")
+    SECURITY_ADVISORY_ENDPOINT: str = Field(
+        default="https://security.huggingface.co/api/advisories"
+    )
     SECURITY_ADVISORY_CACHE_TTL: int = Field(default=3600, ge=1)
-    SECURITY_ADVISORY_FALLBACK_POLICY: Literal["strict", "permissive"] = Field(default="permissive")
+    SECURITY_ADVISORY_FALLBACK_POLICY: Literal["strict", "permissive"] = Field(
+        default="permissive"
+    )
     OCR_GPU_ENABLED: bool = Field(default=False)
     AUDIO_GPU_ENABLED: bool = Field(default=False)
     AUDIO_MAX_WORKERS: int = Field(default=2, gt=0, le=64)
@@ -259,7 +263,9 @@ class Settings(BaseSettings):
         if not isinstance(v, str):
             raise ValueError("CONFLICT_POLICY must be a string.")
         if v not in ("skip", "rename", "overwrite"):
-            raise ValueError("CONFLICT_POLICY must be 'skip', 'rename', or 'overwrite'.")
+            raise ValueError(
+                "CONFLICT_POLICY must be 'skip', 'rename', or 'overwrite'."
+            )
         return v
 
     @field_validator("SECURITY_ADVISORY_FALLBACK_POLICY")
@@ -697,7 +703,9 @@ class AppSettings:
 
                 SharedModelRegistry.get_instance().unload_all_models()
             except Exception as e:
-                logging.debug(f"Failed to unload in-memory models on consent change: {e}")
+                logging.debug(
+                    f"Failed to unload in-memory models on consent change: {e}"
+                )
 
         callbacks = []
         if hasattr(self, "_observer_lock") and hasattr(self, "_observers"):

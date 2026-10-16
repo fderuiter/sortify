@@ -265,7 +265,9 @@ def test_verify_temp_file_hash_florence2_category(temp_model_dir):
 
     expected_hash = hashlib.sha256(content).hexdigest()
     registry = SharedModelRegistry.get_instance()
-    registry.register_expected_hashes("florence-2", {"model.safetensors": expected_hash})
+    registry.register_expected_hashes(
+        "florence-2", {"model.safetensors": expected_hash}
+    )
 
     assert verify_temp_file_hash(temp_path, target_path) is True
     assert os.path.exists(temp_path)
@@ -567,4 +569,3 @@ def test_downloader_proxy_maintained_across_retries(temp_model_dir):
         assert len(opener_calls) == 2
         assert opener_calls[0] == "http://proxy.test:8080"
         assert opener_calls[1] == "http://proxy.test:8080"
-

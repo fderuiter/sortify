@@ -456,4 +456,3 @@ def test_cli_ledger_export_without_session_id(tmp_path, monkeypatch):
     assert len(rows) == 2
 
     db_worker.stop()
-

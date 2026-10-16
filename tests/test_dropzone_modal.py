@@ -354,4 +354,3 @@ async def test_dropzone_responsive_narrow_layout(tmp_path):
 
         # Should have .narrow class applied
         assert active_modal.has_class("narrow")
-

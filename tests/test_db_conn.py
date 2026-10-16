@@ -77,4 +77,3 @@ def test_concurrent_db_conn_access(tmp_path):
         assert len(results) == 10
         assert all(r == 1 for r in results)
         clear_connection_cache(only_current_and_inactive=False)
-

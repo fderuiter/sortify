@@ -1444,9 +1444,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                         value=conflict_pol,
                         id="select-conflict-policy",
                     )
-                    sel_conflict.tooltip = (
-                        "Select collision handling strategy for conflicting target files"
-                    )
+                    sel_conflict.tooltip = "Select collision handling strategy for conflicting target files"
                     yield sel_conflict
 
                 with TabPane("AI & Privacy Settings", id="tab-ai-privacy"):
@@ -3066,9 +3064,7 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 placeholder="Filter staged queue...",
                 id="input-queue-filter",
             )
-            filter_inp.tooltip = (
-                "Filter staged queue items by typing keywords (filename, path, status, extension)"
-            )
+            filter_inp.tooltip = "Filter staged queue items by typing keywords (filename, path, status, extension)"
             yield filter_inp
 
             with Container(classes="dropzone-split-container"):
@@ -3083,8 +3079,12 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     yield Label("📋 Metadata Preview", classes="preview-header")
                     yield Label("Path: N/A", id="preview-path", classes="preview-field")
                     yield Label("Size: N/A", id="preview-size", classes="preview-field")
-                    yield Label("Modified: N/A", id="preview-mtime", classes="preview-field")
-                    yield Label("Status: N/A", id="preview-status", classes="preview-field")
+                    yield Label(
+                        "Modified: N/A", id="preview-mtime", classes="preview-field"
+                    )
+                    yield Label(
+                        "Status: N/A", id="preview-status", classes="preview-field"
+                    )
 
             with Horizontal(classes="queue-row"):
                 btn_filter = Button(
@@ -3222,7 +3222,9 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             if path_str and path_str != "N/A" and os.path.exists(path_str):
                 try:
                     mtime = os.path.getmtime(path_str)
-                    mtime_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+                    mtime_str = datetime.fromtimestamp(mtime).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
                 except Exception:
                     mtime_str = "Error reading timestamp"
             else:
@@ -3538,16 +3540,12 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         help_url = "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors"
 
         filtered = self.get_filtered_items()
-        ready_paths = [
-            item["path"] for item in filtered if item["status"] == "Ready"
-        ]
+        ready_paths = [item["path"] for item in filtered if item["status"] == "Ready"]
 
         if not ready_paths:
             blocked_items = [
                 item for item in filtered if item["status"] == "BLOCKED"
-            ] or [
-                item for item in self.staged_items if item["status"] == "BLOCKED"
-            ]
+            ] or [item for item in self.staged_items if item["status"] == "BLOCKED"]
             if blocked_items:
                 err_text = f"Protected path blocked: {blocked_items[0]['filename']}"
             elif self.staged_items:
@@ -3963,9 +3961,7 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
                 )
                 yield btn_retry_sel
 
-                btn_retry_all = Button(
-                    "Retry All", id="btn-retry-all", variant="error"
-                )
+                btn_retry_all = Button("Retry All", id="btn-retry-all", variant="error")
                 btn_retry_all.tooltip = (
                     "Re-attempt file move operations for all failed items in queue"
                 )
@@ -4090,8 +4086,7 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
             failed = [
                 r
                 for r in records
-                if r.get("status") in ("MISMATCH_FAIL", "MOVE_FAIL")
-                or r.get("error")
+                if r.get("status") in ("MISMATCH_FAIL", "MOVE_FAIL") or r.get("error")
             ]
         return failed
 
@@ -4123,7 +4118,9 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
                 records = self.report_data.get("records", [])
                 if 0 <= audit_table.cursor_row < len(records):
                     rec = records[audit_table.cursor_row]
-                    if rec.get("status") in ("MISMATCH_FAIL", "MOVE_FAIL") or rec.get("error"):
+                    if rec.get("status") in ("MISMATCH_FAIL", "MOVE_FAIL") or rec.get(
+                        "error"
+                    ):
                         selected_record = rec
 
         if not selected_record:
@@ -4153,10 +4150,7 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
         retry_res = retry_failed_moves(base_dir, items_to_retry)
         new_audit = retry_res.get("audit_report", {})
 
-        retried_map = {
-            r.get("source_path"): r
-            for r in new_audit.get("records", [])
-        }
+        retried_map = {r.get("source_path"): r for r in new_audit.get("records", [])}
 
         records = self.report_data.get("records", [])
         for idx, rec in enumerate(records):
@@ -5295,7 +5289,9 @@ class AutoSorterTUI(A11yMixin, App):
                 btn_exec.tooltip = "Execute file sorting plan [Ctrl+E]"
                 yield btn_exec
         alert_banner = Static("", id="alert-banner")
-        alert_banner.tooltip = "Validation alert banner displaying blocking errors or warnings"
+        alert_banner.tooltip = (
+            "Validation alert banner displaying blocking errors or warnings"
+        )
         yield alert_banner
         pb = ProgressBar(total=100, show_percentage=True, id="main-progress-bar")
         pb.tooltip = "Active operation background progress indicator"
@@ -5987,7 +5983,9 @@ class AutoSorterTUI(A11yMixin, App):
 
                 export_res = history_mgr.export_audit_log(
                     output_path=output_path,
-                    session_id=session_id if session_id not in ("none", "all") else None,
+                    session_id=session_id
+                    if session_id not in ("none", "all")
+                    else None,
                     format=fmt,
                 )
                 cnt = export_res.get("count", 0)
@@ -6024,7 +6022,9 @@ class AutoSorterTUI(A11yMixin, App):
             return
 
         if getattr(self, "has_critical_errors", False):
-            self.announce("Cannot execute plan: Critical validation errors exist (see Alert Banner).")
+            self.announce(
+                "Cannot execute plan: Critical validation errors exist (see Alert Banner)."
+            )
             return
 
         base_dir = self.app_session.base_dir if self.app_session else "."
@@ -6143,7 +6143,9 @@ class AutoSorterTUI(A11yMixin, App):
                 if has_critical:
                     btn_exec.tooltip = "Execution disabled: Plan contains blocking critical validation errors"
                 else:
-                    btn_exec.tooltip = "Execution disabled: No files selected to execute"
+                    btn_exec.tooltip = (
+                        "Execution disabled: No files selected to execute"
+                    )
             else:
                 btn_exec.disabled = False
                 btn_exec.tooltip = "Execute file sorting plan [Ctrl+E]"
@@ -6165,11 +6167,17 @@ class AutoSorterTUI(A11yMixin, App):
                         dst_p = c.get("path", "")
                         if c.get("sources"):
                             for s_p in c["sources"]:
-                                msgs.append(f"  • Source: {s_p} -> Destination: {dst_p}")
+                                msgs.append(
+                                    f"  • Source: {s_p} -> Destination: {dst_p}"
+                                )
                         elif c.get("source"):
-                            msgs.append(f"  • Source: {c['source']} -> Destination: {dst_p}")
+                            msgs.append(
+                                f"  • Source: {c['source']} -> Destination: {dst_p}"
+                            )
                         else:
-                            msgs.append(f"  • Destination: {dst_p} ({c.get('message', 'Collision')})")
+                            msgs.append(
+                                f"  • Destination: {dst_p} ({c.get('message', 'Collision')})"
+                            )
                 if circular:
                     msgs.append("⛔ CIRCULAR RENAMING DEPENDENCY DETECTED:")
                     for r in circular:
@@ -6233,7 +6241,13 @@ class AutoSorterTUI(A11yMixin, App):
                 elif norm_key and norm_key in self.critical_error_paths:
                     is_crit = True
                 elif any(
-                    p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                    p
+                    and (
+                        p == norm_fp
+                        or p == norm_key
+                        or p.endswith("/" + norm_key)
+                        or p.endswith("\\" + norm_key)
+                    )
                     for p in self.critical_error_paths
                 ):
                     is_crit = True
@@ -6244,7 +6258,13 @@ class AutoSorterTUI(A11yMixin, App):
                     elif norm_key and norm_key in self.warning_paths:
                         is_warn = True
                     elif any(
-                        p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                        p
+                        and (
+                            p == norm_fp
+                            or p == norm_key
+                            or p.endswith("/" + norm_key)
+                            or p.endswith("\\" + norm_key)
+                        )
                         for p in self.warning_paths
                     ):
                         is_warn = True
@@ -6527,9 +6547,7 @@ class AutoSorterTUI(A11yMixin, App):
                     if not is_same:
                         is_collision = True
 
-                pol = str(
-                    getattr(self.settings, "CONFLICT_POLICY", "rename")
-                ).lower()
+                pol = str(getattr(self.settings, "CONFLICT_POLICY", "rename")).lower()
                 if is_collision:
                     label_parts.append(f"[COLLISION: {pol.upper()}]")
 
@@ -6544,7 +6562,13 @@ class AutoSorterTUI(A11yMixin, App):
                     norm_fp in self.critical_error_paths
                     or norm_key in self.critical_error_paths
                     or any(
-                        p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                        p
+                        and (
+                            p == norm_fp
+                            or p == norm_key
+                            or p.endswith("/" + norm_key)
+                            or p.endswith("\\" + norm_key)
+                        )
                         for p in self.critical_error_paths
                     )
                 )
@@ -6552,7 +6576,13 @@ class AutoSorterTUI(A11yMixin, App):
                     norm_fp in self.warning_paths
                     or norm_key in self.warning_paths
                     or any(
-                        p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                        p
+                        and (
+                            p == norm_fp
+                            or p == norm_key
+                            or p.endswith("/" + norm_key)
+                            or p.endswith("\\" + norm_key)
+                        )
                         for p in self.warning_paths
                     )
                 )

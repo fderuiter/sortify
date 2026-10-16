@@ -1110,9 +1110,7 @@ def _should_bias_token(token_str: str) -> bool:
     """Check if token matches conversational suppression rules or punctuation."""
     if not isinstance(token_str, str) or not token_str:
         return False
-    clean_str = (
-        token_str.replace("Ġ", "").replace(" ", "").replace("<unk>", "").strip()
-    )
+    clean_str = token_str.replace("Ġ", "").replace(" ", "").replace("<unk>", "").strip()
     if not clean_str:
         return False
 

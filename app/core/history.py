@@ -316,7 +316,9 @@ class HistoryManager:
                         (base_dir,),
                     )
                     for r in cur.fetchall():
-                        docs.append((session_id, r[0].replace("\\", "/"), r[1], r[2], None))
+                        docs.append(
+                            (session_id, r[0].replace("\\", "/"), r[1], r[2], None)
+                        )
             if docs:
                 try:
                     conn.executemany(
@@ -988,7 +990,9 @@ class HistoryManager:
                         ts_iso = ""
                         if ts:
                             try:
-                                ts_iso = datetime.fromtimestamp(ts, tz=timezone.utc).isoformat()
+                                ts_iso = datetime.fromtimestamp(
+                                    ts, tz=timezone.utc
+                                ).isoformat()
                             except Exception:
                                 pass
                         steps.append(
@@ -1174,18 +1178,23 @@ class HistoryManager:
 
                         if db and base_dir:
                             try:
-                                rel_target = safe_relpath(target_path, base_dir).replace(
-                                    "\\", "/"
+                                rel_target = safe_relpath(
+                                    target_path, base_dir
+                                ).replace("\\", "/")
+                                rel_source = safe_relpath(
+                                    source_path, base_dir
+                                ).replace("\\", "/")
+                                db.update_document_path(
+                                    base_dir, rel_target, rel_source
                                 )
-                                rel_source = safe_relpath(source_path, base_dir).replace(
-                                    "\\", "/"
-                                )
-                                db.update_document_path(base_dir, rel_target, rel_source)
                             except Exception:
                                 pass
                     except Exception as move_err:
                         import logging
-                        logging.error(f"Failed to unwind step {step['step_id']}: {move_err}")
+
+                        logging.error(
+                            f"Failed to unwind step {step['step_id']}: {move_err}"
+                        )
                         failed_unwinds.append((step, move_err))
 
         if failed_unwinds:
@@ -1618,7 +1627,13 @@ class HistoryManager:
                     )
                     snapshot_docs = cur.fetchall()
                     snapshot_docs_dict = {
-                        r[0].replace("\\", "/"): (r[0].replace("\\", "/"), r[1], r[2], None) for r in snapshot_docs
+                        r[0].replace("\\", "/"): (
+                            r[0].replace("\\", "/"),
+                            r[1],
+                            r[2],
+                            None,
+                        )
+                        for r in snapshot_docs
                     }
 
                 # Write rollback journal before any modifications or relocations
@@ -1671,31 +1686,41 @@ class HistoryManager:
                     for src, dst in moves:
                         try:
                             from app.core.mover import get_safe_path
-    
+
                             db_conn = get_db_connection(self.db.db_path)
-    
+
                             # Fix parent directory collisions
                             parts = (
-                                safe_relpath(dst, base_dir).replace("\\", "/").split("/")
+                                safe_relpath(dst, base_dir)
+                                .replace("\\", "/")
+                                .split("/")
                             )
                             current = base_dir
                             for part in parts[:-1]:
                                 current = os.path.join(current, part)
-                                if os.path.exists(current) and not os.path.isdir(current):
+                                if os.path.exists(current) and not os.path.isdir(
+                                    current
+                                ):
                                     safe_current = get_safe_path(
-                                        os.path.dirname(current), os.path.basename(current)
+                                        os.path.dirname(current),
+                                        os.path.basename(current),
                                     )
                                     _robust_move(current, safe_current)
-                                    rel_current = safe_relpath(current, base_dir).replace(
-                                        "\\", "/"
-                                    )
-                                    rel_safe = safe_relpath(safe_current, base_dir).replace(
-                                        "\\", "/"
-                                    )
+                                    rel_current = safe_relpath(
+                                        current, base_dir
+                                    ).replace("\\", "/")
+                                    rel_safe = safe_relpath(
+                                        safe_current, base_dir
+                                    ).replace("\\", "/")
                                     with db_conn:
                                         db_conn.execute(
                                             "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                            (rel_safe, base_dir, rel_current, rel_current),
+                                            (
+                                                rel_safe,
+                                                base_dir,
+                                                rel_current,
+                                                rel_current,
+                                            ),
                                         )
                                         db_conn.execute(
                                             "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
@@ -1707,43 +1732,50 @@ class HistoryManager:
                                                 rel_current + "/%",
                                             ),
                                         )
-    
+
                             os.makedirs(os.path.dirname(dst), exist_ok=True)
                             if os.path.islink(dst):
                                 try:
                                     from app.core.resilient_file_ops import (
                                         resilient_remove,
                                     )
-    
+
                                     resilient_remove(dst)
                                 except OSError:
                                     pass
-    
+
                             rel_src = safe_relpath(src, base_dir).replace("\\", "/")
                             rel_dst = safe_relpath(dst, base_dir).replace("\\", "/")
-    
+
                             if os.path.exists(dst) and not os.path.samefile(src, dst):
                                 is_cyclic = False
                                 for m_src, m_dst in moves:
                                     if m_src == dst:
                                         is_cyclic = True
                                         break
-    
+
                                 if is_cyclic:
                                     # Cyclic rename conflict -> isolate to safe transient path
                                     branch_rel_temp = os.path.join(
                                         ".branches", safety_session_id, rel_dst
                                     ).replace("\\", "/")
                                     temp_dst = os.path.join(base_dir, branch_rel_temp)
-                                    os.makedirs(os.path.dirname(temp_dst), exist_ok=True)
+                                    os.makedirs(
+                                        os.path.dirname(temp_dst), exist_ok=True
+                                    )
                                     _robust_move(dst, temp_dst)
-    
+
                                     with db_conn:
                                         db_conn.execute(
                                             "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                            (branch_rel_temp, base_dir, rel_dst, rel_dst),
+                                            (
+                                                branch_rel_temp,
+                                                base_dir,
+                                                rel_dst,
+                                                rel_dst,
+                                            ),
                                         )
-    
+
                                     for i, (m_src, m_dst) in enumerate(moves):
                                         if m_src == dst:
                                             moves[i] = (temp_dst, m_dst)
@@ -1753,7 +1785,7 @@ class HistoryManager:
                                         os.path.dirname(dst), os.path.basename(dst)
                                     )
                                     _robust_move(dst, safe_dst)
-    
+
                                     safe_rel = safe_relpath(safe_dst, base_dir).replace(
                                         "\\", "/"
                                     )
@@ -1772,12 +1804,12 @@ class HistoryManager:
                                                 rel_dst + "/%",
                                             ),
                                         )
-    
+
                                 _robust_move(src, dst)
                             else:
                                 if not os.path.exists(dst):
                                     _robust_move(src, dst)
-    
+
                             with db_conn:
                                 db_conn.execute(
                                     "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
@@ -1787,7 +1819,9 @@ class HistoryManager:
                                 snapshot_doc = (
                                     snapshot_docs_dict.get(rel_dst_norm)
                                     or snapshot_docs_dict.get(rel_dst)
-                                    or snapshot_docs_dict.get(rel_dst.replace("/", "\\"))
+                                    or snapshot_docs_dict.get(
+                                        rel_dst.replace("/", "\\")
+                                    )
                                 )
                                 if snapshot_doc:
                                     verified_target = (
@@ -1814,7 +1848,10 @@ class HistoryManager:
                                     )
                         except Exception as move_err:
                             import logging
-                            logging.error(f"Failed to move {src} to {dst} during recovery: {move_err}")
+
+                            logging.error(
+                                f"Failed to move {src} to {dst} during recovery: {move_err}"
+                            )
                             failed_moves.append((src, dst, move_err))
 
                     if failed_moves:
@@ -2062,9 +2099,7 @@ class HistoryManager:
                 try:
                     from app.core.shared_registry import SharedModelRegistry
 
-                    jev_engine = (
-                        SharedModelRegistry.get_instance().get_jev_classifier()
-                    )
+                    jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
                     if jev_engine and hasattr(jev_engine, "clear_cache"):
                         jev_engine.clear_cache()
                 except Exception:
