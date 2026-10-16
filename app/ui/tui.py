@@ -99,12 +99,12 @@ def format_side_by_side_path_comparison(
 
     src_rel = (
         src_norm[len(base_norm) :]
-        if base_norm and src_norm.startswith(base_norm)
+        if base_norm and src_norm.lower().startswith(base_norm.lower())
         else src_norm
     )
     tgt_rel = (
         tgt_norm[len(base_norm) :]
-        if base_norm and tgt_norm.startswith(base_norm)
+        if base_norm and tgt_norm.lower().startswith(base_norm.lower())
         else tgt_norm
     )
 
@@ -155,7 +155,7 @@ def format_folder_path_comparison(
         if base_dir and src_path:
             base_norm = base_dir.replace("\\", "/").rstrip("/") + "/"
             src_norm = src_path.replace("\\", "/")
-            if src_norm.startswith(base_norm):
+            if src_norm.lower().startswith(base_norm.lower()):
                 src_rel = src_norm[len(base_norm) :]
 
         src_fmt, tgt_fmt = _diff_highlight_paths(src_rel, tgt_rel)

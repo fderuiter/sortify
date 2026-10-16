@@ -63,6 +63,17 @@ def test_format_side_by_side_path_comparison_table():
     assert table.columns[1].header == "Target Path (Proposed)"
 
 
+def test_format_side_by_side_path_comparison_windows_drive_casing():
+    """Verify case-insensitive base_dir stripping for Windows drive letters."""
+    table = format_side_by_side_path_comparison(
+        source_path="C:\\Workspace\\docs\\report.pdf",
+        target_path="c:\\workspace\\Finance\\report.pdf",
+        base_dir="C:\\workspace",
+    )
+    assert isinstance(table, Table)
+    assert len(table.rows) == 2  # Relative path row + full path row
+
+
 def test_format_folder_path_comparison_table():
     """Verify format_folder_path_comparison renders multiple file items."""
     files = [
