@@ -7,7 +7,7 @@ import re
 import sys
 import tempfile
 from pathlib import Path
-from typing import Any
+from typing import Any, Optional
 
 from pydantic import BaseModel
 
@@ -277,7 +277,14 @@ def scrub_pii_from_filename(name: str) -> str:
 
 def is_packaged() -> bool:
     """Check if the application is running in a frozen/packaged bundle (e.g., PyInstaller)."""
-    return getattr(sys, "frozen", False)
+    return getattr(sys, "frozen", False) or hasattr(sys, "_MEIPASS")
+
+
+def get_meipass_dir() -> Optional[str]:
+    """Get the PyInstaller _MEIPASS bundle directory path if running packaged, else None."""
+    if is_packaged():
+        return getattr(sys, "_MEIPASS", None)
+    return None
 
 
 def get_base_path(caller_file_path: str = None) -> str:
@@ -286,6 +293,9 @@ def get_base_path(caller_file_path: str = None) -> str:
     Compatible with frozen/packaged execution and local development.
     """
     if is_packaged():
+        mei = get_meipass_dir()
+        if mei:
+            return mei
         return os.path.dirname(sys.executable)
     else:
         file_path = caller_file_path or __file__
@@ -829,10 +839,9 @@ def check_local_models_exist() -> bool:
     except Exception:
         user_model_dir = Path("~/.smart-autosorter/model").expanduser()
 
-    if hasattr(sys, "_MEIPASS"):
-        mei_model_dir = os.path.join(
-            getattr(sys, "_MEIPASS", ""), "offline_bundle", "model"
-        )
+    mei = get_meipass_dir()
+    if mei:
+        mei_model_dir = os.path.join(mei, "offline_bundle", "model")
         if os.path.exists(os.path.join(mei_model_dir, "config.json")) or os.path.exists(
             mei_model_dir
         ):

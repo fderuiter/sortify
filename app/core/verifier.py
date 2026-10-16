@@ -54,7 +54,7 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     """
     import sys
 
-    from app.core.path_utils import is_packaged
+    from app.core.path_utils import get_base_path, get_meipass_dir, is_packaged
 
     if settings is not None and getattr(settings, "AI_CONSENT_GRANTED", None) is False:
         return (
@@ -65,9 +65,7 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     is_sandboxed = is_packaged() or getattr(settings, "SANDBOXED", False)
 
     if not is_ml_available():
-        from app.core.path_utils import get_base_path
-
-        mei = getattr(sys, "_MEIPASS", "")
+        mei = get_meipass_dir() or ""
         try:
             base = get_base_path(__file__)
         except Exception:
@@ -113,8 +111,9 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
         user_bundle_path = os.path.expanduser("~/.smart-autosorter/model")
 
     model_dir = None
-    if hasattr(sys, "_MEIPASS"):
-        mei_bundle_path = os.path.join(sys._MEIPASS, "offline_bundle", "model")
+    mei_dir = get_meipass_dir()
+    if mei_dir:
+        mei_bundle_path = os.path.join(mei_dir, "offline_bundle", "model")
         if os.path.exists(mei_bundle_path):
             model_dir = mei_bundle_path
     if not model_dir:
@@ -123,8 +122,8 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
         elif os.path.exists(user_bundle_path):
             model_dir = user_bundle_path
 
-    if hasattr(sys, "_MEIPASS"):
-        easyocr_dir = os.path.join(sys._MEIPASS, "offline_bundle", "easyocr")
+    if mei_dir:
+        easyocr_dir = os.path.join(mei_dir, "offline_bundle", "easyocr")
     else:
         local_easyocr_path = os.path.join(base_path, "offline_bundle", "easyocr")
         cwd_easyocr_path = os.path.join(os.getcwd(), "offline_bundle", "easyocr")
