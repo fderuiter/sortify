@@ -201,7 +201,7 @@ def test_direct_timer_callback_execution_at_max_debounce_limit(tmp_path):
     with (
         mock.patch("time.time", return_value=mock_time) as patch_time,
         mock.patch("threading.Timer", side_effect=mock_timer_init),
-        mock.patch.object(daemon, "_run_sorting_sync") as mock_run_sync,
+        mock.patch.object(daemon, "_spawn_sorting_process") as mock_spawn_process,
     ):
         # 1. Start continuous event sequence
         daemon.trigger_recalculation()  # t=0.0
@@ -220,7 +220,7 @@ def test_direct_timer_callback_execution_at_max_debounce_limit(tmp_path):
 
         # If first_token callback is invoked directly, it should abort due to cancellation
         daemon._schedule_run(first_token)
-        mock_run_sync.assert_not_called()
+        mock_spawn_process.assert_not_called()
 
         # 3. Reach max debounce delay at t=5.0
         patch_time.return_value = 1005.0
@@ -234,7 +234,7 @@ def test_direct_timer_callback_execution_at_max_debounce_limit(tmp_path):
         daemon._schedule_run(second_token)
 
         # Verify background sorting run was launched with second_token and _first_event_time was reset
-        assert mock_run_sync.called
+        assert mock_spawn_process.called
         assert daemon._first_event_time is None
 
         # 4. Subsequent event after max delay limit triggers a fresh timer schedule
