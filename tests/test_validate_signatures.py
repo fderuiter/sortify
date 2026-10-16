@@ -160,7 +160,9 @@ def test_dynamic_cli_file_discovery(tmp_path):
     assert "sandbox_cli.py" in cli_defs
 
     # Check that public files in cli_dir were discovered, while __init__.py and _*.py were ignored
-    discovered = [k for k in cli_defs.keys() if k not in ("app/main.py", "sandbox_cli.py")]
+    discovered = [
+        k for k in cli_defs.keys() if k not in ("app/main.py", "sandbox_cli.py")
+    ]
     assert len(discovered) == 2
     assert any("alpha_cli.py" in k for k in discovered)
     assert any("beta_cli.py" in k for k in discovered)
@@ -170,7 +172,9 @@ def test_dynamic_cli_file_discovery(tmp_path):
     # Automatically discovers newly added CLI subcommand file
     (cli_dir / "gamma_cli.py").write_text("parser.add_argument('--gamma')")
     cli_defs_updated = collect_cli_definitions(str(cli_dir))
-    discovered_updated = [k for k in cli_defs_updated.keys() if k not in ("app/main.py", "sandbox_cli.py")]
+    discovered_updated = [
+        k for k in cli_defs_updated.keys() if k not in ("app/main.py", "sandbox_cli.py")
+    ]
     assert len(discovered_updated) == 3
 
 
@@ -935,4 +939,3 @@ def test_validation_runner_detects_orphaned_snapshot_across_subdirectories(
     assert not orphaned_tui.exists()
     assert not orphaned_other.exists()
     assert actual_diff.exists()
-

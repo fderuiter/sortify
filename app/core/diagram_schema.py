@@ -4186,7 +4186,9 @@ def _create_core_extractor_spec() -> ComponentDiagramSpec:
         edges=[
             DiagramEdge(source="file", target="router"),
             DiagramEdge(source="router", target="extractor", label="Standard Format"),
-            DiagramEdge(source="router", target="forensic", label="Unrecognized Format"),
+            DiagramEdge(
+                source="router", target="forensic", label="Unrecognized Format"
+            ),
             DiagramEdge(source="extractor", target="text"),
             DiagramEdge(source="forensic", target="text"),
         ],
