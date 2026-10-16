@@ -78,7 +78,7 @@ def _close_evicted_connection(key, conn):
 
 
 _connection_cache = BoundedMemoryCache(max_size=50, on_evict=_close_evicted_connection)
-_cache_lock = threading.Lock()
+_cache_lock = threading.RLock()
 _disable_pytest_win_fallback = True
 
 
@@ -147,8 +147,8 @@ def get_db_connection(db_path: str):
         if cache_key in _connection_cache:
             return _connection_cache[cache_key]
 
-    # Automatically clean up connections for dead threads to prevent resource and lock leaks on Windows
-    clear_dead_thread_connections()
+        # Automatically clean up connections for dead threads to prevent resource and lock leaks on Windows
+        clear_dead_thread_connections()
 
     from app.core.path_utils import resolve_db_crypto
 
@@ -397,6 +397,12 @@ def get_db_connection(db_path: str):
             raise
 
     with _cache_lock:
+        if cache_key in _connection_cache:
+            if conn:
+                try:
+                    conn.close()
+                except Exception:
+                    pass
+            return _connection_cache[cache_key]
         _connection_cache[cache_key] = conn
-
-    return conn
+        return conn
