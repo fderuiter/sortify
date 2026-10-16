@@ -3,7 +3,7 @@ from pathlib import Path
 
 import pytest
 
-from app.core.analyzer import IncrementalAnalyzer
+from app.core.analyzer import IncrementalAnalyzer, SortingPlan
 from app.core.cache import CacheManager
 from app.core.db import Database
 from app.core.db_worker import DBWorker
@@ -214,8 +214,8 @@ def test_compliance_overrides_manual_lock():
     ) == "Secure Finance"
 
 
-def test_invalid_lock_path_raises_during_plan_generation():
-    """Test that invalid folder lock paths raise ValueError during plan generation."""
+def test_invalid_lock_path_recorded_in_invalid_locks_during_plan_generation():
+    """Test that invalid folder lock paths are recorded in plan.invalid_locks without raising exceptions."""
     analyzer = IncrementalAnalyzer(
         max_folders=3, stop_words={"the", "and"}, db=db, model_path=None
     )
@@ -232,7 +232,8 @@ def test_invalid_lock_path_raises_during_plan_generation():
     # Try generating plan with directory traversal lock path
     locked_files = {"file.txt": "Some/../../Traversal"}
 
-    with pytest.raises(ValueError):
-        analyzer.generate_sorting_plan(
-            "dummy", runtime_settings=MockSettings(), locked_files=locked_files
-        )
+    plan = analyzer.generate_sorting_plan(
+        "dummy", runtime_settings=MockSettings(), locked_files=locked_files
+    )
+    assert isinstance(plan, SortingPlan)
+    assert "file.txt" in plan.invalid_locks

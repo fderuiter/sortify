@@ -367,3 +367,204 @@ def test_downloader_aborts_on_placeholder_proxy(temp_model_dir):
     assert len(captured_error) == 1
     assert isinstance(captured_error[0], NetworkError)
     assert "Invalid proxy configuration" in str(captured_error[0])
+
+
+def test_downloader_exponential_backoff_retry_success(temp_model_dir):
+    import urllib.error
+
+    success_called = threading.Event()
+    failure_called = threading.Event()
+    captured_error = []
+
+    def on_success():
+        success_called.set()
+
+    def on_failure(err):
+        captured_error.append(err)
+        failure_called.set()
+
+    mock_data = b"chunk1chunk2"
+    mock_hash = hashlib.sha256(mock_data).hexdigest()
+    SharedModelRegistry.get_instance().register_expected_hashes(
+        "model_download", {"model.onnx": mock_hash}
+    )
+
+    mock_response = MagicMock()
+    mock_response.info.return_value.get.return_value = str(len(mock_data))
+    mock_response.read.side_effect = [b"chunk1", b"chunk2", b""]
+
+    attempt_count = 0
+
+    def open_side_effect(*args, **kwargs):
+        nonlocal attempt_count
+        attempt_count += 1
+        if attempt_count < 3:
+            raise urllib.error.URLError("Transient network glitch")
+        cm = MagicMock()
+        cm.__enter__.return_value = mock_response
+        return cm
+
+    mock_opener = MagicMock()
+    mock_opener.open.side_effect = open_side_effect
+
+    with (
+        patch("urllib.request.build_opener", return_value=mock_opener),
+        patch("shutil.disk_usage", return_value=(10000, 5000, 5000)),
+    ):
+        run_background_download(
+            "http://example.com/model.onnx",
+            temp_model_dir,
+            progress_callback=None,
+            on_success=on_success,
+            on_failure=on_failure,
+            initial_delay=0.01,
+            backoff_factor=2.0,
+            max_retries=3,
+        )
+
+        assert success_called.wait(timeout=15)
+        assert attempt_count == 3
+        assert verify_downloaded_model(temp_model_dir)
+
+
+def test_downloader_exponential_backoff_retry_exhausted(temp_model_dir):
+    import urllib.error
+
+    success_called = threading.Event()
+    failure_called = threading.Event()
+    captured_error = []
+
+    def on_success():
+        success_called.set()
+
+    def on_failure(err):
+        captured_error.append(err)
+        failure_called.set()
+
+    attempt_count = 0
+
+    def open_side_effect(*args, **kwargs):
+        nonlocal attempt_count
+        attempt_count += 1
+        raise urllib.error.URLError("Persistent connection failure")
+
+    mock_opener = MagicMock()
+    mock_opener.open.side_effect = open_side_effect
+
+    from app.core.downloader import NetworkError
+
+    with patch("urllib.request.build_opener", return_value=mock_opener):
+        run_background_download(
+            "http://example.com/model.onnx",
+            temp_model_dir,
+            progress_callback=None,
+            on_success=on_success,
+            on_failure=on_failure,
+            initial_delay=0.01,
+            backoff_factor=2.0,
+            max_retries=3,
+        )
+
+        assert failure_called.wait(timeout=15)
+        # Total attempts = 1 initial + 3 retries = 4
+        assert attempt_count == 4
+        assert len(captured_error) == 1
+        assert isinstance(captured_error[0], NetworkError)
+
+
+def test_downloader_cancellation_during_backoff_wait(temp_model_dir):
+    import urllib.error
+
+    success_called = threading.Event()
+    failure_called = threading.Event()
+    captured_error = []
+
+    def on_success():
+        success_called.set()
+
+    def on_failure(err):
+        captured_error.append(err)
+        failure_called.set()
+
+    cancel_event = threading.Event()
+
+    mock_opener = MagicMock()
+    mock_opener.open.side_effect = urllib.error.URLError("Transient failure")
+
+    with patch("urllib.request.build_opener", return_value=mock_opener):
+        run_background_download(
+            "http://example.com/model.onnx",
+            temp_model_dir,
+            progress_callback=None,
+            on_success=on_success,
+            on_failure=on_failure,
+            cancel_event=cancel_event,
+            initial_delay=10.0,
+            max_retries=3,
+        )
+
+        # Trigger cancellation while thread is in retry wait
+        cancel_event.set()
+
+        assert failure_called.wait(timeout=5)
+        assert len(captured_error) == 1
+        assert isinstance(captured_error[0], DownloadCancelledError)
+
+
+def test_downloader_proxy_maintained_across_retries(temp_model_dir):
+    import urllib.error
+
+    success_called = threading.Event()
+    failure_called = threading.Event()
+    captured_error = []
+
+    def on_success():
+        success_called.set()
+
+    def on_failure(err):
+        captured_error.append(err)
+        failure_called.set()
+
+    mock_data = b"model_data"
+    mock_hash = hashlib.sha256(mock_data).hexdigest()
+    SharedModelRegistry.get_instance().register_expected_hashes(
+        "model_download", {"model.onnx": mock_hash}
+    )
+
+    mock_response = MagicMock()
+    mock_response.info.return_value.get.return_value = str(len(mock_data))
+    mock_response.read.side_effect = [mock_data, b""]
+
+    opener_calls = []
+
+    def mock_get_opener(proxy=None):
+        opener_calls.append(proxy)
+        m_op = MagicMock()
+        if len(opener_calls) == 1:
+            m_op.open.side_effect = urllib.error.URLError("Network timeout")
+        else:
+            cm = MagicMock()
+            cm.__enter__.return_value = mock_response
+            m_op.open.return_value = cm
+        return m_op
+
+    mock_dm = MagicMock()
+    mock_dm.get_opener.side_effect = mock_get_opener
+
+    with patch("shutil.disk_usage", return_value=(10000, 5000, 5000)):
+        run_background_download(
+            "http://example.com/model.onnx",
+            temp_model_dir,
+            proxy="http://proxy.test:8080",
+            progress_callback=None,
+            on_success=on_success,
+            on_failure=on_failure,
+            download_manager=mock_dm,
+            initial_delay=0.01,
+        )
+
+        assert success_called.wait(timeout=15)
+        assert len(opener_calls) == 2
+        assert opener_calls[0] == "http://proxy.test:8080"
+        assert opener_calls[1] == "http://proxy.test:8080"
+
