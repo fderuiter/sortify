@@ -8,7 +8,7 @@ import threading
 import urllib.error
 import urllib.request
 
-from app.core.exceptions import DownloaderError
+from app.core.exceptions import DownloaderError, ModelVerificationError
 from app.core.progress import ProgressUpdate, emit_progress
 
 logger = logging.getLogger(__name__)
@@ -36,12 +36,6 @@ class DiskSpaceError(DownloadError):
 
 class DownloadCancelledError(DownloadError):
     """Raised when the download is cancelled by the user."""
-
-    pass
-
-
-class ModelVerificationError(DownloadError):
-    """Raised when downloaded model integrity or cryptographic validation fails."""
 
     pass
 
@@ -421,7 +415,24 @@ def run_background_download(
         cancel_event = threading.Event()
 
     def thread_target():
-        # Requirement 5: Bypass application sandboxing on this dedicated thread
+        # Pre-download security advisory check before un-sandboxing or allocating disk space
+        try:
+            from app.core.security_advisory import SecurityAdvisoryClient
+
+            advisory_client = SecurityAdvisoryClient.get_instance()
+            advisory_client.check_advisory(repo_id=url)
+        except Exception as adv_err:
+            logger.warning(f"Pre-download security advisory check failed: {adv_err}")
+            if isinstance(adv_err, DownloadError):
+                err = adv_err
+            else:
+                err = ModelVerificationError(str(adv_err))
+                err.__cause__ = adv_err
+            if on_failure:
+                on_failure(err)
+            return
+
+        # Bypass application sandboxing on this dedicated thread after advisory check passes
         try:
             from app.core.shared_registry import _thread_local
 
