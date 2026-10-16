@@ -159,7 +159,7 @@ async def test_dropzone_staging_table_population_and_filtering(tmp_path):
 
     app = ModalTestApp(settings=settings, base_dir=str(test_dir))
 
-    async with app.run_test() as pilot:
+    async with app.run_test(size=(100, 50)) as pilot:
         await pilot.pause()
         active_modal = app.screen
         assert isinstance(active_modal, DropZoneModal)
@@ -209,7 +209,7 @@ async def test_dropzone_remove_and_clear_queue(tmp_path):
 
     app = ModalTestApp(settings=settings, base_dir=str(test_dir))
 
-    async with app.run_test() as pilot:
+    async with app.run_test(size=(100, 50)) as pilot:
         await pilot.pause()
         active_modal = app.screen
         assert isinstance(active_modal, DropZoneModal)
