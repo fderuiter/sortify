@@ -157,13 +157,14 @@ def test_extract_image_skipped_due_to_dimensions(mocker):
     mocker.patch.dict("sys.modules", {"PIL": mock_PIL})
 
     mock_reader = MagicMock()
+    mock_reader.readtext.return_value = [("box", "Extracted text", 0.9)]
     mocker.patch(
         "app.core.extractor_strategies.get_ocr_reader", return_value=mock_reader
     )
 
     text = extract_file_text("large_image.png")
-    assert text == "[STATUS:SKIPPED]"
-    mock_reader.readtext.assert_not_called()
+    assert str(text) == "Extracted text"
+    mock_reader.readtext.assert_called_once()
 
 
 def test_extract_image_downscaled(mocker):

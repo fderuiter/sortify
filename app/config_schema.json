@@ -95,6 +95,12 @@
       "title": "Image Skip Threshold",
       "type": "integer"
     },
+    "PDF_TEXT_DENSITY_THRESHOLD": {
+      "default": 50,
+      "minimum": 0,
+      "title": "Pdf Text Density Threshold",
+      "type": "integer"
+    },
     "MODEL_THREADS": {
       "default": 2,
       "maximum": 32,

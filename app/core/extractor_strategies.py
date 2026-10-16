@@ -54,19 +54,9 @@ def extract_text_from_image(
                 pass
 
         if isinstance(width, (int, float)) and isinstance(height, (int, float)):
-            skip_threshold = (
-                getattr(settings, "IMAGE_SKIP_THRESHOLD", 3000) if settings else 3000
-            )
             max_dimension = (
                 getattr(settings, "IMAGE_MAX_DIMENSION", 1000) if settings else 1000
             )
-
-            if max(width, height) > skip_threshold:
-                name = file_path if file_path else "In-memory image"
-                logging.warning(
-                    f"Skipping OCR for {name} because its dimensions {(width, height)} exceed the skip threshold of {skip_threshold}"
-                )
-                return "[STATUS:SKIPPED]"
 
             if max(width, height) > max_dimension:
                 ratio = max_dimension / max(width, height)
@@ -74,7 +64,7 @@ def extract_text_from_image(
                 new_height = max(min(height, 400), int(height * ratio))
                 name = file_path if file_path else "In-memory image"
                 logging.info(
-                    f"Downscaling {name} from {(width, height)} to {(new_width, new_height)}"
+                    f"Status flag [DOWNSCALED]: Downscaling high-resolution image {name} from {(width, height)} to {(new_width, new_height)} prior to text recognition"
                 )
                 image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
     except Exception as e:
@@ -317,38 +307,134 @@ class XlsxExtractor:
 
 
 class PdfExtractor:
-    """Extractor for PDF documents."""
+    """Extractor for PDF documents using per-page hybrid rasterization."""
 
-    def extract(self, file_path: str, settings=None, progress_callback=None) -> str:
-        """Extract text from a .pdf file."""
-        text = ""
+    def _has_vector_graphics(self, page) -> bool:
+        """Detect whether a PDF page contains vector graphics paths."""
+        VECTOR_OPS = {
+            b"m",
+            b"l",
+            b"c",
+            b"v",
+            b"y",
+            b"re",
+            b"S",
+            b"s",
+            b"f",
+            b"F",
+            b"f*",
+            b"B",
+            b"B*",
+            b"b",
+            b"b*",
+            b"sh",
+            "m",
+            "l",
+            "c",
+            "v",
+            "y",
+            "re",
+            "S",
+            "s",
+            "f",
+            "F",
+            "f*",
+            "B",
+            "B*",
+            "b",
+            "b*",
+            "sh",
+        }
+        has_vector = False
+
+        def visitor_op(op, args, cm, tm):
+            nonlocal has_vector
+            if op in VECTOR_OPS:
+                has_vector = True
+
+        try:
+            page.extract_text(visitor_operand_before=visitor_op)
+        except Exception:
+            pass
+
+        return has_vector
+
+    def _rasterize_page_to_pil(self, file_path: str, page_idx: int):
+        """Rasterize a single PDF page to a PIL Image bitmap using pypdfium2."""
+        try:
+            import pypdfium2 as pdfium
+
+            pdf = pdfium.PdfDocument(file_path)
+            if page_idx < len(pdf):
+                page = pdf[page_idx]
+                pil_image = page.render(scale=2.0).to_pil()
+                return pil_image
+        except Exception as e:
+            logging.warning(
+                f"Full-page rasterization via pypdfium2 failed for page {page_idx + 1} of {file_path}: {e}"
+            )
+        return None
+
+    def extract(
+        self,
+        file_path: str,
+        settings=None,
+        progress_callback=None,
+        cancel_check=None,
+    ) -> str:
+        """Extract text from a .pdf file using per-page hybrid rasterization."""
+        if settings is None:
+            from app.config import AppSettings
+
+            try:
+                settings = AppSettings()
+            except Exception:
+                pass
+
+        density_threshold = (
+            getattr(settings, "PDF_TEXT_DENSITY_THRESHOLD", 50) if settings else 50
+        )
+
+        page_texts = []
+        page_statuses = []
+
         try:
             with open(file_path, "rb") as f:
                 reader = pypdf.PdfReader(f)
                 total_pages = len(reader.pages)
+
                 for idx, page in enumerate(reader.pages):
+                    if cancel_check and cancel_check():
+                        logging.info(f"PDF extraction cancelled for {file_path}")
+                        return "[STATUS:CANCELLED]"
+
+                    page_num = idx + 1
                     if progress_callback and total_pages > 0:
                         pct = (idx + 1) / total_pages
                         _emit_progress(
                             progress_callback,
                             pct,
-                            f"Extracting text from page {idx + 1} of {total_pages}",
+                            f"Analyzing PDF page {page_num} of {total_pages}",
                         )
-                    text += page.extract_text() or ""
-        except Exception as e:
-            logging.error(f"Failed standard text extraction for {file_path}: {e}")
 
-        if not text.strip():
-            # Standard extraction yields no text, attempt visual extraction
-            visual_text = ""
-            try:
-                from PIL import Image
+                    embedded_text = ""
+                    try:
+                        embedded_text = page.extract_text() or ""
+                    except Exception as text_e:
+                        logging.warning(
+                            f"Error extracting embedded text on PDF page {page_num} of {file_path}: {text_e}"
+                        )
 
-                with open(file_path, "rb") as f:
-                    pdf_reader = pypdf.PdfReader(f)
-                    total_pages = len(pdf_reader.pages)
-                    for idx, page in enumerate(pdf_reader.pages):
-                        page_num = idx + 1
+                    has_vector_paths = self._has_vector_graphics(page)
+                    is_dense_text = len(embedded_text.strip()) >= density_threshold
+
+                    page_text = ""
+                    status_flag = "STANDARD"
+
+                    if is_dense_text and not has_vector_paths:
+                        page_text = embedded_text.strip()
+                        status_flag = "STANDARD"
+                    elif has_vector_paths:
                         if progress_callback and total_pages > 0:
                             pct = (idx + 0.5) / total_pages
                             _emit_progress(
@@ -356,29 +442,104 @@ class PdfExtractor:
                                 pct,
                                 f"OCR Fallback: Running EasyOCR on page {page_num} of {total_pages}",
                             )
+                        rendered_pil = self._rasterize_page_to_pil(file_path, idx)
+                        if rendered_pil:
+                            ocr_text = extract_text_from_image(
+                                rendered_pil,
+                                settings=settings,
+                                file_path=file_path,
+                                progress_callback=progress_callback,
+                            )
+                            if ocr_text and not ocr_text.startswith("[STATUS:"):
+                                page_text = (embedded_text + " " + ocr_text).strip()
+                            else:
+                                page_text = embedded_text.strip()
+                            status_flag = "RASTERIZED"
+                        else:
+                            page_text = embedded_text.strip()
+                            status_flag = "STANDARD"
+                    else:
+                        if progress_callback and total_pages > 0:
+                            pct = (idx + 0.5) / total_pages
+                            _emit_progress(
+                                progress_callback,
+                                pct,
+                                f"OCR Fallback: Running EasyOCR on page {page_num} of {total_pages}",
+                            )
+                        embedded_ocr_text = ""
+                        decoding_error = False
 
-                        for img in page.images:
-                            try:
-                                pil_image = Image.open(io.BytesIO(img.data))
-                                extracted = extract_text_from_image(
-                                    pil_image,
+                        try:
+                            from PIL import Image
+
+                            for img in page.images:
+                                try:
+                                    pil_image = Image.open(io.BytesIO(img.data))
+                                    extracted = extract_text_from_image(
+                                        pil_image,
+                                        settings=settings,
+                                        file_path=file_path,
+                                        progress_callback=progress_callback,
+                                    )
+                                    if extracted and not extracted.startswith(
+                                        "[STATUS:"
+                                    ):
+                                        embedded_ocr_text += extracted + " "
+                                except Exception as img_e:
+                                    logging.warning(
+                                        f"Image decoding exception on page {page_num} of {file_path}: {img_e}"
+                                    )
+                                    decoding_error = True
+                        except Exception as e:
+                            logging.warning(
+                                f"Failed accessing page images on page {page_num} of {file_path}: {e}"
+                            )
+                            decoding_error = True
+
+                        if embedded_ocr_text.strip() and not decoding_error:
+                            page_text = (
+                                embedded_text + " " + embedded_ocr_text
+                            ).strip()
+                            status_flag = "EMBEDDED_OCR"
+                        else:
+                            rendered_pil = self._rasterize_page_to_pil(file_path, idx)
+                            if rendered_pil:
+                                ocr_text = extract_text_from_image(
+                                    rendered_pil,
                                     settings=settings,
                                     file_path=file_path,
                                     progress_callback=progress_callback,
                                 )
-                                if extracted and extracted != "[STATUS:SKIPPED]":
-                                    visual_text += extracted + " "
-                            except Exception as img_e:
-                                logging.error(
-                                    f"Failed to process image in PDF {file_path}: {img_e}"
-                                )
-            except Exception as e:
-                logging.error(f"Failed visual extraction for PDF {file_path}: {e}")
+                                if ocr_text and not ocr_text.startswith("[STATUS:"):
+                                    page_text = (embedded_text + " " + ocr_text).strip()
+                                else:
+                                    page_text = embedded_text.strip()
+                                status_flag = "RASTERIZED"
+                            else:
+                                page_text = embedded_text.strip()
+                                status_flag = "STANDARD"
 
-            if visual_text.strip():
-                return visual_text.strip()
+                    logging.info(
+                        f"PDF {file_path} Page {page_num}/{total_pages}: status={status_flag}, text_length={len(page_text)}"
+                    )
+                    page_statuses.append(
+                        {
+                            "page": page_num,
+                            "status": status_flag,
+                            "text_length": len(page_text),
+                        }
+                    )
+                    if page_text:
+                        page_texts.append(page_text)
 
-        return text
+        except Exception as e:
+            logging.error(f"Failed PDF extraction for {file_path}: {e}")
+
+        combined_text = "\n".join(page_texts).strip()
+        logging.info(
+            f"Completed PDF extraction for {file_path}: total_pages={len(page_statuses)}, statuses={page_statuses}"
+        )
+        return combined_text
 
 
 class ImageExtractor:
