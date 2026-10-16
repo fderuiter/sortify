@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "d411f555f153db7a5476e66ba5adad0a6d7f410610f88316b11da30c7e07fffb"
+    "checksum": "eb91d7bd5a284f5eb20759763f991b5401bb05bad94d9d91caaea6bb2477c4d8"
   },
   "classes": [
     {
@@ -88,6 +88,11 @@
               "annotation": "Any",
               "default": null,
               "name": "plan"
+            },
+            {
+              "annotation": "str",
+              "default": "'skip'",
+              "name": "conflict_policy"
             }
           ],
           "returns": "dict"
@@ -281,6 +286,11 @@
               "annotation": "dict",
               "default": null,
               "name": "plan"
+            },
+            {
+              "annotation": "str",
+              "default": "'skip'",
+              "name": "conflict_policy"
             }
           ],
           "returns": "dict"
