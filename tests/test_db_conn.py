@@ -47,3 +47,34 @@ def test_db_conn_with_single_quote_key(tmp_path):
         assert row[0] == "hello"
 
         clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_concurrent_db_conn_access(tmp_path):
+    """Verify that get_db_connection handles concurrent cache-miss initialization safely."""
+    import concurrent.futures
+
+    db_file = tmp_path / "test_concurrent.db"
+    key_file = tmp_path / "test_concurrent.key"
+    key_file.write_text("concurrent_secret_key_123", encoding="utf-8")
+
+    from app.core.crypto import SessionCrypto
+
+    crypto = SessionCrypto(key_file, db_file)
+
+    with patch("app.core.path_utils.resolve_db_crypto", return_value=crypto):
+        clear_connection_cache(only_current_and_inactive=False)
+
+        def worker():
+            conn = get_db_connection(str(db_file))
+            cursor = conn.cursor()
+            cursor.execute("SELECT 1;")
+            return cursor.fetchone()[0]
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+            futures = [executor.submit(worker) for _ in range(10)]
+            results = [f.result() for f in concurrent.futures.as_completed(futures)]
+
+        assert len(results) == 10
+        assert all(r == 1 for r in results)
+        clear_connection_cache(only_current_and_inactive=False)
+
