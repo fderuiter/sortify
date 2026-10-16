@@ -64,14 +64,15 @@ class OfflineModelLoader:
             if p:
                 candidates.append(p)
 
-        from app.core.path_utils import get_base_path, is_packaged
+        from app.core.path_utils import get_base_path, get_meipass_dir, is_packaged
 
         if is_packaged() and hasattr(sys, "executable"):
             exe_dir = os.path.dirname(sys.executable)
             candidates.append(os.path.join(exe_dir, "smart-autosorter-models.zip"))
 
-        if hasattr(sys, "_MEIPASS"):
-            candidates.append(os.path.join(sys._MEIPASS, "smart-autosorter-models.zip"))
+        mei_dir = get_meipass_dir()
+        if mei_dir:
+            candidates.append(os.path.join(mei_dir, "smart-autosorter-models.zip"))
 
         candidates.append(os.path.join(os.getcwd(), "smart-autosorter-models.zip"))
         candidates.append(
@@ -266,10 +267,11 @@ class OfflineModelLoader:
             searched_paths.append(env_path)
 
         # Precedence 2: PyInstaller temporary execution directory
-        from app.core.path_utils import is_packaged
+        from app.core.path_utils import get_meipass_dir
 
-        if is_packaged() and hasattr(sys, "_MEIPASS"):
-            meipass_path = os.path.join(sys._MEIPASS, "offline_bundle", folder_name)
+        mei_dir = get_meipass_dir()
+        if mei_dir:
+            meipass_path = os.path.join(mei_dir, "offline_bundle", folder_name)
             searched_paths.append(meipass_path)
 
         # Precedence 3: Local workspace directory

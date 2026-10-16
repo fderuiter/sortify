@@ -3215,6 +3215,8 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Close verification dialog", show=True),
+        Binding("ctrl+r", "retry_selected", "Retry Selected Failed Item", show=True),
+        Binding("ctrl+t", "retry_all", "Retry All Failed Items", show=True),
         Binding("ctrl+j", "export_json", "Export JSON Report", show=True),
         Binding("ctrl+c", "export_csv", "Export CSV Report", show=True),
     ]
@@ -3229,7 +3231,7 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
         background: $panel;
         border: thick $primary;
         width: 95%;
-        max-width: 100;
+        max-width: 105;
         min-width: 50;
         height: 85%;
         min-height: 20;
@@ -3286,10 +3288,14 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
     #audit-status-filter {
         width: 38%;
     }
-    #audit-table {
+    #audit-table, #failed-items-table {
         height: 1fr;
         margin-bottom: 1;
         border: solid $accent;
+    }
+    #audit-tabs {
+        height: 1fr;
+        margin-bottom: 1;
     }
     .button-row {
         height: 3;
@@ -3333,35 +3339,59 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
                     classes="stat-card stat-unverified",
                 )
 
-            with Horizontal(classes="filter-row"):
-                inp = Input(
-                    placeholder="Search by filename or path...",
-                    id="audit-search-input",
-                )
-                inp.tooltip = "Filter verification results by filename or path"
-                yield inp
+            with TabbedContent(initial="tab-all-records", id="audit-tabs"):
+                with TabPane("All Verification Records", id="tab-all-records"):
+                    with Horizontal(classes="filter-row"):
+                        inp = Input(
+                            placeholder="Search by filename or path...",
+                            id="audit-search-input",
+                        )
+                        inp.tooltip = "Filter verification results by filename or path"
+                        yield inp
 
-                status_sel = Select(
-                    [
-                        ("All Statuses", "ALL"),
-                        ("Verified Pass [PASS]", "VERIFIED_PASS"),
-                        ("Mismatch Fail [FAIL]", "MISMATCH_FAIL"),
-                        ("Skipped [SKIPPED]", "SKIPPED"),
-                        ("Unverified [UNVERIFIED]", "UNVERIFIED"),
-                    ],
-                    value="ALL",
-                    id="audit-status-filter",
-                    allow_blank=False,
-                )
-                status_sel.tooltip = "Filter results by verification status"
-                yield status_sel
+                        status_sel = Select(
+                            [
+                                ("All Statuses", "ALL"),
+                                ("Verified Pass [PASS]", "VERIFIED_PASS"),
+                                ("Mismatch Fail [FAIL]", "MISMATCH_FAIL"),
+                                ("Skipped [SKIPPED]", "SKIPPED"),
+                                ("Unverified [UNVERIFIED]", "UNVERIFIED"),
+                            ],
+                            value="ALL",
+                            id="audit-status-filter",
+                            allow_blank=False,
+                        )
+                        status_sel.tooltip = "Filter results by verification status"
+                        yield status_sel
 
-            table = DataTable(id="audit-table")
-            table.cursor_type = "row"
-            table.tooltip = "Audit report tabular verification tree"
-            yield table
+                    table = DataTable(id="audit-table")
+                    table.cursor_type = "row"
+                    table.tooltip = "Audit report tabular verification tree"
+                    yield table
+
+                with TabPane("Failed Items Queue", id="tab-failed-queue"):
+                    failed_table = DataTable(id="failed-items-table")
+                    failed_table.cursor_type = "row"
+                    failed_table.tooltip = "Dedicated Failed Items queue table"
+                    yield failed_table
 
             with Horizontal(classes="button-row"):
+                btn_retry_sel = Button(
+                    "Retry Selected", id="btn-retry-selected", variant="warning"
+                )
+                btn_retry_sel.tooltip = (
+                    "Re-attempt file move operation for selected failed item"
+                )
+                yield btn_retry_sel
+
+                btn_retry_all = Button(
+                    "Retry All", id="btn-retry-all", variant="error"
+                )
+                btn_retry_all.tooltip = (
+                    "Re-attempt file move operations for all failed items in queue"
+                )
+                yield btn_retry_all
+
                 btn_json = Button(
                     "Export JSON", id="btn-export-json", variant="primary"
                 )
@@ -3449,6 +3479,43 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
 
             table.add_row(badge, filename, pre_trunc, post_trunc, rel_dst)
 
+        self._populate_failed_table()
+
+    def _populate_failed_table(self) -> None:
+        """Populate dedicated Failed Items queue table with error descriptions."""
+        table = self.query_one("#failed-items-table", DataTable)
+        table.clear(columns=True)
+        table.add_columns(
+            "Filename",
+            "Status",
+            "Error Description",
+            "Source Path",
+            "Destination Path",
+        )
+
+        failed_records = self._get_failed_records()
+
+        for rec in failed_records:
+            fn = rec.get("filename", "")
+            st = rec.get("status_badge", rec.get("status", ""))
+            err = rec.get("error") or rec.get("error_description") or "Operation failed"
+            src = rec.get("relative_source") or rec.get("source_path", "")
+            dst = rec.get("relative_destination") or rec.get("destination_path", "")
+            table.add_row(fn, st, err, src, dst)
+
+    def _get_failed_records(self) -> List[Dict[str, Any]]:
+        """Get list of failed item records from report data."""
+        failed = self.report_data.get("failed_items", [])
+        if not failed:
+            records = self.report_data.get("records", [])
+            failed = [
+                r
+                for r in records
+                if r.get("status") in ("MISMATCH_FAIL", "MOVE_FAIL")
+                or r.get("error")
+            ]
+        return failed
+
     @on(Input.Changed, "#audit-search-input")
     def on_search_changed(self, event: Input.Changed) -> None:
         """Handle search input filter update."""
@@ -3460,6 +3527,105 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
         """Handle status filter dropdown update."""
         search_val = self.query_one("#audit-search-input", Input).value
         self._populate_table(search_query=search_val, status_filter=str(event.value))
+
+    def action_retry_selected(self) -> None:
+        """Retry move operation for selected failed item."""
+        failed_table = self.query_one("#failed-items-table", DataTable)
+        selected_record = None
+
+        if failed_table.cursor_row is not None and failed_table.row_count > 0:
+            failed_records = self._get_failed_records()
+            if 0 <= failed_table.cursor_row < len(failed_records):
+                selected_record = failed_records[failed_table.cursor_row]
+
+        if not selected_record:
+            audit_table = self.query_one("#audit-table", DataTable)
+            if audit_table.cursor_row is not None and audit_table.row_count > 0:
+                records = self.report_data.get("records", [])
+                if 0 <= audit_table.cursor_row < len(records):
+                    rec = records[audit_table.cursor_row]
+                    if rec.get("status") in ("MISMATCH_FAIL", "MOVE_FAIL") or rec.get("error"):
+                        selected_record = rec
+
+        if not selected_record:
+            msg = "No failed item selected to retry."
+            self.announce(msg)
+            self.notify(msg, severity="warning")
+            return
+
+        self._execute_retry([selected_record])
+
+    def action_retry_all(self) -> None:
+        """Retry move operations for all failed items in queue."""
+        failed_records = self._get_failed_records()
+        if not failed_records:
+            msg = "No failed items to retry."
+            self.announce(msg)
+            self.notify(msg, severity="warning")
+            return
+
+        self._execute_retry(failed_records)
+
+    def _execute_retry(self, items_to_retry: List[Dict[str, Any]]) -> None:
+        """Execute mover retry for selected failed items and refresh UI."""
+        from app.core.mover import retry_failed_moves
+
+        base_dir = self.report_data.get("base_dir", "")
+        retry_res = retry_failed_moves(base_dir, items_to_retry)
+        new_audit = retry_res.get("audit_report", {})
+
+        retried_map = {
+            r.get("source_path"): r
+            for r in new_audit.get("records", [])
+        }
+
+        records = self.report_data.get("records", [])
+        for idx, rec in enumerate(records):
+            src = rec.get("source_path")
+            if src in retried_map:
+                records[idx] = retried_map[src]
+
+        from app.core.audit_reporter import generate_audit_report
+
+        self.report_data = generate_audit_report(base_dir, records)
+
+        self._populate_table()
+        self._update_stats_cards()
+
+        pass_cnt = self.report_data.get("verified_pass_count", 0)
+        fail_cnt = self.report_data.get("mismatch_fail_count", 0)
+        msg = f"Retried {len(items_to_retry)} item(s). Overall status: {pass_cnt} passed, {fail_cnt} failed."
+        self.announce(msg)
+        self.notify(msg, severity="information")
+
+    def _update_stats_cards(self) -> None:
+        """Update stat card labels with current metrics."""
+        total = self.report_data.get("total_files", 0)
+        pass_cnt = self.report_data.get("verified_pass_count", 0)
+        fail_cnt = self.report_data.get("mismatch_fail_count", 0)
+        skip_cnt = self.report_data.get("skipped_count", 0)
+        unverified_cnt = self.report_data.get("unverified_count", 0)
+
+        try:
+            cards = self.query(".stat-card")
+            if len(cards) >= 5:
+                cards[0].update(f"Total: {total}")
+                cards[1].update(f"[PASS]: {pass_cnt}")
+                cards[2].update(f"[FAIL]: {fail_cnt}")
+                cards[3].update(f"[SKIPPED]: {skip_cnt}")
+                cards[4].update(f"[UNVERIFIED]: {unverified_cnt}")
+        except Exception:
+            pass
+
+    @on(Button.Pressed, "#btn-retry-selected")
+    def on_btn_retry_selected(self) -> None:
+        """Handle Retry Selected button press."""
+        self.action_retry_selected()
+
+    @on(Button.Pressed, "#btn-retry-all")
+    def on_btn_retry_all(self) -> None:
+        """Handle Retry All button press."""
+        self.action_retry_all()
 
     def action_export_json(self) -> None:
         """Export audit report to JSON format."""
@@ -4450,6 +4616,32 @@ class AutoSorterTUI(A11yMixin, App):
         border: heavy $accent;
         text-style: bold;
     }
+    #alert-banner {
+        width: 100%;
+        height: auto;
+        min-height: 1;
+        max-height: 6;
+        padding: 0 1;
+        margin: 0;
+        display: none;
+    }
+    #alert-banner.alert-critical {
+        background: $error-darken-2;
+        color: $text;
+        border: solid $error;
+        text-style: bold;
+        display: block;
+    }
+    #alert-banner.alert-warning {
+        background: $warning-darken-2;
+        color: $text;
+        border: solid $warning;
+        display: block;
+    }
+    #btn-execute {
+        margin-top: 1;
+        width: 100%;
+    }
     """
 
     def __init__(
@@ -4497,6 +4689,10 @@ class AutoSorterTUI(A11yMixin, App):
         self.visual_select_active: bool = False
         self.visual_selected_nodes: list = []
         self._wizard_dismissed_this_session: bool = False
+        self.verification_result: Dict[str, Any] = {}
+        self.has_critical_errors: bool = False
+        self.critical_error_paths: set = set()
+        self.warning_paths: set = set()
 
     def compose(self) -> ComposeResult:
         """Compose main dual-pane TUI layout."""
@@ -4516,6 +4712,14 @@ class AutoSorterTUI(A11yMixin, App):
                 tui_log = Log(id="tui-log", classes="tui-log-area")
                 tui_log.tooltip = "Live operation execution log output feed"
                 yield tui_log
+                btn_exec = Button(
+                    "Execute Plan [Ctrl+E]", id="btn-execute", variant="primary"
+                )
+                btn_exec.tooltip = "Execute file sorting plan [Ctrl+E]"
+                yield btn_exec
+        alert_banner = Static("", id="alert-banner")
+        alert_banner.tooltip = "Validation alert banner displaying blocking errors or warnings"
+        yield alert_banner
         pb = ProgressBar(total=100, show_percentage=True, id="main-progress-bar")
         pb.tooltip = "Active operation background progress indicator"
         pb.display = False
@@ -5330,6 +5534,11 @@ class AutoSorterTUI(A11yMixin, App):
             handle_history_modal_result,
         )
 
+    @on(Button.Pressed, "#btn-execute")
+    def on_btn_execute_pressed(self) -> None:
+        """Handle Execute Plan button press."""
+        self.action_execute_sort()
+
     def action_execute_sort(self) -> None:
         """Trigger sorting plan execution worker."""
         if self._is_text_control_focused():
@@ -5343,8 +5552,221 @@ class AutoSorterTUI(A11yMixin, App):
             self.announce("No checked files in sorting plan to execute.")
             return
 
+        if self.has_critical_errors:
+            self.announce("Cannot execute plan: Critical validation errors exist (see Alert Banner).")
+            return
+
         self.announce("Executing file moves according to plan...")
         self.run_execute_worker()
+
+    @work(group="validation", exclusive=True, thread=True)
+    def run_validation_worker(self) -> None:
+        """Asynchronously verify plan integrity in background worker thread."""
+        try:
+            from app.core.verifier import VerificationEngine
+
+            exec_plan = self._get_executable_plan()
+            if not self.plan or not self._has_file_nodes(exec_plan):
+                self.call_from_thread(self._update_validation_state, {})
+                return
+
+            base_dir = (
+                self.app_session.base_dir
+                if self.app_session
+                else (self.base_dir or ".")
+            )
+            result = VerificationEngine.verify_plan_integrity(base_dir, exec_plan)
+            self.call_from_thread(self._update_validation_state, result)
+        except Exception as e:
+            logger.error(f"Error running validation worker: {e}")
+
+    def _update_validation_state(self, result: Dict[str, Any]) -> None:
+        """Update UI controls, alert banner, and tree highlights based on validation result."""
+        self.verification_result = result or {}
+
+        collisions = result.get("collisions", [])
+        circular = result.get("circular_renames", [])
+        invalid = result.get("invalid_renames", [])
+        long_paths = result.get("long_paths", [])
+
+        broken_links = result.get("broken_links", [])
+        unconfirmed = result.get("unconfirmed_renames", [])
+
+        has_critical = bool(collisions or circular or invalid or long_paths)
+        has_warnings = bool(broken_links or unconfirmed)
+
+        self.has_critical_errors = has_critical
+
+        # Build path sets for tree node highlighting
+        crit_paths = set()
+        for c in collisions:
+            if c.get("path"):
+                crit_paths.add(os.path.normpath(c["path"]))
+            if c.get("source"):
+                crit_paths.add(os.path.normpath(c["source"]))
+            for s in c.get("sources", []):
+                crit_paths.add(os.path.normpath(s))
+        for r in circular:
+            if r.get("path"):
+                crit_paths.add(os.path.normpath(r["path"]))
+            for p in r.get("cycle", []):
+                crit_paths.add(os.path.normpath(p))
+        for inv in invalid:
+            if inv.get("path"):
+                crit_paths.add(os.path.normpath(inv["path"]))
+            if inv.get("source"):
+                crit_paths.add(os.path.normpath(inv["source"]))
+        for lp in long_paths:
+            if lp.get("path"):
+                crit_paths.add(os.path.normpath(lp["path"]))
+            if lp.get("source"):
+                crit_paths.add(os.path.normpath(lp["source"]))
+
+        warn_paths = set()
+        for bl in broken_links:
+            if bl.get("path"):
+                warn_paths.add(os.path.normpath(bl["path"]))
+        for unc in unconfirmed:
+            if unc.get("path"):
+                warn_paths.add(os.path.normpath(unc["path"]))
+            if unc.get("source"):
+                warn_paths.add(os.path.normpath(unc["source"]))
+
+        self.critical_error_paths = crit_paths
+        self.warning_paths = warn_paths
+
+        # Update Execute Button
+        try:
+            btn_exec = self.query_one("#btn-execute", Button)
+            exec_plan = self._get_executable_plan()
+            has_files = self._has_file_nodes(exec_plan)
+
+            if has_critical or not has_files:
+                btn_exec.disabled = True
+                if has_critical:
+                    btn_exec.tooltip = "Execution disabled: Plan contains blocking critical validation errors"
+                else:
+                    btn_exec.tooltip = "Execution disabled: No files selected to execute"
+            else:
+                btn_exec.disabled = False
+                btn_exec.tooltip = "Execute file sorting plan [Ctrl+E]"
+        except Exception:
+            pass
+
+        # Update Alert Banner
+        try:
+            alert_banner = self.query_one("#alert-banner", Static)
+            if has_critical:
+                alert_banner.display = True
+                alert_banner.remove_class("alert-warning")
+                alert_banner.add_class("alert-critical")
+
+                msgs = []
+                if collisions:
+                    msgs.append("⛔ CRITICAL FILE COLLISION(S) DETECTED:")
+                    for c in collisions:
+                        dst_p = c.get("path", "")
+                        if c.get("sources"):
+                            for s_p in c["sources"]:
+                                msgs.append(f"  • Source: {s_p} -> Destination: {dst_p}")
+                        elif c.get("source"):
+                            msgs.append(f"  • Source: {c['source']} -> Destination: {dst_p}")
+                        else:
+                            msgs.append(f"  • Destination: {dst_p} ({c.get('message', 'Collision')})")
+                if circular:
+                    msgs.append("⛔ CIRCULAR RENAMING DEPENDENCY DETECTED:")
+                    for r in circular:
+                        msgs.append(f"  • {r.get('message')}")
+                if invalid:
+                    msgs.append("⛔ INVALID FILENAME / STRUCTURE:")
+                    for inv in invalid:
+                        msgs.append(f"  • {inv.get('message')}")
+                if long_paths:
+                    msgs.append("⛔ EXCEEDS PATH LENGTH LIMIT:")
+                    for lp in long_paths:
+                        msgs.append(f"  • {lp.get('message')}")
+
+                alert_str = "\n".join(msgs)
+                alert_banner.update(alert_str)
+                self.announce(f"Alert Banner: {alert_str}")
+            elif has_warnings:
+                alert_banner.display = True
+                alert_banner.remove_class("alert-critical")
+                alert_banner.add_class("alert-warning")
+
+                msgs = ["⚠️ NON-FATAL WARNING(S) REPORTED (Execution unblocked):"]
+                for bl in broken_links:
+                    msgs.append(f"  • {bl.get('message')}")
+                for unc in unconfirmed:
+                    msgs.append(f"  • {unc.get('message')}")
+
+                alert_str = "\n".join(msgs)
+                alert_banner.update(alert_str)
+            else:
+                alert_banner.display = False
+                alert_banner.update("")
+        except Exception as e:
+            logger.debug(f"Error updating alert banner: {e}")
+
+        # Update node styling in tree view
+        self._apply_tree_node_styles()
+
+    def _apply_tree_node_styles(self) -> None:
+        """Apply red/yellow styling to existing tree nodes based on active error/warning paths."""
+        try:
+            tree = self.query_one("#plan-tree", Tree)
+
+            def _stylize_node(node: TreeNode) -> None:
+                data = getattr(node, "data", None)
+                if not data or not isinstance(data, dict):
+                    for child in node.children:
+                        _stylize_node(child)
+                    return
+
+                filepath = data.get("filepath", "")
+                key = data.get("key", "")
+                norm_fp = os.path.normpath(filepath) if filepath else ""
+                norm_key = os.path.normpath(key) if key else ""
+
+                is_crit = False
+                is_warn = False
+
+                if norm_fp and norm_fp in self.critical_error_paths:
+                    is_crit = True
+                elif norm_key and norm_key in self.critical_error_paths:
+                    is_crit = True
+                elif any(
+                    p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                    for p in self.critical_error_paths
+                ):
+                    is_crit = True
+
+                if not is_crit:
+                    if norm_fp and norm_fp in self.warning_paths:
+                        is_warn = True
+                    elif norm_key and norm_key in self.warning_paths:
+                        is_warn = True
+                    elif any(
+                        p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                        for p in self.warning_paths
+                    ):
+                        is_warn = True
+
+                if isinstance(node.label, Text):
+                    plain_txt = node.label.plain
+                    new_txt = Text(plain_txt)
+                    if is_crit:
+                        new_txt.stylize("bold red")
+                    elif is_warn:
+                        new_txt.stylize("bold yellow")
+                    node.label = new_txt
+
+                for child in node.children:
+                    _stylize_node(child)
+
+            _stylize_node(tree.root)
+        except Exception as e:
+            logger.debug(f"Error applying tree node styles: {e}")
 
     @work(exclusive=True, thread=True)
     def run_execute_worker(self) -> None:
@@ -5472,6 +5894,7 @@ class AutoSorterTUI(A11yMixin, App):
             else:
                 self._build_tree_nodes(self.plan, tree.root, current_folder="")
             tree.root.expand_all()
+            self.run_validation_worker()
         except Exception as e:
             logger.error(f"Error rebuilding tree: {e}")
 
@@ -5581,7 +6004,33 @@ class AutoSorterTUI(A11yMixin, App):
                 if target_filename and target_filename != file_key:
                     label_parts.append(f"-> {target_filename}")
 
+                norm_fp = os.path.normpath(filepath) if filepath else ""
+                norm_key = os.path.normpath(file_key) if file_key else ""
+
+                is_crit_node = (
+                    norm_fp in self.critical_error_paths
+                    or norm_key in self.critical_error_paths
+                    or any(
+                        p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                        for p in self.critical_error_paths
+                    )
+                )
+                is_warn_node = (
+                    norm_fp in self.warning_paths
+                    or norm_key in self.warning_paths
+                    or any(
+                        p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                        for p in self.warning_paths
+                    )
+                )
+
                 label_str = cb_str + " 📄 " + " ".join(label_parts[1:])
+                text_obj = Text(label_str)
+                if is_crit_node:
+                    text_obj.stylize("bold red")
+                elif is_warn_node:
+                    text_obj.stylize("bold yellow")
+
                 node_data = {
                     "is_file": True,
                     "key": file_key,
@@ -5593,7 +6042,7 @@ class AutoSorterTUI(A11yMixin, App):
                     "is_checked": is_checked,
                     "is_excluded": is_excluded,
                 }
-                parent_item.add_leaf(Text(label_str), data=node_data)
+                parent_item.add_leaf(text_obj, data=node_data)
             elif isinstance(v, dict):
                 sub_folder = (
                     (Path(current_folder) / k).as_posix() if current_folder else k

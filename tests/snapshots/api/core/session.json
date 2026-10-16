@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "67874d109225fb2a5772acb0283e526485196b31302c11e33c43c80723ab6d7f"
+    "checksum": "4178c9686f7ed23ef6f8fbb4728e50c12443632a37f3a499384279e80750c4e2"
   },
   "classes": [
     {
@@ -166,6 +166,34 @@
               "annotation": null,
               "default": "None",
               "name": "progress_callback"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "retry_failed_moves",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "failed_items"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "progress_callback"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
             }
           ],
           "returns": null
