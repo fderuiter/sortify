@@ -208,10 +208,11 @@ class AppSession:
         try:
             from app.core.shared_registry import SharedModelRegistry
 
-            jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
-            jev_engine.set_database(
-                str(self.session_dir / "autosorter.db"), self.db_worker
-            )
+            if getattr(self.settings, "AI_CONSENT_GRANTED", True) is not False:
+                jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
+                jev_engine.set_database(
+                    str(self.session_dir / "autosorter.db"), self.db_worker
+                )
         except Exception:
             pass
 
