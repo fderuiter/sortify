@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "19c2f9f265e2919829815383a4089b87511b4cd5af740bbc7d24471c86cf019a"
+    "checksum": "c3d662f88f0ba59c91cb06245158baa1a1b3fa77f999a1efbd221ad4f14411c0"
   },
   "classes": [
     {
@@ -105,12 +105,32 @@
               "name": "lock_path"
             },
             {
-              "annotation": "str",
+              "annotation": "Optional[str]",
               "default": "None",
               "name": "file_path"
             }
           ],
           "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "validate_lock_path_safe",
+          "parameters": [
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "lock_path"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "file_path"
+            }
+          ],
+          "returns": "Tuple[bool, Optional[str]]"
         },
         {
           "async": false,
