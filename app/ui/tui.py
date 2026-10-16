@@ -8,6 +8,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
+from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
@@ -15,7 +16,7 @@ from rich.text import Text
 from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
-from textual.containers import Horizontal, Vertical
+from textual.containers import Container, Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
@@ -860,6 +861,10 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
         color: $accent;
         margin-bottom: 1;
     }
+    .error-banner {
+        color: $error;
+        text-style: bold;
+    }
     .preset-row {
         margin-top: 1;
         margin-bottom: 1;
@@ -903,6 +908,54 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
         else:
             self.selected_sources = []
 
+    @staticmethod
+    def _validate_directory_path(path_str: str) -> Optional[str]:
+        """Validate if path_str exists, is a directory, and allows read access.
+
+        Returns error message string if invalid, or None if valid.
+        """
+        if not path_str or not path_str.strip():
+            return "Directory path cannot be empty."
+
+        clean_path = path_str.strip()
+        expanded = os.path.abspath(os.path.expanduser(clean_path))
+
+        try:
+            if not os.path.exists(expanded):
+                return f"Target directory does not exist: {clean_path}"
+
+            if not os.path.isdir(expanded):
+                return f"Path is not a directory: {clean_path}"
+
+            if not os.access(expanded, os.R_OK):
+                return f"Permission denied for directory: {clean_path}"
+        except Exception as exc:
+            return f"Invalid directory path: {exc}"
+
+        return None
+
+    def _show_error(self, message: str) -> None:
+        """Display inline error banner, announce message, and focus input."""
+        try:
+            lbl = self.query_one("#lbl-error", Static)
+            lbl.update(message)
+        except Exception:
+            pass
+        self.announce(message, priority="assertive")
+        try:
+            self.query_one("#input-dir", Input).focus()
+        except Exception:
+            pass
+
+    @on(Input.Changed, "#input-dir")
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Clear error banner when user changes input text."""
+        try:
+            lbl = self.query_one("#lbl-error", Static)
+            lbl.update("")
+        except Exception:
+            pass
+
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
@@ -919,6 +972,7 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
             )
             inp.tooltip = "Enter absolute target directory path to scan"
             yield inp
+            yield Static("", id="lbl-error", classes="error-banner")
             yield Label("Selected Sources:", id="lbl-sources")
             yield Static(
                 self._format_sources_display(),
@@ -983,17 +1037,28 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     def action_add_dir(self) -> None:
         """Add input directory path to selected source list."""
         val = self.query_one("#input-dir", Input).value.strip()
-        if val:
-            abs_p = os.path.abspath(os.path.expanduser(val))
-            if abs_p not in self.selected_sources:
-                self.selected_sources.append(abs_p)
-                self.announce(f"Added directory path: {abs_p}")
-                self._update_sources_widget()
-            self.added_via_btn = True
+        if not val:
+            return
+        err = self._validate_directory_path(val)
+        if err:
+            self._show_error(err)
+            return
+
+        abs_p = os.path.abspath(os.path.expanduser(val))
+        if abs_p not in self.selected_sources:
+            self.selected_sources.append(abs_p)
+            self.announce(f"Added directory path: {abs_p}")
+            self._update_sources_widget()
+        self.added_via_btn = True
+        try:
+            self.query_one("#lbl-error", Static).update("")
+        except Exception:
+            pass
 
     @on(Button.Pressed, "#preset-demo")
     def action_demo(self) -> None:
         """Select sandbox demo workspace preset."""
+        from app.core.sample_corpus import generate_sample_corpus
         from app.ui.notifications import notify
 
         path = os.path.abspath("sandbox/demo_workspace")
@@ -1008,6 +1073,18 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
                 self.announce(err_msg, priority="assertive")
                 notify(err_msg, type="error")
                 return
+
+        try:
+            generate_sample_corpus(path, overwrite=True)
+            sample_msg = f"Generated sample corpus documents in '{path}'."
+            self.announce(sample_msg)
+            notify(sample_msg, type="info")
+        except Exception as exc:
+            logger.error(f"Failed to generate sample corpus in '{path}': {exc}")
+            err_msg = f"Failed to generate sample corpus: {exc}"
+            self.announce(err_msg, priority="assertive")
+            notify(err_msg, type="error")
+
         self.announce(f"Selected demo workspace preset: {path}")
         self.dismiss(path)
 
@@ -1015,6 +1092,10 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     def action_downloads(self) -> None:
         """Select user Downloads directory preset."""
         path = os.path.expanduser("~/Downloads")
+        err = self._validate_directory_path(path)
+        if err:
+            self._show_error(err)
+            return
         self.announce(f"Selected Downloads preset: {path}")
         self.dismiss(path)
 
@@ -1022,6 +1103,10 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
     def action_documents(self) -> None:
         """Select user Documents directory preset."""
         path = os.path.expanduser("~/Documents")
+        err = self._validate_directory_path(path)
+        if err:
+            self._show_error(err)
+            return
         self.announce(f"Selected Documents preset: {path}")
         self.dismiss(path)
 
@@ -1030,6 +1115,11 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
         """Confirm directory selection."""
         val = self.query_one("#input-dir", Input).value.strip()
         if val:
+            err = self._validate_directory_path(val)
+            if err:
+                self._show_error(err)
+                return
+
             abs_p = os.path.abspath(os.path.expanduser(val))
             if not self.added_via_btn and len(self.selected_sources) <= 1:
                 self.announce(f"Confirmed directory selection: '{abs_p}'")
@@ -1040,6 +1130,12 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
                 self.selected_sources.append(abs_p)
 
         if self.selected_sources:
+            for source in self.selected_sources:
+                err = self._validate_directory_path(source)
+                if err:
+                    self._show_error(err)
+                    return
+
             self.announce(f"Confirmed directory selection: '{self.selected_sources}'")
             res = (
                 self.selected_sources
@@ -1336,6 +1432,23 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     inp_conc.tooltip = "Worker concurrency thread limit for processing"
                     yield inp_conc
 
+                    yield Label("Conflict Policy:", classes="field-label")
+                    conflict_pol = getattr(self.settings, "CONFLICT_POLICY", "rename")
+                    conflict_options = [
+                        ("Overwrite", "overwrite"),
+                        ("Auto-Rename", "rename"),
+                        ("Skip", "skip"),
+                    ]
+                    sel_conflict = Select(
+                        options=conflict_options,
+                        value=conflict_pol,
+                        id="select-conflict-policy",
+                    )
+                    sel_conflict.tooltip = (
+                        "Select collision handling strategy for conflicting target files"
+                    )
+                    yield sel_conflict
+
                 with TabPane("AI & Privacy Settings", id="tab-ai-privacy"):
                     yield Heading("Sorting Strategy:", level=2, classes="field-label")
                     strat = getattr(self.settings, "SORTING_STRATEGY", "default")
@@ -1503,11 +1616,19 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             ai_consent = bool(getattr(self.settings, "AI_CONSENT_GRANTED", False))
 
+        try:
+            conflict_pol = self.query_one("#select-conflict-policy", Select).value
+            if conflict_pol == Select.BLANK:
+                conflict_pol = "rename"
+        except Exception:
+            conflict_pol = getattr(self.settings, "CONFLICT_POLICY", "rename")
+
         res = {
             "PROTECTED_PATHS": p_list,
             "IGNORED_EXTENSIONS": i_list,
             "MAX_WORKERS": conc,
             "MAX_FOLDERS": max_f,
+            "CONFLICT_POLICY": conflict_pol,
             "SORTING_STRATEGY": strat,
             "CLINICAL_SMART_RENAMING": clin_renaming,
             "CONTEXTUAL_RENAMING": ctx_renaming,
@@ -1990,6 +2111,32 @@ class TemplateGalleryModal(A11yMixin, ModalScreen[None]):
                 pass
         self.announce("Opened starter rule template gallery.")
 
+    @on(Checkbox.Changed)
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Announce starter template gallery checkbox selection state changes."""
+        chk_id = getattr(event.checkbox, "id", None) or getattr(
+            event.control, "id", None
+        )
+        if not chk_id:
+            return
+
+        prefix = ""
+        if chk_id.startswith("chk-gallery-"):
+            prefix = "chk-gallery-"
+        elif chk_id.startswith("chk-template-"):
+            prefix = "chk-template-"
+        else:
+            return
+
+        pack_id = chk_id[len(prefix) :]
+        from app.core.rule_templates import get_starter_templates
+
+        for pack in get_starter_templates():
+            if pack.id == pack_id:
+                state = "selected" if event.value else "deselected"
+                self.announce(f"{pack.title} template pack {state}.")
+                break
+
     @on(Button.Pressed, "#btn-apply-templates")
     def action_apply_templates(self) -> None:
         """Apply selected starter template packs to settings."""
@@ -2164,6 +2311,48 @@ class WizardModal(A11yMixin, ModalScreen[None]):
         except Exception:
             pass
         self.announce("Opened model onboarding wizard dialog.")
+
+    @on(Switch.Changed)
+    def on_switch_changed(self, event: Switch.Changed) -> None:
+        """Announce switch state changes for screen reader accessibility."""
+        switch_id = getattr(event.switch, "id", None) or getattr(
+            event.control, "id", None
+        )
+        if not switch_id:
+            return
+
+        if switch_id == "switch-consent":
+            state = "enabled" if event.value else "disabled"
+            self.announce(f"AI consent {state}.")
+        elif switch_id == "switch-sample-corpus":
+            state = "enabled" if event.value else "disabled"
+            self.announce(f"Sample document corpus generation {state}.")
+
+    @on(Checkbox.Changed)
+    def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
+        """Announce starter template checkbox selection state changes."""
+        chk_id = getattr(event.checkbox, "id", None) or getattr(
+            event.control, "id", None
+        )
+        if not chk_id:
+            return
+
+        prefix = ""
+        if chk_id.startswith("chk-template-"):
+            prefix = "chk-template-"
+        elif chk_id.startswith("chk-gallery-"):
+            prefix = "chk-gallery-"
+        else:
+            return
+
+        pack_id = chk_id[len(prefix) :]
+        from app.core.rule_templates import get_starter_templates
+
+        for pack in get_starter_templates():
+            if pack.id == pack_id:
+                state = "selected" if event.value else "deselected"
+                self.announce(f"{pack.title} template pack {state}.")
+                break
 
     @on(Button.Pressed, "#btn-finish")
     def action_finish(self) -> None:
@@ -2762,12 +2951,57 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         color: $text-muted;
         text-align: center;
     }
+    #input-queue-filter {
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+    .dropzone-split-container {
+        height: auto;
+        min-height: 8;
+        layout: horizontal;
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+    .narrow .dropzone-split-container {
+        layout: vertical;
+    }
     #dropzone-staging-table {
-        height: 6;
-        min-height: 4;
+        width: 60%;
+        height: 7;
+        min-height: 5;
         margin-top: 0;
         margin-bottom: 0;
         border: solid $accent;
+    }
+    .narrow #dropzone-staging-table {
+        width: 100%;
+        height: 6;
+    }
+    #dropzone-metadata-preview {
+        width: 40%;
+        height: 7;
+        min-height: 5;
+        border: solid $primary;
+        background: $surface;
+        padding: 0 1;
+        margin-left: 1;
+        overflow-x: hidden;
+        overflow-y: auto;
+    }
+    .narrow #dropzone-metadata-preview {
+        width: 100%;
+        height: auto;
+        min-height: 4;
+        margin-left: 0;
+        margin-top: 1;
+    }
+    .preview-header {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 0;
+    }
+    .preview-field {
+        color: $text;
     }
     .status-text {
         color: $accent;
@@ -2828,12 +3062,29 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             )
             yield inp
 
-            table = DataTable(id="dropzone-staging-table")
-            table.cursor_type = "row"
-            table.tooltip = (
-                "Interactive staging queue displaying file status and details"
+            filter_inp = Input(
+                placeholder="Filter staged queue...",
+                id="input-queue-filter",
             )
-            yield table
+            filter_inp.tooltip = (
+                "Filter staged queue items by typing keywords (filename, path, status, extension)"
+            )
+            yield filter_inp
+
+            with Container(classes="dropzone-split-container"):
+                table = DataTable(id="dropzone-staging-table")
+                table.cursor_type = "row"
+                table.tooltip = (
+                    "Interactive staging queue displaying file status and details"
+                )
+                yield table
+
+                with Vertical(id="dropzone-metadata-preview"):
+                    yield Label("📋 Metadata Preview", classes="preview-header")
+                    yield Label("Path: N/A", id="preview-path", classes="preview-field")
+                    yield Label("Size: N/A", id="preview-size", classes="preview-field")
+                    yield Label("Modified: N/A", id="preview-mtime", classes="preview-field")
+                    yield Label("Status: N/A", id="preview-status", classes="preview-field")
 
             with Horizontal(classes="queue-row"):
                 btn_filter = Button(
@@ -2916,15 +3167,38 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             return f"{int(size)} B"
         return f"{size:.1f} {units[idx]}"
 
+    def get_filter_query(self) -> str:
+        """Get lowercase trimmed search query from input-queue-filter field."""
+        try:
+            inp = self.query_one("#input-queue-filter", Input)
+            return inp.value.strip().lower()
+        except Exception:
+            return ""
+
+    def get_filtered_items(self) -> List[Dict[str, Any]]:
+        """Return list of staged items filtered by search query."""
+        query = self.get_filter_query()
+        if not query:
+            return list(self.staged_items)
+        return [
+            item
+            for item in self.staged_items
+            if query in item["filename"].lower()
+            or query in item["path"].lower()
+            or query in item["extension"].lower()
+            or query in item["status"].lower()
+        ]
+
     def _refresh_table(self) -> None:
-        """Re-render staging table with items from self.staged_items."""
+        """Re-render staging table with items matching active search filter."""
         try:
             table = self.query_one("#dropzone-staging-table", DataTable)
         except Exception:
             return
         table.clear(columns=True)
         table.add_columns("Status", "Filename", "Extension", "Size", "Full Path")
-        for item in self.staged_items:
+        filtered = self.get_filtered_items()
+        for item in filtered:
             table.add_row(
                 item["status"],
                 item["filename"],
@@ -2932,6 +3206,68 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 item["size_str"],
                 item["path"],
             )
+        self.update_active_metadata_preview()
+
+    def update_metadata_preview(self, item: Optional[Dict[str, Any]] = None) -> None:
+        """Update metadata preview card panel for given staged item."""
+        if item is None:
+            path_str = "N/A"
+            size_str = "N/A"
+            mtime_str = "N/A"
+            status_str = "N/A"
+        else:
+            path_str = item.get("path", "N/A")
+            size_str = item.get("size_str", "N/A")
+            status_str = item.get("status", "N/A")
+            if path_str and path_str != "N/A" and os.path.exists(path_str):
+                try:
+                    mtime = os.path.getmtime(path_str)
+                    mtime_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+                except Exception:
+                    mtime_str = "Error reading timestamp"
+            else:
+                mtime_str = "N/A"
+
+        try:
+            self.query_one("#preview-path", Label).update(f"Path: {path_str}")
+            self.query_one("#preview-size", Label).update(f"Size: {size_str}")
+            self.query_one("#preview-mtime", Label).update(f"Modified: {mtime_str}")
+            self.query_one("#preview-status", Label).update(f"Status: {status_str}")
+        except Exception:
+            pass
+
+    def update_active_metadata_preview(self) -> None:
+        """Fetch item corresponding to current table cursor row and update metadata preview."""
+        try:
+            table = self.query_one("#dropzone-staging-table", DataTable)
+            row_idx = table.cursor_row
+            filtered = self.get_filtered_items()
+            if row_idx is not None and 0 <= row_idx < len(filtered):
+                self.update_metadata_preview(filtered[row_idx])
+            else:
+                self.update_metadata_preview(None)
+        except Exception:
+            self.update_metadata_preview(None)
+
+    @on(Input.Changed, "#input-queue-filter")
+    def on_queue_filter_changed(self, event: Input.Changed) -> None:
+        """Handle search filter text changes to dynamically update visible table rows."""
+        self._refresh_table()
+
+    @on(DataTable.RowHighlighted)
+    def _on_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        """Update metadata preview panel on table row focus/highlight."""
+        self.update_active_metadata_preview()
+
+    @on(DataTable.RowSelected)
+    def _on_table_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Update metadata preview panel on table row selection."""
+        self.update_active_metadata_preview()
+
+    @on(DataTable.CellHighlighted)
+    def _on_table_cell_highlighted(self, event: DataTable.CellHighlighted) -> None:
+        """Update metadata preview panel on cell selection/focus."""
+        self.update_active_metadata_preview()
 
     def stage_paths(self, raw_text: str) -> None:
         """Parse raw input string, expand directories, validate, and stage items."""
@@ -3031,17 +3367,22 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             row_idx = None
 
-        if row_idx is not None and 0 <= row_idx < len(self.staged_items):
-            removed_item = self.staged_items.pop(row_idx)
+        filtered = self.get_filtered_items()
+        if row_idx is not None and 0 <= row_idx < len(filtered):
+            removed_item = filtered[row_idx]
+            if removed_item in self.staged_items:
+                self.staged_items.remove(removed_item)
             self._refresh_table()
             msg = f"Removed '{removed_item['filename']}' from queue. {len(self.staged_items)} item(s) remaining."
             self.update_status_msg(msg)
-            if self.staged_items:
-                new_idx = min(row_idx, len(self.staged_items) - 1)
+            new_filtered = self.get_filtered_items()
+            if new_filtered:
+                new_idx = min(row_idx, len(new_filtered) - 1)
                 try:
                     table.move_cursor(row=new_idx)
                 except Exception:
                     pass
+            self.update_active_metadata_preview()
         else:
             self.update_status_msg("No item selected to remove.")
 
@@ -3053,18 +3394,24 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             row_idx = None
 
-        if row_idx is not None and 0 < row_idx < len(self.staged_items):
-            self.staged_items[row_idx], self.staged_items[row_idx - 1] = (
-                self.staged_items[row_idx - 1],
-                self.staged_items[row_idx],
+        filtered = self.get_filtered_items()
+        if row_idx is not None and 0 < row_idx < len(filtered):
+            item_curr = filtered[row_idx]
+            item_prev = filtered[row_idx - 1]
+            idx_curr = self.staged_items.index(item_curr)
+            idx_prev = self.staged_items.index(item_prev)
+            self.staged_items[idx_curr], self.staged_items[idx_prev] = (
+                self.staged_items[idx_prev],
+                self.staged_items[idx_curr],
             )
             self._refresh_table()
             try:
                 table.move_cursor(row=row_idx - 1)
             except Exception:
                 pass
+            self.update_active_metadata_preview()
             self.update_status_msg(
-                f"Moved '{self.staged_items[row_idx - 1]['filename']}' up in queue priority."
+                f"Moved '{item_curr['filename']}' up in queue priority."
             )
 
     def move_selected_item_down(self) -> None:
@@ -3075,18 +3422,24 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             row_idx = None
 
-        if row_idx is not None and 0 <= row_idx < len(self.staged_items) - 1:
-            self.staged_items[row_idx], self.staged_items[row_idx + 1] = (
-                self.staged_items[row_idx + 1],
-                self.staged_items[row_idx],
+        filtered = self.get_filtered_items()
+        if row_idx is not None and 0 <= row_idx < len(filtered) - 1:
+            item_curr = filtered[row_idx]
+            item_next = filtered[row_idx + 1]
+            idx_curr = self.staged_items.index(item_curr)
+            idx_next = self.staged_items.index(item_next)
+            self.staged_items[idx_curr], self.staged_items[idx_next] = (
+                self.staged_items[idx_next],
+                self.staged_items[idx_curr],
             )
             self._refresh_table()
             try:
                 table.move_cursor(row=row_idx + 1)
             except Exception:
                 pass
+            self.update_active_metadata_preview()
             self.update_status_msg(
-                f"Moved '{self.staged_items[row_idx + 1]['filename']}' down in queue priority."
+                f"Moved '{item_curr['filename']}' down in queue priority."
             )
 
     def clear_queue(self) -> None:
@@ -3184,13 +3537,15 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
         help_url = "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors"
 
-        # Check for blocked or invalid items in staged_items if no items exist or no ready items exist
+        filtered = self.get_filtered_items()
         ready_paths = [
-            item["path"] for item in self.staged_items if item["status"] == "Ready"
+            item["path"] for item in filtered if item["status"] == "Ready"
         ]
 
         if not ready_paths:
             blocked_items = [
+                item for item in filtered if item["status"] == "BLOCKED"
+            ] or [
                 item for item in self.staged_items if item["status"] == "BLOCKED"
             ]
             if blocked_items:
@@ -3975,14 +4330,14 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 classes="modal-subtitle",
             )
 
-            options = []
+            options = [("All Sessions (Aggregate Audit Log)", "all")]
             for s in self.sessions:
                 sid = s.get("session_id", "unknown")
                 b_dir = s.get("base_dir") or "N/A"
                 status = s.get("status") or "completed"
                 options.append((f"{sid[:8]}... | {status} | {b_dir}", sid))
 
-            if not options:
+            if len(options) == 1 and not self.sessions:
                 options = [("No historical sessions found", "none")]
 
             select_sess = Select(
@@ -4543,6 +4898,13 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
             if not target_dir:
                 self.announce("Release operation cancelled.")
                 return
+            if not os.path.exists(target_dir) or not os.path.isdir(target_dir):
+                from app.ui.notifications import notify
+
+                err_msg = f"Target directory does not exist: {target_dir}"
+                self.announce(err_msg, priority="assertive")
+                notify(err_msg, type="error")
+                return
             dest_file_path = os.path.join(target_dir, os.path.basename(orig_rel))
             self.execute_release_async(record, dest_file_path)
 
@@ -4723,6 +5085,11 @@ class VimTree(Tree):
                 self.app.action_toggle_select_all()
             event.stop()
             event.prevent_default()
+        elif event.key in ("g", "G", "shift+g"):
+            if hasattr(self.app, "action_generate_sample_corpus"):
+                self.app.action_generate_sample_corpus()
+            event.stop()
+            event.prevent_default()
         elif event.key in ("enter", "return"):
             node = self.cursor_node
             if node:
@@ -4764,6 +5131,8 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("ctrl+a", "open_audit_report", "Audit Report", show=True),
         Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
         Binding("g", "generate_sample_corpus", "Sample Dataset", show=False),
+        Binding("G", "generate_sample_corpus", "Sample Dataset", show=False),
+        Binding("shift+g", "generate_sample_corpus", "Sample Dataset", show=False),
         Binding("question_mark", "open_cheat_sheet", "Help (?)", show=True),
         Binding("f1", "open_cheat_sheet", "Help (F1)", show=False),
         Binding("ctrl+q", "quit", "Quit", show=True),
@@ -5365,6 +5734,8 @@ class AutoSorterTUI(A11yMixin, App):
                     self.settings.CONTEXTUAL_RENAMING = res["CONTEXTUAL_RENAMING"]
                 if "AI_CONSENT_GRANTED" in res:
                     self.settings.AI_CONSENT_GRANTED = res["AI_CONSENT_GRANTED"]
+                if "CONFLICT_POLICY" in res:
+                    self.settings.CONFLICT_POLICY = res["CONFLICT_POLICY"]
                 if hasattr(self.settings, "_save"):
                     self.settings._save()
                 self.update_status()
@@ -5616,7 +5987,7 @@ class AutoSorterTUI(A11yMixin, App):
 
                 export_res = history_mgr.export_audit_log(
                     output_path=output_path,
-                    session_id=session_id if session_id != "none" else None,
+                    session_id=session_id if session_id not in ("none", "all") else None,
                     format=fmt,
                 )
                 cnt = export_res.get("count", 0)
@@ -6125,8 +6496,44 @@ class AutoSorterTUI(A11yMixin, App):
                     )
                     label_parts.append(f"[ARCH: {arch_str}]")
 
+                target_filename = file_info.get("target_filename") or file_key
+                target_path = None
+                if self.base_dir:
+                    target_path = os.path.normpath(
+                        os.path.join(self.base_dir, current_folder, target_filename)
+                    )
+                elif current_folder:
+                    target_path = os.path.normpath(
+                        os.path.join(current_folder, target_filename)
+                    )
+
+                is_collision = (
+                    file_info.get("collision")
+                    or file_info.get("has_collision")
+                    or False
+                )
+                if (
+                    not is_collision
+                    and target_path
+                    and filepath
+                    and os.path.lexists(target_path)
+                ):
+                    try:
+                        is_same = os.path.samefile(target_path, filepath)
+                    except Exception:
+                        is_same = os.path.normpath(
+                            os.path.abspath(target_path)
+                        ) == os.path.normpath(os.path.abspath(filepath))
+                    if not is_same:
+                        is_collision = True
+
+                pol = str(
+                    getattr(self.settings, "CONFLICT_POLICY", "rename")
+                ).lower()
+                if is_collision:
+                    label_parts.append(f"[COLLISION: {pol.upper()}]")
+
                 label_parts.append(file_key)
-                target_filename = file_info.get("target_filename")
                 if target_filename and target_filename != file_key:
                     label_parts.append(f"-> {target_filename}")
 
@@ -6167,6 +6574,8 @@ class AutoSorterTUI(A11yMixin, App):
                     "rating": rating,
                     "is_checked": is_checked,
                     "is_excluded": is_excluded,
+                    "is_collision": is_collision,
+                    "conflict_policy": pol,
                 }
                 parent_item.add_leaf(text_obj, data=node_data)
             elif isinstance(v, dict):
@@ -6326,6 +6735,15 @@ class AutoSorterTUI(A11yMixin, App):
                     lines.append(f"[bold]Confidence:[/bold] {float(conf):.2%}")
                 except (ValueError, TypeError):
                     lines.append(f"[bold]Confidence:[/bold] {conf}")
+
+            if data.get("is_collision"):
+                pol_str = str(
+                    data.get("conflict_policy")
+                    or getattr(self.settings, "CONFLICT_POLICY", "rename")
+                ).upper()
+                lines.append(
+                    f"[bold warning]Collision Indicator:[/bold warning] [COLLISION: {pol_str}]"
+                )
 
             self.announce(
                 f"Selected file '{key}' in folder '{folder}'. Locked: {locked}. Rating: {rating}."

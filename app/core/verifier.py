@@ -726,7 +726,7 @@ class VirtualFilesystemTracker:
             dest_to_srcs.setdefault(abs_dst, []).append(abs_src)
 
         # 1. Duplicate target collision (exempt if dynamic rename policy is active)
-        if conflict_policy == "skip":
+        if conflict_policy in ("skip", "overwrite"):
             for dst, srcs in dest_to_srcs.items():
                 if len(srcs) > 1:
                     collisions.append(

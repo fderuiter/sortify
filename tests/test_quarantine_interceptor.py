@@ -527,3 +527,113 @@ def test_quarantine_cli_release_db_failure_rollback():
     # Verify physical file was rolled back to staged_path
     assert os.path.exists(staged_path)
     assert not os.path.exists(released_dest)
+
+
+def test_quarantine_interceptor_presorted_policies():
+    """Test that QuarantineInterceptorService pre-sorts policy rules and preserves rule precedence."""
+    unsorted_policies = [
+        {
+            "type": "keyword",
+            "expression": "confidential",
+            "action": "retain",
+            "target_path": "Low_Priority_Retention",
+            "priority": 10,
+        },
+        {
+            "type": "keyword",
+            "expression": "confidential",
+            "action": "redact",
+            "target_path": "High_Priority_Redaction",
+            "priority": 100,
+        },
+    ]
+
+    service = QuarantineInterceptorService(db=db, policies=unsorted_policies)
+
+    # Verify policies were pre-sorted on init
+    assert len(service.policies) == 2
+    assert service.policies[0]["priority"] == 100
+    assert service.policies[0]["action"] == "redact"
+
+    sample_dir = os.path.join(_test_dir, "presorted_interceptor_test")
+    os.makedirs(sample_dir, exist_ok=True)
+    sample_file = os.path.join(sample_dir, "confidential_memo.txt")
+    with open(sample_file, "w", encoding="utf-8") as f:
+        f.write("confidential internal memo content")
+
+    staged_info = service.stage_incoming_file(
+        source_path=sample_file, base_dir=sample_dir
+    )
+    result = service.process_quarantine_job(staged_info["job_id"])
+
+    # High priority redact rule (priority 100) should be applied over low priority retain rule (priority 10)
+    assert result["policy_action"] == "redact"
+    released_path = os.path.join(
+        sample_dir, "High_Priority_Redaction", "confidential_memo.txt"
+    )
+    assert os.path.exists(released_path)
+
+
+def test_precompiled_pii_patterns():
+    """Verify pre-compiled regex objects are module-level Pattern instances."""
+    import re
+
+    from app.core.quarantine_interceptor import (
+        CLINICAL_PII_PATTERN,
+        CREDIT_CARD_PATTERN,
+        EMAIL_PATTERN,
+        SSN_PATTERN,
+    )
+
+    assert isinstance(SSN_PATTERN, re.Pattern)
+    assert isinstance(CREDIT_CARD_PATTERN, re.Pattern)
+    assert isinstance(EMAIL_PATTERN, re.Pattern)
+    assert isinstance(CLINICAL_PII_PATTERN, re.Pattern)
+
+
+def test_scrub_pii_from_text_patterns():
+    """Verify scrub_pii_from_text redacts SSN, credit card, email, and clinical PII patterns."""
+    from app.core.quarantine_interceptor import scrub_pii_from_text
+
+    text = (
+        "User doctor@hospital.org registered SSN 123-45-6789 and Card 4532 1234 5678 9012. "
+        "Confidential Medical Report for Subject 101. Diagnosis: Acute bronchitis."
+    )
+    result = scrub_pii_from_text(text)
+
+    assert "doctor@hospital.org" not in result
+    assert "[REDACTED_EMAIL]" in result
+
+    assert "123-45-6789" not in result
+    assert "[REDACTED_SSN]" in result
+
+    assert "4532 1234 5678 9012" not in result
+    assert "[REDACTED_CARD]" in result
+
+    assert "Confidential Medical Report" not in result
+    assert "Subject 101" not in result
+    assert "Diagnosis: Acute bronchitis" not in result
+    assert "[REDACTED_PII]" in result
+
+
+def test_scrub_pii_from_text_edge_cases():
+    """Verify empty inputs, non-string types, and large documents return expected scrubbed outputs."""
+    from app.core.quarantine_interceptor import scrub_pii_from_text
+
+    # Empty inputs
+    assert scrub_pii_from_text("") == ""
+    assert scrub_pii_from_text(None) == ""
+
+    # Non-string representation
+    assert scrub_pii_from_text(12345) == "12345"
+
+    # Large document string
+    large_doc = (
+        "Standard document line.\n" * 2000
+        + "Contact email: user@domain.com, SSN: 987-65-4321."
+    )
+    scrubbed = scrub_pii_from_text(large_doc)
+    assert "[REDACTED_EMAIL]" in scrubbed
+    assert "[REDACTED_SSN]" in scrubbed
+    assert "user@domain.com" not in scrubbed
+    assert "987-65-4321" not in scrubbed
