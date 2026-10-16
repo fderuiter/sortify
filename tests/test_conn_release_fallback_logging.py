@@ -137,7 +137,10 @@ def test_write_smoke_test_error_all_blocked_handles_gracefully():
     logger = logging.getLogger("app.main")
     with (
         patch("builtins.open", side_effect=restricted_open_all),
-        patch("tempfile.mkstemp", side_effect=PermissionError("System temp write-restricted!")),
+        patch(
+            "tempfile.mkstemp",
+            side_effect=PermissionError("System temp write-restricted!"),
+        ),
         patch("app.config.get_app_dir", return_value=Path("/mock/home/.autosorter")),
         patch.object(logger, "error") as mock_error,
     ):
@@ -156,7 +159,9 @@ def test_write_smoke_test_error_all_blocked_handles_gracefully():
         )
 
 
-def test_write_smoke_test_error_falls_back_to_system_temp_mkstemp(tmp_path, monkeypatch):
+def test_write_smoke_test_error_falls_back_to_system_temp_mkstemp(
+    tmp_path, monkeypatch
+):
     """Verify system temporary directory fallback uses mkstemp with strict 0o600 permissions when primary and home paths fail."""
     import os
     import stat
@@ -188,7 +193,9 @@ def test_write_smoke_test_error_falls_back_to_system_temp_mkstemp(tmp_path, monk
         assert file_mode == 0o600
 
 
-def test_write_smoke_test_error_sys_temp_chmod_failure_handled_gracefully(tmp_path, monkeypatch):
+def test_write_smoke_test_error_sys_temp_chmod_failure_handled_gracefully(
+    tmp_path, monkeypatch
+):
     """Verify that if os.chmod fails on non-POSIX or restricted filesystems, fallback writing still completes."""
     import os
 
@@ -200,18 +207,27 @@ def test_write_smoke_test_error_sys_temp_chmod_failure_handled_gracefully(tmp_pa
 
     monkeypatch.setattr("builtins.open", restricted_open)
     monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
-    monkeypatch.setattr("os.chmod", MagicMock(side_effect=OSError("Operation not supported")))
+    monkeypatch.setattr(
+        "os.chmod", MagicMock(side_effect=OSError("Operation not supported"))
+    )
     if hasattr(os, "fchmod"):
-        monkeypatch.setattr("os.fchmod", MagicMock(side_effect=OSError("Operation not supported")))
+        monkeypatch.setattr(
+            "os.fchmod", MagicMock(side_effect=OSError("Operation not supported"))
+        )
 
     write_smoke_test_error("Chmod failure test error", include_traceback=False)
 
     created_files = list(tmp_path.glob("smoke_test_error_*.txt"))
     assert len(created_files) == 1
-    assert created_files[0].read_text(encoding="utf-8").strip() == "Chmod failure test error"
+    assert (
+        created_files[0].read_text(encoding="utf-8").strip()
+        == "Chmod failure test error"
+    )
 
 
-def test_write_smoke_test_error_sys_temp_type_error_handled_gracefully(tmp_path, monkeypatch):
+def test_write_smoke_test_error_sys_temp_type_error_handled_gracefully(
+    tmp_path, monkeypatch
+):
     """Verify that if os.chmod or os.fchmod raises TypeError (e.g. Windows fd unsupported), fallback writing still completes."""
     import os
 
@@ -223,15 +239,27 @@ def test_write_smoke_test_error_sys_temp_type_error_handled_gracefully(tmp_path,
 
     monkeypatch.setattr("builtins.open", restricted_open)
     monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
-    monkeypatch.setattr("os.chmod", MagicMock(side_effect=TypeError("chmod: path should be string, bytes, os.PathLike, not int")))
+    monkeypatch.setattr(
+        "os.chmod",
+        MagicMock(
+            side_effect=TypeError(
+                "chmod: path should be string, bytes, os.PathLike, not int"
+            )
+        ),
+    )
     if hasattr(os, "fchmod"):
-        monkeypatch.setattr("os.fchmod", MagicMock(side_effect=TypeError("fchmod unsupported")))
+        monkeypatch.setattr(
+            "os.fchmod", MagicMock(side_effect=TypeError("fchmod unsupported"))
+        )
 
     write_smoke_test_error("TypeError failure test error", include_traceback=False)
 
     created_files = list(tmp_path.glob("smoke_test_error_*.txt"))
     assert len(created_files) == 1
-    assert created_files[0].read_text(encoding="utf-8").strip() == "TypeError failure test error"
+    assert (
+        created_files[0].read_text(encoding="utf-8").strip()
+        == "TypeError failure test error"
+    )
 
 
 def test_null_writer_and_reader_stream_properties():

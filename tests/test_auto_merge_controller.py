@@ -206,9 +206,7 @@ def test_process_queue_blocks_unverified_head_commit():
 
     res = process_auto_merge_queue(client)
     assert res is None
-    client.add_labels.assert_called_once_with(
-        204, ["automerge:blocked", "risk:high"]
-    )
+    client.add_labels.assert_called_once_with(204, ["automerge:blocked", "risk:high"])
     client.merge_pull_request.assert_not_called()
 
 
@@ -235,8 +233,5 @@ def test_process_queue_bot_commit_verification():
 
     res = process_auto_merge_queue(client)
     assert res is None
-    client.add_labels.assert_called_once_with(
-        205, ["automerge:blocked", "risk:high"]
-    )
+    client.add_labels.assert_called_once_with(205, ["automerge:blocked", "risk:high"])
     client.merge_pull_request.assert_not_called()
-
