@@ -104,6 +104,7 @@ class Settings(BaseSettings):
     VISUAL_TIMEOUT: int = Field(default=30, gt=0)
     IMAGE_MAX_DIMENSION: int = Field(default=1000, gt=0)
     IMAGE_SKIP_THRESHOLD: int = Field(default=3000, gt=0)
+    PDF_TEXT_DENSITY_THRESHOLD: int = Field(default=50, ge=0)
     MODEL_THREADS: int = Field(default=2, ge=1, le=32)
     GRAMMAR_CACHE_SIZE: int = Field(default=16, gt=0, le=256)
     SNAPSHOT_RETENTION_DAYS: int = Field(default=30, gt=0)
@@ -674,6 +675,14 @@ class AppSettings:
 
     def _notify_observers(self, key: str, value: Any) -> None:
         """Notify registered setting change observers for `key`."""
+        if key == "AI_CONSENT_GRANTED" and value is not True:
+            try:
+                from app.core.shared_registry import SharedModelRegistry
+
+                SharedModelRegistry.get_instance().unload_all_models()
+            except Exception as e:
+                logging.debug(f"Failed to unload in-memory models on consent change: {e}")
+
         callbacks = []
         if hasattr(self, "_observer_lock") and hasattr(self, "_observers"):
             with self._observer_lock:
@@ -756,3 +765,17 @@ class AppSettings:
             self.revalidate()
             new_val = getattr(self._settings_model, name, value)
             self._notify_observers(name, new_val)
+
+
+def _on_ai_consent_changed_core(key: str, value: Any) -> None:
+    """Core observer callback: unload all in-memory AI models when consent is revoked or disabled."""
+    if value is not True:
+        try:
+            from app.core.shared_registry import SharedModelRegistry
+
+            SharedModelRegistry.get_instance().unload_all_models()
+        except Exception as e:
+            logging.debug(f"Failed to unload in-memory models on consent change: {e}")
+
+
+AppSettings.add_observer("AI_CONSENT_GRANTED", _on_ai_consent_changed_core)

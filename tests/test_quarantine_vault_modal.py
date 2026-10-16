@@ -77,8 +77,7 @@ def test_quarantine_vault_modal_mount_and_a11y(temp_db, tmp_path):
             # Verify WCAG accessibility audit compliance
             a11y_result = modal.audit_a11y_compliance()
             assert (
-                a11y_result.get("violations") == []
-                or "violations" not in a11y_result
+                a11y_result.get("violations") == [] or "violations" not in a11y_result
             )
 
             # Verify initial accessibility announcement

@@ -70,6 +70,10 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `3000`
 - **Required**: `False`
 
+### `PDF_TEXT_DENSITY_THRESHOLD`
+- **Default**: `50`
+- **Required**: `False`
+
 ### `MODEL_THREADS`
 - **Default**: `2`
 - **Required**: `False`
