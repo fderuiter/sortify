@@ -69,6 +69,8 @@ def _cross_volume_atomic_move(src: str, dst: str) -> None:
     try:
         if os.path.isdir(src) and not os.path.islink(src):
             shutil.copytree(src, stage_path)
+        elif os.path.islink(src):
+            shutil.copy2(src, stage_path, follow_symlinks=False)
         else:
             shutil.copy2(src, stage_path)
 
@@ -78,7 +80,7 @@ def _cross_volume_atomic_move(src: str, dst: str) -> None:
         if IS_WINDOWS:
             os.rename(stage_path, dst)
         else:
-            if os.path.isdir(stage_path) and not os.path.islink(stage_path):
+            if (os.path.isdir(stage_path) and not os.path.islink(stage_path)) or os.path.islink(stage_path):
                 os.rename(stage_path, dst)
             else:
                 try:
@@ -97,7 +99,7 @@ def _cross_volume_atomic_move(src: str, dst: str) -> None:
                 f"Target verification failed: {dst} does not exist after move."
             )
 
-        if not os.path.isdir(src) and os.path.lexists(src):
+        if not os.path.isdir(src) and not os.path.islink(src) and os.path.lexists(src):
             src_sz = os.path.getsize(src)
             dst_sz = os.path.getsize(dst)
             if src_sz != dst_sz:
@@ -140,7 +142,7 @@ def atomic_move_non_clobber(src: str, dst: str) -> None:
             _cross_volume_atomic_move(src, dst)
             return
     else:
-        if os.path.isdir(src) and not os.path.islink(src):
+        if (os.path.isdir(src) and not os.path.islink(src)) or os.path.islink(src):
             try:
                 os.rename(src, dst)
                 return

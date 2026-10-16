@@ -9,8 +9,9 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Label, Log
+from textual.widgets import Button, Input, Log
 
+from app.ui.heading import Heading
 from app.ui.tui import A11yMixin
 
 
@@ -72,10 +73,13 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
-            yield Label(
-                "CRO Multi-Study Forensic Ingestion [Ctrl+C]", classes="modal-title"
+            yield Heading(
+                "CRO Multi-Study Forensic Ingestion [Ctrl+C]",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
             )
-            yield Label("Source Storage Drive / Archive Root:")
+            yield Heading("Source Storage Drive / Archive Root:", level=2)
             inp_src = Input(
                 value=self.base_dir,
                 placeholder="Select source drive to scan...",
@@ -84,7 +88,7 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
             inp_src.tooltip = "Source storage drive path or archive directory root"
             yield inp_src
 
-            yield Label("Target Audit Output Folder:")
+            yield Heading("Target Audit Output Folder:", level=2)
             default_target = (
                 (Path(self.base_dir) / "CRO_Audit_Output").as_posix()
                 if self.base_dir
