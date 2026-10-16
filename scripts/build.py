@@ -370,10 +370,69 @@ def update_binaries_and_manifest(system_platform=None, bypass_pytest_check=False
     )
 
 
+def download_file(
+    url,
+    dest_path,
+    timeout=30.0,
+    max_retries=3,
+    backoff_factor=1.0,
+):
+    """Download a file from url to dest_path with explicit socket timeouts, automatic retry logic, and cleanup on failure.
+
+    Uses Python standard library utilities alone.
+    """
+    import shutil
+    import time
+    import urllib.error
+    import urllib.request
+    from pathlib import Path
+
+    dest_path = Path(dest_path)
+    dest_path.parent.mkdir(parents=True, exist_ok=True)
+
+    print(f"Downloading {url} to {dest_path}...")
+    req = urllib.request.Request(str(url), headers={"User-Agent": "Mozilla/5.0"})
+    last_exception = None
+
+    for attempt in range(1, max_retries + 1):
+        if attempt > 1:
+            delay = backoff_factor * (2 ** (attempt - 2))
+            print(f"Retry attempt {attempt}/{max_retries} for {url} in {delay:.1f}s...")
+            time.sleep(delay)
+
+        try:
+            with (
+                urllib.request.urlopen(req, timeout=timeout) as response,
+                open(dest_path, "wb") as out_file,
+            ):
+                shutil.copyfileobj(response, out_file)
+            return
+        except BaseException as err:
+            last_exception = err if isinstance(err, Exception) else Exception(str(err))
+            if dest_path.exists():
+                try:
+                    dest_path.unlink()
+                except OSError as remove_err:
+                    print(
+                        f"Warning: Failed to clean up partial file {dest_path}: {remove_err}"
+                    )
+            print(f"Download attempt {attempt}/{max_retries} failed for {url}: {err}")
+            if isinstance(err, (KeyboardInterrupt, SystemExit)):
+                raise
+
+    err_desc = (
+        f"Failed to download asset {url} after {max_retries} attempts: {last_exception}"
+    )
+    print(err_desc)
+    if last_exception is not None:
+        raise last_exception
+    else:
+        raise RuntimeError(err_desc)
+
+
 def download_and_prepare_weights():
     """Ensure that the build process downloads and bundles all necessary model weights."""
     import shutil
-    import urllib.request
     import zipfile
     from pathlib import Path
 
@@ -384,14 +443,6 @@ def download_and_prepare_weights():
 
     model_dir.mkdir(parents=True, exist_ok=True)
     easyocr_dir.mkdir(parents=True, exist_ok=True)
-
-    # Helper function to download file safely with User-Agent header
-    def download_file(url, dest_path):
-        print(f"Downloading {url} to {dest_path}...")
-        dest_path.parent.mkdir(parents=True, exist_ok=True)
-        req = urllib.request.Request(url, headers={"User-Agent": "Mozilla/5.0"})
-        with urllib.request.urlopen(req) as response, open(dest_path, "wb") as out_file:
-            shutil.copyfileobj(response, out_file)
 
     # 1. Download/prepare sentence-transformers model
     hf_base_url = "".join(
