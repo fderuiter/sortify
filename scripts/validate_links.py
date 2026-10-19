@@ -21,6 +21,8 @@ DEFAULT_BYPASS_DOMAINS = {
     "bypassed.com",
     "smartautosorter.com",
     "docs.smartautosorter.com",
+    "sortify.ai",
+    "docs.sortify.ai",
     "astral.sh",
     "docs.astral.sh",
     "pypi.org",
