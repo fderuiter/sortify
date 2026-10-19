@@ -267,10 +267,6 @@ def validate_codebase_duplication(
     function_hashes = {}
 
     for root, _, files in os.walk("app"):
-        if "binaries" in root.split(os.sep) or "app/binaries" in root.replace(
-            "\\", "/"
-        ):
-            continue
         for file in files:
             if not file.endswith(".py"):
                 continue
@@ -435,7 +431,7 @@ def main():
             norm_f = f.replace("\\", "/")
             if norm_f.endswith(".py") and os.path.exists(norm_f):
                 rel = os.path.relpath(norm_f, ".").replace("\\", "/")
-                if rel.startswith("app/") and "app/binaries" not in rel:
+                if rel.startswith("app/"):
                     staged_py_files.add(rel)
         if not staged_py_files:
             print(
@@ -450,10 +446,6 @@ def main():
 
     # Rule 1 & Rule 2: Async DB writes and UI blocking operations
     for root, _, files in os.walk("app"):
-        if "binaries" in root.split(os.sep) or "app/binaries" in root.replace(
-            "\\", "/"
-        ):
-            continue
         for file in files:
             if not file.endswith(".py"):
                 continue

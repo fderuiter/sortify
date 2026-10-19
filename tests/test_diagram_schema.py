@@ -97,7 +97,7 @@ def test_lazy_dict_interface():
     assert isinstance(specs_dict, dict)
 
     # Length & Containment
-    assert len(specs_dict) == 45
+    assert len(specs_dict) == 44
     assert "core_architecture" in specs_dict
     assert "non_existent_key" not in specs_dict
 
@@ -109,21 +109,21 @@ def test_lazy_dict_interface():
     # Keys, Values, Items
     all_keys = list(specs_dict.keys())
     assert "core_architecture" in all_keys
-    assert len(all_keys) == 45
+    assert len(all_keys) == 44
 
     all_items = list(specs_dict.items())
-    assert len(all_items) == 45
+    assert len(all_items) == 44
     assert any(
         k == "core_architecture" and v.id == "core_architecture" for k, v in all_items
     )
 
     all_values = list(specs_dict.values())
-    assert len(all_values) == 45
+    assert len(all_values) == 44
 
     # .copy()
     dict_copy = specs_dict.copy()
     assert isinstance(dict_copy, dict)
-    assert len(dict_copy) == 45
+    assert len(dict_copy) == 44
     assert dict_copy["core_architecture"].id == "core_architecture"
 
     # Repr string
