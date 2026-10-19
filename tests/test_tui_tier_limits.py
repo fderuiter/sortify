@@ -52,7 +52,7 @@ def test_capacity_meter_in_header():
         "Reports": {},
         "Archives": {},
     }
-    app.rebuild_tree()
+    app.update_capacity_meter()
 
     assert app._get_folder_count() == 4
     assert app.sub_title == "4 / 12 Subdirectories used"
