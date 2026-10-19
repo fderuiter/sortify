@@ -38,6 +38,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.cache
 
+## `app.core.concurrency`
+
+::: app.core.concurrency
+
 ## `app.core.crypto`
 
 ::: app.core.crypto
@@ -133,6 +137,10 @@ This document is automatically generated. Do not edit manually.
 ## `app.core.native_dialog`
 
 ::: app.core.native_dialog
+
+## `app.core.network_guard`
+
+::: app.core.network_guard
 
 ## `app.core.offline_loader`
 
