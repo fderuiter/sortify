@@ -1,15 +1,11 @@
-name: Cancel Queued Runs
+name: Cancel All Runs
 
-# Manual-only cleanup: cancels every workflow run in this repository that has
-# not started yet (queued, waiting, pending or requested). Runs already in
-# progress are left alone unless `include_in_progress` is ticked.
+# Manual-only cleanup: cancels every unfinished workflow run in this
+# repository, on every branch, whether it is queued, waiting or already
+# running. Only this cleanup run itself is spared.
 on:
   workflow_dispatch:
     inputs:
-      include_in_progress:
-        description: "Also cancel runs that are already in progress"
-        type: boolean
-        default: false
       dry_run:
         description: "List the runs that would be cancelled without cancelling them"
         type: boolean
@@ -24,20 +20,16 @@ concurrency:
 
 jobs:
   cancel:
-    name: Cancel Queued Workflow Runs
+    name: Cancel All Workflow Runs
     runs-on: ubuntu-latest
     steps:
       - name: Cancel runs
         uses: actions/github-script@v9
         env:
-          INCLUDE_IN_PROGRESS: ${{ inputs.include_in_progress }}
           DRY_RUN: ${{ inputs.dry_run }}
         with:
           script: |
-            const statuses = ['queued', 'waiting', 'pending', 'requested'];
-            if (process.env.INCLUDE_IN_PROGRESS === 'true') {
-              statuses.push('in_progress');
-            }
+            const statuses = ['in_progress', 'queued', 'waiting', 'pending', 'requested'];
             const dryRun = process.env.DRY_RUN === 'true';
 
             const seen = new Set();

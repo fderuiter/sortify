@@ -66,7 +66,7 @@ The controller **fails closed** and blocks auto-merge for PRs touching any of th
 
 - **Disable Auto-Merge for a Specific PR:** Apply the `disable-automerge` label to the PR.
 - **Global Emergency Override:** Disable `.github/workflows/auto-merge-controller.yml` in GitHub Actions settings or remove the workflow file. `main` branch protection rules remain active regardless of controller status.
-- **Clear a Backed-Up Actions Queue:** Run **Cancel Queued Runs** (`.github/workflows/cancel-queued-runs.yml`) from the Actions tab. It cancels every workflow run that has not started yet; tick `include_in_progress` to also stop running ones, or `dry_run` to only list them.
+- **Clear a Backed-Up Actions Queue:** Run **Cancel All Runs** (`.github/workflows/cancel-queued-runs.yml`) from the Actions tab. One run cancels every unfinished workflow run on every branch, queued or running; tick `dry_run` to only list them.
 
 ---
 
