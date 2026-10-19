@@ -94,7 +94,10 @@ def test_key_rotation_failure_audit_recording(tmp_path):
     crypto.get_cipher()
 
     with patch("app.core.ledger.get_default_ledger_path", return_value=ledger_path):
-        with patch("cryptography.fernet.Fernet.generate_key", side_effect=ValueError("Crypto entropy exhaustion")):
+        with patch(
+            "cryptography.fernet.Fernet.generate_key",
+            side_effect=ValueError("Crypto entropy exhaustion"),
+        ):
             with pytest.raises(ValueError, match="Crypto entropy exhaustion"):
                 crypto.rotate_key(
                     session_id="failed_rot_session",

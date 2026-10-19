@@ -431,9 +431,7 @@ def test_florence2_pre_execution_integrity_valid_bundle(tmp_path, mocker):
         mock_transformers.Florence2ForConditionalGeneration.from_pretrained
     )
     mock_from_model.return_value = mock_model
-    mock_from_processor = (
-        mock_transformers.Florence2Processor.from_pretrained
-    )
+    mock_from_processor = mock_transformers.Florence2Processor.from_pretrained
     mock_from_processor.return_value = mock_processor
 
     mocker.patch.dict(
@@ -485,9 +483,7 @@ def test_florence2_pre_execution_integrity_tampered_bundle_aborts(tmp_path, mock
     mock_from_model = (
         mock_transformers.Florence2ForConditionalGeneration.from_pretrained
     )
-    mock_from_processor = (
-        mock_transformers.Florence2Processor.from_pretrained
-    )
+    mock_from_processor = mock_transformers.Florence2Processor.from_pretrained
 
     mocker.patch.dict(
         "sys.modules",

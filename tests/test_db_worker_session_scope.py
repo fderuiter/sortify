@@ -45,20 +45,24 @@ def test_db_worker_session_scope_commit(temp_db_and_worker):
     assert worker.get_active_session_id() == session_id
 
     # Execute batch 1
-    db.execute_batch_updates([
-        {
-            "type": "document_path",
-            "args": (base_dir, "doc1.txt", "moved/doc1.txt"),
-        }
-    ])
+    db.execute_batch_updates(
+        [
+            {
+                "type": "document_path",
+                "args": (base_dir, "doc1.txt", "moved/doc1.txt"),
+            }
+        ]
+    )
 
     # Execute batch 2
-    db.execute_batch_updates([
-        {
-            "type": "document_path",
-            "args": (base_dir, "doc2.txt", "moved/doc2.txt"),
-        }
-    ])
+    db.execute_batch_updates(
+        [
+            {
+                "type": "document_path",
+                "args": (base_dir, "doc2.txt", "moved/doc2.txt"),
+            }
+        ]
+    )
 
     # Commit session
     worker.commit_session(session_id)
@@ -85,20 +89,24 @@ def test_db_worker_session_scope_rollback(temp_db_and_worker):
     worker.begin_session(session_id, db_path=db.db_path)
 
     # Batch 1 update
-    db.execute_batch_updates([
-        {
-            "type": "document_path",
-            "args": (base_dir, "file1.txt", "folder/file1.txt"),
-        }
-    ])
+    db.execute_batch_updates(
+        [
+            {
+                "type": "document_path",
+                "args": (base_dir, "file1.txt", "folder/file1.txt"),
+            }
+        ]
+    )
 
     # Batch 2 update
-    db.execute_batch_updates([
-        {
-            "type": "document_path",
-            "args": (base_dir, "file2.txt", "folder/file2.txt"),
-        }
-    ])
+    db.execute_batch_updates(
+        [
+            {
+                "type": "document_path",
+                "args": (base_dir, "file2.txt", "folder/file2.txt"),
+            }
+        ]
+    )
 
     # Roll back session
     worker.rollback_session(session_id)
@@ -127,12 +135,14 @@ def test_db_worker_session_auto_rollback_on_task_exception(temp_db_and_worker):
     worker.begin_session(session_id, db_path=db.db_path)
 
     # Apply valid batch 1
-    db.execute_batch_updates([
-        {
-            "type": "document_path",
-            "args": (base_dir, "item1.txt", "new_dir/item1.txt"),
-        }
-    ])
+    db.execute_batch_updates(
+        [
+            {
+                "type": "document_path",
+                "args": (base_dir, "item1.txt", "new_dir/item1.txt"),
+            }
+        ]
+    )
 
     # Submit a failing task to worker queue
     def _failing_task():
@@ -160,12 +170,14 @@ def test_db_worker_session_timeout(temp_db_and_worker):
     # Begin session with 0.1s timeout
     worker.begin_session(session_id, db_path=db.db_path, timeout=0.1)
 
-    db.execute_batch_updates([
-        {
-            "type": "document_path",
-            "args": (base_dir, "data.txt", "timed_out/data.txt"),
-        }
-    ])
+    db.execute_batch_updates(
+        [
+            {
+                "type": "document_path",
+                "args": (base_dir, "data.txt", "timed_out/data.txt"),
+            }
+        ]
+    )
 
     # Wait for timeout to expire
     time.sleep(0.2)
@@ -222,6 +234,7 @@ def test_multi_batch_move_failure_auto_rollback(temp_db_and_worker, monkeypatch)
 
     # Monkeypatch shutil.move to fail on file2.txt
     import shutil
+
     orig_shutil_move = shutil.move
 
     def mock_failing_move(src, dst):

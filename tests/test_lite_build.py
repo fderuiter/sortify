@@ -456,11 +456,16 @@ def test_destination_path_normalization_and_assertion():
 
     normalize_dest_path = mock_globals["normalize_dest_path"]
     normalize_collection = mock_globals["normalize_collection"]
-    assert_no_backslashes_in_dest_paths = mock_globals["assert_no_backslashes_in_dest_paths"]
+    assert_no_backslashes_in_dest_paths = mock_globals[
+        "assert_no_backslashes_in_dest_paths"
+    ]
 
     # 1. Test normalize_dest_path
     assert normalize_dest_path("sqlcipher3\\sub") == "sqlcipher3/sub"
-    assert normalize_dest_path("app\\binaries\\windows\\sqlcipher3") == "app/binaries/windows/sqlcipher3"
+    assert (
+        normalize_dest_path("app\\binaries\\windows\\sqlcipher3")
+        == "app/binaries/windows/sqlcipher3"
+    )
     assert normalize_dest_path("folder\\\\sub/") == "folder/sub"
 
     # 2. Test normalize_collection leaves host paths untouched while fixing dest paths
@@ -469,8 +474,14 @@ def test_destination_path_normalization_and_assertion():
         ("C:\\host\\system\\path\\lib.so", "app\\binaries\\linux"),
     ]
     norm_collection = normalize_collection(raw_collection)
-    assert norm_collection[0] == ("C:\\host\\system\\path\\db.dll", "sqlcipher3/sub/db.dll")
-    assert norm_collection[1] == ("C:\\host\\system\\path\\lib.so", "app/binaries/linux")
+    assert norm_collection[0] == (
+        "C:\\host\\system\\path\\db.dll",
+        "sqlcipher3/sub/db.dll",
+    )
+    assert norm_collection[1] == (
+        "C:\\host\\system\\path\\lib.so",
+        "app/binaries/linux",
+    )
 
     # 3. Test inline assertion behavior
     # Valid collection with only forward slashes in dest paths
@@ -478,14 +489,20 @@ def test_destination_path_normalization_and_assertion():
         ("C:\\host\\path\\file.dll", "sqlcipher3/sqlite3.dll"),
         ("C:\\host\\path\\app.so", "app/binaries/linux/lib.so"),
     ]
-    assert_no_backslashes_in_dest_paths(valid_collection, "valid_test", is_pre_analysis=True)
+    assert_no_backslashes_in_dest_paths(
+        valid_collection, "valid_test", is_pre_analysis=True
+    )
 
     # Invalid collection with backslash in dest path must raise ValueError
     invalid_collection = [
         ("C:\\host\\path\\file.dll", "sqlcipher3\\sqlite3.dll"),
     ]
-    with pytest.raises(ValueError, match="Active backslashes detected in destination paths"):
-        assert_no_backslashes_in_dest_paths(invalid_collection, "invalid_test", is_pre_analysis=True)
+    with pytest.raises(
+        ValueError, match="Active backslashes detected in destination paths"
+    ):
+        assert_no_backslashes_in_dest_paths(
+            invalid_collection, "invalid_test", is_pre_analysis=True
+        )
 
     # 4. Check Analysis arguments from spec execution to ensure no destination paths contain backslashes
     analysis_call = mock_globals["Analysis"].call_args
@@ -494,7 +511,10 @@ def test_destination_path_normalization_and_assertion():
     binaries_list = analysis_call.kwargs.get("binaries", [])
 
     for src, dest in datas_list:
-        assert "\\" not in dest, f"Found backslash in destination path for data asset: {dest}"
+        assert "\\" not in dest, (
+            f"Found backslash in destination path for data asset: {dest}"
+        )
     for src, dest in binaries_list:
-        assert "\\" not in dest, f"Found backslash in destination path for binary asset: {dest}"
-
+        assert "\\" not in dest, (
+            f"Found backslash in destination path for binary asset: {dest}"
+        )
