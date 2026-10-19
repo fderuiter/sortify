@@ -24,6 +24,19 @@ def _robust_move(src, dst):
     resilient_move(src, dst)
 
 
+def _remove_staging_leftovers(base_dir: str) -> None:
+    """Delete transient ``.tmp_stage_*`` files left by interrupted moves, and nothing else."""
+    from app.core.resilient_file_ops import resilient_remove
+
+    for root, _dirs, files in os.walk(base_dir):
+        for name in files:
+            if name.startswith(".tmp_stage_"):
+                try:
+                    resilient_remove(os.path.join(root, name))
+                except OSError as exc:
+                    logging.warning(f"Could not remove staging file {name}: {exc}")
+
+
 class HistoryManager:
     """Manages full directory snapshots and rollback functionality."""
 
@@ -1236,17 +1249,8 @@ class HistoryManager:
                 f"Recovery incomplete: {len(failed_unwinds)} step(s) failed to unwind. Error: {first_err}"
             )
 
-        if snapshot_files and base_dir and os.path.exists(base_dir):
-            for root, dirs, files in os.walk(base_dir):
-                for f in files:
-                    full_path = os.path.join(root, f)
-                    rel_path = safe_relpath(full_path, base_dir).replace("\\", "/")
-                    if rel_path not in snapshot_files:
-                        try:
-                            target_dirs_to_clean.add(os.path.dirname(full_path))
-                            os.remove(full_path)
-                        except Exception:
-                            pass
+        if base_dir and os.path.exists(base_dir):
+            _remove_staging_leftovers(base_dir)
 
         if base_dir:
             from app.core.mover import _prune_emptied_dirs
@@ -1265,74 +1269,6 @@ class HistoryManager:
             db.invalidate_cache()
 
         return unwound_count
-
-        # Clean up any leftover/orphaned files created during a failed transfer
-        # but not present in the original snapshot files.
-        conn = get_db_connection(self.db_path)
-        try:
-            with conn:
-                cur = conn.execute(
-                    "SELECT original_rel_path FROM snapshot_files WHERE session_id = ?",
-                    (session_id,),
-                )
-                snapshot_rel_paths = {
-                    r[0].lower().replace("\\", "/") for r in cur.fetchall()
-                }
-            if snapshot_rel_paths:
-                from app.core.resilient_file_ops import resilient_remove
-                from app.core.scanner import get_files_recursively
-
-                current_files = get_files_recursively(base_dir, include_hidden=True)
-                for rel_path in current_files:
-                    norm_rel_path = rel_path.lower().replace("\\", "/")
-                    if norm_rel_path not in snapshot_rel_paths:
-                        abs_path = os.path.normpath(os.path.join(base_dir, rel_path))
-                        if os.path.lexists(abs_path) and not os.path.isdir(abs_path):
-                            try:
-                                resilient_remove(abs_path)
-                            except OSError:
-                                pass
-        except Exception as ex:
-            logging.warning(
-                f"Failed cleaning leftover orphan files during step rollback: {ex}"
-            )
-
-        # Clean empty directories
-        try:
-            from app.config import AppSettings
-            from app.core.mover import _remove_empty_dirs
-
-            app_settings = AppSettings()
-            protected_paths = getattr(app_settings, "PROTECTED_PATHS", [])
-            protected_paths = (
-                [os.path.normpath(p) for p in protected_paths]
-                if protected_paths
-                else None
-            )
-            for entry in os.listdir(base_dir):
-                entry_path = os.path.join(base_dir, entry)
-                if os.path.isdir(entry_path):
-                    try:
-                        _remove_empty_dirs(entry_path, protected_paths)
-                    except Exception:
-                        pass
-        except Exception:
-            pass
-
-        # Mark session as rolled_back and clean up
-        with conn:
-            conn.execute(
-                "UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?",
-                (session_id,),
-            )
-        self.db.invalidate_cache()
-
-        try:
-            journal_path = Path(self.db_path).parent / "rollback_journal.json"
-            if journal_path.exists():
-                journal_path.unlink()
-        except Exception as ex:
-            logging.warning(f"Failed to delete rollback journal: {ex}")
 
     def _rollback_from_snapshot_internal(
         self,
@@ -2043,39 +1979,9 @@ class HistoryManager:
                     conn.commit()
                     raise e
 
-                # Clean up any leftover/orphaned files that were copied during the failed transfer
-                # but are not in the snapshot files.
-                from app.core.scanner import get_files_recursively
-
-                try:
-                    import gc
-                    import time
-
-                    gc.collect()
-                    time.sleep(0.1)
-                    current_files_after_restore = get_files_recursively(
-                        base_dir, include_hidden=True
-                    )
-                    snapshot_rel_paths = {
-                        r[0].lower().replace("\\", "/") for r in snapshot_files
-                    }
-                    for rel_path in current_files_after_restore:
-                        norm_rel_path = rel_path.lower().replace("\\", "/")
-                        if norm_rel_path not in snapshot_rel_paths:
-                            abs_path = os.path.join(base_dir, rel_path)
-                            if os.path.lexists(abs_path) and not os.path.isdir(
-                                abs_path
-                            ):
-                                try:
-                                    from app.core.resilient_file_ops import (
-                                        resilient_remove,
-                                    )
-
-                                    resilient_remove(abs_path)
-                                except OSError:
-                                    pass
-                except Exception:
-                    pass
+                # Only remove staging files this tool created; never files that
+                # merely weren't in the snapshot (hidden files, new downloads).
+                _remove_staging_leftovers(base_dir)
 
                 # Clean empty directories
                 from app.config import AppSettings
