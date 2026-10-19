@@ -18,6 +18,8 @@ from app.core.path_utils import safe_relpath
 from app.core.progress import emit_progress
 from app.core.text_utils import sanitize_text
 
+logger = logging.getLogger(__name__)
+
 
 class ExtractionStatus(str, Enum):
     """Enumeration of document extraction statuses."""
@@ -311,8 +313,10 @@ def process_item_worker(
             return item, item, ""
     except Exception as e:
         logging.error(
-            f"General worker failure processing item: {item}. Error: {str(e)}"
+            f"General worker failure processing item: {item}. Error: {str(e)}",
+            exc_info=True,
         )
+
     finally:
         emit_progress(
             progress_callback,
@@ -369,7 +373,10 @@ async def build_corpus_generator_async(
         try:
             settings = AppSettings()
         except Exception:
-            pass
+            logger.warning(
+                "Could not load AppSettings; extracting without settings",
+                exc_info=True,
+            )
 
     items_to_sort = sorted(items_to_sort)
     try:
@@ -470,7 +477,10 @@ def build_corpus_generator(
         try:
             settings = AppSettings()
         except Exception:
-            pass
+            logger.warning(
+                "Could not load AppSettings; extracting without settings",
+                exc_info=True,
+            )
 
     items_to_sort = sorted(items_to_sort)
     try:

@@ -86,7 +86,9 @@ class SecurityAdvisoryClient:
 
                 self._settings = AppSettings()
             except Exception:
-                pass
+                logger.warning(
+                    "Could not load AppSettings; using advisory defaults", exc_info=True
+                )
         if self._settings:
             return getattr(
                 self._settings, "SECURITY_ADVISORY_ENDPOINT", DEFAULT_ADVISORY_ENDPOINT
@@ -104,7 +106,9 @@ class SecurityAdvisoryClient:
 
                 self._settings = AppSettings()
             except Exception:
-                pass
+                logger.warning(
+                    "Could not load AppSettings; using advisory defaults", exc_info=True
+                )
         if self._settings:
             return float(
                 getattr(
@@ -124,7 +128,9 @@ class SecurityAdvisoryClient:
 
                 self._settings = AppSettings()
             except Exception:
-                pass
+                logger.warning(
+                    "Could not load AppSettings; using advisory defaults", exc_info=True
+                )
         if self._settings:
             pol = getattr(
                 self._settings, "SECURITY_ADVISORY_FALLBACK_POLICY", "permissive"
@@ -306,6 +312,10 @@ class SecurityAdvisoryClient:
 
                 opener = DownloadManager.get_instance().get_opener()
             except Exception:
+                logger.warning(
+                    "DownloadManager opener unavailable; using default urllib opener",
+                    exc_info=True,
+                )
                 opener = urllib.request.build_opener()
 
             with opener.open(req, timeout=eff_timeout) as resp:

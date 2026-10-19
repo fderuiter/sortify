@@ -88,6 +88,10 @@ class QuarantineInterceptorService:
 
                 self.jev_classifier = JevClassifierEngine()
             except Exception:
+                logger.warning(
+                    "Jev classifier unavailable; sensitivity pre-classification disabled",
+                    exc_info=True,
+                )
                 self.jev_classifier = None
 
         if auto_quarantine_ratings is not None:
@@ -137,7 +141,8 @@ class QuarantineInterceptorService:
         except Exception as e:
             logger.warning(
                 f"Security warning: Target subfolder '{target_subfolder}' failed validation ({e}). "
-                f"Falling back to default directory '{fallback_dir}'."
+                f"Falling back to default directory '{fallback_dir}'.",
+                exc_info=True,
             )
             return fallback_dir
 
@@ -153,7 +158,8 @@ class QuarantineInterceptorService:
         except Exception as e:
             logger.warning(
                 f"Security warning: Error checking boundary containment for '{candidate_dir}' ({e}). "
-                f"Falling back to default directory '{fallback_dir}'."
+                f"Falling back to default directory '{fallback_dir}'.",
+                exc_info=True,
             )
             return fallback_dir
 
@@ -189,7 +195,9 @@ class QuarantineInterceptorService:
         try:
             file_hash = resilient_file_hash(staged_path)
         except Exception:
-            pass
+            logger.warning(
+                f"Could not hash staged quarantine file '{staged_path}'", exc_info=True
+            )
 
         # Record atomic STAGED state transition in database
         self.db.stage_quarantine_record(
@@ -334,7 +342,9 @@ class QuarantineInterceptorService:
                     base_dir=base_dir,
                 )
             except Exception as e:
-                logger.warning(f"Plugin quarantine scan execution warning: {e}")
+                logger.warning(
+                    f"Plugin quarantine scan execution warning: {e}", exc_info=True
+                )
 
             # 4. Extended Policy Engine Evaluation
             matched_rule = PolicyEngine.evaluate_policies(
@@ -442,7 +452,8 @@ class QuarantineInterceptorService:
                         return record
                 except Exception as jev_err:
                     logger.warning(
-                        f"Jev pre-classification warning for {orig_rel_path}: {jev_err}"
+                        f"Jev pre-classification warning for {orig_rel_path}: {jev_err}",
+                        exc_info=True,
                     )
 
             # 5. Policy Lifecycle Action Execution
@@ -466,7 +477,10 @@ class QuarantineInterceptorService:
                         if vec:
                             zero_vector_buffer(vec)
                     except Exception:
-                        pass
+                        logger.warning(
+                            f"Failed to scrub document vector for '{orig_rel_path}'",
+                            exc_info=True,
+                        )
 
                 # Log REDACTED transition
                 self.db.update_quarantine_status(
