@@ -4,7 +4,7 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-from app.cli.generate_docs import main
+from scripts.generate_docs import main
 
 pytestmark = [pytest.mark.slow, pytest.mark.integration]
 
@@ -35,10 +35,10 @@ def test_docs_drift_detection_fails_on_drift(tmp_path):
     """Test that docs pipeline --check detects drift in generated doc files."""
     with patch("sys.argv", ["generate_docs.py", "--check"]):
         with (
-            patch("app.cli.generate_docs.generate_tutorial_docs"),
-            patch("app.cli.generate_docs.generate_ui_docs"),
-            patch("app.cli.generate_docs.generate_admin_guide"),
-            patch("app.cli.generate_docs.update_security_md"),
+            patch("scripts.generate_docs.generate_tutorial_docs"),
+            patch("scripts.generate_docs.generate_ui_docs"),
+            patch("scripts.generate_docs.generate_admin_guide"),
+            patch("scripts.generate_docs.update_security_md"),
             patch("subprocess.run") as mock_run,
             patch("sys.exit") as mock_exit,
         ):
