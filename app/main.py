@@ -1339,9 +1339,30 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
     sys.exit(0)
 
 
-def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
+_CLI_EXAMPLES = """\
+examples:
+  smart-autosorter                         open the full-screen TUI
+  smart-autosorter sort ~/Downloads --dry-run
+                                           preview the plan without moving files
+  smart-autosorter sort ~/Downloads        sort the folder
+  smart-autosorter undo --latest           move the last sort's files back
+  smart-autosorter undo --list             list past sorts you can undo
+
+Run 'smart-autosorter <command> --help' for a command's options.
+"""
+
+
+def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentParser:
     """Build and return the main command-line argument parser for Smart AutoSorter AI Pro."""
-    parser = argparse.ArgumentParser(prog=prog, description="Smart AutoSorter AI Pro")
+    parser = argparse.ArgumentParser(
+        prog=prog,
+        description=(
+            "Smart AutoSorter AI Pro: sort a folder of documents into topic\n"
+            "folders, offline. Every move can be undone."
+        ),
+        epilog=_CLI_EXAMPLES,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument(
         "-q",
         "--quiet",
@@ -1366,7 +1387,7 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     parser.add_argument(
         "--update-snapshots",
         action="store_true",
-        help="Regenerate reference baseline snapshots across all covered views",
+        help=argparse.SUPPRESS,  # developer tool: regenerate UI snapshots
     )
     parser.add_argument(
         "--daemon",
@@ -1376,7 +1397,7 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     parser.add_argument(
         "--debug-layout",
         action="store_true",
-        help="Enable visual debug outlines for UI elements in dev mode",
+        help=argparse.SUPPRESS,  # developer tool: outline UI elements
     )
     parser.add_argument(
         "--tui",
@@ -1386,7 +1407,7 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     parser.add_argument(
         "--interactive",
         action="store_true",
-        help="Launch full-screen interactive TUI mode",
+        help="Same as --tui",
     )
     ai_consent_group = parser.add_mutually_exclusive_group()
     ai_consent_group.add_argument(
