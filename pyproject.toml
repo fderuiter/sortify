@@ -176,6 +176,7 @@ unresolved-attribute = "warn"
 
 [dependency-groups]
 dev = [
+    "anyio>=4.15.1",
     "deptry",
     "pefile>=2023.2.7",
     "pre-commit>=4.6.2",
