@@ -503,12 +503,7 @@ def resilient_rmtree(path, ignore_errors=False):
                     shutil.rmtree(path)
                 return
 
-            kwargs = {}
-            if sys.version_info >= (3, 12):
-                kwargs["onexc"] = _handle_error
-            else:
-                kwargs["onerror"] = _handle_error
-            shutil.rmtree(path, **kwargs)
+            shutil.rmtree(path, onexc=_handle_error)
             if not os.path.lexists(path):
                 return
             raise OSError(f"Directory {path} was not deleted")

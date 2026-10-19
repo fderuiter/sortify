@@ -363,7 +363,7 @@ def resolve_db_crypto(db_path: Path | str):
     return SessionCrypto(key_path, db_path_obj)
 
 
-def validate_target_path(target_path: str, keyword: str = None) -> None:
+def validate_target_path(target_path: str, keyword: str | None = None) -> None:
     """Validate a target folder path for cross-platform safety and correct structure.
 
     Args:

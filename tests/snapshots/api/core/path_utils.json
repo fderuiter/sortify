@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "2534a0ad008be25eeb2bba294dde9108be13e3dd008cfe61519e1263b9ccefe7"
+    "checksum": "559cd5115cf871e93d3de41fbbe6f9d3059e8494f62060c19fff05cfacaa7d08"
   },
   "classes": [],
   "functions": [
@@ -247,7 +247,7 @@
           "name": "target_path"
         },
         {
-          "annotation": "str",
+          "annotation": "str | None",
           "default": "None",
           "name": "keyword"
         }

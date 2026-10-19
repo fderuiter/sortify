@@ -266,7 +266,7 @@ class CROMultiStudyPipeline:
                                 shutil.copy2(src_to_copy, dest_file_path)
                             except shutil.SameFileError:
                                 pass
-                            except Exception as e:
+                            except OSError as e:
                                 logger.warning(
                                     f"Failed to copy {src_to_copy} to {dest_file_path}: {e}"
                                 )
@@ -360,5 +360,7 @@ class CROMultiStudyPipeline:
             try:
                 self.scanner.cleanup()
             except Exception as e:
-                logger.warning(f"Error cleaning up scanner staging directory: {e}")
+                logger.warning(
+                    f"Error cleaning up scanner staging directory: {e}", exc_info=True
+                )
             registry.unload_all_models()

@@ -488,7 +488,7 @@ class DataFlowDiagramSpec(BaseModel):
                         lbl_text = f"{lbl_text}: {edge.contract}"
                     else:
                         lbl_text = edge.contract
-                lbl_part = f"|{_edge_label(lbl_text)}|" if lbl_text else ""
+                lbl_part = f"|{_edge_label(str(lbl_text))}|" if lbl_text else ""
                 lines.append(
                     f"    {edge.source} {edge.arrow_type}{lbl_part} {edge.target}"
                 )
@@ -4393,7 +4393,7 @@ class LazyDiagramSpecsDict(dict):
         """Get spec by key lazily."""
         return get_diagram_spec(key)
 
-    def get(self, key: str, default: Any = None) -> Any:
+    def get(self, key: str, default: Any = None, /) -> Any:  # ty: ignore[invalid-method-override]
         """Get spec by key lazily or return default."""
         if key in _SPEC_FACTORIES:
             return get_diagram_spec(key)

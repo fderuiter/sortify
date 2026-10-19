@@ -4851,7 +4851,7 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         self._close_pending_drop()
         pending: List[Dict[str, Any]] = []
         try:
-            from app.core.extractor import build_corpus_generator
+            from app.core.pipeline import SortPipeline
             from app.core.scanner import get_files_recursively
             from app.core.session import AppSession
 
@@ -4882,17 +4882,7 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                         "file_count": len(files),
                     }
                 )
-                generator = build_corpus_generator(
-                    base_dir=base_dir,
-                    items_to_sort=files,
-                    progress_callback=lambda info=None: None,
-                    max_workers=getattr(self.settings, "MAX_WORKERS", 2),
-                    db=session.db,
-                    settings=self.settings,
-                )
-                for chunk in generator:
-                    session.partial_fit(chunk)
-                pending[-1]["plan"] = session.generate_sorting_plan()
+                pending[-1]["plan"] = SortPipeline(session).plan(files)
 
             self._pending_drop = pending
             if app_ref:
@@ -4955,14 +4945,18 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         pending = list(getattr(self, "_pending_drop", []))
         self._pending_drop = []
         processed_items = []
+        outcomes = []
         try:
+            from app.core.pipeline import SortPipeline
+
             for item in pending:
                 try:
-                    summary = item["session"].execute_moves(item["plan"])
+                    outcome = SortPipeline(item["session"]).execute(item["plan"])
+                    outcomes.append(outcome)
                     processed_items.append(
                         {
                             "path": item["path"],
-                            "summary": summary,
+                            "summary": outcome.summary,
                             "file_count": item.get("file_count", 1),
                         }
                     )
@@ -4970,7 +4964,10 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     item["session"].close()
 
             file_count = sum(i["file_count"] for i in processed_items)
-            final_msg = f"Completed triage of {file_count} dropped item(s)!"
+            final_msg = (
+                f"Completed triage of {file_count} dropped item(s): "
+                + " ".join(o.describe() for o in outcomes)
+            )
             if app_ref:
                 app_ref.call_from_thread(self.update_status_msg, final_msg)
             result_dict = {
@@ -9486,24 +9483,9 @@ def run_tui(
             or not hasattr(sys.stdin, "isatty")
             or not sys.stdin.isatty()
         ):
-            try:
-                import ctypes
+            from app.frozen_runtime import attach_console
 
-                if ctypes.windll.kernel32.AllocConsole():
-                    try:
-                        sys.stdout = open("CONOUT$", "w", encoding="utf-8")
-                    except Exception:
-                        pass
-                    try:
-                        sys.stderr = open("CONERR$", "w", encoding="utf-8")
-                    except Exception:
-                        pass
-                    try:
-                        sys.stdin = open("CONIN$", "r", encoding="utf-8")
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+            attach_console()
 
     if (
         sys.stdin is None

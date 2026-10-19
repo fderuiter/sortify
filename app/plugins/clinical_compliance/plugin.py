@@ -27,7 +27,8 @@ def quarantine_scan_hook(
             )
         except Exception as e:
             logger.warning(
-                f"Clinical compliance quarantine hook evaluation warning: {e}"
+                f"Clinical compliance quarantine hook evaluation warning: {e}",
+                exc_info=True,
             )
 
 
@@ -49,7 +50,7 @@ def register_plugin(registry: Any) -> None:
             "clinical_isf", ClinicalTMFStrategy(mode="isf")
         )
     except Exception as e:
-        logger.error(f"Failed registering clinical clustering strategies: {e}")
+        logger.exception(f"Failed registering clinical clustering strategies: {e}")
 
     # 3. Register TUI strategy dropdown options
     registry.register_tui_strategy_options(
@@ -65,7 +66,7 @@ def register_plugin(registry: Any) -> None:
 
         registry.register_tui_view("cro_forensic", CROForensicModal)
     except Exception as e:
-        logger.error(f"Failed registering clinical TUI views: {e}")
+        logger.exception(f"Failed registering clinical TUI views: {e}")
 
     # 5. Register TUI settings switches
     registry.register_tui_switch(

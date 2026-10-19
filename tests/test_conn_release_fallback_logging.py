@@ -266,7 +266,8 @@ def test_null_writer_and_reader_stream_properties():
     """Verify that NullWriter and NullReader correctly implement stream interface properties and methods."""
     from unittest.mock import MagicMock
 
-    from app.main import ANSIStrippingWriter, NullReader, NullWriter
+    from app.frozen_runtime import NullReader, NullWriter
+    from app.main import ANSIStrippingWriter
 
     writer = NullWriter()
     assert writer.closed is False

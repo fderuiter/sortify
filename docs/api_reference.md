@@ -238,6 +238,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.demo
 
+## `app.frozen_runtime`
+
+::: app.frozen_runtime
+
 ## `app.log_filter`
 
 ::: app.log_filter

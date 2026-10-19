@@ -6,6 +6,7 @@ in the session folder are copied in once, the first time the store opens.
 """
 
 import logging
+import sqlite3
 import time
 from dataclasses import dataclass
 from pathlib import Path
@@ -14,6 +15,7 @@ from typing import Callable
 from app.core.cache import CacheManager, _cache_db_baseline
 from app.core.db import Database, _main_db_baseline
 from app.core.db_conn import get_db_connection
+from app.core.exceptions import CryptoError
 from app.core.history import HistoryManager, _history_db_baseline
 from app.core.migrations import Migration, migrate
 
@@ -22,6 +24,14 @@ STORE_FILENAME = "sortify.db"
 # Per-session files older versions wrote, in import order.
 LEGACY_HISTORY_DB = "history.db"
 LEGACY_MAIN_DB = "autosorter.db"
+
+# Database errors from either driver; sqlcipher3's classes don't subclass sqlite3's.
+try:
+    from sqlcipher3 import dbapi2 as _sqlcipher
+
+    _DB_ERRORS: tuple[type[Exception], ...] = (sqlite3.Error, _sqlcipher.Error)
+except ImportError:
+    _DB_ERRORS = (sqlite3.Error,)
 
 
 def _store_initial(conn) -> None:
@@ -157,7 +167,7 @@ def _import_one(store: Store, source: Path, copy: Callable) -> bool:
         except BaseException:
             conn.rollback()
             raise
-    except Exception as e:
+    except (*_DB_ERRORS, OSError, CryptoError, ValueError) as e:
         logging.warning(f"Could not import {source} into the app store: {e}")
         return False
     logging.info(f"Imported {row_count} rows from {source} into the app store.")
@@ -216,7 +226,7 @@ def _reencrypt(column: str, old_crypto, new_crypto) -> Callable[[dict], dict | N
             return None
         try:
             record[column] = new_crypto.encrypt_text(old_crypto.decrypt_text(cipher))
-        except Exception:
+        except CryptoError:
             return None
         return record
 

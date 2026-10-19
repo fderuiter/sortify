@@ -709,6 +709,44 @@ class Database:
 
         self.worker.execute_write_async(_write)
 
+    def _drop_stale_destination_row_conn(
+        self, conn, base_dir, old_filepath, new_filepath
+    ):
+        """Delete a leftover row at a move's destination before renaming onto it.
+
+        The file has already been moved there, so any existing row for the
+        destination is stale (deleted or moved outside the app). Leaving it
+        makes the rename hit the UNIQUE (base_dir, filepath) constraint.
+        Nothing is dropped when there is no source row to rename, so a
+        replayed or rolled-back update can't delete a row it doesn't replace.
+        """
+        if new_filepath == old_filepath:
+            return
+        cursor = conn.execute(
+            "SELECT 1 FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?) LIMIT 1",
+            (base_dir, old_filepath, old_filepath),
+        )
+        if cursor.fetchone() is None:
+            return
+        cursor = conn.execute(
+            "SELECT 1 FROM documents WHERE base_dir = ? AND filepath = ? LIMIT 1",
+            (base_dir, new_filepath),
+        )
+        if cursor.fetchone() is None:
+            return
+        cursor = conn.execute(
+            "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
+            (base_dir, new_filepath),
+        )
+        if cursor.fetchone() is not None:
+            self._update_tfidf_for_document_conn(
+                conn, base_dir, new_filepath, None, False
+            )
+        conn.execute(
+            "DELETE FROM documents WHERE base_dir = ? AND filepath = ?",
+            (base_dir, new_filepath),
+        )
+
     def remove_document(self, base_dir, filepath):
         """Remove a document and its historical assignments when deleted."""
         filepath = filepath.replace("\\", "/")
@@ -781,6 +819,9 @@ class Database:
             counts = precomputed_counts
             conn = get_db_connection(self.db_path)
             with conn:
+                self._drop_stale_destination_row_conn(
+                    conn, base_dir, old_filepath, new_filepath
+                )
                 conn.execute(
                     "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
                     (new_filepath, new_dir, base_dir, old_filepath, old_filepath),
@@ -1196,6 +1237,9 @@ class Database:
                 import os
 
                 new_dir = os.path.dirname(new_filepath).replace("\\", "/")
+                self._drop_stale_destination_row_conn(
+                    conn, base_dir, old_filepath, new_filepath
+                )
                 conn.execute(
                     "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
                     (new_filepath, new_dir, base_dir, old_filepath, old_filepath),

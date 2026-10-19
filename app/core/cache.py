@@ -8,10 +8,10 @@ import time
 
 try:
     import sqlite3
-except Exception:
+except ImportError:
     try:
         from sqlcipher3 import dbapi2 as sqlite3
-    except Exception:
+    except ImportError:
         import types
 
         sqlite3 = types.ModuleType("sqlite3")
@@ -82,7 +82,9 @@ class BoundedMemoryCache(Generic[K, V]):
                 try:
                     self.on_evict(key, val)
                 except Exception as e:
-                    logging.error(f"Error in on_evict callback for key {key}: {e}")
+                    logging.error(
+                        f"Error in on_evict callback for key {key}: {e}", exc_info=True
+                    )
 
     def get(self, key: K, default: Any = None) -> Any:
         """Retrieve an item from the cache, updating its LRU position if valid."""
@@ -115,7 +117,8 @@ class BoundedMemoryCache(Generic[K, V]):
                         self.on_evict(evicted_key, evicted_val)
                     except Exception as e:
                         logging.error(
-                            f"Error in on_evict callback for key {evicted_key}: {e}"
+                            f"Error in on_evict callback for key {evicted_key}: {e}",
+                            exc_info=True,
                         )
 
     def put(self, key: K, value: V, ttl: float | None = None) -> None:
@@ -149,7 +152,10 @@ class BoundedMemoryCache(Generic[K, V]):
                     try:
                         self.on_evict(key, val)
                     except Exception as e:
-                        logging.error(f"Error in on_evict callback during clear: {e}")
+                        logging.error(
+                            f"Error in on_evict callback during clear: {e}",
+                            exc_info=True,
+                        )
             self._cache.clear()
 
     def keys(self) -> list[K]:
