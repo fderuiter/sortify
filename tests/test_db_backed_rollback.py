@@ -195,3 +195,24 @@ def test_backward_compatibility_old_records(setup_history_env):
 
     # Ensure rollback doesn't raise error
     history_manager.rollback(session_id)
+
+
+def test_snapshot_rollback_prints_nothing_to_stdout(setup_history_env, capsys):
+    """Snapshot rollback must not dump file inventories to stdout (#725)."""
+    base_dir, db, history_manager, db_worker = setup_history_env
+    with open(os.path.join(base_dir, "secret-report.txt"), "w") as f:
+        f.write("content")
+    session_id = history_manager.create_snapshot(base_dir)
+    os.makedirs(os.path.join(base_dir, "Moved"))
+    os.replace(
+        os.path.join(base_dir, "secret-report.txt"),
+        os.path.join(base_dir, "Moved", "secret-report.txt"),
+    )
+    capsys.readouterr()
+
+    history_manager.rollback(session_id)
+
+    assert os.path.exists(os.path.join(base_dir, "secret-report.txt"))
+    out = capsys.readouterr().out
+    assert "DEBUG ROLLBACK" not in out
+    assert "secret-report.txt" not in out
