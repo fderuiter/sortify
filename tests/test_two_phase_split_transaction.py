@@ -244,11 +244,9 @@ def test_independent_rollback_safety(temp_environment):
     session.db.invalidate_cache()
     slow_path_plan = session.generate_sorting_plan(fast_path_only=False)
 
-    # We patch execute_moves to raise an exception mid-way to simulate a failure (e.g. power outage or crash)
-    # Wait, let's inject a fake move in the slow_path_plan that triggers an exception
-    # or mock _execute_moves_recursive to raise an OSError.
+    # Simulate a disk failure in the per-item move routine during Phase 2.
     with mock.patch(
-        "app.core.mover._execute_moves_recursive",
+        "app.core.mover._process_move_item",
         side_effect=OSError("Disk failure during AI phase moves"),
     ):
         with pytest.raises(OSError):

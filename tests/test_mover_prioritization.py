@@ -1,7 +1,24 @@
 import os
 import time
+from unittest.mock import patch
 
-from app.core.mover import _collect_move_items, _execute_moves_recursive
+from app.core.mover import _collect_move_items, execute_moves
+
+
+def _executed_order(base_dir, plan, db, history_manager):
+    """Run the real mover with one worker and return source names in move order."""
+    import app.core.resilient_file_ops as rfo
+
+    real_move = rfo.resilient_move
+    order = []
+
+    def recording_move(src, dst):
+        order.append(os.path.basename(src))
+        return real_move(src, dst)
+
+    with patch.object(rfo, "resilient_move", side_effect=recording_move):
+        execute_moves(base_dir, plan, db, history_manager, max_workers=1)
+    return order
 
 
 def test_collect_move_items_sorts_by_mtime(tmp_path):
@@ -49,7 +66,7 @@ def test_collect_move_items_sorts_by_mtime(tmp_path):
     assert filenames == ["moved_archival.txt", "moved_old.txt", "moved_recent.txt"]
 
 
-def test_recursive_move_execution_order_by_mtime(test_history_env):
+def test_move_execution_order_by_mtime(test_history_env):
     base_dir, db, cache, history_manager, db_worker = test_history_env
 
     f1 = os.path.join(base_dir, "new.txt")
@@ -70,29 +87,23 @@ def test_recursive_move_execution_order_by_mtime(test_history_env):
             "__type__": "file",
             "relative_source": "new.txt",
             "target_filename": "target_new.txt",
+            "user_confirmed": True,
         },
         "mid.txt": {
             "__type__": "file",
             "relative_source": "mid.txt",
             "target_filename": "target_mid.txt",
+            "user_confirmed": True,
         },
         "old.txt": {
             "__type__": "file",
             "relative_source": "old.txt",
             "target_filename": "target_old.txt",
+            "user_confirmed": True,
         },
     }
 
-    db_updates_batch = []
-    _execute_moves_recursive(
-        base_dir, plan, db, session_id="test-session", db_updates_batch=db_updates_batch
-    )
-
-    executed_sources = [
-        item["args"][3]
-        for item in db_updates_batch
-        if item.get("type") == "transaction_step"
-    ]
+    executed_sources = _executed_order(base_dir, plan, db, history_manager)
 
     # Executed order must be old.txt -> mid.txt -> new.txt
     assert executed_sources == ["old.txt", "mid.txt", "new.txt"]

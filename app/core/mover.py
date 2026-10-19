@@ -751,453 +751,6 @@ def _get_node_priority_key(
     return (5, 0.0, float("inf"))
 
 
-def _execute_moves_recursive(
-    base_dir: str,
-    plan: dict,
-    db,
-    current_dest: str = "",
-    path_map: dict = None,
-    db_updates_batch: list = None,
-    active_parent_path: str = "",
-    depth: int = 0,
-    runtime_settings=None,
-    moved_counter: list = None,
-    batch_size: int = 50,
-    session_id: str = None,
-    step_counter: list = None,
-    ledger=None,
-    history_manager=None,
-    audit_records: list = None,
-    pending_links: list = None,
-) -> None:
-    """Recursively move files according to the plan."""
-    base_dir = os.path.normpath(base_dir)
-    if path_map is None:
-        path_map = {}
-    if moved_counter is None:
-        moved_counter = [0]
-    if step_counter is None:
-        step_counter = [1]
-    if pending_links is None:
-        pending_links = []
-
-    curr_plan = (
-        plan.plan if hasattr(plan, "plan") and isinstance(plan.plan, dict) else plan
-    )
-    if not isinstance(curr_plan, dict):
-        return
-
-    sorted_plan_items = sorted(
-        curr_plan.items(),
-        key=lambda item: _get_node_priority_key(
-            base_dir, item[0], item[1], active_parent_path, depth
-        ),
-    )
-
-    for key, content in sorted_plan_items:
-        node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
-        is_leaf = (
-            content is None
-            or node_type in ("file", "directory")
-            or isinstance(content, BaseModel)
-        )
-        if is_leaf:
-            if node_type == "directory":
-                continue
-
-            if _get_val(content, "status") == "Already Sorted":
-                # Even if already sorted, the target might have moved, so we still process links
-                pass
-
-            if depth > 0 and _get_val(content, "relative_source") is None:
-                if content is not None and not (
-                    isinstance(content, dict) or isinstance(content, BaseModel)
-                ):
-                    raise ValueError(
-                        f"Missing required relative source metadata field for nested item '{key}'"
-                    )
-
-            source_path = _resolve_source_path(
-                base_dir, key, content, active_parent_path, depth
-            )
-
-            if not os.path.lexists(source_path):
-                continue
-
-            tgt_fn = _get_val(content, "target_filename")
-            if tgt_fn is not None:
-                filename = tgt_fn
-            else:
-                filename = os.path.basename(key)
-
-            # Downstream Barrier: Evaluate Sensitivity Metadata Before Physical Relocation
-            sens_rating = None
-            sens_score = 0.0
-            if isinstance(content, dict):
-                sens_rating = content.get("sensitivity_rating")
-                sens_score = content.get("sensitivity_score", 0.0)
-
-            sens_rating_str = str(sens_rating or "LOW").upper()
-            auto_ratings = [
-                r.upper()
-                for r in getattr(
-                    runtime_settings, "AUTO_QUARANTINE_RATINGS", ["CRITICAL", "HIGH"]
-                )
-            ]
-            quarantine_dir_name = getattr(
-                runtime_settings, "QUARANTINE_DIR_NAME", "_Compliance_Quarantine"
-            )
-
-            active_dest = current_dest
-            if sens_rating_str in auto_ratings:
-                logging.warning(
-                    f"Downstream Barrier Interception: File {source_path} has sensitivity rating {sens_rating_str}. "
-                    f"Blocking move to '{current_dest}' and redirecting to '{quarantine_dir_name}'."
-                )
-                active_dest = quarantine_dir_name
-
-            import unicodedata
-
-            dest_dir = os.path.normpath(os.path.join(base_dir, active_dest))
-            dest_dir = unicodedata.normalize("NFC", dest_dir)
-
-            if not os.path.exists(dest_dir):
-                os.makedirs(dest_dir, exist_ok=True)
-
-            target_path = os.path.normpath(os.path.join(dest_dir, filename))
-            collision = False
-            if os.path.lexists(target_path):
-                is_same = False
-                if os.path.lexists(source_path):
-                    try:
-                        is_same = os.path.samefile(target_path, source_path)
-                    except OSError:
-                        is_same = _is_same_path(target_path, source_path)
-                if not is_same:
-                    collision = True
-
-            conflict_policy = "rename"
-            if runtime_settings:
-                conflict_policy = getattr(runtime_settings, "CONFLICT_POLICY", "rename")
-
-            if collision and conflict_policy == "skip":
-                logging.info(
-                    f"Collision detected for {target_path}. Policy is 'skip', bypassing move."
-                )
-                continue
-
-            if collision and conflict_policy == "overwrite":
-                dest_path = target_path
-            else:
-                dest_path = os.path.normpath(
-                    get_safe_path(dest_dir, filename, source_path)
-                )
-            dest_path = unicodedata.normalize("NFC", dest_path)
-            _update_path_map_entry(path_map, source_path, dest_path)
-
-            if not is_subpath_or_equal(dest_path, base_dir):
-                msg = f"Runtime boundary violation: Destination path '{dest_path}' attempts to escape target base directory '{base_dir}'."
-                logging.error(msg)
-                raise ValueError(msg)
-
-            source_rel_path = safe_relpath(source_path, base_dir).replace("\\", "/")
-            rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
-            if sens_rating_str in auto_ratings and db:
-                try:
-                    job_id = f"qjob_mover_{uuid.uuid4().hex[:12]}"
-                    if hasattr(db, "stage_quarantine_record"):
-                        db.stage_quarantine_record(
-                            job_id=job_id,
-                            base_dir=base_dir,
-                            original_filepath=source_rel_path,
-                            staged_filepath=rel_dest,
-                            policy_action="sensitivity_hold",
-                        )
-                    if hasattr(db, "update_quarantine_status"):
-                        import time
-
-                        db.update_quarantine_status(
-                            job_id=job_id,
-                            status="QUARANTINED",
-                            policy_action="sensitivity_hold",
-                            audit_entry={
-                                "timestamp": time.time(),
-                                "status": "QUARANTINED",
-                                "policy_action": "sensitivity_hold",
-                                "details": (
-                                    f"Downstream mover barrier intercepted {sens_rating_str} sensitivity file; "
-                                    f"redirected to {quarantine_dir_name}"
-                                ),
-                                "sensitivity_rating": sens_rating_str,
-                                "sensitivity_score": sens_score,
-                                "source_path": source_rel_path,
-                                "destination_path": rel_dest,
-                            },
-                        )
-                except Exception as audit_err:
-                    logging.warning(
-                        f"Failed to record mover compliance audit entry: {audit_err}"
-                    )
-            doc = (
-                db.get_document(base_dir, source_rel_path)
-                if hasattr(db, "get_document")
-                else None
-            )
-            file_hash = doc.get("file_hash") if (doc and isinstance(doc, dict)) else ""
-
-            entry_id = f"{session_id}:{source_rel_path}" if session_id else None
-            if ledger and session_id:
-                try:
-                    ledger.log_intent(
-                        session_id=session_id,
-                        base_dir=base_dir,
-                        source_path=source_path,
-                        dest_path=dest_path,
-                        source_rel_path=source_rel_path,
-                        dest_rel_path=rel_dest,
-                        current_dest=current_dest,
-                        file_hash=file_hash or "",
-                        entry_id=entry_id,
-                    )
-                except Exception as exc:
-                    logging.warning(
-                        f"Failed to log move intent to transaction ledger: {exc}"
-                    )
-
-            link_info = LinkManager.get_link_info(source_path)
-            if not link_info:
-                if is_junction_path(source_path):
-                    try:
-                        target = os.readlink(source_path)
-                        if target.startswith(("\\\\?\\", "\\??\\")):
-                            target = target[4:]
-                        link_info = {"type": "junction", "target": target}
-                    except OSError:
-                        pass
-                elif os.path.islink(source_path):
-                    try:
-                        target = os.readlink(source_path)
-                        if target.startswith(("\\\\?\\", "\\??\\")):
-                            target = target[4:]
-                        link_info = {"type": "symlink", "target": target}
-                    except OSError:
-                        pass
-
-            moved_as_link = False
-
-            if link_info:
-                pending_links.append(
-                    {
-                        "source_path": source_path,
-                        "dest_path": dest_path,
-                        "link_info": link_info,
-                    }
-                )
-
-            if dest_path == source_path:
-                # Still record user verified target if needed even if not moving
-                if doc and doc.get("file_hash"):
-                    if db_updates_batch is not None:
-                        db_updates_batch.append(
-                            {
-                                "type": "verified_target",
-                                "args": (
-                                    base_dir,
-                                    doc["file_hash"],
-                                    current_dest.replace("\\", "/"),
-                                ),
-                            }
-                        )
-                    else:
-                        db.set_user_verified_target(
-                            base_dir, doc["file_hash"], current_dest.replace("\\", "/")
-                        )
-                if ledger and entry_id:
-                    try:
-                        ledger.update_status(entry_id, "COMPLETED")
-                    except Exception:
-                        pass
-                continue
-
-            displaced_path = overwritten_path = None
-            if not moved_as_link:
-                from app.core.resilient_file_ops import resilient_move
-
-                if (
-                    collision
-                    and conflict_policy == "overwrite"
-                    and os.path.lexists(dest_path)
-                    and not _is_same_path(source_path, dest_path)
-                ):
-                    overwritten_path = dest_path
-                    displaced_path = _displace_for_overwrite(
-                        dest_path, base_dir, session_id
-                    )
-
-                try:
-                    dest_path = resilient_move(source_path, dest_path)
-                except Exception:
-                    if displaced_path:
-                        _restore_displaced(displaced_path, overwritten_path)
-                    raise
-                rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
-
-            if ledger and entry_id:
-                try:
-                    ledger.update_status(entry_id, "MOVED_PHYSICAL")
-                except Exception as exc:
-                    logging.warning(
-                        f"Failed to update transaction ledger status: {exc}"
-                    )
-
-            _log_displacement(
-                history_manager, session_id, overwritten_path, displaced_path
-            )
-            if (
-                history_manager
-                and session_id
-                and not _is_same_path(dest_path, source_path)
-            ):
-                file_hash = doc.get("file_hash") if doc else None
-                orig_filename = os.path.basename(source_path)
-                is_collision = bool(
-                    collision or (os.path.basename(dest_path) != orig_filename)
-                )
-                is_cross_vol = _is_cross_volume(source_path, dest_path)
-                try:
-                    history_manager.log_step(
-                        session_id=session_id,
-                        source_path=source_path,
-                        target_path=dest_path,
-                        original_path=source_path,
-                        original_filename=orig_filename,
-                        is_cross_volume=is_cross_vol,
-                        is_collision_renamed=is_collision,
-                        file_hash=file_hash,
-                    )
-                except Exception as log_err:
-                    logging.warning(f"Failed to log relocation step: {log_err}")
-
-            # Record user verified target and update filepath only after successful move
-            if doc and doc.get("file_hash"):
-                if db_updates_batch is not None:
-                    db_updates_batch.append(
-                        {
-                            "type": "verified_target",
-                            "args": (
-                                base_dir,
-                                doc["file_hash"],
-                                current_dest.replace("\\", "/"),
-                            ),
-                        }
-                    )
-                else:
-                    db.set_user_verified_target(
-                        base_dir, doc["file_hash"], current_dest.replace("\\", "/")
-                    )
-
-            # Update filepath in database
-            if db_updates_batch is not None:
-                db_updates_batch.append(
-                    {
-                        "type": "document_path",
-                        "args": (base_dir, source_rel_path, rel_dest),
-                    }
-                )
-            else:
-                db.update_document_path(base_dir, source_rel_path, rel_dest)
-
-            # Record atomic transaction step entry into the core transaction ledger
-            if session_id:
-                step_num = step_counter[0]
-                step_counter[0] += 1
-                item_type = link_info["type"] if link_info else "file"
-                link_meta = None
-                if link_info:
-                    link_meta = {
-                        "target": link_info.get("target"),
-                        "type": link_info["type"],
-                    }
-                import json
-
-                step_hash = None
-                if item_type == "file" and os.path.exists(dest_path):
-                    try:
-                        from app.core.extractor import get_file_hash
-
-                        step_hash = get_file_hash(dest_path)
-                    except Exception:
-                        pass
-                if not step_hash and doc:
-                    step_hash = doc.get("file_hash")
-
-                step_entry = {
-                    "type": "transaction_step",
-                    "args": (
-                        session_id,
-                        step_num,
-                        base_dir,
-                        source_rel_path,
-                        rel_dest,
-                        step_hash,
-                        item_type,
-                        json.dumps(link_meta) if link_meta else None,
-                    ),
-                }
-                if db_updates_batch is not None:
-                    db_updates_batch.append(step_entry)
-                else:
-                    db.record_transaction_step(*step_entry["args"])
-
-            if ledger and entry_id:
-                try:
-                    ledger.update_status(entry_id, "COMPLETED")
-                except Exception as exc:
-                    logging.warning(
-                        f"Failed to update transaction ledger completion: {exc}"
-                    )
-
-            moved_counter[0] += 1
-            if moved_counter[0] >= batch_size:
-                if db_updates_batch:
-                    db.execute_batch_updates(db_updates_batch)
-                    db_updates_batch.clear()
-                moved_counter[0] = 0
-        else:
-            # It's a folder
-            _execute_moves_recursive(
-                base_dir,
-                content,
-                db,
-                os.path.join(current_dest, key),
-                path_map,
-                db_updates_batch,
-                os.path.join(active_parent_path, key),
-                depth + 1,
-                runtime_settings,
-                moved_counter,
-                batch_size,
-                session_id=session_id,
-                step_counter=step_counter,
-                ledger=ledger,
-                history_manager=history_manager,
-                pending_links=pending_links,
-            )
-
-    if depth == 0 and pending_links:
-        _resolve_pending_links(
-            base_dir=base_dir,
-            pending_links=pending_links,
-            path_map=path_map,
-            db=db,
-            session_id=session_id,
-            ledger=ledger,
-            history_manager=history_manager,
-            db_updates_batch=db_updates_batch,
-            step_counter=step_counter,
-        )
-
-
 def _is_cancelled(token) -> bool:
     """Evaluate if a cancellation token, flag, event or callable requests cancellation."""
     if token is None:
@@ -1914,112 +1467,76 @@ class AsyncMoveEngine:
         }
 
         try:
-            import unittest.mock
+            from app.core.shared_registry import SharedWorkerPool
 
-            if (
-                isinstance(
-                    _execute_moves_recursive,
-                    (unittest.mock.Mock, unittest.mock.NonCallableMock),
+            pool = SharedWorkerPool.get_instance(max_workers=effective_max_workers)
+            for chunk_idx, chunk in enumerate(chunks):
+                if _is_cancelled(cancel_token):
+                    logging.info(
+                        f"Cancellation requested before scheduling chunk {chunk_idx}. Halting worker scheduling."
+                    )
+                    summary["cancelled"] = True
+                    break
+
+                futures = [
+                    pool.submit(
+                        _process_move_item,
+                        base_dir,
+                        item,
+                        db,
+                        path_map,
+                        runtime_settings,
+                        session_id,
+                        ledger,
+                        history_manager,
+                        db_lock,
+                        step_counter,
+                        db_updates_batch,
+                        audit_records,
+                        pending_links,
+                    )
+                    for item in chunk
+                ]
+
+                # Never leave moves in flight: on the first failure, cancel
+                # what hasn't started and wait for the rest before any rollback.
+                done, not_done = concurrent.futures.wait(
+                    futures, return_when=concurrent.futures.FIRST_EXCEPTION
                 )
-                or hasattr(_execute_moves_recursive, "mock_add_spec")
-                or getattr(_execute_moves_recursive, "__name__", "")
-                != "_execute_moves_recursive"
-            ):
-                _execute_moves_recursive(
-                    base_dir,
-                    plan,
-                    db,
-                    "",
-                    path_map,
-                    db_updates_batch,
-                    runtime_settings=runtime_settings,
-                    moved_counter=[0],
-                    batch_size=effective_chunk_size,
-                    session_id=session_id,
-                    step_counter=step_counter,
-                    ledger=ledger,
-                    history_manager=history_manager,
-                    audit_records=audit_records,
-                    pending_links=pending_links,
+                if not_done:
+                    for fut in not_done:
+                        fut.cancel()
+                    concurrent.futures.wait(not_done)
+                for fut in futures:
+                    if not fut.cancelled() and fut.exception() is not None:
+                        raise fut.exception()
+
+                with db_lock:
+                    if db_updates_batch and hasattr(db, "execute_batch_updates"):
+                        db.execute_batch_updates(list(db_updates_batch))
+                        db_updates_batch.clear()
+                        has_flushed_db = True
+
+                processed_count = min(
+                    (chunk_idx + 1) * effective_chunk_size, total_items
+                )
+                progress_ratio = (
+                    (chunk_idx + 1) / total_chunks if total_chunks > 0 else 1.0
                 )
                 emit_progress(
                     effective_progress_cb,
-                    1.0,
-                    stage=f"Moved {total_items} of {total_items} files",
-                    unit_count=total_items,
+                    progress_ratio,
+                    stage=f"Moved {processed_count} of {total_items} files",
+                    unit_count=processed_count,
                     unit_type="files",
                 )
-            else:
-                from app.core.shared_registry import SharedWorkerPool
 
-                pool = SharedWorkerPool.get_instance(max_workers=effective_max_workers)
-                for chunk_idx, chunk in enumerate(chunks):
-                    if _is_cancelled(cancel_token):
-                        logging.info(
-                            f"Cancellation requested before scheduling chunk {chunk_idx}. Halting worker scheduling."
-                        )
-                        summary["cancelled"] = True
-                        break
-
-                    futures = [
-                        pool.submit(
-                            _process_move_item,
-                            base_dir,
-                            item,
-                            db,
-                            path_map,
-                            runtime_settings,
-                            session_id,
-                            ledger,
-                            history_manager,
-                            db_lock,
-                            step_counter,
-                            db_updates_batch,
-                            audit_records,
-                            pending_links,
-                        )
-                        for item in chunk
-                    ]
-
-                    # Never leave moves in flight: on the first failure, cancel
-                    # what hasn't started and wait for the rest before any rollback.
-                    done, not_done = concurrent.futures.wait(
-                        futures, return_when=concurrent.futures.FIRST_EXCEPTION
+                if _is_cancelled(cancel_token):
+                    logging.info(
+                        f"Cancellation requested after chunk {chunk_idx}. Stopping pipeline execution."
                     )
-                    if not_done:
-                        for fut in not_done:
-                            fut.cancel()
-                        concurrent.futures.wait(not_done)
-                    for fut in futures:
-                        if not fut.cancelled() and fut.exception() is not None:
-                            raise fut.exception()
-
-                    with db_lock:
-                        if db_updates_batch and hasattr(db, "execute_batch_updates"):
-                            db.execute_batch_updates(list(db_updates_batch))
-                            db_updates_batch.clear()
-                            has_flushed_db = True
-
-                    processed_count = min(
-                        (chunk_idx + 1) * effective_chunk_size, total_items
-                    )
-                    progress_ratio = (
-                        (chunk_idx + 1) / total_chunks if total_chunks > 0 else 1.0
-                    )
-                    emit_progress(
-                        effective_progress_cb,
-                        progress_ratio,
-                        stage=f"Moved {processed_count} of {total_items} files",
-                        unit_count=processed_count,
-                        unit_type="files",
-                    )
-
-                    if _is_cancelled(cancel_token):
-                        logging.info(
-                            f"Cancellation requested after chunk {chunk_idx}. Stopping pipeline execution."
-                        )
-                        summary["cancelled"] = True
-                        break
+                    summary["cancelled"] = True
+                    break
 
             if not summary["cancelled"]:
                 if pending_links:

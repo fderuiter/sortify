@@ -2,7 +2,7 @@ import pytest
 from pydantic import ValidationError
 
 from app.config import Settings
-from app.core.mover import _execute_moves_recursive
+from app.core.mover import execute_moves
 
 
 class DummyDB:
@@ -44,11 +44,13 @@ def test_conflict_policy_skip(tmp_path):
     collision_file.write_text("dest_content")
 
     plan = {
-        "source/test.txt": {
-            "__type__": "file",
-            "relative_source": "source/test.txt",
-            "target_filename": "test.txt",
-            "status": "To Be Moved",
+        "dest": {
+            "test.txt": {
+                "__type__": "file",
+                "relative_source": "../source/test.txt",
+                "target_filename": "test.txt",
+                "status": "To Be Moved",
+            }
         }
     }
 
@@ -58,13 +60,7 @@ def test_conflict_policy_skip(tmp_path):
     db = DummyDB()
 
     # Execute with "skip" policy
-    _execute_moves_recursive(
-        base_dir=str(tmp_path),
-        plan=plan,
-        db=db,
-        current_dest="dest",
-        runtime_settings=DummySettings(),
-    )
+    execute_moves(str(tmp_path), plan, db, None, runtime_settings=DummySettings())
 
     # Since policy is skip, the source file should still exist and the destination file should not be modified
     assert source_file.exists()
@@ -88,11 +84,13 @@ def test_conflict_policy_rename(tmp_path):
     collision_file.write_text("dest_content")
 
     plan = {
-        "source/test.txt": {
-            "__type__": "file",
-            "relative_source": "source/test.txt",
-            "target_filename": "test.txt",
-            "status": "To Be Moved",
+        "dest": {
+            "test.txt": {
+                "__type__": "file",
+                "relative_source": "../source/test.txt",
+                "target_filename": "test.txt",
+                "status": "To Be Moved",
+            }
         }
     }
 
@@ -102,13 +100,7 @@ def test_conflict_policy_rename(tmp_path):
     db = DummyDB()
 
     # Execute with "rename" policy
-    _execute_moves_recursive(
-        base_dir=str(tmp_path),
-        plan=plan,
-        db=db,
-        current_dest="dest",
-        runtime_settings=DummySettings(),
-    )
+    execute_moves(str(tmp_path), plan, db, None, runtime_settings=DummySettings())
 
     # Since policy is rename, the source file should be moved, and a new suffix path created
     assert not source_file.exists()
@@ -135,11 +127,13 @@ def test_conflict_policy_overwrite(tmp_path):
     collision_file.write_text("dest_content")
 
     plan = {
-        "source/test.txt": {
-            "__type__": "file",
-            "relative_source": "source/test.txt",
-            "target_filename": "test.txt",
-            "status": "To Be Moved",
+        "dest": {
+            "test.txt": {
+                "__type__": "file",
+                "relative_source": "../source/test.txt",
+                "target_filename": "test.txt",
+                "status": "To Be Moved",
+            }
         }
     }
 
@@ -149,13 +143,7 @@ def test_conflict_policy_overwrite(tmp_path):
     db = DummyDB()
 
     # Execute with "overwrite" policy
-    _execute_moves_recursive(
-        base_dir=str(tmp_path),
-        plan=plan,
-        db=db,
-        current_dest="dest",
-        runtime_settings=DummySettings(),
-    )
+    execute_moves(str(tmp_path), plan, db, None, runtime_settings=DummySettings())
 
     # Since policy is overwrite, the source file should be moved and replace destination file
     assert not source_file.exists()

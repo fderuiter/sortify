@@ -3,9 +3,26 @@
 import asyncio
 import os
 import time
+from unittest.mock import patch
 
 from app.core.daemon import ContinuousWatchdogDaemon, FileChangeEvent
-from app.core.mover import _collect_move_items, _execute_moves_recursive
+from app.core.mover import _collect_move_items, execute_moves
+
+
+def _executed_order(base_dir, plan, db, history_manager):
+    """Run the real mover with one worker and return source names in move order."""
+    import app.core.resilient_file_ops as rfo
+
+    real_move = rfo.resilient_move
+    order = []
+
+    def recording_move(src, dst):
+        order.append(os.path.basename(src))
+        return real_move(src, dst)
+
+    with patch.object(rfo, "resilient_move", side_effect=recording_move):
+        execute_moves(base_dir, plan, db, history_manager, max_workers=1)
+    return order
 
 
 class DummySettings:
@@ -29,7 +46,7 @@ class DummySettings:
 
 
 def test_file_mover_orders_by_priority_score_and_mtime(test_history_env):
-    """Verify _execute_moves_recursive and _collect_move_items order items by priority ascending, score descending, and mtime ascending."""
+    """Verify the mover and _collect_move_items order items by priority ascending, score descending, and mtime ascending."""
     base_dir, db, cache, history_manager, db_worker = test_history_env
     now = time.time()
 
@@ -53,6 +70,7 @@ def test_file_mover_orders_by_priority_score_and_mtime(test_history_env):
             "__type__": "file",
             "relative_source": "technical.log",
             "target_filename": "out_tech.log",
+            "user_confirmed": True,
             "archival_priority": 4,
             "archival_priority_score": 0.30,
         },
@@ -60,6 +78,7 @@ def test_file_mover_orders_by_priority_score_and_mtime(test_history_env):
             "__type__": "file",
             "relative_source": "contract.pdf",
             "target_filename": "out_legal.pdf",
+            "user_confirmed": True,
             "archival_priority": 1,
             "archival_priority_score": 0.85,
         },
@@ -67,6 +86,7 @@ def test_file_mover_orders_by_priority_score_and_mtime(test_history_env):
             "__type__": "file",
             "relative_source": "invoice_new.csv",
             "target_filename": "out_fin_new.csv",
+            "user_confirmed": True,
             "archival_priority": 1,
             "archival_priority_score": 0.90,
         },
@@ -74,6 +94,7 @@ def test_file_mover_orders_by_priority_score_and_mtime(test_history_env):
             "__type__": "file",
             "relative_source": "invoice_old.csv",
             "target_filename": "out_fin_old.csv",
+            "user_confirmed": True,
             "archival_priority": 1,
             "archival_priority_score": 0.90,
         },
@@ -93,16 +114,7 @@ def test_file_mover_orders_by_priority_score_and_mtime(test_history_env):
     ]
     assert collected_files == expected_order
 
-    db_updates_batch = []
-    _execute_moves_recursive(
-        base_dir, plan, db, session_id="test-session", db_updates_batch=db_updates_batch
-    )
-
-    executed_sources = [
-        item["args"][3]
-        for item in db_updates_batch
-        if item.get("type") == "transaction_step"
-    ]
+    executed_sources = _executed_order(base_dir, plan, db, history_manager)
     assert executed_sources == [
         "invoice_old.csv",
         "invoice_new.csv",
