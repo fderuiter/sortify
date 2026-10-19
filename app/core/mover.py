@@ -1707,6 +1707,7 @@ class AsyncMoveEngine:
         Raises
         ------
             ValueError: If base_dir or plan verification fails integrity checks.
+            RuntimeError: If a history manager is given but the undo snapshot cannot be created.
         """
         base_dir = os.path.normpath(base_dir)
 
@@ -1729,11 +1730,19 @@ class AsyncMoveEngine:
 
         session_id = None
         if not resume and history_manager:
+            # Without a snapshot nothing could undo or roll back the moves, so
+            # refuse to start rather than move files under an unknown session.
             try:
                 session_id = history_manager.create_snapshot(base_dir)
-                logging.info(f"Created snapshot session {session_id} for {base_dir}")
             except Exception as snap_err:
-                logging.warning(f"Failed to create snapshot: {snap_err}")
+                raise RuntimeError(
+                    f"Refusing to move files: could not create an undo snapshot for {base_dir}: {snap_err}"
+                ) from snap_err
+            if not session_id:
+                raise RuntimeError(
+                    f"Refusing to move files: could not create an undo snapshot for {base_dir}."
+                )
+            logging.info(f"Created snapshot session {session_id} for {base_dir}")
         elif history_manager:
             logging.info(f"Resuming snapshot session for {base_dir}")
             try:
