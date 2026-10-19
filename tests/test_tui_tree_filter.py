@@ -43,6 +43,34 @@ def temp_workspace():
         yield tmpdir
 
 
+async def set_filter(app, pilot, query: str, max_pauses: int = 100) -> None:
+    """Type a tree filter query and wait for the debounced re-render.
+
+    The input re-renders the tree 0.15 s after its last change, so a fixed
+    0.2 s pause loses that race on a slow runner (seen on macOS CI). Record
+    the queries the tree is rendered with and wait for this one.
+    """
+    rendered = []
+    real_render = app.render_tree
+
+    def recording_render(*args, **kwargs):
+        real_render(*args, **kwargs)
+        rendered.append(kwargs.get("search_query"))
+
+    app.render_tree = recording_render
+    try:
+        app.query_one("#tree-search-input", Input).value = query
+        for _ in range(max_pauses):
+            if query in rendered:
+                break
+            await pilot.pause(0.05)
+        else:
+            pytest.fail(f"Tree was never filtered by {query!r}")
+    finally:
+        del app.render_tree
+    await pilot.pause()
+
+
 def test_tui_tree_search_input_layout(temp_workspace):
     """Verify Requirement 1: TUI preview layout renders a search input field above directory tree view."""
 
@@ -146,8 +174,7 @@ def test_tui_tree_filter_dynamic_substring_matching(temp_workspace):
 
             # Type "invoice" (case-insensitive substring filter)
             search_input.focus()
-            search_input.value = "invoice"
-            await pilot.pause(0.2)
+            await set_filter(app, pilot, "invoice")
 
             filtered_root_labels = [str(node.label) for node in tree.root.children]
             # Financial_Reports is included because Q1_Invoice_2024.pdf matches "invoice"
@@ -196,15 +223,13 @@ def test_tui_tree_filter_clearing_restores_full_visibility(temp_workspace):
             search_input = app.query_one("#tree-search-input", Input)
 
             # Apply filter for "alpha"
-            search_input.value = "alpha"
-            await pilot.pause(0.2)
+            await set_filter(app, pilot, "alpha")
 
             assert len(tree.root.children) == 1
             assert "Alpha" in str(tree.root.children[0].label)
 
             # Clear search field
-            search_input.value = ""
-            await pilot.pause(0.2)
+            await set_filter(app, pilot, "")
 
             # Restores full visibility of all nodes (both Alpha and Beta)
             restored_labels = [str(node.label) for node in tree.root.children]
@@ -240,8 +265,7 @@ def test_tui_tree_filter_no_matches_feedback(temp_workspace):
             search_input = app.query_one("#tree-search-input", Input)
 
             # Type non-matching query
-            search_input.value = "nonexistent_query_123"
-            await pilot.pause(0.2)
+            await set_filter(app, pilot, "nonexistent_query_123")
 
             assert len(tree.root.children) == 1
             info_label = str(tree.root.children[0].label)
@@ -293,8 +317,7 @@ def test_tui_tree_filter_select_all_only_affects_visible_nodes(temp_workspace):
             tree = app.query_one("#plan-tree", Tree)
 
             # Filter to 'invoice'
-            search_input.value = "invoice"
-            await pilot.pause(0.2)
+            await set_filter(app, pilot, "invoice")
 
             # Ensure focus is on tree, not search input, so 'a' hotkey triggers action_toggle_select_all
             tree.focus()
@@ -346,8 +369,7 @@ def test_tui_tree_filter_input_changes_do_not_trigger_plan_validation(temp_works
 
             search_input = app.query_one("#tree-search-input", Input)
             search_input.focus()
-            search_input.value = "doc"
-            await pilot.pause(0.2)
+            await set_filter(app, pilot, "doc")
 
             # Verify run_validation_worker was NOT called during filter input typing
             assert validation_spy.call_count == 0
