@@ -1,3 +1,4 @@
+import asyncio
 import os
 import shutil
 
@@ -68,6 +69,8 @@ def tui_rollback_env(tmp_path):
         s["history_db_path"] = str(history_db_path)
 
     settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    # Keep the first-run onboarding wizard from popping over the modals under test.
+    settings.AI_CONSENT_GRANTED = False
 
     return {
         "tmp_path": tmp_path,
@@ -163,9 +166,29 @@ async def test_rollback_confirm_modal_flow(tui_rollback_env):
         lbl_sid = confirm_screen.query_one("#lbl-confirm-sid", Label)
         assert session_id in str(lbl_sid.render())
 
+        # Step-ledger sessions always skip missing files, so no force option (#742)
+        assert not confirm_screen.query("#chk-ignore-missing")
+        lbl_missing = confirm_screen.query_one("#lbl-confirm-missing", Label)
+        assert "skipped" in str(lbl_missing.render())
+
+
+@pytest.mark.anyio
+async def test_rollback_confirm_modal_offers_force_without_step_ledger(
+    tui_rollback_env,
+):
+    """Verify the force option is offered only for sessions without step-ledger rows (#742)."""
+    session_info = dict(tui_rollback_env["sessions"][0], step_count=0)
+    settings = tui_rollback_env["settings"]
+
+    app = AutoSorterTUI(settings=settings)
+    async with app.run_test() as pilot:
+        confirm_screen = RollbackConfirmModal(session_info=session_info)
+        app.push_screen(confirm_screen)
+        await pilot.pause()
+
         chk_force = confirm_screen.query_one("#chk-ignore-missing", Checkbox)
-        assert chk_force is not None
         assert not chk_force.value
+        assert not confirm_screen.query("#lbl-confirm-missing")
 
 
 @pytest.mark.anyio
@@ -246,12 +269,9 @@ async def test_rollback_execution_missing_files_flow(tui_rollback_env):
         btn_rollback.press()
         await pilot.pause()
 
-        # Confirm WITH ignore_missing checked
+        # Step-ledger sessions skip missing files without a force option
         confirm_screen = app.screen
         assert isinstance(confirm_screen, RollbackConfirmModal)
-
-        chk_force = confirm_screen.query_one("#chk-ignore-missing", Checkbox)
-        chk_force.value = True
 
         btn_confirm = confirm_screen.query_one("#btn-confirm-rollback", Button)
         btn_confirm.press()
@@ -308,3 +328,119 @@ async def test_rollback_execution_error_modal_on_failure(tui_rollback_env, monke
         assert isinstance(error_screen, RollbackErrorModal)
         lbl_err = error_screen.query_one("#lbl-error-message", Label)
         assert "Access denied" in str(lbl_err.render())
+
+
+@pytest.mark.anyio
+async def test_rollback_uses_databases_next_to_session_history(
+    tui_rollback_env, monkeypatch
+):
+    """Verify a namespaced session rolls back against its own autosorter.db and cache.db (#742)."""
+    sessions = tui_rollback_env["sessions"]
+    session_id = tui_rollback_env["session_id"]
+    settings = tui_rollback_env["settings"]
+    session_dir = os.path.dirname(tui_rollback_env["history_db_path"])
+
+    used_paths = {}
+    real_rollback = HistoryManager.rollback
+
+    def spy_rollback(self, sid, ignore_missing=False):
+        used_paths["db"] = os.path.dirname(os.path.abspath(self.db.db_path))
+        used_paths["cache"] = os.path.dirname(
+            os.path.abspath(self.cache_manager.db_path)
+        )
+        return real_rollback(self, sid, ignore_missing=ignore_missing)
+
+    monkeypatch.setattr("app.core.history.HistoryManager.rollback", spy_rollback)
+
+    app = AutoSorterTUI(settings=settings)
+    async with app.run_test() as pilot:
+        modal = HistoryModal(sessions=sessions, base_dir=tui_rollback_env["base_dir"])
+        app.push_screen(modal)
+        await pilot.pause()
+
+        modal.query_one("#select-history-session", Select).value = session_id
+        await pilot.pause()
+        modal.query_one("#btn-rollback-session", Button).press()
+        await pilot.pause()
+        app.screen.query_one("#btn-confirm-rollback", Button).press()
+
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+    assert used_paths == {"db": session_dir, "cache": session_dir}
+
+
+def test_open_session_history_stops_its_db_worker(tmp_path):
+    """Verify each rollback releases the DBWorker thread it starts (#742)."""
+    import threading
+
+    from app.core.history import open_session_history
+
+    def worker_threads():
+        return [
+            t
+            for t in threading.enumerate()
+            if t.name == "DBWorkerThread" and t.is_alive()
+        ]
+
+    before = len(worker_threads())
+    for _ in range(3):
+        with open_session_history(tmp_path / "history.db") as history_mgr:
+            assert history_mgr.db.worker.thread.is_alive()
+    assert len(worker_threads()) == before
+
+
+@pytest.mark.anyio
+async def test_escape_does_not_close_history_modal_mid_rollback(
+    tui_rollback_env, monkeypatch
+):
+    """Verify Escape keeps the History modal open until the rollback result is shown (#742)."""
+    import threading
+
+    sessions = tui_rollback_env["sessions"]
+    session_id = tui_rollback_env["session_id"]
+    settings = tui_rollback_env["settings"]
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def blocking_rollback(self, sid, ignore_missing=False):
+        started.set()
+        release.wait(timeout=10)
+        return 2
+
+    monkeypatch.setattr("app.core.history.HistoryManager.rollback", blocking_rollback)
+    monkeypatch.setattr("app.main.find_all_history_sessions", lambda: sessions)
+
+    app = AutoSorterTUI(settings=settings)
+    async with app.run_test() as pilot:
+        modal = HistoryModal(sessions=sessions, base_dir=tui_rollback_env["base_dir"])
+        app.push_screen(modal)
+        await pilot.pause()
+
+        modal.query_one("#select-history-session", Select).value = session_id
+        await pilot.pause()
+        modal.query_one("#btn-rollback-session", Button).press()
+        await pilot.pause()
+        app.screen.query_one("#btn-confirm-rollback", Button).press()
+        await pilot.pause()
+
+        try:
+            assert await asyncio.to_thread(started.wait, 10)
+            await pilot.press("escape")
+            await pilot.pause()
+            assert app.screen is modal
+        finally:
+            release.set()
+
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        assert app.screen is modal
+        lbl_status = modal.query_one("#lbl-rollback-status", Label)
+        assert "successfully rolled back" in str(lbl_status.render())
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.screen is not modal

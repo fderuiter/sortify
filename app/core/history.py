@@ -4,8 +4,9 @@ import logging
 import os
 import time
 import uuid
+from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any, Dict, Iterator, List
 
 from app.core.db_conn import get_db_connection
 from app.core.path_utils import is_junction_path, safe_relpath
@@ -2209,3 +2210,32 @@ class HistoryManager:
             )
 
         return self.db.worker.execute_write(_write)
+
+
+@contextmanager
+def open_session_history(
+    history_db_path: "str | os.PathLike[str] | None" = None,
+) -> Iterator[HistoryManager]:
+    """Yield a HistoryManager bound to the databases of one sort session.
+
+    A session keeps its ``autosorter.db`` and ``cache.db`` next to its
+    ``history.db``, so a rollback must update those rather than the global
+    databases in the app dir. Without a path, the app dir's ``history.db`` is used.
+    The DBWorker opened here is stopped on exit.
+    """
+    from app.config import get_app_dir
+    from app.core.cache import CacheManager
+    from app.core.db import Database
+    from app.core.db_worker import DBWorker
+
+    history_db = (
+        Path(history_db_path) if history_db_path else get_app_dir() / "history.db"
+    )
+    session_dir = history_db.parent
+    db_worker = DBWorker()
+    try:
+        db = Database(session_dir / "autosorter.db", db_worker)
+        cache_mgr = CacheManager(str(session_dir / "cache.db"), db_worker)
+        yield HistoryManager(db, cache_mgr, str(history_db))
+    finally:
+        db_worker.stop(stop_embeddings=False)
