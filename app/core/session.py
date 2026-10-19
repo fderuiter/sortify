@@ -1,5 +1,6 @@
 """Session manager module for encapsulating app state."""
 
+import contextlib
 import json
 import os
 from typing import Any, Dict, Optional, Tuple
@@ -170,6 +171,9 @@ async def scan_abandoned_sessions_async():
 
 class AppSession:
     """Encapsulates the core business logic, analytics, and database services for a single application run."""
+
+    # Seconds a move waits for another sort of the same folder to finish (ADR 0007).
+    folder_lock_timeout = 10.0
 
     def __init__(self, settings, base_dir=None, session_id=None, source_dirs=None):
         self.settings = settings
@@ -365,33 +369,51 @@ class AppSession:
 
         from app.core.mover import execute_moves
 
-        return execute_moves(
-            self.base_dir,
-            plan,
-            self.db,
-            self.history_manager,
-            self.settings,
-            resume=resume,
-            cancel_check=cancel_check,
-            chunk_size=chunk_size,
-            progress_callback=progress_callback,
-            source_dirs=self.source_dirs,
-            **kwargs,
-        )
+        with self._lock_folders():
+            return execute_moves(
+                self.base_dir,
+                plan,
+                self.db,
+                self.history_manager,
+                self.settings,
+                resume=resume,
+                cancel_check=cancel_check,
+                chunk_size=chunk_size,
+                progress_callback=progress_callback,
+                source_dirs=self.source_dirs,
+                **kwargs,
+            )
 
     def retry_failed_moves(self, failed_items, progress_callback=None, **kwargs):
         """Re-attempt move operations for failed items."""
         from app.core.mover import retry_failed_moves
 
-        return retry_failed_moves(
-            self.base_dir,
-            failed_items,
-            db=self.db,
-            history_manager=self.history_manager,
-            runtime_settings=self.settings,
-            progress_callback=progress_callback,
-            **kwargs,
-        )
+        with self._lock_folders():
+            return retry_failed_moves(
+                self.base_dir,
+                failed_items,
+                db=self.db,
+                history_manager=self.history_manager,
+                runtime_settings=self.settings,
+                progress_callback=progress_callback,
+                **kwargs,
+            )
+
+    def _lock_folders(self) -> contextlib.ExitStack:
+        """Hold a FolderLock on every source folder while files move."""
+        from app.core.folder_lock import FolderLock
+
+        stack = contextlib.ExitStack()
+        folders = self.source_dirs or ([self.base_dir] if self.base_dir else [])
+        try:
+            for folder in sorted(folders):
+                stack.enter_context(
+                    FolderLock(folder, timeout=self.folder_lock_timeout)
+                )
+        except BaseException:
+            stack.close()
+            raise
+        return stack
 
     def close(self):
         """Cleanup session directory."""

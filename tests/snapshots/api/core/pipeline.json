@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "2ef051e5d35b5987929031bc78dd36bcdc4910eec84152abb0dc0cfaf6d8dafa"
+    "checksum": "30c89ac4ae631e27fc8e2d6b123019f13efeadf5ac8965e7469441de03df6d14"
   },
   "classes": [
     {
@@ -61,7 +61,7 @@
               "name": "**kwargs"
             }
           ],
-          "returns": "Any"
+          "returns": "SortResult"
         },
         {
           "async": false,
@@ -138,6 +138,67 @@
             }
           ],
           "returns": null
+        }
+      ]
+    },
+    {
+      "class_name": "SortResult",
+      "decorators": [
+        "@dataclass"
+      ],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "describe",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "from_summary",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "Optional[dict]",
+              "default": null,
+              "name": "summary"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "quarantine_dir"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "ok",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
         }
       ]
     }

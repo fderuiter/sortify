@@ -1,0 +1,66 @@
+{
+  "_metadata": {
+    "checksum": "5be84db7ed89106228bfceab8bc100b89da0618fa24f3e90b9dd0e0615a6a169"
+  },
+  "classes": [
+    {
+      "class_name": "FolderBusyError",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "folder"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    {
+      "class_name": "FolderLock",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "folder"
+            },
+            {
+              "annotation": "float",
+              "default": "0.0",
+              "name": "timeout"
+            },
+            {
+              "annotation": "Optional[Path]",
+              "default": "None",
+              "name": "lock_dir"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    }
+  ],
+  "functions": []
+}

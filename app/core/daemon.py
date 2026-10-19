@@ -1048,12 +1048,14 @@ class ContinuousWatchdogDaemon:
                 base_dir, files = drop_scope(abs_path)
                 session = AppSession(self.settings, base_dir=base_dir)
                 try:
-                    plan, summary = SortPipeline(session).run(files, dry_run=dry_run)
-                    if dry_run:
+                    plan, outcome = SortPipeline(session).run(files, dry_run=dry_run)
+                    if outcome is None:
                         summary = {
                             "status": "dry_run",
                             "plan": _make_json_serializable(plan),
                         }
+                    else:
+                        summary = outcome.summary
                     processed_items.append(
                         {
                             "path": abs_path,

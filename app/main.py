@@ -802,7 +802,7 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                 "plan": serializable_plan,
             }
         else:
-            summary = pipeline.execute(plan)
+            outcome = pipeline.execute(plan)
             result = {
                 "status": "success",
                 "dry_run": False,
@@ -811,7 +811,7 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                     str(Path(dest_dir).resolve()) if dest_dir else str(target_path)
                 ),
                 "plan": serializable_plan,
-                "summary": summary,
+                "summary": outcome.summary,
             }
 
         quiet = getattr(args, "quiet", False)
@@ -833,14 +833,9 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                         file=sys.stderr,
                     )
                 else:
-                    report = (result.get("summary") or {}).get("audit_report") or {}
-                    failed = report.get("mismatch_fail_count") or 0
-                    if failed:
-                        print(
-                            f"Warning: {failed} file(s) failed verification after "
-                            "the move. Check the audit report.",
-                            file=sys.stderr,
-                        )
+                    print(outcome.describe(), file=sys.stderr)
+                    for source, reason in outcome.failed:
+                        print(f"  Failed: {source}: {reason}", file=sys.stderr)
                     print(
                         "To undo this sort, run: smart-autosorter undo --latest",
                         file=sys.stderr,
@@ -1314,7 +1309,7 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
             if dry_run:
                 summary = {"status": "dry_run", "plan": serializable_plan}
             else:
-                summary = pipeline.execute(plan)
+                summary = pipeline.execute(plan).summary
 
             processed_results.append(
                 {
