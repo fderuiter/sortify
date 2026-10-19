@@ -116,3 +116,62 @@ async def test_scanner_detects_interrupted_rollback(mock_session_base, tmp_path)
     assert session_info["is_rollback_recovery"] is True
     assert session_info["status"] == "interrupted_rollback"
     assert session_info["journal_path"] == str(journal_path)
+
+
+def test_step_rollback_deletes_journal_on_success(test_history_env):
+    """A completed ledger-step rollback must not leave a journal behind.
+
+    A leftover journal makes the next start report the finished undo as an
+    interrupted rollback and offer to resume it.
+    """
+    from app.core.extractor import get_file_hash
+
+    base_dir, db, cache, history_manager, db_worker = test_history_env
+
+    moved = os.path.join(base_dir, "Finance", "report.txt")
+    os.makedirs(os.path.dirname(moved), exist_ok=True)
+    with open(moved, "w") as f:
+        f.write("quarterly revenue")
+
+    steps = [
+        {
+            "step_number": 1,
+            "source_path": "report.txt",
+            "destination_path": os.path.join("Finance", "report.txt"),
+            "file_hash": get_file_hash(moved),
+            "item_type": "file",
+            "metadata": None,
+        }
+    ]
+    journal_path = Path(history_manager.db_path).parent / "rollback_journal.json"
+
+    db.worker.execute_write(
+        lambda: history_manager._rollback_from_steps(
+            "session-1", steps, base_dir, safety_session_id=None
+        )
+    )
+
+    assert os.path.exists(os.path.join(base_dir, "report.txt"))
+    assert not journal_path.exists(), (
+        "Journal was left behind after a successful step rollback"
+    )
+
+
+def test_rollback_leaves_no_active_sessions(test_history_env):
+    """After a successful undo, no session (including its safety snapshot) stays active."""
+    base_dir, db, cache, history_manager, db_worker = test_history_env
+
+    src = os.path.join(base_dir, "report.txt")
+    with open(src, "w") as f:
+        f.write("quarterly revenue")
+    db.upsert_document(base_dir, "report.txt", "hash_val", "extracted text")
+    session_id = history_manager.create_snapshot(base_dir)
+
+    os.makedirs(os.path.join(base_dir, "Finance"))
+    shutil.move(src, os.path.join(base_dir, "Finance", "report.txt"))
+
+    history_manager.rollback(session_id)
+
+    statuses = {s["session_id"]: s["status"] for s in history_manager.get_sessions()}
+    assert statuses[session_id] == "rolled_back"
+    assert "active" not in statuses.values(), statuses

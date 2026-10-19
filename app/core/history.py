@@ -856,6 +856,21 @@ class HistoryManager:
                 f"Recovery incomplete: {len(failed_steps)} step(s) failed during rollback. Error: {first_err}"
             )
 
+        conn = get_db_connection(self.db_path)
+        with conn:
+            conn.execute(
+                "UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?",
+                (session_id,),
+            )
+
+        # Every step reversed, so the journal no longer describes unfinished work.
+        try:
+            journal_path = Path(self.db_path).parent / "rollback_journal.json"
+            if journal_path.exists():
+                journal_path.unlink()
+        except Exception as ex:
+            logging.warning(f"Failed to delete rollback journal: {ex}")
+
     def log_step(
         self,
         session_id: str,
@@ -2098,30 +2113,39 @@ class HistoryManager:
                 safety_session_id = self._create_snapshot_internal(base_dir)
 
             if step_count > 0:
-                return self._unwind_session_internal(session_id, db=self.db)
-
-            steps = self.db.get_transaction_steps(session_id)
-            if steps:
-                return self._rollback_from_steps(
+                result = self._unwind_session_internal(session_id, db=self.db)
+            elif steps := self.db.get_transaction_steps(session_id):
+                result = self._rollback_from_steps(
                     session_id,
                     steps,
                     base_dir,
                     safety_session_id,
                     ignore_missing=ignore_missing,
                 )
-
-            missing = self.check_missing_files(session_id)
-            if missing and not ignore_missing:
-                raise ValueError(
-                    f"Cannot rollback: {len(missing)} files from the snapshot are missing from the disk (e.g., {missing[0]})."
+            else:
+                missing = self.check_missing_files(session_id)
+                if missing and not ignore_missing:
+                    raise ValueError(
+                        f"Cannot rollback: {len(missing)} files from the snapshot are missing from the disk (e.g., {missing[0]})."
+                    )
+                result = self._rollback_from_snapshot_internal(
+                    session_id,
+                    base_dir=base_dir,
+                    safety_session_id=safety_session_id,
+                    ignore_missing=ignore_missing,
                 )
 
-            return self._rollback_from_snapshot_internal(
-                session_id,
-                base_dir=base_dir,
-                safety_session_id=safety_session_id,
-                ignore_missing=ignore_missing,
-            )
+            # The safety snapshot is recorded as an "active" session. Once the
+            # rollback has finished, leaving it active makes the startup scan
+            # report it as an interrupted session.
+            if safety_session_id:
+                done_conn = get_db_connection(self.db_path)
+                with done_conn:
+                    done_conn.execute(
+                        "UPDATE sessions SET status = 'completed' WHERE session_id = ?",
+                        (safety_session_id,),
+                    )
+            return result
 
         return self.db.worker.execute_write(_write)
 
