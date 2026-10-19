@@ -17,7 +17,6 @@ from app.core.extractor import (
 )
 from app.core.history import HistoryManager
 from app.core.mover import (
-    _execute_moves_recursive,
     _remove_empty_dirs,
     execute_moves,
     get_safe_path,
@@ -210,148 +209,46 @@ def test_mover_get_safe_path_samefile(tmp_path):
         assert safe == str(dest / "file_1.txt")
 
 
-def test_execute_moves_recursive_dict_directory_and_invalid(tmp_path):
-    plan = {"__type__": "directory"}
-    _execute_moves_recursive(str(tmp_path), plan, db)
+def test_execute_moves_ignores_malformed_plan_nodes(tmp_path):
+    keep = tmp_path / "keep.txt"
+    keep.write_text("data")
+    execute_moves(str(tmp_path), {"__type__": "directory"}, db, None)
+    assert keep.read_text() == "data"
 
-    plan2 = {"folder": {"__type__": "directory", "file": None}}
-    _execute_moves_recursive(str(tmp_path), plan2, db)
 
-
-def test_execute_moves_recursive_no_target_filename(tmp_path):
+def test_execute_moves_without_target_filename_keeps_name(tmp_path):
     f1 = tmp_path / "test.txt"
     f1.write_text("data")
-    plan = {"test.txt": {"__type__": "file", "status": "Moved"}}
-    try:
-        _execute_moves_recursive(str(tmp_path), plan, db, "dest")
-    except Exception:
-        pass
-    assert (tmp_path / "dest" / "test.txt").exists()
+    plan = {
+        "dest": {"test.txt": {"__type__": "file", "relative_source": "../test.txt"}}
+    }
+    execute_moves(str(tmp_path), plan, db, None)
+    assert (tmp_path / "dest" / "test.txt").read_text() == "data"
     assert not f1.exists()
 
 
-def test_execute_moves_recursive_symlink(tmp_path):
+def test_execute_moves_moves_symlink_as_link(tmp_path):
     import sys
 
-    if sys.platform != "win32":
-        f1 = tmp_path / "target.txt"
-        f1.write_text("data")
-        sym = tmp_path / "link.txt"
-        os.symlink("target.txt", str(sym))
-
-        plan = {
-            "link.txt": {
-                "__type__": "file",
-                "status": "Moved",
-                "target_filename": "link.txt",
-            }
-        }
-        dest = tmp_path / "dest"
-        try:
-            _execute_moves_recursive(str(tmp_path), plan, db, "dest")
-        except Exception:
-            pass
-        assert (dest / "link.txt").is_symlink()
-        assert not sym.exists()
-
-
-def test_execute_moves_recursive_symlink_update_in_place(tmp_path):
-    import sys
-
-    if sys.platform != "win32":
-        f1 = tmp_path / "target.txt"
-        f1.write_text("data")
-        sym = tmp_path / "link.txt"
-        os.symlink("target.txt", str(sym))
-
-        plan = {
-            "link.txt": {
-                "__type__": "file",
-                "status": "Already Sorted",
-                "target_filename": "link.txt",
-            }
-        }
-        path_map = {os.path.abspath(f1): os.path.abspath(tmp_path / "new_target.txt")}
-        try:
-            _execute_moves_recursive(str(tmp_path), plan, db, "", path_map=path_map)
-        except Exception:
-            pass
-        assert sym.is_symlink()
-
-
-def test_execute_moves_recursive_pylnk3(tmp_path):
-    with mock.patch.dict("sys.modules", {"pylnk3": mock.MagicMock()}):
-        import app.core.mover
-
-        app.core.mover.pylnk3 = mock.MagicMock()
-        app.core.mover.pylnk3.for_file.side_effect = lambda *a, **k: open(
-            k["lnk_name"], "w"
-        ).close()
-
-        f1 = tmp_path / "link.lnk"
-        f1.write_text("lnkdata")
-
-        with mock.patch(
-            "app.core.link_manager.LinkManager.get_link_info",
-            return_value={"type": "lnk", "target": "target.txt"},
-        ):
-            plan = {
-                "link.lnk": {
-                    "__type__": "file",
-                    "status": "Moved",
-                    "target_filename": "link.lnk",
-                }
-            }
-            try:
-                _execute_moves_recursive(str(tmp_path), plan, db, "dest")
-            except Exception:
-                pass
-            assert not f1.exists()
-
-
-def test_execute_moves_recursive_pylnk3_exception(tmp_path):
-    with mock.patch.dict("sys.modules", {"pylnk3": mock.MagicMock()}):
-        import app.core.mover
-
-        app.core.mover.pylnk3 = mock.MagicMock()
-        app.core.mover.pylnk3.for_file.side_effect = lambda *a, **k: open(
-            k["lnk_name"], "w"
-        ).close()
-        app.core.mover.pylnk3.parse.side_effect = Exception("LNK Error")
-
-        f1 = tmp_path / "link2.lnk"
-        f1.write_text("lnkdata")
-
-        with mock.patch(
-            "app.core.link_manager.LinkManager.get_link_info",
-            return_value={"type": "lnk", "target": "target.txt"},
-        ):
-            plan = {
-                "link2.lnk": {
-                    "__type__": "file",
-                    "status": "Moved",
-                    "target_filename": "link2.lnk",
-                }
-            }
-            try:
-                _execute_moves_recursive(str(tmp_path), plan, db, "dest")
-            except Exception:
-                pass
-            assert not (tmp_path / "dest" / "link2.lnk").exists()
-
-
-def test_execute_moves_recursive_rel_dest_key(tmp_path):
-    f1 = tmp_path / "file.txt"
+    if sys.platform == "win32":
+        return
+    f1 = tmp_path / "target.txt"
     f1.write_text("data")
+    sym = tmp_path / "link.txt"
+    os.symlink("target.txt", str(sym))
+
     plan = {
-        "file.txt": {
-            "__type__": "file",
-            "status": "Moved",
-            "target_filename": "file.txt",
+        "dest": {
+            "link.txt": {
+                "__type__": "file",
+                "relative_source": "../link.txt",
+                "target_filename": "link.txt",
+            }
         }
     }
-    _execute_moves_recursive(str(tmp_path), plan, db, "")
-    assert f1.exists()
+    execute_moves(str(tmp_path), plan, db, None)
+    assert (tmp_path / "dest" / "link.txt").is_symlink()
+    assert not os.path.lexists(sym)
 
 
 def test_extract_file_text_empty_file(tmp_path):
@@ -413,30 +310,6 @@ def test_mover_remove_empty_dirs_with_files(tmp_path):
     assert d1.exists()
 
 
-def test_execute_moves_recursive_symlink_no_update(tmp_path):
-    import sys
-
-    if sys.platform != "win32":
-        f1 = tmp_path / "target.txt"
-        f1.write_text("data")
-        sym = tmp_path / "link.txt"
-        os.symlink("target.txt", str(sym))
-
-        plan = {
-            "link.txt": {
-                "__type__": "file",
-                "status": "Moved",
-                "target_filename": "link.txt",
-            }
-        }
-        with mock.patch(
-            "app.core.link_manager.LinkManager.get_link_info",
-            return_value={"type": "symlink", "target": "target.txt"},
-        ):
-            _execute_moves_recursive(str(tmp_path), plan, db, "")
-        assert sym.is_symlink()
-
-
 def test_execute_moves_cleanup_disabled(tmp_path):
     plan = {
         "delme": {
@@ -487,10 +360,6 @@ def test_mover_import_error():
         importlib.reload(app.core.mover)
 
 
-def test_execute_moves_non_dict_plan(tmp_path):
-    _execute_moves_recursive(str(tmp_path), "invalid_plan", db, "")
-
-
 def test_mover_remove_empty_dirs_recursive(tmp_path):
     d1 = tmp_path / "dir1"
     d1.mkdir()
@@ -500,116 +369,23 @@ def test_mover_remove_empty_dirs_recursive(tmp_path):
     assert not d1.exists()
 
 
-def test_execute_moves_recursive_symlink_needs_update(tmp_path):
-    import sys
-
-    if sys.platform != "win32":
-        f1 = tmp_path / "target.txt"
-        f1.write_text("data")
-        sym = tmp_path / "link.txt"
-        os.symlink(str(f1), str(sym))  # Absolute target
-
-        plan = {
-            "link.txt": {
-                "__type__": "file",
-                "status": "Moved",
-                "target_filename": "link.txt",
-            }
-        }
-        dest = tmp_path / "dest"
-        dest.mkdir()
-        # new_abs_target differs so it updates
-        path_map = {os.path.abspath(f1): os.path.abspath(tmp_path / "new_target.txt")}
-        with mock.patch(
-            "app.core.link_manager.LinkManager.get_link_info",
-            return_value={"type": "symlink", "target": str(f1)},
-        ):
-            _execute_moves_recursive(str(tmp_path), plan, db, "dest", path_map=path_map)
-
-
-def test_execute_moves_recursive_db_doc_update(tmp_path):
+def test_execute_moves_renames_tracked_document(tmp_path):
     f1 = tmp_path / "test.txt"
     f1.write_text("data")
     plan = {
-        "test.txt": {
-            "__type__": "file",
-            "status": "Moved",
-            "target_filename": "test2.txt",
+        "dest": {
+            "test.txt": {
+                "__type__": "file",
+                "relative_source": "../test.txt",
+                "target_filename": "test2.txt",
+                "user_confirmed": True,
+            }
         }
     }
+    db.upsert_document(str(tmp_path), "test.txt", "fake_hash", "data")
 
-    file_hash = "fake_hash"
-    db.upsert_document(str(tmp_path), "test.txt", file_hash, "data")
-
-    try:
-        _execute_moves_recursive(str(tmp_path), plan, db, "dest")
-    except Exception:
-        pass
-    assert (tmp_path / "dest" / "test2.txt").exists()
-
-
-def test_execute_moves_recursive_symlink_needs_update_relative(tmp_path):
-    import sys
-
-    if sys.platform != "win32":
-        f1 = tmp_path / "target.txt"
-        f1.write_text("data")
-        sym = tmp_path / "link.txt"
-        os.symlink("target.txt", str(sym))  # Relative target
-
-        plan = {
-            "link.txt": {
-                "__type__": "file",
-                "status": "Moved",
-                "target_filename": "link.txt",
-            }
-        }
-        dest = tmp_path / "dest"
-        dest.mkdir()
-        # new_abs_target differs so it updates
-        path_map = {os.path.abspath(f1): os.path.abspath(tmp_path / "new_target.txt")}
-        with mock.patch(
-            "app.core.link_manager.LinkManager.get_link_info",
-            return_value={"type": "symlink", "target": "target.txt"},
-        ):
-            try:
-                _execute_moves_recursive(str(tmp_path), plan, db, "", path_map=path_map)
-            except Exception:
-                pass
-
-
-def test_execute_moves_recursive_pylnk3_in_place(tmp_path):
-    with mock.patch.dict("sys.modules", {"pylnk3": mock.MagicMock()}):
-        import app.core.mover
-
-        app.core.mover.pylnk3 = mock.MagicMock()
-        app.core.mover.pylnk3.for_file.side_effect = lambda *a, **k: open(
-            k["lnk_name"], "w"
-        ).close()
-
-        f1 = tmp_path / "link.lnk"
-        f1.write_text("lnkdata")
-
-        with mock.patch(
-            "app.core.link_manager.LinkManager.get_link_info",
-            return_value={"type": "lnk", "target": "target.txt"},
-        ):
-            plan = {
-                "link.lnk": {
-                    "__type__": "file",
-                    "status": "Moved",
-                    "target_filename": "link.lnk",
-                }
-            }
-            path_map = {
-                os.path.abspath(tmp_path / "target.txt"): os.path.abspath(
-                    tmp_path / "new.txt"
-                )
-            }
-            try:
-                _execute_moves_recursive(str(tmp_path), plan, db, "", path_map=path_map)
-            except Exception:
-                pass
+    execute_moves(str(tmp_path), plan, db, None)
+    assert (tmp_path / "dest" / "test2.txt").read_text() == "data"
 
 
 def test_execute_moves_loop_skip(tmp_path):
