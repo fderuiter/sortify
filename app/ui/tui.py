@@ -5614,6 +5614,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             sessions = find_all_history_sessions()
         self.sessions = sessions or []
         self.base_dir = base_dir
+        self._rollback_in_progress = False
 
     def compose(self) -> ComposeResult:
         """Compose history view, export, and rollback modal widgets."""
@@ -5835,6 +5836,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             self.query_one("#btn-rollback-session", Button).disabled = True
             self.query_one("#btn-export", Button).disabled = True
             self.query_one("#btn-cancel", Button).disabled = True
+            self._rollback_in_progress = True
 
             lbl_status = self.query_one("#lbl-rollback-status", Label)
             lbl_status.update(f"⏳ Rolling back session {sid[:8]}... Please wait.")
@@ -5876,6 +5878,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
     def _on_rollback_success(self, session_id: str, restored_count: int) -> None:
         """Handle successful session rollback completion on main thread."""
+        self._rollback_in_progress = False
         from app.main import find_all_history_sessions
 
         self.sessions = find_all_history_sessions()
@@ -5900,6 +5903,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
     def _on_rollback_failure(self, session_id: str, err: Exception) -> None:
         """Handle session rollback failure on main thread."""
+        self._rollback_in_progress = False
         lbl_status = self.query_one("#lbl-rollback-status", Label)
         lbl_status.update(f"❌ Rollback failed: {err}")
 
@@ -5943,7 +5947,10 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
-        """Cancel history export modal."""
+        """Cancel history export modal, unless a rollback is still running."""
+        if self._rollback_in_progress:
+            self.announce("Rollback in progress. Please wait for it to finish.")
+            return
         self.dismiss(None)
 
 

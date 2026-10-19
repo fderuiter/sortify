@@ -1,3 +1,4 @@
+import asyncio
 import os
 import shutil
 
@@ -68,6 +69,8 @@ def tui_rollback_env(tmp_path):
         s["history_db_path"] = str(history_db_path)
 
     settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    # Keep the first-run onboarding wizard from popping over the modals under test.
+    settings.AI_CONSENT_GRANTED = False
 
     return {
         "tmp_path": tmp_path,
@@ -386,3 +389,58 @@ def test_open_session_history_stops_its_db_worker(tmp_path):
         with open_session_history(tmp_path / "history.db") as history_mgr:
             assert history_mgr.db.worker.thread.is_alive()
     assert len(worker_threads()) == before
+
+
+@pytest.mark.anyio
+async def test_escape_does_not_close_history_modal_mid_rollback(
+    tui_rollback_env, monkeypatch
+):
+    """Verify Escape keeps the History modal open until the rollback result is shown (#742)."""
+    import threading
+
+    sessions = tui_rollback_env["sessions"]
+    session_id = tui_rollback_env["session_id"]
+    settings = tui_rollback_env["settings"]
+
+    started = threading.Event()
+    release = threading.Event()
+
+    def blocking_rollback(self, sid, ignore_missing=False):
+        started.set()
+        release.wait(timeout=10)
+        return 2
+
+    monkeypatch.setattr("app.core.history.HistoryManager.rollback", blocking_rollback)
+    monkeypatch.setattr("app.main.find_all_history_sessions", lambda: sessions)
+
+    app = AutoSorterTUI(settings=settings)
+    async with app.run_test() as pilot:
+        modal = HistoryModal(sessions=sessions, base_dir=tui_rollback_env["base_dir"])
+        app.push_screen(modal)
+        await pilot.pause()
+
+        modal.query_one("#select-history-session", Select).value = session_id
+        await pilot.pause()
+        modal.query_one("#btn-rollback-session", Button).press()
+        await pilot.pause()
+        app.screen.query_one("#btn-confirm-rollback", Button).press()
+        await pilot.pause()
+
+        try:
+            assert await asyncio.to_thread(started.wait, 10)
+            await pilot.press("escape")
+            await pilot.pause()
+            assert app.screen is modal
+        finally:
+            release.set()
+
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        assert app.screen is modal
+        lbl_status = modal.query_one("#lbl-rollback-status", Label)
+        assert "successfully rolled back" in str(lbl_status.render())
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert app.screen is not modal
