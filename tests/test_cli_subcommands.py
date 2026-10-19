@@ -516,3 +516,47 @@ def test_drop_subcommand_dry_run_json(tmp_path):
     assert data["dry_run"] is True
     assert data["processed_count"] == 1
     assert len(data["results"]) == 1
+
+
+def test_format_plan_tree_renders_folders_files_and_renames():
+    """Plans print as an indented tree with counts, renames shown inline."""
+    from app.main import format_plan_tree
+
+    plan = {
+        "Finance": {
+            "2024": {
+                "q1.pdf": {"__type__": "file", "relative_source": "q1.pdf"},
+            },
+            "Invoice-ACME.pdf": {
+                "__type__": "file",
+                "target_filename": "Invoice-ACME.pdf",
+                "relative_source": "scan_0001.pdf",
+            },
+        },
+        "notes.txt": None,
+    }
+    lines, n_files, n_folders = format_plan_tree(plan)
+    assert lines == [
+        "Finance/",
+        "  2024/",
+        "    q1.pdf",
+        "  Invoice-ACME.pdf  (was scan_0001.pdf)",
+        "notes.txt",
+    ]
+    assert (n_files, n_folders) == (3, 2)
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_sort_dry_run_prints_readable_plan_not_json():
+    """Without --json, a dry run prints a folder tree and says nothing moved."""
+    with tempfile.TemporaryDirectory() as src_dir:
+        create_sample_corpus(src_dir)
+        before = sorted(os.listdir(src_dir))
+
+        code, stdout, stderr = run_cli(["sort", src_dir, "--dry-run"])
+        assert code == 0, stderr
+        assert not stdout.lstrip().startswith("{")
+        assert "finance_doc.txt" in stdout
+        assert "Would move" in stderr
+        assert "no files were moved" in stderr
+        assert sorted(os.listdir(src_dir)) == before
