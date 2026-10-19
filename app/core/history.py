@@ -1736,7 +1736,7 @@ class HistoryManager:
                             if os.path.exists(dst) and not os.path.samefile(src, dst):
                                 is_cyclic = False
                                 for m_src, m_dst in moves:
-                                    if m_src == dst:
+                                    if _is_same_restored_path(m_src, dst):
                                         is_cyclic = True
                                         break
 
@@ -1763,7 +1763,7 @@ class HistoryManager:
                                         )
 
                                     for i, (m_src, m_dst) in enumerate(moves):
-                                        if m_src == dst:
+                                        if _is_same_restored_path(m_src, dst):
                                             moves[i] = (temp_dst, m_dst)
                                 else:
                                     # Non-cyclic inline rename (Requirement 2)
