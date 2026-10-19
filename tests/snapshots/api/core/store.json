@@ -1,0 +1,112 @@
+{
+  "_metadata": {
+    "checksum": "716036291f0559299b8004108886824ce073c680a1a61aee4b329acc20a2c2ad"
+  },
+  "classes": [
+    {
+      "class_name": "Store",
+      "decorators": [
+        "@dataclass(frozen=True)"
+      ],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "cache",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "worker"
+            }
+          ],
+          "returns": "CacheManager"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "database",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "worker"
+            }
+          ],
+          "returns": "Database"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "history",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Database",
+              "default": null,
+              "name": "db"
+            },
+            {
+              "annotation": "CacheManager",
+              "default": null,
+              "name": "cache_manager"
+            }
+          ],
+          "returns": "HistoryManager"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "import_legacy_sessions",
+      "parameters": [
+        {
+          "annotation": "Store",
+          "default": null,
+          "name": "store"
+        },
+        {
+          "annotation": "Path",
+          "default": null,
+          "name": "session_root"
+        }
+      ],
+      "returns": "int"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "open_store",
+      "parameters": [
+        {
+          "annotation": "Path | str | None",
+          "default": "None",
+          "name": "app_dir"
+        },
+        {
+          "annotation": "Path | None",
+          "default": "None",
+          "name": "legacy_session_root"
+        }
+      ],
+      "returns": "Store"
+    }
+  ]
+}

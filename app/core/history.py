@@ -189,18 +189,21 @@ HISTORY_DB_MIGRATIONS = (Migration(1, "baseline", _history_db_baseline),)
 class HistoryManager:
     """Manages full directory snapshots and rollback functionality."""
 
-    def __init__(self, db, cache_manager, db_path=None):
+    def __init__(
+        self, db, cache_manager, db_path=None, migrations=HISTORY_DB_MIGRATIONS
+    ):
         from pathlib import Path
 
         self.db = db
         self.cache_manager = cache_manager
         self.db_path = db_path or str(Path(db.db_path).parent / "history.db")
+        self.migrations = migrations
         self._init_db()
 
     def _init_db(self):
         conn = get_db_connection(self.db_path)
         with conn:
-            migrate(conn, HISTORY_DB_MIGRATIONS, label=f"History {self.db_path}")
+            migrate(conn, self.migrations, label=f"History {self.db_path}")
 
     def _create_snapshot_internal(self, base_dir: str) -> str:
         session_id = str(uuid.uuid4())

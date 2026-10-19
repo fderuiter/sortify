@@ -222,6 +222,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.simulation_exporter
 
+## `app.core.store`
+
+::: app.core.store
+
 ## `app.core.text_utils`
 
 ::: app.core.text_utils

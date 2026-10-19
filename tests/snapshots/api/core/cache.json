@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "24df8c9ed57cc441fca1c2a0b4464a62b67cf3f6a07afeb9b61444a9a18b5d32"
+    "checksum": "90781f6287bb1c31524933b2042b8ee8dfe0037ff5ff1e63f59f7acb39d42cb6"
   },
   "classes": [
     {
@@ -237,6 +237,11 @@
               "annotation": "'DBWorker | Any'",
               "default": null,
               "name": "worker"
+            },
+            {
+              "annotation": "tuple[Migration, ...]",
+              "default": "CACHE_DB_MIGRATIONS",
+              "name": "migrations"
             }
           ],
           "returns": null
