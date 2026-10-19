@@ -37,28 +37,6 @@ def _remove_staging_leftovers(base_dir: str) -> None:
                     logging.warning(f"Could not remove staging file {name}: {exc}")
 
 
-def _same_content(path_a: str, path_b: str) -> bool:
-    """Return True only when both paths are regular files with identical bytes."""
-    try:
-        if os.path.samefile(path_a, path_b):
-            return True
-    except OSError:
-        return False
-    if not (os.path.isfile(path_a) and os.path.isfile(path_b)):
-        return False
-    if os.path.islink(path_a) or os.path.islink(path_b):
-        return False
-    try:
-        if os.path.getsize(path_a) != os.path.getsize(path_b):
-            return False
-        from app.core.resilient_file_ops import resilient_file_hash
-
-        # Raw bytes, not the metadata-insensitive digest get_file_hash uses.
-        return resilient_file_hash(path_a) == resilient_file_hash(path_b)
-    except OSError:
-        return False
-
-
 def _is_same_restored_path(actual: str, expected: str) -> bool:
     return os.path.normcase(os.path.abspath(actual)) == os.path.normcase(
         os.path.abspath(expected)
@@ -1231,7 +1209,9 @@ class HistoryManager:
                     os.makedirs(os.path.dirname(source_path), exist_ok=True)
 
                     try:
-                        if os.path.lexists(source_path) and _same_content(
+                        from app.core.resilient_file_ops import same_file_content
+
+                        if os.path.lexists(source_path) and same_file_content(
                             source_path, target_path
                         ):
                             # An identical copy is already back in place.
