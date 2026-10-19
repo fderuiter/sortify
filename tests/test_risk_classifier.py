@@ -2,7 +2,16 @@
 
 from __future__ import annotations
 
-from scripts.classify_pr import PRMetadata, classify_pr
+from pathlib import Path
+
+import pytest
+
+from scripts.classify_pr import (
+    PROTECTED_PATHS,
+    PRMetadata,
+    classify_pr,
+    dependency_update_type_from_title,
+)
 
 
 def test_docs_only_pr_is_eligible():
@@ -27,7 +36,7 @@ def test_opt_in_bot_pr_is_eligible():
         title="refactor: improve internal helper",
         author="stitch",
         labels=["automerge"],
-        changed_files=["app/core/resilient_file_ops.py"],
+        changed_files=["app/core/analyzer.py"],
         additions=15,
         deletions=3,
     )
@@ -247,3 +256,70 @@ def test_dependency_manifests_sensitive_unless_dependabot():
     res = classify_pr(meta)
     assert res.eligible is False
     assert res.risk_level == "sensitive"
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "app/core/resilient_file_ops.py",
+        "app/core/ledger.py",
+        "app/core/db.py",
+        "app/core/db_conn.py",
+        "app/core/db_worker.py",
+    ],
+)
+def test_data_safety_modules_are_protected(path):
+    meta = PRMetadata(
+        pr_number=117,
+        title="fix: small change",
+        author="stitch",
+        labels=["automerge"],
+        changed_files=[path],
+        additions=2,
+        deletions=1,
+    )
+    res = classify_pr(meta)
+    assert res.eligible is False
+    assert res.risk_level == "sensitive"
+
+
+def test_dependencies_label_does_not_skip_the_opt_in():
+    meta = PRMetadata(
+        pr_number=118,
+        title="chore: bump helper",
+        author="stitch",
+        labels=["dependencies"],
+        changed_files=["app/core/analyzer.py"],
+        additions=2,
+        deletions=1,
+    )
+    res = classify_pr(meta)
+    assert res.eligible is False
+    assert any("'automerge' label" in r for r in res.blocking_reasons)
+
+
+@pytest.mark.parametrize(
+    ("title", "expected"),
+    [
+        ("Bump requests from 2.31.0 to 2.32.3", "minor"),
+        ("build(deps): bump ruff from 0.6.1 to 0.6.9 in /tools", "minor"),
+        ("Bump pydantic from 2.9.2 to 3.0.0", "major"),
+        ("Bump actions/checkout from v4 to v5", "major"),
+        ("Bump textual from 0.79.1 to 0.80.0", "major"),
+        ("Bump the pip group across 1 directory with 3 updates", "major"),
+        ("Bump numpy", "major"),
+    ],
+)
+def test_dependency_update_type_from_title(title, expected):
+    assert dependency_update_type_from_title(title) == expected
+
+
+def test_protected_paths_are_listed_in_codeowners():
+    codeowners = Path(__file__).resolve().parents[1] / ".github" / "CODEOWNERS"
+    owned = {
+        line.split()[0]
+        for line in codeowners.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.startswith("#") and "@fderuiter" in line
+    }
+    missing = [p for p in PROTECTED_PATHS if p not in owned]
+    assert not missing, f"Add to .github/CODEOWNERS: {missing}"
