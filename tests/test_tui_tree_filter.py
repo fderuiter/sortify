@@ -14,6 +14,19 @@ from app.ui.tui import AutoSorterTUI
 pytestmark = pytest.mark.xdist_group(name="tui")
 
 
+async def wait_for_tree(pilot, tree, predicate, timeout=5.0):
+    """Wait until the debounced tree filter has re-rendered so that predicate(tree) holds.
+
+    The search input re-renders the tree from a 0.15 s timer, so a fixed pause
+    can expire first on a slow runner.
+    """
+    loop = asyncio.get_running_loop()
+    deadline = loop.time() + timeout
+    while not predicate(tree):
+        assert loop.time() < deadline, "tree filter did not re-render in time"
+        await pilot.pause(0.05)
+
+
 @pytest.fixture(autouse=True)
 def isolated_app_dir(monkeypatch, tmp_path):
     """Ensure AppSettings is isolated from persistent disk configuration changes."""
@@ -147,7 +160,7 @@ def test_tui_tree_filter_dynamic_substring_matching(temp_workspace):
             # Type "invoice" (case-insensitive substring filter)
             search_input.focus()
             search_input.value = "invoice"
-            await pilot.pause(0.2)
+            await wait_for_tree(pilot, tree, lambda t: not any("Marketing_Docs" in str(n.label) for n in t.root.children))
 
             filtered_root_labels = [str(node.label) for node in tree.root.children]
             # Financial_Reports is included because Q1_Invoice_2024.pdf matches "invoice"
@@ -197,14 +210,14 @@ def test_tui_tree_filter_clearing_restores_full_visibility(temp_workspace):
 
             # Apply filter for "alpha"
             search_input.value = "alpha"
-            await pilot.pause(0.2)
+            await wait_for_tree(pilot, tree, lambda t: len(t.root.children) == 1)
 
             assert len(tree.root.children) == 1
             assert "Alpha" in str(tree.root.children[0].label)
 
             # Clear search field
             search_input.value = ""
-            await pilot.pause(0.2)
+            await wait_for_tree(pilot, tree, lambda t: len(t.root.children) == 2)
 
             # Restores full visibility of all nodes (both Alpha and Beta)
             restored_labels = [str(node.label) for node in tree.root.children]
@@ -241,7 +254,7 @@ def test_tui_tree_filter_no_matches_feedback(temp_workspace):
 
             # Type non-matching query
             search_input.value = "nonexistent_query_123"
-            await pilot.pause(0.2)
+            await wait_for_tree(pilot, tree, lambda t: any("No matching" in str(n.label) for n in t.root.children))
 
             assert len(tree.root.children) == 1
             info_label = str(tree.root.children[0].label)
@@ -294,7 +307,7 @@ def test_tui_tree_filter_select_all_only_affects_visible_nodes(temp_workspace):
 
             # Filter to 'invoice'
             search_input.value = "invoice"
-            await pilot.pause(0.2)
+            await wait_for_tree(pilot, tree, lambda t: not any("Photos" in str(n.label) for n in t.root.children))
 
             # Ensure focus is on tree, not search input, so 'a' hotkey triggers action_toggle_select_all
             tree.focus()
