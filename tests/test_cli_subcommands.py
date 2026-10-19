@@ -608,3 +608,21 @@ def test_one_off_flags_are_not_persisted(tmp_path, monkeypatch):
     saved = json.loads((app_dir / "settings.json").read_text(encoding="utf-8"))
     assert saved["MAX_FOLDERS"] == 7
     assert saved.get("AI_CONSENT_GRANTED") is None
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_drop_preset_is_hidden_and_warns(tmp_path):
+    """drop --preset never did anything: it is hidden from help and warns if used."""
+    from app.main import build_parser
+
+    drop_parser = build_parser()._subparsers._group_actions[0].choices["drop"]
+    assert "--preset" not in drop_parser.format_help()
+
+    test_file = tmp_path / "financial_report.pdf"
+    test_file.write_text("Q3 Financial results and accounting projections")
+    code, stdout, stderr = run_cli(
+        ["drop", str(test_file), "--preset", "demo", "--dry-run", "--json"]
+    )
+    assert code == 0, stderr
+    assert "--preset has no effect with drop" in stderr
+    assert json.loads(stdout)["processed_count"] == 1

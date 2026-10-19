@@ -1155,6 +1155,12 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
         )
         sys.exit(0)
 
+    if getattr(args, "preset", None):
+        print(
+            "Warning: --preset has no effect with drop; it sorts the paths you give it.",
+            file=sys.stderr,
+        )
+
     raw_paths = getattr(args, "paths", [])
     if not raw_paths:
         print("Error: No target paths provided for drop command.", file=sys.stderr)
@@ -1497,7 +1503,7 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
     parser_config.add_argument(
         "--show",
         action="store_true",
-        help="Display current configuration settings",
+        help="Display current configuration settings (the default)",
     )
     parser_config.add_argument(
         "--json",
@@ -1583,7 +1589,9 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         type=str,
         choices=["demo", "downloads", "documents"],
         default=None,
-        help="Use standard workspace preset directory",
+        # drop sorts the paths it is given; --preset is accepted only so
+        # existing scripts don't break, and it warns when used.
+        help=argparse.SUPPRESS,
     )
     parser_drop.add_argument(
         "--dest-dir",
