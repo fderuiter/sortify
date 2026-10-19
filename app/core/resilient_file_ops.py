@@ -19,6 +19,7 @@ import uuid
 from contextlib import contextmanager
 from typing import Optional
 
+from app.core.exceptions import PartialMoveError
 from app.core.path_utils import is_junction_path
 
 # Load the original shutil.move to detect if it has been mocked or monkeypatched in tests.
@@ -216,6 +217,7 @@ def _cross_volume_atomic_move(src: str, dst: str) -> None:
 
     stage_path = os.path.join(dst_dir, f".tmp_stage_{uuid.uuid4().hex}")
     published = False
+    removing_source_tree = False
 
     try:
         if os.path.isdir(src) and not os.path.islink(src):
@@ -244,11 +246,12 @@ def _cross_volume_atomic_move(src: str, dst: str) -> None:
 
         # Target verified! Now safely remove source file/directory.
         if os.path.isdir(src) and not os.path.islink(src):
+            removing_source_tree = True
             resilient_rmtree(src)
         else:
             resilient_remove(src)
 
-    except Exception:
+    except Exception as err:
         # Clean up transient staging file upon failure
         if os.path.lexists(stage_path):
             try:
@@ -258,6 +261,12 @@ def _cross_volume_atomic_move(src: str, dst: str) -> None:
                     resilient_remove(stage_path)
             except Exception:
                 pass
+        # Files rmtree already removed from src exist only in dst now, so keep it.
+        if removing_source_tree:
+            raise PartialMoveError(
+                f"Moved {src} to {dst}, but part of the source could not be removed. "
+                f"{dst} is complete; the leftover files are still in {src}."
+            ) from err
         # Remove a published copy that failed verification; the source is untouched.
         if published and os.path.lexists(src) and os.path.lexists(dst):
             try:
