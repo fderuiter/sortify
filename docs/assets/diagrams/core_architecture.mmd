@@ -9,7 +9,6 @@ flowchart TD
         core_session["app.core.session"]
         core_daemon["app.core.daemon"]
         core_ipc["app.core.ipc"]
-        core_integration["app.core.integration"]
         core_domain_contracts["app.core.domain_contracts"]
     end
     subgraph ingestion_extraction ["Ingestion & Extraction Engine (app.core)"]
@@ -92,7 +91,6 @@ flowchart TD
     core_session --> core_mover
     core_daemon --> core_session
     core_daemon --> core_ipc
-    core_integration --> core_session
     core_extractor --> core_extractor_strategies
     core_extractor --> core_forensic_scanner
     core_extractor --> core_offline_loader
