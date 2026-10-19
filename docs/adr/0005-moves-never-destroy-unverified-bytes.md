@@ -1,5 +1,5 @@
 ---
-status: proposed (2026-10-19)
+status: accepted (2026-10-19)
 ---
 
 # A move never destroys bytes it has not verified exist elsewhere

@@ -1,5 +1,5 @@
 ---
-status: proposed (2026-10-19)
+status: accepted (2026-10-19)
 ---
 
 # One sort pipeline, built in one place, with layers enforced in CI
