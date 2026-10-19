@@ -21,9 +21,9 @@ Once the setup is complete, verify your environment by running the test suite:
 uv run pytest -m "not slow"
 ```
 
-## Interactive CLI Demo Mode
+## CLI Demo Mode
 
-To help new developers quickly understand the end-to-end data flow without reviewing source code, the system includes an interactive demo mode.
+To help new developers see the end-to-end data flow without reading the source, the app has a demo mode. It runs on its own and needs no input.
 
 ### Running the Demo
 
@@ -37,20 +37,20 @@ uv run smart-autosorter --demo
 
 ### Automated Sample Corpus Utility
 
-The demo mode leverages an internal automated utility (`generate_sample_corpus` in `app/demo.py`) that quickly builds a test dataset containing at least 3 documents. This satisfies the minimum document constraint required by the ML clustering engine. Developers can review this script to see how sample data (e.g., mock text files on finance and technology) is assembled for local testing.
+The demo builds its data with `generate_sample_corpus(base_dir, overwrite=False)` from `app/core/sample_corpus.py`, which `app/demo.py` and the TUI's sample-dataset key both use. It writes four sample files (finance, technology and health texts plus an empty file), enough for the clustering engine's three-document minimum. Read it to see how test data is assembled.
 
 ## Centralized Backend System Utilities
 
 To prevent redundant patterns, platform-specific bugs, and visual/functional defects across application scopes, we consolidate all system packaging, path character validation, and session database directory setup / encryption key lookups.
 
 ### 1. Unified Helpers Overview
-All shared system utilities must reside in or be exposed through `app.core.path_utils`. Direct usage of custom platform/frozen hacks is strictly prohibited.
+Shared path and packaging helpers live in `app.core.path_utils`, cryptography in `app.core.crypto` and secret scrubbing in `app.core.text_utils`. Don't write your own platform or frozen-bundle checks.
 
 * **`is_packaged() -> bool`**: Returns `True` if running inside a frozen bundle (e.g., PyInstaller).
 * **`get_base_path(caller_file_path: str = None) -> str`**: Standard application base path resolver. Always pass `__file__` when calling from another module so that mocked environments are correctly handled.
 * **`validate_target_path(target_path: str, keyword: str = None) -> None`**: Standard target path validation for illegal characters, absolute paths, or traversal segments.
-* **`is_subpath_or_equal(child: str, parent: str) -> bool`**: Cross-platform boundary containment check verifying whether a candidate path is within a parent directory.
-* **`setup_session_directory(session_id: str = None) -> tuple[str, Path]`**: Sets up the standard data/session directory in the OS temp folder.
+* **`is_subpath_or_equal(child: str, parent: str) -> bool`** (in `app.core.mover`, not `path_utils`): Cross-platform check that a candidate path is inside a parent directory.
+* **`setup_session_directory(session_id: str = None) -> tuple[str, Path]`**: Creates the session directory under `$AUTOSORTER_APP_DIR/sessions`, or in the OS temp folder when that variable is unset.
 * **`resolve_db_crypto(db_path: Path | str) -> SessionCrypto`**: Standard lookup function for session encryption keys and database decrypters.
 * **`CryptoManager`**: Centralized facade (`app.core.crypto`) providing static methods for key derivation (`derive_db_hash`, `derive_keyring_account`, `derive_isolated_key_path`), envelope encryption (`encrypt_proxy_setting`, `decrypt_proxy_setting`), and pre-flight key generation (`generate_bootstrap_key`).
 * **`sanitize_secret_patterns(text: str, replacement: str = "") -> str`**: Centralized secret scrubbing delegate (`app.core.text_utils`) that redacts API keys, JWTs, Bearer tokens, private keys, and high-entropy secret payloads across text streams and logging filters.

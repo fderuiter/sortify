@@ -12,6 +12,7 @@ from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Log
 
 from app.ui.heading import Heading
+from app.ui.notifications import TROUBLESHOOTING_URL
 from app.ui.tui import A11yMixin
 
 
@@ -66,9 +67,7 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
         super().__init__()
         self.settings = settings
         self.base_dir = base_dir
-        self.help_url = (
-            "https://docs.smartautosorter.com/troubleshooting/#cro-forensic-ingestion"
-        )
+        self.help_url = f"{TROUBLESHOOTING_URL}#cro-forensic-ingestion"
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
@@ -154,9 +153,7 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
         log_w = self.query_one("#log-widget", Log)
         src = self.query_one("#input-source", Input).value.strip()
         tgt = self.query_one("#input-target", Input).value.strip()
-        help_url = (
-            "https://docs.smartautosorter.com/troubleshooting/#cro-forensic-ingestion"
-        )
+        help_url = f"{TROUBLESHOOTING_URL}#cro-forensic-ingestion"
 
         if not src or not os.path.exists(src):
             log_w.write_line(
@@ -220,7 +217,7 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
         url = getattr(
             self,
             "help_url",
-            "https://docs.smartautosorter.com/troubleshooting/#cro-forensic-ingestion",
+            f"{TROUBLESHOOTING_URL}#cro-forensic-ingestion",
         )
         from app.ui.notifications import notify
 

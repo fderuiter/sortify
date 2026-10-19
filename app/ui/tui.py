@@ -45,6 +45,7 @@ from textual.widgets.tree import TreeNode
 from app.core.path_utils import scrub_user_home_paths
 from app.core.text_utils import sanitize_secret_patterns
 from app.ui.heading import Heading
+from app.ui.notifications import TROUBLESHOOTING_URL
 
 logger = logging.getLogger(__name__)
 
@@ -299,9 +300,7 @@ class A11yMixin:
         if not forwarded:
             # Speaking aloud is opt-in: screen-reader users already hear the
             # status bar, and everyone else should not hear every message.
-            speech_bin = (
-                self._get_speech_binary() if self._speech_enabled() else None
-            )
+            speech_bin = self._get_speech_binary() if self._speech_enabled() else None
 
             if speech_bin:
                 speech_thread = self._speech_thread
@@ -1823,9 +1822,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     def __init__(self, settings):
         super().__init__()
         self.settings = settings
-        self.help_url = (
-            "https://docs.smartautosorter.com/troubleshooting/#settings-configuration"
-        )
+        self.help_url = f"{TROUBLESHOOTING_URL}#settings-configuration"
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
@@ -2206,9 +2203,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             if i.strip()
         ]
 
-        help_url = (
-            "https://docs.smartautosorter.com/troubleshooting/#settings-configuration"
-        )
+        help_url = f"{TROUBLESHOOTING_URL}#settings-configuration"
         try:
             conc_val = self.query_one("#input-concurrency", Input).value.strip()
             conc = int(conc_val)
@@ -2308,7 +2303,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         url = getattr(
             self,
             "help_url",
-            "https://docs.smartautosorter.com/troubleshooting/#settings-configuration",
+            f"{TROUBLESHOOTING_URL}#settings-configuration",
         )
         from app.ui.notifications import notify
 
@@ -3666,7 +3661,7 @@ class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
     @on(Button.Pressed, "#btn-help")
     def action_help(self) -> None:
         """Open session recovery troubleshooting guide."""
-        url = "https://docs.smartautosorter.com/troubleshooting/#session-recovery"
+        url = f"{TROUBLESHOOTING_URL}#session-recovery"
         from app.ui.notifications import notify
 
         notify(f"Opening help link: {url}", type="info", help_url=url)
@@ -4690,7 +4685,7 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         url = getattr(
             self,
             "help_url",
-            "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors",
+            f"{TROUBLESHOOTING_URL}#dropzone-errors",
         )
         from app.ui.notifications import notify
 
@@ -4714,7 +4709,7 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         if raw_text:
             self.stage_paths(raw_text)
 
-        help_url = "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors"
+        help_url = f"{TROUBLESHOOTING_URL}#dropzone-errors"
 
         filtered = self.get_filtered_items()
         ready_paths = [item["path"] for item in filtered if item["status"] == "Ready"]
