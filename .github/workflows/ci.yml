@@ -153,6 +153,10 @@ jobs:
     - name: Install Mermaid renderer
       run: |
         npm install --global @mermaid-js/mermaid-cli@12.0.0
+        # Ubuntu 24.04 runners block unprivileged user namespaces through
+        # AppArmor, so headless Chrome dies with "No usable sandbox!". Allow
+        # them rather than running Chrome with --no-sandbox.
+        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
         # Fail here, not silently in docs --check, if headless Chrome can't start.
         printf 'graph TD\n  A --> B\n' > "$RUNNER_TEMP/probe.mmd"
         mmdc -i "$RUNNER_TEMP/probe.mmd" -o "$RUNNER_TEMP/probe.svg"
