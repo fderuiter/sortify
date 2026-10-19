@@ -189,7 +189,7 @@ class PolicyEngine:
                 lock_path, keyword=os.path.basename(file_path) if file_path else None
             )
             return True, None
-        except Exception as err:
+        except ValueError as err:
             return False, str(err)
 
     @staticmethod

@@ -21,7 +21,7 @@ def is_admin():
 
     try:
         return ctypes.windll.shell32.IsUserAnAdmin()
-    except Exception:
+    except (AttributeError, OSError):
         return False
 
 
@@ -85,7 +85,7 @@ def register_context_menu(enable: bool):
             bg_command_str,
         )
     except Exception as e:
-        raise RuntimeError(f"Registry operation failed: {e}")
+        raise RuntimeError(f"Registry operation failed: {e}") from e
 
 
 if __name__ == "__main__":
@@ -107,4 +107,4 @@ if __name__ == "__main__":
             import logging
 
             logging.basicConfig(filename="reg_error.log", level=logging.ERROR)
-            logging.error(str(e))
+            logging.exception(str(e))

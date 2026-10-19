@@ -42,7 +42,7 @@ def _get_local_hostname() -> str:
     if _local_hostname is None:
         try:
             _local_hostname = socket.gethostname().lower()
-        except Exception:
+        except OSError:
             _local_hostname = ""
     return _local_hostname
 
@@ -83,8 +83,9 @@ def _is_local_address(host: str) -> bool:
                 continue
             if ip.is_loopback or ip.is_unspecified or ip.is_private or ip.is_link_local:
                 return True
-    except Exception:
-        pass
+    except (OSError, UnicodeError):
+        # Unresolvable (gaierror) or not encodable as IDNA: not provably local.
+        return False
 
     return False
 

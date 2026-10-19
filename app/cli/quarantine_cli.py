@@ -2,6 +2,7 @@
 
 import argparse
 import json
+import logging
 import os
 import sys
 from pathlib import Path
@@ -11,6 +12,8 @@ from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.quarantine_interceptor import QuarantineInterceptorService
 from app.core.resilient_file_ops import atomic_quarantine_relocation
+
+logger = logging.getLogger(__name__)
 
 
 def register_subparser(subparsers: argparse._SubParsersAction) -> None:
@@ -275,6 +278,7 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
 
                 sys.exit(0)
             except Exception as e:
+                logger.debug("Quarantine job %s failed", job_id, exc_info=True)
                 print(
                     f"Error processing quarantine job '{job_id}': {e}", file=sys.stderr
                 )

@@ -5,6 +5,7 @@ context-aware filenames as an independent pipeline stage while respecting user p
 AI consent, and path safety guardrails.
 """
 
+import contextlib
 import gc
 import logging
 import os
@@ -238,7 +239,10 @@ class ContextExtractor:
             if top_terms:
                 return top_terms
         except Exception as e:
-            logger.debug(f"TF-IDF extraction fallback to frequency count due to: {e}")
+            logger.debug(
+                f"TF-IDF extraction fallback to frequency count due to: {e}",
+                exc_info=True,
+            )
 
         # Fallback to simple frequency count
         from collections import Counter
@@ -267,12 +271,10 @@ def is_file_protected_or_locked(
         abs_fp = os.path.abspath(filepath)
         for p in protected_paths:
             if p:
-                try:
-                    abs_p = os.path.abspath(p)
-                    if is_subpath_or_equal(abs_fp, abs_p):
+                # A path that cannot be resolved protects nothing.
+                with contextlib.suppress(OSError, TypeError, ValueError):
+                    if is_subpath_or_equal(abs_fp, os.path.abspath(p)):
                         return True
-                except Exception:
-                    pass
 
     # 3. Policy match lock check
     if matched_policies and filepath in matched_policies:
@@ -334,7 +336,8 @@ class FileRenamerEngine:
                 )
             except Exception as e:
                 logger.warning(
-                    f"ML contextual generation failed: {e}. Falling back to TF-IDF."
+                    f"ML contextual generation failed: {e}. Falling back to TF-IDF.",
+                    exc_info=True,
                 )
                 keywords = ContextExtractor.extract_keywords_tfidf(
                     text, stop_words, max_keywords=3
