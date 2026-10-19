@@ -154,6 +154,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.pattern_formatter
 
+## `app.core.pipeline`
+
+::: app.core.pipeline
+
 ## `app.core.plugin_registry`
 
 ::: app.core.plugin_registry

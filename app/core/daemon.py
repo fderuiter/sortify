@@ -22,6 +22,7 @@ from app.core.domain_contracts import (
 from app.core.metadata import MetadataPass
 from app.core.mover import is_subpath_or_equal
 from app.core.path_utils import safe_relpath
+from app.core.pipeline import SortPipeline, drop_scope
 from app.core.quarantine_interceptor import QuarantineInterceptorService
 from app.core.resilient_file_ops import resilient_remove
 from app.core.scanner import get_files_recursively
@@ -1042,64 +1043,26 @@ class ContinuousWatchdogDaemon:
                 continue
 
             try:
-                if os.path.isdir(abs_path):
-                    files = get_files_recursively(abs_path)
-                    session = AppSession(self.settings, base_dir=abs_path)
-                    try:
-                        from app.core.extractor import build_corpus_generator
-
-                        gen = build_corpus_generator(
-                            base_dir=abs_path,
-                            items_to_sort=files,
-                            progress_callback=lambda info=None: None,
-                            max_workers=getattr(self.settings, "MAX_WORKERS", 2),
-                            db=session.db,
-                            settings=self.settings,
-                        )
-                        for chunk in gen:
-                            session.partial_fit(chunk)
-                        plan = session.generate_sorting_plan()
-                        if dry_run:
-                            summary = {
-                                "status": "dry_run",
-                                "plan": _make_json_serializable(plan),
-                            }
-                        else:
-                            summary = session.execute_moves(plan)
-                        processed_items.append(
-                            {"path": abs_path, "type": "directory", "summary": summary}
-                        )
-                    finally:
-                        session.close()
-                elif os.path.isfile(abs_path):
-                    parent_dir = os.path.dirname(abs_path)
-                    session = AppSession(self.settings, base_dir=parent_dir)
-                    try:
-                        from app.core.extractor import build_corpus_generator
-
-                        gen = build_corpus_generator(
-                            base_dir=parent_dir,
-                            items_to_sort=[abs_path],
-                            progress_callback=lambda info=None: None,
-                            max_workers=getattr(self.settings, "MAX_WORKERS", 2),
-                            db=session.db,
-                            settings=self.settings,
-                        )
-                        for chunk in gen:
-                            session.partial_fit(chunk)
-                        plan = session.generate_sorting_plan()
-                        if dry_run:
-                            summary = {
-                                "status": "dry_run",
-                                "plan": _make_json_serializable(plan),
-                            }
-                        else:
-                            summary = session.execute_moves(plan)
-                        processed_items.append(
-                            {"path": abs_path, "type": "file", "summary": summary}
-                        )
-                    finally:
-                        session.close()
+                if not (os.path.isdir(abs_path) or os.path.isfile(abs_path)):
+                    continue
+                base_dir, files = drop_scope(abs_path)
+                session = AppSession(self.settings, base_dir=base_dir)
+                try:
+                    plan, summary = SortPipeline(session).run(files, dry_run=dry_run)
+                    if dry_run:
+                        summary = {
+                            "status": "dry_run",
+                            "plan": _make_json_serializable(plan),
+                        }
+                    processed_items.append(
+                        {
+                            "path": abs_path,
+                            "type": "directory" if files is None else "file",
+                            "summary": summary,
+                        }
+                    )
+                finally:
+                    session.close()
             except Exception as e:
                 logger.error(f"Error processing dropped path {abs_path}: {e}")
                 errors.append(f"Processing error for {abs_path}: {e}")
