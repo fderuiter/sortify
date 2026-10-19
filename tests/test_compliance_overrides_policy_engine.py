@@ -284,4 +284,3 @@ def test_policy_engine_presorted_evaluation():
     )
     assert res_presorted is not None
     assert res_presorted.target_path == "High_Priority"
-

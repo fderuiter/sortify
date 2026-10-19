@@ -48,7 +48,10 @@ def test_advisory_client_singleton_and_cache():
 
     # Test clear_cache
     client1.clear_cache()
-    assert client1.get_cached_advisory("sentence-transformers/all-MiniLM-L6-v2", None) is None
+    assert (
+        client1.get_cached_advisory("sentence-transformers/all-MiniLM-L6-v2", None)
+        is None
+    )
 
 
 def test_cached_lookup_latency_under_50ms():
@@ -63,7 +66,9 @@ def test_cached_lookup_latency_under_50ms():
     elapsed = time.perf_counter() - start_time
 
     assert result.has_advisory is False
-    assert elapsed < 0.050, f"Cached lookup took {elapsed * 1000:.2f}ms, exceeding 50ms SLA limit!"
+    assert elapsed < 0.050, (
+        f"Cached lookup took {elapsed * 1000:.2f}ms, exceeding 50ms SLA limit!"
+    )
 
 
 def test_active_security_advisory_blocks_and_raises_verification_error():
@@ -112,7 +117,9 @@ def test_fallback_policy_strict_vs_permissive():
 def test_background_downloader_pre_download_advisory_check_blocks_download():
     """Verify background downloader checks advisories and halts before stream opening or disk allocation."""
     client = SecurityAdvisoryClient.get_instance()
-    test_url = "https://huggingface.co/vulnerable-org/malicious-model/resolve/main/model.onnx"
+    test_url = (
+        "https://huggingface.co/vulnerable-org/malicious-model/resolve/main/model.onnx"
+    )
     repo_id = SecurityAdvisoryClient.extract_repo_id(test_url)
 
     # Flag repository as vulnerable in advisory client
@@ -180,7 +187,9 @@ def test_offline_loader_blocks_loading_flagged_model():
         with open(os.path.join(model_folder, "model.onnx"), "w") as f:
             f.write("dummy model content")
 
-        with patch.object(OfflineModelLoader, "resolve_model_path", return_value=model_folder):
+        with patch.object(
+            OfflineModelLoader, "resolve_model_path", return_value=model_folder
+        ):
             with pytest.raises(ModelVerificationError) as exc_info:
                 OfflineModelLoader.load_model(model_id, mock_loader)
 
@@ -207,9 +216,7 @@ def test_concurrent_advisory_cache_thread_safety():
         except Exception as e:
             errors.append(e)
 
-    threads = [
-        threading.Thread(target=worker, args=(i,)) for i in range(50)
-    ]
+    threads = [threading.Thread(target=worker, args=(i,)) for i in range(50)]
     for t in threads:
         t.start()
     for t in threads:

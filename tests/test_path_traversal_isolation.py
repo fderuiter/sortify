@@ -80,8 +80,16 @@ def test_verification_engine_detects_escaping_paths_and_fails_integrity():
 
     tracker = VirtualFilesystemTracker()
     moves_list = [
-        ("file1.txt", os.path.join(base_dir, "file1.txt"), os.path.join(base_dir, "Documents", "file1.txt")),
-        ("file2.txt", os.path.join(base_dir, "file2.txt"), os.path.join(outside_dir, "file2.txt")),
+        (
+            "file1.txt",
+            os.path.join(base_dir, "file1.txt"),
+            os.path.join(base_dir, "Documents", "file1.txt"),
+        ),
+        (
+            "file2.txt",
+            os.path.join(base_dir, "file2.txt"),
+            os.path.join(outside_dir, "file2.txt"),
+        ),
     ]
 
     escaping = tracker.check_escaping_paths(moves_list, base_dir)
@@ -107,7 +115,10 @@ def test_verify_plan_integrity_logs_sanitization_warnings(caplog):
         result = VerificationEngine.verify_plan_integrity(base_dir, plan)
 
     assert result["success"] is True
-    assert any("Pre-flight plan sanitization adjustment:" in record.message for record in caplog.records)
+    assert any(
+        "Pre-flight plan sanitization adjustment:" in record.message
+        for record in caplog.records
+    )
 
 
 def test_runtime_boundary_violation_raises_value_error_and_rolls_back():
@@ -179,7 +190,10 @@ def test_async_move_engine_rejects_escaping_paths():
 
         # Monkeypatch VerificationEngine inside mover module
         with pytest.MonkeyPatch.context() as mp:
-            mp.setattr("app.core.verifier.VerificationEngine.verify_plan_integrity", mock_verifier.verify_plan_integrity)
+            mp.setattr(
+                "app.core.verifier.VerificationEngine.verify_plan_integrity",
+                mock_verifier.verify_plan_integrity,
+            )
 
             plan = {
                 "sub": {
@@ -190,5 +204,7 @@ def test_async_move_engine_rejects_escaping_paths():
                 }
             }
 
-            with pytest.raises(ValueError, match="Plan validation or confirmation failed"):
+            with pytest.raises(
+                ValueError, match="Plan validation or confirmation failed"
+            ):
                 engine.execute(base_dir, plan, db=None, history_manager=MagicMock())
