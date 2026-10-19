@@ -784,6 +784,14 @@ def safe_relpath(path: str | Path, start: str | Path | None = None) -> str:
     start_str = str(start)
 
     try:
+        try:
+            real_p = os.path.realpath(path_str)
+            real_s = os.path.realpath(start_str)
+            rel = os.path.relpath(real_p, real_s)
+            if not rel.startswith(".."):
+                return rel
+        except Exception:
+            pass
         return os.path.relpath(path_str, start_str)
     except (ValueError, TypeError, Exception):
         return os.path.abspath(path_str)
