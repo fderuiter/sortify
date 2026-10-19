@@ -1,51 +1,38 @@
 # Troubleshooting Guide
 
-Welcome to the Smart AutoSorter AI Pro troubleshooting guide. If you are experiencing issues during setup, particularly with downloading the AI model, please consult the sections below.
+Welcome to the Smart AutoSorter AI Pro troubleshooting guide. This page covers model downloads, settings errors, interrupted sessions, the DropZone and CRO ingestion. The **Help** buttons in the terminal UI open the matching section.
 
 ![Setup Wizard Network Flow](assets/diagrams/setup_wizard_flow.svg)
 
-## Common Network Failure Messages
+## Model download failures
 
-### 1. "Download failed: Cannot connect to host" or "Connection timeout"
-**Cause:** Your firewall, antivirus, or network proxy is blocking the background network request to Hugging Face (`huggingface.co`), or you are completely disconnected from the internet.
-**Solution:**
-- Check your internet connection.
-- Temporarily disable your VPN or firewall to see if it allows the download to proceed.
-- If you are on an enterprise network, you may need to ask your administrator for an **offline deployment bundle** to sideload the model.
+The Model Manager (`[Ctrl+K]`) downloads the optional embedding model (`all-MiniLM-L6-v2` in ONNX format) from Hugging Face. When a download fails it shows **Model download failed:** followed by the reason.
 
-### 2. "Download failed: Insufficient disk space"
-**Cause:** The 80MB AI model download requires free disk space on your local drive.
-**Solution:**
-- Free up at least 200MB of space on your main system drive.
-- Clear unneeded temporary files on your drive, then retry the download.
+### Network errors
+The message names a network, connection or timeout error. A firewall, antivirus, VPN or proxy is blocking `huggingface.co`, or the machine is offline.
 
-## Manual Retries
+- Check your internet connection, and try again with the VPN off.
+- Behind a corporate proxy, enter it in the Model Manager's proxy field before downloading.
+- If the network can't be opened, ask your administrator for the offline deployment bundle, which includes the model.
 
-If the initial download in the Setup Wizard fails or if you previously declined AI consent, you can manually trigger consent setup or retry the AI model download at any time:
+### "Insufficient disk space"
+The message reads `Insufficient disk space. Required: N bytes, Free: M bytes.` or `Insufficient disk space on the target drive.` Sortify checks that the target drive has room for the whole file before it downloads. Free that much space plus a margin, then retry.
 
-### Using CLI Commands
-- Grant consent and trigger model setup directly from the command line:
-  ```bash
-  smart-autosorter --accept-ai-consent
-  ```
-- Alternatively, update your stored configuration setting directly:
-  ```bash
-  smart-autosorter config --set AI_CONSENT_GRANTED true
-  ```
-- In non-interactive or headless execution environments without a TTY, include non-interactive flags to bypass interactive dialog prompts:
-  ```bash
-  smart-autosorter --accept-ai-consent --skip-wizard --non-interactive
-  ```
+## Granting consent and retrying the download
 
-### Using Text User Interface (TUI)
-- Launch the interactive terminal interface:
-  ```bash
-  smart-autosorter --tui
-  ```
-- Press `[Ctrl+W]` to reopen the Model Onboarding Wizard modal.
-- Use `[Tab]` to navigate to the **AI Consent Granted** toggle switch, press `[Space]` or `[Enter]` to toggle consent on, and press `[Enter]` on **Finish & Save** to save your preferences and retry initialization.
+Consent and the download are separate steps. Granting consent allows Sortify to use the model; the download itself starts from the Model Manager.
 
-If the problem persists and you cannot resolve your network issues, you can keep using the application offline (`smart-autosorter --decline-ai-consent`). Files are still clustered by content using TF-IDF keyword vectors instead of the embedding model; see [Offline Mode](user_guide.md#offline-mode).
+### In the terminal UI
+1. Start the app with `smart-autosorter --tui`.
+2. Press `[Ctrl+W]` to open the Model Onboarding Wizard, switch **AI Consent Granted** on with `[Space]`, and choose **Finish & Save**.
+3. Press `[Ctrl+K]` to open the Model Manager and choose **Start Download**, or **Retry Download** after a failure.
+
+### From the command line
+`smart-autosorter --accept-ai-consent` opens the terminal UI with consent granted for that run. It does not start the download; use the Model Manager for that.
+
+`smart-autosorter config --set AI_CONSENT_GRANTED true` is meant to save consent permanently, but it currently prints the new value without reliably saving it ([#806](https://github.com/fderuiter/sortify/issues/806)). Use the wizard until that is fixed.
+
+You can keep using Sortify without the model (`smart-autosorter --decline-ai-consent`). Files are still clustered by content using TF-IDF keyword vectors; see [Offline Mode](user_guide.md#offline-mode).
 
 ## Settings configuration
 

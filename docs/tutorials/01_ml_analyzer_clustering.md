@@ -6,11 +6,11 @@ The system utilizes an `IncrementalAnalyzer` that processes documents and automa
 
 ## 2. Parameter Explanations & Expectations
 The `IncrementalAnalyzer` class requires several parameters to govern its behavior and state:
-- `max_folders` (int): The upper limit of subdirectories the analyzer will generate for organizing documents (e.g., must be greater than 0 and is hard-capped at 12 by system constraints).
+- `max_folders` (int): The most folders the analyzer creates at each level of the tree. Each level gets `min(max_folders, documents // 2)` clusters, at least 2. In the app this comes from the `MAX_FOLDERS` setting (default 12, allowed 1 to 50).
 - `stop_words` (set): A set of common words (e.g., 'the', 'and', 'for') that are filtered out during tokenization and TF-IDF calculation to ensure meaningful clustering.
 - `db` (Database): An active `Database` instance. The analyzer is stateful and stores TF-IDF vocabularies, document mappings, and other metadata inside this SQLite-backed database.
-- `strategy_name` (str): Specifies the clustering strategy. The fully offline/deterministic strategy is `'default'`, which uses recursive KMeans and TF-IDF keywords. `'generative'` can be used when LLM-driven naming is active.
-- `model_path` (str/None): The filesystem path to semantic embedding model weights if neural vector clustering is enabled. When `None` or omitted, it falls back to standard keyword-based modeling, which has zero network or hardware model-loading dependencies.
+- `strategy_name` (str): Specifies the clustering strategy. `'default'` is the fully offline strategy: recursive KMeans with folders named from TF-IDF keywords, and what the app uses unless AI-assisted naming is on. `'generative'` names folders with a local LLM. If you omit the argument the constructor uses `'generative'`, so pass `'default'` explicitly as this tutorial does.
+- `model_path` (str/None): The path to the ONNX embedding model. Passing `None` forces TF-IDF keyword vectors, with no model loading at all. Omitting the argument is different: the analyzer then looks for a model in the offline bundle or the app's data folder and uses it if one is installed.
 
 ### Expected Inputs:
 - **Base Directory (`base_dir`)**: The root directory being analyzed.

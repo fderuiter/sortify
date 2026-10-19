@@ -7,7 +7,7 @@ The system relies on an automated, pipelined data flow from the moment the user 
 ![Architecture Data Flow](assets/diagrams/architecture_dataflow.svg)
 
 ### 1. Data Extraction
-When a directory is selected, `build_corpus_generator` scans and extracts text from supported files (PDFs, DOCX, CSV, Excel, TXT).
+When a directory is selected, `get_files_recursively` (`app/core/scanner.py`) lists its files and `build_corpus_generator` (`app/core/extractor.py`) extracts their text on the shared worker pool, yielding results in chunks of 50. Supported formats are TXT, DOCX, CSV, XLSX/XLS and PDF, plus images (OCR) and audio (Whisper) when the `ml` extra is installed.
 
 ### 2. ML Clustering & Recursive Analysis
 
@@ -16,19 +16,18 @@ See [IncrementalAnalyzer][app.core.analyzer.IncrementalAnalyzer] for details on 
 See [RecursiveKMeansStrategy][app.core.analyzer_strategies.RecursiveKMeansStrategy] for details on the hierarchical clustering approach used for deep folder structures.
 
 ### 3. Folder Naming Logic
-Documents left over after rule-based routing are vectorized with TF-IDF, or with ONNX sentence embeddings when the optional model is installed, and grouped with `MiniBatchKMeans` (`k = min(MAX_FOLDERS, documents // 2)`, at least 2). Clustering recurses into each group up to five levels deep, so `MAX_FOLDERS` caps folders per level rather than in total. Recursion stops when fewer than three documents remain; at the top level those documents go to `Miscellaneous`, deeper down they stay in their parent folder.
+Documents left over after rule-based routing are vectorized with TF-IDF, or with ONNX sentence embeddings when the optional model is installed, and grouped with `MiniBatchKMeans` (`k = min(MAX_FOLDERS, documents // 2)`, at least 2). Clustering recurses into each group until it reaches `MAX_DEPTH` (default 5, so at most four levels of nested folders), and `MAX_FOLDERS` caps folders per level rather than in total. Recursion stops when fewer than three documents remain; at the top level those documents go to `Miscellaneous`, deeper down they stay in their parent folder.
 
 With the default strategy, a folder is named from the top two TF-IDF terms of its documents, capitalized and joined with a hyphen (e.g., `Finance-Money`). When AI-assisted naming is enabled, the `generative` strategy asks a local LLM for a 1–4 word name instead.
 
-## Asyncio Concurrency & UI Responsiveness
+## Background Work & UI Responsiveness
 
-The application features a responsive user interface powered by an `asyncio` event loop and leverages thread pool offloading to ensure non-blocking UI interactions during heavy file I/O and machine learning operations.
+The terminal UI keeps the interface responsive by running every slow step in a Textual worker thread, not on the UI event loop.
 
-- **Async Event Loop & Non-Blocking Scheduling:** Long-running background operations, such as initial directory processing (`_scan_and_process_worker`), are scheduled on the active `asyncio` event loop using `asyncio.create_task`.
-- **Thread Pool Offloading (`asyncio.to_thread`):** Blocking file system scanning (`get_files_recursively`), document metadata extraction (`MetadataPass.run`), incremental ML fitting (`partial_fit`), and sorting plan calculation (`generate_sorting_plan`) are delegated to worker threads via `asyncio.to_thread` to keep the UI event loop unblocked.
-- **Debounced Plan Recalculation:** User actions that require plan updates (such as file drag-and-drop moves or node lock toggles) trigger `_rebuild_plan_async`. Recalculation is debounced by 0.5 seconds using `asyncio.sleep(0.5)` wrapped inside a `_debounce_task`. Rapid user interactions cancel any existing pending debounce task (`_debounce_task.cancel()`) to prevent redundant plan recalculations.
-- **Cooperative Token Cancellation (`threading.Event`):** Plan recalculations utilize isolated `threading.Event` cancellation tokens (`_current_recalc_token`). The offloaded thread regularly evaluates a `check_cancel` callback (`lambda: token.is_set()`). If the token is set or if `asyncio.sleep` raises `asyncio.CancelledError`, background execution aborts immediately, preventing wasteful CPU and RAM consumption.
-- **Thread-Safe UI Dispatch:** Thread worker progress callbacks dispatch UI component updates back to the primary asyncio event loop using `loop.call_soon_threadsafe`.
+- **Worker threads:** Scanning and plan building run in `@work(thread=True)` workers such as `run_scan_worker` in `app/ui/tui.py`. The worker calls `get_files_recursively`, `MetadataPass.run`, the analyzer's `partial_fit` and `AppSession.generate_sorting_plan` directly, and `exclusive=True` cancels a running scan when a new one starts.
+- **UI updates from workers:** Workers never touch widgets directly. Progress and results go back to the UI thread through `App.call_from_thread`, for example `self.call_from_thread(self.rebuild_tree)` once a plan is ready.
+- **Plan edits:** Locking, renaming or moving a node in the plan tree updates the plan and calls `rebuild_tree()` straight away; there is no debounce in the TUI.
+- **Async core APIs:** The core library also offers `asyncio` entry points for the daemon and IPC server, such as `build_corpus_generator_async` (`app/core/extractor.py`), which offload blocking work with `asyncio.to_thread`. The daemon (`app/core/daemon.py`) debounces file-system events with a `threading.Timer` (`DEBOUNCE_DELAY`, default 0.6 s, capped at `MAX_DEBOUNCE_DELAY`, default 5 s) and hands results to its event loop with `loop.call_soon_threadsafe`.
 
 ### Background Processing & Debouncing Sequence Flow
 
@@ -43,10 +42,10 @@ The application features a responsive user interface powered by an `asyncio` eve
 To prevent redundant patterns, platform-specific path bugs, and visual/functional defects across application scopes, we consolidate all system packaging checks, path character validations, and database directory setups / encryption key lookups.
 
 ### Centralized Core Helpers
-All shared system utilities must reside in or be exposed through `app.core.path_utils`. Direct usage of custom platform or frozen bundle hacks is strictly prohibited.
+Shared path and packaging helpers live in `app.core.path_utils`, cryptography in `app.core.crypto` and secret scrubbing in `app.core.text_utils`. Direct usage of custom platform or frozen bundle hacks is strictly prohibited.
 * **Packaging and Bundle Detections:** The unified helper `is_packaged()` in `app.core.path_utils` checks `sys.frozen` to detect if the app is running in a PyInstaller frozen bundle.
 * **Path Sanitization & Name Validation:** Standard validations such as `validate_target_path()`, `sanitize_name()`, and `is_valid_name()` standardize path checking across the application, adhering to OS limits and avoiding platform-specific path errors.
-* **Quarantine Target Path & Boundary Validation:** `QuarantineInterceptorService.resolve_safe_target_dir()` verifies target output subfolders using `validate_target_path()` and enforces strict boundary containment within base directory boundaries via `is_subpath_or_equal()`, safely falling back to default subfolders if path traversal or illegal characters are detected.
+* **Quarantine Target Path & Boundary Validation:** `QuarantineInterceptorService.resolve_safe_target_dir()` verifies target output subfolders using `validate_target_path()` and enforces containment within the base directory via `is_subpath_or_equal()` (`app/core/mover.py`), safely falling back to default subfolders if path traversal or illegal characters are detected.
 * **Session and Data Directory Resolution:** Session setup is centralized in `setup_session_directory()` and encryption key lookup is handled via `resolve_db_crypto()`.
 * **Centralized Cryptographic & Key Management Facade:** Cryptographic key derivation (SHA-256 with legacy MD5 migration), envelope encryption for proxy settings, and ephemeral bootstrap keys are managed by `CryptoManager` (`app.core.crypto`).
 * **Unified Secret Scrubbing Delegate:** All secret scrubbing and diagnostic credential masking delegates to `sanitize_secret_patterns()` in `app.core.text_utils`, eliminating duplicate regex definitions across logging and text filtering.
@@ -54,14 +53,25 @@ All shared system utilities must reside in or be exposed through `app.core.path_
 ### Automated Commit-Stage Linting
 The `validate-architecture` pre-commit hook (`scripts/validate_architecture.py`, also run in CI) parses changed Python files and rejects re-introduced copies of centralized helpers, such as hardcoded illegal path characters (e.g., `<>:"|?*`), direct `sys.frozen` checks, or raw `secret.key` references outside of `path_utils.py`. The older `scripts/validate_duplicates.py` is deprecated.
 
-## Modular CLI Subcommand Registry
+## Command-Line Interface
 
-The command-line interface is organized modularly under `app/cli/`, delegating domain subcommands to dedicated handlers registered via `build_subparser_registry` in `app/cli/__init__.py`:
+`build_parser` in `app/main.py` defines the top-level options (such as `--tui`) and these subcommands:
 
-- **`ledger` (`app/cli/ledger_cli.py`)**: Transaction ledger status (`status`), automated operation recovery (`reconcile`), and record cleanup (`purge`).
-- **`quarantine` (`app/cli/quarantine_cli.py`)**: Quarantine staging inspection (`list`, `inspect`), forensic scanning (`process`), and document release (`release`).
+| Subcommand | Purpose |
+|---|---|
+| `sort` | Scan, plan and move files in a folder (`--dry-run` previews the plan) |
+| `scan` | Scan and analyse a folder without moving anything |
+| `config` | Show or change saved settings |
+| `daemon` | Watch folders and sort new files continuously |
+| `undo` | List sessions or roll one back |
+| `drop` | Triage specific files or folders, like the TUI DropZone |
 
-All subcommands enforce stream isolation (`sys.stdout` reserved for structured output/JSON; `sys.stderr` for logs and progress), support `--json`, `--quiet`, and `--no-color` global wrappers, and execute database connection cleanup in `finally` blocks to release file descriptor locks across all target platforms.
+Further domain subcommands are registered from `app/cli/` by `register_cli_subcommands` and dispatched by `handle_cli_command` (`app/cli/__init__.py`):
+
+- **`ledger` (`app/cli/ledger_cli.py`)**: transaction ledger `status`, `reconcile` (recover interrupted operations), `purge` and `export` (CSV or JSON audit export).
+- **`quarantine` (`app/cli/quarantine_cli.py`)**: `list` and `inspect` staged items, `process` (forensic scan) and `release`.
+
+The `ledger` and `quarantine` sub-actions each accept `--json`, `--quiet`/`-q` and `--no-color`, write structured output to `stdout` and logs and progress to `stderr`, and close their database connections in `finally` blocks so file locks are released on every platform.
 
 ## Dual-Barrier Sensitivity Compliance System
 

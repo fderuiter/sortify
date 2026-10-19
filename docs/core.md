@@ -13,7 +13,7 @@ The system uses a two-phase pipeline to convert documents into structured sortin
 1. **Extraction (`app.core.extractor`)**:
     - The extractor reads raw files across multiple supported formats (TXT, CSV, PDF, DOCX, XLSX/XLS, plus images via OCR and audio via Whisper when the `ml` extra is installed).
     - It maps each file to its raw text payload using robust exception-handling to ensure that a failure in one document does not crash the entire run.
-    - An asynchronous generator (`build_corpus_generator`) processes these files concurrently in a thread pool, yielding chunks of extracted text to keep memory usage low.
+    - `build_corpus_generator` submits files to the shared worker pool and yields the extracted text in chunks of 50 to keep memory use low. `build_corpus_generator_async` is the `asyncio` variant used by the daemon.
 
 2. **Analysis (`app.core.analyzer`)**:
     - Extracted text chunks are fed incrementally into the `IncrementalAnalyzer`.
@@ -35,11 +35,16 @@ The system uses a two-phase pipeline to convert documents into structured sortin
 
 ## Verifier Logic
 
-Before any files are moved, the `app.core.verifier` ensures the sorting plan is safe and valid. The `VerificationEngine` proactively checks for execution errors:
+Before any files are moved, `VerificationEngine.verify_integrity` (`app.core.verifier`) checks the sorting plan and reports problems by category:
 
-- **Volume and Disk Space Constraints**: It tracks the expected changes in disk usage across volumes and confirms that sufficient free space exists for the destination directory before attempting a move.
-- **Path Length Restrictions**: It prevents operations that would exceed OS-level path limits (e.g., 260 characters on Windows or 4096 characters on Unix systems).
-- **File Accessibility**: It validates that the source files exist, are accessible, and are not locked by other processes.
+- **Collisions**: two files planned for the same destination, or a destination whose parent path is blocked by a file.
+- **Circular renames**: moves that would swap or cycle file names.
+- **Broken links**: symlinks and Windows shortcuts whose targets would break after the moves.
+- **Escaping paths**: destinations that would resolve outside the target folder.
+- **Long paths**: destinations longer than 260 characters. The same limit is applied on every OS.
+- **Invalid or unconfirmed renames**: proposed names with illegal characters or a changed extension, and renames the user hasn't confirmed.
+
+It does not check free disk space or whether a source file is locked by another program; those failures surface during the move itself.
 
 ---
 
