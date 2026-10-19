@@ -128,7 +128,9 @@ def test_history_baseline_completes_old_snapshot_tables(conn):
     )
     conn.commit()
 
-    assert migrate(conn, HISTORY_DB_MIGRATIONS, label="history") == 1
+    assert migrate(conn, HISTORY_DB_MIGRATIONS, label="history") == (
+        HISTORY_DB_MIGRATIONS[-1].version
+    )
 
     assert {"is_symlink", "file_hash", "link_type", "window_mode"} <= table_columns(
         conn, "snapshot_files"

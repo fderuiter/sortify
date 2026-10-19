@@ -1,0 +1,224 @@
+{
+  "_metadata": {
+    "checksum": "e234f455bb0d7eabad152de4780cda7189386d6de8f08dc6ad6940be7485f678"
+  },
+  "classes": [
+    {
+      "class_name": "Move",
+      "decorators": [
+        "@dataclass(frozen=True)"
+      ],
+      "methods": []
+    },
+    {
+      "class_name": "MoveLedger",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "db_path"
+            },
+            {
+              "annotation": "_Writer | None",
+              "default": "None",
+              "name": "writer"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "list_moves",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            }
+          ],
+          "returns": "list[Move]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "mark_done",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "seq"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "dst"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "displaced"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "mark_failed",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "seq"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "error"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "mark_verified",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "seq"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "record_intent",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "src"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "dst"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "src_sha256"
+            },
+            {
+              "annotation": "int | None",
+              "default": "None",
+              "name": "size"
+            }
+          ],
+          "returns": "int"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "create_moves_table",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "conn"
+        }
+      ],
+      "returns": "None"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "import_step_ledger",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "conn"
+        }
+      ],
+      "returns": "int"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "migrate_add_moves",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "conn"
+        }
+      ],
+      "returns": "None"
+    }
+  ]
+}

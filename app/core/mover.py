@@ -498,6 +498,35 @@ def _log_displacement(history_manager, session_id, dest_path, backup_path) -> No
         logging.warning(f"Failed to log overwrite backup step: {log_err}")
 
 
+def _record_move_intent(moves, session_id, source_path, dest_path, src_sha256):
+    """Commit the move's intent row (ADR 0006) and return its seq, or None if it failed."""
+    if not (moves and session_id):
+        return None
+    size = None
+    try:
+        if os.path.isfile(source_path) and not os.path.islink(source_path):
+            size = os.lstat(source_path).st_size
+    except OSError:
+        pass
+    try:
+        return moves.record_intent(
+            session_id, source_path, dest_path, src_sha256=src_sha256, size=size
+        )
+    except Exception as err:
+        logging.warning(f"Failed to record move intent for {source_path}: {err}")
+        return None
+
+
+def _record_move_state(moves, session_id, seq, state: str, **fields) -> None:
+    """Move the intent row ``seq`` to ``state``; a ledger error never fails the move."""
+    if not (moves and session_id) or seq is None:
+        return
+    try:
+        getattr(moves, f"mark_{state}")(session_id, seq, **fields)
+    except Exception as err:
+        logging.warning(f"Failed to mark move {session_id}#{seq} {state}: {err}")
+
+
 def _is_foreign_hidden_dir(path: str) -> bool:
     name = os.path.basename(os.path.normpath(path))
     return name.startswith(".") and name not in _OWNED_HIDDEN_DIRS
@@ -1137,39 +1166,55 @@ def _process_move_item(
                     pass
         return True
 
+    # The intent row is committed before anything on disk changes (ADR 0006).
+    moves = getattr(history_manager, "moves", None) if history_manager else None
+    move_seq = _record_move_intent(moves, session_id, source_path, dest_path, pre_hash)
+
     displaced_path = overwritten_path = None
     if not moved_as_link:
         import unittest.mock
 
-        if (
-            collision
-            and conflict_policy == "overwrite"
-            and os.path.lexists(dest_path)
-            and not _is_same_path(source_path, dest_path)
-        ):
-            overwritten_path = dest_path
-            displaced_path = _displace_for_overwrite(dest_path, base_dir, session_id)
-
         try:
             if (
-                isinstance(
-                    shutil.move, (unittest.mock.Mock, unittest.mock.NonCallableMock)
-                )
-                or hasattr(shutil.move, "mock_add_spec")
-                or getattr(shutil.move, "__name__", "") == "mock_move"
-                or getattr(shutil.move, "__module__", "") != "shutil"
+                collision
+                and conflict_policy == "overwrite"
+                and os.path.lexists(dest_path)
+                and not _is_same_path(source_path, dest_path)
             ):
-                shutil.move(source_path, dest_path)
-            else:
-                from app.core.resilient_file_ops import resilient_move
+                overwritten_path = dest_path
+                displaced_path = _displace_for_overwrite(
+                    dest_path, base_dir, session_id
+                )
 
-                dest_path = resilient_move(source_path, dest_path)
-                rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
+            try:
+                if (
+                    isinstance(
+                        shutil.move, (unittest.mock.Mock, unittest.mock.NonCallableMock)
+                    )
+                    or hasattr(shutil.move, "mock_add_spec")
+                    or getattr(shutil.move, "__name__", "") == "mock_move"
+                    or getattr(shutil.move, "__module__", "") != "shutil"
+                ):
+                    shutil.move(source_path, dest_path)
+                else:
+                    from app.core.resilient_file_ops import resilient_move
+
+                    dest_path = resilient_move(source_path, dest_path)
+                    rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
+            except Exception as err:
+                logging.error(
+                    f"Failed to move file {source_path} to {dest_path}: {err}"
+                )
+                if displaced_path:
+                    _restore_displaced(displaced_path, overwritten_path)
+                raise
         except Exception as err:
-            logging.error(f"Failed to move file {source_path} to {dest_path}: {err}")
-            if displaced_path:
-                _restore_displaced(displaced_path, overwritten_path)
+            _record_move_state(moves, session_id, move_seq, "failed", error=str(err))
             raise
+
+    _record_move_state(
+        moves, session_id, move_seq, "done", dst=dest_path, displaced=displaced_path
+    )
 
     if ledger and entry_id:
         with db_lock:
@@ -1213,6 +1258,12 @@ def _process_move_item(
             step_hash = get_file_hash(dest_path)
         except Exception:
             pass
+    if step_hash and step_hash == pre_hash:
+        _record_move_state(moves, session_id, move_seq, "verified")
+    elif move_seq is not None and pre_hash:
+        logging.warning(
+            f"Moved {source_path} to {dest_path}, but its hash no longer matches the source."
+        )
     if not step_hash and doc:
         step_hash = doc.get("file_hash")
 

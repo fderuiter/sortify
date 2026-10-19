@@ -191,7 +191,7 @@ def test_cli_ledger_export_command(test_history_env, monkeypatch):
         output=csv_out,
         format="csv",
         csv=True,
-        ledger_db=str(env["tmp_path"] / "history.db"),
+        ledger_db=str(env["tmp_path"] / "transaction_ledger.db"),
         quiet=True,
         json=True,
     )
@@ -209,7 +209,9 @@ def test_cli_ledger_export_command(test_history_env, monkeypatch):
             }
         ]
 
-    monkeypatch.setattr("app.core.session_catalog.find_all_history_sessions", mock_find_sessions)
+    monkeypatch.setattr(
+        "app.core.session_catalog.find_all_history_sessions", mock_find_sessions
+    )
 
     with pytest.raises(SystemExit) as exc_info:
         handle_ledger_command(args, settings)
@@ -277,7 +279,9 @@ def test_export_audit_log_all_sessions_consolidation(tmp_path, monkeypatch):
             },
         ]
 
-    monkeypatch.setattr("app.core.session_catalog.find_all_history_sessions", mock_find_sessions)
+    monkeypatch.setattr(
+        "app.core.session_catalog.find_all_history_sessions", mock_find_sessions
+    )
 
     json_out = str(tmp_path / "aggregated.json")
     res = hm1.export_audit_log(json_out, session_id=None, format="json")
@@ -329,7 +333,9 @@ def test_export_audit_log_secondary_db_by_session_id(tmp_path, monkeypatch):
             }
         ]
 
-    monkeypatch.setattr("app.core.session_catalog.find_all_history_sessions", mock_find_sessions)
+    monkeypatch.setattr(
+        "app.core.session_catalog.find_all_history_sessions", mock_find_sessions
+    )
 
     csv_out = str(tmp_path / "secondary.csv")
     # Export using primary HistoryManager, searching for s2_id in secondary database
@@ -386,7 +392,9 @@ def test_export_audit_log_corrupted_db_handling(tmp_path, monkeypatch):
             },
         ]
 
-    monkeypatch.setattr("app.core.session_catalog.find_all_history_sessions", mock_find_sessions)
+    monkeypatch.setattr(
+        "app.core.session_catalog.find_all_history_sessions", mock_find_sessions
+    )
 
     csv_out = str(tmp_path / "corrupt_test.csv")
     res = hm.export_audit_log(csv_out, session_id=None, format="csv")
@@ -423,7 +431,7 @@ def test_cli_ledger_export_without_session_id(tmp_path, monkeypatch):
         output=csv_out,
         format="csv",
         csv=True,
-        ledger_db=str(db_path),
+        ledger_db=str(tmp_path / "transaction_ledger.db"),
         quiet=True,
         json=False,
     )
@@ -446,7 +454,9 @@ def test_cli_ledger_export_without_session_id(tmp_path, monkeypatch):
             },
         ]
 
-    monkeypatch.setattr("app.core.session_catalog.find_all_history_sessions", mock_find_sessions)
+    monkeypatch.setattr(
+        "app.core.session_catalog.find_all_history_sessions", mock_find_sessions
+    )
 
     with pytest.raises(SystemExit) as exc_info:
         handle_ledger_command(args, settings)

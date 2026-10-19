@@ -130,6 +130,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.mover
 
+## `app.core.moves`
+
+::: app.core.moves
+
 ## `app.core.native_dialog`
 
 ::: app.core.native_dialog

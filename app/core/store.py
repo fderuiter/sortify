@@ -18,6 +18,7 @@ from app.core.db_conn import get_db_connection
 from app.core.exceptions import CryptoError
 from app.core.history import HistoryManager, _history_db_baseline
 from app.core.migrations import Migration, migrate
+from app.core.moves import import_step_ledger, migrate_add_moves
 
 STORE_FILENAME = "sortify.db"
 
@@ -49,7 +50,10 @@ def _store_initial(conn) -> None:
 
 
 # Ordered schema migrations for the app store. Never edit one after release.
-STORE_MIGRATIONS = (Migration(1, "initial", _store_initial),)
+STORE_MIGRATIONS = (
+    Migration(1, "initial", _store_initial),
+    Migration(2, "moves", migrate_add_moves),
+)
 
 
 @dataclass(frozen=True)
@@ -245,6 +249,10 @@ def _copy_history(src, dst, old_crypto, new_crypto) -> int:
     )
     # step_id is a store-wide sequence; the copied steps get new ids in their old order.
     count += _copy_table(src, dst, "step_ledger", skip=("step_id",))
+    # The move ledger (ADR 0006): copy it where the old file has one, and build
+    # it from the copied steps for the sessions it lacks.
+    count += _copy_table(src, dst, "moves", skip=("id",))
+    count += import_step_ledger(dst)
     return count
 
 
