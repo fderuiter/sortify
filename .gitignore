@@ -1,4 +1,3 @@
-.mypy_cache/
 venv/
 .venv/
 .pytest_cache/
@@ -41,3 +40,6 @@ pytest_failures.txt
 
 # run-sortify skill driver screenshots
 .sortify-driver/
+
+# Diagram renders are SVG only
+docs/assets/diagrams/*.png

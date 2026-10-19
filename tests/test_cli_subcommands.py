@@ -386,6 +386,25 @@ def test_headless_tui_flag_honored():
 
 
 @pytest.mark.xdist_group(name="cli_subcommands")
+@pytest.mark.parametrize(
+    "argv",
+    [
+        ["--tui", "{dir}"],
+        ["{dir}", "--tui"],
+        ["--skip-wizard", "--tui", "{dir}"],
+    ],
+)
+def test_tui_flag_accepts_directory_in_any_position(tmp_path, argv):
+    """Test top-level flags may come before or after the bare directory."""
+    argv = [a.format(dir=tmp_path) for a in argv]
+    with mock_non_interactive_stdin(), patch("app.ui.tui.run_tui") as mock_run_tui:
+        code, stdout, stderr = run_cli(argv)
+    assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+    mock_run_tui.assert_called_once()
+    assert mock_run_tui.call_args.args[1] == str(tmp_path)
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
 def test_headless_explicit_sort_subcommand():
     """Test non-interactive invocation with explicit sort subcommand executes batch sorting."""
     with tempfile.TemporaryDirectory() as src_dir:

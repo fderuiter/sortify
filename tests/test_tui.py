@@ -2257,3 +2257,41 @@ def test_empty_state_tells_user_how_to_start(temp_workspace):
             assert temp_workspace in meta.replace("\n", "")
 
     asyncio.run(_test())
+
+
+def test_main_screen_bindings_avoid_keys_terminals_cannot_send():
+    """Ctrl+M/J are Enter, Ctrl+I is Tab, Ctrl+H is Backspace, Ctrl+P is the palette."""
+    unreachable = {
+        "ctrl+m",
+        "ctrl+j",
+        "ctrl+i",
+        "ctrl+h",
+        AutoSorterTUI.COMMAND_PALETTE_BINDING,
+    }
+    assert [b.key for b in AutoSorterTUI.BINDINGS if b.key in unreachable] == []
+
+
+@pytest.mark.parametrize(
+    "key, action",
+    [
+        ("ctrl+k", "action_open_model_manager"),
+        ("ctrl+y", "action_open_history"),
+        ("ctrl+x", "action_open_extraction_preview"),
+    ],
+)
+def test_rebound_shortcuts_reach_their_actions(temp_workspace, key, action):
+    """The Model Manager, History and Extraction Preview keys open their dialogs."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            with patch.object(app, action) as handler:
+                await pilot.press(key)
+                await pilot.pause()
+                handler.assert_called_once()
+
+    asyncio.run(_test())

@@ -24,7 +24,7 @@ If the check the user wants already exists, stop and point at it.
 
 ### 2. Pick the hook shape
 
-- A tool already in the `dev` dependency group (ruff, mypy, pytest) → a **local** hook with `entry: uv run <tool> ...`. Adding a new tool means adding it to the `dev` group in `pyproject.toml` first, with `uv add --group dev <tool>`.
+- A tool already in the `dev` dependency group (ruff, ty, pytest) → a **local** hook with `entry: uv run <tool> ...`. Adding a new tool means adding it to the `dev` group in `pyproject.toml` first, with `uv add --group dev <tool>`.
 - A generic file check that `pre-commit/pre-commit-hooks` already ships → add its `id` to that existing upstream entry.
 - A repo validator under `scripts/` → a local hook with `entry: uv run python scripts/<name>.py`.
 
@@ -32,18 +32,19 @@ If the check the user wants already exists, stop and point at it.
 
 - Set `files:` (a regex) or `types: [python]` so the hook runs only when relevant files are staged.
 - Leave `pass_filenames` at its default (true) when the tool accepts file arguments, so it checks only staged files. Set `pass_filenames: false` only for whole-repo checks, and give those a tight `files:` regex so they don't run on every commit.
-- Keep commit-time hooks fast. Anything over a few seconds (the full test suite, mypy on the whole repo, builds) belongs in CI, not here.
+- Keep commit-time hooks fast. Anything over a few seconds (the full test suite, builds) belongs in CI, not here.
 
 ### 4. Write the hook
 
 Match the style of the neighbouring local hooks:
 
 ```yaml
-      - id: mypy-staged
-        name: MyPy (staged files)
-        entry: uv run mypy
+      - id: deptry
+        name: Deptry Dependency Check
+        entry: uv run deptry .
         language: system
-        types: [python]
+        pass_filenames: false
+        files: '^(app/.*\.py|pyproject\.toml|uv\.lock)$'
 ```
 
 ### 5. Verify

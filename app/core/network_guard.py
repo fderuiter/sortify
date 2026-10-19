@@ -180,12 +180,12 @@ def install() -> None:
             return
         socket.socket.connect = safe_connect  # type: ignore[method-assign]
         socket.socket.connect_ex = safe_connect_ex  # type: ignore[method-assign]
-        socket.getaddrinfo = safe_getaddrinfo
-        socket.gethostbyname = safe_gethostbyname
-        socket.gethostbyname_ex = safe_gethostbyname_ex
-        socket.gethostbyaddr = safe_gethostbyaddr
-        socket.getnameinfo = safe_getnameinfo
-        socket.getfqdn = safe_getfqdn
+        socket.getaddrinfo = safe_getaddrinfo  # ty: ignore[invalid-assignment]
+        socket.gethostbyname = safe_gethostbyname  # ty: ignore[invalid-assignment]
+        socket.gethostbyname_ex = safe_gethostbyname_ex  # ty: ignore[invalid-assignment]
+        socket.gethostbyaddr = safe_gethostbyaddr  # ty: ignore[invalid-assignment]
+        socket.getnameinfo = safe_getnameinfo  # ty: ignore[invalid-assignment]
+        socket.getfqdn = safe_getfqdn  # ty: ignore[invalid-assignment]
         _installed = True
 
 
