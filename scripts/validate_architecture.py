@@ -67,12 +67,9 @@ IMPORT_LAYER_RULES = {
     "app.main": _TOOLING,
 }
 
-# Modules exempt from IMPORT_LAYER_RULES, with the reason.
-IMPORT_LAYER_EXEMPT = {
-    # Documentation generator: renders every CLI's --help, including app.main,
-    # sandbox_cli and scripts/, so it has to import them.
-    "app.cli.generate_docs",
-}
+# Modules exempt from IMPORT_LAYER_RULES, with the reason. The docs generator
+# that needed an exemption now lives in scripts/, outside the layering.
+IMPORT_LAYER_EXEMPT: set[str] = set()
 
 
 def compute_normalized_ast_hash(node: ast.AST) -> str:
@@ -332,7 +329,7 @@ def validate_codebase_duplication(
 def validate_diagram_schema_and_assets(errors: list) -> None:
     """Validate that Pydantic diagram specifications represent all active core modules and match generated assets."""
     try:
-        from app.core.diagram_schema import CORE_ARCHITECTURE_SPEC, SYSTEM_DIAGRAM_SPECS
+        from scripts.diagram_schema import CORE_ARCHITECTURE_SPEC, SYSTEM_DIAGRAM_SPECS
 
         # 1. Verify all active app/core/*.py submodules are represented in core_architecture diagram spec
         core_files = glob.glob("app/core/*.py")
