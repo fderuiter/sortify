@@ -9486,24 +9486,9 @@ def run_tui(
             or not hasattr(sys.stdin, "isatty")
             or not sys.stdin.isatty()
         ):
-            try:
-                import ctypes
+            from app.frozen_runtime import attach_console
 
-                if ctypes.windll.kernel32.AllocConsole():
-                    try:
-                        sys.stdout = open("CONOUT$", "w", encoding="utf-8")
-                    except Exception:
-                        pass
-                    try:
-                        sys.stderr = open("CONERR$", "w", encoding="utf-8")
-                    except Exception:
-                        pass
-                    try:
-                        sys.stdin = open("CONIN$", "r", encoding="utf-8")
-                    except Exception:
-                        pass
-            except Exception:
-                pass
+            attach_console()
 
     if (
         sys.stdin is None
