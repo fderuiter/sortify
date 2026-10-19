@@ -22,6 +22,7 @@ jobs:
   auto-merge:
     name: Execute Serialized Auto-Merge
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
     steps:
       # Runs the default branch's controller; never PR code.

@@ -19,6 +19,7 @@ jobs:
   security-and-audit:
     name: Security & Audit
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: read
       pull-requests: read  # gitleaks-action lists the PR's commits
@@ -58,6 +59,7 @@ jobs:
   type-check:
     name: Type Check (ty)
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
     - uses: actions/checkout@v7
       with:
@@ -85,6 +87,7 @@ jobs:
   static-checks:
     name: Static Checks
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     steps:
     - uses: actions/checkout@v7
       with:
@@ -145,6 +148,7 @@ jobs:
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 60
     defaults:
       run:
         shell: bash
@@ -252,6 +256,7 @@ jobs:
   changes:
     name: Detect Documentation Changes
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     permissions:
       contents: read
       pull-requests: read  # paths-filter lists the PR's files
@@ -275,6 +280,7 @@ jobs:
     needs: [static-checks, changes]
     if: needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
     steps:
@@ -303,6 +309,7 @@ jobs:
   heavy-tests:
     name: Heavy Tests
     runs-on: ubuntu-latest
+    timeout-minutes: 60
     steps:
     - uses: actions/checkout@v7
       with:
@@ -315,9 +322,9 @@ jobs:
           ~/.smart-autosorter/offline_bundle
           offline_bundle/
           ~/.cache/huggingface
+        # No restore-keys: weights saved for another manifest must not be
+        # restored and tested as if they were the pinned ones.
         key: model-weights-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'offline_bundle/**', 'app/core/prompt_manifest.py') }}
-        restore-keys: |
-          model-weights-${{ runner.os }}-
 
     - name: Install uv
       uses: astral-sh/setup-uv@v7
@@ -351,6 +358,7 @@ jobs:
   verify-offline-bundle:
     name: Verify Offline Bundle
     runs-on: ubuntu-latest
+    timeout-minutes: 45
     steps:
     - uses: actions/checkout@v7
       with:
@@ -359,10 +367,10 @@ jobs:
     - name: Cache Offline Wheel Downloads
       uses: actions/cache@v6
       with:
+        # setup-uv already caches uv's downloads, and prepare_offline.py
+        # deletes offline_bundle/wheels on start, so only pip's cache helps.
         path: |
-          ~/.cache/uv
           ~/.cache/pip
-          offline_bundle/wheels
         key: offline-wheels-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'offline_bundle/requirements.txt') }}
         restore-keys: |
           offline-wheels-${{ runner.os }}-
@@ -400,6 +408,7 @@ jobs:
   required-ci:
     name: Required CI
     runs-on: ubuntu-latest
+    timeout-minutes: 5
     needs: [security-and-audit, type-check, static-checks, build-and-test, heavy-tests, verify-offline-bundle]
     if: ${{ always() }}
     steps:
