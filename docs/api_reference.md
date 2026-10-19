@@ -214,6 +214,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.session
 
+## `app.core.session_catalog`
+
+::: app.core.session_catalog
+
 ## `app.core.shared_registry`
 
 ::: app.core.shared_registry

@@ -1,9 +1,11 @@
+import errno
 import logging
 import os
 from unittest.mock import patch
 
 import pytest
 
+import app.core.resilient_file_ops as rfo
 from app.core.resilient_file_ops import (
     _cross_volume_atomic_move,
     atomic_move_non_clobber,
@@ -83,10 +85,19 @@ def test_cross_volume_atomic_move_verification_and_cleanup(tmp_path):
     dst = tmp_path / "target_volume" / "data.csv"
     dst.parent.mkdir(parents=True, exist_ok=True)
 
-    # Force cross-volume fallback path
-    with patch("app.core.resilient_file_ops.IS_WINDOWS", False):
-        with patch("os.link", side_effect=OSError(18, "Invalid cross-device link")):
-            actual_dst = resilient_move(str(src), str(dst))
+    # Make renames between the two folders fail as they would across volumes.
+    # The staging rename stays inside the target folder, so it must still work;
+    # failing every os.link broke it on platforms without a native no-replace
+    # rename (Windows CI), where _rename_noreplace falls back to os.link.
+    real_rename = rfo._rename_noreplace
+
+    def rename_across_volumes(move_src, move_dst):
+        if os.path.dirname(move_src) != os.path.dirname(move_dst):
+            raise OSError(errno.EXDEV, "Invalid cross-device link")
+        return real_rename(move_src, move_dst)
+
+    with patch.object(rfo, "_rename_noreplace", side_effect=rename_across_volumes):
+        actual_dst = resilient_move(str(src), str(dst))
 
     assert os.path.normpath(actual_dst) == os.path.normpath(str(dst))
     assert dst.read_text(encoding="utf-8") == "CSV Content 123"

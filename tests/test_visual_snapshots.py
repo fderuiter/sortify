@@ -124,6 +124,26 @@ def assert_svg_snapshot(snapshot_name: str, actual_svg: str) -> None:
     )
 
 
+async def settle_for_screenshot(app, pilot, max_pauses: int = 100) -> None:
+    """Let the app finish rendering before a screenshot.
+
+    Footer builds its key list in a later refresh than the first paint and
+    rebuilds it when focus or bindings change, so a fixed number of pauses
+    can catch it empty on a slow runner (seen on Windows CI). Wait until
+    the base screen's footer has keys, then give the screen one more pass.
+    """
+    for _ in range(2):
+        await pilot.pause()
+    footer_screen = app.screen_stack[0]
+    for _ in range(max_pauses):
+        if footer_screen.query("FooterKey"):
+            break
+        await pilot.pause(0.05)
+    else:
+        pytest.fail("Footer never rendered its key bindings")
+    await pilot.pause()
+
+
 @pytest.fixture(autouse=True)
 def isolated_app_dir(monkeypatch, tmp_path):
     """Ensure AppSettings is isolated from persistent disk configuration changes."""
@@ -175,8 +195,7 @@ def test_tui_main_screen_snapshot():
         settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
-            for _ in range(2):
-                await pilot.pause()
+            await settle_for_screenshot(app, pilot)
             svg = app.export_screenshot()
             assert_svg_snapshot("tui_main_screen", svg)
 
@@ -220,8 +239,10 @@ def test_tui_populated_plan_snapshot():
                 },
             }
             app.rebuild_tree()
-            for _ in range(2):
-                await pilot.pause()
+            # rebuild_tree starts the validation worker on a thread, and its
+            # result re-enables Execute; wait for it so slow runners match.
+            await app.workers.wait_for_complete()
+            await settle_for_screenshot(app, pilot)
             svg = app.export_screenshot()
             assert_svg_snapshot("tui_populated_plan", svg)
 
@@ -238,8 +259,7 @@ def test_wizard_modal_snapshot():
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(WizardModal(app.settings))
-            for _ in range(2):
-                await pilot.pause()
+            await settle_for_screenshot(app, pilot)
             svg = app.export_screenshot()
             assert_svg_snapshot("wizard_modal", svg)
 
@@ -260,8 +280,7 @@ def test_settings_modal_snapshot():
             for _ in range(2):
                 await pilot.pause()
             modal.query_one(".modal-box").scroll_home(animate=False)
-            for _ in range(2):
-                await pilot.pause()
+            await settle_for_screenshot(app, pilot)
             svg = app.export_screenshot()
             assert_svg_snapshot("settings_modal", svg)
 
@@ -283,8 +302,7 @@ def test_rename_modal_snapshot():
                 extension=".pdf",
             )
             app.push_screen(modal)
-            for _ in range(2):
-                await pilot.pause()
+            await settle_for_screenshot(app, pilot)
             svg = app.export_screenshot()
             assert_svg_snapshot("rename_modal", svg)
 
@@ -305,8 +323,7 @@ def test_cro_forensic_modal_snapshot():
             for _ in range(2):
                 await pilot.pause()
             modal.query_one(".modal-box").scroll_home(animate=False)
-            for _ in range(2):
-                await pilot.pause()
+            await settle_for_screenshot(app, pilot)
             svg = app.export_screenshot()
             assert_svg_snapshot("cro_forensic_modal", svg)
 
@@ -323,8 +340,7 @@ def test_new_folder_modal_snapshot():
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(NewFolderModal())
-            for _ in range(2):
-                await pilot.pause()
+            await settle_for_screenshot(app, pilot)
             svg = app.export_screenshot()
             assert_svg_snapshot("new_folder_modal", svg)
 
@@ -341,8 +357,7 @@ def test_directory_select_modal_snapshot():
         app = AutoSorterTUI(settings=settings, base_dir="/dummy/projects")
         async with app.run_test(size=(100, 30)) as pilot:
             app.push_screen(DirectorySelectModal(current_dir=app.base_dir))
-            for _ in range(2):
-                await pilot.pause()
+            await settle_for_screenshot(app, pilot)
             svg = app.export_screenshot()
             assert_svg_snapshot("directory_select_modal", svg)
 
@@ -362,8 +377,7 @@ def test_extraction_preview_modal_snapshot(tmp_path):
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 35)) as pilot:
             app.push_screen(ExtractionPreviewModal(pdf_path, app.settings))
-            for _ in range(2):
-                await pilot.pause()
+            await settle_for_screenshot(app, pilot)
             svg = app.export_screenshot()
             assert_svg_snapshot("extraction_preview_modal", svg)
 
