@@ -38,3 +38,6 @@ pytest_failures.txt
 # Transient snapshot diff files
 *.actual
 
+
+# run-sortify skill driver screenshots
+.sortify-driver/
