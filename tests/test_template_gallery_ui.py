@@ -102,13 +102,15 @@ def test_wizard_modal_switch_and_checkbox_announcements(tmp_path):
     async def _test():
         with tempfile.NamedTemporaryFile(suffix=".json") as f:
             settings = AppSettings(filepath=f.name)
-            settings._settings_model.AI_CONSENT_GRANTED = None
             app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
 
             async with app.run_test() as pilot:
-                await pilot.pause(0.2)
-                modal = app.screen
-                assert isinstance(modal, WizardModal)
+                await pilot.pause(0.1)
+                modal = WizardModal(settings)
+                app.push_screen(modal)
+                for _ in range(5):
+                    await pilot.pause(0.05)
+                assert isinstance(app.screen, WizardModal)
 
                 from textual.widgets import Checkbox, Switch
 
@@ -184,13 +186,15 @@ def test_modal_unrecognized_controls_handled_gracefully(tmp_path):
     async def _test():
         with tempfile.NamedTemporaryFile(suffix=".json") as f:
             settings = AppSettings(filepath=f.name)
-            settings._settings_model.AI_CONSENT_GRANTED = None
             app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
 
             async with app.run_test() as pilot:
-                await pilot.pause(0.2)
-                modal = app.screen
-                assert isinstance(modal, WizardModal)
+                await pilot.pause(0.1)
+                modal = WizardModal(settings)
+                app.push_screen(modal)
+                for _ in range(5):
+                    await pilot.pause(0.05)
+                assert isinstance(app.screen, WizardModal)
 
                 from textual.widgets import Checkbox, Switch
 
