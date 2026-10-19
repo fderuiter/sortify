@@ -145,10 +145,6 @@ def bundle_dll_directories(base_dir: str | None, exe_dir: str | None) -> list[st
         for sqlcipher_dir in (
             os.path.join(base_dir, "sqlcipher3"),
             os.path.join(base_dir, "_internal", "sqlcipher3"),
-            os.path.join(base_dir, "app", "binaries", "windows", "sqlcipher3"),
-            os.path.join(
-                base_dir, "_internal", "app", "binaries", "windows", "sqlcipher3"
-            ),
         ):
             if os.path.isdir(sqlcipher_dir):
                 candidates.append(sqlcipher_dir)
