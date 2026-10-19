@@ -1800,6 +1800,16 @@ def main():
 
     if not is_interactive and not is_explicit_ui:
         if getattr(args, "directory", None):
+            # A bare directory opens the TUI, where the user confirms the plan.
+            # With no terminal (cron, pipes, CI) nobody can confirm, so only
+            # preview; moving files requires the explicit `sort` subcommand.
+            args.dry_run = True
+            if not getattr(args, "quiet", False):
+                print(
+                    "No interactive terminal detected: previewing the plan only. "
+                    f"Run 'sort {args.directory}' to move files.",
+                    file=sys.stderr,
+                )
             handle_sort_command(args, settings)
         else:
             parser.print_help(sys.stderr)
