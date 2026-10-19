@@ -20,7 +20,7 @@ Commands:
                        tree (what Ctrl+S skips; see SKILL.md gotchas)
   eval PYTHON          eval/exec Python with `app`, `pilot`, `target` in scope
   quit                 exit
-Run from the repo root:  uv run python .claude/skills/run-sortify/driver.py
+Run from the repo root:  uv run python .agents/skills/run-sortify/driver.py
 """
 
 import argparse

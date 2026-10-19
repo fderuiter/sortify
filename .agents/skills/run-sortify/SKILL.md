@@ -8,7 +8,7 @@ description: Run, start, launch, drive, screenshot or smoke-test Sortify (Smart 
 Sortify is a Python 3.12 file organizer with two user surfaces: the
 `smart-autosorter` CLI (headless `sort`/`scan`/`undo`) and a Textual TUI
 (`app/ui/tui.py`). The agent path for the TUI is
-`.claude/skills/run-sortify/driver.py`: it boots `AutoSorterTUI` under
+`.agents/skills/run-sortify/driver.py`: it boots `AutoSorterTUI` under
 Textual's Pilot (no TTY), in a throwaway app dir + `HOME`, against a
 generated 8-file corpus, and takes key presses / screenshots / tree dumps
 as commands. The CLI is driven directly.
@@ -36,7 +36,7 @@ are lazy and TF-IDF clustering works without it.
 One-shot, commands as `-c` flags (stderr is keyring noise, drop it):
 
 ```bash
-uv run python .claude/skills/run-sortify/driver.py \
+uv run python .agents/skills/run-sortify/driver.py \
   -c "analyze" -c "tree" -c "press down down" -c "ss planned" \
   -c "press ctrl+e" -c "idle" -c "screen" -c "ss executed" -c "files" 2>/dev/null
 ```
@@ -68,7 +68,7 @@ Options: `--dir PATH` (sort your own folder - it **moves files** on
 REPL mode under tmux, for poking around interactively:
 
 ```bash
-tmux new-session -d -s drv -x 200 -y 50 "uv run python .claude/skills/run-sortify/driver.py 2>/dev/null"
+tmux new-session -d -s drv -x 200 -y 50 "uv run python .agents/skills/run-sortify/driver.py 2>/dev/null"
 until tmux capture-pane -t drv -p | grep -q "sortify>"; do sleep 1; done
 tmux send-keys -t drv "press ctrl+f" Enter "type fin 2" Enter "eval app.query_one('#tree-search-input').value" Enter
 tmux send-keys -t drv "press ctrl+o" Enter "screen" Enter "ss settings" Enter
