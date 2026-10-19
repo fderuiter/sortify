@@ -42,6 +42,10 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `False`
 - **Required**: `False`
 
+### `SPEAK_ANNOUNCEMENTS`
+- **Default**: `False`
+- **Required**: `False`
+
 ### `KEYWORD_RULES`
 - **Default**: `PydanticUndefined`
 - **Required**: `False`

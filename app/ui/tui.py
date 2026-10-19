@@ -228,6 +228,14 @@ class A11yMixin:
             except Exception:
                 pass
 
+    def _speech_enabled(self) -> bool:
+        """Return whether the user opted in to spoken status messages."""
+        settings = getattr(self, "settings", None)
+        try:
+            return bool(getattr(settings, "SPEAK_ANNOUNCEMENTS", False))
+        except Exception:
+            return False
+
     def _get_speech_binary(self) -> Optional[str]:
         """Resolve available speech synthesis executable based on host platform.
 
@@ -289,8 +297,11 @@ class A11yMixin:
             pass
 
         if not forwarded:
-            # Check speech binary presence via _get_speech_binary before launching subprocess
-            speech_bin = self._get_speech_binary()
+            # Speaking aloud is opt-in: screen-reader users already hear the
+            # status bar, and everyone else should not hear every message.
+            speech_bin = (
+                self._get_speech_binary() if self._speech_enabled() else None
+            )
 
             if speech_bin:
                 speech_thread = self._speech_thread
@@ -1962,6 +1973,15 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                         tooltip="Toggle AI contextual file renaming",
                     )
 
+                    yield LabeledSwitch(
+                        label="Speak Status Messages Aloud",
+                        value=bool(
+                            getattr(self.settings, "SPEAK_ANNOUNCEMENTS", False)
+                        ),
+                        switch_id="switch-speak-announcements",
+                        tooltip="Read each status message aloud with the system speech command (say / spd-say)",
+                    )
+
                     btn_scrub = Button(
                         "Scrub AI Artifacts",
                         id="btn-scrub-artifacts",
@@ -2245,6 +2265,10 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             ctx_renaming = bool(getattr(self.settings, "CONTEXTUAL_RENAMING", False))
         try:
+            speak = self.query_one("#switch-speak-announcements", Switch).value
+        except Exception:
+            speak = bool(getattr(self.settings, "SPEAK_ANNOUNCEMENTS", False))
+        try:
             ai_consent = self.query_one("#switch-ai-consent", Switch).value
         except Exception:
             ai_consent = bool(getattr(self.settings, "AI_CONSENT_GRANTED", False))
@@ -2273,6 +2297,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             "CLINICAL_SMART_RENAMING": clin_renaming,
             "CONTEXTUAL_RENAMING": ctx_renaming,
             "AI_CONSENT_GRANTED": ai_consent,
+            "SPEAK_ANNOUNCEMENTS": speak,
         }
         self.announce("Saved application settings.")
         self.dismiss(res)
@@ -7353,6 +7378,8 @@ class AutoSorterTUI(A11yMixin, App):
                     self.settings.CONTEXTUAL_RENAMING = res["CONTEXTUAL_RENAMING"]
                 if "AI_CONSENT_GRANTED" in res:
                     self.settings.AI_CONSENT_GRANTED = res["AI_CONSENT_GRANTED"]
+                if "SPEAK_ANNOUNCEMENTS" in res:
+                    self.settings.SPEAK_ANNOUNCEMENTS = res["SPEAK_ANNOUNCEMENTS"]
                 if "PDF_TEXT_DENSITY_THRESHOLD" in res:
                     self.settings.PDF_TEXT_DENSITY_THRESHOLD = res[
                         "PDF_TEXT_DENSITY_THRESHOLD"

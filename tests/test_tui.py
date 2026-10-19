@@ -1069,6 +1069,7 @@ def test_tui_speech_binary_execution_exception_fallback(temp_workspace):
 
     settings = AppSettings()
     settings._settings_model.AI_CONSENT_GRANTED = True
+    settings._settings_model.SPEAK_ANNOUNCEMENTS = True
     mock_speech_bin = "/usr/bin/spd-say"
 
     async def _test():
@@ -1100,6 +1101,7 @@ def test_tui_speech_binary_available_and_audit(temp_workspace):
 
     settings = AppSettings()
     settings._settings_model.AI_CONSENT_GRANTED = True
+    settings._settings_model.SPEAK_ANNOUNCEMENTS = True
     mock_speech_bin = "/usr/bin/spd-say"
 
     async def _test():
@@ -2293,5 +2295,53 @@ def test_rebound_shortcuts_reach_their_actions(temp_workspace, key, action):
                 await pilot.press(key)
                 await pilot.pause()
                 handler.assert_called_once()
+
+    asyncio.run(_test())
+
+
+@pytest.mark.parametrize("speak", [False, True])
+def test_announcements_are_spoken_only_when_enabled(temp_workspace, speak):
+    """Status messages go through say/spd-say only after the user opts in."""
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    settings._settings_model.SPEAK_ANNOUNCEMENTS = speak
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            app.join_speech_thread(timeout=1.0)
+            with (
+                patch("sys.platform", "linux"),
+                patch("shutil.which", return_value="/usr/bin/spd-say"),
+                patch("subprocess.run") as run,
+            ):
+                app.announce("Scan finished")
+                app.join_speech_thread(timeout=1.0)
+            spoken = [c.args[0] for c in run.call_args_list]
+            assert spoken == ([["/usr/bin/spd-say", "Scan finished"]] if speak else [])
+            assert "Scan finished" in str(app.query_one("#status-bar", Static).render())
+
+    asyncio.run(_test())
+
+
+def test_settings_modal_saves_speak_announcements(temp_workspace):
+    """The Settings dialog exposes the speech toggle and returns it on save."""
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test(size=(120, 60)) as pilot:
+            results = []
+            modal = SettingsModal(settings)
+            app.push_screen(modal, results.append)
+            await pilot.pause()
+            switch = modal.query_one("#switch-speak-announcements", Switch)
+            assert switch.value is False
+            switch.value = True
+            modal.action_save()
+            await pilot.pause()
+            assert results and results[0]["SPEAK_ANNOUNCEMENTS"] is True
 
     asyncio.run(_test())
