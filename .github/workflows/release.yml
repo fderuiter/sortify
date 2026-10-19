@@ -155,7 +155,7 @@ jobs:
           subject-path: dist/${{ matrix.artifact_name }}
 
       - name: Attest SBOM
-        uses: actions/attest-sbom@v2
+        uses: actions/attest-sbom@v4
         with:
           subject-path: dist/${{ matrix.artifact_name }}
           sbom-path: dist/${{ matrix.artifact_name }}.sbom.json
