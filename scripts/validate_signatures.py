@@ -567,7 +567,14 @@ def main():
     is_ci = os.environ.get("CI", "").lower() in ("true", "1")
     all_modules = collect_modules_and_payloads()
 
-    if args.module_paths:
+    global_config_files = {"pyproject.toml", "uv.lock"}
+    is_global_config_changed = any(
+        os.path.basename(t) in global_config_files for t in args.module_paths
+    )
+
+    if is_global_config_changed:
+        target_modules = all_modules
+    elif args.module_paths:
         target_modules = [
             m
             for m in all_modules
