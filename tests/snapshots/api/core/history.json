@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "fd28e8e016c4b12e3decd5c602b5c9d0a7428dc044e1a883269740da9b8ac39d"
+    "checksum": "8194661c76160a4dc2c529d912bc27a34366ae4c76a2c67626de5419b09330e5"
   },
   "classes": [
     {
@@ -31,6 +31,11 @@
               "annotation": null,
               "default": "None",
               "name": "db_path"
+            },
+            {
+              "annotation": null,
+              "default": "HISTORY_DB_MIGRATIONS",
+              "name": "migrations"
             }
           ],
           "returns": null

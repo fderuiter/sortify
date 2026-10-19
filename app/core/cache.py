@@ -316,9 +316,15 @@ CACHE_DB_MIGRATIONS = (Migration(1, "baseline", _cache_db_baseline),)
 class CacheManager:
     """Manages the persistence of cached extraction data to an SQLite database."""
 
-    def __init__(self, db_path: str, worker: "DBWorker | Any"):
+    def __init__(
+        self,
+        db_path: str,
+        worker: "DBWorker | Any",
+        migrations: tuple[Migration, ...] = CACHE_DB_MIGRATIONS,
+    ):
         self.db_path = db_path
         self.worker = worker
+        self.migrations = migrations
         self._init_db()
 
     def _get_conn(self):
@@ -332,7 +338,7 @@ class CacheManager:
         conn = self._get_conn()
         try:
             with conn:
-                migrate(conn, CACHE_DB_MIGRATIONS, label=f"Cache {self.db_path}")
+                migrate(conn, self.migrations, label=f"Cache {self.db_path}")
         except Exception as e:
             logging.error(
                 f"Failed to initialize directory cache database: {e}", exc_info=True
