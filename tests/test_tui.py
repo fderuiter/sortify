@@ -2468,3 +2468,43 @@ def test_sample_dataset_fills_an_empty_folder_directly(tmp_path):
             assert app.base_dir == str(empty)
 
     asyncio.run(_test())
+
+
+def test_execute_button_waits_for_a_plan(temp_workspace):
+    """Execute starts disabled and says to scan, then enables once a plan has files."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            btn = app.query_one("#btn-execute", Button)
+            assert btn.disabled is True
+            assert "Scan a folder first" in str(btn.tooltip)
+
+            app.app_session = MagicMock(base_dir=temp_workspace)
+            app.plan = {
+                "Invoices": {
+                    "document_1.pdf": {
+                        "__type__": "file",
+                        "filepath": os.path.join(temp_workspace, "document_1.pdf"),
+                        "target_filename": "document_1.pdf",
+                        "relative_source": "document_1.pdf",
+                    }
+                }
+            }
+            with patch(
+                "app.core.verifier.VerificationEngine.verify_plan_integrity",
+                return_value={},
+            ):
+                app.rebuild_tree()
+                for _ in range(20):
+                    await pilot.pause(0.05)
+                    if not btn.disabled:
+                        break
+            assert btn.disabled is False
+            assert "Ctrl+E" in str(btn.tooltip)
+
+    asyncio.run(_test())
