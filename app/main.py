@@ -12,212 +12,11 @@ from pathlib import Path
 
 from app.config import AppSettings
 from app.core.domain_contracts import _make_json_serializable
-
-# Dynamic Windows DLL Path Injection
 from app.core.path_utils import is_packaged
 from app.core.plan_format import format_plan_tree
 from app.core.session_catalog import find_all_history_sessions
+from app.frozen_runtime import prepare_frozen_windows_runtime
 from app.log_filter import LogScrubbingFilter
-
-
-class NullWriter:
-    """A helper class that discards any written output to mimic a stream."""
-
-    encoding = "utf-8"
-    errors = "replace"
-
-    def write(self, text):
-        """Discard written text."""
-        return len(text) if text else 0
-
-    def writelines(self, lines):
-        """Discard written lines."""
-        pass
-
-    def flush(self):
-        """No-op flush to satisfy the stream interface."""
-        pass
-
-    def isatty(self):
-        """Return False for null stream."""
-        return False
-
-    def fileno(self):
-        """Raise OSError for missing file descriptor."""
-        raise OSError("NullWriter has no file descriptor")
-
-    def readable(self):
-        """Return False for write-only null stream."""
-        return False
-
-    def writable(self):
-        """Return True for null writer stream."""
-        return True
-
-    def seekable(self):
-        """Return False for null stream."""
-        return False
-
-    @property
-    def closed(self):
-        """Return False for active null stream."""
-        return False
-
-
-class NullReader:
-    """A helper class that discards input stream calls."""
-
-    encoding = "utf-8"
-    errors = "replace"
-
-    def read(self, *args, **kwargs):
-        """Return empty string."""
-        return ""
-
-    def readline(self, *args, **kwargs):
-        """Return empty string."""
-        return ""
-
-    def readlines(self, *args, **kwargs):
-        """Return empty list."""
-        return []
-
-    def isatty(self):
-        """Return False for null stream."""
-        return False
-
-    def fileno(self):
-        """Raise OSError for missing file descriptor."""
-        raise OSError("NullReader has no file descriptor")
-
-    def readable(self):
-        """Return True for null reader stream."""
-        return True
-
-    def writable(self):
-        """Return False for null reader stream."""
-        return False
-
-    def seekable(self):
-        """Return False for null stream."""
-        return False
-
-    @property
-    def closed(self):
-        """Return False for active null stream."""
-        return False
-
-
-if sys.platform == "win32" and is_packaged():
-    # Attempt to allocate a console for windowed executables (console=False)
-    if sys.stdout is None or sys.stderr is None or sys.stdin is None:
-        try:
-            import ctypes
-
-            if ctypes.windll.kernel32.AllocConsole():
-                try:
-                    sys.stdout = open("CONOUT$", "w", encoding="utf-8")
-                except Exception:
-                    pass
-                try:
-                    sys.stderr = open("CONERR$", "w", encoding="utf-8")
-                except Exception:
-                    pass
-                try:
-                    sys.stdin = open("CONIN$", "r", encoding="utf-8")
-                except Exception:
-                    pass
-        except Exception:
-            pass
-
-    if sys.stdout is None:
-        sys.stdout = NullWriter()
-    if sys.stderr is None:
-        sys.stderr = NullWriter()
-    if sys.stdin is None:
-        sys.stdin = NullReader()
-
-    from app.core.path_utils import get_meipass_dir
-
-    base_dir = get_meipass_dir()
-    if base_dir:
-        base_dir = os.path.abspath(base_dir)
-        try:
-            os.add_dll_directory(base_dir)
-        except Exception:
-            pass
-
-        # In PyInstaller 6+, modules and libraries are under the _internal folder
-        internal_dir = os.path.abspath(os.path.join(base_dir, "_internal"))
-        if os.path.isdir(internal_dir):
-            try:
-                os.add_dll_directory(internal_dir)
-            except Exception:
-                pass
-
-        sqlcipher_dirs = [
-            os.path.abspath(os.path.join(base_dir, "sqlcipher3")),
-            os.path.abspath(os.path.join(base_dir, "_internal", "sqlcipher3")),
-            os.path.abspath(
-                os.path.join(base_dir, "app", "binaries", "windows", "sqlcipher3")
-            ),
-            os.path.abspath(
-                os.path.join(
-                    base_dir, "_internal", "app", "binaries", "windows", "sqlcipher3"
-                )
-            ),
-        ]
-        for sqlcipher_dir in sqlcipher_dirs:
-            if os.path.isdir(sqlcipher_dir):
-                try:
-                    os.add_dll_directory(sqlcipher_dir)
-                except Exception:
-                    pass
-                # Recursively add all subdirectories of sqlcipher_dir to search path as well
-                for root, dirs, _ in os.walk(sqlcipher_dir):
-                    for d in dirs:
-                        try:
-                            os.add_dll_directory(os.path.abspath(os.path.join(root, d)))
-                        except Exception:
-                            pass
-
-    exe_dir = os.path.dirname(sys.executable)
-    if exe_dir:
-        exe_dir = os.path.abspath(exe_dir)
-        try:
-            os.add_dll_directory(exe_dir)
-        except Exception:
-            pass
-        exe_internal = os.path.abspath(os.path.join(exe_dir, "_internal"))
-        if os.path.isdir(exe_internal):
-            try:
-                os.add_dll_directory(exe_internal)
-            except Exception:
-                pass
-
-    # Prepend all resolved directories to the PATH environment variable to guarantee OS-level DLL resolution
-    if base_dir:
-        paths_to_add = [base_dir]
-        if os.path.isdir(internal_dir):
-            paths_to_add.append(internal_dir)
-        for sqlcipher_dir in sqlcipher_dirs:
-            if os.path.isdir(sqlcipher_dir):
-                paths_to_add.append(sqlcipher_dir)
-                for root, dirs, _ in os.walk(sqlcipher_dir):
-                    for d in dirs:
-                        paths_to_add.append(os.path.abspath(os.path.join(root, d)))
-        if exe_dir:
-            paths_to_add.append(exe_dir)
-            if os.path.isdir(exe_internal):
-                paths_to_add.append(exe_internal)
-
-        unique_paths = []
-        for p in paths_to_add:
-            abs_p = os.path.abspath(p)
-            if abs_p not in unique_paths and os.path.isdir(abs_p):
-                unique_paths.append(abs_p)
-
-        os.environ["PATH"] = ";".join(unique_paths) + ";" + os.environ.get("PATH", "")
 
 ANSI_ESCAPE_REGEX = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
@@ -1616,6 +1415,7 @@ def main():
     import multiprocessing
     import sys
 
+    prepare_frozen_windows_runtime()
     multiprocessing.freeze_support()
 
     parser = build_parser()
@@ -1776,5 +1576,6 @@ def main():
 if __name__ == "__main__":
     import multiprocessing
 
+    prepare_frozen_windows_runtime()
     multiprocessing.freeze_support()
     main()
