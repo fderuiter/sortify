@@ -122,6 +122,27 @@ def test_missing_key_with_existing_db(tmp_path):
         crypto.get_cipher()
 
 
+def test_missing_key_with_existing_db_and_no_sqlite_driver_fails_closed(
+    tmp_path, monkeypatch
+):
+    """Without a SQLite driver the guard can't prove the DB is empty, so it refuses."""
+    import app.core.crypto as crypto_module
+
+    monkeypatch.setattr(keyring, "get_password", lambda *args, **kwargs: None)
+    key_path = tmp_path / "secret.key"
+    db_path = tmp_path / "autosorter.db"
+    db_path.write_bytes(b"not inspectable without a driver")
+    monkeypatch.setattr(crypto_module, "sqlite3", None)
+
+    crypto = SessionCrypto(key_path, db_path)
+
+    with pytest.raises(
+        RuntimeError, match="Database accessed but key file is missing."
+    ):
+        crypto.get_cipher()
+    assert not key_path.exists()
+
+
 def test_missing_key_with_empty_db(tmp_path):
     key_path = tmp_path / "secret.key"
     db_path = tmp_path / "autosorter.db"

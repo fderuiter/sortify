@@ -452,6 +452,10 @@ class SessionCrypto:
                         ".log",
                     )
                 ):
+                    if sqlite3 is None:
+                        # Without a SQLite driver we can't prove the database
+                        # is empty, so fail closed rather than mint a new key.
+                        raise CryptoError("Database accessed but key file is missing.")
                     try:
                         from contextlib import closing
 
