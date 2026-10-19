@@ -567,7 +567,6 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                     "core_pipeline",
                     "core_folder_lock",
                     "core_session",
-                    "core_user_space_bootstrap",
                     "core_daemon",
                     "core_ipc",
                     "core_integration",
@@ -680,9 +679,6 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramNode(id="core_pipeline", label="app.core.pipeline"),
             DiagramNode(id="core_folder_lock", label="app.core.folder_lock"),
             DiagramNode(id="core_session", label="app.core.session"),
-            DiagramNode(
-                id="core_user_space_bootstrap", label="app.core.user_space_bootstrap"
-            ),
             DiagramNode(id="core_daemon", label="app.core.daemon"),
             DiagramNode(id="core_ipc", label="app.core.ipc"),
             DiagramNode(id="core_integration", label="app.core.integration"),
@@ -782,7 +778,6 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramEdge(source="core_pipeline", target="core_extractor"),
             DiagramEdge(source="app_main", target="core_session"),
             DiagramEdge(source="app_tui", target="core_session"),
-            DiagramEdge(source="core_session", target="core_user_space_bootstrap"),
             DiagramEdge(source="core_session", target="core_scanner"),
             DiagramEdge(source="core_session", target="core_extractor"),
             DiagramEdge(source="core_session", target="core_analyzer"),
@@ -4045,13 +4040,6 @@ def _create_core_session_spec() -> ComponentDiagramSpec:
                 tooltip="Session Start",
             ),
             DiagramNode(
-                id="bootstrap",
-                label="User Space Bootstrap",
-                shape="subroutine",
-                url="docs/api_reference.md#appcoreuser_space_bootstrap",
-                tooltip="Bootstrap Exec",
-            ),
-            DiagramNode(
                 id="scanner",
                 label="Directory Scanner Instance",
                 shape="rectangle",
@@ -4073,62 +4061,10 @@ def _create_core_session_spec() -> ComponentDiagramSpec:
             ),
         ],
         edges=[
-            DiagramEdge(source="start", target="bootstrap"),
-            DiagramEdge(source="bootstrap", target="scanner"),
-            DiagramEdge(source="bootstrap", target="analyzer"),
+            DiagramEdge(source="start", target="scanner"),
+            DiagramEdge(source="start", target="analyzer"),
             DiagramEdge(source="scanner", target="state"),
             DiagramEdge(source="analyzer", target="state"),
-        ],
-    )
-
-
-def _create_core_user_space_bootstrap_spec() -> ComponentDiagramSpec:
-    """Build core_user_space_bootstrap diagram specification."""
-    return ComponentDiagramSpec(
-        id="core_user_space_bootstrap",
-        title="User Space Bootstrap Subsystem Workflow",
-        diagram_type="flowchart",
-        direction="TD",
-        nodes=[
-            DiagramNode(
-                id="launch",
-                label="Application Startup Request",
-                shape="round",
-                url="docs/api_reference.md#appcoreuser_space_bootstrap",
-                tooltip="Startup Request",
-            ),
-            DiagramNode(
-                id="guard",
-                label="Environment Directory Guard",
-                shape="rhombus",
-                url="docs/api_reference.md#appcoreenv_helper",
-                tooltip="Env Guard",
-            ),
-            DiagramNode(
-                id="mkdir",
-                label="Create ~/.autosorter Directories",
-                shape="rectangle",
-                tooltip="Mkdir Autosorter",
-            ),
-            DiagramNode(
-                id="settings",
-                label="Load & Debounce Settings",
-                shape="database",
-                tooltip="Load Settings",
-            ),
-            DiagramNode(
-                id="ready",
-                label="User Space Initialized",
-                shape="stadium",
-                tooltip="Bootstrap Ready",
-            ),
-        ],
-        edges=[
-            DiagramEdge(source="launch", target="guard"),
-            DiagramEdge(source="guard", target="mkdir", label="First Run"),
-            DiagramEdge(source="mkdir", target="settings"),
-            DiagramEdge(source="guard", target="settings", label="Dirs Exist"),
-            DiagramEdge(source="settings", target="ready"),
         ],
     )
 
@@ -4368,7 +4304,6 @@ _SPEC_FACTORIES: Dict[str, Callable[[], BaseDiagramSpec]] = {
     "core_history": _create_core_history_spec,
     "core_ledger": _create_core_ledger_spec,
     "core_session": _create_core_session_spec,
-    "core_user_space_bootstrap": _create_core_user_space_bootstrap_spec,
     "core_downloader": _create_core_downloader_spec,
     "core_extractor": _create_core_extractor_spec,
     "core_file_renamer": _create_core_file_renamer_spec,
@@ -4416,7 +4351,6 @@ CONSTANT_TO_KEY_MAP: Dict[str, str] = {
     "CORE_HISTORY_SPEC": "core_history",
     "CORE_LEDGER_SPEC": "core_ledger",
     "CORE_SESSION_SPEC": "core_session",
-    "CORE_USER_SPACE_BOOTSTRAP_SPEC": "core_user_space_bootstrap",
     "CORE_DOWNLOADER_SPEC": "core_downloader",
     "CORE_EXTRACTOR_SPEC": "core_extractor",
     "CORE_FILE_RENAMER_SPEC": "core_file_renamer",

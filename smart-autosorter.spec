@@ -71,21 +71,6 @@ if sqlcipher_spec and sqlcipher_spec.submodule_search_locations:
 else:
     print("Warning: sqlcipher3 not found in active environment.")
 
-# Explicitly bundle local precompiled platform libraries for offline usage
-app_binaries_src = os.path.join('app', 'binaries')
-if os.path.exists(app_binaries_src):
-    for root, dirs, files in os.walk(app_binaries_src):
-        for file in files:
-            abs_file_path = os.path.abspath(os.path.join(root, file))
-            # Determine destination subdirectory in the package (under app/binaries)
-            rel_sub = os.path.relpath(root, app_binaries_src)
-            rel_sub_posix = rel_sub.replace('\\', '/')
-            if rel_sub_posix in ('.', ''):
-                dest_dir = 'app/binaries'
-            else:
-                dest_dir = f'app/binaries/{rel_sub_posix}'
-            datas.append((abs_file_path, dest_dir))
-
 # Note: offline_bundle model weights are excluded from embedded datas and packaged into sidecar smart-autosorter-models.zip
 
 # Explicitly bundle documentation files
@@ -112,11 +97,6 @@ if (platform.system().lower() == "windows" or sys.platform == "win32") and "pyte
             if os.path.isdir(p):
                 search_dirs.append(p)
                 
-    # Check packaged local binaries directory
-    app_bin_win = os.path.abspath(os.path.join("app", "binaries", "windows", "sqlcipher3"))
-    if os.path.isdir(app_bin_win) and app_bin_win not in search_dirs:
-        search_dirs.append(app_bin_win)
-
     # Finally, check executable directory
     exe_dir = os.path.dirname(sys.executable)
     if exe_dir and exe_dir not in search_dirs:
@@ -375,8 +355,8 @@ def is_standard_sqlite_binary(dest_name, src_path):
     
     # Identify any standard sqlite3 binary files
     if any(term in dest_lower for term in ('sqlite3', '_sqlite3')):
-        # Allow it only if it originates from sqlcipher3 or app/binaries
-        if 'sqlcipher3' in src_lower or 'app/binaries' in src_lower or 'app_binaries' in src_lower:
+        # Allow it only if it originates from the sqlcipher3 package
+        if 'sqlcipher3' in src_lower:
             return False
             
         # Build list of virtualenv directories to check
@@ -438,8 +418,7 @@ if "pytest" not in sys.modules:
             for sub in [
                 "Library/bin", "DLLs", "Scripts",
                 "Lib/site-packages/sqlcipher3", "Lib/site-packages/sqlcipher3/.libs", "Lib/site-packages/sqlcipher3.libs",
-                "Lib/site-packages/pysqlcipher3", "Lib/site-packages/pysqlcipher3.libs", "Lib/site-packages/pysqlcipher3/dlls", "Lib/site-packages/pysqlcipher3/bin",
-                "app/binaries/windows/sqlcipher3"
+                "Lib/site-packages/pysqlcipher3", "Lib/site-packages/pysqlcipher3.libs", "Lib/site-packages/pysqlcipher3/dlls", "Lib/site-packages/pysqlcipher3/bin"
             ]:
                 candidate_dir = os.path.join(vd, sub.replace("/", os.sep))
                 if os.path.isdir(candidate_dir):
@@ -457,20 +436,7 @@ if "pytest" not in sys.modules:
                     break
             if custom_sqlite3_dll:
                 break
-                
 
-
-    if not custom_sqlite3_dll:
-        # Walk the app/binaries directory to find the custom sqlite3.dll as a reliable fallback
-        app_bin_dir = os.path.join('app', 'binaries')
-        if os.path.exists(app_bin_dir):
-            for root, dirs, files in os.walk(app_bin_dir):
-                for file in files:
-                    if file.lower() == "sqlite3.dll":
-                        custom_sqlite3_dll = os.path.abspath(os.path.join(root, file))
-                        break
-                if custom_sqlite3_dll:
-                    break
 
 # Exclude Quasar framework files, Vue assets, HTML templates, and static web assets
 def is_web_asset(name):
@@ -497,7 +463,7 @@ for x in a.binaries:
         
     # Redirect standard sqlite3.dll to our custom one instead of discarding it to satisfy pefile/dependency requirements
     if dest_lower.endswith("sqlite3.dll") and custom_sqlite3_dll:
-        if not ('sqlcipher3' in src_lower or 'app/binaries' in src_lower or 'app_binaries' in src_lower):
+        if 'sqlcipher3' not in src_lower:
             print(f"Redirecting standard sqlite3.dll dependency {src_path} -> custom {custom_sqlite3_dll}")
             new_binaries.append((dest_name, custom_sqlite3_dll, x[2]))
             continue

@@ -450,14 +450,14 @@ class QuarantineInterceptorService:
                 # Execute PII Scrubbing & Release Pipeline
                 scrubbed_text = scrub_pii_from_text(extracted_text)
 
-                # Overwrite staged file with sanitized content
+                # Overwrite staged file with sanitized content. A failure must
+                # stop the job here: releasing the file now would publish the
+                # unredacted original as "sanitized". It propagates to the
+                # handler below, which routes the job to manual review.
                 if os.path.exists(staged_path):
-                    try:
-                        with open(staged_path, "w", encoding="utf-8") as f:
-                            f.write(scrubbed_text)
-                        _set_posix_mode(staged_path, 0o600)
-                    except Exception:
-                        pass
+                    with open(staged_path, "w", encoding="utf-8") as f:
+                        f.write(scrubbed_text)
+                    _set_posix_mode(staged_path, 0o600)
 
                 # If vector exists in DB, scrub vector
                 if record.get("file_hash"):
