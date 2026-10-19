@@ -7413,9 +7413,40 @@ class AutoSorterTUI(A11yMixin, App):
         ):
             self.action_select_dir()
             return
+        if self._announce_if_busy("scan"):
+            return
+        self._start_scan()
 
+    def _start_scan(self) -> None:
+        """Announce and launch the scan worker without the busy guard."""
         self.announce(f"Scanning directories: {', '.join(self.source_dirs)} ...")
         self.run_scan_worker()
+
+    def _running_pipeline_worker(self) -> Optional[str]:
+        """Return the name of a running scan or execute worker, if any."""
+        for worker in self.workers:
+            if worker.is_running and worker.name in (
+                "run_scan_worker",
+                "run_execute_worker",
+            ):
+                return worker.name
+        return None
+
+    def _announce_if_busy(self, action: str) -> bool:
+        """Refuse to start ``action`` while a scan or move is still running.
+
+        Both workers share the default exclusive group, so starting one cancels
+        the other and replaces the AppSession that a running move depends on.
+        """
+        running = self._running_pipeline_worker()
+        if running is None:
+            return False
+        if running == "run_execute_worker":
+            msg = f"Files are still being moved. Wait for it to finish before you {action}."
+        else:
+            msg = f"A scan is still running. Wait for it to finish before you {action}."
+        self.announce(msg, priority="assertive")
+        return True
 
     @work(exclusive=True, thread=True)
     def run_scan_worker(self) -> None:
@@ -7626,6 +7657,8 @@ class AutoSorterTUI(A11yMixin, App):
             return
         if not self.plan or not self.app_session:
             self.announce("No plan available to execute. Run [Ctrl+S] Scan first.")
+            return
+        if self._announce_if_busy("execute the plan"):
             return
 
         exec_plan = self._get_executable_plan()
@@ -7916,7 +7949,6 @@ class AutoSorterTUI(A11yMixin, App):
             )
             msg = f"Execution completed successfully! Summary: {summary}"
             self.call_from_thread(self.announce, msg)
-            self.call_from_thread(self.action_scan_directory)
 
             audit_report = (
                 summary.get("audit_report") if isinstance(summary, dict) else None
@@ -7935,6 +7967,8 @@ class AutoSorterTUI(A11yMixin, App):
 
             if audit_report:
                 self.call_from_thread(self.action_open_audit_report, audit_report)
+            # Rescan last: the scan worker replaces the AppSession this worker uses.
+            self.call_from_thread(self._start_scan)
         except Exception as e:
             logger.error(f"Error executing moves: {e}")
             self.call_from_thread(self.announce, f"Execution error: {e}")

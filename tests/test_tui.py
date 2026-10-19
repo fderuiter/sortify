@@ -2114,3 +2114,75 @@ def test_ctrl_q_quits_from_tree_and_search_input(temp_workspace, focus_search):
             assert app.return_code == 0
 
     asyncio.run(_test())
+
+
+def test_scan_and_execute_are_refused_while_moves_are_running(temp_workspace):
+    """Ctrl+S and Ctrl+E during a running move keep the live session and plan."""
+    import threading
+
+    release_moves = threading.Event()
+    moves_started = threading.Event()
+
+    def _slow_moves(plan, progress_callback=None):
+        moves_started.set()
+        release_moves.wait(timeout=10)
+        return {"moved": 1, "failed": 0}
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            session = MagicMock()
+            session.base_dir = temp_workspace
+            session.execute_moves.side_effect = _slow_moves
+            app.app_session = session
+            app.plan = {
+                "Invoices": {
+                    "document_1.pdf": {
+                        "__type__": "file",
+                        "filepath": os.path.join(temp_workspace, "document_1.pdf"),
+                        "target_filename": "document_1.pdf",
+                        "relative_source": "document_1.pdf",
+                    }
+                }
+            }
+            app.rebuild_tree()
+            await pilot.pause()
+
+            with (
+                patch(
+                    "app.core.verifier.VerificationEngine.get_duplicate_groups",
+                    return_value=[],
+                ),
+                patch.object(app, "run_scan_worker") as scan_worker,
+                patch.object(app, "action_open_audit_report"),
+                patch.object(app, "announce", wraps=app.announce) as announce,
+            ):
+                await pilot.press("ctrl+e")
+                await asyncio.to_thread(moves_started.wait, 5)
+
+                await pilot.press("ctrl+s")
+                await pilot.press("ctrl+e")
+                await pilot.pause()
+
+                scan_worker.assert_not_called()
+                session.close.assert_not_called()
+                assert session.execute_moves.call_count == 1
+                busy = [
+                    c.args[0]
+                    for c in announce.call_args_list
+                    if "still being moved" in c.args[0]
+                ]
+                assert len(busy) == 2
+
+                release_moves.set()
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+
+                # The automatic rescan runs once the move has finished.
+                scan_worker.assert_called_once()
+
+    asyncio.run(_test())
