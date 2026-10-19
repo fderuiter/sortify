@@ -8,6 +8,8 @@ version = "0.1.0"
 description = "Local, offline-first document organizer that sorts folders by rules and content clustering"
 readme = "README.md"
 requires-python = ">=3.12,<4"
+license = "GPL-3.0-only"
+license-files = ["LICENSE"]
 authors = [{ name = "Frederick de Ruiter" }]
 keywords = ["file-organizer", "document-clustering", "tui", "offline", "tf-idf"]
 classifiers = [

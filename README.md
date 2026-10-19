@@ -70,3 +70,7 @@ uv run pytest -m "not slow"
 ## Security and privacy
 
 Documents are processed on your machine. Network access is limited to the optional model download and a security-advisory lookup for that model; see [PRIVACY.md](PRIVACY.md). Report vulnerabilities as described in [SECURITY.md](SECURITY.md).
+
+## License
+
+Smart AutoSorter AI Pro is licensed under the [GNU General Public License v3.0](LICENSE).
