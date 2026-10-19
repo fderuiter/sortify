@@ -2574,7 +2574,7 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
             yield Heading(
-                "Interactive Model Management [Ctrl+M]",
+                "Interactive Model Management [Ctrl+K]",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
@@ -3773,7 +3773,7 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
                 classes="shortcut-row",
             )
             yield Label(
-                "  Ctrl+H      - Session history & audit log export",
+                "  Ctrl+Y      - Session history & audit log export",
                 classes="shortcut-row",
             )
             yield Label(
@@ -3792,7 +3792,7 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
                 "  Ctrl+W      - Open model onboarding wizard", classes="shortcut-row"
             )
             yield Label(
-                "  Ctrl+P      - Launch PDF extraction strategy preview",
+                "  Ctrl+X      - Launch PDF extraction strategy preview",
                 classes="shortcut-row",
             )
             yield Label(
@@ -3809,7 +3809,7 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
                 classes="shortcut-row",
             )
             yield Label(
-                "  Ctrl+M      - Open the model manager",
+                "  Ctrl+K      - Open the model manager",
                 classes="shortcut-row",
             )
             yield Label(
@@ -5663,7 +5663,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         """Compose history view, export, and rollback modal widgets."""
         with Vertical(classes="modal-box"):
             yield Heading(
-                "Session History & Rollback Controls [Ctrl+H]",
+                "Session History & Rollback Controls [Ctrl+Y]",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
@@ -6689,16 +6689,16 @@ class AutoSorterTUI(A11yMixin, App):
         Binding("plus", "rate_positive", "Rating (+)", show=False),
         Binding("minus", "rate_negative", "Rating (-)", show=False),
         Binding("ctrl+o", "open_settings", "Settings", show=False),
-        Binding("ctrl+m", "open_model_manager", "Model Manager", show=False),
+        Binding("ctrl+k", "open_model_manager", "Model Manager", show=False),
         Binding("ctrl+w", "open_wizard", "Wizard", show=False),
         Binding("ctrl+c", "open_cro_forensic", "CRO Ingest", show=False),
         Binding("ctrl+d", "open_dropzone", "DropZone", show=False),
         Binding("ctrl+s", "scan_directory", "Scan", show=True),
-        Binding("ctrl+h", "open_history", "History View", show=False),
+        Binding("ctrl+y", "open_history", "History View", show=False),
         Binding("ctrl+u", "open_quarantine_vault", "Quarantine Vault", show=False),
         Binding("ctrl+e", "execute_sort", "Execute Plan", show=True),
         Binding("ctrl+a", "open_audit_report", "Audit Report", show=False),
-        Binding("ctrl+p", "open_extraction_preview", "Extraction Preview", show=False),
+        Binding("ctrl+x", "open_extraction_preview", "Extraction Preview", show=False),
         Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
         Binding("ctrl+f", "focus_search", "Search Tree", show=True),
         Binding("g", "generate_sample_corpus", "Sample Dataset", show=False),
@@ -7369,7 +7369,7 @@ class AutoSorterTUI(A11yMixin, App):
         self.push_screen(SettingsModal(self.settings), on_saved)
 
     def action_open_extraction_preview(self) -> None:
-        """Open visual extraction preview modal for active or selected PDF document [Ctrl+P]."""
+        """Open visual extraction preview modal for active or selected PDF document [Ctrl+X]."""
         if self._is_text_control_focused(allow_tree_search=True):
             return
 
@@ -7397,7 +7397,7 @@ class AutoSorterTUI(A11yMixin, App):
 
         if not pdf_path:
             self.announce(
-                "Please select a PDF document to preview extraction strategies [Ctrl+P]."
+                "Please select a PDF document to preview extraction strategies [Ctrl+X]."
             )
             return
 
