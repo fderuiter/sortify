@@ -349,3 +349,23 @@ async def test_rollback_uses_databases_next_to_session_history(
         await pilot.pause()
 
     assert used_paths == {"db": session_dir, "cache": session_dir}
+
+
+def test_open_session_history_stops_its_db_worker(tmp_path):
+    """Verify each rollback releases the DBWorker thread it starts (#742)."""
+    import threading
+
+    from app.core.history import open_session_history
+
+    def worker_threads():
+        return [
+            t
+            for t in threading.enumerate()
+            if t.name == "DBWorkerThread" and t.is_alive()
+        ]
+
+    before = len(worker_threads())
+    for _ in range(3):
+        with open_session_history(tmp_path / "history.db") as history_mgr:
+            assert history_mgr.db.worker.thread.is_alive()
+    assert len(worker_threads()) == before

@@ -2221,6 +2221,7 @@ def open_session_history(
     A session keeps its ``autosorter.db`` and ``cache.db`` next to its
     ``history.db``, so a rollback must update those rather than the global
     databases in the app dir. Without a path, the app dir's ``history.db`` is used.
+    The DBWorker opened here is stopped on exit.
     """
     from app.config import get_app_dir
     from app.core.cache import CacheManager
@@ -2232,6 +2233,9 @@ def open_session_history(
     )
     session_dir = history_db.parent
     db_worker = DBWorker()
-    db = Database(session_dir / "autosorter.db", db_worker)
-    cache_mgr = CacheManager(str(session_dir / "cache.db"), db_worker)
-    yield HistoryManager(db, cache_mgr, str(history_db))
+    try:
+        db = Database(session_dir / "autosorter.db", db_worker)
+        cache_mgr = CacheManager(str(session_dir / "cache.db"), db_worker)
+        yield HistoryManager(db, cache_mgr, str(history_db))
+    finally:
+        db_worker.stop(stop_embeddings=False)
