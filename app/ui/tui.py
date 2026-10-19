@@ -49,6 +49,8 @@ from app.ui.notifications import TROUBLESHOOTING_URL
 
 logger = logging.getLogger(__name__)
 
+EXECUTE_NEEDS_SCAN_TOOLTIP = "Execution disabled: Scan a folder first [Ctrl+S]"
+
 
 def _diff_highlight_paths(src_path: str, tgt_path: str) -> Tuple[Text, Text]:
     """Compute contrasting color diff highlighting for two path strings."""
@@ -7064,9 +7066,12 @@ class AutoSorterTUI(A11yMixin, App):
                 tui_log.tooltip = "Live operation execution log output feed"
                 yield tui_log
                 btn_exec = Button(
-                    "Execute Plan [Ctrl+E]", id="btn-execute", variant="primary"
+                    "Execute Plan [Ctrl+E]",
+                    id="btn-execute",
+                    variant="primary",
+                    disabled=True,
                 )
-                btn_exec.tooltip = "Execute file sorting plan [Ctrl+E]"
+                btn_exec.tooltip = EXECUTE_NEEDS_SCAN_TOOLTIP
                 yield btn_exec
         alert_banner = Static("", id="alert-banner")
         alert_banner.tooltip = (
@@ -8058,6 +8063,8 @@ class AutoSorterTUI(A11yMixin, App):
                 btn_exec.disabled = True
                 if has_critical:
                     btn_exec.tooltip = "Execution disabled: Plan contains blocking critical validation errors"
+                elif not self.plan:
+                    btn_exec.tooltip = EXECUTE_NEEDS_SCAN_TOOLTIP
                 else:
                     btn_exec.tooltip = (
                         "Execution disabled: No files selected to execute"
