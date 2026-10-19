@@ -1,5 +1,6 @@
 """Textual full-screen terminal interface with interactive tree and modal dialogs."""
 
+import difflib
 import logging
 import os
 import shutil
@@ -12,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from rich.table import Table
 from rich.text import Text
 from textual import events, on, work
 from textual.app import App, ComposeResult
@@ -45,6 +47,134 @@ from app.core.text_utils import sanitize_secret_patterns
 from app.ui.heading import Heading
 
 logger = logging.getLogger(__name__)
+
+
+def _diff_highlight_paths(
+    src_path: str, tgt_path: str
+) -> Tuple[Text, Text]:
+    """Compute contrasting color diff highlighting for two path strings."""
+    if not src_path and not tgt_path:
+        return Text("(None)", style="dim"), Text("(None)", style="dim")
+
+    src_clean = src_path or "(None)"
+    tgt_clean = tgt_path or "(None)"
+
+    if src_clean == tgt_clean:
+        return Text(src_clean, style="dim white"), Text(tgt_clean, style="dim white")
+
+    matcher = difflib.SequenceMatcher(None, src_clean, tgt_clean)
+    src_formatted = Text()
+    tgt_formatted = Text()
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            src_formatted.append(src_clean[i1:i2])
+            tgt_formatted.append(tgt_clean[j1:j2])
+        elif tag == "replace":
+            src_formatted.append(src_clean[i1:i2], style="bold red")
+            tgt_formatted.append(tgt_clean[j1:j2], style="bold green")
+        elif tag == "delete":
+            src_formatted.append(src_clean[i1:i2], style="bold red")
+        elif tag == "insert":
+            tgt_formatted.append(tgt_clean[j1:j2], style="bold green")
+
+    return src_formatted, tgt_formatted
+
+
+def format_side_by_side_path_comparison(
+    source_path: str,
+    target_path: str,
+    base_dir: Optional[str] = None,
+) -> Table:
+    """Render split side-by-side columns comparing source and target paths with contrasting color diffs."""
+    table = Table(
+        expand=True,
+        show_header=True,
+        header_style="bold cyan",
+        box=None,
+    )
+    table.add_column("Source Path (Current)", style="bold", ratio=1)
+    table.add_column("Target Path (Proposed)", style="bold", ratio=1)
+
+    src_norm = source_path.replace("\\", "/") if source_path else ""
+    tgt_norm = target_path.replace("\\", "/") if target_path else ""
+
+    base_norm = base_dir.replace("\\", "/") if base_dir else ""
+    if base_norm and not base_norm.endswith("/"):
+        base_norm += "/"
+
+    src_rel = (
+        src_norm[len(base_norm) :]
+        if base_norm and src_norm.lower().startswith(base_norm.lower())
+        else src_norm
+    )
+    tgt_rel = (
+        tgt_norm[len(base_norm) :]
+        if base_norm and tgt_norm.lower().startswith(base_norm.lower())
+        else tgt_norm
+    )
+
+    src_rel_fmt, tgt_rel_fmt = _diff_highlight_paths(src_rel, tgt_rel)
+    table.add_row(src_rel_fmt, tgt_rel_fmt)
+
+    if base_norm and (src_norm != src_rel or tgt_norm != tgt_rel):
+        src_full_fmt, tgt_full_fmt = _diff_highlight_paths(src_norm, tgt_norm)
+        table.add_row(src_full_fmt, tgt_full_fmt)
+
+    return table
+
+
+def format_folder_path_comparison(
+    files_info: List[Dict[str, Any]],
+    base_dir: Optional[str] = None,
+    max_items: int = 8,
+) -> Table:
+    """Render side-by-side path comparison table for items in a folder subtree."""
+    table = Table(
+        expand=True,
+        show_header=True,
+        header_style="bold cyan",
+        box=None,
+    )
+    table.add_column("Source Path (Current)", style="bold", ratio=1)
+    table.add_column("Target Path (Proposed)", style="bold", ratio=1)
+
+    if not files_info:
+        table.add_row(
+            Text("No files in folder", style="dim"),
+            Text("No files in folder", style="dim"),
+        )
+        return table
+
+    for fi in files_info[:max_items]:
+        src_path = fi.get("filepath", "")
+        key = fi.get("key") or fi.get("target_filename") or ""
+        folder = fi.get("folder", "")
+        target_fn = fi.get("target_filename") or key
+        tgt_rel = (
+            os.path.join(folder, target_fn).replace("\\", "/")
+            if folder and folder != "(Root)"
+            else target_fn
+        )
+
+        src_rel = src_path
+        if base_dir and src_path:
+            base_norm = base_dir.replace("\\", "/").rstrip("/") + "/"
+            src_norm = src_path.replace("\\", "/")
+            if src_norm.lower().startswith(base_norm.lower()):
+                src_rel = src_norm[len(base_norm) :]
+
+        src_fmt, tgt_fmt = _diff_highlight_paths(src_rel, tgt_rel)
+        table.add_row(src_fmt, tgt_fmt)
+
+    if len(files_info) > max_items:
+        remaining = len(files_info) - max_items
+        table.add_row(
+            Text(f"... and {remaining} more items", style="dim italic"),
+            Text(f"... and {remaining} more items", style="dim italic"),
+        )
+
+    return table
 
 
 class A11yMixin:
@@ -6467,6 +6597,15 @@ class AutoSorterTUI(A11yMixin, App):
             tree.tooltip = "Interactive tree view of proposed file organization plan"
             yield tree
             with Vertical(id="right-meta-pane"):
+                yield Heading("Side-by-Side Path Comparison", level=2, classes="meta-header")
+                path_comp = Static(
+                    "Select a file or folder in the tree to compare source and target paths.",
+                    id="path-comparison",
+                )
+                path_comp.tooltip = (
+                    "Side-by-side split column view comparing source and destination target paths"
+                )
+                yield path_comp
                 yield Heading("Node Metadata Inspector", level=2, classes="meta-header")
                 meta_widget = Static(
                     "Select a node in the tree to inspect details.", id="meta-details"
@@ -7628,6 +7767,12 @@ class AutoSorterTUI(A11yMixin, App):
             else:
                 self._build_tree_nodes(self.plan, tree.root, current_folder="")
             tree.root.expand_all()
+            if tree.cursor_node and tree.cursor_node.data:
+                self._update_inspector(tree.cursor_node, announce=False)
+            elif getattr(self, "active_tree_node", None) and self.active_tree_node.data:
+                self._update_inspector(self.active_tree_node, announce=False)
+            else:
+                self._update_inspector(None, announce=False)
             self.run_validation_worker()
         except Exception as e:
             logger.error(f"Error rebuilding tree: {e}")
@@ -7846,8 +7991,10 @@ class AutoSorterTUI(A11yMixin, App):
                 )
                 self._build_tree_nodes(v, child_tree_node, current_folder=sub_folder)
 
-    def _update_inspector(self, node_or_data: Any = None) -> str:
-        """Update and return formatted metadata text for the inspector panel."""
+    def _update_inspector(
+        self, node_or_data: Any = None, announce: bool = True
+    ) -> str:
+        """Update and return formatted metadata text for the inspector panel and path comparison pane."""
         if node_or_data is None:
             node_or_data = self.active_tree_node
 
@@ -7857,6 +8004,12 @@ class AutoSorterTUI(A11yMixin, App):
         elif isinstance(node_or_data, dict):
             data = node_or_data
 
+        path_comp_widget = None
+        try:
+            path_comp_widget = self.query_one("#path-comparison", Static)
+        except Exception:
+            pass
+
         if not data or not isinstance(data, dict):
             msg = "Root folder of sorting plan."
             try:
@@ -7864,6 +8017,12 @@ class AutoSorterTUI(A11yMixin, App):
                 meta_widget.update(msg)
             except Exception:
                 pass
+            if path_comp_widget:
+                all_files = self._collect_file_nodes_from_dict(self.plan) if hasattr(self, "plan") and self.plan else []
+                if all_files:
+                    path_comp_widget.update(format_folder_path_comparison(all_files, self.base_dir))
+                else:
+                    path_comp_widget.update("Select a file or folder in the tree to compare source and target paths.")
             return msg
 
         if data.get("is_empty_state"):
@@ -7874,12 +8033,15 @@ class AutoSorterTUI(A11yMixin, App):
                 msg = "Empty workspace node. Press [Ctrl+B] to select a different directory."
             else:
                 msg = "Empty workspace node. No documents found in target directory."
-            self.announce(msg)
+            if announce:
+                self.announce(msg)
             try:
                 meta_widget = self.query_one("#meta-details", Static)
                 meta_widget.update(msg)
             except Exception:
                 pass
+            if path_comp_widget:
+                path_comp_widget.update("No documents available for path comparison.")
             return msg
 
         lines = []
@@ -7889,6 +8051,24 @@ class AutoSorterTUI(A11yMixin, App):
             locked = "Yes [LOCKED]" if data.get("is_locked") else "No"
             rating = data.get("rating") or "None"
             info = data.get("info") if isinstance(data.get("info"), dict) else {}
+
+            src_filepath = data.get("filepath") or info.get("filepath") or key
+            target_fn = info.get("target_filename") or key
+            target_folder = folder if folder != "(Root)" else ""
+            if self.base_dir and target_folder:
+                target_filepath = os.path.join(self.base_dir, target_folder, target_fn)
+            elif self.base_dir:
+                target_filepath = os.path.join(self.base_dir, target_fn)
+            else:
+                target_filepath = os.path.join(target_folder, target_fn) if target_folder else target_fn
+
+            if path_comp_widget:
+                table = format_side_by_side_path_comparison(
+                    source_path=src_filepath,
+                    target_path=target_filepath,
+                    base_dir=self.base_dir,
+                )
+                path_comp_widget.update(table)
 
             lines.append(f"[bold accent]File:[/bold accent] {key}")
             lines.append(f"[bold]Path:[/bold] {data.get('filepath')}")
@@ -7982,15 +8162,36 @@ class AutoSorterTUI(A11yMixin, App):
                     f"[bold warning]Collision Indicator:[/bold warning] [COLLISION: {pol_str}]"
                 )
 
-            self.announce(
-                f"Selected file '{key}' in folder '{folder}'. Locked: {locked}. Rating: {rating}."
-            )
+            if announce:
+                self.announce(
+                    f"Selected file '{key}' in folder '{folder}'. Locked: {locked}. Rating: {rating}."
+                )
         else:
             key = data.get("key", "")
             folder = data.get("folder", "")
+            folder_info = data.get("info", {})
+            child_files = (
+                self._collect_file_nodes_from_dict(folder_info)
+                if isinstance(folder_info, dict)
+                else []
+            )
+
+            if path_comp_widget:
+                if child_files:
+                    table = format_folder_path_comparison(
+                        files_info=child_files,
+                        base_dir=self.base_dir,
+                    )
+                    path_comp_widget.update(table)
+                else:
+                    path_comp_widget.update(
+                        f"Folder category '{key}' contains no document items."
+                    )
+
             lines.append(f"[bold accent]Folder Category:[/bold accent] {key}")
             lines.append(f"[bold]Relative Path:[/bold] {folder}")
-            self.announce(f"Selected folder category '{key}' at path '{folder}'.")
+            if announce:
+                self.announce(f"Selected folder category '{key}' at path '{folder}'.")
 
         text = "\n".join(lines)
         try:
