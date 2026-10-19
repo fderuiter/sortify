@@ -46,3 +46,4 @@ pytest_failures.txt
 
 # Diagram renders are SVG only
 docs/assets/diagrams/*.png
+.hypothesis/
