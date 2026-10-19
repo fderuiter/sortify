@@ -29,7 +29,7 @@ Once tagged releases exist, the release workflow publishes self-contained archiv
 ```bash
 uv run smart-autosorter                         # open the terminal UI
 uv run smart-autosorter sort ~/Downloads --dry-run
-uv run smart-autosorter scan ~/Downloads --json  # plan only, never moves files
+uv run smart-autosorter scan ~/Downloads        # print the plan as a tree, never moves files
 uv run smart-autosorter undo --latest
 uv run smart-autosorter --demo                  # sorts a generated sample corpus
 uv run smart-autosorter --help                  # all subcommands and flags
