@@ -1,0 +1,21 @@
+{
+  "_metadata": {
+    "checksum": "891e417763f3c3fc7ab977c9c5ce8d96d4910fa2c43491254a808977df779ded"
+  },
+  "classes": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "format_plan_tree",
+      "parameters": [
+        {
+          "annotation": "dict",
+          "default": null,
+          "name": "plan"
+        }
+      ],
+      "returns": "tuple[list[str], int, int]"
+    }
+  ]
+}

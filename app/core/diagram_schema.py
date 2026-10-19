@@ -658,6 +658,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                 nodes=[
                     "core_text_utils",
                     "core_path_utils",
+                    "core_plan_format",
                     "core_native_dialog",
                     "core_env_helper",
                     "core_crypto",
@@ -759,6 +760,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             # Utilities
             DiagramNode(id="core_text_utils", label="app.core.text_utils"),
             DiagramNode(id="core_path_utils", label="app.core.path_utils"),
+            DiagramNode(id="core_plan_format", label="app.core.plan_format"),
             DiagramNode(id="core_native_dialog", label="app.core.native_dialog"),
             DiagramNode(id="core_env_helper", label="app.core.env_helper"),
             DiagramNode(id="core_crypto", label="app.core.crypto"),
