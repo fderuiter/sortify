@@ -8032,10 +8032,10 @@ class AutoSorterTUI(A11yMixin, App):
                             matching_ids.add(id(v))
                             has_match = True
                     else:
-                        sub_folder = (
-                            (Path(folder) / k).as_posix() if folder else k
+                        sub_folder = (Path(folder) / k).as_posix() if folder else k
+                        folder_direct_match = (
+                            query in k.lower() or query in sub_folder.lower()
                         )
-                        folder_direct_match = query in k.lower() or query in sub_folder.lower()
                         child_match = _walk(v, sub_folder)
                         if folder_direct_match or child_match:
                             matching_ids.add(id(v))
@@ -8078,9 +8078,7 @@ class AutoSorterTUI(A11yMixin, App):
                 )
             else:
                 matching_ids = (
-                    self._build_matching_node_ids(self.plan, query)
-                    if query
-                    else None
+                    self._build_matching_node_ids(self.plan, query) if query else None
                 )
                 nodes_added = self._build_tree_nodes(
                     self.plan,
@@ -8167,7 +8165,8 @@ class AutoSorterTUI(A11yMixin, App):
                             v,
                             current_folder=sub_folder,
                             query=query,
-                            parent_folder_matches=parent_folder_matches or folder_matches,
+                            parent_folder_matches=parent_folder_matches
+                            or folder_matches,
                             matching_ids=matching_ids,
                         )
                     )

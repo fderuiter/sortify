@@ -149,7 +149,9 @@ class DBWorker:
                         )
                         self._do_rollback_session(sess_id)
                     except Exception as rollback_err:
-                        logger.error(f"Failed during automatic transaction rollback: {rollback_err}")
+                        logger.error(
+                            f"Failed during automatic transaction rollback: {rollback_err}"
+                        )
                 if result_q is not None:
                     result_q.put(("error", e))
             finally:
