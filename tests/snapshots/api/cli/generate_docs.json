@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "46e73e0ac718058902181e8b4cd50e2d87f5ae21a95c9f501d75ed9e4cd53baf"
+    "checksum": "eba59152332a862b3c4d2fccbd068204a7d5fdb32e697879b7a02ac56c92e436"
   },
   "cli": [
     {
@@ -48,18 +48,6 @@
       "keywords": {
         "action": "store_true",
         "help": "Skip MkDocs HTML site generation build step."
-      },
-      "method": "add_argument"
-    },
-    {
-      "args": [
-        "files"
-      ],
-      "caller": "parser",
-      "keywords": {
-        "default": [],
-        "help": "Optional file path(s) passed by pre-commit or callers.",
-        "nargs": "*"
       },
       "method": "add_argument"
     }

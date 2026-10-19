@@ -29,11 +29,13 @@ repos:
         name: Validate Documentation
         entry: uv run docs --check --no-build
         language: system
+        pass_filenames: false
         files: '^(docs/|scripts/.*\.py|app/.*\.py|mkdocs\.yml|README\.md|PRIVACY\.md|SECURITY\.md)'
       - id: validate-diagram-artifacts
         name: Validate Diagram Artifacts and Mermaid Compilation
         entry: uv run python scripts/diagram_toolchain.py --verify
         language: system
+        pass_filenames: false
         files: '^(app/ui/.*\.py|scripts/diagram_toolchain\.py|docs/assets/diagrams/.*|docs/.*\.md)$'
       - id: validate-links
         name: Validate External Links
@@ -49,6 +51,7 @@ repos:
         name: Validate Agent Prompts Manifest
         entry: uv run python scripts/prompt_manifest.py verify
         language: system
+        pass_filenames: false
         files: '^\.github/AGENTS/.*$'
       - id: validate-signatures
         name: Validate API and CLI Signatures

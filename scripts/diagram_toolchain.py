@@ -654,7 +654,8 @@ def main():
         "command",
         nargs="?",
         default="build",
-        help="Command to execute ('build' or 'verify') or optional target file path.",
+        choices=["build", "verify"],
+        help="Command to execute: 'build' (default) or 'verify'",
     )
     parser.add_argument(
         "--verify",
@@ -674,22 +675,10 @@ def main():
         default=DEFAULT_OUTPUT_DIR,
         help=f"Target directory for compiled diagram assets (default: {DEFAULT_OUTPUT_DIR})",
     )
-    parser.add_argument(
-        "files",
-        nargs="*",
-        default=[],
-        help="Optional file path(s) passed by pre-commit or callers.",
-    )
 
     args = parser.parse_args()
 
-    if args.command in ("build", "verify"):
-        cmd_action = args.command
-        _staged_files = args.files
-    else:
-        cmd_action = "verify" if args.verify_flag else "build"
-        _staged_files = [args.command] + args.files
-
+    cmd_action = args.command
     is_verify = cmd_action == "verify" or args.verify_flag
 
     if is_verify:

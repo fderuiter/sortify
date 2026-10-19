@@ -286,20 +286,28 @@ def validate_codebase_duplication(
     for h, locs in function_hashes.items():
         distinct_files = {loc[0] for loc in locs}
         if len(distinct_files) > 1:
-            if target_files is not None and not any(
-                loc[0] in target_files for loc in locs
-            ):
-                continue
-            primary_file, primary_line, primary_name = locs[0]
-            for dup_file, dup_line, dup_name in locs[1:]:
-                if dup_file != primary_file:
-                    if target_files is not None and dup_file not in target_files:
-                        continue
-                    errors.append(
-                        f"{dup_file}:{dup_line}: Duplicate function body found for '{dup_name}'. "
-                        f"Structurally identical to function '{primary_name}' in {primary_file}:{primary_line}. "
-                        "Consolidate logic into a shared module."
-                    )
+            if target_files is None:
+                primary_file, primary_line, primary_name = locs[0]
+                for dup_file, dup_line, dup_name in locs[1:]:
+                    if dup_file != primary_file:
+                        errors.append(
+                            f"{dup_file}:{dup_line}: Duplicate function body found for '{dup_name}'. "
+                            f"Structurally identical to function '{primary_name}' in {primary_file}:{primary_line}. "
+                            "Consolidate logic into a shared module."
+                        )
+            else:
+                for curr_file, curr_line, curr_name in locs:
+                    if curr_file in target_files:
+                        other_locs = [
+                            (f, line, name) for f, line, name in locs if f != curr_file
+                        ]
+                        if other_locs:
+                            other_file, other_line, other_name = other_locs[0]
+                            errors.append(
+                                f"{curr_file}:{curr_line}: Duplicate function body found for '{curr_name}'. "
+                                f"Structurally identical to function '{other_name}' in {other_file}:{other_line}. "
+                                "Consolidate logic into a shared module."
+                            )
 
 
 def validate_diagram_schema_and_assets(errors: list) -> None:
