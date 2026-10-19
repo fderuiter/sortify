@@ -163,7 +163,7 @@ jobs:
 
     - name: Validate Documentation and Integrity
       run: |
-        uv run docs --check
+        uv run python scripts/generate_docs.py --check
 
   build-and-test:
     name: Build & Test

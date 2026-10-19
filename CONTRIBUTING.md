@@ -33,7 +33,7 @@ uv run pytest -m slow -n 0              # ML, snapshot and integration tests
 uv run ruff check . && uv run ruff format .
 uv run ty check                         # type check app/ (config in pyproject.toml)
 uv run pre-commit run --all-files       # every hook, same as CI's static checks
-uv run docs --check                     # regenerate docs, audit links, build the site
+uv run python scripts/generate_docs.py --check  # regenerate docs, audit links, build the site
 uv run mkdocs serve                     # preview the docs site at http://127.0.0.1:8000
 ```
 
@@ -45,7 +45,7 @@ Set `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` when running tests on
 
 | Hook | Script | Fails when |
 |---|---|---|
-| `validate-docs` | `uv run docs --check --no-build` | generated docs (`docs/api_reference.md`, `docs/ui.md`, `docs/admin_guide.md`, `SECURITY.md`) are stale, or a handwritten doc links to a missing path |
+| `validate-docs` | `uv run python scripts/generate_docs.py --check --no-build` | generated docs (`docs/api_reference.md`, `docs/ui.md`, `docs/admin_guide.md`, `SECURITY.md`) are stale, or a handwritten doc links to a missing path |
 | `validate-diagram-artifacts` | `scripts/diagram_toolchain.py` | a Mermaid diagram spec doesn't compile |
 | `validate-signatures` | `scripts/validate_signatures.py` | a public API or CLI signature changed without updating its baseline in `tests/snapshots/api/` |
 | `validate-architecture` | `scripts/validate_architecture.py` | a centralized helper (path validation, packaging checks, key lookup) is duplicated instead of reused |
@@ -60,10 +60,10 @@ CI (`.github/workflows/ci.yml`) runs the same checks, a dependency audit and sec
 
 Some checks compare against committed files. When you change them on purpose, regenerate and commit the result so reviewers can see the diff:
 
-- **Generated docs:** `uv run docs` rewrites the generated pages and `SECURITY.md`.
+- **Generated docs:** `uv run python scripts/generate_docs.py` rewrites the generated pages and `SECURITY.md`.
 - **API and CLI signatures:** `uv run python scripts/validate_signatures.py --update`.
 - **TUI snapshots:** `UPDATE_SNAPSHOTS=1 uv run pytest tests/test_visual_snapshots.py -n 0`, then commit `tests/snapshots/tui_svg/`.
-- **Diagrams:** edit the spec in `app/core/diagram_schema.py`, then run `uv run python scripts/diagram_toolchain.py build` and commit the `.mmd` and `.svg` files in `docs/assets/diagrams/`. Rendering needs Node and mermaid-cli (`npm install -g @mermaid-js/mermaid-cli`, which also fetches the headless Chrome it uses). Without it the build keeps the existing SVGs and warns that a changed diagram is stale.
+- **Diagrams:** edit the spec in `scripts/diagram_schema.py`, then run `uv run python scripts/diagram_toolchain.py build` and commit the `.mmd` and `.svg` files in `docs/assets/diagrams/`. Rendering needs Node and mermaid-cli (`npm install -g @mermaid-js/mermaid-cli`, which also fetches the headless Chrome it uses). Without it the build keeps the existing SVGs and warns that a changed diagram is stale.
 
 ## Code conventions
 
