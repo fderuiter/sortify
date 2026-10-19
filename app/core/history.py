@@ -1192,6 +1192,8 @@ class HistoryManager:
                         import logging
                         logging.error(f"Failed to unwind step {step['step_id']}: {move_err}")
                         failed_unwinds.append((step, move_err))
+        elif snapshot_files:
+            return self._rollback_from_snapshot_internal(session_id, base_dir=base_dir)
 
         if failed_unwinds:
             first_err = failed_unwinds[0][1]
