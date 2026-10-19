@@ -79,6 +79,10 @@ Some checks compare against committed files. When you change them on purpose, re
 3. Fill in the pull request template.
 4. Sensitive paths (workflows, `SECURITY.md`, `PRIVACY.md`, config, crypto, mover, history, session, build tooling and the snapshot baselines) need code-owner review and are never auto-merged. The full list is in [Auto-Merge Policy](docs/auto_merge_policy.md) and `.github/CODEOWNERS`.
 
+## Releasing
+
+Publish a GitHub release (Releases → Draft a new release, with a new `v*` tag). Publishing it runs **Release Binaries** (`.github/workflows/release.yml`), which builds the Windows, Linux and macOS archives, attests their provenance and SBOMs, and attaches them to the release. Pushing a tag on its own does not release anything.
+
 ## Reporting bugs and vulnerabilities
 
 Open a GitHub issue for bugs. For security problems follow the reporting steps in [SECURITY.md](SECURITY.md).

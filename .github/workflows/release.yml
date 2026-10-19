@@ -1,14 +1,14 @@
 name: Release Binaries
 
+# Publishing a GitHub release is the one trigger that ships binaries. A tag
+# push used to trigger too, so a release created with a new tag built and
+# uploaded everything twice, racing on the same asset names.
 on:
   release:
     types: [published]
-  push:
-    tags:
-      - 'v*'
   # Dry-run the full build on PRs that change how releases are built, so a
-  # broken release pipeline is caught before a tag is pushed. Publishing steps
-  # below are gated on tags/releases and are skipped for these runs.
+  # broken release pipeline is caught before a release is published. The
+  # publish job only runs for releases and is skipped for these runs.
   pull_request:
     branches: [ main ]
     paths:
@@ -19,7 +19,7 @@ on:
 
 # Building runs third-party code (dependencies, PyInstaller, Syft) and also
 # runs on PRs, so it gets a read-only token. Only the publish job, which runs
-# for tags and releases, can write to the release and mint attestations.
+# for published releases, can write to the release and mint attestations.
 permissions:
   contents: read
 
@@ -125,7 +125,7 @@ jobs:
   publish:
     name: Publish ${{ matrix.os_name }}
     needs: build-binaries
-    if: startsWith(github.ref, 'refs/tags/') || github.event_name == 'release'
+    if: github.event_name == 'release'
     runs-on: ubuntu-latest
     permissions:
       contents: write
@@ -167,6 +167,15 @@ jobs:
             dist/${{ matrix.artifact_name }}
             dist/${{ matrix.artifact_name }}.sha256
             dist/${{ matrix.artifact_name }}.sbom.json
-            dist/smart-autosorter-models.zip
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+
+      # Every OS packages the same model weights; upload them once so three
+      # jobs don't race to replace the same asset.
+      - name: Upload Model Weights
+        if: matrix.os_name == 'Linux'
+        uses: softprops/action-gh-release@v3
+        with:
+          files: dist/smart-autosorter-models.zip
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
