@@ -1,0 +1,160 @@
+{
+  "_metadata": {
+    "checksum": "2ef051e5d35b5987929031bc78dd36bcdc4910eec84152abb0dc0cfaf6d8dafa"
+  },
+  "classes": [
+    {
+      "class_name": "SortPipeline",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "session"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "base_dir",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "execute",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "plan"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "plan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[list]",
+              "default": "None",
+              "name": "items"
+            },
+            {
+              "annotation": "Optional[Callable]",
+              "default": "None",
+              "name": "progress_callback"
+            },
+            {
+              "annotation": "Optional[Callable]",
+              "default": "None",
+              "name": "cancel_check"
+            },
+            {
+              "annotation": "int",
+              "default": "50",
+              "name": "chunk_size"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "run",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[list]",
+              "default": "None",
+              "name": "items"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "dry_run"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "settings",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "drop_scope",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "path"
+        }
+      ],
+      "returns": "tuple[str, Optional[list]]"
+    }
+  ]
+}

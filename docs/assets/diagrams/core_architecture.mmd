@@ -4,6 +4,7 @@ flowchart TD
         app_tui["app.tui (Textual Terminal Interface)"]
     end
     subgraph session_orchestration ["Session Orchestration & Lifecycle (app.core)"]
+        core_pipeline["app.core.pipeline"]
         core_session["app.core.session"]
         core_user_space_bootstrap["app.core.user_space_bootstrap"]
         core_daemon["app.core.daemon"]
@@ -74,6 +75,10 @@ flowchart TD
     end
     core_pattern_formatter["app.core.pattern_formatter"]
     app_main --> app_tui
+    app_main --> core_pipeline
+    core_daemon --> core_pipeline
+    core_pipeline --> core_session
+    core_pipeline --> core_extractor
     app_main --> core_session
     app_tui --> core_session
     core_session --> core_user_space_bootstrap

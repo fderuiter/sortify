@@ -564,6 +564,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                 id="session_orchestration",
                 title="Session Orchestration & Lifecycle (app.core)",
                 nodes=[
+                    "core_pipeline",
                     "core_session",
                     "core_user_space_bootstrap",
                     "core_daemon",
@@ -673,6 +674,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             ),
             DiagramNode(id="app_tui", label="app.tui (Textual Terminal Interface)"),
             # Orchestration
+            DiagramNode(id="core_pipeline", label="app.core.pipeline"),
             DiagramNode(id="core_session", label="app.core.session"),
             DiagramNode(id="core_diagram_schema", label="app.core.diagram_schema"),
             DiagramNode(
@@ -767,6 +769,10 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
         ],
         edges=[
             DiagramEdge(source="app_main", target="app_tui"),
+            DiagramEdge(source="app_main", target="core_pipeline"),
+            DiagramEdge(source="core_daemon", target="core_pipeline"),
+            DiagramEdge(source="core_pipeline", target="core_session"),
+            DiagramEdge(source="core_pipeline", target="core_extractor"),
             DiagramEdge(source="app_main", target="core_session"),
             DiagramEdge(source="app_tui", target="core_session"),
             DiagramEdge(source="core_session", target="core_user_space_bootstrap"),
