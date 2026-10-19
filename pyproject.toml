@@ -64,16 +64,12 @@ ml = [
 
 [project.scripts]
 smart-autosorter = "app.main:main"
-docs = "app.cli.generate_docs:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
 
 [tool.ruff]
 line-length = 88
-exclude = [
-    "app/binaries",
-]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "D", "D417"]
@@ -99,7 +95,6 @@ error-on-warning = false
 
 [tool.ty.src]
 include = ["app"]
-exclude = ["app/binaries"]
 
 [tool.ty.analysis]
 # Optional `ml` extra and `docs` group packages, imported lazily behind guards.
@@ -149,7 +144,6 @@ include = [
     "app/core/session.py",
     "app/core/shared_registry.py",
     "app/core/text_utils.py",
-    "app/core/user_space_bootstrap.py",
 ]
 
 [tool.ty.overrides.rules]
@@ -160,7 +154,6 @@ all = "ignore"
 [[tool.ty.overrides]]
 include = [
     "app/core/crypto.py",
-    "app/core/diagram_schema.py",
     "app/core/history.py",
     "app/core/mover.py",
     "app/core/policy_engine.py",
@@ -233,15 +226,30 @@ markers = [
     "slow: marks tests as slow / heavy ML, snapshot, or integration tests (deselect with '-m \"not slow\"')",
     "integration: marks integration tests",
     "ml: marks machine learning model tests",
+    "real_db_worker: run against the real asynchronous DBWorker write queue instead of the synchronous test stand-in",
 ]
 
 [tool.coverage.run]
 source = ["app"]
 omit = [
     "app/demo.py",
-    "app/main.py",
     "*__init__.py",
 ]
 
 [tool.coverage.report]
 show_missing = true
+
+# Per-module floors for the code that moves, undoes and encrypts user files,
+# checked on Linux by scripts/check_coverage_floors.py with branch coverage on.
+# Set about two points under what main measured on 2026-10-19; raise a floor
+# when tests raise its module, never lower it to get a PR green. Target: 90.
+[tool.sortify.coverage-floors]
+"app/core/mover.py" = 74
+"app/core/history.py" = 66
+"app/core/resilient_file_ops.py" = 71
+"app/core/ledger.py" = 84
+"app/core/crypto.py" = 86
+"app/core/daemon.py" = 70
+"app/core/db_conn.py" = 71
+"app/core/verifier.py" = 82
+"app/core/path_utils.py" = 77

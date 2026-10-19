@@ -1,5 +1,8 @@
-"""Backward-compatibility wrapper for documentation generator."""
+"""Automated documentation generator."""
 
+import glob
+import os
+import re
 import sys
 from pathlib import Path
 
@@ -7,7 +10,898 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
-from app.cli.generate_docs import main  # noqa: E402
+
+def get_python_executable():
+    """Dynamically determine the best Python command/executable."""
+    return sys.executable
+
+
+def generate_tutorial_docs():
+    """Ensure tutorial documentation directory exists."""
+    tutorials_dir = Path("docs") / "tutorials"
+    tutorials_dir.mkdir(parents=True, exist_ok=True)
+
+
+def generate_api_docs():
+    """Generate API reference markdown from python modules."""
+    app_dir = "app"
+    output_file = os.path.join("docs", "api_reference.md")
+
+    with open(output_file, "w", encoding="utf-8", newline="\n") as f:
+        f.write("# API Reference\n\n")
+        f.write("This document is automatically generated. Do not edit manually.\n\n")
+
+        f.write("## Core Architecture Diagram\n\n")
+        f.write(
+            "![Core Architecture Diagram](assets/diagrams/core_architecture.svg)\n\n"
+        )
+
+        # Find all python files except ui and binaries
+        py_files = glob.glob(os.path.join(app_dir, "**", "*.py"), recursive=True)
+        py_files = [
+            p
+            for p in py_files
+            if not p.endswith("__init__.py")
+            and "/ui/" not in p
+            and "\\ui\\" not in p
+            and "/binaries/" not in p
+            and "\\binaries\\" not in p
+        ]
+        py_files.sort(key=lambda p: Path(p).parts)
+
+        for file_path in py_files:
+            parts = Path(file_path).with_suffix("").parts
+            module_name = ".".join(parts)
+            f.write(f"## `{module_name}`\n\n")
+            f.write(f"::: {module_name}\n\n")
+
+
+def compile_diagram_assets():
+    """Compile diagram specifications into SVG/PNG visual assets and Mermaid files."""
+    from scripts.diagram_toolchain import build_diagrams
+
+    if not build_diagrams(force=False, verify_only=False):
+        raise RuntimeError(
+            "One or more diagrams failed schema validation or rendering; "
+            "see the messages above."
+        )
+
+
+def generate_ui_docs():
+    """Generate UI Reference from app/ui/*.py."""
+    app_dir = os.path.join("app", "ui")
+    output_file = os.path.join("docs", "ui.md")
+
+    with open(output_file, "w", encoding="utf-8", newline="\n") as f:
+        f.write("# UI API Reference\n\n")
+        f.write("This document is automatically generated. Do not edit manually.\n\n")
+
+        f.write("## Component Architecture & Catalog Diagrams\n\n")
+
+        f.write("### Catalog Interactive Workbench Workflow\n\n")
+        f.write(
+            "![Component Catalog Workflow](assets/diagrams/catalog_workflow.svg)\n\n"
+        )
+
+        f.write("### UI Component Hierarchy\n\n")
+        f.write(
+            "![UI Component Hierarchy](assets/diagrams/ui_component_hierarchy.svg)\n\n"
+        )
+
+        py_files = glob.glob(os.path.join(app_dir, "*.py"))
+        py_files = [p for p in py_files if not p.endswith("__init__.py")]
+        py_files.sort(key=lambda p: Path(p).parts)
+
+        for file_path in py_files:
+            parts = Path(file_path).with_suffix("").parts
+            module_name = ".".join(parts)
+            f.write(f"## `{module_name}`\n\n")
+            f.write(f"::: {module_name}\n\n")
+
+
+_KEY_NAMES = {
+    "escape": "Esc",
+    "question_mark": "?",
+    "space": "Space",
+    "plus": "+",
+    "minus": "-",
+    "enter": "Enter",
+    "tab": "Tab",
+}
+
+
+def _format_key(key: str) -> str:
+    """Render a Textual key name (e.g. ``ctrl+s``) the way users type it."""
+    if len(key) == 1:
+        return f"Shift+{key}" if key.isupper() else key
+    parts = key.split("+")
+    rendered = [
+        _KEY_NAMES.get(p, p.upper() if len(p) <= 2 else p.title()) for p in parts
+    ]
+    return "+".join(rendered)
+
+
+def _collect_bindings(source_path: str) -> dict:
+    """Map class name to ``(title, [(keys, description)])`` from ``BINDINGS``."""
+    import ast
+
+    with open(source_path, "r", encoding="utf-8") as f:
+        tree = ast.parse(f.read())
+
+    found = {}
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for stmt in node.body:
+            if not (
+                isinstance(stmt, ast.Assign)
+                and any(getattr(t, "id", None) == "BINDINGS" for t in stmt.targets)
+                and isinstance(stmt.value, (ast.List, ast.Tuple))
+            ):
+                continue
+            rows = {}
+            for call in stmt.value.elts:
+                if not (isinstance(call, ast.Call) and len(call.args) >= 3):
+                    continue
+                key, _action, desc = (
+                    a.value if isinstance(a, ast.Constant) else None
+                    for a in call.args[:3]
+                )
+                if not (isinstance(key, str) and isinstance(desc, str)):
+                    continue
+                # Several keys can share one description (e.g. ? and F1).
+                keys = rows.setdefault(desc, [])
+                label = _format_key(key)
+                if label not in keys:
+                    keys.append(label)
+            title = re.sub(r"(?<!^)(?=[A-Z])", " ", node.name.removesuffix("Modal"))
+            found[node.name] = (title, [(keys, desc) for desc, keys in rows.items()])
+    return found
+
+
+def generate_keyboard_docs():
+    """Generate the keyboard shortcut reference from the TUI ``BINDINGS``."""
+    bindings = _collect_bindings(os.path.join("app", "ui", "tui.py"))
+    output_file = os.path.join("docs", "keyboard_shortcuts.md")
+
+    def table(rows):
+        lines = ["| Keys | Action |", "|---|---|"]
+        for keys, desc in rows:
+            lines.append(f"| {' / '.join(f'`{k}`' for k in keys)} | {desc} |")
+        return "\n".join(lines) + "\n\n"
+
+    with open(output_file, "w", encoding="utf-8", newline="\n") as f:
+        f.write("# Keyboard Shortcuts\n\n")
+        f.write(
+            "This page is generated from the terminal UI's key bindings "
+            "(`app/ui/tui.py`). Do not edit it manually.\n\n"
+        )
+        f.write("Press `?` or `F1` in the app to see these shortcuts.\n\n")
+
+        main = bindings.pop("AutoSorterTUI", None)
+        if main:
+            f.write("## Main Window\n\n")
+            f.write(table(main[1]))
+
+        f.write("## Dialogs\n\n")
+        f.write("`Esc` closes or cancels any dialog.\n\n")
+        for name in sorted(bindings):
+            title, rows = bindings[name]
+            # Dialogs whose only keys are close/help are covered by the line above.
+            extra = [r for r in rows if not set(r[0]) <= {"Esc", "?", "F1"}]
+            if not extra:
+                continue
+            f.write(f"### {title}\n\n")
+            f.write(table(extra))
+
+
+def _describe_type(annotation) -> str:
+    """Render a settings annotation compactly (``int``, ``list[str]``, ...)."""
+    import typing
+
+    if typing.get_origin(annotation) is typing.Literal:
+        return "str"
+    if typing.get_args(annotation):
+        text = str(annotation)
+    else:
+        text = getattr(annotation, "__name__", None) or str(annotation)
+    text = text.replace("typing.", "")
+    # Annotated item types (e.g. constrained strings) add noise, not meaning:
+    # keep the base type and drop the bracketed metadata.
+    while "Annotated[" in text:
+        start = text.index("Annotated[")
+        depth, end = 0, start + len("Annotated")
+        for end in range(end, len(text)):
+            depth += {"[": 1, "]": -1}.get(text[end], 0)
+            if depth == 0:
+                break
+        base = text[start + len("Annotated[") : end].split(",")[0]
+        text = text[:start] + base + text[end + 1 :]
+    return text
+
+
+def _describe_default(field) -> str:
+    """Render a field default, calling factories and summarizing long values."""
+    default = field.get_default(call_default_factory=True)
+    if isinstance(default, set):
+        default = sorted(default)
+    if isinstance(default, str):
+        try:
+            default = f"~/{Path(default).relative_to(Path.home()).as_posix()}"
+        except ValueError:
+            pass
+    if isinstance(default, (list, dict)) and len(repr(default)) > 80:
+        return f"{len(default)} built-in entries (see `app/config.py`)"
+    return f"`{default!r}`" if isinstance(default, str) else f"`{default}`"
+
+
+def _describe_bounds(field) -> str:
+    """Render numeric bounds and literal choices as a short phrase."""
+    import typing
+
+    if typing.get_origin(field.annotation) is typing.Literal:
+        return ", ".join(f"`{v}`" for v in typing.get_args(field.annotation))
+    symbols = {"gt": ">", "ge": ">=", "lt": "<", "le": "<="}
+    parts = []
+    for meta in field.metadata:
+        for attr, symbol in symbols.items():
+            value = getattr(meta, attr, None)
+            if value is not None:
+                parts.append(f"{symbol} {value}")
+    return ", ".join(parts)
+
+
+def generate_admin_guide():
+    """Generate Admin Guide from config and scripts."""
+    output_file = os.path.join("docs", "admin_guide.md")
+
+    # Import config safely
+    from app.config import Settings
+
+    with open(output_file, "w", encoding="utf-8", newline="\n") as f:
+        f.write("# Administrator Guide\n\n")
+        f.write("This document is automatically generated. Do not edit manually.\n\n")
+
+        f.write("## Configuration Parameters\n\n")
+        f.write(
+            "The following parameters are extracted directly from the application's "
+            "configuration schema (`app.config.Settings`). Set them with "
+            "`smart-autosorter config --set NAME VALUE`, in "
+            "`~/.autosorter/settings.json`, or as an environment variable with "
+            "the `SORTIFY_` prefix (for example `SORTIFY_MAX_FOLDERS`).\n\n"
+        )
+
+        for name, field in Settings.model_fields.items():
+            f.write(f"### `{name}`\n")
+            f.write(f"- **Type**: `{_describe_type(field.annotation)}`\n")
+            f.write(f"- **Default**: {_describe_default(field)}\n")
+            allowed = _describe_bounds(field)
+            if allowed:
+                f.write(f"- **Allowed**: {allowed}\n")
+            if field.description:
+                f.write(f"\n{field.description}\n")
+            f.write("\n")
+
+        f.write("## Precedence Rules\n\n")
+        f.write(
+            "The application evaluates configuration parameters using a strict precedence hierarchy to determine how settings interact. The priority is applied as follows, from highest to lowest:\n\n"
+        )
+        f.write(
+            "1. **Command-Line Flags:** Flags such as `--max-folders`, `--strategy` and `--conflict-policy` override every other source for that run only.\n"
+            "2. **Local Settings File (`~/.autosorter/settings.json`):** Parameters defined here override environment variables and default properties.\n"
+        )
+        f.write(
+            "3. **Environment Variables (or the app directory's `.env` file):** Only variables prefixed with `SORTIFY_` apply, for example `SORTIFY_MAX_FOLDERS=9`. A `.env` file is read only from the app directory (`~/.autosorter/.env`, or `$AUTOSORTER_APP_DIR/.env`), never from the current working directory. Values from the environment apply to each run but are not written to `settings.json`, so they keep working until the setting is changed explicitly.\n"
+        )
+        f.write(
+            "4. **Default Parameters:** Base defaults are used as fallbacks if a setting is not explicitly defined in the local file or environment.\n\n"
+        )
+
+        f.write("## Dynamic Configuration Saves\n\n")
+        f.write(
+            "System settings modified during runtime are dynamically saved to the local JSON configuration file (`~/.autosorter/settings.json`) located in the user's home directory. To ensure stability and prevent excessive disk writes, these dynamic changes are saved with a short debounced delay of 0.5 seconds.\n\n"
+        )
+
+        f.write("## Compliance Policies & Routing Rules\n\n")
+        f.write("### Policy Evaluation Flowchart\n\n")
+        f.write(
+            "![Policy Evaluation Flowchart](assets/diagrams/policy_evaluation_flow.svg)\n\n"
+        )
+        f.write("### Rule Syntax & Types\n\n")
+        f.write(
+            "Compliance policies categorize and sort documents based on three rule types:\n\n"
+        )
+        f.write(
+            "- **Keyword Rules**: Search for files containing a specific word or phrase anywhere in their text contents (for example, 'invoice' or 'billing').\n"
+        )
+        f.write(
+            "- **Pattern Rules**: Match files using structured formatting or text sequences (such as a standard format of letters followed by numbers) to match specific document types.\n"
+        )
+        f.write(
+            "- **Override Rules**: Check for exact text matches, taking precedent to bypass standard classification rules.\n\n"
+        )
+
+        f.write("### Sequential Execution & Priority\n\n")
+        f.write(
+            "Rules are evaluated sequentially, starting from the highest priority value down to the lowest. "
+        )
+        f.write(
+            "Because rules are checked in priority order, if a higher-priority rule matches, it will be executed first. "
+        )
+        f.write(
+            "This can sometimes result in 'shadowing', where a lower-priority rule never runs because a higher-priority rule has already matched the same conditions. "
+        )
+        f.write(
+            "To resolve overlaps, adjust rule priority numbers or make matching conditions more specific.\n\n"
+        )
+
+        f.write("### Halting Parameters\n\n")
+        f.write("Each policy includes a 'Halt on mismatch' setting. ")
+        f.write(
+            "When active, if a document fails to meet this rule's criteria, the system will immediately stop evaluating any remaining lower-priority rules. "
+        )
+        f.write(
+            "This halting behavior is crucial for enforcing strict sequential checks and ensuring that files do not proceed to general classification or AI-based sorting if they fail compliance conditions.\n\n"
+        )
+
+        f.write("### Path Validation Rules\n\n")
+        f.write(
+            "To ensure system security, stability, and compatibility across operating systems, all target paths must comply with the following strict validation rules:\n\n"
+        )
+        f.write(
+            "- **No Absolute Paths**: All target paths must be relative paths and cannot start with leading slashes (such as `/` or `\\`).\n"
+        )
+        f.write(
+            "- **No Directory Traversal**: Paths are blocked from using directory traversal segments (such as `..`) to prevent files from being moved outside of the designated folders.\n"
+        )
+        f.write(
+            '- **No Illegal Characters**: Target paths must not contain any prohibited characters, including `<`, `>`, `:`, `"`, `|`, `?`, or `*`.\n\n'
+        )
+
+        f.write("### Configuration Recovery & Troubleshooting\n\n")
+        f.write(
+            "If the system detects invalid fields or syntax errors in the configuration file (`settings.json`), automatic saves are locked. "
+        )
+        f.write(
+            "This safeguard prevents overwriting and potentially corrupting your existing settings. "
+        )
+        f.write(
+            "While saves are suspended, the application will use temporary default values to prevent crashes.\n\n"
+        )
+        f.write("To resolve a blocked-save state, follow these recovery options:\n\n")
+        f.write(
+            "1. **Check Warning Banners**: Review the detailed list of validation errors displayed under the warning banner in the application settings dialog.\n"
+        )
+        f.write(
+            "2. **Manually Edit Settings**: Open the local configuration file (`~/.autosorter/settings.json`) and correct the invalid values or formats.\n"
+        )
+        f.write(
+            "3. **Reset Configuration**: Delete the invalid `settings.json` file or click the reset button to restore default, valid configuration values, which will immediately re-enable automatic saving.\n\n"
+        )
+
+        f.write("## Maintenance Scripts and CLI Commands\n\n")
+
+        # app/main.py
+        f.write("### `app/main.py`\n")
+        import argparse
+
+        from app.main import build_parser
+
+        main_parser = build_parser()
+        f.write("Main command-line interface for Smart AutoSorter AI Pro.\n\n")
+        f.write("#### Top-Level Usage\n```text\n")
+        f.write(main_parser.format_help().replace("\r\n", "\n"))
+        f.write("```\n\n")
+
+        f.write("#### Non-Interactive / Headless Execution Guard\n\n")
+        f.write(
+            "When executing `app/main.py` in non-interactive or detached standard input streams (such as CI automation pipelines or script redirections using `< /dev/null` where `sys.stdin.isatty()` returns `False`):\n\n"
+        )
+        f.write(
+            "- **Target Path Auto-Routing**: If a positional target directory path is supplied without an explicit subcommand (e.g. `python3 app/main.py /tmp/docs < /dev/null`), execution is routed to headless batch document sorting (`handle_sort_command`) as a **dry run**: the plan is printed and no files are moved, because nobody is present to confirm it. Use the explicit `sort` subcommand (e.g. `python3 app/main.py sort /tmp/docs`) to move files from scripts or cron.\n"
+        )
+        f.write(
+            "- **CLI Guidance & Exit Code 2**: If no target directory path or subcommand is supplied (e.g. `python3 app/main.py < /dev/null`), the application outputs CLI usage guidance to `sys.stderr` and exits cleanly with exit code `2`. This prevents non-interactive streams from hanging on terminal UI initialization.\n"
+        )
+        f.write(
+            "- **Explicit Interface Flag Overrides**: If explicit UI flags (`--gui`, `--tui`, `--demo`, `--daemon`, `FORCE_GUI`) are invoked, the requested interface launcher is executed as explicitly requested.\n\n"
+        )
+
+        subparsers_action = None
+        for action in main_parser._actions:
+            if isinstance(action, argparse._SubParsersAction):
+                subparsers_action = action
+                break
+
+        if subparsers_action:
+            f.write("#### Subcommands\n\n")
+            for sub_name, sub_parser in subparsers_action.choices.items():
+                f.write(f"##### `{sub_name}`\n```text\n")
+                f.write(sub_parser.format_help().replace("\r\n", "\n"))
+                f.write("```\n\n")
+
+        # sandbox_cli.py
+        f.write("### `sandbox_cli.py`\n")
+        import sandbox_cli
+
+        f.write(f"{sandbox_cli.__doc__}\n\n")
+        f.write("#### Usage\n```text\n")
+        f.write(sandbox_cli.build_parser().format_help().replace("\r\n", "\n"))
+        f.write("```\n\n")
+
+        # scripts/prepare_offline.py
+        f.write("### `scripts/prepare_offline.py`\n")
+        import scripts.prepare_offline as prepare_offline
+
+        f.write(f"{prepare_offline.__doc__}\n\n")
+
+        # scripts/install_offline.py
+        f.write("### `scripts/install_offline.py`\n")
+        import scripts.install_offline as install_offline
+
+        f.write(f"{install_offline.__doc__}\n\n")
+
+
+def update_security_md():
+    """Scan for network dependencies and update SECURITY.md."""
+    import concurrent.futures
+    import re
+    from urllib.parse import urlparse
+
+    from scripts.validate_links import DEFAULT_BYPASS_DOMAINS, URL_REGEX, validate_url
+
+    network_deps = []
+    urls_to_validate = set()
+
+    config_path = "network_rules.json"
+    config = {}
+    valid_rules = []
+    if os.path.exists(config_path):
+        import json
+
+        with open(config_path, "r", encoding="utf-8") as f:
+            config = json.load(f)
+        raw_rules = config.get("rules", [])
+        for rule in raw_rules:
+            if (
+                rule.get("pattern")
+                and rule.get("match_type")
+                and rule.get("description")
+            ):
+                valid_rules.append(rule)
+
+    import_regex = re.compile(
+        r"^\s*(?:import|from)\s+(urllib|requests|httpx|aiohttp|socket|ftplib|http\.client)(?:\s|\.|$)"
+    )
+
+    # Scan only the shipped code named in network_rules.json, so test fixtures
+    # (fake proxies and credentials) never reach SECURITY.md.
+    scan_roots = [t for t in config.get("targets", []) if os.path.isdir(t)] or ["."]
+    walk = (entry for target in scan_roots for entry in os.walk(target))
+
+    for root, dirs, files in walk:
+        # Exclude common external dependency dirs
+        dirs[:] = [
+            d
+            for d in dirs
+            if not d.startswith(".")
+            and d
+            not in (
+                "venv",
+                "env",
+                "__pycache__",
+                "node_modules",
+                "site-packages",
+                "build",
+                "dist",
+                "htmlcov",
+            )
+        ]
+        for file in files:
+            if not file.endswith(".py"):
+                continue
+
+            filepath = os.path.join(root, file)
+            # Avoid scanning the script itself
+            if "generate_docs.py" in filepath.replace("\\", "/"):
+                continue
+
+            with open(filepath, "r", encoding="utf-8") as f:
+                try:
+                    file_content = f.read()
+                except UnicodeDecodeError:
+                    continue
+
+            rel_path = os.path.relpath(filepath, ".").replace("\\", "/")
+
+            # Check rules
+            for rule in valid_rules:
+                pattern = rule.get("pattern")
+                match_type = rule.get("match_type")
+                desc = rule.get("description")
+
+                match_found = False
+                matched_str = ""
+
+                if match_type == "substring" and pattern in file_content:
+                    match_found = True
+                    matched_str = pattern
+                elif match_type == "regex":
+                    try:
+                        m = re.search(pattern, file_content)
+                        if m:
+                            match_found = True
+                            matched_str = m.group(0)
+                    except re.error:
+                        pass
+
+                if match_found:
+                    network_deps.append(f"- `{matched_str}` (via `{rel_path}`): {desc}")
+
+            # Find URLs
+            for match in URL_REGEX.finditer(file_content):
+                url = match.group(0).rstrip(".,;)'\"")
+                urls_to_validate.add(url)
+
+                try:
+                    domain = urlparse(url).netloc
+                except Exception:
+                    domain = url
+
+                if domain:
+                    network_deps.append(
+                        f"- `{domain}` (via `{rel_path}`): Auto-discovered network URL"
+                    )
+
+            # Find Imports
+            for line in file_content.splitlines():
+                m = import_regex.search(line)
+                if m:
+                    module = m.group(1)
+                    network_deps.append(
+                        f"- `{module}` (via `{rel_path}`): Auto-discovered network import"
+                    )
+
+    # Deduplicate and sort
+    network_deps = sorted(list(set(network_deps)))
+
+    has_critical_error = False
+    print(f"Discovered {len(urls_to_validate)} unique network URLs to validate.")
+    with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
+        # Request timeouts of no more than 5 seconds per domain handled by validate_url?
+        # Wait, validate_url in validate_links.py uses TIMEOUT = 3.0 which is <= 5s.
+        future_to_url = {
+            executor.submit(validate_url, url, DEFAULT_BYPASS_DOMAINS): url
+            for url in urls_to_validate
+        }
+        for future in concurrent.futures.as_completed(future_to_url):
+            url = future_to_url[future]
+            try:
+                success, msg, is_critical = future.result()
+                if not success and is_critical:
+                    print(f"[FAIL] {url} - {msg}")
+                    has_critical_error = True
+                elif not success:
+                    print(f"[WARN] {url} - {msg}")
+                else:
+                    print(f"[PASS] {url} - {msg}")
+            except Exception as e:
+                print(f"[WARN] {url} generated an exception: {e}")
+
+    if has_critical_error:
+        raise Exception(
+            "One or more network dependencies failed connectivity validation."
+        )
+
+    sec_file = "SECURITY.md"
+    with open(sec_file, "r", encoding="utf-8") as f:
+        lines = f.readlines()
+
+    out_lines = []
+    in_network_section = False
+    for line in lines:
+        if line.startswith("## Network Dependencies"):
+            in_network_section = True
+            out_lines.append(line)
+            out_lines.append(
+                "\nThis section is automatically generated by scanning the Python files in the directories listed under `targets` in `network_rules.json`. Tests are not scanned.\n\n"
+            )
+            for dep in network_deps:
+                out_lines.append(dep + "\n")
+            out_lines.append("\n")
+            continue
+
+        if in_network_section and line.startswith("## "):
+            in_network_section = False
+
+        if not in_network_section:
+            out_lines.append(line)
+
+    with open(sec_file, "w", encoding="utf-8", newline="\n") as f:
+        f.writelines(out_lines)
+
+
+def get_handwritten_docs():
+    """Discover all handwritten markdown documentation files."""
+    generated_set = {
+        "docs/api_reference.md",
+        "docs/ui.md",
+        "docs/admin_guide.md",
+        "docs/keyboard_shortcuts.md",
+        "SECURITY.md",
+    }
+    docs = []
+    for root_file in ["README.md", "PRIVACY.md"]:
+        if os.path.exists(root_file):
+            docs.append(root_file)
+
+    if os.path.exists("docs"):
+        for root, dirs, files in os.walk("docs"):
+            for f in sorted(files):
+                if f.endswith(".md"):
+                    full_path = Path(root, f).as_posix()
+                    if full_path not in generated_set:
+                        docs.append(full_path)
+    return sorted(list(set(docs)))
+
+
+def audit_handwritten_docs():
+    """Audit external links and relative codebase path references in handwritten docs."""
+    import re
+
+    from scripts.validate_links import DEFAULT_BYPASS_DOMAINS, URL_REGEX, validate_url
+
+    handwritten_docs = get_handwritten_docs()
+    errors = []
+
+    path_pattern = re.compile(
+        r"\b(?:app|scripts|docs|tests|notebooks|offline_bundle|sandbox)/(?:[a-zA-Z0-9_\-.]+/)*[a-zA-Z0-9_\-.]+(?:\.[a-zA-Z0-9]+)?"
+    )
+
+    for doc_path in handwritten_docs:
+        if not os.path.exists(doc_path):
+            continue
+        try:
+            with open(doc_path, "r", encoding="utf-8") as f:
+                content = f.read()
+        except Exception:
+            continue
+
+        # 1. External URL validation
+        for match in URL_REGEX.finditer(content):
+            url = match.group(0).strip().rstrip(".,;)'\"`<> \n\r\t\\")
+            if not url:
+                continue
+            success, msg, is_critical = validate_url(url, DEFAULT_BYPASS_DOMAINS)
+            if not success and is_critical:
+                errors.append(f"Broken external link in {doc_path}: {url} ({msg})")
+
+        # 2. Codebase path reference validation (excluding fenced code blocks)
+        content_no_code_blocks = re.sub(r"```[\s\S]*?```", "", content)
+
+        found_paths = set()
+
+        # Markdown links: [label](path)
+        for match in re.finditer(r"\[[^\]]*\]\(([^)]+)\)", content_no_code_blocks):
+            target = match.group(1).strip()
+            if not target.startswith(("http://", "https://", "mailto:", "#")):
+                path_only = target.split("#")[0].strip()
+                if path_only:
+                    found_paths.add(path_only)
+
+        # Path regex pattern
+        for match in path_pattern.finditer(content_no_code_blocks):
+            p = match.group(0).rstrip(".,;)'\"`:")
+            if p:
+                found_paths.add(p)
+
+        # Verify existence
+        for p in sorted(found_paths):
+            doc_dir = os.path.dirname(doc_path)
+            rel_to_doc = os.path.join(doc_dir, p) if doc_dir else p
+            if not (os.path.exists(p) or os.path.exists(rel_to_doc)):
+                errors.append(f"Invalid codebase path reference in {doc_path}: {p}")
+
+    return errors
+
+
+def validate_mermaid_diagrams():
+    """Validate Mermaid diagrams across all core documentation and tutorial files."""
+    import re
+
+    from scripts.diagram_toolchain import validate_mermaid_syntax
+
+    doc_files = []
+    if os.path.exists("docs"):
+        for root, dirs, files in os.walk("docs"):
+            for f in sorted(files):
+                if f.endswith(".md"):
+                    doc_files.append(Path(root, f).as_posix())
+
+    errors = []
+
+    for file_path in sorted(list(set(doc_files))):
+        if not os.path.exists(file_path):
+            continue
+
+        try:
+            with open(file_path, "r", encoding="utf-8") as f:
+                full_text = f.read()
+        except Exception as e:
+            errors.append(f"Could not read file {file_path}: {e}")
+            continue
+
+        blocks = re.findall(r"```mermaid\s*([\s\S]*?)```", full_text)
+
+        for idx, block in enumerate(blocks, start=1):
+            syntax_errors = validate_mermaid_syntax(block)
+            for err in syntax_errors:
+                errors.append(
+                    f"Invalid Mermaid diagram block #{idx} in {file_path}: {err}"
+                )
+
+    return errors
+
+
+def main():
+    """Execute the unified documentation generation and validation pipeline."""
+    os.chdir(REPO_ROOT)
+    import argparse
+    import subprocess
+    import traceback
+
+    parser = argparse.ArgumentParser(
+        description="Unified Documentation Pipeline Manager"
+    )
+    parser.add_argument(
+        "--check",
+        "--verify",
+        action="store_true",
+        help="Detect and report unsynced markdown reference files.",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        default=True,
+        help="Enforce strict validation mode on MkDocs build (default).",
+    )
+    parser.add_argument(
+        "--no-strict",
+        dest="strict",
+        action="store_false",
+        help="Disable strict validation mode on MkDocs build.",
+    )
+    parser.add_argument(
+        "--no-build",
+        "--skip-build",
+        action="store_true",
+        help="Skip MkDocs HTML site generation build step.",
+    )
+
+    args = parser.parse_args()
+
+    # 1. Identify files to check
+    generated_files = [
+        Path("docs/api_reference.md").as_posix(),
+        Path("docs/ui.md").as_posix(),
+        Path("docs/admin_guide.md").as_posix(),
+        Path("docs/keyboard_shortcuts.md").as_posix(),
+        "SECURITY.md",
+    ]
+
+    initial_contents = {}
+    if args.check:
+        for filepath in generated_files:
+            if os.path.exists(filepath):
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        initial_contents[filepath] = f.read().replace("\r\n", "\n")
+                except Exception:
+                    initial_contents[filepath] = None
+            else:
+                initial_contents[filepath] = None
+
+    # 2. Run documentation generation
+    tasks = [
+        ("compile_diagram_assets", compile_diagram_assets),
+        ("generate_tutorial_docs", generate_tutorial_docs),
+        ("generate_api_docs", generate_api_docs),
+        ("generate_ui_docs", generate_ui_docs),
+        ("generate_admin_guide", generate_admin_guide),
+        ("generate_keyboard_docs", generate_keyboard_docs),
+        ("update_security_md", update_security_md),
+    ]
+
+    errors = []
+    for name, task in tasks:
+        try:
+            task()
+        except Exception as e:
+            errors.append((name, e, sys.exc_info()))
+
+    if errors:
+        sys.stderr.write(
+            "Documentation generation encountered errors in the following modules:\n\n"
+        )
+        for name, exc, exc_info in errors:
+            sys.stderr.write(f"--- Error in {name} ---\n")
+            traceback.print_exception(*exc_info, file=sys.stderr)
+            sys.stderr.write("\n")
+        sys.exit(1)
+
+    # Validate Mermaid diagram syntax across documentation files
+    mermaid_validation_errors = validate_mermaid_diagrams()
+    if mermaid_validation_errors:
+        sys.stderr.write(
+            "\nError: Mermaid diagram syntax validation failed with the following issues:\n"
+        )
+        for err in mermaid_validation_errors:
+            sys.stderr.write(f"  - {err}\n")
+        sys.exit(1)
+
+    # 3. Check for unsynced files and audit handwritten docs if requested
+    changed_files = []
+    if args.check:
+        for filepath in generated_files:
+            new_content = None
+            if os.path.exists(filepath):
+                try:
+                    with open(filepath, "r", encoding="utf-8") as f:
+                        new_content = f.read().replace("\r\n", "\n")
+                except Exception:
+                    pass
+            if new_content != initial_contents.get(filepath):
+                changed_files.append(filepath)
+
+        doc_audit_errors = audit_handwritten_docs()
+        if doc_audit_errors:
+            sys.stderr.write(
+                "\nError: Handwritten documentation audit failed with the following issues:\n"
+            )
+            for err in doc_audit_errors:
+                sys.stderr.write(f"  - {err}\n")
+            sys.exit(1)
+
+    # 4. Run MkDocs build (and preserve strict build flags)
+    if not args.no_build:
+        try:
+            import mkdocs  # noqa: F401
+        except ModuleNotFoundError:
+            sys.stderr.write(
+                "\nError: 'mkdocs' is not installed in the current environment.\n"
+                "To build documentation with MkDocs, run with the docs dependency group:\n"
+                "  uv run --group docs python scripts/generate_docs.py\n"
+                "  or: uv run --group docs mkdocs build\n"
+                "or pass '--no-build' / '--skip-build' when running without optional documentation dependencies.\n\n"
+            )
+            sys.exit(1)
+
+        build_cmd = [sys.executable, "-m", "mkdocs", "build"]
+        if args.strict:
+            build_cmd.append("--strict")
+
+        print(f"Running MkDocs build: {' '.join(build_cmd)}")
+        result = subprocess.run(build_cmd, capture_output=False)
+        if result.returncode != 0:
+            sys.stderr.write(
+                f"Error: MkDocs build failed with exit code {result.returncode}\n"
+            )
+            sys.exit(result.returncode)
+    else:
+        print("Skipping MkDocs build (--no-build).")
+
+    # 5. Report if files were out of sync
+    if args.check and changed_files:
+        sys.stderr.write(
+            "\nError: The following auto-generated documentation files are out of sync or have modified contents:\n"
+        )
+        for f in changed_files:
+            sys.stderr.write(f"  - {f}\n")
+        sys.stderr.write("\nPlease commit the updated documentation files.\n")
+        sys.exit(1)
+
+    print("Documentation generation and validation completed successfully.")
+
 
 if __name__ == "__main__":
     main()

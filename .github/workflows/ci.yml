@@ -163,7 +163,7 @@ jobs:
 
     - name: Validate Documentation and Integrity
       run: |
-        uv run docs --check
+        uv run python scripts/generate_docs.py --check
 
   build-and-test:
     name: Build & Test
@@ -226,7 +226,13 @@ jobs:
         SMOKE_TEST: "0"
       shell: bash
       run: |
-        if ! uv run pytest -m "not slow" -n auto --cov=app --cov-report=xml --cov-report=html --cov-report=term tests/; then
+        # Fast-suite coverage was 76% on Linux when this gate was set (#738); the
+        # margin leaves room for platform-specific skips on Windows and macOS.
+        # Linux also measures branches (72.9% on 2026-10-19) for the per-module
+        # floors checked in the next step.
+        BRANCH_FLAG=""
+        if [ "$RUNNER_OS" = "Linux" ]; then BRANCH_FLAG="--cov-branch"; fi
+        if ! uv run pytest -m "not slow" -n auto --cov=app $BRANCH_FLAG --cov-report=xml --cov-report=html --cov-report=json --cov-report=term --cov-fail-under=70 tests/; then
           if [ -f pytest_failures.txt ]; then
             echo "=== PYTEST FAILURES ==="
             cat pytest_failures.txt
@@ -235,6 +241,11 @@ jobs:
           fi
           exit 1
         fi
+
+    - name: Check Data-Safety Coverage Floors
+      if: matrix.os == 'ubuntu-latest'
+      run: |
+        uv run python scripts/check_coverage_floors.py coverage.json
 
     - name: Upload Test Coverage Artifacts
       if: matrix.os == 'ubuntu-latest'

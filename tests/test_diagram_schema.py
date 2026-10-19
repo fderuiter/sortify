@@ -7,8 +7,8 @@ import time
 import pytest
 from pydantic import ValidationError
 
-import app.core.diagram_schema as ds
-from app.core.diagram_schema import (
+import scripts.diagram_schema as ds
+from scripts.diagram_schema import (
     ComponentDiagramSpec,
     DiagramNode,
     LazyDiagramSpecsDict,
@@ -27,13 +27,13 @@ def _is_ci_or_parallel() -> bool:
 
 
 def test_diagram_schema_import_performance():
-    """Verify app.core.diagram_schema import latency is under 50ms with zero top-level spec instantiations."""
+    """Verify scripts.diagram_schema import latency is under 50ms with zero top-level spec instantiations."""
     ds.reset_diagram_specs_cache()
     assert len(ds._INSTANTIATED_SPECS) == 0
 
     # Test re-import latency when module is in sys.modules
     t0 = time.perf_counter()
-    import app.core.diagram_schema  # noqa: F401
+    import scripts.diagram_schema  # noqa: F401
 
     import_time_ms = (time.perf_counter() - t0) * 1000
     sla_threshold = 200.0 if _is_ci_or_parallel() else 50.0
@@ -97,7 +97,7 @@ def test_lazy_dict_interface():
     assert isinstance(specs_dict, dict)
 
     # Length & Containment
-    assert len(specs_dict) == 45
+    assert len(specs_dict) == 44
     assert "core_architecture" in specs_dict
     assert "non_existent_key" not in specs_dict
 
@@ -109,21 +109,21 @@ def test_lazy_dict_interface():
     # Keys, Values, Items
     all_keys = list(specs_dict.keys())
     assert "core_architecture" in all_keys
-    assert len(all_keys) == 45
+    assert len(all_keys) == 44
 
     all_items = list(specs_dict.items())
-    assert len(all_items) == 45
+    assert len(all_items) == 44
     assert any(
         k == "core_architecture" and v.id == "core_architecture" for k, v in all_items
     )
 
     all_values = list(specs_dict.values())
-    assert len(all_values) == 45
+    assert len(all_values) == 44
 
     # .copy()
     dict_copy = specs_dict.copy()
     assert isinstance(dict_copy, dict)
-    assert len(dict_copy) == 45
+    assert len(dict_copy) == 44
     assert dict_copy["core_architecture"].id == "core_architecture"
 
     # Repr string

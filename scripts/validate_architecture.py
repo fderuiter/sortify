@@ -67,12 +67,9 @@ IMPORT_LAYER_RULES = {
     "app.main": _TOOLING,
 }
 
-# Modules exempt from IMPORT_LAYER_RULES, with the reason.
-IMPORT_LAYER_EXEMPT = {
-    # Documentation generator: renders every CLI's --help, including app.main,
-    # sandbox_cli and scripts/, so it has to import them.
-    "app.cli.generate_docs",
-}
+# Modules exempt from IMPORT_LAYER_RULES, with the reason. The docs generator
+# that needed an exemption now lives in scripts/, outside the layering.
+IMPORT_LAYER_EXEMPT: set[str] = set()
 
 
 def compute_normalized_ast_hash(node: ast.AST) -> str:
@@ -270,10 +267,6 @@ def validate_codebase_duplication(
     function_hashes = {}
 
     for root, _, files in os.walk("app"):
-        if "binaries" in root.split(os.sep) or "app/binaries" in root.replace(
-            "\\", "/"
-        ):
-            continue
         for file in files:
             if not file.endswith(".py"):
                 continue
@@ -332,7 +325,7 @@ def validate_codebase_duplication(
 def validate_diagram_schema_and_assets(errors: list) -> None:
     """Validate that Pydantic diagram specifications represent all active core modules and match generated assets."""
     try:
-        from app.core.diagram_schema import CORE_ARCHITECTURE_SPEC, SYSTEM_DIAGRAM_SPECS
+        from scripts.diagram_schema import CORE_ARCHITECTURE_SPEC, SYSTEM_DIAGRAM_SPECS
 
         # 1. Verify all active app/core/*.py submodules are represented in core_architecture diagram spec
         core_files = glob.glob("app/core/*.py")
@@ -438,7 +431,7 @@ def main():
             norm_f = f.replace("\\", "/")
             if norm_f.endswith(".py") and os.path.exists(norm_f):
                 rel = os.path.relpath(norm_f, ".").replace("\\", "/")
-                if rel.startswith("app/") and "app/binaries" not in rel:
+                if rel.startswith("app/"):
                     staged_py_files.add(rel)
         if not staged_py_files:
             print(
@@ -453,10 +446,6 @@ def main():
 
     # Rule 1 & Rule 2: Async DB writes and UI blocking operations
     for root, _, files in os.walk("app"):
-        if "binaries" in root.split(os.sep) or "app/binaries" in root.replace(
-            "\\", "/"
-        ):
-            continue
         for file in files:
             if not file.endswith(".py"):
                 continue

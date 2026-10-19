@@ -22,15 +22,6 @@ for mod_name in list(sys.modules.keys()):
     ):
         sys.modules.pop(mod_name, None)
 
-if sys.platform == "win32":
-    # Automatically resolve and register platform-specific native library paths for Windows
-    try:
-        from app.core.user_space_bootstrap import _resolve_platform_driver_paths
-
-        _resolve_platform_driver_paths()
-    except Exception:
-        pass
-
 
 class MemoryKeyring(KeyringBackend):
     priority = 1
@@ -62,9 +53,16 @@ def reset_memory_keyring():
 
 
 @pytest.fixture(autouse=True)
-def sync_db_worker():
-    """Ensure all database writes happen synchronously during tests to prevent race conditions on Windows."""
+def sync_db_worker(request):
+    """Ensure all database writes happen synchronously during tests to prevent race conditions on Windows.
+
+    Mark a test ``real_db_worker`` to run it against the real asynchronous write queue.
+    """
     from app.core.db_worker import DBWorker
+
+    if request.node.get_closest_marker("real_db_worker"):
+        yield
+        return
 
     def sync_execute(self, func, *args, **kwargs):
         import threading
