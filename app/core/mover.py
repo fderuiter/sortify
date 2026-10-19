@@ -441,7 +441,61 @@ def _resolve_pending_links(
                     raise
 
 
-_OWNED_HIDDEN_DIRS = {".branches"}
+OVERWRITE_BACKUP_DIR = ".sortify_overwritten"
+_OWNED_HIDDEN_DIRS = {".branches", OVERWRITE_BACKUP_DIR}
+
+
+def overwrite_backup_dir(base_dir: str, session_id: str) -> str:
+    """Return the folder where a session parks the files its overwrites displaced."""
+    return os.path.join(base_dir, OVERWRITE_BACKUP_DIR, session_id)
+
+
+def _displace_for_overwrite(dest_path: str, base_dir: str, session_id) -> str:
+    """Move the file at dest_path into the session's backup folder instead of deleting it."""
+    from app.core.resilient_file_ops import resilient_move
+
+    backup_path = os.path.join(
+        overwrite_backup_dir(base_dir, session_id or f"nosession_{uuid.uuid4().hex}"),
+        safe_relpath(dest_path, base_dir),
+    )
+    backup_path = resilient_move(dest_path, backup_path)
+    logging.info(f"Overwrite: moved existing {dest_path} aside to {backup_path}")
+    return backup_path
+
+
+def _restore_displaced(backup_path: str, dest_path: str) -> None:
+    """Put a displaced file back after the move that would have replaced it failed."""
+    from app.core.resilient_file_ops import resilient_move
+
+    try:
+        restored = resilient_move(backup_path, dest_path)
+    except Exception as err:
+        logging.error(
+            f"Overwrite failed and {dest_path} could not be restored; it is kept at {backup_path}: {err}"
+        )
+        return
+    if not _is_same_path(restored, dest_path):
+        logging.warning(
+            f"Overwrite failed and {dest_path} is now occupied; restored the original to {restored}."
+        )
+
+
+def _log_displacement(history_manager, session_id, dest_path, backup_path) -> None:
+    """Record the displacement before the move that replaced it, so undo restores both."""
+    if not (history_manager and session_id and backup_path):
+        return
+    if not hasattr(history_manager, "log_step"):
+        return
+    try:
+        history_manager.log_step(
+            session_id=session_id,
+            source_path=dest_path,
+            target_path=backup_path,
+            original_path=dest_path,
+            original_filename=os.path.basename(dest_path),
+        )
+    except Exception as log_err:
+        logging.warning(f"Failed to log overwrite backup step: {log_err}")
 
 
 def _is_foreign_hidden_dir(path: str) -> bool:
@@ -965,8 +1019,9 @@ def _execute_moves_recursive(
                         pass
                 continue
 
+            displaced_path = overwritten_path = None
             if not moved_as_link:
-                from app.core.resilient_file_ops import resilient_move, resilient_remove
+                from app.core.resilient_file_ops import resilient_move
 
                 if (
                     collision
@@ -974,9 +1029,17 @@ def _execute_moves_recursive(
                     and os.path.lexists(dest_path)
                     and not _is_same_path(source_path, dest_path)
                 ):
-                    resilient_remove(dest_path)
+                    overwritten_path = dest_path
+                    displaced_path = _displace_for_overwrite(
+                        dest_path, base_dir, session_id
+                    )
 
-                dest_path = resilient_move(source_path, dest_path)
+                try:
+                    dest_path = resilient_move(source_path, dest_path)
+                except Exception:
+                    if displaced_path:
+                        _restore_displaced(displaced_path, overwritten_path)
+                    raise
                 rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
 
             if ledger and entry_id:
@@ -987,6 +1050,9 @@ def _execute_moves_recursive(
                         f"Failed to update transaction ledger status: {exc}"
                     )
 
+            _log_displacement(
+                history_manager, session_id, overwritten_path, displaced_path
+            )
             if (
                 history_manager
                 and session_id
@@ -1516,10 +1582,9 @@ def _process_move_item(
                     pass
         return True
 
+    displaced_path = overwritten_path = None
     if not moved_as_link:
         import unittest.mock
-
-        from app.core.resilient_file_ops import resilient_remove
 
         if (
             collision
@@ -1527,7 +1592,8 @@ def _process_move_item(
             and os.path.lexists(dest_path)
             and not _is_same_path(source_path, dest_path)
         ):
-            resilient_remove(dest_path)
+            overwritten_path = dest_path
+            displaced_path = _displace_for_overwrite(dest_path, base_dir, session_id)
 
         try:
             if (
@@ -1546,6 +1612,8 @@ def _process_move_item(
                 rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
         except Exception as err:
             logging.error(f"Failed to move file {source_path} to {dest_path}: {err}")
+            if displaced_path:
+                _restore_displaced(displaced_path, overwritten_path)
             raise
 
     if ledger and entry_id:
@@ -1554,6 +1622,12 @@ def _process_move_item(
                 ledger.update_status(entry_id, "MOVED_PHYSICAL")
             except Exception as exc:
                 logging.warning(f"Failed to update transaction ledger status: {exc}")
+
+    if displaced_path:
+        with db_lock:
+            _log_displacement(
+                history_manager, session_id, overwritten_path, displaced_path
+            )
 
     if history_manager and session_id and not _is_same_path(dest_path, source_path):
         orig_filename = os.path.basename(source_path)
