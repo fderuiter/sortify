@@ -9279,6 +9279,8 @@ def run_tui(
         )
         sys.exit(1)
 
+    _start_multiprocessing_resource_tracker()
+
     app = AutoSorterTUI(
         settings=settings,
         base_dir=base_dir,
@@ -9286,6 +9288,24 @@ def run_tui(
         non_interactive=non_interactive,
     )
     app.run()
+
+
+def _start_multiprocessing_resource_tracker() -> None:
+    """Start multiprocessing's resource tracker while stderr is still a real fd.
+
+    The tracker starts lazily with the first spawned process and passes
+    ``sys.stderr.fileno()`` to its child. Textual replaces ``sys.stderr``
+    while running, so starting it later (when clustering spawns its worker)
+    fails with ``ValueError: bad value(s) in fds_to_keep``.
+    """
+    if sys.platform == "win32":
+        return
+    try:
+        from multiprocessing import resource_tracker
+
+        resource_tracker.ensure_running()
+    except Exception as e:
+        logger.warning(f"Could not start multiprocessing resource tracker: {e}")
 
 
 @dataclass

@@ -3,7 +3,9 @@
 import asyncio
 import os
 import re
+import sys
 import tempfile
+from pathlib import Path
 from unittest.mock import AsyncMock, MagicMock, patch
 
 import pytest
@@ -1034,6 +1036,77 @@ def test_run_tui_guardrails(monkeypatch):
     ):
         run_tui(settings)
     assert exc2.value.code == 1
+
+
+def test_run_tui_starts_resource_tracker_before_textual(monkeypatch):
+    """Verify run_tui starts the multiprocessing resource tracker before app.run()."""
+    from app.ui import tui
+
+    monkeypatch.setenv("FORCE_TUI", "1")
+    monkeypatch.setenv("IGNORE_TERMINAL_SIZE", "1")
+    calls = []
+    fake_app = MagicMock()
+    fake_app.run.side_effect = lambda: calls.append("run")
+
+    with (
+        patch.object(tui, "AutoSorterTUI", return_value=fake_app),
+        patch(
+            "multiprocessing.resource_tracker.ensure_running",
+            side_effect=lambda: calls.append("tracker"),
+        ),
+    ):
+        tui.run_tui(AppSettings())
+
+    expected = ["run"] if sys.platform == "win32" else ["tracker", "run"]
+    assert calls == expected
+
+
+@pytest.mark.skipif(sys.platform == "win32", reason="POSIX resource tracker only")
+def test_spawn_works_after_stderr_is_replaced_once_tracker_started():
+    """Reproduce the TUI clustering crash: spawning after Textual swaps stderr."""
+    import subprocess
+    import textwrap
+
+    script = textwrap.dedent(
+        """
+        import multiprocessing, sys
+
+        class Captured:
+            def write(self, s): pass
+            def flush(self): pass
+            def fileno(self): return -1
+
+        if __name__ == "__main__":
+            if sys.argv[1] == "fixed":
+                from app.ui.tui import _start_multiprocessing_resource_tracker
+                _start_multiprocessing_resource_tracker()
+            sys.stderr = Captured()
+            ctx = multiprocessing.get_context("spawn")
+            try:
+                ctx.Semaphore()
+                p = ctx.Process(target=print)
+                p.start()
+                p.join()
+                print("ok")
+            except ValueError as e:
+                print(f"error: {e}")
+        """
+    )
+    repo_root = str(Path(__file__).parent.parent.resolve())
+    env = {**os.environ, "PYTHONPATH": repo_root}
+
+    def run(mode):
+        return subprocess.run(
+            [sys.executable, "-c", script, mode],
+            capture_output=True,
+            text=True,
+            env=env,
+            timeout=120,
+            cwd=repo_root,
+        ).stdout.strip()
+
+    assert "fds_to_keep" in run("unfixed")
+    assert run("fixed").endswith("ok")
 
 
 def test_tui_speech_binary_fallback_missing_binary(temp_workspace):
