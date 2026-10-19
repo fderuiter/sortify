@@ -312,7 +312,8 @@ def test_export_audit_log_secondary_db_by_session_id(tmp_path, monkeypatch):
     hm_secondary = HistoryManager(db, cache_mgr, str(secondary_db))
 
     s2_id = str(uuid.uuid4())
-    hm_secondary.log_step(s2_id, "/src/sec.txt", "/dst/sec.txt", file_hash="sec_hash")
+    src_path = os.path.normpath("/src/sec.txt")
+    hm_secondary.log_step(s2_id, src_path, "/dst/sec.txt", file_hash="sec_hash")
 
     def mock_find_sessions():
         return [
@@ -339,7 +340,7 @@ def test_export_audit_log_secondary_db_by_session_id(tmp_path, monkeypatch):
 
     assert len(rows) == 1
     assert rows[0]["session_id"] == s2_id
-    assert rows[0]["source_path"] == "/src/sec.txt"
+    assert rows[0]["source_path"] == src_path
 
     db_worker.stop()
 
