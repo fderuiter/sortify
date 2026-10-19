@@ -20,7 +20,9 @@ def test_validate_architecture_incremental_pass(monkeypatch):
 
 
 def test_validate_architecture_incremental_irrelevant_file(monkeypatch):
-    monkeypatch.setattr(sys, "argv", ["validate_architecture.py", "README.md", "tests/test_foo.py"])
+    monkeypatch.setattr(
+        sys, "argv", ["validate_architecture.py", "README.md", "tests/test_foo.py"]
+    )
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 0

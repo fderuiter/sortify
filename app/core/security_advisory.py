@@ -107,7 +107,9 @@ class SecurityAdvisoryClient:
                 pass
         if self._settings:
             return float(
-                getattr(self._settings, "SECURITY_ADVISORY_CACHE_TTL", DEFAULT_CACHE_TTL)
+                getattr(
+                    self._settings, "SECURITY_ADVISORY_CACHE_TTL", DEFAULT_CACHE_TTL
+                )
             )
         return float(DEFAULT_CACHE_TTL)
 
@@ -206,7 +208,9 @@ class SecurityAdvisoryClient:
                 if now - ts > self.ttl:
                     del self._cache[k]
                     continue
-                if (norm_repo and k[0] == norm_repo) or (norm_hash and k[1] == norm_hash):
+                if (norm_repo and k[0] == norm_repo) or (
+                    norm_hash and k[1] == norm_hash
+                ):
                     return res
 
         return None
@@ -253,9 +257,7 @@ class SecurityAdvisoryClient:
         norm_hash = file_hash.strip().lower() if file_hash else None
         eff_timeout = min(float(timeout), MAX_API_TIMEOUT)
         eff_fallback = (
-            fallback_policy.strip().lower()
-            if fallback_policy
-            else self.fallback_policy
+            fallback_policy.strip().lower() if fallback_policy else self.fallback_policy
         )
 
         # 1. Fast In-Memory Cache Lookup (< 50ms)
@@ -287,7 +289,9 @@ class SecurityAdvisoryClient:
                 params["file_hash"] = norm_hash
 
             query_str = urllib.parse.urlencode(params)
-            endpoint_url = f"{self.endpoint}?{query_str}" if query_str else self.endpoint
+            endpoint_url = (
+                f"{self.endpoint}?{query_str}" if query_str else self.endpoint
+            )
 
             req = urllib.request.Request(
                 endpoint_url,
@@ -322,7 +326,11 @@ class SecurityAdvisoryClient:
                 sev = resp_data.get("severity") or resp_data.get("rating")
                 det = resp_data.get("details") or resp_data.get("message")
 
-                if not adv_id and isinstance(resp_data.get("advisories"), list) and resp_data["advisories"]:
+                if (
+                    not adv_id
+                    and isinstance(resp_data.get("advisories"), list)
+                    and resp_data["advisories"]
+                ):
                     first_adv = resp_data["advisories"][0]
                     if isinstance(first_adv, dict):
                         adv_id = first_adv.get("id")

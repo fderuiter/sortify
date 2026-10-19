@@ -105,7 +105,11 @@ def _resolve_platform_driver_paths() -> list:
 
     # Discover local repo packaged binary paths
     repo_bin_base = Path(__file__).resolve().parent.parent / "binaries"
-    platform_key = "windows" if sys.platform == "win32" else ("macos" if sys.platform == "darwin" else "linux")
+    platform_key = (
+        "windows"
+        if sys.platform == "win32"
+        else ("macos" if sys.platform == "darwin" else "linux")
+    )
     local_platform_dir = repo_bin_base / platform_key
     for cand in (local_platform_dir, local_platform_dir / "sqlcipher3"):
         try:
@@ -218,7 +222,10 @@ def _resolve_platform_driver_paths() -> list:
                             git_root = Path(cleaned).parent
                             for sub_bin in ("mingw64/bin", "usr/bin", "bin"):
                                 git_bin_dir = str((git_root / sub_bin).resolve())
-                                if os.path.isdir(git_bin_dir) and git_bin_dir not in dirs_to_add:
+                                if (
+                                    os.path.isdir(git_bin_dir)
+                                    and git_bin_dir not in dirs_to_add
+                                ):
                                     dirs_to_add.append(git_bin_dir)
                         except Exception:
                             pass
@@ -553,7 +560,9 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
 
             try:
                 is_text_file = file_path.suffix in (".py", ".pyi", ".typed")
-                actual_hash = resilient_file_hash(file_path, normalize_text=is_text_file)
+                actual_hash = resilient_file_hash(
+                    file_path, normalize_text=is_text_file
+                )
             except Exception as e:
                 raise RuntimeError(
                     f"Startup validation failed: could not verify integrity of {rel_path_str}. Error: {e}"
@@ -575,7 +584,9 @@ def bootstrap_binaries(force_download: bool = False) -> bool:
 
         # 7. Execute pre-flight verification
         if verify_sqlcipher_encryption():
-            logger.info("Startup pre-flight database encryption verification successful!")
+            logger.info(
+                "Startup pre-flight database encryption verification successful!"
+            )
             try:
                 from sqlcipher3 import dbapi2 as sqlite3
 

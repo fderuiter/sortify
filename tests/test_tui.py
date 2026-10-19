@@ -894,7 +894,9 @@ def test_tui_conflict_policy_settings_and_tree_indicator(temp_workspace):
                 await pilot.pause(0.1)
 
                 tree = app.query_one("#plan-tree", Tree)
-                nodes_labels = [str(leaf.label) for leaf in tree.root.children[0].children]
+                nodes_labels = [
+                    str(leaf.label) for leaf in tree.root.children[0].children
+                ]
                 assert any("[COLLISION: OVERWRITE]" in lbl for lbl in nodes_labels)
 
     asyncio.run(_test())
@@ -2090,5 +2092,3 @@ def test_tui_generate_sample_corpus_keybindings(temp_workspace):
                 assert mock_action.call_count == 3
 
     asyncio.run(_test())
-
-

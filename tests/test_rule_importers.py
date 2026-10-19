@@ -62,7 +62,9 @@ def test_hazel_rule_importer_plist():
         ]
     }
 
-    with tempfile.NamedTemporaryFile(suffix=".hazelrules", mode="wb", delete=False) as f:
+    with tempfile.NamedTemporaryFile(
+        suffix=".hazelrules", mode="wb", delete=False
+    ) as f:
         plistlib.dump(hazel_data, f)
         temp_path = f.name
 
@@ -105,7 +107,9 @@ def test_dropit_rule_importer_xml():
     </Profile>
     """
 
-    with tempfile.NamedTemporaryFile(suffix=".xml", mode="w", encoding="utf-8", delete=False) as f:
+    with tempfile.NamedTemporaryFile(
+        suffix=".xml", mode="w", encoding="utf-8", delete=False
+    ) as f:
         f.write(xml_content)
         temp_path = f.name
 
@@ -143,7 +147,9 @@ def test_dropit_rule_importer_json():
         },
     ]
 
-    with tempfile.NamedTemporaryFile(suffix=".json", mode="w", encoding="utf-8", delete=False) as f:
+    with tempfile.NamedTemporaryFile(
+        suffix=".json", mode="w", encoding="utf-8", delete=False
+    ) as f:
         json.dump(json_data, f)
         temp_path = f.name
 
@@ -164,10 +170,11 @@ def test_dropit_rule_importer_json():
 
 def test_get_rule_importer_factory():
     """Verify factory function auto-detects importer strategies."""
-    with tempfile.NamedTemporaryFile(suffix=".hazelrules") as f1, \
-         tempfile.NamedTemporaryFile(suffix=".xml") as f2, \
-         tempfile.NamedTemporaryFile(suffix=".json") as f3:
-
+    with (
+        tempfile.NamedTemporaryFile(suffix=".hazelrules") as f1,
+        tempfile.NamedTemporaryFile(suffix=".xml") as f2,
+        tempfile.NamedTemporaryFile(suffix=".json") as f3,
+    ):
         imp1 = get_rule_importer(f1.name)
         assert isinstance(imp1, HazelRuleImporter)
 

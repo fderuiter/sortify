@@ -207,4 +207,3 @@ def test_modal_unrecognized_controls_handled_gracefully(tmp_path):
                 assert not any(m == "" for m in messages)
 
     asyncio.run(_test())
-

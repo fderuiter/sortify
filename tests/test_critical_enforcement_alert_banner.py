@@ -94,7 +94,9 @@ def test_execution_button_disabled_on_collision_alert_banner_rendered(temp_works
         async with app.run_test() as pilot:
             file1_path = os.path.join(temp_workspace, "doc1.txt")
             file2_path = os.path.join(temp_workspace, "doc2.txt")
-            target_path = os.path.normpath(os.path.join(temp_workspace, "Finance", "same_target.txt"))
+            target_path = os.path.normpath(
+                os.path.join(temp_workspace, "Finance", "same_target.txt")
+            )
 
             app.plan = {
                 "Finance": {
@@ -246,7 +248,9 @@ def test_dynamic_recalculation_enables_button_within_500ms(temp_workspace):
             app.rebuild_tree()
             await pilot.pause()
 
-            cleared_result = VerificationEngine.verify_plan_integrity(temp_workspace, app.plan)
+            cleared_result = VerificationEngine.verify_plan_integrity(
+                temp_workspace, app.plan
+            )
             app._update_validation_state(cleared_result)
             await pilot.pause()
 

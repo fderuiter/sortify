@@ -411,8 +411,12 @@ def resilient_file_hash(
                             info
                             for info in zf.infolist()
                             if not info.is_dir()
-                            and not info.filename.replace("\\", "/").lower().lstrip("/").startswith("docprops/")
-                            and info.filename.replace("\\", "/").lower().lstrip("/") != "docprops"
+                            and not info.filename.replace("\\", "/")
+                            .lower()
+                            .lstrip("/")
+                            .startswith("docprops/")
+                            and info.filename.replace("\\", "/").lower().lstrip("/")
+                            != "docprops"
                         ]
                         entries.sort(key=lambda x: x.filename)
                         for info in entries:
