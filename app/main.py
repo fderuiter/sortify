@@ -464,26 +464,26 @@ def _extract_bool_arg(
 
 
 def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
-    """Apply command-line argument overrides to AppSettings."""
+    """Apply command-line argument overrides to AppSettings for this run only."""
     from unittest.mock import MagicMock
 
     max_folders = getattr(args, "max_folders", None)
     if max_folders is not None and not isinstance(max_folders, MagicMock):
-        settings.MAX_FOLDERS = max_folders
+        settings.override("MAX_FOLDERS", max_folders)
 
     strategy = getattr(args, "strategy", None)
     if strategy is not None and not isinstance(strategy, MagicMock):
-        settings.SORTING_STRATEGY = strategy
+        settings.override("SORTING_STRATEGY", strategy)
 
     conflict_policy = getattr(args, "conflict_policy", None)
     if conflict_policy is not None and not isinstance(conflict_policy, MagicMock):
-        settings.CONFLICT_POLICY = conflict_policy
+        settings.override("CONFLICT_POLICY", conflict_policy)
 
     contextual_renaming = getattr(args, "contextual_renaming", None)
     if contextual_renaming is not None and not isinstance(
         contextual_renaming, MagicMock
     ):
-        settings.CONTEXTUAL_RENAMING = contextual_renaming
+        settings.override("CONTEXTUAL_RENAMING", contextual_renaming)
 
     # Handle AI consent flags and environment variables
     accept_consent = _extract_bool_arg(args, "accept_ai_consent")
@@ -496,15 +496,15 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
 
     # CLI consent flags take precedence over saved settings and env vars
     if accept_consent:
-        settings.AI_CONSENT_GRANTED = True
+        settings.override("AI_CONSENT_GRANTED", True)
     elif decline_consent:
-        settings.AI_CONSENT_GRANTED = False
+        settings.override("AI_CONSENT_GRANTED", False)
     elif env_consent is not None:
         env_consent_clean = env_consent.strip().lower()
         if env_consent_clean in ("1", "true", "yes", "on"):
-            settings.AI_CONSENT_GRANTED = True
+            settings.override("AI_CONSENT_GRANTED", True)
         elif env_consent_clean in ("0", "false", "no", "off"):
-            settings.AI_CONSENT_GRANTED = False
+            settings.override("AI_CONSENT_GRANTED", False)
 
     # Check for non-interactive mode or wizard bypass
     is_non_interactive_env = bool(
@@ -521,7 +521,7 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
         setattr(settings, "_skip_wizard", True)
         setattr(settings, "_non_interactive", True)
         if settings.AI_CONSENT_GRANTED is None:
-            settings.AI_CONSENT_GRANTED = False
+            settings.override("AI_CONSENT_GRANTED", False)
 
 
 def resolve_preset_and_directory(args: argparse.Namespace) -> Path:
@@ -972,6 +972,7 @@ def handle_config_command(args: argparse.Namespace, settings: AppSettings):
                     else:
                         new_val = value
                     setattr(settings, key_upper, new_val)
+                    settings.flush()
                 except Exception as ex:
                     print(
                         f"Error: Failed to set configuration key '{key_upper}' to '{value}': {ex}",

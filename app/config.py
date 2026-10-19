@@ -468,6 +468,9 @@ class AppSettings:
         self._filepath = filepath or str(get_app_dir() / "settings.json")
         self._save_timer = None
         self._lock = threading.Lock()
+        # Per-run overrides (CLI flags): name -> the persisted JSON value that
+        # saves write instead, so a one-off flag never becomes the new default.
+        self._transient_values: dict[str, Any] = {}
         self._raw_encrypted_proxy = None
         self._validation_errors = []
         self._observers = defaultdict(list)
@@ -588,9 +591,35 @@ class AppSettings:
             self._save_timer.daemon = True
             self._save_timer.start()
 
+    def flush(self) -> None:
+        """Write a pending debounced save now.
+
+        The debounce timer is a daemon thread, so a process that exits right
+        after changing a setting would otherwise lose the change.
+        """
+        with self._lock:
+            timer = self._save_timer
+            self._save_timer = None
+        if timer is not None:
+            timer.cancel()
+            self._save()
+
+    def override(self, name: str, value: Any) -> None:
+        """Apply a value for this run only, without persisting it.
+
+        A later explicit assignment (``settings.NAME = value``) persists as usual.
+        """
+        if name not in self._transient_values:
+            self._transient_values[name] = self._settings_model.model_dump(
+                mode="json"
+            ).get(name)
+        setattr(self._settings_model, name, value)
+        self._notify_observers(name, getattr(self._settings_model, name, value))
+
     def _save(self):
         with self._lock:
             data = self._settings_model.model_dump(mode="json")
+            data.update(self._transient_values)
         try:
             # Encrypt PROXY setting if present and not already encrypted
             proxy_val = data.get("PROXY", "")
@@ -787,11 +816,13 @@ class AppSettings:
             "_has_validation_errors",
             "_observers",
             "_observer_lock",
+            "_transient_values",
         ):
             super().__setattr__(name, value)
         else:
             if name == "MAX_AUDIO_WORKERS":
                 name = "AUDIO_MAX_WORKERS"
+            self._transient_values.pop(name, None)
             if name == "PROXY" and value != "<DECRYPTION_FAILED>":
                 super().__setattr__("_raw_encrypted_proxy", None)
             setattr(self._settings_model, name, value)
