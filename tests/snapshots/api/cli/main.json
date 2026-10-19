@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "c633d7a27ad4d1ccb2b513445c4c3eaa2933f6f56a1477ee05bbbbee6b5e6b7f"
+    "checksum": "b786fbd8779e82417099930d7dce6a754a56dbf401bedf1a5a554e800470a72d"
   },
   "cli": [
     {
@@ -284,7 +284,7 @@
       "caller": "parser_config",
       "keywords": {
         "action": "store_true",
-        "help": "Display current configuration settings"
+        "help": "Display current configuration settings (the default)"
       },
       "method": "add_argument"
     },
@@ -460,7 +460,7 @@
           "documents"
         ],
         "default": null,
-        "help": "Use standard workspace preset directory",
+        "help": "argparse.SUPPRESS",
         "type": "str"
       },
       "method": "add_argument"
