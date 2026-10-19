@@ -1,11 +1,37 @@
+import errno
 import os
-import shutil
+from contextlib import contextmanager
 from unittest.mock import patch
 
 import pytest
 
+import app.core.resilient_file_ops as rfo
 from app.core.db_conn import get_db_connection
 from app.core.mover import execute_moves
+
+
+@contextmanager
+def _cross_partition_with_locked_source(locked_src, message):
+    """Force the real cross-volume copy path and make deleting ``locked_src`` fail."""
+    real_rename = rfo._rename_noreplace
+    real_remove = rfo.resilient_remove
+
+    def rename(src, dst):
+        if os.path.basename(src).startswith(".tmp_stage_"):
+            return real_rename(src, dst)
+        raise OSError(errno.EXDEV, "Invalid cross-device link")
+
+    def remove(path):
+        if os.path.abspath(path) == os.path.abspath(locked_src):
+            raise PermissionError(message)
+        return real_remove(path)
+
+    with (
+        patch.object(rfo, "_rename_noreplace", side_effect=rename),
+        patch.object(rfo, "resilient_remove", side_effect=remove),
+        patch.object(rfo, "RETRY_DELAY", 0.001),
+    ):
+        yield
 
 
 def test_single_file_cross_partition_move_failure(test_history_env):
@@ -51,20 +77,11 @@ def test_single_file_cross_partition_move_failure(test_history_env):
         }
     }
 
-    # 4. Mock shutil.move to simulate cross-partition deletion failure
-    # It copies the file to destination, then throws PermissionError simulating deletion block.
-    original_move = shutil.move
-
-    def mock_move(src, dst):
-        if src == file1_src and dst == file1_dst:
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            with open(src, "rb") as sf, open(dst, "wb") as df:
-                df.write(sf.read())
-            raise PermissionError("Simulated cross-partition source deletion failure.")
-        return original_move(src, dst)
-
+    # 4. Copy across partitions succeeds, but deleting the source is blocked.
     # 5. Execute move and expect failure/rollback
-    with patch("app.core.mover.shutil.move", side_effect=mock_move):
+    with _cross_partition_with_locked_source(
+        file1_src, "Simulated cross-partition source deletion failure."
+    ):
         with pytest.raises(
             PermissionError, match="Simulated cross-partition source deletion failure"
         ):
@@ -157,23 +174,12 @@ def test_batch_file_cross_partition_move_failure(test_history_env):
         }
     }
 
-    # 4. Mock shutil.move
-    # - fileA moves successfully.
-    # - fileB fails after copy during source deletion.
-    original_move = shutil.move
-
-    def mock_move(src, dst):
-        if src == fileB_src and dst == fileB_dst:
-            os.makedirs(os.path.dirname(dst), exist_ok=True)
-            with open(src, "rb") as sf, open(dst, "wb") as df:
-                df.write(sf.read())
-            raise PermissionError(
-                "Simulated batch element B cross-partition source deletion failure."
-            )
-        return original_move(src, dst)
-
+    # 4. fileA moves across partitions; fileB is copied but its source can't be deleted.
     # 5. Execute move and expect failure/rollback
-    with patch("app.core.mover.shutil.move", side_effect=mock_move):
+    with _cross_partition_with_locked_source(
+        fileB_src,
+        "Simulated batch element B cross-partition source deletion failure.",
+    ):
         with pytest.raises(
             PermissionError,
             match="Simulated batch element B cross-partition source deletion failure",
