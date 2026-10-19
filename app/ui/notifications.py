@@ -36,9 +36,11 @@ def _sanitize_notification_text(val: Any) -> Optional[str]:
             return ""
         return sanitize_secret_patterns(scrub_user_home_paths(s))
     except Exception:
+        logger.debug("Notification text sanitization failed", exc_info=True)
         try:
             return str(val)
         except Exception:
+            logger.debug("Notification text could not be stringified", exc_info=True)
             return ""
 
 
@@ -117,8 +119,8 @@ class NotificationManager:
             app = active_app.get(None)
             if app is not None:
                 return app
-        except Exception:
-            pass
+        except ImportError:
+            logger.debug("Textual active_app context unavailable", exc_info=True)
         return None
 
     def notify(
@@ -163,7 +165,9 @@ class NotificationManager:
             try:
                 handler(event)
             except Exception as e:
-                logger.debug(f"Error in custom notification handler: {e}")
+                logger.debug(
+                    f"Error in custom notification handler: {e}", exc_info=True
+                )
 
         if mode == NotificationMode.TUI:
             self._dispatch_tui(
@@ -225,7 +229,7 @@ class NotificationManager:
                 )
                 toast_ok = True
             except Exception as ex:
-                logger.debug(f"Textual toast notification failed: {ex}")
+                logger.debug(f"Textual toast notification failed: {ex}", exc_info=True)
 
             log_ok = False
             try:
@@ -235,7 +239,7 @@ class NotificationManager:
                 log_widget.write_line(f"[{type.upper()}] {display_msg}")
                 log_ok = True
             except Exception:
-                pass
+                logger.debug("TUI log widget dispatch failed", exc_info=True)
 
             if not toast_ok and not log_ok:
                 raise RuntimeError("Both TUI toast and log widget dispatch failed")
@@ -250,7 +254,7 @@ class NotificationManager:
             else:
                 _do_notify()
         except Exception as ex:
-            logger.debug(f"TUI dispatch failed: {ex}")
+            logger.debug(f"TUI dispatch failed: {ex}", exc_info=True)
             self._dispatch_cli(
                 message, type=type, caption=caption, help_url=help_url, **kwargs
             )
@@ -284,7 +288,7 @@ class NotificationManager:
                 if hasattr(self._output_stream, "flush"):
                     self._output_stream.flush()
         except Exception as e:
-            logger.debug(f"Failed writing notification to stream: {e}")
+            logger.debug(f"Failed writing notification to stream: {e}", exc_info=True)
 
 
 def notify(

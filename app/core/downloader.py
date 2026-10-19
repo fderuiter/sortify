@@ -1,5 +1,6 @@
 """Model downloader module with sandbox bypass, proxy support, and real-time tracking."""
 
+import contextlib
 import json
 import logging
 import os
@@ -84,7 +85,7 @@ class DownloadManager:
 
                     AppSettings.add_observer("PROXY", cls._instance._on_proxy_changed)
                 except Exception:
-                    pass
+                    logger.debug("Could not register proxy observer", exc_info=True)
             return cls._instance
 
     @classmethod
@@ -99,7 +100,7 @@ class DownloadManager:
                         "PROXY", cls._instance._on_proxy_changed
                     )
                 except Exception:
-                    pass
+                    logger.debug("Could not remove proxy observer", exc_info=True)
                 cls._instance = None
 
     def __init__(self, settings=None):
@@ -150,7 +151,8 @@ class DownloadManager:
             self._settings.add_observer("PROXY", self._on_proxy_changed)
         except Exception as e:
             logger.warning(
-                f"Failed to initialize proxy setting observer in DownloadManager: {e}"
+                f"Failed to initialize proxy setting observer in DownloadManager: {e}",
+                exc_info=True,
             )
 
     def _on_proxy_changed(self, new_proxy: str):
@@ -282,8 +284,10 @@ class DownloadManager:
 
                 _thread_local.sandboxed = False
                 _thread_local.reason = "model deletion execution"
-            except Exception:
-                pass
+            except ImportError:
+                logger.debug(
+                    "Failed to clear sandboxed flag on deletion thread", exc_info=True
+                )
 
             try:
                 self.cancel_download()
@@ -294,7 +298,8 @@ class DownloadManager:
                     SharedModelRegistry.get_instance().unload_all_models()
                 except Exception as e:
                     logger.warning(
-                        f"Failed to unload in-memory model instances during deletion: {e}"
+                        f"Failed to unload in-memory model instances during deletion: {e}",
+                        exc_info=True,
                     )
 
                 from app.core.resilient_file_ops import resilient_rmtree
@@ -312,6 +317,7 @@ class DownloadManager:
                 if on_done:
                     on_done(True, None)
             except Exception as e:
+                logger.debug("Model deletion failed", exc_info=True)
                 if on_done:
                     on_done(False, e)
 
@@ -360,7 +366,7 @@ def verify_temp_file_hash(temp_path: str, target_path: str) -> bool:
         if os.path.exists(temp_path):
             try:
                 os.remove(temp_path)
-            except Exception as e:
+            except OSError as e:
                 logger.error(
                     f"Failed to immediately delete temporary file {temp_path}: {e}"
                 )
@@ -394,7 +400,7 @@ def verify_downloaded_model(model_dir: str) -> bool:
     try:
         with open(config_file, "r", encoding="utf-8") as f:
             json.load(f)
-    except Exception:
+    except (OSError, ValueError):
         return False
     return True
 
@@ -424,7 +430,10 @@ def run_background_download(
             advisory_client = SecurityAdvisoryClient.get_instance()
             advisory_client.check_advisory(repo_id=url)
         except Exception as adv_err:
-            logger.warning(f"Pre-download security advisory check failed: {adv_err}")
+            logger.warning(
+                f"Pre-download security advisory check failed: {adv_err}",
+                exc_info=True,
+            )
             if isinstance(adv_err, DownloadError):
                 err = adv_err
             else:
@@ -440,7 +449,7 @@ def run_background_download(
 
             _thread_local.sandboxed = False
             _thread_local.reason = "model download execution"
-        except Exception as e:
+        except ImportError as e:
             logger.debug(f"Failed to clear sandboxed flag on downloader thread: {e}")
 
         try:
@@ -454,6 +463,10 @@ def run_background_download(
                 try:
                     dm = DownloadManager.get_instance()
                 except Exception:
+                    logger.debug(
+                        "DownloadManager unavailable; using direct opener",
+                        exc_info=True,
+                    )
                     dm = None
 
             def get_current_opener():
@@ -618,10 +631,8 @@ def run_background_download(
             # Clean up temp files
             temp_path = os.path.join(model_dir, "model.onnx.tmp")
             if os.path.exists(temp_path):
-                try:
+                with contextlib.suppress(OSError):
                     os.remove(temp_path)
-                except Exception:
-                    pass
             if on_failure:
                 on_failure(e)
 
@@ -629,20 +640,19 @@ def run_background_download(
             # Clean up temp files
             temp_path = os.path.join(model_dir, "model.onnx.tmp")
             if os.path.exists(temp_path):
-                try:
+                with contextlib.suppress(OSError):
                     os.remove(temp_path)
-                except Exception:
-                    pass
             if on_failure:
                 on_failure(e)
 
         except Exception as e:
+            logger.debug("Model download failed", exc_info=True)
             # Clean up temp files
             temp_path = os.path.join(model_dir, "model.onnx.tmp")
             if os.path.exists(temp_path):
                 try:
                     os.remove(temp_path)
-                except Exception as cleanup_err:
+                except OSError as cleanup_err:
                     logger.warning(
                         f"Failed to clean up temporary file {temp_path}: {cleanup_err}"
                     )

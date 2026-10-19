@@ -88,18 +88,14 @@ convention = "numpy"
 
 # Exception-handling baseline for #783: files that predate the rule. Fix a file
 # and delete its line; never add one.
-"sandbox_cli.py" = ["BLE001", "S110", "SIM105"]
 "app/cli/generate_docs.py" = ["BLE001", "S110", "SIM105"]
 "app/cli/ledger_cli.py" = ["BLE001", "S110"]
-"app/core/analyzer.py" = ["BLE001", "S110", "SIM105"]
 "app/core/analyzer_strategies.py" = ["BLE001", "S110", "SIM105"]
 "app/core/crypto.py" = ["BLE001", "S110", "SIM105"]
 "app/core/daemon.py" = ["BLE001", "S110", "SIM105"]
 "app/core/db.py" = ["BLE001", "S110", "SIM105"]
 "app/core/db_conn.py" = ["BLE001", "S110", "SIM105"]
 "app/core/db_worker.py" = ["BLE001", "S110", "SIM105"]
-"app/core/downloader.py" = ["BLE001", "S110", "SIM105"]
-"app/core/env_helper.py" = ["BLE001", "S110", "SIM105"]
 "app/core/extractor_strategies.py" = ["BLE001", "S110", "SIM105"]
 "app/core/history.py" = ["BLE001", "S110", "SIM105"]
 "app/core/ipc.py" = ["BLE001", "S110", "SIM105"]
@@ -109,10 +105,7 @@ convention = "numpy"
 "app/core/resilient_file_ops.py" = ["BLE001", "S110", "SIM105"]
 "app/core/semantic_embeddings.py" = ["BLE001", "S110", "SIM105"]
 "app/core/session.py" = ["BLE001", "S110", "SIM105"]
-"app/core/shared_registry.py" = ["BLE001", "S110", "SIM105"]
-"app/core/user_space_bootstrap.py" = ["BLE001", "S110", "SIM105"]
 "app/main.py" = ["BLE001", "S110", "SIM105"]
-"app/ui/notifications.py" = ["BLE001", "S110"]
 "app/ui/tui.py" = ["BLE001", "S110", "SIM105"]
 
 [tool.ruff.format]
