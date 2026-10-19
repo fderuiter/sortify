@@ -6,6 +6,7 @@ themselves. See issue #708 and the system design's "Target architecture".
 """
 
 import os
+from dataclasses import dataclass, field
 from typing import Any, Callable, Optional
 
 
@@ -22,6 +23,60 @@ def drop_scope(path: str) -> tuple[str, Optional[list]]:
 
 def _no_progress(info=None):
     pass
+
+
+@dataclass
+class SortResult:
+    """What one sort did, in the shape every front end reports it.
+
+    ``moved``, ``skipped`` and ``quarantined`` list relative source paths;
+    ``failed`` pairs each relative source path with its reason. ``summary`` is the
+    mover's raw summary, kept for JSON output and the audit report.
+    """
+
+    moved: list[str] = field(default_factory=list)
+    skipped: list[str] = field(default_factory=list)
+    quarantined: list[str] = field(default_factory=list)
+    failed: list[tuple[str, str]] = field(default_factory=list)
+    cancelled: bool = False
+    summary: dict = field(default_factory=dict)
+
+    @classmethod
+    def from_summary(cls, summary: Optional[dict], quarantine_dir: str):
+        """Build a result from ``execute_moves``'s summary and its audit report."""
+        summary = summary or {}
+        result = cls(cancelled=bool(summary.get("cancelled")), summary=summary)
+        report = summary.get("audit_report") or {}
+        for rec in report.get("records") or []:
+            src = rec.get("relative_source") or rec.get("source_path") or ""
+            dst = (rec.get("relative_destination") or "").replace("\\", "/")
+            status = rec.get("status")
+            if status in ("MISMATCH_FAIL", "MOVE_FAIL"):
+                result.failed.append((src, rec.get("error") or status))
+            elif status == "SKIPPED":
+                result.skipped.append(src)
+            elif quarantine_dir in dst.split("/"):
+                result.quarantined.append(src)
+            else:
+                result.moved.append(src)
+        return result
+
+    @property
+    def ok(self) -> bool:
+        """True when nothing failed and the sort was not cancelled."""
+        return not self.failed and not self.cancelled
+
+    def describe(self) -> str:
+        """One line for people: counts, and whether it was cancelled."""
+        parts = [f"{len(self.moved)} moved"]
+        if self.quarantined:
+            parts.append(f"{len(self.quarantined)} quarantined")
+        if self.skipped:
+            parts.append(f"{len(self.skipped)} skipped")
+        if self.failed:
+            parts.append(f"{len(self.failed)} failed")
+        line = ", ".join(parts) + "."
+        return f"Cancelled: {line}" if self.cancelled else line
 
 
 class SortPipeline:
@@ -77,14 +132,18 @@ class SortPipeline:
 
         return self.session.generate_sorting_plan()
 
-    def execute(self, plan, **kwargs) -> Any:
-        """Move the files in ``plan`` and return the mover's summary."""
-        return self.session.execute_moves(plan, **kwargs)
+    def execute(self, plan, **kwargs) -> SortResult:
+        """Move the files in ``plan`` and return what happened."""
+        summary = self.session.execute_moves(plan, **kwargs)
+        quarantine_dir = getattr(
+            self.settings, "QUARANTINE_DIR_NAME", "_Compliance_Quarantine"
+        )
+        return SortResult.from_summary(summary, quarantine_dir)
 
     def run(self, items: Optional[list] = None, *, dry_run: bool = False, **kwargs):
-        """Plan, then execute unless ``dry_run``. Returns ``(plan, summary)``.
+        """Plan, then execute unless ``dry_run``. Returns ``(plan, result)``.
 
-        A dry run's summary is ``None``.
+        A dry run's result is ``None``.
         """
         plan = self.plan(items, **kwargs)
         if dry_run:

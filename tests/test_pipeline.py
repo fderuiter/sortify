@@ -87,8 +87,65 @@ def test_dry_run_returns_the_plan_and_no_summary(session):
 
 
 def test_run_moves_the_planned_files(session):
-    plan, summary = SortPipeline(session).run()
+    plan, result = SortPipeline(session).run()
 
-    assert summary is not None
+    assert result.ok
+    assert sorted(Path(p).name for p in result.moved) == [
+        "finance_doc.txt",
+        "health_doc.txt",
+        "tech_doc.txt",
+    ]
+    assert result.describe() == "3 moved."
     remaining = {p.name for p in Path(session.base_dir).iterdir() if p.is_file()}
     assert not remaining & {"finance_doc.txt", "tech_doc.txt", "health_doc.txt"}
+
+
+def test_result_sorts_audit_records_into_buckets():
+    from app.core.pipeline import SortResult
+
+    summary = {
+        "cancelled": False,
+        "audit_report": {
+            "records": [
+                {
+                    "relative_source": "a.txt",
+                    "relative_destination": "Fin/a.txt",
+                    "status": "VERIFIED_PASS",
+                },
+                {
+                    "relative_source": "b.txt",
+                    "relative_destination": "_Compliance_Quarantine/b.txt",
+                    "status": "VERIFIED_PASS",
+                },
+                {
+                    "relative_source": "c.txt",
+                    "relative_destination": "c.txt",
+                    "status": "SKIPPED",
+                },
+                {
+                    "relative_source": "d.txt",
+                    "relative_destination": "X/d.txt",
+                    "status": "MOVE_FAIL",
+                    "error": "File relocation operation failed",
+                },
+            ]
+        },
+    }
+
+    result = SortResult.from_summary(summary, "_Compliance_Quarantine")
+
+    assert result.moved == ["a.txt"]
+    assert result.quarantined == ["b.txt"]
+    assert result.skipped == ["c.txt"]
+    assert result.failed == [("d.txt", "File relocation operation failed")]
+    assert not result.ok
+    assert result.describe() == "1 moved, 1 quarantined, 1 skipped, 1 failed."
+
+
+def test_cancelled_result_says_so():
+    from app.core.pipeline import SortResult
+
+    result = SortResult.from_summary({"cancelled": True}, "_Compliance_Quarantine")
+
+    assert not result.ok
+    assert result.describe() == "Cancelled: 0 moved."

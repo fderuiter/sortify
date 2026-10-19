@@ -94,6 +94,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.file_renamer
 
+## `app.core.folder_lock`
+
+::: app.core.folder_lock
+
 ## `app.core.forensic_scanner`
 
 ::: app.core.forensic_scanner
