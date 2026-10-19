@@ -6,7 +6,7 @@ import pytest
 
 from app.core.cache import CacheManager
 from app.core.db import Database
-from app.core.db_conn import get_db_connection
+from app.core.db_conn import clear_connection_cache, get_db_connection
 from app.core.db_worker import DBWorker
 from app.core.history import HistoryManager
 from app.core.migrations import StoreTooNewError, schema_version
@@ -163,6 +163,8 @@ def test_refuses_a_store_written_by_a_newer_version(tmp_path):
 def test_text_without_its_key_is_left_for_re_extraction(tmp_path, worker, base_dir):
     sessions = tmp_path / "sessions"
     session_id = _legacy_session(sessions / "s1", worker, base_dir, "invoice 42")
+    # Windows can't delete a database file while a connection to it is open.
+    clear_connection_cache(only_current_and_inactive=False)
     (sessions / "s1" / "autosorter.db").unlink()
 
     store = open_store(tmp_path / "app", legacy_session_root=sessions)
