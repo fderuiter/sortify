@@ -4,6 +4,7 @@ This module is responsible for safely moving files to new directories.
 """
 
 import asyncio
+import concurrent.futures
 import json
 import logging
 import os
@@ -1847,8 +1848,18 @@ class AsyncMoveEngine:
                         for item in chunk
                     ]
 
+                    # Never leave moves in flight: on the first failure, cancel
+                    # what hasn't started and wait for the rest before any rollback.
+                    done, not_done = concurrent.futures.wait(
+                        futures, return_when=concurrent.futures.FIRST_EXCEPTION
+                    )
+                    if not_done:
+                        for fut in not_done:
+                            fut.cancel()
+                        concurrent.futures.wait(not_done)
                     for fut in futures:
-                        fut.result()
+                        if not fut.cancelled() and fut.exception() is not None:
+                            raise fut.exception()
 
                     with db_lock:
                         if db_updates_batch and hasattr(db, "execute_batch_updates"):
