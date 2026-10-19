@@ -1142,6 +1142,11 @@ class HistoryManager:
         target_dirs_to_clean = set()
 
         failed_unwinds = []
+        if not steps:
+            return self._rollback_from_snapshot_internal(
+                session_id, base_dir=base_dir, ignore_missing=True
+            )
+
         if steps:
             # Exact reverse chronological order
             steps_reverse = sorted(steps, key=lambda s: s["step_id"], reverse=True)
@@ -2090,7 +2095,7 @@ class HistoryManager:
             except Exception:
                 pass
 
-        return
+        return len(moves)
 
     def rollback(self, session_id: str, ignore_missing: bool = False):
         """Revert directory and metadata state using recorded transaction ledger steps or snapshot."""

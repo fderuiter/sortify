@@ -303,3 +303,58 @@ async def test_startup_recovery_triggers_uncommitted_batch_unwind(
     assert abandoned[0]["uncommitted_batch"] is True
 
     db_worker.stop()
+
+
+def test_symlink_base_dir_collision_unwind(tmp_path):
+    """Verify session active lookup and path mapping when base_dir is accessed through a symlink (e.g. macOS /var -> /private/var)."""
+    real_base = tmp_path / "real_base"
+    real_base.mkdir()
+    sym_base = tmp_path / "sym_base"
+    os.symlink(real_base, sym_base)
+
+    base_dir = str(sym_base)
+    db_worker = DBWorker()
+    db = Database(tmp_path / "sym_docs.db", worker=db_worker)
+    cache = CacheManager(str(tmp_path / "sym_cache.db"), worker=db_worker)
+    history_manager = HistoryManager(db, cache, str(tmp_path / "sym_history.db"))
+
+    src_file = os.path.join(base_dir, "report.pdf")
+    with open(src_file, "w") as f:
+        f.write("source report")
+
+    target_dir = os.path.join(base_dir, "archive")
+    os.makedirs(target_dir, exist_ok=True)
+
+    colliding_file = os.path.join(target_dir, "report.pdf")
+    with open(colliding_file, "w") as f:
+        f.write("existing archive report")
+
+    db.upsert_document(base_dir, "report.pdf", "hash_src", "source text")
+
+    plan = {
+        "archive": {
+            "report.pdf": {
+                "__type__": "file",
+                "relative_source": "../report.pdf",
+                "status": "To Be Sorted",
+            }
+        }
+    }
+
+    session_id = history_manager.create_snapshot(base_dir)
+
+    summary = execute_moves(base_dir, plan, db, history_manager, resume=True)
+
+    renamed_target = os.path.join(target_dir, "report_1.pdf")
+    assert os.path.exists(renamed_target)
+    assert os.path.exists(colliding_file)
+
+    history_manager.unwind_session(session_id, db=db)
+
+    assert os.path.exists(src_file)
+    with open(src_file, "r") as f:
+        assert f.read() == "source report"
+
+    assert not os.path.exists(renamed_target)
+    assert os.path.exists(colliding_file)
+    db_worker.stop()

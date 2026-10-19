@@ -12,6 +12,7 @@ from app.ui.tui import (
     AutoSorterTUI,
     CROForensicModal,
     DirectorySelectModal,
+    ExtractionPreviewModal,
     LicenseActivationModal,
     NewFolderModal,
     RenameModal,
@@ -382,5 +383,26 @@ def test_license_activation_modal_snapshot():
                 await pilot.pause()
             svg = app.export_screenshot()
             assert_svg_snapshot("license_activation_modal", svg)
+
+    asyncio.run(_test())
+
+
+@pytest.mark.slow
+def test_extraction_preview_modal_snapshot(tmp_path):
+    """Verify visual layout of ExtractionPreviewModal screen."""
+
+    async def _test():
+        from tests.test_extraction_preview import create_multi_page_pdf
+
+        pdf_path = create_multi_page_pdf(tmp_path)
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings)
+        async with app.run_test(size=(100, 35)) as pilot:
+            app.push_screen(ExtractionPreviewModal(pdf_path, app.settings))
+            for _ in range(2):
+                await pilot.pause()
+            svg = app.export_screenshot()
+            assert_svg_snapshot("extraction_preview_modal", svg)
 
     asyncio.run(_test())
