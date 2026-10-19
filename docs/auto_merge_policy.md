@@ -14,12 +14,18 @@ Every Pull Request undergoes automated risk classification via `.github/workflow
 
 ### A. Automatically Eligible by Default
 - **Documentation-only changes** (`docs/**`, `README.md`, `mkdocs.yml`) that do not touch sensitive/security files.
-- **Dependabot minor or patch updates** (pip or github-actions) after full CI verification.
+- **Dependabot minor or patch updates** to `pyproject.toml`/`uv.lock` after full CI verification. Only PRs authored by `dependabot[bot]` qualify; a `dependencies` label alone does not. GitHub Actions bumps touch `.github/**` and always need a human merge.
 
 ### B. Explicit Opt-In (`automerge` label) vs Classifier Approval (`automerge:eligible`)
 Production-code maintenance and refactor PRs require an explicit **`automerge`** label to authorize automated evaluation.
 When present, `.github/workflows/classify-pr.yml` runs `scripts/classify_pr.py` to evaluate the PR. If low-risk criteria are met, the classifier applies the **`automerge:eligible`** label and posts a successful `automerge/classification` commit status.
 The auto-merge controller strictly requires `automerge:eligible` (not raw `automerge`) to proceed.
+
+### Trust model
+The PR under evaluation must not be able to approve itself:
+- `classify-pr.yml` runs on `pull_request_target`, so both the workflow and `scripts/classify_pr.py` come from the base branch. It never checks out or runs the PR's code.
+- The `automerge:eligible` label and the `automerge/classification` status are only a pre-filter. Before acting, the controller re-runs `classify_pr()` from its own default-branch checkout on file, commit and label data fetched from the GitHub API.
+- `Required CI` is accepted only as a check run created by GitHub Actions. Plain commit statuses with that name are ignored.
 
 Thresholds for low-risk opt-in PRs:
 - $\le 10$ changed files
@@ -38,7 +44,8 @@ The controller **fails closed** and blocks auto-merge for PRs touching any of th
 - Envelope encryption & key management (`app/core/crypto.py`)
 - Safe file movement & rollback logic (`app/core/mover.py`, `app/core/history.py`)
 - Quarantine & interceptor logic (`app/core/quarantine_interceptor.py`, `app/core/session.py`)
-- Release & compilation toolchains (`scripts/build.py`, `smart-autosorter.spec`)
+- Release & compilation toolchains and CI/merge tooling (`scripts/**`, `smart-autosorter.spec`)
+- Dependency manifests and lockfile (`pyproject.toml`, `uv.lock`), unless the PR is authored by `dependabot[bot]`
 - Major dependency updates (e.g. major version bumps)
 - Snapshot baselines (`tests/snapshots/api/**`, `tests/snapshots/tui_svg/**`)
 
