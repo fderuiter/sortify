@@ -265,7 +265,11 @@ async def test_tui_cancelling_consent_revocation_reverts_switch(tmp_path, monkey
         modal = app.screen
         assert isinstance(modal, SettingsModal)
 
-        sw = modal.query_one("#switch-ai-consent", Switch)
+        from textual.widgets import TabbedContent
+        modal.query_one("#settings-tabbed-content", TabbedContent).active = "tab-ai-privacy"
+        await pilot.pause(0.2)
+
+        sw = await _wait_for_widget(modal, "#switch-ai-consent", Switch, pilot=pilot)
         assert sw.value is True
 
         # Toggle switch off
