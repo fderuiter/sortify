@@ -26,23 +26,23 @@ If the initial download in the Setup Wizard fails or if you previously declined 
 ### Using CLI Commands
 - Grant consent and trigger model setup directly from the command line:
   ```bash
-  python app/main.py --accept-ai-consent
+  smart-autosorter --accept-ai-consent
   ```
 - Alternatively, update your stored configuration setting directly:
   ```bash
-  python app/main.py config --set AI_CONSENT_GRANTED true
+  smart-autosorter config --set AI_CONSENT_GRANTED true
   ```
 - In non-interactive or headless execution environments without a TTY, include non-interactive flags to bypass interactive dialog prompts:
   ```bash
-  python app/main.py --accept-ai-consent --skip-wizard --non-interactive
+  smart-autosorter --accept-ai-consent --skip-wizard --non-interactive
   ```
 
 ### Using Text User Interface (TUI)
 - Launch the interactive terminal interface:
   ```bash
-  python app/main.py --tui
+  smart-autosorter --tui
   ```
 - Press `[Ctrl+W]` to reopen the Model Onboarding Wizard modal.
 - Use `[Tab]` to navigate to the **AI Consent Granted** toggle switch, press `[Space]` or `[Enter]` to toggle consent on, and press `[Enter]` on **Finish & Save** to save your preferences and retry initialization.
 
-If the problem persists and you cannot resolve your network issues, you can continue using the application in **Offline Non-Semantic Mode** (`python app/main.py --decline-ai-consent`), which will still process your files automatically, albeit without advanced AI context.
+If the problem persists and you cannot resolve your network issues, you can keep using the application offline (`smart-autosorter --decline-ai-consent`). Files are still clustered by content using TF-IDF keyword vectors instead of the embedding model; see [Offline Mode](user_guide.md#offline-mode).
