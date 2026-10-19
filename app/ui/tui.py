@@ -11,7 +11,7 @@ import time
 from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
 from rich.table import Table
 from rich.text import Text
@@ -8003,10 +8003,51 @@ class AutoSorterTUI(A11yMixin, App):
         except Exception:
             return ""
 
-    def rebuild_tree(
-        self, search_query: Optional[str] = None, run_validation: bool = True
-    ) -> None:
-        """Rebuild Textual Tree widget from in-memory plan structure."""
+    def _build_matching_node_ids(
+        self, plan_dict: Dict[str, Any], query: str, current_folder: str = ""
+    ) -> Set[int]:
+        """Perform a single O(N) bottom-up pass returning a set of dictionary object IDs matching the query."""
+        matching_ids: Set[int] = set()
+        if not query or not isinstance(plan_dict, dict):
+            return matching_ids
+
+        def _walk(d: Dict[str, Any], folder: str) -> bool:
+            has_match = False
+            for k, v in d.items():
+                if isinstance(v, dict):
+                    if v.get("__type__") == "file":
+                        filepath = str(
+                            v.get(
+                                "filepath",
+                                (Path(self.base_dir) / folder / k).as_posix()
+                                if self.base_dir
+                                else (Path(folder) / k).as_posix(),
+                            )
+                        )
+                        target_filename = str(v.get("target_filename", ""))
+                        if (
+                            query in k.lower()
+                            or query in filepath.lower()
+                            or query in target_filename.lower()
+                        ):
+                            matching_ids.add(id(v))
+                            has_match = True
+                    else:
+                        sub_folder = (
+                            (Path(folder) / k).as_posix() if folder else k
+                        )
+                        folder_direct_match = query in k.lower() or query in sub_folder.lower()
+                        child_match = _walk(v, sub_folder)
+                        if folder_direct_match or child_match:
+                            matching_ids.add(id(v))
+                            has_match = True
+            return has_match
+
+        _walk(plan_dict, current_folder)
+        return matching_ids
+
+    def render_tree(self, search_query: Optional[str] = None) -> None:
+        """Render Textual Tree widget from in-memory plan structure without running validation worker."""
         try:
             tree = self.query_one("#plan-tree", Tree)
             tree.reset("Proposed Organization Plan")
@@ -8037,8 +8078,17 @@ class AutoSorterTUI(A11yMixin, App):
                     },
                 )
             else:
+                matching_ids = (
+                    self._build_matching_node_ids(self.plan, query)
+                    if query
+                    else None
+                )
                 nodes_added = self._build_tree_nodes(
-                    self.plan, tree.root, current_folder="", query=query
+                    self.plan,
+                    tree.root,
+                    current_folder="",
+                    query=query,
+                    matching_ids=matching_ids,
                 )
                 if query and nodes_added == 0:
                     tree.root.add_leaf(
@@ -8052,10 +8102,16 @@ class AutoSorterTUI(A11yMixin, App):
                 self._update_inspector(self.active_tree_node, announce=False)
             else:
                 self._update_inspector(None, announce=False)
-            if run_validation:
-                self.run_validation_worker()
         except Exception as e:
-            logger.error(f"Error rebuilding tree: {e}")
+            logger.error(f"Error rendering tree: {e}")
+
+    def rebuild_tree(
+        self, search_query: Optional[str] = None, run_validation: bool = True
+    ) -> None:
+        """Rebuild Textual Tree widget from in-memory plan structure and optionally validate plan integrity."""
+        self.render_tree(search_query=search_query)
+        if run_validation:
+            self.run_validation_worker()
 
     def _collect_file_nodes_from_dict(self, d: Dict[str, Any]) -> List[Dict[str, Any]]:
         """Collect all file info dicts nested within a plan directory subtree."""
@@ -8076,6 +8132,7 @@ class AutoSorterTUI(A11yMixin, App):
         current_folder: str = "",
         query: str = "",
         parent_folder_matches: bool = False,
+        matching_ids: Optional[Set[int]] = None,
     ) -> List[Dict[str, Any]]:
         """Collect file info dicts for nodes visible under the active search query filter."""
         files = []
@@ -8085,22 +8142,15 @@ class AutoSorterTUI(A11yMixin, App):
         if not query:
             return self._collect_file_nodes_from_dict(node_dict)
 
+        if matching_ids is None and query:
+            matching_ids = self._build_matching_node_ids(
+                node_dict, query, current_folder=current_folder
+            )
+
         for k, v in sorted(node_dict.items()):
             if isinstance(v, dict) and v.get("__type__") == "file":
-                filepath = str(
-                    v.get(
-                        "filepath",
-                        (Path(self.base_dir) / current_folder / k).as_posix()
-                        if self.base_dir
-                        else (Path(current_folder) / k).as_posix(),
-                    )
-                )
-                target_filename = str(v.get("target_filename", ""))
-                if (
-                    parent_folder_matches
-                    or query in k.lower()
-                    or query in filepath.lower()
-                    or query in target_filename.lower()
+                if parent_folder_matches or (
+                    matching_ids is not None and id(v) in matching_ids
                 ):
                     files.append(v)
             elif isinstance(v, dict):
@@ -8111,7 +8161,7 @@ class AutoSorterTUI(A11yMixin, App):
                 if (
                     parent_folder_matches
                     or folder_matches
-                    or self._node_matches_query(k, v, current_folder, query)
+                    or (matching_ids is not None and id(v) in matching_ids)
                 ):
                     files.extend(
                         self._collect_visible_file_nodes_from_dict(
@@ -8119,6 +8169,7 @@ class AutoSorterTUI(A11yMixin, App):
                             current_folder=sub_folder,
                             query=query,
                             parent_folder_matches=parent_folder_matches or folder_matches,
+                            matching_ids=matching_ids,
                         )
                     )
         return files
@@ -8129,35 +8180,10 @@ class AutoSorterTUI(A11yMixin, App):
         """Check if a node (file or directory) or any of its descendants match the search query."""
         if not query:
             return True
-
-        if isinstance(val, dict) and val.get("__type__") == "file":
-            filepath = str(
-                val.get(
-                    "filepath",
-                    (Path(self.base_dir) / current_folder / key).as_posix()
-                    if self.base_dir
-                    else (Path(current_folder) / key).as_posix(),
-                )
-            )
-            target_filename = str(val.get("target_filename", ""))
-            return (
-                query in key.lower()
-                or query in filepath.lower()
-                or query in target_filename.lower()
-            )
-        elif isinstance(val, dict):
-            sub_folder = (
-                (Path(current_folder) / key).as_posix() if current_folder else key
-            )
-            if query in key.lower() or query in sub_folder.lower():
-                return True
-            for child_k, child_v in val.items():
-                if isinstance(child_v, dict) and self._node_matches_query(
-                    child_k, child_v, sub_folder, query
-                ):
-                    return True
-            return False
-        return False
+        matching_ids = self._build_matching_node_ids(
+            {key: val}, query, current_folder=current_folder
+        )
+        return id(val) in matching_ids
 
     def _build_tree_nodes(
         self,
@@ -8166,9 +8192,15 @@ class AutoSorterTUI(A11yMixin, App):
         current_folder: str,
         query: str = "",
         parent_folder_matches: bool = False,
+        matching_ids: Optional[Set[int]] = None,
     ) -> int:
         """Recursively build tree nodes, filtering by search query if specified. Returns count of nodes added."""
         added_count = 0
+        if query and matching_ids is None:
+            matching_ids = self._build_matching_node_ids(
+                node_dict, query, current_folder=current_folder
+            )
+
         for k, v in sorted(
             node_dict.items(),
             key=lambda x: (
@@ -8188,11 +8220,7 @@ class AutoSorterTUI(A11yMixin, App):
                 target_filename = file_info.get("target_filename", "")
 
                 if query and not parent_folder_matches:
-                    file_matches = (
-                        query in file_key.lower()
-                        or query in str(filepath).lower()
-                        or query in str(target_filename).lower()
-                    )
+                    file_matches = matching_ids is not None and id(v) in matching_ids
                     if not file_matches:
                         continue
 
@@ -8370,7 +8398,7 @@ class AutoSorterTUI(A11yMixin, App):
                 if query and not (
                     parent_folder_matches
                     or folder_matches
-                    or self._node_matches_query(k, v, current_folder, query)
+                    or (matching_ids is not None and id(v) in matching_ids)
                 ):
                     continue
 
@@ -8405,6 +8433,7 @@ class AutoSorterTUI(A11yMixin, App):
                     current_folder=sub_folder,
                     query=query,
                     parent_folder_matches=parent_folder_matches or folder_matches,
+                    matching_ids=matching_ids,
                 )
                 added_count += 1 + child_added
 
@@ -8645,7 +8674,7 @@ class AutoSorterTUI(A11yMixin, App):
         if timer is not None:
             timer.stop()
         self._tree_filter_timer = self.set_timer(
-            0.02, lambda: self.rebuild_tree(search_query=val, run_validation=False)
+            0.15, lambda: self.render_tree(search_query=val)
         )
 
     def action_focus_search(self) -> None:

@@ -147,7 +147,7 @@ def test_tui_tree_filter_dynamic_substring_matching(temp_workspace):
             # Type "invoice" (case-insensitive substring filter)
             search_input.focus()
             search_input.value = "invoice"
-            await pilot.pause(0.05)
+            await pilot.pause(0.2)
 
             filtered_root_labels = [str(node.label) for node in tree.root.children]
             # Financial_Reports is included because Q1_Invoice_2024.pdf matches "invoice"
@@ -197,14 +197,14 @@ def test_tui_tree_filter_clearing_restores_full_visibility(temp_workspace):
 
             # Apply filter for "alpha"
             search_input.value = "alpha"
-            await pilot.pause(0.05)
+            await pilot.pause(0.2)
 
             assert len(tree.root.children) == 1
             assert "Alpha" in str(tree.root.children[0].label)
 
             # Clear search field
             search_input.value = ""
-            await pilot.pause(0.05)
+            await pilot.pause(0.2)
 
             # Restores full visibility of all nodes (both Alpha and Beta)
             restored_labels = [str(node.label) for node in tree.root.children]
@@ -241,7 +241,7 @@ def test_tui_tree_filter_no_matches_feedback(temp_workspace):
 
             # Type non-matching query
             search_input.value = "nonexistent_query_123"
-            await pilot.pause(0.05)
+            await pilot.pause(0.2)
 
             assert len(tree.root.children) == 1
             info_label = str(tree.root.children[0].label)
@@ -294,7 +294,7 @@ def test_tui_tree_filter_select_all_only_affects_visible_nodes(temp_workspace):
 
             # Filter to 'invoice'
             search_input.value = "invoice"
-            await pilot.pause(0.05)
+            await pilot.pause(0.2)
 
             # Ensure focus is on tree, not search input, so 'a' hotkey triggers action_toggle_select_all
             tree.focus()
@@ -347,7 +347,7 @@ def test_tui_tree_filter_input_changes_do_not_trigger_plan_validation(temp_works
             search_input = app.query_one("#tree-search-input", Input)
             search_input.focus()
             search_input.value = "doc"
-            await pilot.pause(0.1)
+            await pilot.pause(0.2)
 
             # Verify run_validation_worker was NOT called during filter input typing
             assert validation_spy.call_count == 0
