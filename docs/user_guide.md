@@ -1,124 +1,131 @@
-# User Guides
+# User Guide
 
-Welcome to the User Guides for Smart AutoSorter AI Pro.
+Smart AutoSorter AI Pro organizes a folder of documents into a generated folder tree. You can drive it from the full-screen terminal interface (TUI) or from the command line, and every run can be undone.
 
-## First-Run Steps & Setup Wizard
+The examples below use `smart-autosorter`. When running from a source checkout, prefix each command with `uv run`.
 
-When you launch Smart AutoSorter AI Pro for the first time, you are prompted with the **Privacy & Data Setup Wizard** to configure AI consent. The AI features require a small, one-time 80MB model download from Hugging Face.
+## First Run and AI Consent
+
+On first launch the **Privacy & Data Setup Wizard** asks whether you allow the optional AI model download: a one-time, roughly 80 MB embedding model from Hugging Face.
 
 ![First-Run Setup Wizard Flowchart](assets/diagrams/user_guide_setup_wizard.svg)
 
-You can complete first-run setup using either CLI arguments or TUI keyboard navigation:
+Declining is fine. Sorting still works offline using TF-IDF keyword clustering (see [Offline Mode](#offline-mode)).
 
-### Command-Line Interface (CLI) Setup
-- **Grant AI Consent & Enable Model:** Pass the `--accept-ai-consent` flag to grant consent and initialize local model downloading:
+### From the command line
+- Grant consent and download the model:
   ```bash
-  python app/main.py --accept-ai-consent
+  smart-autosorter --accept-ai-consent
   ```
-- **Decline AI Consent (Offline Non-Semantic Mode):** Pass the `--decline-ai-consent` flag to opt out of model downloads and run in offline non-semantic sorting mode:
+- Decline and stay fully offline:
   ```bash
-  python app/main.py --decline-ai-consent
+  smart-autosorter --decline-ai-consent
   ```
-- **Non-Interactive & Headless Environments:** When running in automated scripts or non-interactive environments without an interactive TTY, combine consent flags with `--skip-wizard` or `--non-interactive` to bypass interactive wizard prompts:
+- In scripts or other non-interactive environments, add `--non-interactive` (or `--skip-wizard`) so no dialog waits for input:
   ```bash
-  python app/main.py --accept-ai-consent --non-interactive
-  ```
-
-### Text User Interface (TUI) Setup
-When launching the interactive terminal interface (`python app/main.py --tui`), the setup wizard modal opens automatically on initial startup:
-1. **Navigate Controls:** Use `[Tab]` or `[Shift+Tab]` to move focus between the AI Consent toggle switch and button controls.
-2. **Toggle Consent:** Press `[Space]` or `[Enter]` on the switch control to toggle AI consent on or off.
-3. **Confirm & Save:** Use `[Tab]` to highlight **Finish & Save** and press `[Enter]` to confirm your selection and proceed.
-
-## Privacy Configurations
-
-Your privacy is our priority.
-- **Local Processing:** If you enable AI features and download the model, all semantic analysis occurs strictly on your machine.
-- **No External Communication:** We never send your files or personal data to any external server. 
-- **Privacy Settings:** You can verify or update your AI consent preferences at any time via the TUI Settings modal (`[Ctrl+O]` or `[Ctrl+W]` for the setup wizard) or via CLI configuration commands:
-  ```bash
-  python app/main.py config --set AI_CONSENT_GRANTED true
+  smart-autosorter --accept-ai-consent --non-interactive
   ```
 
-## Exclusion List Configuration
+### In the terminal interface
+The wizard opens automatically on first launch of `smart-autosorter`:
+1. Use `[Tab]` / `[Shift+Tab]` to move between the AI Consent switch and the buttons.
+2. Press `[Space]` or `[Enter]` on the switch to toggle consent.
+3. Highlight **Finish & Save** and press `[Enter]`.
 
-You can manage an **Exclusion List** (stop words) to specify common text terms (e.g., 'the', 'and', 'for') that are ignored during text normalization and AI semantic analysis.
+Reopen the wizard any time with `[Ctrl+W]`.
 
-It is important to distinguish stop word text filtering from file extension or filesystem rules:
-- **Text Filtering:** Exclusion list terms remove frequent or generic words from document content before text analysis and clustering take place.
-- **File Extensions:** Stop words do not filter file extensions (e.g., `.pdf`, `.docx`) or exclude specific file types from being processed by the application.
+## Sorting a Folder
 
-To manage your exclusion list:
-- **Via CLI:** Use the `config --set` command with a comma-separated string of stop words:
-  ```bash
-  python app/main.py config --set STOP_WORDS "word1,word2,word3"
-  ```
-- **Via TUI:** In the terminal interface, navigate configuration fields using `[Tab]`, type or modify terms in the input fields, and use `[Backspace]` or `[Delete]` to edit or remove stop word entries.
+### In the terminal interface
+1. Start the app with `smart-autosorter` (or `smart-autosorter --tui`).
+2. Press `[Ctrl+B]` to choose a folder, then `[Ctrl+S]` to scan it. The proposed folder tree appears; nothing has moved yet.
+3. Review the plan. `[Ctrl+F]` searches the tree, `[Space]` checks items, `[Ctrl+L]` locks a file in place, `[Ctrl+R]` renames a folder and `[Ctrl+N]` creates one. Drag-and-drop moves files between folders.
+4. Press `[Ctrl+E]` to execute. You can review duplicates first, and an audit report is shown when the moves finish.
 
-## Folder Cleanup Options
+Press `[?]` or `[F1]` for the full list of shortcuts and `[Ctrl+Q]` to quit.
 
-To keep your output directory organized, you can enable **Cleanup Empty Folders**. When enabled, the application automatically removes any folders left empty after the sorting or clustering processes are completed.
+### From the command line
+```bash
+smart-autosorter scan ~/Downloads --json      # print the plan, move nothing
+smart-autosorter sort ~/Downloads --dry-run   # verify the plan without moving
+smart-autosorter sort ~/Downloads             # sort in place
+smart-autosorter sort ~/Downloads --dest-dir ~/Sorted
+```
 
-To configure folder cleanup:
-- **Via CLI:** Set the `CLEANUP_EMPTY_FOLDERS` configuration option using the CLI command:
-  ```bash
-  python app/main.py config --set CLEANUP_EMPTY_FOLDERS true
-  ```
-  To disable cleanup, set it to `false`:
-  ```bash
-  python app/main.py config --set CLEANUP_EMPTY_FOLDERS false
-  ```
-- **Via TUI:** Press `[Ctrl+O]` to open Application Settings in the interactive terminal interface, press `[Tab]` to highlight toggle controls, and press `[Space]` or `[Enter]` to toggle folder cleanup options.
+Useful options for `sort` and `scan`:
+- `--max-folders N`: maximum folders per level (default 12, up to 50).
+- `--strategy`: `default` (keyword clustering), `generative` (local LLM folder names, needs the `ml` extra), or the clinical `clinical_tmf` / `clinical_isf` strategies.
+- `--conflict-policy skip|rename`: what to do when a destination file already exists.
+- `--export-report FILE --report-format html|json`: save an audit report of the run.
+
+## How Files Are Placed
+
+Each file goes through these steps in order, and the first one that matches decides where it goes:
+1. Locked paths you pinned in the TUI.
+2. Compliance policies and the sensitivity classifier. Highly sensitive files go to a quarantine folder for review.
+3. Keyword rules and rules learned from your past corrections.
+4. Extension categories for files whose text isn't extracted (for example `Images`, `Archives`, `Executables`).
+5. The folder a file with the same content went to before.
+6. Content clustering for everything else.
+
+Clustering groups documents with similar wording and names each folder after its two strongest keywords (for example `Finance-Budget`). It recurses into large groups to make sub-folders, up to five levels deep. When fewer than three documents are left to cluster at the top level they go to `Miscellaneous`.
+
+## Supported File Formats
+
+Text is extracted from `.txt`, `.docx`, `.csv`, `.xlsx`, `.xls` and `.pdf`. With the optional `ml` extra installed, images (`.png`, `.jpg`, `.jpeg`) are read with OCR and audio (`.mp3`, `.wav`, `.m4a`) is transcribed with Whisper (which needs `ffmpeg` and `whisper` on your `PATH`). Every other file type is still sorted, into an extension category folder.
+
+## Undoing a Run
+
+Every run is recorded as a session that can be rolled back:
+```bash
+smart-autosorter undo --list           # show recent sessions
+smart-autosorter undo --latest         # roll back the most recent run
+smart-autosorter undo --session-id ID  # roll back a specific run
+```
+In the TUI, `[Ctrl+H]` opens the history view.
+
+## Settings
+
+View settings with `smart-autosorter config --show`, and change one with `config --set KEY VALUE`. Settings are stored in `~/.autosorter/settings.json`; command-line flags override them for a single run. In the TUI, `[Ctrl+O]` opens the settings dialog.
+
+### Exclusion list (stop words)
+Stop words are common terms (e.g. 'the', 'and', 'for') ignored when analyzing document text. They don't filter file types.
+```bash
+smart-autosorter config --set STOP_WORDS "word1,word2,word3"
+```
+
+### Cleaning up empty folders
+When enabled, folders left empty after sorting are removed.
+```bash
+smart-autosorter config --set CLEANUP_EMPTY_FOLDERS true
+```
+
+### AI consent
+```bash
+smart-autosorter config --set AI_CONSENT_GRANTED true
+```
 
 ## Background Folder Monitoring
 
-Smart AutoSorter AI Pro provides continuous background directory monitoring to track target folders for real-time file additions and modifications.
+The daemon watches a folder and sorts new files as they arrive:
+```bash
+smart-autosorter daemon start ~/Downloads
+smart-autosorter daemon status
+smart-autosorter daemon stop
+```
+`pause`, `resume`, `health` and `metrics` are also available.
 
 ![Watchdog Event Aggregation & Debounce State Machine](assets/diagrams/user_guide_watchdog_state.svg)
 
-### Continuous Watchdog Monitoring
-When background folder monitoring is active, the system continuously tracks target directories for file events. When new files are added or existing files are modified, background monitoring automatically triggers sorting and reorganization without requiring manual intervention.
+- **Incomplete downloads are ignored.** Files ending in `.crdownload`, `.tmp` or `.download` are skipped until they are finished.
+- **Bursts are batched.** After a file event the daemon waits 0.6 seconds (`DEBOUNCE_DELAY`) for more changes, and never more than 5 seconds (`MAX_DEBOUNCE_DELAY`) during a continuous stream of writes.
 
-### Transient File Filtering
-To ensure incomplete downloads or temporary working files do not disrupt background operations, the background monitor automatically filters out transient files. 
-- **Filtered Extensions:** By default, files with transient extensions such as `.crdownload`, `.tmp`, and `.download` are ignored during background monitoring and file scanning.
-- **Completion Detection:** Files are only processed once temporary download operations are fully complete and the file is finalized on disk.
+## Offline Mode
 
-### Debounce Timing & Event Handling
-During rapid file creation or continuous file write operations (such as multi-file downloads or bulk file copies), processing every individual file event immediately would cause unnecessary background recalculations.
-- **Standard Debounce Delay:** A default delay of 0.6 seconds pauses processing after a file event, waiting briefly to aggregate additional rapid changes.
-- **Maximum Debounce Delay:** For continuous write streams, a maximum debounce delay limit of 5.0 seconds guarantees that background recalculations are scheduled once file activity stabilizes, preventing redundant processing while avoiding indefinite delays.
+If you decline the model download, are offline during setup, or the model is missing, the app runs without the embedding model:
+- Documents are still clustered by content, using TF-IDF keyword vectors instead of sentence embeddings. Groupings can be a little less precise for documents that use different words for the same topic.
+- No network connections are made for the model.
 
-## Offline Non-Semantic Mode
+## Privacy
 
-This application includes a dedicated offline non-semantic sorting fallback mode. This mode is activated automatically if you decline the model download, if you are completely offline during setup, or if the model is otherwise missing.
-
-### How Offline Mode Works
-In offline non-semantic mode, the AI clustering features are disabled. Instead, the application processes folders by grouping files based purely on file extensions or basic alphabetical sorting rules, without analyzing the internal text or semantic meaning. 
-- Files are grouped into generic category folders (e.g., all `.txt` files into a Text Documents folder).
-- No background network connections are attempted.
-- Performance is extremely fast as no heavy machine learning computations occur.
-
-## System Limits
-
-The following rules and constraints govern how the AI sorts your files:
-
-### Supported File Formats
-The system currently supports the following file formats for sorting:
-- `.txt`
-- `.docx`
-- `.csv`
-- `.xlsx`
-- `.xls`
-- `.pdf`
-
-### AI Clustering Constraints
-To ensure optimal performance and categorization:
-- A minimum of **3 supported files** is required to enable AI clustering.
-- The system will generate a maximum of **12 folders** (subdirectories).
-
-### Miscellaneous Folder
-The **Miscellaneous** folder acts as a fallback for files that the AI cannot confidently categorize. Files are placed here if they have:
-- Insufficient text content.
-- Low semantic scores.
-- Unreadable data.
+All document processing happens on your machine, and local databases are encrypted. The app's only network traffic is the optional model download and a security-advisory check for that model. See the Privacy Policy (`PRIVACY.md` in the repository) for details.
