@@ -41,7 +41,6 @@ MODULE_TO_PACKAGE_MAP = {
     "scipy": "scipy",
     "numpy": "numpy",
     "pydantic": "pydantic",
-    "nicegui": "nicegui",
     "xlrd": "xlrd",
     "torch": "torch",
     "easyocr": "easyocr",
