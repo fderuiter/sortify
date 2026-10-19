@@ -936,3 +936,33 @@ def test_network_rules_vulnerability_database_egress_rules():
 
     assert re.search(gh_rule["pattern"], "https://api.github.com/advisories")
     assert not re.search(gh_rule["pattern"], "https://apiXgithubXcom/advisories")
+
+
+def test_update_security_md_scans_only_network_rules_targets(tmp_path, monkeypatch):
+    import json
+
+    from app.cli.generate_docs import update_security_md
+
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "client.py").write_text(
+        'URL = "https://shipped.example.org/api"\n'
+    )
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_client.py").write_text(
+        'PROXY = "http://user:secret@fixture.example.net:8080"\n'
+    )
+    (tmp_path / "network_rules.json").write_text(
+        json.dumps({"targets": ["app"], "rules": []})
+    )
+    (tmp_path / "SECURITY.md").write_text(
+        "# Security Policy\n\n## Network Dependencies\n\nstale\n"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    with patch("scripts.validate_links.validate_url", return_value=(True, "ok", False)):
+        update_security_md()
+
+    security_md = (tmp_path / "SECURITY.md").read_text()
+    assert "shipped.example.org" in security_md
+    assert "fixture.example.net" not in security_md
+    assert "stale" not in security_md
