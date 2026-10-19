@@ -230,10 +230,6 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.text_utils
 
-## `app.core.user_space_bootstrap`
-
-::: app.core.user_space_bootstrap
-
 ## `app.core.verifier`
 
 ::: app.core.verifier

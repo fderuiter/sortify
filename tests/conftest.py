@@ -22,15 +22,6 @@ for mod_name in list(sys.modules.keys()):
     ):
         sys.modules.pop(mod_name, None)
 
-if sys.platform == "win32":
-    # Automatically resolve and register platform-specific native library paths for Windows
-    try:
-        from app.core.user_space_bootstrap import _resolve_platform_driver_paths
-
-        _resolve_platform_driver_paths()
-    except Exception:
-        pass
-
 
 class MemoryKeyring(KeyringBackend):
     priority = 1

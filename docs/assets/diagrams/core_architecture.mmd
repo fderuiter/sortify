@@ -7,7 +7,6 @@ flowchart TD
         core_pipeline["app.core.pipeline"]
         core_folder_lock["app.core.folder_lock"]
         core_session["app.core.session"]
-        core_user_space_bootstrap["app.core.user_space_bootstrap"]
         core_daemon["app.core.daemon"]
         core_ipc["app.core.ipc"]
         core_integration["app.core.integration"]
@@ -86,7 +85,6 @@ flowchart TD
     core_pipeline --> core_extractor
     app_main --> core_session
     app_tui --> core_session
-    core_session --> core_user_space_bootstrap
     core_session --> core_scanner
     core_session --> core_extractor
     core_session --> core_analyzer

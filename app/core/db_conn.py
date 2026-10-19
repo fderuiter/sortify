@@ -18,14 +18,8 @@ def escape_pragma_key(key_str: str) -> str:
     return str(key_str).replace("'", "''")
 
 
-# Run user-space bootstrapping to download, register, and verify precompiled native binaries
-try:
-    from app.core.user_space_bootstrap import bootstrap_binaries
-
-    bootstrap_binaries()
-except Exception as exc:
-    logger.error(f"User-space bootstrapping failed: {exc}")
-
+# sqlcipher3-wheels ships SQLCipher and OpenSSL statically linked into one
+# extension module, so the import needs no DLL or library-path setup.
 try:
     from sqlcipher3 import dbapi2 as sqlite3
 
@@ -84,10 +78,10 @@ _path_locks_lock = threading.Lock()
 _disable_pytest_win_fallback = True
 
 
-def _get_path_init_lock(abs_path: str) -> threading.Lock:
+def _get_path_init_lock(abs_path: str):
     with _path_locks_lock:
         if abs_path not in _path_init_locks:
-            _path_init_locks[abs_path] = threading.Lock()
+            _path_init_locks[abs_path] = threading.RLock()
         return _path_init_locks[abs_path]
 
 
@@ -161,13 +155,20 @@ def get_db_connection(db_path: str):
         # Automatically clean up connections for dead threads to prevent resource and lock leaks on Windows
         clear_dead_thread_connections()
 
-    path_lock = _get_path_init_lock(abs_path)
-    with path_lock:
+    # Open each database path one thread at a time. Opening runs PRAGMA
+    # journal_mode = WAL, which needs an exclusive lock while a fresh database
+    # converts; threads racing through it fail with "database is locked" on
+    # Windows. Cache hits never take this lock.
+    with _get_path_init_lock(abs_path):
         with _cache_lock:
             if cache_key in _connection_cache:
                 return _connection_cache[cache_key]
+        return _open_connection(db_path, abs_path, cache_key)
 
-        from app.core.path_utils import resolve_db_crypto
+
+def _open_connection(db_path: str, abs_path: str, cache_key):
+    """Open, key and configure a connection, then cache it under cache_key."""
+    from app.core.path_utils import resolve_db_crypto
 
     crypto = resolve_db_crypto(db_path)
     raw_key = crypto.get_raw_key()
