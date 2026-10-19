@@ -1,6 +1,7 @@
 """Tests for the move ledger and the mover writing it (ADR 0006, step 2 of #714)."""
 
 import hashlib
+import os
 import sqlite3
 from contextlib import closing
 from types import SimpleNamespace
@@ -70,7 +71,7 @@ def test_sort_records_each_move_in_order_and_verifies_its_hash(env):
 
     moves = history.moves.list_moves(_only_session(history))
     assert [m.seq for m in moves] == [1, 2]
-    by_name = {m.src.rsplit("/", 1)[-1]: m for m in moves}
+    by_name = {os.path.basename(m.src): m for m in moves}
     assert set(by_name) == set(contents)
     for name, data in contents.items():
         move = by_name[name]
