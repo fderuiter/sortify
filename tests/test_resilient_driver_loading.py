@@ -49,7 +49,9 @@ def test_get_db_connection_graceful_fallback_cross_platform(tmp_path, caplog):
                         # Verify read/write functionality on fallback connection
                         with conn:
                             cursor = conn.cursor()
-                            cursor.execute("CREATE TABLE IF NOT EXISTS test_tb (id INT)")
+                            cursor.execute(
+                                "CREATE TABLE IF NOT EXISTS test_tb (id INT)"
+                            )
                             cursor.execute("INSERT INTO test_tb VALUES (100)")
                             cursor.execute("SELECT id FROM test_tb")
                             row = cursor.fetchone()

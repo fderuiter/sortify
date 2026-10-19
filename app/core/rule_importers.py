@@ -113,7 +113,15 @@ class BaseRuleImporter(abc.ABC):
             lower = action_data.lower()
             return any(
                 k in lower
-                for k in ("script", "applescript", "shell", "bash", "python", "cmd.exe", "exec")
+                for k in (
+                    "script",
+                    "applescript",
+                    "shell",
+                    "bash",
+                    "python",
+                    "cmd.exe",
+                    "exec",
+                )
             )
         elif isinstance(action_data, dict):
             act_type = str(
@@ -124,7 +132,16 @@ class BaseRuleImporter(abc.ABC):
             ).lower()
             return any(
                 k in act_type
-                for k in ("script", "applescript", "shell", "bash", "python", "cmd", "exec", "run")
+                for k in (
+                    "script",
+                    "applescript",
+                    "shell",
+                    "bash",
+                    "python",
+                    "cmd",
+                    "exec",
+                    "run",
+                )
             )
         return False
 
@@ -314,7 +331,11 @@ class HazelRuleImporter(BaseRuleImporter):
 
                 if "extension" in attribute or "pattern" in attribute or "*" in val_str:
                     # Pattern policy rule
-                    expr = val_str if val_str.startswith("*") or "." in val_str else f"*.{val_str}"
+                    expr = (
+                        val_str
+                        if val_str.startswith("*") or "." in val_str
+                        else f"*.{val_str}"
+                    )
                     result.policies.append(
                         {
                             "type": "pattern",
@@ -326,7 +347,9 @@ class HazelRuleImporter(BaseRuleImporter):
                     )
                 else:
                     # Simple single-word keyword vs phrase policy
-                    if len(val_str.split()) == 1 and all(c.isalnum() or c in "_-" for c in val_str):
+                    if len(val_str.split()) == 1 and all(
+                        c.isalnum() or c in "_-" for c in val_str
+                    ):
                         result.keyword_rules[val_str.lower()] = target_dir
                     else:
                         result.policies.append(
@@ -476,7 +499,9 @@ class DropItRuleImporter(BaseRuleImporter):
                 or data.get("items")
                 or []
             )
-            if not rules_list and ("Pattern" in data or "Rules" in data or "Name" in data):
+            if not rules_list and (
+                "Pattern" in data or "Rules" in data or "Name" in data
+            ):
                 rules_list = [data]
 
         if not isinstance(rules_list, list):
@@ -567,7 +592,9 @@ class DropItRuleImporter(BaseRuleImporter):
                     }
                 )
             else:
-                if len(mask.split()) == 1 and all(c.isalnum() or c in "_-" for c in mask):
+                if len(mask.split()) == 1 and all(
+                    c.isalnum() or c in "_-" for c in mask
+                ):
                     result.keyword_rules[mask.lower()] = target_dir
                 else:
                     result.policies.append(
@@ -617,9 +644,7 @@ def get_rule_importer(file_path: Union[str, Path]) -> BaseRuleImporter:
     )
 
 
-def import_and_merge_rules(
-    file_path: Union[str, Path], settings: Any
-) -> ImportResult:
+def import_and_merge_rules(file_path: Union[str, Path], settings: Any) -> ImportResult:
     """Parse external rule package and merge into settings.
 
     Args:

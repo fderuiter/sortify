@@ -116,5 +116,3 @@ async def test_scanner_detects_interrupted_rollback(mock_session_base, tmp_path)
     assert session_info["is_rollback_recovery"] is True
     assert session_info["status"] == "interrupted_rollback"
     assert session_info["journal_path"] == str(journal_path)
-
-

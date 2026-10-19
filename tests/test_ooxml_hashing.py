@@ -4,35 +4,50 @@ import zipfile
 from app.core.extractor import get_file_hash
 
 
-def create_mock_docx(file_path, modified_time_str="2026-01-01T00:00:00Z", body_text="Hello World"):
+def create_mock_docx(
+    file_path, modified_time_str="2026-01-01T00:00:00Z", body_text="Hello World"
+):
     """Helper to build a valid minimal .docx archive."""
     with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("[Content_Types].xml", b"<Types></Types>")
         zf.writestr("_rels/.rels", b"<Relationships></Relationships>")
         zf.writestr(
             "docProps/core.xml",
-            f'<cp:coreProperties><dcterms:modified>{modified_time_str}</dcterms:modified></cp:coreProperties>'.encode("utf-8"),
+            f"<cp:coreProperties><dcterms:modified>{modified_time_str}</dcterms:modified></cp:coreProperties>".encode(
+                "utf-8"
+            ),
         )
-        zf.writestr("docProps/app.xml", b"<Properties><Application>Microsoft Word</Application></Properties>")
+        zf.writestr(
+            "docProps/app.xml",
+            b"<Properties><Application>Microsoft Word</Application></Properties>",
+        )
         zf.writestr(
             "word/document.xml",
-            f"<w:document><w:body><w:p><w:t>{body_text}</w:t></w:p></w:body></w:document>".encode("utf-8"),
+            f"<w:document><w:body><w:p><w:t>{body_text}</w:t></w:p></w:body></w:document>".encode(
+                "utf-8"
+            ),
         )
 
 
-def create_mock_xlsx(file_path, modified_time_str="2026-01-01T00:00:00Z", cell_val="100"):
+def create_mock_xlsx(
+    file_path, modified_time_str="2026-01-01T00:00:00Z", cell_val="100"
+):
     """Helper to build a valid minimal .xlsx archive."""
     with zipfile.ZipFile(file_path, "w", zipfile.ZIP_DEFLATED) as zf:
         zf.writestr("[Content_Types].xml", b"<Types></Types>")
         zf.writestr("_rels/.rels", b"<Relationships></Relationships>")
         zf.writestr(
             "docProps/core.xml",
-            f'<cp:coreProperties><dcterms:modified>{modified_time_str}</dcterms:modified></cp:coreProperties>'.encode("utf-8"),
+            f"<cp:coreProperties><dcterms:modified>{modified_time_str}</dcterms:modified></cp:coreProperties>".encode(
+                "utf-8"
+            ),
         )
         zf.writestr("xl/workbook.xml", b"<workbook></workbook>")
         zf.writestr(
             "xl/worksheets/sheet1.xml",
-            f"<worksheet><sheetData><c><v>{cell_val}</v></c></sheetData></worksheet>".encode("utf-8"),
+            f"<worksheet><sheetData><c><v>{cell_val}</v></c></sheetData></worksheet>".encode(
+                "utf-8"
+            ),
         )
 
 
@@ -41,8 +56,12 @@ def test_docx_hash_stability_on_metadata_update(tmp_path):
     doc_v1 = tmp_path / "document_v1.docx"
     doc_v2 = tmp_path / "document_v2.docx"
 
-    create_mock_docx(doc_v1, modified_time_str="2026-01-01T00:00:00Z", body_text="Test Document Body")
-    create_mock_docx(doc_v2, modified_time_str="2026-10-16T12:00:00Z", body_text="Test Document Body")
+    create_mock_docx(
+        doc_v1, modified_time_str="2026-01-01T00:00:00Z", body_text="Test Document Body"
+    )
+    create_mock_docx(
+        doc_v2, modified_time_str="2026-10-16T12:00:00Z", body_text="Test Document Body"
+    )
 
     # Raw whole-file SHA-256 hashes differ due to metadata/zip timestamp updates
     raw_hash_v1 = hashlib.sha256(doc_v1.read_bytes()).hexdigest()
@@ -95,12 +114,16 @@ def test_corrupt_office_archive_fallback(tmp_path):
 def test_rollback_preverification_succeeds_with_modified_metadata(tmp_path):
     """Verify rollback pre-verification succeeds when target Office files have modified metadata timestamps."""
     doc_path = tmp_path / "report.docx"
-    create_mock_docx(doc_path, modified_time_str="2026-01-01T00:00:00Z", body_text="Financial Report")
+    create_mock_docx(
+        doc_path, modified_time_str="2026-01-01T00:00:00Z", body_text="Financial Report"
+    )
 
     initial_hash = get_file_hash(str(doc_path))
 
     # Simulate Office viewing / metadata timestamp update
-    create_mock_docx(doc_path, modified_time_str="2026-10-16T12:00:00Z", body_text="Financial Report")
+    create_mock_docx(
+        doc_path, modified_time_str="2026-10-16T12:00:00Z", body_text="Financial Report"
+    )
 
     current_hash = get_file_hash(str(doc_path))
     assert current_hash == initial_hash

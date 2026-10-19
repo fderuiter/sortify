@@ -260,6 +260,7 @@ def test_main_cli_output_merge(monkeypatch, capsys):
         lambda client: AutoMergeResult(action=AutoMergeAction.MERGED, pr_id=123),
     )
     from scripts.auto_merge_controller import main
+
     main()
     captured = capsys.readouterr()
     assert "Auto-merged PR #123" in captured.out
@@ -273,6 +274,7 @@ def test_main_cli_output_update(monkeypatch, capsys):
         lambda client: AutoMergeResult(action=AutoMergeAction.UPDATED, pr_id=456),
     )
     from scripts.auto_merge_controller import main
+
     main()
     captured = capsys.readouterr()
     assert "Updated branch for PR #456" in captured.out
@@ -286,6 +288,7 @@ def test_main_cli_output_none(monkeypatch, capsys):
         lambda client: AutoMergeResult(action=AutoMergeAction.NONE, pr_id=None),
     )
     from scripts.auto_merge_controller import main
+
     main()
     captured = capsys.readouterr()
     assert "No PR was auto-merged in this cycle." in captured.out

@@ -242,7 +242,9 @@ class VerificationEngine:
         return _sp(plan)
 
     @staticmethod
-    def verify_plan_integrity(base_dir: str, plan: Any, conflict_policy: str = "skip") -> dict:
+    def verify_plan_integrity(
+        base_dir: str, plan: Any, conflict_policy: str = "skip"
+    ) -> dict:
         """Run complete virtual filesystem simulation and integrity check."""
         try:
             from app.core.path_utils import sanitize_plan as _sp
@@ -264,7 +266,9 @@ class VerificationEngine:
                 plan_dict = sanitized_plan
 
             tracker = VirtualFilesystemTracker()
-            result = tracker.verify_integrity(base_dir, plan_dict, conflict_policy=conflict_policy)
+            result = tracker.verify_integrity(
+                base_dir, plan_dict, conflict_policy=conflict_policy
+            )
 
             all_warnings = sanitization_warnings + result.get("warnings", [])
             result["warnings"] = list(dict.fromkeys(all_warnings))
@@ -930,7 +934,9 @@ class VirtualFilesystemTracker:
 
         return broken_links
 
-    def verify_integrity(self, base_dir: str, plan: dict, conflict_policy: str = "skip") -> dict:
+    def verify_integrity(
+        self, base_dir: str, plan: dict, conflict_policy: str = "skip"
+    ) -> dict:
         """Run complete virtual filesystem simulation and integrity check."""
         moves_list = VerificationEngine.get_moves(base_dir, plan)
 
@@ -939,7 +945,9 @@ class VirtualFilesystemTracker:
         self.populate_from_moves(moves_list)
 
         # Trace and analyze issues
-        collisions = self.check_collisions(moves_list, base_dir, conflict_policy=conflict_policy)
+        collisions = self.check_collisions(
+            moves_list, base_dir, conflict_policy=conflict_policy
+        )
         circular_renames = self.check_circular_renames(moves_list)
 
         # Simulate final VFS state
