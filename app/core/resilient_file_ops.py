@@ -694,6 +694,29 @@ def resilient_file_hash(
     return hashlib.sha256().hexdigest()
 
 
+def same_file_content(path_a: str, path_b: str) -> bool:
+    """Return True only when both paths are one file or regular files with identical bytes.
+
+    Compares raw bytes, not the metadata-insensitive digest ``get_file_hash`` uses,
+    and returns False whenever either file cannot be read.
+    """
+    try:
+        if os.path.samefile(path_a, path_b):
+            return True
+    except OSError:
+        return False
+    if os.path.islink(path_a) or os.path.islink(path_b):
+        return False
+    if not (os.path.isfile(path_a) and os.path.isfile(path_b)):
+        return False
+    try:
+        if os.path.getsize(path_a) != os.path.getsize(path_b):
+            return False
+        return _hash_file(path_a) == _hash_file(path_b)
+    except OSError:
+        return False
+
+
 def _set_posix_mode(path: str, mode: int) -> None:
     """Set POSIX file permissions mode if on non-Windows platform."""
     if sys.platform != "win32":

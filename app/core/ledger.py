@@ -285,37 +285,33 @@ class TransactionLedger:
                 reconciled_count += 1
 
             elif dest_exists and source_exists:
-                # Conflict state during interrupted move:
-                if status == "MOVED_PHYSICAL":
-                    if db:
-                        try:
-                            if file_hash and hasattr(db, "set_user_verified_target"):
-                                db.set_user_verified_target(
-                                    base_dir,
-                                    file_hash,
-                                    (current_dest or "").replace("\\", "/"),
-                                )
-                            if hasattr(db, "update_document_path"):
-                                db.update_document_path(base_dir, source_rel, dest_rel)
-                        except Exception:
-                            pass
-                else:
-                    try:
-                        from app.core.resilient_file_ops import resilient_remove
+                # The move never finished. Remove the destination only when it is
+                # the source itself (a hard link left by the link-then-unlink
+                # fallback) or a byte-identical copy; anything else may be a file
+                # that was already there, so keep both and report it.
+                from app.core.resilient_file_ops import (
+                    resilient_remove,
+                    same_file_content,
+                )
 
+                if same_file_content(source_path, dest_path):
+                    try:
                         resilient_remove(dest_path)
                     except Exception as e:
                         logger.warning(
-                            f"Could not remove partial destination during reconciliation: {e}"
+                            f"Could not remove duplicate destination during reconciliation: {e}"
                         )
-                    if db:
-                        try:
-                            if hasattr(db, "update_document_path"):
-                                db.update_document_path(
-                                    base_dir, source_rel, source_rel
-                                )
-                        except Exception:
-                            pass
+                else:
+                    logger.warning(
+                        f"Reconciliation conflict for {entry_id}: {dest_path} differs "
+                        f"from {source_path}; keeping both files."
+                    )
+                if db:
+                    try:
+                        if hasattr(db, "update_document_path"):
+                            db.update_document_path(base_dir, source_rel, source_rel)
+                    except Exception:
+                        pass
                 self.update_status(entry_id, "COMPLETED")
                 reconciled_count += 1
 

@@ -199,24 +199,19 @@ def test_simulated_mid_batch_crash_reconciliation(tmp_path):
     assert not os.path.exists(dst_file2)
 
 
-def test_reconciliation_conflict_both_exist(tmp_path):
-    """Verify headless reconciliation handles cases where source and partial destination both exist."""
-    ledger_db = str(tmp_path / "ledger.db")
-    ledger = TransactionLedger(ledger_db)
-
-    base_dir = str(tmp_path)
+def _log_pending_both_exist(tmp_path, dest_writer):
+    ledger = TransactionLedger(str(tmp_path / "ledger.db"))
     src_file = tmp_path / "file.txt"
     src_file.write_text("original")
-
     dst_dir = tmp_path / "Dest"
     dst_dir.mkdir()
     dst_file = dst_dir / "file.txt"
-    dst_file.write_text("partial")
+    dest_writer(src_file, dst_file)
 
-    # Intent logged as PENDING, process crashed mid-copy
+    # Intent logged as PENDING, process crashed before the move finished
     ledger.log_intent(
         session_id="session-conflict",
-        base_dir=base_dir,
+        base_dir=str(tmp_path),
         source_path=str(src_file),
         dest_path=str(dst_file),
         source_rel_path="file.txt",
@@ -224,14 +219,38 @@ def test_reconciliation_conflict_both_exist(tmp_path):
         current_dest="Dest",
         file_hash="hash_conflict",
     )
-
     db = MockDB()
     ledger.reconcile_incomplete_transactions(db)
-
-    # Partial destination file removed, source file preserved
-    assert os.path.exists(src_file)
-    assert not os.path.exists(dst_file)
     assert len(ledger.get_pending_entries()) == 0
+    assert db.paths.get("file.txt") == "file.txt"
+    return src_file, dst_file
+
+
+def test_reconciliation_keeps_unrelated_destination(tmp_path):
+    """#768: a different file at the destination is never deleted."""
+    src_file, dst_file = _log_pending_both_exist(
+        tmp_path, lambda _src, dst: dst.write_text("someone else's file")
+    )
+    assert src_file.read_text() == "original"
+    assert dst_file.read_text() == "someone else's file"
+
+
+def test_reconciliation_removes_identical_copy(tmp_path):
+    """A complete copy of the source at the destination is a leftover duplicate."""
+    src_file, dst_file = _log_pending_both_exist(
+        tmp_path, lambda src, dst: shutil.copy2(src, dst)
+    )
+    assert src_file.read_text() == "original"
+    assert not os.path.exists(dst_file)
+
+
+def test_reconciliation_removes_hard_link_left_by_move(tmp_path):
+    """The link-then-unlink fallback can crash with the file under both names."""
+    src_file, dst_file = _log_pending_both_exist(
+        tmp_path, lambda src, dst: os.link(src, dst)
+    )
+    assert src_file.read_text() == "original"
+    assert not os.path.exists(dst_file)
 
 
 def test_ledger_performance_overhead(tmp_path):
