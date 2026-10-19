@@ -471,7 +471,7 @@ usage: smart-autosorter config [-h] [--show] [--json] [--set KEY VALUE] [-q]
 
 options:
   -h, --help            show this help message and exit
-  --show                Display current configuration settings
+  --show                Display current configuration settings (the default)
   --json                Output configuration as JSON
   --set KEY VALUE       Set configuration KEY to VALUE
   -q, --quiet           Suppress informational prints and non-essential
@@ -607,9 +607,8 @@ options:
 
 ##### `drop`
 ```text
-usage: smart-autosorter drop [-h] [--preset {demo,downloads,documents}]
-                             [--dest-dir DEST_DIR] [--dry-run] [--json] [-q]
-                             [--no-color] [--max-folders MAX_FOLDERS]
+usage: smart-autosorter drop [-h] [--dest-dir DEST_DIR] [--dry-run] [--json]
+                             [-q] [--no-color] [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename}]
                              [--contextual-renaming]
@@ -626,8 +625,6 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
-  --preset {demo,downloads,documents}
-                        Use standard workspace preset directory
   --dest-dir DEST_DIR   Destination directory for sorted files
   --dry-run             Perform dry run analysis without executing physical
                         moves

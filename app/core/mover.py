@@ -1055,8 +1055,10 @@ def _process_move_item(
             doc = db.get_document(base_dir, source_rel_path)
 
     file_hash = doc.get("file_hash") if (doc and isinstance(doc, dict)) else ""
-    pre_hash = file_hash
-    if not pre_hash and os.path.exists(source_path):
+    # Hash the bytes being moved with the same function as the post-move check.
+    # The DB hash can be an MD5 of extracted text, or stale (#844).
+    pre_hash = ""
+    if os.path.exists(source_path):
         try:
             from app.core.extractor import get_file_hash
 
