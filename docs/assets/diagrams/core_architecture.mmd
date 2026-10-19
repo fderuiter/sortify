@@ -48,6 +48,7 @@ flowchart TD
         core_migrations["app.core.migrations"]
         core_ledger[("app.core.ledger")]
         core_history[("app.core.history")]
+        core_session_catalog["app.core.session_catalog"]
     end
     subgraph execution_operations ["Policy, Validation & File Operations (app.core)"]
         core_policy_engine{app.core.policy_engine}
@@ -123,6 +124,7 @@ flowchart TD
     core_store --> core_history
     core_ledger --> core_db
     core_history --> core_db
+    core_history --> core_session_catalog
     core_policy_engine --> core_quarantine_interceptor
     core_quarantine_interceptor --> core_domain_contracts
     core_policy_engine --> core_mover

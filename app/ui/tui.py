@@ -49,6 +49,8 @@ from app.ui.notifications import TROUBLESHOOTING_URL
 
 logger = logging.getLogger(__name__)
 
+EXECUTE_NEEDS_SCAN_TOOLTIP = "Execution disabled: Scan a folder first [Ctrl+S]"
+
 
 def _diff_highlight_paths(src_path: str, tgt_path: str) -> Tuple[Text, Text]:
     """Compute contrasting color diff highlighting for two path strings."""
@@ -4542,9 +4544,12 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         for item in raw_items:
             abs_p = os.path.abspath(item)
             if os.path.isdir(abs_p):
+                # The scanner returns paths relative to the folder it walked.
                 files = get_files_recursively(abs_p)
                 for f_path in files:
-                    self._add_single_file_to_staging(f_path, protected)
+                    self._add_single_file_to_staging(
+                        os.path.join(abs_p, f_path), protected
+                    )
                     new_count += 1
             else:
                 self._add_single_file_to_staging(abs_p, protected)
@@ -4850,22 +4855,33 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             from app.core.scanner import get_files_recursively
             from app.core.session import AppSession
 
+            # Plan every staged file in a folder together, so a dropped folder
+            # is clustered as a whole instead of one file at a time.
+            groups: Dict[str, List[str]] = {}
             for path in target_paths:
                 if os.path.isdir(path):
-                    base_dir = path
-                    files = get_files_recursively(base_dir)
+                    groups.setdefault(path, []).extend(get_files_recursively(path))
                 else:
-                    base_dir = os.path.dirname(path)
-                    files = [path]
+                    groups.setdefault(os.path.dirname(path), []).append(
+                        os.path.basename(path)
+                    )
 
+            for base_dir, files in groups.items():
                 if app_ref:
                     app_ref.call_from_thread(
                         self.update_status_msg,
-                        f"Classifying {len(files)} file(s) in '{os.path.basename(path)}'...",
+                        f"Classifying {len(files)} file(s) in '{os.path.basename(base_dir)}'...",
                     )
 
                 session = AppSession(self.settings, base_dir=base_dir)
-                pending.append({"path": path, "session": session, "plan": None})
+                pending.append(
+                    {
+                        "path": base_dir,
+                        "session": session,
+                        "plan": None,
+                        "file_count": len(files),
+                    }
+                )
                 generator = build_corpus_generator(
                     base_dir=base_dir,
                     items_to_sort=files,
@@ -4943,16 +4959,23 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             for item in pending:
                 try:
                     summary = item["session"].execute_moves(item["plan"])
-                    processed_items.append({"path": item["path"], "summary": summary})
+                    processed_items.append(
+                        {
+                            "path": item["path"],
+                            "summary": summary,
+                            "file_count": item.get("file_count", 1),
+                        }
+                    )
                 finally:
                     item["session"].close()
 
-            final_msg = f"Completed triage of {len(processed_items)} dropped item(s)!"
+            file_count = sum(i["file_count"] for i in processed_items)
+            final_msg = f"Completed triage of {file_count} dropped item(s)!"
             if app_ref:
                 app_ref.call_from_thread(self.update_status_msg, final_msg)
             result_dict = {
                 "status": "success",
-                "processed_count": len(processed_items),
+                "processed_count": file_count,
                 "items": processed_items,
             }
             self.processed_result = result_dict
@@ -5820,7 +5843,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     ):
         super().__init__()
         if sessions is None:
-            from app.main import find_all_history_sessions
+            from app.core.session_catalog import find_all_history_sessions
 
             sessions = find_all_history_sessions()
         self.sessions = sessions or []
@@ -6090,7 +6113,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     def _on_rollback_success(self, session_id: str, restored_count: int) -> None:
         """Handle successful session rollback completion on main thread."""
         self._rollback_in_progress = False
-        from app.main import find_all_history_sessions
+        from app.core.session_catalog import find_all_history_sessions
 
         self.sessions = find_all_history_sessions()
         self._refresh_session_options(selected_sid=session_id)
@@ -7064,9 +7087,12 @@ class AutoSorterTUI(A11yMixin, App):
                 tui_log.tooltip = "Live operation execution log output feed"
                 yield tui_log
                 btn_exec = Button(
-                    "Execute Plan [Ctrl+E]", id="btn-execute", variant="primary"
+                    "Execute Plan [Ctrl+E]",
+                    id="btn-execute",
+                    variant="primary",
+                    disabled=True,
                 )
-                btn_exec.tooltip = "Execute file sorting plan [Ctrl+E]"
+                btn_exec.tooltip = EXECUTE_NEEDS_SCAN_TOOLTIP
                 yield btn_exec
         alert_banner = Static("", id="alert-banner")
         alert_banner.tooltip = (
@@ -7804,6 +7830,12 @@ class AutoSorterTUI(A11yMixin, App):
                     or "Re-download model bundle"
                 )
                 msg = f"Scan complete (DEGRADED FALLBACK MODE: {reason}. Suggested action: {rec_action}). Analyzed {len(files)} files."
+                self.call_from_thread(
+                    self.notify,
+                    f"Sorting plan generated in degraded fallback mode: {reason}",
+                    title=f"Suggested recovery action: {rec_action}",
+                    severity="warning",
+                )
             else:
                 msg = f"Scan complete. Analyzed {len(files)} files into proposed plan."
 
@@ -7862,7 +7894,7 @@ class AutoSorterTUI(A11yMixin, App):
         """Trigger session history view and audit log export modal screen."""
         if self._is_text_control_focused(allow_tree_search=True):
             return
-        from app.main import find_all_history_sessions
+        from app.core.session_catalog import find_all_history_sessions
 
         sessions = find_all_history_sessions()
 
@@ -8058,6 +8090,8 @@ class AutoSorterTUI(A11yMixin, App):
                 btn_exec.disabled = True
                 if has_critical:
                     btn_exec.tooltip = "Execution disabled: Plan contains blocking critical validation errors"
+                elif not self.plan:
+                    btn_exec.tooltip = EXECUTE_NEEDS_SCAN_TOOLTIP
                 else:
                     btn_exec.tooltip = (
                         "Execution disabled: No files selected to execute"

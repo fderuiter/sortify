@@ -252,11 +252,8 @@ class SharedModelRegistry:
                 for filename, expected_hash in expected.items():
                     file_path = os.path.join(model_path, filename)
                     if not os.path.exists(file_path):
-                        if not is_packaged():
-                            logging.warning(
-                                f"Required model file {file_path} is missing. Skipping integrity check in non-packaged mode."
-                            )
-                            return True
+                        # A missing registered file is a failure in every mode:
+                        # returning early here used to skip the remaining files.
                         reason = f"Required model file {file_path} is missing."
                         self.record_model_health(
                             model_id,

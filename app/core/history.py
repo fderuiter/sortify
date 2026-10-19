@@ -18,6 +18,10 @@ except ImportError:
     pylnk3 = None
 
 
+# Session status of the safety snapshot an undo takes before it touches files.
+UNDO_SNAPSHOT_STATUS = "undo_snapshot"
+
+
 def _robust_move(src, dst):
     """Safely move a file, retrying on temporary Windows sharing violations and file locks."""
     from app.core.resilient_file_ops import resilient_move
@@ -869,6 +873,19 @@ class HistoryManager:
         except Exception as ex:
             logging.warning(f"Failed to delete rollback journal: {ex}")
 
+    def _mark_undo_snapshot(self, session_id: str) -> None:
+        """Label a pre-undo safety snapshot so it is never mistaken for a sort.
+
+        Left "active", the startup scan reports it as interrupted work; marked
+        "completed", ``undo --latest`` picks it instead of the previous sort.
+        """
+        conn = get_db_connection(self.db_path)
+        with conn:
+            conn.execute(
+                "UPDATE sessions SET status = ? WHERE session_id = ?",
+                (UNDO_SNAPSHOT_STATUS, session_id),
+            )
+
     def log_step(
         self,
         session_id: str,
@@ -974,7 +991,7 @@ class HistoryManager:
                 db_paths.append(p_abs)
 
         try:
-            from app.main import find_all_history_sessions
+            from app.core.session_catalog import find_all_history_sessions
 
             discovered_sessions = find_all_history_sessions()
             for s in discovered_sessions:
@@ -1312,6 +1329,7 @@ class HistoryManager:
 
         if not safety_session_id:
             safety_session_id = self._create_snapshot_internal(base_dir)
+            self._mark_undo_snapshot(safety_session_id)
 
         with conn:
             try:
@@ -1384,24 +1402,6 @@ class HistoryManager:
                     if size not in active_files_by_size:
                         active_files_by_size[size] = []
                     active_files_by_size[size].append(abs_path)
-
-                print("DEBUG ROLLBACK: inodes_reliable =", inodes_reliable, flush=True)
-                print("DEBUG ROLLBACK: current_files =", current_files, flush=True)
-                print(
-                    "DEBUG ROLLBACK: snapshot_files =",
-                    [(r[0], r[1], r[2], r[3], r[6]) for r in snapshot_files],
-                    flush=True,
-                )
-                print(
-                    "DEBUG ROLLBACK: active_files_by_size =",
-                    active_files_by_size,
-                    flush=True,
-                )
-                print(
-                    "DEBUG ROLLBACK: active_files_by_sig =",
-                    active_files_by_sig,
-                    flush=True,
-                )
 
                 # First compute all intended moves
                 moves = []
@@ -1539,10 +1539,6 @@ class HistoryManager:
                                                 ].pop(idx)
                                                 break
 
-                    print(
-                        f"DEBUG ROLLBACK FILE {rel_path}: current_abs resolved to = {current_abs}",
-                        flush=True,
-                    )
                     if not current_abs:
                         if not is_link_entity and not ignore_missing:
                             raise ValueError(
@@ -2109,6 +2105,7 @@ class HistoryManager:
             safety_session_id = None
             if os.path.exists(base_dir):
                 safety_session_id = self._create_snapshot_internal(base_dir)
+                self._mark_undo_snapshot(safety_session_id)
 
             if step_count > 0:
                 result = self._unwind_session_internal(session_id, db=self.db)
@@ -2133,16 +2130,8 @@ class HistoryManager:
                     ignore_missing=ignore_missing,
                 )
 
-            # The safety snapshot is recorded as an "active" session. Once the
-            # rollback has finished, leaving it active makes the startup scan
-            # report it as an interrupted session.
             if safety_session_id:
-                done_conn = get_db_connection(self.db_path)
-                with done_conn:
-                    done_conn.execute(
-                        "UPDATE sessions SET status = 'completed' WHERE session_id = ?",
-                        (safety_session_id,),
-                    )
+                self._mark_undo_snapshot(safety_session_id)
             return result
 
         return self.db.worker.execute_write(_write)

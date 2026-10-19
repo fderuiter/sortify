@@ -78,3 +78,39 @@ def test_validate_architecture_incremental_violation(monkeypatch, tmp_path):
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
+
+
+def _layer_errors(filepath, source):
+    import ast
+
+    from scripts.validate_architecture import validate_import_layers
+
+    errors = []
+    validate_import_layers(errors, filepath, ast.parse(source))
+    return errors
+
+
+def test_import_layers_flag_function_local_upward_import():
+    source = "def f():\n    from app.ui.notifications import NotificationManager\n"
+    errors = _layer_errors("app/core/example.py", source)
+    assert len(errors) == 1
+    assert "app/core/example.py:2" in errors[0]
+    assert "'app.ui'" in errors[0]
+
+
+def test_import_layers_flag_entrypoint_and_tooling_imports():
+    assert _layer_errors("app/ui/view.py", "import app.main\n")
+    assert _layer_errors("app/cli/tool.py", "from app.main import build_parser\n")
+    assert _layer_errors("app/main.py", "import pytest\n")
+    assert _layer_errors("app/core/x.py", "from scripts import validate_links\n")
+
+
+def test_import_layers_allow_downward_and_similar_names():
+    assert not _layer_errors("app/ui/view.py", "from app.core import mover\n")
+    assert not _layer_errors("app/core/x.py", "import app.main_helpers\n")
+    assert not _layer_errors("app/core/x.py", "from . import ui\n")
+    assert not _layer_errors("app/config.py", "import app.ui\n")
+
+
+def test_import_layers_respect_exemptions():
+    assert not _layer_errors("app/cli/generate_docs.py", "import sandbox_cli\n")

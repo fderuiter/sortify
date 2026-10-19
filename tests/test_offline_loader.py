@@ -18,6 +18,20 @@ from app.core.shared_registry import SharedModelRegistry
 pytestmark = [pytest.mark.slow, pytest.mark.ml]
 
 
+@pytest.fixture
+def trust_model_folders(monkeypatch):
+    """Skip hash verification for tests that mock the filesystem to test other behavior."""
+    monkeypatch.setattr(
+        OfflineModelLoader, "_verify_candidate", classmethod(lambda cls, m, p: True)
+    )
+
+
+def _sha256(data: bytes) -> str:
+    import hashlib
+
+    return hashlib.sha256(data).hexdigest()
+
+
 def test_model_weights_not_found_error():
     """Verify that ModelWeightsNotFoundError includes the searched locations in its message."""
     searched = ["/path/a", "/path/b"]
@@ -29,7 +43,7 @@ def test_model_weights_not_found_error():
     assert "/path/b" in str(err)
 
 
-def test_dynamic_path_resolution_order(tmp_path, monkeypatch):
+def test_dynamic_path_resolution_order(tmp_path, monkeypatch, trust_model_folders):
     """Verify that path resolution checks fallback directories in correct order of precedence."""
     # Reset/clear registry of models for isolated testing
     OfflineModelLoader._registered_models.clear()
@@ -121,28 +135,8 @@ def test_dynamic_path_resolution_order(tmp_path, monkeypatch):
         resolved = OfflineModelLoader.resolve_model_path("dummy-model")
         assert "sys_meipass" in resolved or "_MEIPASS" in resolved
 
-    # Disable MEIPASS path -> Precedence 3: Workspace folder
-    def mock_exists_workspace(path):
-        if "dummy-model" in path:
-            if (
-                "offline_bundle" in path
-                and "sys_meipass" not in path
-                and ".smart-autosorter" not in path
-            ):
-                if "config.json" in path:
-                    return original_exists(str(workspace_dir / "config.json"))
-                return True
-        return False
-
-    with (
-        patch("os.path.exists", side_effect=mock_exists_workspace),
-        patch("os.path.isdir", return_value=True),
-    ):
-        resolved = OfflineModelLoader.resolve_model_path("dummy-model")
-        assert "offline_bundle" in resolved
-        assert ".smart-autosorter" not in resolved
-
-    # Disable Workspace -> Precedence 4: Home directory fallback
+    # The working directory is never searched (see
+    # test_working_directory_is_not_searched), so the next fallback is home.
     def mock_exists_home(path):
         if "dummy-model" in path:
             if ".smart-autosorter" in path:
@@ -159,7 +153,7 @@ def test_dynamic_path_resolution_order(tmp_path, monkeypatch):
         assert ".smart-autosorter" in resolved
 
 
-def test_offline_sandboxing_enforced_connect():
+def test_offline_sandboxing_enforced_connect(trust_model_folders):
     """Assert that a model loader trying to connect externally is blocked and raises OfflineModelLoadError."""
     OfflineModelLoader._registered_models.clear()
     OfflineModelLoader.register_model("sandbox-model")
@@ -179,7 +173,7 @@ def test_offline_sandboxing_enforced_connect():
             OfflineModelLoader.load_model("sandbox-model", bad_loader_fn)
 
 
-def test_offline_sandboxing_enforced_dns():
+def test_offline_sandboxing_enforced_dns(trust_model_folders):
     """Assert that a model loader trying to resolve an external DNS name is blocked and raises OfflineModelLoadError."""
     OfflineModelLoader._registered_models.clear()
     OfflineModelLoader.register_model("sandbox-model")
@@ -198,7 +192,7 @@ def test_offline_sandboxing_enforced_dns():
             OfflineModelLoader.load_model("sandbox-model", bad_loader_fn)
 
 
-def test_automatic_injection_of_local_files_only():
+def test_automatic_injection_of_local_files_only(trust_model_folders):
     """Verify that OfflineModelLoader.load_model automatically injects local_files_only=True and trust_remote_code=False."""
     OfflineModelLoader._registered_models.clear()
     OfflineModelLoader.register_model("auto-inject-model")
@@ -550,6 +544,14 @@ def test_sidecar_model_hydration_success(tmp_path, monkeypatch):
 
     OfflineModelLoader._registered_models.clear()
     OfflineModelLoader.register_model("model", expected_files=["config.json"])
+    SharedModelRegistry._instance = None
+    SharedModelRegistry.get_instance().register_expected_hashes(
+        "generative_naming",
+        {
+            "config.json": _sha256(b'{"model_type": "minilm"}'),
+            "model.onnx": _sha256(b"dummy_onnx_weights"),
+        },
+    )
 
     progress_updates = []
 
@@ -597,3 +599,105 @@ def test_sidecar_hydration_tampered_weights_error(tmp_path, monkeypatch):
             sidecar_zip_path=str(sidecar_zip),
             target_dir=str(target_home / ".smart-autosorter" / "offline_bundle"),
         )
+
+
+def _write_sidecar(zip_path, files):
+    import zipfile
+
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        for name, data in files.items():
+            zf.writestr(name, data)
+
+
+@pytest.fixture
+def isolated_home(tmp_path, monkeypatch):
+    home = tmp_path / "home"
+    home.mkdir()
+    monkeypatch.setenv("HOME", str(home))
+    monkeypatch.setenv("USERPROFILE", str(home))
+    monkeypatch.delenv("SMART_AUTOSORTER_MODELS_ZIP", raising=False)
+    monkeypatch.delenv("MODELS_ZIP_PATH", raising=False)
+    OfflineModelLoader._registered_models.clear()
+    SharedModelRegistry._instance = None
+    yield home
+    SharedModelRegistry._instance = None
+
+
+def test_tampered_sidecar_weights_never_become_resolvable(
+    tmp_path, monkeypatch, isolated_home
+):
+    """Weights that fail verification are not left on disk for the next lookup."""
+    sidecar = tmp_path / "smart-autosorter-models.zip"
+    _write_sidecar(sidecar, {"mymodel/model.onnx": b"TAMPERED WEIGHTS"})
+    monkeypatch.setenv("SMART_AUTOSORTER_MODELS_ZIP", str(sidecar))
+    SharedModelRegistry.get_instance().register_expected_hashes(
+        "mymodel", {"model.onnx": "0" * 64}
+    )
+    OfflineModelLoader.register_model("mymodel", expected_files=["model.onnx"])
+
+    with pytest.raises(ModelWeightsNotFoundError):
+        OfflineModelLoader.resolve_model_path("mymodel")
+    sidecar.unlink()
+
+    bundle = isolated_home / ".smart-autosorter" / "offline_bundle"
+    assert not (bundle / "mymodel").exists()
+    assert not any(p.name.startswith(".hydrate-") for p in bundle.parent.iterdir())
+    with pytest.raises(ModelWeightsNotFoundError):
+        OfflineModelLoader.resolve_model_path("mymodel")
+
+
+def test_tampered_folder_already_on_disk_is_refused(isolated_home):
+    """A model folder whose files don't match the registered hashes is skipped."""
+    folder = isolated_home / ".smart-autosorter" / "offline_bundle" / "mymodel"
+    folder.mkdir(parents=True)
+    (folder / "model.onnx").write_bytes(b"TAMPERED WEIGHTS")
+    SharedModelRegistry.get_instance().register_expected_hashes(
+        "mymodel", {"model.onnx": _sha256(b"GOOD WEIGHTS")}
+    )
+
+    with pytest.raises(ModelWeightsNotFoundError):
+        OfflineModelLoader.resolve_model_path("mymodel")
+
+    (folder / "model.onnx").write_bytes(b"GOOD WEIGHTS")
+    assert OfflineModelLoader.resolve_model_path("mymodel") == str(folder)
+
+
+def test_model_folder_without_registered_hashes_is_refused(isolated_home):
+    """There is nothing to verify an unregistered model against, so it is refused."""
+    folder = isolated_home / ".smart-autosorter" / "offline_bundle" / "unknown"
+    folder.mkdir(parents=True)
+    (folder / "weights.bin").write_bytes(b"weights")
+
+    with pytest.raises(ModelWeightsNotFoundError):
+        OfflineModelLoader.resolve_model_path("unknown")
+
+
+def test_working_directory_is_not_searched(tmp_path, monkeypatch, isolated_home):
+    """Neither a sidecar zip nor an offline_bundle in the CWD is used."""
+    cwd = tmp_path / "downloads"
+    (cwd / "offline_bundle" / "mymodel").mkdir(parents=True)
+    (cwd / "offline_bundle" / "mymodel" / "model.onnx").write_bytes(b"W")
+    _write_sidecar(cwd / "smart-autosorter-models.zip", {"mymodel/model.onnx": b"W"})
+    monkeypatch.chdir(cwd)
+    SharedModelRegistry.get_instance().register_expected_hashes(
+        "mymodel", {"model.onnx": _sha256(b"W")}
+    )
+
+    candidates = OfflineModelLoader._find_sidecar_zip_candidates()
+    assert not any(c.startswith(str(cwd)) for c in candidates)
+    with pytest.raises(ModelWeightsNotFoundError):
+        OfflineModelLoader.resolve_model_path("mymodel")
+
+
+def test_verify_integrity_fails_on_any_missing_registered_file(tmp_path):
+    """A missing registered file fails verification instead of skipping the rest."""
+    from app.core.exceptions import HashVerificationError  # noqa: F401
+
+    (tmp_path / "a.bin").write_bytes(b"a")
+    registry = SharedModelRegistry()
+    registry.register_expected_hashes(
+        "two-files", {"missing.bin": "0" * 64, "a.bin": "1" * 64}
+    )
+
+    with pytest.raises(FileNotFoundError):
+        registry.verify_integrity("two-files", str(tmp_path))
