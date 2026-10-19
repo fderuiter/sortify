@@ -8,7 +8,7 @@ flowchart TD
     fastpath -->|Certain Match| category
     fastpath -->|Uncertain Match| model
     model --> confidence
-    confidence -->|Score >= 0.8| category
+    confidence -->|"Score >= 0.8"| category
     click features "docs/api_reference.md#appcorejev_classifier" "Feature Matrix"
     click fastpath tooltip "Fast Path Check"
     click model tooltip "JEV Model Exec"
