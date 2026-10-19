@@ -339,7 +339,7 @@ def test_export_audit_log_secondary_db_by_session_id(tmp_path, monkeypatch):
 
     assert len(rows) == 1
     assert rows[0]["session_id"] == s2_id
-    assert rows[0]["source_path"] == "/src/sec.txt"
+    assert rows[0]["source_path"] == os.path.normpath("/src/sec.txt")
 
     db_worker.stop()
 

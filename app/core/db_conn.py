@@ -79,6 +79,7 @@ def _close_evicted_connection(key, conn):
 
 _connection_cache = BoundedMemoryCache(max_size=50, on_evict=_close_evicted_connection)
 _cache_lock = threading.RLock()
+_db_init_lock = threading.RLock()
 _disable_pytest_win_fallback = True
 
 
@@ -150,7 +151,12 @@ def get_db_connection(db_path: str):
         # Automatically clean up connections for dead threads to prevent resource and lock leaks on Windows
         clear_dead_thread_connections()
 
-    from app.core.path_utils import resolve_db_crypto
+    with _db_init_lock:
+        with _cache_lock:
+            if cache_key in _connection_cache:
+                return _connection_cache[cache_key]
+
+        from app.core.path_utils import resolve_db_crypto
 
     crypto = resolve_db_crypto(db_path)
     raw_key = crypto.get_raw_key()
