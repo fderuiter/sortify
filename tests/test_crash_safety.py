@@ -11,6 +11,11 @@ power cut or ``kill -9`` would leave the mover. It then runs a real
 2. Undo restores the folder: afterwards every original file is back at its
    own path with identical bytes, and nothing extra is left behind.
 
+The fixed cases below pin known crash points. A Hypothesis test then picks
+other corpora and crash points and checks the property that already holds on
+main for every one of them: neither the crash nor the undo after it loses a
+file's bytes.
+
 The crash hook lives only in the child's wrapper script below; production code
 has no test branches for it.
 """
@@ -22,10 +27,13 @@ import os
 import random
 import subprocess
 import sys
+import tempfile
 from collections import Counter
 from pathlib import Path
 
 import pytest
+from hypothesis import given, settings
+from hypothesis import strategies as st
 
 pytestmark = pytest.mark.slow
 
@@ -178,3 +186,42 @@ def test_crash_during_sort_then_undo_restores_every_file(
         f"undo exit {undo.returncode}: not restored {not_restored}, "
         f"left behind {left_behind}\n{undo.stdout[-2000:]}{undo.stderr[-2000:]}"
     )
+
+
+# Each example runs two real CLI processes, so keep the count small. Derandomized
+# so CI explores the same crash points on every run and a failure reproduces.
+@settings(max_examples=10, deadline=None, derandomize=True)
+@given(
+    seed=st.integers(min_value=0, max_value=10_000),
+    crash_mode=st.sampled_from(["before", "after"]),
+    crash_at=st.integers(min_value=1, max_value=40),
+)
+def test_crash_and_undo_never_lose_bytes(seed, crash_mode, crash_at):
+    with tempfile.TemporaryDirectory() as tmp:
+        work = Path(tmp)
+        folder = work / "folder"
+        folder.mkdir()
+        (work / "home").mkdir()
+        _make_corpus(folder, seed)
+        before = Counter(_snapshot(folder).values())
+
+        sort = _cli(
+            work,
+            "sort",
+            str(folder),
+            "--accept-ai-consent",
+            "--non-interactive",
+            crash_at=crash_at,
+            crash_mode=crash_mode,
+        )
+        # 0 when the sort made fewer moves than crash_at.
+        assert sort.returncode in (0, 137), sort.stdout + sort.stderr
+        lost = before - Counter(_snapshot(folder).values())
+        assert not lost, f"bytes lost by the crash itself: {sorted(lost)}"
+
+        undo = _cli(work, "undo", "--latest")
+        lost = before - Counter(_snapshot(folder).values())
+        assert not lost, (
+            f"bytes lost by undo after the crash: {sorted(lost)}\n"
+            f"{undo.stdout[-2000:]}{undo.stderr[-2000:]}"
+        )
