@@ -298,7 +298,7 @@ def test_build_parser_factory():
 
     parser = build_parser()
     assert isinstance(parser, argparse.ArgumentParser)
-    assert parser.prog == "app/main.py"
+    assert parser.prog == "smart-autosorter"
 
     help_text = parser.format_help()
     assert "--demo" in help_text
