@@ -67,13 +67,6 @@ jobs:
             const labels = pr.labels.map(l => l.name);
             const isDependabot = pr.user.login === 'dependabot[bot]';
 
-            let dependencyUpdateType = 'minor';
-            if (isDependabot || labels.includes('dependencies')) {
-              if (pr.title.toLowerCase().includes('major') || pr.title.toLowerCase().includes('breaking')) {
-                dependencyUpdateType = 'major';
-              }
-            }
-
             const meta = {
               pr_number: pr.number,
               title: pr.title,
@@ -84,7 +77,6 @@ jobs:
               additions: additions,
               deletions: deletions,
               is_dependabot: isDependabot,
-              dependency_update_type: dependencyUpdateType,
               all_commits_verified: allCommitsVerified,
               unverified_commit_shas: unverifiedCommitShas,
             };

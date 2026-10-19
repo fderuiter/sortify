@@ -299,17 +299,23 @@ def main() -> None:
             raw_data = f.read()
 
     data = json.loads(raw_data)
+    title = data.get("title", "")
+    is_dependabot = data.get("is_dependabot", False)
+    # Derived from the title, as auto_merge_controller does, so the labels
+    # this posts agree with what the controller will merge.
     meta = PRMetadata(
         pr_number=data.get("pr_number", 0),
-        title=data.get("title", ""),
+        title=title,
         author=data.get("author", ""),
         is_draft=data.get("is_draft", False),
         labels=data.get("labels", []),
         changed_files=data.get("changed_files", []),
         additions=data.get("additions", 0),
         deletions=data.get("deletions", 0),
-        is_dependabot=data.get("is_dependabot", False),
-        dependency_update_type=data.get("dependency_update_type", "minor"),
+        is_dependabot=is_dependabot,
+        dependency_update_type=(
+            dependency_update_type_from_title(title) if is_dependabot else "minor"
+        ),
         all_commits_verified=data.get("all_commits_verified", True),
         unverified_commit_shas=data.get("unverified_commit_shas", []),
     )
