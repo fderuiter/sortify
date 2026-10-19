@@ -37,11 +37,11 @@ One-shot, commands as `-c` flags (stderr is keyring noise, drop it):
 
 ```bash
 uv run python .agents/skills/run-sortify/driver.py \
-  -c "analyze" -c "tree" -c "press down down" -c "ss planned" \
+  -c "press ctrl+s" -c "idle" -c "tree" -c "press down down" -c "ss planned" \
   -c "press ctrl+e" -c "idle" -c "screen" -c "ss executed" -c "files" 2>/dev/null
 ```
 
-That is the full user flow: plan the corpus into `Budget-Balance/` and
+That is the full user flow: scan (Ctrl+S) and plan the corpus into `Budget-Balance/` and
 `Cluster-Backend/`, show it in the tree, execute the moves (Ctrl+E), land
 on the `AuditReportModal` with 8 `[PASS]` rows, and list the moved files.
 Screenshots go to `.sortify-driver/<name>.svg` + `.png` (gitignored).
@@ -58,7 +58,6 @@ Commands (`--script FILE` for a file of them, or pipe on stdin for a REPL):
 | `wait SECS` | let the app run |
 | `ss NAME` | screenshot to `.sortify-driver/NAME.{svg,png}` |
 | `tree` / `plan` / `screen` / `files` | dump plan tree, `app.plan` JSON, active screen + focus + status bar, target dir |
-| `analyze` | extract + fit + plan in the app's session, redraw tree (see Gotchas) |
 | `eval PY` | eval/exec with `app`, `pilot`, `target` in scope |
 
 Options: `--dir PATH` (sort your own folder - it **moves files** on
@@ -80,7 +79,9 @@ tmux send-keys -t drv "quit" Enter
 ## Run the real TUI binary in tmux
 
 Use this when the bug might be in startup/argument handling rather than in
-`AutoSorterTUI` itself:
+`AutoSorterTUI` itself. Until the clustering subprocess bug below is fixed,
+Ctrl+S here still shows "Empty Workspace"; check `$D/app/autosorter.log`
+for `fds_to_keep`:
 
 ```bash
 D=$(mktemp -d); mkdir $D/inbox; for i in 1 2 3 4; do
@@ -118,22 +119,19 @@ uv run pytest tests/test_visual_snapshots.py   # TUI SVG snapshots (slow marker)
 
 ## Gotchas
 
-- **TUI Ctrl+S never plans text documents (product bug at 014e228).**
-  `run_scan_worker` (`app/ui/tui.py:7421`) runs only `MetadataPass` and then
-  `generate_sorting_plan()`; it never extracts text, so the DB has 0
-  documents and the tree shows "Empty Workspace" while the status bar says
-  "Analyzed 8 files". Same for `G` (sample dataset). Reproduced both in the
-  driver and in the real binary under tmux. The CLI `sort` path does
-  extraction (`build_corpus_generator` + `partial_fit`) and works. The
-  driver's `analyze` command runs that missing step so you can reach the
-  tree and Ctrl+E; when testing a fix to Ctrl+S, use `press ctrl+s` +
-  `idle` + `tree` instead and expect two folders.
 - **Clustering spawns a subprocess, which breaks inside Textual.** Once
   Textual has replaced `sys.stderr`, multiprocessing's resource tracker
-  dies with `ValueError: bad value(s) in fds_to_keep`, `generate_sorting_plan`
-  logs "Failed during generate_sorting_plan" and returns `{}`. The driver
-  calls `resource_tracker.ensure_running()` before `run_test()` to avoid
-  it. Whether the real TUI hits this once Ctrl+S extracts is untested.
+  dies with `ValueError: bad value(s) in fds_to_keep`;
+  `generate_sorting_plan` logs "Failed during generate_sorting_plan" to
+  `autosorter.log` and returns `{}`, so the tree shows "Empty Workspace"
+  while the status bar says "Analyzed 8 files". This hits the real TUI
+  (verified under tmux). The driver calls `resource_tracker.ensure_running()`
+  before `run_test()`, so the driver does NOT reproduce it; use the tmux
+  path above to test a fix for it.
+- Ctrl+S runs `MetadataPass` first; files it routes by rule (keywords,
+  extensions) skip text extraction, and the rest go through
+  `build_corpus_generator` + `partial_fit` (`run_scan_worker` in
+  `app/ui/tui.py`), the same as CLI `sort`.
 - **Never redirect stderr of the real TUI** (`2>file`): Textual draws to
   stderr, so the whole UI goes into the file and tmux shows raw escapes.
 - **Bare `smart-autosorter --tui DIR` fails** with "invalid choice" (the
@@ -153,9 +151,8 @@ uv run pytest tests/test_visual_snapshots.py   # TUI SVG snapshots (slow marker)
 - **Plan folders nest twice** (`Budget-Balance/Budget-Balance/fin1.txt`)
   from the recursive KMeans on this small corpus, in both CLI and TUI.
 - **`undo` leaves the empty generated folders behind**; only files move back.
-- After Ctrl+E the TUI rescans, so the tree behind the audit modal goes
-  back to "Empty Workspace" (same Ctrl+S bug) and the status bar shows
-  the scan message, not the move result. Check `files` or the modal.
+- After Ctrl+E the TUI rescans the now-sorted folder, so the status bar
+  shows the scan message, not the move result. Check `files` or the modal.
 
 ## Troubleshooting
 
@@ -163,6 +160,6 @@ uv run pytest tests/test_visual_snapshots.py   # TUI SVG snapshots (slow marker)
 |---|---|
 | `app/main.py: error: argument subcommand: invalid choice: '/tmp/...'` | put the dir after `sort`: `smart-autosorter sort DIR --tui` |
 | tmux pane full of `[?1049h[48;5;17m...` | you redirected stderr of the TUI; remove `2>` |
-| `plan folders: []` / tree empty after `analyze` | resource tracker not pre-started (look for `fds_to_keep` in stderr), or fewer than 3 text files in `--dir` |
+| Tree shows "Empty Workspace" after `press ctrl+s` + `idle` | `fds_to_keep` in `autosorter.log` (resource tracker not pre-started), or fewer than 3 text files in `--dir` |
 | `ss` prints "png conversion failed" | no Chromium found; open the `.svg` instead |
 | Startup shows "Interrupted Session Detected" | stale `AUTOSORTER_APP_DIR`; use a fresh one (driver default) |

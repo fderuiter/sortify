@@ -16,8 +16,6 @@ Commands:
   screen               print active screen class, focused widget, status bar
   plan                 print app.plan as JSON
   files                list files under the target dir
-  analyze              extract + fit + plan in the app's session, then redraw the
-                       tree (what Ctrl+S skips; see SKILL.md gotchas)
   eval PYTHON          eval/exec Python with `app`, `pilot`, `target` in scope
   quit                 exit
 Run from the repo root:  uv run python .agents/skills/run-sortify/driver.py
@@ -72,30 +70,6 @@ def svg_to_png(svg: Path, png: Path, width: int, height: int) -> bool:
         timeout=60,
     )
     return r.returncode == 0 and png.exists()
-
-
-def analyze(app, target: Path) -> None:
-    """Extract, fit and plan in the app's session (the step Ctrl+S skips)."""
-    from app.core.extractor import build_corpus_generator
-    from app.core.scanner import get_files_from_sources
-    from app.core.session import AppSession
-
-    if app.app_session is None:
-        app.app_session = AppSession(
-            app.settings, str(target), source_dirs=[str(target)]
-        )
-    s = app.app_session
-    files = get_files_from_sources([str(target)])
-    for chunk in build_corpus_generator(
-        base_dir=str(target),
-        items_to_sort=files,
-        progress_callback=lambda info=None: None,
-        max_workers=2,
-        db=s.db,
-        settings=app.settings,
-    ):
-        s.partial_fit(chunk)
-    app.plan = s.generate_sorting_plan()
 
 
 def tree_lines(node, depth=0):
@@ -177,11 +151,6 @@ async def run(args) -> int:
                     print(f"status={status.render()}")
             elif cmd == "plan":
                 print(json.dumps(app.plan, indent=1, default=str))
-            elif cmd == "analyze":
-                await asyncio.to_thread(analyze, app, target)
-                app.rebuild_tree()
-                await pilot.pause()
-                print(f"plan folders: {sorted(app.plan)}")
             elif cmd == "files":
                 for p in sorted(target.rglob("*")):
                     print(p.relative_to(target), "/" if p.is_dir() else "")
