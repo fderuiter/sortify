@@ -25,6 +25,7 @@ plugins:
 
 nav:
   - User Guide: user_guide.md
+  - Keyboard Shortcuts: keyboard_shortcuts.md
   - Administrator Guide: admin_guide.md
   - Interactive Tutorials:
     - Stateful ML Analyzer Clustering: tutorials/01_ml_analyzer_clustering.md
