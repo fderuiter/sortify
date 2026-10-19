@@ -1,6 +1,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.cli.generate_docs import (
     _collect_bindings,
     _format_key,
@@ -972,6 +974,16 @@ def test_update_security_md_scans_only_network_rules_targets(tmp_path, monkeypat
     assert "stale" not in security_md
 
 
+def test_compile_diagram_assets_fails_when_a_diagram_fails():
+    """A diagram that doesn't render must fail the docs build, not just warn."""
+    from app.cli.generate_docs import compile_diagram_assets
+
+    with patch("scripts.diagram_toolchain.build_diagrams", return_value=False):
+        with pytest.raises(RuntimeError, match="failed schema validation or rendering"):
+            compile_diagram_assets()
+
+    with patch("scripts.diagram_toolchain.build_diagrams", return_value=True):
+        compile_diagram_assets()
 def test_format_key_matches_how_users_type_keys():
     assert _format_key("ctrl+s") == "Ctrl+S"
     assert _format_key("question_mark") == "?"
