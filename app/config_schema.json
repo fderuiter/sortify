@@ -54,6 +54,11 @@
       "title": "Explorer Integration",
       "type": "boolean"
     },
+    "SPEAK_ANNOUNCEMENTS": {
+      "default": false,
+      "title": "Speak Announcements",
+      "type": "boolean"
+    },
     "KEYWORD_RULES": {
       "additionalProperties": true,
       "title": "Keyword Rules",
