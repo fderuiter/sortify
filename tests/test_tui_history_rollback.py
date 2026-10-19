@@ -308,3 +308,44 @@ async def test_rollback_execution_error_modal_on_failure(tui_rollback_env, monke
         assert isinstance(error_screen, RollbackErrorModal)
         lbl_err = error_screen.query_one("#lbl-error-message", Label)
         assert "Access denied" in str(lbl_err.render())
+
+
+@pytest.mark.anyio
+async def test_rollback_uses_databases_next_to_session_history(
+    tui_rollback_env, monkeypatch
+):
+    """Verify a namespaced session rolls back against its own autosorter.db and cache.db (#742)."""
+    sessions = tui_rollback_env["sessions"]
+    session_id = tui_rollback_env["session_id"]
+    settings = tui_rollback_env["settings"]
+    session_dir = os.path.dirname(tui_rollback_env["history_db_path"])
+
+    used_paths = {}
+    real_rollback = HistoryManager.rollback
+
+    def spy_rollback(self, sid, ignore_missing=False):
+        used_paths["db"] = os.path.dirname(os.path.abspath(self.db.db_path))
+        used_paths["cache"] = os.path.dirname(
+            os.path.abspath(self.cache_manager.db_path)
+        )
+        return real_rollback(self, sid, ignore_missing=ignore_missing)
+
+    monkeypatch.setattr("app.core.history.HistoryManager.rollback", spy_rollback)
+
+    app = AutoSorterTUI(settings=settings)
+    async with app.run_test() as pilot:
+        modal = HistoryModal(sessions=sessions, base_dir=tui_rollback_env["base_dir"])
+        app.push_screen(modal)
+        await pilot.pause()
+
+        modal.query_one("#select-history-session", Select).value = session_id
+        await pilot.pause()
+        modal.query_one("#btn-rollback-session", Button).press()
+        await pilot.pause()
+        app.screen.query_one("#btn-confirm-rollback", Button).press()
+
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+    assert used_paths == {"db": session_dir, "cache": session_dir}

@@ -5844,21 +5844,12 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     ) -> None:
         """Execute session rollback asynchronously in background worker thread."""
         try:
-            from app.config import get_app_dir
-            from app.core.cache import CacheManager
-            from app.core.db import Database
-            from app.core.db_worker import DBWorker
-            from app.core.history import HistoryManager
+            from app.core.history import open_session_history
 
-            target_db = history_db_path or str(get_app_dir() / "history.db")
-            db_worker = DBWorker()
-            db = Database(get_app_dir() / "autosorter.db", db_worker)
-            cache_mgr = CacheManager(str(get_app_dir() / "cache.db"), db_worker)
-            history_mgr = HistoryManager(db, cache_mgr, target_db)
-
-            restored_count = history_mgr.rollback(
-                session_id, ignore_missing=ignore_missing
-            )
+            with open_session_history(history_db_path) as history_mgr:
+                restored_count = history_mgr.rollback(
+                    session_id, ignore_missing=ignore_missing
+                )
 
             app_obj = getattr(self, "app", None)
             if app_obj and hasattr(app_obj, "call_from_thread"):

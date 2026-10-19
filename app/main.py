@@ -1144,24 +1144,18 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
 
     session_obj = None
     try:
-        from app.core.cache import CacheManager
-        from app.core.db import Database
-        from app.core.db_worker import DBWorker
-        from app.core.history import HistoryManager
+        from app.core.history import open_session_history
 
         if db_path and Path(db_path).exists():
-            session_dir = Path(db_path).parent
-            db_worker = DBWorker()
-            db = Database(session_dir / "autosorter.db", db_worker)
-            cache_mgr = CacheManager(str(session_dir / "cache.db"), db_worker)
-            history_mgr = HistoryManager(db, cache_mgr, str(db_path))
+            with open_session_history(db_path) as history_mgr:
+                history_mgr.rollback(target_session_id, ignore_missing=force_flag)
         else:
             from app.core.session import AppSession
 
             session_obj = AppSession(settings, base_dir=base_dir)
-            history_mgr = session_obj.history_manager
-
-        history_mgr.rollback(target_session_id, ignore_missing=force_flag)
+            session_obj.history_manager.rollback(
+                target_session_id, ignore_missing=force_flag
+            )
 
         result = {
             "status": "success",
