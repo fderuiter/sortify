@@ -62,9 +62,16 @@ def reset_memory_keyring():
 
 
 @pytest.fixture(autouse=True)
-def sync_db_worker():
-    """Ensure all database writes happen synchronously during tests to prevent race conditions on Windows."""
+def sync_db_worker(request):
+    """Ensure all database writes happen synchronously during tests to prevent race conditions on Windows.
+
+    Mark a test ``real_db_worker`` to run it against the real asynchronous write queue.
+    """
     from app.core.db_worker import DBWorker
+
+    if request.node.get_closest_marker("real_db_worker"):
+        yield
+        return
 
     def sync_execute(self, func, *args, **kwargs):
         import threading

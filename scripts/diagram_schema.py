@@ -571,7 +571,6 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                     "core_daemon",
                     "core_ipc",
                     "core_integration",
-                    "core_diagram_schema",
                     "core_domain_contracts",
                 ],
             ),
@@ -682,7 +681,6 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramNode(id="core_pipeline", label="app.core.pipeline"),
             DiagramNode(id="core_folder_lock", label="app.core.folder_lock"),
             DiagramNode(id="core_session", label="app.core.session"),
-            DiagramNode(id="core_diagram_schema", label="app.core.diagram_schema"),
             DiagramNode(
                 id="core_user_space_bootstrap", label="app.core.user_space_bootstrap"
             ),
@@ -1600,7 +1598,10 @@ CONTRIBUTOR_ONBOARDING_SPEC = ComponentDiagramSpec(
         DiagramNode(id="C", label="Install Hooks: uv run pre-commit install"),
         DiagramNode(id="D", label="Run Test Suite: uv run pytest"),
         DiagramNode(id="E", label="Run CLI Demo: uv run smart-autosorter --demo"),
-        DiagramNode(id="F", label="Run Docs Check: uv run docs --check"),
+        DiagramNode(
+            id="F",
+            label="Run Docs Check: uv run python scripts/generate_docs.py --check",
+        ),
         DiagramNode(id="G", label="Submit Pull Request"),
     ],
     edges=[
@@ -2753,7 +2754,10 @@ def _create_contributor_onboarding_spec() -> ComponentDiagramSpec:
             DiagramNode(id="C", label="Install Hooks: uv run pre-commit install"),
             DiagramNode(id="D", label="Run Test Suite: uv run pytest"),
             DiagramNode(id="E", label="Run CLI Demo: uv run smart-autosorter --demo"),
-            DiagramNode(id="F", label="Run Docs Check: uv run docs --check"),
+            DiagramNode(
+                id="F",
+                label="Run Docs Check: uv run python scripts/generate_docs.py --check",
+            ),
             DiagramNode(id="G", label="Submit Pull Request"),
         ],
         edges=[

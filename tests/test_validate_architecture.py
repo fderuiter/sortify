@@ -112,5 +112,6 @@ def test_import_layers_allow_downward_and_similar_names():
     assert not _layer_errors("app/config.py", "import app.ui\n")
 
 
-def test_import_layers_respect_exemptions():
-    assert not _layer_errors("app/cli/generate_docs.py", "import sandbox_cli\n")
+def test_import_layers_have_no_docs_generator_exemption():
+    # The docs generator moved to scripts/, so app.cli gets no exemption.
+    assert _layer_errors("app/cli/generate_docs.py", "import sandbox_cli\n")

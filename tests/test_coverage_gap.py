@@ -297,8 +297,8 @@ def test_mover_get_safe_path_source_missing(tmp_path):
 def test_mover_remove_empty_dirs_not_dir(tmp_path):
     f1 = tmp_path / "file.txt"
     f1.write_text("data")
-    # coverage 44
     _remove_empty_dirs(str(f1))
+    assert f1.read_text() == "data"
 
 
 def test_mover_remove_empty_dirs_with_files(tmp_path):
@@ -310,54 +310,131 @@ def test_mover_remove_empty_dirs_with_files(tmp_path):
     assert d1.exists()
 
 
-def test_execute_moves_cleanup_disabled(tmp_path):
-    plan = {
-        "delme": {
-            "__type__": "directory",
-            "source_path": "nonexistent",
-            "status": "To Be Deleted",
-            "protected": False,
-        }
+class _CleanupSettings:
+    CLEANUP_EMPTY_FOLDERS = True
+    PROTECTED_PATHS: list[str] = []
+
+
+class _NoCleanupSettings:
+    CLEANUP_EMPTY_FOLDERS = False
+
+
+def _delete_node(path, **extra):
+    return {
+        "__type__": "directory",
+        "source_path": str(path),
+        "status": "To Be Deleted",
+        **extra,
     }
 
-    class MockSettings:
-        CLEANUP_EMPTY_FOLDERS = False
 
-    execute_moves(str(tmp_path), plan, db, history_manager, MockSettings())
+def test_execute_moves_deletes_empty_folder_marked_for_deletion(tmp_path):
+    d1 = tmp_path / "delme"
+    d1.mkdir()
+
+    summary = execute_moves(
+        str(tmp_path),
+        {"delme": _delete_node(d1, protected=False)},
+        db,
+        history_manager,
+        _CleanupSettings(),
+    )
+
+    assert not d1.exists()
+    assert summary["deleted_folders"] == 1
+    assert summary["protected_folders"] == 0
+
+
+def test_execute_moves_cleanup_disabled(tmp_path):
+    d1 = tmp_path / "delme"
+    d1.mkdir()
+
+    summary = execute_moves(
+        str(tmp_path),
+        {"delme": _delete_node(d1, protected=False)},
+        db,
+        history_manager,
+        _NoCleanupSettings(),
+    )
+
+    assert d1.is_dir()
+    assert summary["deleted_folders"] == 0
+    assert summary["protected_folders"] == 1
 
 
 def test_execute_moves_protected_folder(tmp_path):
-    plan = {
-        "delme": {
-            "__type__": "directory",
-            "source_path": "nonexistent",
-            "status": "To Be Deleted",
-            "protected": True,
-        }
-    }
+    d1 = tmp_path / "delme"
+    d1.mkdir()
 
-    class MockSettings:
-        CLEANUP_EMPTY_FOLDERS = True
+    summary = execute_moves(
+        str(tmp_path),
+        {"delme": _delete_node(d1, protected=True)},
+        db,
+        history_manager,
+        _CleanupSettings(),
+    )
 
-    execute_moves(str(tmp_path), plan, db, history_manager, MockSettings())
+    assert d1.is_dir()
+    assert summary["deleted_folders"] == 0
+    assert summary["protected_folders"] == 1
 
 
-def test_mover_import_error():
-    with mock.patch.dict("sys.modules", {"pylnk3": None}):
-        # reload app.core.mover to trigger import error
-        import importlib
+def test_execute_moves_protected_paths_setting_keeps_folder(tmp_path):
+    d1 = tmp_path / "delme"
+    d1.mkdir()
 
-        import app.core.mover
+    class Settings(_CleanupSettings):
+        PROTECTED_PATHS = [str(d1)]
 
-        importlib.reload(app.core.mover)
-        assert app.core.mover.pylnk3 is None
+    summary = execute_moves(
+        str(tmp_path),
+        {"delme": _delete_node(d1, protected=False)},
+        db,
+        history_manager,
+        Settings(),
+    )
 
-        # reload again to restore
-        import sys
+    assert d1.is_dir()
+    assert summary["deleted_folders"] == 0
+    assert summary["protected_folders"] == 1
 
-        if "pylnk3" in sys.modules:
-            del sys.modules["pylnk3"]
-        importlib.reload(app.core.mover)
+
+def test_execute_moves_keeps_folder_marked_for_deletion_that_has_files(tmp_path):
+    d1 = tmp_path / "delme"
+    d1.mkdir()
+    (d1 / "late.txt").write_text("arrived after planning")
+
+    summary = execute_moves(
+        str(tmp_path),
+        {"delme": _delete_node(d1)},
+        db,
+        history_manager,
+        _CleanupSettings(),
+    )
+
+    assert (d1 / "late.txt").read_text() == "arrived after planning"
+    assert summary["deleted_folders"] == 0
+
+
+def test_mover_optional_pylnk3_import_falls_back_to_none(tmp_path):
+    # Run in a fresh interpreter so the import fallback is exercised without
+    # reloading app.core.mover inside the shared test worker.
+    import subprocess
+    import sys
+
+    code = (
+        "import sys; sys.modules['pylnk3'] = None; "
+        "import app.core.mover as m; "
+        "assert m.pylnk3 is None"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", code],
+        cwd=str(Path(__file__).resolve().parent.parent),
+        capture_output=True,
+        text=True,
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
 
 
 def test_mover_remove_empty_dirs_recursive(tmp_path):
@@ -389,60 +466,70 @@ def test_execute_moves_renames_tracked_document(tmp_path):
 
 
 def test_execute_moves_loop_skip(tmp_path):
-    plan = {
-        "dir1": {
-            "__type__": "directory",
-            "source_path": "nonexistent",
-            "status": "Skipped",
-            "protected": False,
-        },
-        "dir2": {
-            "__type__": "directory",
-            "source_path": "nonexistent",
-            "status": "To Be Deleted",
-            "protected": False,
-        },
-    }
+    def make_plan():
+        d1 = tmp_path / "dir1"
+        d2 = tmp_path / "dir2"
+        d1.mkdir(exist_ok=True)
+        d2.mkdir(exist_ok=True)
+        plan = {
+            "dir1": {
+                "__type__": "directory",
+                "source_path": str(d1),
+                "status": "Skipped",
+                "protected": False,
+            },
+            "dir2": _delete_node(d2, protected=False),
+        }
+        return plan, d1, d2
 
-    class MockSettings:
-        CLEANUP_EMPTY_FOLDERS = True
-
+    plan, d1, d2 = make_plan()
     with mock.patch("app.core.verifier.VerificationEngine.get_moves", return_value=[]):
-        execute_moves(str(tmp_path), plan, db, history_manager, MockSettings())
+        summary = execute_moves(
+            str(tmp_path), plan, db, history_manager, _CleanupSettings()
+        )
+    # Only the folder marked for deletion goes; the skipped one stays.
+    assert d1.is_dir()
+    assert not d2.exists()
+    assert summary["deleted_folders"] == 1
 
-    class MockSettingsFalse:
-        CLEANUP_EMPTY_FOLDERS = False
-
+    plan, d1, d2 = make_plan()
     with mock.patch("app.core.verifier.VerificationEngine.get_moves", return_value=[]):
-        execute_moves(str(tmp_path), plan, db, history_manager, MockSettingsFalse())
+        summary = execute_moves(
+            str(tmp_path), plan, db, history_manager, _NoCleanupSettings()
+        )
+    assert d1.is_dir()
+    assert d2.is_dir()
+    assert summary["deleted_folders"] == 0
 
 
 def test_execute_moves_find_dir_nodes_list(tmp_path):
+    keep = tmp_path / "keep"
+    keep.mkdir()
     plan = {"__type__": "directory", "nested": [{"status": "Moved"}]}
 
-    class MockSettings:
-        CLEANUP_EMPTY_FOLDERS = False
-
     with mock.patch("app.core.verifier.VerificationEngine.get_moves", return_value=[]):
-        execute_moves(str(tmp_path), plan, db, history_manager, MockSettings())
+        summary = execute_moves(
+            str(tmp_path), plan, db, history_manager, _NoCleanupSettings()
+        )
+
+    assert not summary["cancelled"]
+    assert summary["deleted_folders"] == 0
+    assert keep.is_dir()
 
 
 def test_remove_empty_dirs_exception(tmp_path):
     d1 = tmp_path / "delme"
     d1.mkdir()
-    plan = {
-        "delme": {
-            "__type__": "directory",
-            "source_path": str(d1),
-            "status": "To Be Deleted",
-        }
-    }
-
-    class MockSettings:
-        CLEANUP_EMPTY_FOLDERS = True
 
     with mock.patch("os.rmdir", side_effect=OSError("Busy")):
-        try:
-            execute_moves(str(tmp_path), plan, db, history_manager, MockSettings())
-        except OSError:
-            pass
+        summary = execute_moves(
+            str(tmp_path),
+            {"delme": _delete_node(d1)},
+            db,
+            history_manager,
+            _CleanupSettings(),
+        )
+
+    # A folder that can't be removed is left in place and not counted.
+    assert d1.is_dir()
+    assert summary["deleted_folders"] == 0
