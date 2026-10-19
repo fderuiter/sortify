@@ -631,6 +631,93 @@ class SessionCrypto:
                 logger.warning(f"Failed to read key_path in get_raw_key: {e}")
         return key.decode("utf-8") if key else None
 
+    def _rekey_database(self, current_raw: str, new_raw: str) -> None:
+        """Re-encrypt the SQLCipher database from ``current_raw`` to ``new_raw``.
+
+        Opens with an explicit key: get_db_connection() would look the key up
+        in the key stores, which may hold neither key mid-rotation.
+        """
+        from contextlib import closing
+
+        from app.core import db_conn
+
+        if not db_conn.HAS_SQLCIPHER:
+            return
+        db_conn.clear_connection_cache(only_current_and_inactive=False)
+        with closing(db_conn.sqlite3.connect(str(self.db_path), timeout=30.0)) as conn:
+            conn.execute(f"PRAGMA key = '{db_conn.escape_pragma_key(current_raw)}'")
+            # Fails here if current_raw is the wrong key.
+            conn.execute("SELECT count(*) FROM sqlite_master").fetchone()
+            conn.execute(f"PRAGMA rekey = '{db_conn.escape_pragma_key(new_raw)}'")
+        db_conn.clear_connection_cache(only_current_and_inactive=False)
+
+    def _write_isolated_key(self, key: bytes) -> None:
+        """Replace the key file atomically, so a failed write keeps the old key."""
+        self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+        try:
+            os.chmod(self.isolated_dir, 0o700)
+        except OSError:
+            pass
+        tmp_path = self.isolated_key_path.with_name(
+            self.isolated_key_path.name + ".tmp"
+        )
+        fd = os.open(str(tmp_path), os.O_WRONLY | os.O_CREAT | os.O_TRUNC, 0o600)
+        try:
+            with os.fdopen(fd, "wb") as f:
+                f.write(key)
+                f.flush()
+                os.fsync(f.fileno())
+            os.replace(tmp_path, self.isolated_key_path)
+        except BaseException:
+            try:
+                os.remove(tmp_path)
+            except OSError:
+                pass
+            raise
+
+    def _store_rotated_key(self, key: bytes) -> None:
+        """Store ``key`` so that get_cipher() finds it first, or raise."""
+        raw = key.decode("utf-8")
+        try:
+            keyring.set_password(self.keyring_service, self.keyring_account, raw)
+        except Exception as e:
+            logger.warning(f"Keyring update failed during key rotation: {e}")
+            # get_cipher() reads the keyring before the key file, so an old
+            # entry left there would hide the new key.
+            try:
+                keyring.delete_password(self.keyring_service, self.keyring_account)
+            except Exception:
+                pass
+            try:
+                stale = keyring.get_password(self.keyring_service, self.keyring_account)
+            except Exception:
+                stale = None
+            if stale and stale != raw:
+                raise CryptoError(
+                    "The keyring still holds the old key and can't be updated."
+                ) from e
+        self._write_isolated_key(key)
+
+    def _undo_rotation(self, new_raw: str, old_key: bytes) -> None:
+        """Put the database and both key stores back on ``old_key``."""
+        raw = old_key.decode("utf-8")
+        try:
+            self._rekey_database(new_raw, raw)
+        except Exception as e:
+            logger.critical(
+                f"Key rotation failed and the database could not be rekeyed back: {e}. "
+                f"It is now encrypted with the new key, which was not stored."
+            )
+            raise
+        try:
+            keyring.set_password(self.keyring_service, self.keyring_account, raw)
+        except Exception as e:
+            logger.warning(f"Could not restore the old key in the keyring: {e}")
+        try:
+            self._write_isolated_key(old_key)
+        except OSError as e:
+            logger.warning(f"Could not restore the old key file: {e}")
+
     def rotate_key(
         self,
         new_key_str: str | None = None,
@@ -673,56 +760,38 @@ class SessionCrypto:
                 )
                 new_raw_key = new_key_bytes.decode("utf-8")
 
-                # 1. Rekey SQLCipher database if DB file exists
+                # The current key, so a failed rotation can be undone. It
+                # needn't be a Fernet key, so don't go through get_cipher().
+                old_raw = self._get_raw_key_internal()
+                old_key = old_raw.encode("utf-8") if old_raw else None
+                db_rekeyed = False
+
+                # 1. Rekey SQLCipher database if DB file exists. A failed rekey
+                # leaves the database on the old key, so the old key must stay stored.
                 if self.db_path.exists() and self.db_path.stat().st_size > 0:
-                    try:
-                        from app.core.db_conn import (
-                            clear_connection_cache,
-                            escape_pragma_key,
-                            get_db_connection,
+                    if old_key is None:
+                        raise CryptoError(
+                            "Cannot rotate the key: the current key isn't loaded, "
+                            "so a failed rotation couldn't be undone."
                         )
-
-                        clear_connection_cache(only_current_and_inactive=False)
-                        conn = get_db_connection(str(self.db_path))
-                        with conn:
-                            escaped_key = escape_pragma_key(new_raw_key)
-                            conn.execute(f"PRAGMA rekey = '{escaped_key}'")
-                        clear_connection_cache(only_current_and_inactive=False)
+                    try:
+                        self._rekey_database(old_key.decode("utf-8"), new_raw_key)
                     except Exception as e:
-                        logger.warning(
-                            f"SQLCipher PRAGMA rekey failed during key rotation: {e}"
-                        )
+                        raise CryptoError(
+                            f"SQLCipher rekey failed; the database keeps its old key: {e}"
+                        ) from e
+                    db_rekeyed = True
 
-                # 2. Update OS keyring if available
+                # 2-3. Store the new key. If get_cipher() could end up with any
+                # other key, the database would be unreadable, so put it back.
                 try:
-                    keyring.set_password(
-                        self.keyring_service, self.keyring_account, new_raw_key
-                    )
-                except Exception as e:
-                    logger.warning(f"Keyring update failed during key rotation: {e}")
-
-                # 3. Update isolated key file
-                self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-                try:
-                    os.chmod(self.isolated_dir, 0o700)
-                except OSError:
-                    pass
-
-                try:
-                    fd = os.open(
-                        str(self.isolated_key_path),
-                        os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
-                        0o600,
-                    )
-                    with os.fdopen(fd, "wb") as f:
-                        f.write(new_key_bytes)
-                except OSError:
-                    with open(self.isolated_key_path, "wb") as f:
-                        f.write(new_key_bytes)
-                    try:
-                        os.chmod(self.isolated_key_path, 0o600)
-                    except OSError:
-                        pass
+                    self._store_rotated_key(new_key_bytes)
+                except Exception as store_err:
+                    if db_rekeyed:
+                        self._undo_rotation(new_raw_key, old_key)
+                    raise CryptoError(
+                        f"Could not store the new key; rotation was undone: {store_err}"
+                    ) from store_err
 
                 # 4. Update internal cipher state
                 self._key = new_key_bytes
