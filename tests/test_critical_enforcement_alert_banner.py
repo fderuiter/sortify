@@ -302,6 +302,9 @@ def test_tree_highlights_critical_nodes_in_red_and_warnings_in_yellow(temp_works
             app.warning_paths = warn_paths
 
             app.rebuild_tree()
+            # rebuild_tree validates the plan on a worker thread, and its result
+            # replaces the paths set above; let it land before setting them again.
+            await app.workers.wait_for_complete()
             await pilot.pause()
 
             # Re-apply styles explicitly for assertion
