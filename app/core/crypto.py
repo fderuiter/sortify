@@ -791,7 +791,8 @@ class SessionCrypto:
                 try:
                     self._store_rotated_key(new_key_bytes)
                 except Exception as store_err:
-                    if db_rekeyed:
+                    # db_rekeyed implies old_key was loaded (checked above).
+                    if db_rekeyed and old_key is not None:
                         self._undo_rotation(new_raw_key, old_key)
                     raise CryptoError(
                         f"Could not store the new key; rotation was undone: {store_err}"

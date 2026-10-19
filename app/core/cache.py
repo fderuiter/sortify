@@ -15,7 +15,7 @@ except ImportError:
         import types
 
         sqlite3 = types.ModuleType("sqlite3")
-        sqlite3.Error = Exception
+        sqlite3.Error = Exception  # ty: ignore[unresolved-attribute]
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -28,6 +28,7 @@ from typing import (
     Optional,
     Tuple,
     TypeVar,
+    cast,
 )
 
 from app.core.exceptions import CacheError
@@ -211,9 +212,11 @@ class BoundedMemoryCache(Generic[K, V]):
         with self._lock:
             if key not in self._cache:
                 return False
-            val, expire_time = self._cache[key]  # type: ignore[index]
+            # A key found in the cache has the cache's key type.
+            k = cast(K, key)
+            val, expire_time = self._cache[k]
             if self._is_expired(expire_time):
-                self._remove_item(key, call_on_evict=True)  # type: ignore[arg-type]
+                self._remove_item(k, call_on_evict=True)
                 return False
             return True
 
