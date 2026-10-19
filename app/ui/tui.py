@@ -300,9 +300,7 @@ class A11yMixin:
         if not forwarded:
             # Speaking aloud is opt-in: screen-reader users already hear the
             # status bar, and everyone else should not hear every message.
-            speech_bin = (
-                self._get_speech_binary() if self._speech_enabled() else None
-            )
+            speech_bin = self._get_speech_binary() if self._speech_enabled() else None
 
             if speech_bin:
                 speech_thread = self._speech_thread
