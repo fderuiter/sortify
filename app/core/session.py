@@ -205,16 +205,16 @@ class AppSession:
             self.db, self.cache_manager, str(self.session_dir / "history.db")
         )
 
-        try:
-            from app.core.shared_registry import SharedModelRegistry
+        if getattr(self.settings, "AI_CONSENT_GRANTED", None):
+            try:
+                from app.core.shared_registry import SharedModelRegistry
 
-            if getattr(self.settings, "AI_CONSENT_GRANTED", True):
                 jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
                 jev_engine.set_database(
                     str(self.session_dir / "autosorter.db"), self.db_worker
                 )
-        except Exception:
-            pass
+            except Exception:
+                pass
 
         try:
             from app.core.ledger import TransactionLedger
