@@ -1,0 +1,82 @@
+name: Cancel Queued Runs
+
+# Manual-only cleanup: cancels every workflow run in this repository that has
+# not started yet (queued, waiting, pending or requested). Runs already in
+# progress are left alone unless `include_in_progress` is ticked.
+on:
+  workflow_dispatch:
+    inputs:
+      include_in_progress:
+        description: "Also cancel runs that are already in progress"
+        type: boolean
+        default: false
+      dry_run:
+        description: "List the runs that would be cancelled without cancelling them"
+        type: boolean
+        default: false
+
+permissions:
+  actions: write
+
+concurrency:
+  group: cancel-queued-runs
+  cancel-in-progress: false
+
+jobs:
+  cancel:
+    name: Cancel Queued Workflow Runs
+    runs-on: ubuntu-latest
+    steps:
+      - name: Cancel runs
+        uses: actions/github-script@v9
+        env:
+          INCLUDE_IN_PROGRESS: ${{ inputs.include_in_progress }}
+          DRY_RUN: ${{ inputs.dry_run }}
+        with:
+          script: |
+            const statuses = ['queued', 'waiting', 'pending', 'requested'];
+            if (process.env.INCLUDE_IN_PROGRESS === 'true') {
+              statuses.push('in_progress');
+            }
+            const dryRun = process.env.DRY_RUN === 'true';
+
+            const seen = new Set();
+            let cancelled = 0;
+            let failed = 0;
+            for (const status of statuses) {
+              const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
+                owner: context.repo.owner,
+                repo: context.repo.repo,
+                status,
+                per_page: 100,
+              });
+              for (const run of runs) {
+                // Never cancel this cleanup run itself.
+                if (run.id === context.runId || seen.has(run.id)) continue;
+                seen.add(run.id);
+                const label = `#${run.run_number} ${run.name} (${run.status}, ${run.head_branch}) ${run.html_url}`;
+                if (dryRun) {
+                  core.info(`Would cancel ${label}`);
+                  continue;
+                }
+                try {
+                  await github.rest.actions.cancelWorkflowRun({
+                    owner: context.repo.owner,
+                    repo: context.repo.repo,
+                    run_id: run.id,
+                  });
+                  cancelled += 1;
+                  core.info(`Cancelled ${label}`);
+                } catch (error) {
+                  // A run can start or finish between listing and cancelling.
+                  failed += 1;
+                  core.warning(`Could not cancel ${label}: ${error.message}`);
+                }
+              }
+            }
+
+            const summary = dryRun
+              ? `Dry run: ${seen.size} run(s) would be cancelled.`
+              : `Cancelled ${cancelled} run(s); ${failed} could not be cancelled.`;
+            core.info(summary);
+            await core.summary.addRaw(summary).write();
