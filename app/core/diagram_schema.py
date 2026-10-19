@@ -606,6 +606,8 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                 title="Concurrency & Shared Registry (app.core)",
                 nodes=[
                     "core_shared_registry",
+                    "core_concurrency",
+                    "core_network_guard",
                     "core_db_worker",
                 ],
             ),
@@ -706,6 +708,8 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                 id="core_shared_registry",
                 label="app.core.shared_registry (SharedWorkerPool)",
             ),
+            DiagramNode(id="core_concurrency", label="app.core.concurrency"),
+            DiagramNode(id="core_network_guard", label="app.core.network_guard"),
             DiagramNode(id="core_db_worker", label="app.core.db_worker"),
             # Storage
             DiagramNode(id="core_db", label="app.core.db", shape="database"),
@@ -787,6 +791,9 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramEdge(source="core_shared_registry", target="core_mover"),
             DiagramEdge(source="core_shared_registry", target="core_extractor"),
             DiagramEdge(source="core_db_worker", target="core_shared_registry"),
+            DiagramEdge(source="core_shared_registry", target="core_concurrency"),
+            DiagramEdge(source="core_shared_registry", target="core_network_guard"),
+            DiagramEdge(source="core_network_guard", target="core_concurrency"),
             DiagramEdge(source="core_db", target="core_cache"),
             DiagramEdge(source="core_ledger", target="core_db"),
             DiagramEdge(source="core_history", target="core_db"),
