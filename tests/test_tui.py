@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import re
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -2184,5 +2185,70 @@ def test_scan_and_execute_are_refused_while_moves_are_running(temp_workspace):
 
                 # The automatic rescan runs once the move has finished.
                 scan_worker.assert_called_once()
+
+    asyncio.run(_test())
+
+
+def _cheat_sheet_key_label(key: str) -> str:
+    named = {
+        "plus": "+",
+        "minus": "-",
+        "question_mark": "?",
+        "space": "Space",
+        "shift+g": "G",
+    }
+    if key in named:
+        return named[key]
+    if key.startswith("ctrl+"):
+        return "Ctrl+" + key[len("ctrl+") :].upper()
+    return key.upper() if len(key) == 1 else key.capitalize()
+
+
+def test_cheat_sheet_lists_every_main_screen_shortcut(temp_workspace):
+    """Bindings hidden from the footer must still be discoverable via ? / F1."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            app.action_open_cheat_sheet()
+            await pilot.pause()
+            rows = [
+                re.split(r"\s{2,}- ", str(label.render()).strip(), maxsplit=1)[0]
+                for label in app.screen.query(".shortcut-row")
+            ]
+            listed_keys = " | ".join(rows).lower()
+            missing = [
+                b.key
+                for b in AutoSorterTUI.BINDINGS
+                if _cheat_sheet_key_label(b.key).lower() not in listed_keys
+            ]
+            assert missing == []
+
+    asyncio.run(_test())
+
+
+def test_footer_shows_core_workflow_shortcuts_only():
+    """The footer stays short enough that Scan and Quit are always visible."""
+    shown = {b.action for b in AutoSorterTUI.BINDINGS if b.show}
+    assert {"scan_directory", "execute_sort", "select_dir", "quit"} <= shown
+    assert len(shown) <= 8
+
+
+def test_empty_state_tells_user_how_to_start(temp_workspace):
+    """With no plan, the inspector and status line point at Ctrl+S / Ctrl+B."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            meta = str(app.query_one("#meta-details", Static).render())
+            assert "Press Ctrl+S to scan" in meta
+            assert temp_workspace in meta.replace("\n", "")
 
     asyncio.run(_test())
