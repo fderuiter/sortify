@@ -939,3 +939,18 @@ def test_validation_runner_detects_orphaned_snapshot_across_subdirectories(
     assert not orphaned_tui.exists()
     assert not orphaned_other.exists()
     assert actual_diff.exists()
+
+
+def test_positional_non_monitored_module_path_exit_zero(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py", "app/ui/tui.py"])
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+    assert exc_info.value.code == 0
+
+
+def test_positional_global_config_fallback(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py", "pyproject.toml"])
+    # pyproject.toml forces full scan; codebase signatures match baseline snapshots, so main() exits 0
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+    assert exc_info.value.code == 0

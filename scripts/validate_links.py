@@ -3,6 +3,7 @@
 
 import argparse
 import concurrent.futures
+import os
 import re
 import socket
 import sys
@@ -147,12 +148,29 @@ def main():
         action="store_true",
         help="Validate URL syntax locally without network requests",
     )
+    parser.add_argument(
+        "files",
+        nargs="*",
+        default=[],
+        help="Optional staged file path(s) to validate links in.",
+    )
     args = parser.parse_args()
 
     bypass_domains = set(args.bypass) | DEFAULT_BYPASS_DOMAINS
     urls = set()
 
-    for file_path in get_all_target_files(extensions=(".py", ".md")):
+    is_full_scan = not args.files or any(
+        re.search(r"(pyproject\.toml|mkdocs\.yml|uv\.lock)$", f) for f in args.files
+    )
+
+    if is_full_scan:
+        target_files = get_all_target_files(extensions=(".py", ".md"))
+    else:
+        target_files = [
+            f for f in args.files if f.endswith((".py", ".md")) and os.path.isfile(f)
+        ]
+
+    for file_path in target_files:
         try:
             with open(file_path, "r", encoding="utf-8") as f:
                 try:

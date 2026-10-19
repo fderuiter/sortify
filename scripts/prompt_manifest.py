@@ -198,6 +198,12 @@ def main():
     parser.add_argument(
         "action", choices=["generate", "verify"], help="Action to perform"
     )
+    parser.add_argument(
+        "files",
+        nargs="*",
+        default=[],
+        help="Optional file path(s) passed by pre-commit or callers.",
+    )
 
     args = parser.parse_args()
 

@@ -185,3 +185,72 @@ dependencies = []
     )
     exit_code = main()
     assert exit_code == 1
+
+
+def test_incremental_file_argument_pass(monkeypatch, tmp_path):
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text('[project]\ndependencies = ["pillow"]\n', encoding="utf-8")
+
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    good_file = app_dir / "good.py"
+    bad_file = app_dir / "bad.py"
+    good_file.write_text("import PIL\n", encoding="utf-8")
+    bad_file.write_text("import undeclared_pkg\n", encoding="utf-8")
+
+    # Pass only good.py as staged argument
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "validate_imports.py",
+            "--root-dir",
+            str(tmp_path),
+            str(good_file),
+        ],
+    )
+    assert main() == 0
+
+
+def test_incremental_file_argument_irrelevant(monkeypatch, tmp_path):
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text("[project]\ndependencies = []\n", encoding="utf-8")
+
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    (app_dir / "bad.py").write_text("import undeclared_pkg\n", encoding="utf-8")
+
+    # Pass irrelevant file
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "validate_imports.py",
+            "--root-dir",
+            str(tmp_path),
+            "README.md",
+        ],
+    )
+    assert main() == 0
+
+
+def test_incremental_pyproject_fallback(monkeypatch, tmp_path):
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text("[project]\ndependencies = []\n", encoding="utf-8")
+
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    (app_dir / "bad.py").write_text("import undeclared_pkg\n", encoding="utf-8")
+
+    # Pass pyproject.toml -> forces full scan which detects bad.py
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        [
+            "validate_imports.py",
+            "--root-dir",
+            str(tmp_path),
+            "pyproject.toml",
+        ],
+    )
+    assert main() == 1

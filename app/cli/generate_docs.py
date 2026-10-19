@@ -612,6 +612,12 @@ def main():
         action="store_true",
         help="Skip MkDocs HTML site generation build step.",
     )
+    parser.add_argument(
+        "files",
+        nargs="*",
+        default=[],
+        help="Optional file path(s) passed by pre-commit or callers.",
+    )
 
     args = parser.parse_args()
 
