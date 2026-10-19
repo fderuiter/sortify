@@ -1617,9 +1617,19 @@ class ScrubArtifactsModal(A11yMixin, ModalScreen[bool]):
     def compose(self) -> ComposeResult:
         """Compose modal layout with warning labels and action buttons."""
         with Vertical(classes="modal-box"):
-            yield Heading("Scrub AI Artifacts Confirmation", level=1, classes="modal-title")
-            yield Label(f"Stored Document Vectors: {self.vector_count} records", classes="info-label", id="lbl-vector-count")
-            yield Label(f"Model Cache Footprint: {self.cache_size_mb:.2f} MB", classes="info-label", id="lbl-cache-size")
+            yield Heading(
+                "Scrub AI Artifacts Confirmation", level=1, classes="modal-title"
+            )
+            yield Label(
+                f"Stored Document Vectors: {self.vector_count} records",
+                classes="info-label",
+                id="lbl-vector-count",
+            )
+            yield Label(
+                f"Model Cache Footprint: {self.cache_size_mb:.2f} MB",
+                classes="info-label",
+                id="lbl-cache-size",
+            )
             yield Label(
                 "Warning: This operation will permanently remove all stored document vector embeddings "
                 "from the SQLite database and purge local model cache files from disk. "
@@ -1628,7 +1638,9 @@ class ScrubArtifactsModal(A11yMixin, ModalScreen[bool]):
             )
             with Horizontal(classes="button-row"):
                 yield Button("Cancel", id="btn-cancel-scrub", variant="default")
-                yield Button("Scrub AI Artifacts", id="btn-confirm-scrub", variant="error")
+                yield Button(
+                    "Scrub AI Artifacts", id="btn-confirm-scrub", variant="error"
+                )
 
     @on(Button.Pressed, "#btn-confirm-scrub")
     def action_confirm(self) -> None:
@@ -1694,9 +1706,19 @@ class ConsentRevocationModal(A11yMixin, ModalScreen[bool]):
     def compose(self) -> ComposeResult:
         """Compose modal layout with warning labels and consent revocation action buttons."""
         with Vertical(classes="modal-box"):
-            yield Heading("Confirm AI Consent Revocation", level=1, classes="modal-title")
-            yield Label(f"Stored Document Vectors: {self.vector_count} records", classes="info-label", id="lbl-vector-count")
-            yield Label(f"Model Cache Footprint: {self.cache_size_mb:.2f} MB", classes="info-label", id="lbl-cache-size")
+            yield Heading(
+                "Confirm AI Consent Revocation", level=1, classes="modal-title"
+            )
+            yield Label(
+                f"Stored Document Vectors: {self.vector_count} records",
+                classes="info-label",
+                id="lbl-vector-count",
+            )
+            yield Label(
+                f"Model Cache Footprint: {self.cache_size_mb:.2f} MB",
+                classes="info-label",
+                id="lbl-cache-size",
+            )
             yield Label(
                 "Revoking AI consent will disable AI features, unload models from memory, "
                 "scrub stored document vectors from SQLite tables, and purge model cache files from disk. "
@@ -1704,8 +1726,14 @@ class ConsentRevocationModal(A11yMixin, ModalScreen[bool]):
                 classes="warning-label",
             )
             with Horizontal(classes="button-row"):
-                yield Button("Keep Consent Active", id="btn-cancel-revoke", variant="default")
-                yield Button("Revoke Consent & Scrub Data", id="btn-confirm-revoke", variant="error")
+                yield Button(
+                    "Keep Consent Active", id="btn-cancel-revoke", variant="default"
+                )
+                yield Button(
+                    "Revoke Consent & Scrub Data",
+                    id="btn-confirm-revoke",
+                    variant="error",
+                )
 
     @on(Button.Pressed, "#btn-confirm-revoke")
     def action_confirm(self) -> None:
@@ -1878,9 +1906,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                         value=conflict_pol,
                         id="select-conflict-policy",
                     )
-                    sel_conflict.tooltip = (
-                        "Select collision handling strategy for conflicting target files"
-                    )
+                    sel_conflict.tooltip = "Select collision handling strategy for conflicting target files"
                     yield sel_conflict
 
                 with TabPane("AI & Privacy Settings", id="tab-ai-privacy"):
@@ -1942,9 +1968,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                         id="btn-scrub-artifacts",
                         variant="warning",
                     )
-                    btn_scrub.tooltip = (
-                        "Report vector count and cache footprint, and scrub stored vectors and model files"
-                    )
+                    btn_scrub.tooltip = "Report vector count and cache footprint, and scrub stored vectors and model files"
                     yield btn_scrub
 
                     btn_templates = Button(
@@ -1959,17 +1983,18 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
                 with TabPane("Extraction & OCR", id="tab-extraction"):
                     yield Label(
-                        "PDF Text Density Threshold (chars/page):", classes="field-label"
+                        "PDF Text Density Threshold (chars/page):",
+                        classes="field-label",
                     )
-                    density_val = getattr(self.settings, "PDF_TEXT_DENSITY_THRESHOLD", 50)
+                    density_val = getattr(
+                        self.settings, "PDF_TEXT_DENSITY_THRESHOLD", 50
+                    )
                     inp_density = Input(
                         value=str(density_val),
                         placeholder="50",
                         id="input-pdf-density-threshold",
                     )
-                    inp_density.tooltip = (
-                        "Pages with fewer embedded characters trigger EasyOCR rasterization fallback"
-                    )
+                    inp_density.tooltip = "Pages with fewer embedded characters trigger EasyOCR rasterization fallback"
                     yield inp_density
 
                     slider_density = DensitySlider(
@@ -2071,17 +2096,25 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 if confirmed:
                     if self.settings:
                         self.settings.AI_CONSENT_GRANTED = False
-                    if hasattr(self, "app") and hasattr(self.app, "settings") and self.app.settings:
+                    if (
+                        hasattr(self, "app")
+                        and hasattr(self.app, "settings")
+                        and self.app.settings
+                    ):
                         self.app.settings.AI_CONSENT_GRANTED = False
                     self._execute_scrub_and_purge()
                     if hasattr(self, "announce"):
-                        self.announce("AI consent revoked and artifacts scrubbed.", priority="polite")
+                        self.announce(
+                            "AI consent revoked and artifacts scrubbed.",
+                            priority="polite",
+                        )
                 else:
                     event.switch.value = True
 
             if hasattr(self, "app") and self.app:
                 self.app.push_screen(
-                    ConsentRevocationModal(v_count, footprint_mb), _on_revoke_modal_result
+                    ConsentRevocationModal(v_count, footprint_mb),
+                    _on_revoke_modal_result,
                 )
 
     def _execute_scrub_and_purge(self) -> None:
@@ -2133,11 +2166,14 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         try:
             from app.ui.notifications import notify
 
-            notify("AI artifacts scrubbed and model cache purging started.", type="info")
+            notify(
+                "AI artifacts scrubbed and model cache purging started.", type="info"
+            )
         except Exception:
             pass
         if hasattr(self, "announce"):
             self.announce("AI artifacts scrubbed and model cache purging started.")
+
     @on(Button.Pressed, "#btn-save")
     def action_save(self) -> None:
         """Save settings and dismiss modal."""
@@ -2214,7 +2250,10 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             ai_consent = bool(getattr(self.settings, "AI_CONSENT_GRANTED", False))
 
-        if ai_consent is False and getattr(self.settings, "AI_CONSENT_GRANTED", None) is True:
+        if (
+            ai_consent is False
+            and getattr(self.settings, "AI_CONSENT_GRANTED", None) is True
+        ):
             self._execute_scrub_and_purge()
 
         try:
@@ -2359,10 +2398,14 @@ class ExtractionPreviewModal(A11yMixin, ModalScreen[Optional[int]]):
             yield Label("", id="preview-summary-label")
 
             with Horizontal(classes="button-row"):
-                btn_cancel = Button("Cancel", id="btn-preview-cancel", variant="default")
+                btn_cancel = Button(
+                    "Cancel", id="btn-preview-cancel", variant="default"
+                )
                 btn_cancel.tooltip = "Close preview dialog without saving settings"
                 yield btn_cancel
-                btn_save = Button("Save & Apply", id="btn-preview-save", variant="primary")
+                btn_save = Button(
+                    "Save & Apply", id="btn-preview-save", variant="primary"
+                )
                 btn_save.tooltip = "Save density threshold to settings and apply"
                 yield btn_save
 
@@ -2433,7 +2476,10 @@ class ExtractionPreviewModal(A11yMixin, ModalScreen[Optional[int]]):
                 self.current_threshold = val
                 try:
                     slider = self.query_one("#preview-slider-threshold", DensitySlider)
-                    if slider.value != val and slider.min_value <= val <= slider.max_value:
+                    if (
+                        slider.value != val
+                        and slider.min_value <= val <= slider.max_value
+                    ):
                         slider.value = val
                 except Exception:
                     pass
@@ -2878,7 +2924,9 @@ class TemplateGalleryModal(A11yMixin, ModalScreen[None]):
                     id="btn-import-rules",
                     variant="primary",
                 )
-                btn_import.tooltip = "Import Hazel (.hazelrules) or DropIt XML/JSON rule files"
+                btn_import.tooltip = (
+                    "Import Hazel (.hazelrules) or DropIt XML/JSON rule files"
+                )
                 yield btn_import
                 btn_apply = Button(
                     "Apply Selected Templates",
@@ -3073,7 +3121,9 @@ class RuleImportModal(A11yMixin, ModalScreen[Optional[Any]]):
                     placeholder="/path/to/rules.hazelrules or profile.xml/json",
                     id="input-rule-file-path",
                 )
-                btn_parse = Button("Parse File", id="btn-parse-rule-file", variant="primary")
+                btn_parse = Button(
+                    "Parse File", id="btn-parse-rule-file", variant="primary"
+                )
                 btn_parse.tooltip = "Parse selected rule file and display preview"
                 yield btn_parse
 
@@ -3122,7 +3172,9 @@ class RuleImportModal(A11yMixin, ModalScreen[Optional[Any]]):
             dt_kw.add_columns("Keyword", "Target Path")
 
             dt_pol = self.query_one("#dt-imported-policies", DataTable)
-            dt_pol.add_columns("Type", "Expression / Pattern", "Target Path", "Priority")
+            dt_pol.add_columns(
+                "Type", "Expression / Pattern", "Target Path", "Priority"
+            )
         except Exception:
             pass
         self.announce("Opened external rule importer modal.")
@@ -3191,9 +3243,7 @@ class RuleImportModal(A11yMixin, ModalScreen[Optional[Any]]):
         else:
             btn_merge.disabled = True
 
-        self.announce(
-            f"Parsed {res.source_format}: {total_rules} rules extracted."
-        )
+        self.announce(f"Parsed {res.source_format}: {total_rules} rules extracted.")
 
     @on(Button.Pressed, "#btn-merge-imported-rules")
     def action_merge_rules(self) -> None:
@@ -4124,9 +4174,7 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 placeholder="Filter staged queue...",
                 id="input-queue-filter",
             )
-            filter_inp.tooltip = (
-                "Filter staged queue items by typing keywords (filename, path, status, extension)"
-            )
+            filter_inp.tooltip = "Filter staged queue items by typing keywords (filename, path, status, extension)"
             yield filter_inp
 
             with Container(classes="dropzone-split-container"):
@@ -4141,8 +4189,12 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     yield Label("📋 Metadata Preview", classes="preview-header")
                     yield Label("Path: N/A", id="preview-path", classes="preview-field")
                     yield Label("Size: N/A", id="preview-size", classes="preview-field")
-                    yield Label("Modified: N/A", id="preview-mtime", classes="preview-field")
-                    yield Label("Status: N/A", id="preview-status", classes="preview-field")
+                    yield Label(
+                        "Modified: N/A", id="preview-mtime", classes="preview-field"
+                    )
+                    yield Label(
+                        "Status: N/A", id="preview-status", classes="preview-field"
+                    )
 
             with Horizontal(classes="queue-row"):
                 btn_filter = Button(
@@ -4280,7 +4332,9 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             if path_str and path_str != "N/A" and os.path.exists(path_str):
                 try:
                     mtime = os.path.getmtime(path_str)
-                    mtime_str = datetime.fromtimestamp(mtime).strftime("%Y-%m-%d %H:%M:%S")
+                    mtime_str = datetime.fromtimestamp(mtime).strftime(
+                        "%Y-%m-%d %H:%M:%S"
+                    )
                 except Exception:
                     mtime_str = "Error reading timestamp"
             else:
@@ -4596,16 +4650,12 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         help_url = "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors"
 
         filtered = self.get_filtered_items()
-        ready_paths = [
-            item["path"] for item in filtered if item["status"] == "Ready"
-        ]
+        ready_paths = [item["path"] for item in filtered if item["status"] == "Ready"]
 
         if not ready_paths:
             blocked_items = [
                 item for item in filtered if item["status"] == "BLOCKED"
-            ] or [
-                item for item in self.staged_items if item["status"] == "BLOCKED"
-            ]
+            ] or [item for item in self.staged_items if item["status"] == "BLOCKED"]
             if blocked_items:
                 err_text = f"Protected path blocked: {blocked_items[0]['filename']}"
             elif self.staged_items:
@@ -5021,9 +5071,7 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
                 )
                 yield btn_retry_sel
 
-                btn_retry_all = Button(
-                    "Retry All", id="btn-retry-all", variant="error"
-                )
+                btn_retry_all = Button("Retry All", id="btn-retry-all", variant="error")
                 btn_retry_all.tooltip = (
                     "Re-attempt file move operations for all failed items in queue"
                 )
@@ -5148,8 +5196,7 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
             failed = [
                 r
                 for r in records
-                if r.get("status") in ("MISMATCH_FAIL", "MOVE_FAIL")
-                or r.get("error")
+                if r.get("status") in ("MISMATCH_FAIL", "MOVE_FAIL") or r.get("error")
             ]
         return failed
 
@@ -5181,7 +5228,9 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
                 records = self.report_data.get("records", [])
                 if 0 <= audit_table.cursor_row < len(records):
                     rec = records[audit_table.cursor_row]
-                    if rec.get("status") in ("MISMATCH_FAIL", "MOVE_FAIL") or rec.get("error"):
+                    if rec.get("status") in ("MISMATCH_FAIL", "MOVE_FAIL") or rec.get(
+                        "error"
+                    ):
                         selected_record = rec
 
         if not selected_record:
@@ -5211,10 +5260,7 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
         retry_res = retry_failed_moves(base_dir, items_to_retry)
         new_audit = retry_res.get("audit_report", {})
 
-        retried_map = {
-            r.get("source_path"): r
-            for r in new_audit.get("records", [])
-        }
+        retried_map = {r.get("source_path"): r for r in new_audit.get("records", [])}
 
         records = self.report_data.get("records", [])
         for idx, rec in enumerate(records):
@@ -5314,8 +5360,187 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
         self.action_cancel()
 
 
+class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
+    """Confirmation modal dialog before executing session rollback."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel rollback dialog", show=True),
+    ]
+
+    CSS = """
+    RollbackConfirmModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.7);
+    }
+    .confirm-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $warning;
+        width: 85%;
+        max-width: 75;
+        height: auto;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $warning;
+        margin-bottom: 1;
+    }
+    .warning-box {
+        margin-top: 1;
+        margin-bottom: 1;
+        padding: 1;
+        background: $boost;
+        border: dashed $warning;
+        color: $text;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    """
+
+    def __init__(self, session_info: Dict[str, Any]):
+        super().__init__()
+        self.session_info = session_info
+
+    def compose(self) -> ComposeResult:
+        """Compose confirmation modal widgets."""
+        sid = self.session_info.get("session_id", "unknown")
+        b_dir = self.session_info.get("base_dir") or "N/A"
+        step_cnt = (
+            self.session_info.get("step_count")
+            or self.session_info.get("file_count")
+            or 0
+        )
+        ts = self.session_info.get("timestamp")
+        ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "N/A"
+
+        with Vertical(classes="confirm-box"):
+            yield Heading(
+                "Confirm Session Rollback",
+                level=1,
+                classes="modal-title",
+                id="confirm-title",
+            )
+            yield Label(f"Session ID: {sid}", id="lbl-confirm-sid")
+            yield Label(f"Base Directory: {b_dir}", id="lbl-confirm-dir")
+            yield Label(
+                f"Operations / Files to restore: {step_cnt}", id="lbl-confirm-ops"
+            )
+            yield Label(f"Session Timestamp: {ts_str}", id="lbl-confirm-ts")
+
+            with Vertical(classes="warning-box"):
+                yield Label(
+                    "⚠️ Warning: Rolling back will restore files to their original locations prior to this session. Any subsequent manual edits or file relocations in target folders may be unwound or overwritten."
+                )
+
+            yield Checkbox(
+                "Force rollback (ignore missing target files)",
+                value=False,
+                id="chk-ignore-missing",
+            )
+
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button(
+                    "Cancel", id="btn-cancel-rollback", variant="default"
+                )
+                yield btn_cancel
+                btn_confirm = Button(
+                    "Confirm Rollback", id="btn-confirm-rollback", variant="error"
+                )
+                yield btn_confirm
+
+    def on_mount(self) -> None:
+        """Focus confirm button and announce modal screen."""
+        self.query_one("#btn-confirm-rollback", Button).focus()
+        self.announce("Opened rollback confirmation modal dialog.")
+
+    @on(Button.Pressed, "#btn-confirm-rollback")
+    def action_confirm(self) -> None:
+        """Confirm rollback action and dismiss modal with parameters."""
+        chk = self.query_one("#chk-ignore-missing", Checkbox)
+        self.dismiss(
+            {
+                "confirmed": True,
+                "session_id": self.session_info.get("session_id"),
+                "ignore_missing": chk.value if chk else False,
+            }
+        )
+
+    @on(Button.Pressed, "#btn-cancel-rollback")
+    def action_cancel(self) -> None:
+        """Cancel rollback confirmation dialog."""
+        self.dismiss(None)
+
+
+class RollbackErrorModal(A11yMixin, ModalScreen[None]):
+    """Modal dialog displaying error messages encountered during session rollback."""
+
+    BINDINGS = [
+        Binding("escape", "close", "Close error dialog", show=True),
+    ]
+
+    CSS = """
+    RollbackErrorModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.7);
+    }
+    .error-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $error;
+        width: 85%;
+        max-width: 75;
+        height: auto;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $error;
+        margin-bottom: 1;
+    }
+    .error-text {
+        margin-top: 1;
+        margin-bottom: 1;
+        color: $text;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    """
+
+    def __init__(self, title: str = "Rollback Failed", error_message: str = ""):
+        super().__init__()
+        self.error_title = title
+        self.error_message = error_message
+
+    def compose(self) -> ComposeResult:
+        """Compose error modal widgets."""
+        with Vertical(classes="error-box"):
+            yield Heading(
+                self.error_title, level=1, classes="modal-title", id="error-title"
+            )
+            yield Label(
+                self.error_message, classes="error-text", id="lbl-error-message"
+            )
+            with Horizontal(classes="button-row"):
+                yield Button("Close", id="btn-close-error", variant="primary")
+
+    def on_mount(self) -> None:
+        """Focus close button and announce error message."""
+        self.query_one("#btn-close-error", Button).focus()
+        self.announce(f"Error dialog: {self.error_title}")
+
+    @on(Button.Pressed, "#btn-close-error")
+    def action_close(self) -> None:
+        """Dismiss error modal dialog."""
+        self.dismiss(None)
+
+
 class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
-    """Modal dialog for viewing session history records and exporting audit logs."""
+    """Modal dialog for viewing session history records, exporting audit logs, and rolling back sessions."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
@@ -5350,6 +5575,14 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         color: $text-muted;
         margin-bottom: 1;
     }
+    .details-box {
+        margin-top: 1;
+        margin-bottom: 1;
+        padding: 1;
+        background: $boost;
+        border: solid $accent;
+        color: $text;
+    }
     .button-row {
         margin-top: 1;
         height: 3;
@@ -5375,16 +5608,16 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         self.base_dir = base_dir
 
     def compose(self) -> ComposeResult:
-        """Compose history view and export modal widgets."""
+        """Compose history view, export, and rollback modal widgets."""
         with Vertical(classes="modal-box"):
             yield Heading(
-                "Session History & Audit Log Export [Ctrl+H]",
+                "Session History & Rollback Controls [Ctrl+H]",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
             )
             yield Label(
-                "Select a session row to export activity audit log:",
+                "Select a session row to export audit log or perform session rollback:",
                 classes="modal-subtitle",
             )
 
@@ -5393,7 +5626,13 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 sid = s.get("session_id", "unknown")
                 b_dir = s.get("base_dir") or "N/A"
                 status = s.get("status") or "completed"
-                options.append((f"{sid[:8]}... | {status} | {b_dir}", sid))
+                step_cnt = s.get("step_count") or s.get("file_count") or 0
+                options.append(
+                    (
+                        f"{sid[:8]}... | {status.upper()} | {step_cnt} file(s) | {b_dir}",
+                        sid,
+                    )
+                )
 
             if len(options) == 1 and not self.sessions:
                 options = [("No historical sessions found", "none")]
@@ -5404,10 +5643,19 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 id="select-history-session",
                 allow_blank=False,
             )
-            select_sess.tooltip = "Select historical session row for audit log export"
+            select_sess.tooltip = (
+                "Select historical session row for audit log export or session rollback"
+            )
             yield select_sess
 
-            yield Label("Output File Path:")
+            yield Label("Session Details:", classes="modal-subtitle")
+            yield Label(
+                "Select a session above to view details.",
+                id="lbl-session-details",
+                classes="details-box",
+            )
+
+            yield Label("Output File Path (Audit Log Export):")
             inp_path = Input(
                 value="./audit_log.csv",
                 placeholder="Enter export path (e.g. ./audit_log.csv)...",
@@ -5428,10 +5676,22 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             fmt_select.tooltip = "Select audit log output format"
             yield fmt_select
 
+            yield Label("", id="lbl-rollback-status")
+
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
-                btn_cancel.tooltip = "Cancel history export dialog"
+                btn_cancel.tooltip = "Cancel history dialog"
                 yield btn_cancel
+
+                btn_rollback = Button(
+                    "Rollback Session",
+                    id="btn-rollback-session",
+                    variant="warning",
+                    disabled=True,
+                )
+                btn_rollback.tooltip = "Revert file operations for selected session"
+                yield btn_rollback
+
                 btn_export = Button(
                     "Export Audit Log", id="btn-export", variant="primary"
                 )
@@ -5454,8 +5714,66 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     def on_mount(self) -> None:
         """Focus session select widget on mount and emit accessibility announcement."""
         self._update_layout(self.size.width)
-        self.query_one("#select-history-session", Select).focus()
-        self.announce("Opened session history export modal dialog.")
+        select_widget = self.query_one("#select-history-session", Select)
+        select_widget.focus()
+        self._update_selected_session_view(select_widget.value)
+        self.announce("Opened session history export and rollback modal dialog.")
+
+    @on(Select.Changed, "#select-history-session")
+    def on_session_changed(self, event: Select.Changed) -> None:
+        """Update session details label and button state when session selection changes."""
+        self._update_selected_session_view(event.value)
+
+    def _update_selected_session_view(self, session_val: Any) -> None:
+        """Update session details label and enable/disable rollback button based on selected session."""
+        try:
+            lbl_details = self.query_one("#lbl-session-details", Label)
+            btn_rollback = self.query_one("#btn-rollback-session", Button)
+        except Exception:
+            return
+
+        if not session_val or session_val in ("none", "all"):
+            lbl_details.update(
+                "Aggregate log across all historical sessions selected."
+                if session_val == "all"
+                else "No session selected."
+            )
+            btn_rollback.disabled = True
+            btn_rollback.tooltip = "Select an individual session to enable rollback"
+            return
+
+        target = None
+        for s in self.sessions:
+            if s.get("session_id") == session_val:
+                target = s
+                break
+
+        if not target:
+            lbl_details.update("Session information unavailable.")
+            btn_rollback.disabled = True
+            return
+
+        sid = target.get("session_id", "N/A")
+        status = target.get("status") or "completed"
+        b_dir = target.get("base_dir") or "N/A"
+        step_cnt = target.get("step_count") or target.get("file_count") or 0
+        ts = target.get("timestamp")
+        ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "N/A"
+
+        details_str = (
+            f"Session ID: {sid}\n"
+            f"Status: {status.upper()} | Operations/Files: {step_cnt}\n"
+            f"Timestamp: {ts_str}\n"
+            f"Base Directory: {b_dir}"
+        )
+        lbl_details.update(details_str)
+
+        if status.lower() == "rolled_back":
+            btn_rollback.disabled = True
+            btn_rollback.tooltip = "Session has already been rolled back"
+        else:
+            btn_rollback.disabled = False
+            btn_rollback.tooltip = "Revert file operations for selected session"
 
     @on(Button.Pressed, "#btn-export")
     def action_export_audit(self) -> None:
@@ -5479,6 +5797,150 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 "format": str(format_val),
             }
         )
+
+    @on(Button.Pressed, "#btn-rollback-session")
+    def action_rollback_session(self) -> None:
+        """Prompt confirmation and initiate asynchronous session rollback."""
+        session_val = self.query_one("#select-history-session", Select).value
+        if not session_val or session_val in ("none", "all"):
+            self.announce("Please select a specific session to rollback.")
+            return
+
+        target_sess = None
+        for s in self.sessions:
+            if s.get("session_id") == session_val:
+                target_sess = s
+                break
+
+        if not target_sess or str(target_sess.get("status")).lower() == "rolled_back":
+            self.announce("Selected session cannot be rolled back.")
+            return
+
+        def handle_confirm_result(result: Optional[Dict[str, Any]]) -> None:
+            if not result or not result.get("confirmed"):
+                return
+
+            sid = result["session_id"]
+            ignore_missing = result.get("ignore_missing", False)
+            db_path = target_sess.get("history_db_path")
+
+            self.query_one("#btn-rollback-session", Button).disabled = True
+            self.query_one("#btn-export", Button).disabled = True
+            self.query_one("#btn-cancel", Button).disabled = True
+
+            lbl_status = self.query_one("#lbl-rollback-status", Label)
+            lbl_status.update(f"⏳ Rolling back session {sid[:8]}... Please wait.")
+            self.announce(f"Executing rollback for session {sid[:8]}...")
+
+            self.run_rollback_worker(sid, ignore_missing, db_path)
+
+        self.app.push_screen(
+            RollbackConfirmModal(session_info=target_sess),
+            handle_confirm_result,
+        )
+
+    @work(thread=True)
+    def run_rollback_worker(
+        self, session_id: str, ignore_missing: bool, history_db_path: Optional[str]
+    ) -> None:
+        """Execute session rollback asynchronously in background worker thread."""
+        try:
+            from app.config import get_app_dir
+            from app.core.cache import CacheManager
+            from app.core.db import Database
+            from app.core.db_worker import DBWorker
+            from app.core.history import HistoryManager
+
+            target_db = history_db_path or str(get_app_dir() / "history.db")
+            db_worker = DBWorker()
+            db = Database(get_app_dir() / "autosorter.db", db_worker)
+            cache_mgr = CacheManager(str(get_app_dir() / "cache.db"), db_worker)
+            history_mgr = HistoryManager(db, cache_mgr, target_db)
+
+            restored_count = history_mgr.rollback(
+                session_id, ignore_missing=ignore_missing
+            )
+
+            app_obj = getattr(self, "app", None)
+            if app_obj and hasattr(app_obj, "call_from_thread"):
+                app_obj.call_from_thread(
+                    self._on_rollback_success, session_id, restored_count
+                )
+            else:
+                self._on_rollback_success(session_id, restored_count)
+        except Exception as err:
+            app_obj = getattr(self, "app", None)
+            if app_obj and hasattr(app_obj, "call_from_thread"):
+                app_obj.call_from_thread(self._on_rollback_failure, session_id, err)
+            else:
+                self._on_rollback_failure(session_id, err)
+
+    def _on_rollback_success(self, session_id: str, restored_count: int) -> None:
+        """Handle successful session rollback completion on main thread."""
+        from app.main import find_all_history_sessions
+
+        self.sessions = find_all_history_sessions()
+        self._refresh_session_options(selected_sid=session_id)
+
+        lbl_status = self.query_one("#lbl-rollback-status", Label)
+        lbl_status.update(
+            f"✅ Session successfully rolled back. ({restored_count} operations unwound)"
+        )
+
+        msg = f"Session {session_id[:8]}... successfully rolled back ({restored_count} file(s) restored)."
+        self.announce(msg)
+        try:
+            from app.ui.notifications import notify
+
+            notify(msg, type="info")
+        except Exception:
+            pass
+
+        self.query_one("#btn-cancel", Button).disabled = False
+        self.query_one("#btn-export", Button).disabled = False
+
+    def _on_rollback_failure(self, session_id: str, err: Exception) -> None:
+        """Handle session rollback failure on main thread."""
+        lbl_status = self.query_one("#lbl-rollback-status", Label)
+        lbl_status.update(f"❌ Rollback failed: {err}")
+
+        msg = f"Rollback failed for session {session_id[:8]}...: {err}"
+        self.announce(msg)
+        try:
+            from app.ui.notifications import notify
+
+            notify(msg, type="error")
+        except Exception:
+            pass
+
+        self.query_one("#btn-cancel", Button).disabled = False
+        self.query_one("#btn-export", Button).disabled = False
+        self.query_one("#btn-rollback-session", Button).disabled = False
+
+        self.app.push_screen(
+            RollbackErrorModal(title="Rollback Failed", error_message=str(err))
+        )
+
+    def _refresh_session_options(self, selected_sid: Optional[str] = None) -> None:
+        """Re-populate session select dropdown widget options after state update."""
+        select_sess = self.query_one("#select-history-session", Select)
+        options = [("All Sessions (Aggregate Audit Log)", "all")]
+        for s in self.sessions:
+            sid = s.get("session_id", "unknown")
+            b_dir = s.get("base_dir") or "N/A"
+            status = s.get("status") or "completed"
+            step_cnt = s.get("step_count") or s.get("file_count") or 0
+            options.append(
+                (f"{sid[:8]}... | {status.upper()} | {step_cnt} file(s) | {b_dir}", sid)
+            )
+
+        if len(options) == 1 and not self.sessions:
+            options = [("No historical sessions found", "none")]
+
+        select_sess.set_options(options)
+        if selected_sid:
+            select_sess.value = selected_sid
+        self._update_selected_session_view(select_sess.value)
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
@@ -6365,7 +6827,9 @@ class AutoSorterTUI(A11yMixin, App):
                 btn_exec.tooltip = "Execute file sorting plan [Ctrl+E]"
                 yield btn_exec
         alert_banner = Static("", id="alert-banner")
-        alert_banner.tooltip = "Validation alert banner displaying blocking errors or warnings"
+        alert_banner.tooltip = (
+            "Validation alert banner displaying blocking errors or warnings"
+        )
         yield alert_banner
         pb = ProgressBar(total=100, show_percentage=True, id="main-progress-bar")
         pb.tooltip = "Active operation background progress indicator"
@@ -6854,9 +7318,7 @@ class AutoSorterTUI(A11yMixin, App):
 
         def on_preview_closed(saved_val: Optional[int]) -> None:
             if saved_val is not None:
-                self.announce(
-                    f"Updated extraction density threshold to {saved_val}."
-                )
+                self.announce(f"Updated extraction density threshold to {saved_val}.")
 
         self.push_screen(
             ExtractionPreviewModal(pdf_path, self.settings), on_preview_closed
@@ -7104,7 +7566,9 @@ class AutoSorterTUI(A11yMixin, App):
 
                 export_res = history_mgr.export_audit_log(
                     output_path=output_path,
-                    session_id=session_id if session_id not in ("none", "all") else None,
+                    session_id=session_id
+                    if session_id not in ("none", "all")
+                    else None,
                     format=fmt,
                 )
                 cnt = export_res.get("count", 0)
@@ -7141,7 +7605,9 @@ class AutoSorterTUI(A11yMixin, App):
             return
 
         if getattr(self, "has_critical_errors", False):
-            self.announce("Cannot execute plan: Critical validation errors exist (see Alert Banner).")
+            self.announce(
+                "Cannot execute plan: Critical validation errors exist (see Alert Banner)."
+            )
             return
 
         base_dir = self.app_session.base_dir if self.app_session else "."
@@ -7260,7 +7726,9 @@ class AutoSorterTUI(A11yMixin, App):
                 if has_critical:
                     btn_exec.tooltip = "Execution disabled: Plan contains blocking critical validation errors"
                 else:
-                    btn_exec.tooltip = "Execution disabled: No files selected to execute"
+                    btn_exec.tooltip = (
+                        "Execution disabled: No files selected to execute"
+                    )
             else:
                 btn_exec.disabled = False
                 btn_exec.tooltip = "Execute file sorting plan [Ctrl+E]"
@@ -7282,11 +7750,17 @@ class AutoSorterTUI(A11yMixin, App):
                         dst_p = c.get("path", "")
                         if c.get("sources"):
                             for s_p in c["sources"]:
-                                msgs.append(f"  • Source: {s_p} -> Destination: {dst_p}")
+                                msgs.append(
+                                    f"  • Source: {s_p} -> Destination: {dst_p}"
+                                )
                         elif c.get("source"):
-                            msgs.append(f"  • Source: {c['source']} -> Destination: {dst_p}")
+                            msgs.append(
+                                f"  • Source: {c['source']} -> Destination: {dst_p}"
+                            )
                         else:
-                            msgs.append(f"  • Destination: {dst_p} ({c.get('message', 'Collision')})")
+                            msgs.append(
+                                f"  • Destination: {dst_p} ({c.get('message', 'Collision')})"
+                            )
                 if circular:
                     msgs.append("⛔ CIRCULAR RENAMING DEPENDENCY DETECTED:")
                     for r in circular:
@@ -7350,7 +7824,13 @@ class AutoSorterTUI(A11yMixin, App):
                 elif norm_key and norm_key in self.critical_error_paths:
                     is_crit = True
                 elif any(
-                    p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                    p
+                    and (
+                        p == norm_fp
+                        or p == norm_key
+                        or p.endswith("/" + norm_key)
+                        or p.endswith("\\" + norm_key)
+                    )
                     for p in self.critical_error_paths
                 ):
                     is_crit = True
@@ -7361,7 +7841,13 @@ class AutoSorterTUI(A11yMixin, App):
                     elif norm_key and norm_key in self.warning_paths:
                         is_warn = True
                     elif any(
-                        p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                        p
+                        and (
+                            p == norm_fp
+                            or p == norm_key
+                            or p.endswith("/" + norm_key)
+                            or p.endswith("\\" + norm_key)
+                        )
                         for p in self.warning_paths
                     ):
                         is_warn = True
@@ -7650,9 +8136,7 @@ class AutoSorterTUI(A11yMixin, App):
                     if not is_same:
                         is_collision = True
 
-                pol = str(
-                    getattr(self.settings, "CONFLICT_POLICY", "rename")
-                ).lower()
+                pol = str(getattr(self.settings, "CONFLICT_POLICY", "rename")).lower()
                 if is_collision:
                     label_parts.append(f"[COLLISION: {pol.upper()}]")
 
@@ -7667,7 +8151,13 @@ class AutoSorterTUI(A11yMixin, App):
                     norm_fp in self.critical_error_paths
                     or norm_key in self.critical_error_paths
                     or any(
-                        p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                        p
+                        and (
+                            p == norm_fp
+                            or p == norm_key
+                            or p.endswith("/" + norm_key)
+                            or p.endswith("\\" + norm_key)
+                        )
                         for p in self.critical_error_paths
                     )
                 )
@@ -7675,7 +8165,13 @@ class AutoSorterTUI(A11yMixin, App):
                     norm_fp in self.warning_paths
                     or norm_key in self.warning_paths
                     or any(
-                        p and (p == norm_fp or p == norm_key or p.endswith("/" + norm_key) or p.endswith("\\" + norm_key))
+                        p
+                        and (
+                            p == norm_fp
+                            or p == norm_key
+                            or p.endswith("/" + norm_key)
+                            or p.endswith("\\" + norm_key)
+                        )
                         for p in self.warning_paths
                     )
                 )

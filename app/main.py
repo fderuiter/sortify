@@ -587,12 +587,34 @@ def find_all_history_sessions() -> list:
                     sid, ts, base_dir, status = row
                     if sid not in seen_sids:
                         seen_sids.add(sid)
+                        step_count = 0
+                        try:
+                            c = conn.execute(
+                                "SELECT COUNT(*) FROM step_ledger WHERE session_id = ?",
+                                (sid,),
+                            )
+                            step_count = c.fetchone()[0]
+                        except Exception:
+                            pass
+
+                        file_count = 0
+                        try:
+                            c = conn.execute(
+                                "SELECT COUNT(*) FROM snapshot_files WHERE session_id = ?",
+                                (sid,),
+                            )
+                            file_count = c.fetchone()[0]
+                        except Exception:
+                            pass
+
                         all_sessions.append(
                             {
                                 "session_id": sid,
                                 "timestamp": ts,
                                 "base_dir": base_dir,
                                 "status": status,
+                                "step_count": step_count,
+                                "file_count": file_count,
                                 "history_db_path": str(db_path),
                                 "session_dir": str(db_path.parent),
                             }

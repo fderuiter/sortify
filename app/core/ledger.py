@@ -40,9 +40,7 @@ def sanitize_audit_metadata(metadata: Any) -> Dict[str, Any]:
     if not isinstance(metadata, dict):
         if isinstance(metadata, str):
             return {
-                "details": sanitize_secret_patterns(
-                    metadata, replacement="[REDACTED]"
-                )
+                "details": sanitize_secret_patterns(metadata, replacement="[REDACTED]")
             }
         return {}
 
@@ -65,17 +63,13 @@ def sanitize_audit_metadata(metadata: Any) -> Dict[str, Any]:
                     sanitized_list.append(sanitize_audit_metadata(item))
                 elif isinstance(item, str):
                     sanitized_list.append(
-                        sanitize_secret_patterns(
-                            item, replacement="[REDACTED]"
-                        )
+                        sanitize_secret_patterns(item, replacement="[REDACTED]")
                     )
                 else:
                     sanitized_list.append(item)
             sanitized[k_str] = sanitized_list
         elif isinstance(v, str):
-            sanitized[k_str] = sanitize_secret_patterns(
-                v, replacement="[REDACTED]"
-            )
+            sanitized[k_str] = sanitize_secret_patterns(v, replacement="[REDACTED]")
         else:
             sanitized[k_str] = v
     return sanitized
@@ -460,4 +454,3 @@ class TransactionLedger:
                     }
                 )
             return results
-

@@ -39,7 +39,9 @@ def test_rule_import_modal_parsing_and_merging():
         ]
     }
 
-    with tempfile.NamedTemporaryFile(suffix=".hazelrules", mode="wb", delete=False) as f:
+    with tempfile.NamedTemporaryFile(
+        suffix=".hazelrules", mode="wb", delete=False
+    ) as f:
         plistlib.dump(hazel_data, f)
         temp_path = f.name
 
@@ -50,6 +52,7 @@ def test_rule_import_modal_parsing_and_merging():
         try:
             # Simulate user setting input path and triggering parse
             from app.core.rule_importers import HazelRuleImporter
+
             importer = HazelRuleImporter()
             res = importer.parse_file(temp_path)
             modal.current_result = res

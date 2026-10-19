@@ -186,7 +186,7 @@ jobs:
         SMOKE_TEST: "0"
       shell: bash
       run: |
-        if ! uv run pytest -m "not slow" -n auto tests/; then
+        if ! uv run pytest -m "not slow" -n auto --cov=app --cov-report=xml --cov-report=html --cov-report=term tests/; then
           if [ -f pytest_failures.txt ]; then
             echo "=== PYTEST FAILURES ==="
             cat pytest_failures.txt

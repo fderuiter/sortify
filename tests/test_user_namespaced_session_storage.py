@@ -63,7 +63,9 @@ def test_get_session_base_dir_creates_user_namespaced_directory(monkeypatch, tmp
     monkeypatch.delenv("AUTOSORTER_APP_DIR", raising=False)
     monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
 
-    with mock.patch("app.core.path_utils.get_sanitized_username", return_value="test_user"):
+    with mock.patch(
+        "app.core.path_utils.get_sanitized_username", return_value="test_user"
+    ):
         base_dir = get_session_base_dir()
         assert base_dir == tmp_path / "autosorter_sessions_test_user"
         assert base_dir.exists()
@@ -157,7 +159,9 @@ async def test_session_recovery_scans_only_active_user_root(monkeypatch, tmp_pat
 
     try:
         # Run session recovery scan as User B
-        with mock.patch("app.core.path_utils.get_sanitized_username", return_value="userb"):
+        with mock.patch(
+            "app.core.path_utils.get_sanitized_username", return_value="userb"
+        ):
             abandoned = await scan_abandoned_sessions_async()
 
             # Should find ONLY User B's abandoned session, ignoring User A's

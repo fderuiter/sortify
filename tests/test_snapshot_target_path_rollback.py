@@ -173,7 +173,9 @@ def test_ai_categorization_retrieves_restored_exemplars(test_snapshot_env):
     with open(file_abs, "w") as f:
         f.write("Invoice for ACME Corp consulting services")
 
-    db.upsert_document(base_dir, file_rel, "hash_ai", "Invoice for ACME Corp consulting services")
+    db.upsert_document(
+        base_dir, file_rel, "hash_ai", "Invoice for ACME Corp consulting services"
+    )
     db.set_user_verified_target_path(base_dir, file_rel, "Invoices/2026")
 
     # Snapshot 1: Verified target is "Invoices/2026"
@@ -187,7 +189,9 @@ def test_ai_categorization_retrieves_restored_exemplars(test_snapshot_env):
     db.set_user_verified_target_path(base_dir, file_rel, "Trash")
 
     # Verify pre_fetch_historical_corpus sees "Trash" before rollback
-    corpus_before = pre_fetch_historical_corpus(db, base_dir, filenames=[file_rel], documents=[])
+    corpus_before = pre_fetch_historical_corpus(
+        db, base_dir, filenames=[file_rel], documents=[]
+    )
     examples_before = corpus_before.get("examples", [])
     assert len(examples_before) == 1
     assert examples_before[0]["user_verified_target_path"] == "Trash"
@@ -196,7 +200,9 @@ def test_ai_categorization_retrieves_restored_exemplars(test_snapshot_env):
     history_manager.rollback(snapshot_1)
 
     # Verify pre_fetch_historical_corpus retrieves restored exemplar "Invoices/2026" immediately
-    corpus_after = pre_fetch_historical_corpus(db, base_dir, filenames=[file_rel], documents=[])
+    corpus_after = pre_fetch_historical_corpus(
+        db, base_dir, filenames=[file_rel], documents=[]
+    )
     examples_after = corpus_after.get("examples", [])
     assert len(examples_after) == 1
     assert examples_after[0]["user_verified_target_path"] == "Invoices/2026"
@@ -235,4 +241,3 @@ def test_snapshot_rollback_with_windows_backslash_paths(test_snapshot_env):
     # Verify target path restored
     assert db.get_user_verified_target_path(base_dir, file_rel_win) == "Target_Folder"
     assert db.get_user_verified_target_path(base_dir, file_rel_norm) == "Target_Folder"
-
