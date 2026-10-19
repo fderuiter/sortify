@@ -4,6 +4,7 @@ Provides ultra-fast, local, deterministic document classification, sensitivity r
 and archival prioritization within a sub-150 ms SLA to bypass heavy generative AI processing.
 """
 
+import contextlib
 import json
 import logging
 import os
@@ -73,7 +74,10 @@ def _extract_pdf_snippet(file_path: str) -> str:
                     text = reader.pages[0].extract_text() or ""
                     return text[:4096].lower()
     except Exception as e:
-        logger.debug(f"Fast PDF snippet extraction failed for {file_path}: {e}")
+        logger.debug(
+            f"Fast PDF snippet extraction failed for {file_path}: {e}",
+            exc_info=True,
+        )
     return ""
 
 
@@ -96,7 +100,10 @@ def _extract_docx_snippet(file_path: str) -> str:
                     break
             return " ".join(text_parts)[:4096].lower()
     except Exception as e:
-        logger.debug(f"Fast DOCX snippet extraction failed for {file_path}: {e}")
+        logger.debug(
+            f"Fast DOCX snippet extraction failed for {file_path}: {e}",
+            exc_info=True,
+        )
     return ""
 
 
@@ -126,7 +133,10 @@ def _extract_xlsx_snippet(file_path: str) -> str:
             finally:
                 wb.close()
     except Exception as e:
-        logger.debug(f"Fast XLSX snippet extraction failed for {file_path}: {e}")
+        logger.debug(
+            f"Fast XLSX snippet extraction failed for {file_path}: {e}",
+            exc_info=True,
+        )
     return ""
 
 
@@ -156,7 +166,10 @@ def _extract_xls_snippet(file_path: str) -> str:
                         break
                 return " ".join(text_parts)[:4096].lower()
     except Exception as e:
-        logger.debug(f"Fast XLS snippet extraction failed for {file_path}: {e}")
+        logger.debug(
+            f"Fast XLS snippet extraction failed for {file_path}: {e}",
+            exc_info=True,
+        )
     return ""
 
 
@@ -180,7 +193,10 @@ def _extract_pptx_snippet(file_path: str) -> str:
                             break
             return " ".join(text_parts)[:4096].lower()
     except Exception as e:
-        logger.debug(f"Fast PPTX snippet extraction failed for {file_path}: {e}")
+        logger.debug(
+            f"Fast PPTX snippet extraction failed for {file_path}: {e}",
+            exc_info=True,
+        )
     return ""
 
 
@@ -401,7 +417,8 @@ class JevClassifierEngine:
                 )
         except Exception as e:
             logger.warning(
-                f"Failed to initialize jev_classification_cache DB table: {e}"
+                f"Failed to initialize jev_classification_cache DB table: {e}",
+                exc_info=True,
             )
 
     def _get_file_stat_key(self, file_path: str) -> Optional[Tuple[str, float, int]]:
@@ -416,7 +433,7 @@ class JevClassifierEngine:
             abs_path = os.path.abspath(file_path).replace("\\", "/")
             stat = os.stat(file_path)
             return (abs_path, float(stat.st_mtime), int(stat.st_size))
-        except Exception as e:
+        except (OSError, ValueError) as e:
             logger.debug(f"Could not calculate stat key for {file_path}: {e}")
             return None
 
@@ -438,7 +455,7 @@ class JevClassifierEngine:
                 else:
                     _write_delete_all()
         except Exception as e:
-            logger.warning(f"Failed to clear classification cache: {e}")
+            logger.warning(f"Failed to clear classification cache: {e}", exc_info=True)
 
     def invalidate(self, file_path: str) -> None:
         """Invalidate both in-memory and persistent database cache entries for a file."""
@@ -469,7 +486,9 @@ class JevClassifierEngine:
                 else:
                     _write_delete()
         except Exception as e:
-            logger.warning(f"Failed to invalidate cache for {file_path}: {e}")
+            logger.warning(
+                f"Failed to invalidate cache for {file_path}: {e}", exc_info=True
+            )
 
     def _get_from_db(
         self, stat_key: Tuple[str, float, int]
@@ -509,7 +528,7 @@ class JevClassifierEngine:
                 if db_mtime == mtime and db_size == size:
                     try:
                         metadata = json.loads(meta_json) if meta_json else {}
-                    except Exception:
+                    except (ValueError, TypeError):
                         metadata = {}
                     return JevClassificationResult(
                         category=category,
@@ -524,7 +543,9 @@ class JevClassifierEngine:
                 else:
                     self.invalidate(abs_path)
         except Exception as e:
-            logger.warning(f"Database cache query failed for {abs_path}: {e}")
+            logger.warning(
+                f"Database cache query failed for {abs_path}: {e}", exc_info=True
+            )
         return None
 
     def _save_to_db(
@@ -584,7 +605,8 @@ class JevClassifierEngine:
                 _write_upsert()
         except Exception as e:
             logger.warning(
-                f"Failed to persist classification result for {abs_path}: {e}"
+                f"Failed to persist classification result for {abs_path}: {e}",
+                exc_info=True,
             )
 
     def classify(
@@ -628,7 +650,8 @@ class JevClassifierEngine:
                 snippet = str(text_content)[:4096].lower()
             elif os.path.exists(file_path) and os.path.isfile(file_path):
                 # Read at most 4KB snippet if readable file and size < 10MB
-                try:
+                # Snippet is best-effort; an unreadable file is classified by name only.
+                with contextlib.suppress(OSError):
                     if os.path.getsize(file_path) <= 10 * 1024 * 1024:
                         if ext in {
                             ".txt",
@@ -658,8 +681,6 @@ class JevClassifierEngine:
                             snippet = _extract_xls_snippet(file_path)
                         elif ext == ".pptx":
                             snippet = _extract_pptx_snippet(file_path)
-                except Exception:
-                    pass
 
             text_to_check = f"{fn_lower} {snippet}"
 
@@ -726,9 +747,11 @@ class JevClassifierEngine:
             try:
                 path_str = str(file_path)
             except Exception:
+                logger.debug("file_path could not be converted to str", exc_info=True)
                 path_str = "<unprintable file_path>"
             logger.warning(
-                f"Jev classification exception for {path_str}: {e}. Returning unclassified fallback."
+                f"Jev classification exception for {path_str}: {e}. Returning unclassified fallback.",
+                exc_info=True,
             )
             return JevClassificationResult(
                 category="Unclassified",

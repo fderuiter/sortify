@@ -36,7 +36,9 @@ def _get_schema_validator():
                             schema = json.load(sf)
                         _SCHEMA_VALIDATOR = jsonschema.Draft202012Validator(schema)
                     except Exception as e:
-                        logging.error(f"Failed to load config schema: {e}")
+                        logging.error(
+                            f"Failed to load config schema: {e}", exc_info=True
+                        )
     return _SCHEMA_VALIDATOR
 
 
@@ -536,7 +538,8 @@ class AppSettings:
                             data["PROXY"] = decrypted_val
                         except Exception as e:
                             logging.warning(
-                                f"Failed to decrypt proxy settings, replacing with placeholder: {e}"
+                                f"Failed to decrypt proxy settings, replacing with placeholder: {e}",
+                                exc_info=True,
                             )
                             data["PROXY"] = "<DECRYPTION_FAILED>"
                     else:
@@ -592,7 +595,9 @@ class AppSettings:
                 self._notify_observers("PROXY", getattr(self._settings_model, "PROXY"))
 
         except Exception as e:
-            logging.warning(f"Failed to load settings, using defaults: {e}")
+            logging.warning(
+                f"Failed to load settings, using defaults: {e}", exc_info=True
+            )
             # If JSON is corrupted, we don't want to overwrite either
             self._has_validation_errors = True
             self._validation_errors.append(
@@ -663,7 +668,8 @@ class AppSettings:
                         )
                     except Exception as e:
                         logging.error(
-                            f"Failed to encrypt proxy string during save: {e}"
+                            f"Failed to encrypt proxy string during save: {e}",
+                            exc_info=True,
                         )
 
             parent_dir = os.path.dirname(self._filepath)
@@ -673,7 +679,7 @@ class AppSettings:
             with open(self._filepath, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4)
         except Exception as e:
-            logging.error(f"Failed to save settings: {e}")
+            logging.error(f"Failed to save settings: {e}", exc_info=True)
 
     def revalidate(self) -> bool:
         """Re-check all current settings values against JSON schema and Pydantic validation.
@@ -697,6 +703,8 @@ class AppSettings:
                     )
                     errors.append({"field": path, "message": error.message})
             except Exception as e:
+                # Fail closed: an unexpected validator crash counts as an error.
+                logging.warning("JSON schema validation raised", exc_info=True)
                 errors.append({"field": "schema", "message": str(e)})
 
         # Validate against Settings Pydantic model
@@ -758,7 +766,8 @@ class AppSettings:
                 SharedModelRegistry.get_instance().unload_all_models()
             except Exception as e:
                 logging.debug(
-                    f"Failed to unload in-memory models on consent change: {e}"
+                    f"Failed to unload in-memory models on consent change: {e}",
+                    exc_info=True,
                 )
             try:
                 from app.core.db import Database
@@ -766,7 +775,8 @@ class AppSettings:
                 Database.scrub_all_vectors()
             except Exception as e:
                 logging.debug(
-                    f"Failed to scrub database vectors on consent change: {e}"
+                    f"Failed to scrub database vectors on consent change: {e}",
+                    exc_info=True,
                 )
 
         callbacks = []
@@ -810,6 +820,10 @@ class AppSettings:
             else:
                 callback(key, value)
         except Exception:
+            logging.debug(
+                f"Observer callback for '{key}' failed; retrying other arities",
+                exc_info=True,
+            )
             try:
                 callback(value)
             except TypeError:
@@ -865,14 +879,20 @@ def _on_ai_consent_changed_core(key: str, value: Any) -> None:
 
             SharedModelRegistry.get_instance().unload_all_models()
         except Exception as e:
-            logging.debug(f"Failed to unload in-memory models on consent change: {e}")
+            logging.debug(
+                f"Failed to unload in-memory models on consent change: {e}",
+                exc_info=True,
+            )
 
         try:
             from app.core.db import Database
 
             Database.scrub_all_vectors()
         except Exception as e:
-            logging.debug(f"Failed to scrub database vectors on consent change: {e}")
+            logging.debug(
+                f"Failed to scrub database vectors on consent change: {e}",
+                exc_info=True,
+            )
 
 
 AppSettings.add_observer("AI_CONSENT_GRANTED", _on_ai_consent_changed_core)

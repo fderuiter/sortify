@@ -81,7 +81,9 @@ class ImportResult:
             try:
                 settings._save()
             except Exception as e:
-                logger.debug(f"Save trigger post rule import failed: {e}")
+                logger.warning(
+                    f"Save trigger post rule import failed: {e}", exc_info=True
+                )
 
         return new_keywords, new_policies
 
@@ -158,7 +160,7 @@ class HazelRuleImporter(BaseRuleImporter):
             with open(p, "rb") as f:
                 header = f.read(100)
                 return b"plist" in header or b"bplist" in header
-        except Exception:
+        except OSError:
             return False
 
     def parse_file(self, file_path: Union[str, Path]) -> ImportResult:
@@ -175,7 +177,9 @@ class HazelRuleImporter(BaseRuleImporter):
             with open(p, "rb") as f:
                 plist_data = plistlib.load(f)
         except Exception as exc:
-            logger.warning(f"Failed to parse plist file '{file_path}': {exc}")
+            logger.warning(
+                f"Failed to parse plist file '{file_path}': {exc}", exc_info=True
+            )
             result.warnings.append(
                 f"Failed to parse Hazel plist file '{p.name}': {exc}"
             )
@@ -389,7 +393,7 @@ class DropItRuleImporter(BaseRuleImporter):
         try:
             with open(p, "r", encoding="utf-8-sig", errors="replace") as f:
                 content = f.read()
-        except Exception as exc:
+        except OSError as exc:
             logger.warning(f"Failed to read file '{file_path}': {exc}")
             result.warnings.append(f"Failed to read file '{p.name}': {exc}")
             return result
@@ -411,7 +415,7 @@ class DropItRuleImporter(BaseRuleImporter):
         result.source_format = "DropIt XML Profile"
         try:
             root = ET.fromstring(xml_content)
-        except Exception as exc:
+        except (ET.ParseError, ValueError) as exc:
             logger.warning(f"Failed to parse XML in '{file_name}': {exc}")
             result.warnings.append(
                 f"Failed to parse XML in DropIt profile '{file_name}': {exc}"
@@ -481,7 +485,7 @@ class DropItRuleImporter(BaseRuleImporter):
         result.source_format = "DropIt JSON Profile"
         try:
             data = json.loads(json_content)
-        except Exception as exc:
+        except ValueError as exc:
             logger.warning(f"Failed to parse JSON in '{file_name}': {exc}")
             result.warnings.append(
                 f"Failed to parse JSON in DropIt profile '{file_name}': {exc}"

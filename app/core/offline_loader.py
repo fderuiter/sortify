@@ -5,6 +5,7 @@ sandboxed loading, graceful failure exceptions, and Florence-2 visual
 processing with coordinate/text sanitization.
 """
 
+import contextlib
 import inspect
 import logging
 import os
@@ -111,14 +112,13 @@ class OfflineModelLoader:
         # The working directory is deliberately not searched: it is often a
         # folder of untrusted files (Downloads) that this app is sorting.
 
-        try:
+        # An unresolvable base path (e.g. deleted cwd) just drops these candidates.
+        with contextlib.suppress(OSError):
             base_dir = get_base_path()
             candidates.append(os.path.join(base_dir, "smart-autosorter-models.zip"))
             candidates.append(
                 os.path.join(base_dir, "dist", "smart-autosorter-models.zip")
             )
-        except Exception:
-            pass
 
         candidates.append(
             os.path.expanduser("~/.smart-autosorter/smart-autosorter-models.zip")
@@ -344,7 +344,7 @@ class OfflineModelLoader:
             workspace_base_path = os.path.join(base_dir, "offline_bundle", folder_name)
             if workspace_base_path not in searched_paths:
                 searched_paths.append(workspace_base_path)
-        except Exception as e:
+        except OSError as e:
             logger.debug(f"Could not resolve base path for model '{model_id}': {e}")
 
         # Precedence 4: User home directory fallback
@@ -374,7 +374,7 @@ class OfflineModelLoader:
                     else:
                         try:
                             present = bool(os.listdir(path))
-                        except Exception as e:
+                        except OSError as e:
                             logger.debug(f"Could not list directory '{path}': {e}")
                             present = False
                     if present and cls._verify_candidate(model_id, path):
@@ -407,7 +407,7 @@ class OfflineModelLoader:
                     if found_path:
                         return found_path
             except Exception as e:
-                logger.error(f"Sidecar model hydration failed: {e}")
+                logger.error(f"Sidecar model hydration failed: {e}", exc_info=True)
 
         # Deduplicate searched_paths for exception message
         unique_searched = []
@@ -494,14 +494,20 @@ class OfflineModelLoader:
                         file_hash = resilient_file_hash(cand_p)
                         break
                     except Exception:
-                        pass
+                        logger.warning(
+                            f"Could not hash model file '{cand_p}' for advisory check",
+                            exc_info=True,
+                        )
         elif os.path.isfile(model_path):
             try:
                 from app.core.resilient_file_ops import resilient_file_hash
 
                 file_hash = resilient_file_hash(model_path)
             except Exception:
-                pass
+                logger.warning(
+                    f"Could not hash model file '{model_path}' for advisory check",
+                    exc_info=True,
+                )
 
         try:
             advisory_client.check_advisory(
@@ -603,12 +609,17 @@ class Florence2VisualProcessor:
                 limit = SharedModelRegistry.get_instance().get_thread_limit()
                 torch.set_num_threads(limit)
             except Exception:
-                pass
+                logger.debug("Could not apply torch thread limit", exc_info=True)
 
             kwargs["trust_remote_code"] = False
             try:
                 return Florence2ForConditionalGeneration.from_pretrained(path, **kwargs)
             except Exception:
+                logger.debug(
+                    "Florence2ForConditionalGeneration load failed; "
+                    "falling back to AutoModelForCausalLM",
+                    exc_info=True,
+                )
                 return AutoModelForCausalLM.from_pretrained(path, **kwargs)
 
         def load_florence_processor(path: str, **kwargs: Any) -> Any:
@@ -618,6 +629,10 @@ class Florence2VisualProcessor:
             try:
                 return Florence2Processor.from_pretrained(path, **kwargs)
             except Exception:
+                logger.debug(
+                    "Florence2Processor load failed; falling back to AutoProcessor",
+                    exc_info=True,
+                )
                 return AutoProcessor.from_pretrained(path, **kwargs)
 
         try:
@@ -649,7 +664,7 @@ class Florence2VisualProcessor:
                 if hasattr(torch.mps, "empty_cache"):
                     torch.mps.empty_cache()
         except Exception:
-            pass
+            logger.debug("Could not release torch accelerator cache", exc_info=True)
 
     def process_image(
         self,

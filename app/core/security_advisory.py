@@ -86,7 +86,9 @@ class SecurityAdvisoryClient:
 
                 self._settings = AppSettings()
             except Exception:
-                pass
+                logger.warning(
+                    "Could not load AppSettings; using advisory defaults", exc_info=True
+                )
         if self._settings:
             return getattr(
                 self._settings, "SECURITY_ADVISORY_ENDPOINT", DEFAULT_ADVISORY_ENDPOINT
@@ -104,7 +106,9 @@ class SecurityAdvisoryClient:
 
                 self._settings = AppSettings()
             except Exception:
-                pass
+                logger.warning(
+                    "Could not load AppSettings; using advisory defaults", exc_info=True
+                )
         if self._settings:
             return float(
                 getattr(
@@ -124,7 +128,9 @@ class SecurityAdvisoryClient:
 
                 self._settings = AppSettings()
             except Exception:
-                pass
+                logger.warning(
+                    "Could not load AppSettings; using advisory defaults", exc_info=True
+                )
         if self._settings:
             pol = getattr(
                 self._settings, "SECURITY_ADVISORY_FALLBACK_POLICY", "permissive"
@@ -256,9 +262,6 @@ class SecurityAdvisoryClient:
         norm_repo = self.extract_repo_id(repo_id) if repo_id else None
         norm_hash = file_hash.strip().lower() if file_hash else None
         eff_timeout = min(float(timeout), MAX_API_TIMEOUT)
-        eff_fallback = (
-            fallback_policy.strip().lower() if fallback_policy else self.fallback_policy
-        )
 
         # 1. Fast In-Memory Cache Lookup (< 50ms)
         cached_result = self.get_cached_advisory(norm_repo, norm_hash)
@@ -271,6 +274,12 @@ class SecurityAdvisoryClient:
                 )
                 raise ModelVerificationError(details_msg)
             return cached_result
+
+        # Resolved only on a cache miss: the default policy loads AppSettings
+        # from disk, which a cached lookup has no use for.
+        eff_fallback = (
+            fallback_policy.strip().lower() if fallback_policy else self.fallback_policy
+        )
 
         # 2. Remote Security Advisory API Query
         # Bypassing thread-local socket sandboxing safely during advisory lookup
@@ -306,6 +315,10 @@ class SecurityAdvisoryClient:
 
                 opener = DownloadManager.get_instance().get_opener()
             except Exception:
+                logger.warning(
+                    "DownloadManager opener unavailable; using default urllib opener",
+                    exc_info=True,
+                )
                 opener = urllib.request.build_opener()
 
             with opener.open(req, timeout=eff_timeout) as resp:

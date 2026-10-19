@@ -123,7 +123,7 @@ class ForensicScanner:
         if os.path.exists(archive_path):
             try:
                 archive_size = os.path.getsize(archive_path)
-            except Exception:
+            except OSError:
                 archive_size = 0
 
         file_count = 0
@@ -243,12 +243,14 @@ class ForensicScanner:
                         os.remove(p)
                     elif os.path.isdir(p):
                         os.rmdir(p)
-                except Exception as cleanup_err:
+                except OSError as cleanup_err:
                     logger.debug(f"Cleanup error for {p}: {cleanup_err}")
             raise ase
 
         except Exception as e:
-            logger.warning(f"Error unpacking archive {archive_path}: {e}")
+            logger.warning(
+                f"Error unpacking archive {archive_path}: {e}", exc_info=True
+            )
 
         return extracted_files
 
@@ -288,7 +290,7 @@ class ForensicScanner:
                                 af.write(payload)
                             extracted_attachments.append(att_path)
         except Exception as e:
-            logger.warning(f"Failed to parse email {eml_path}: {e}")
+            logger.warning(f"Failed to parse email {eml_path}: {e}", exc_info=True)
 
         return body_text, extracted_attachments
 
@@ -417,7 +419,10 @@ class ForensicScanner:
             file_size = os.path.getsize(actual_file_path)
             sha256 = self.compute_sha256(actual_file_path)
         except Exception as e:
-            logger.warning(f"Failed to read file metadata for {actual_file_path}: {e}")
+            logger.warning(
+                f"Failed to read file metadata for {actual_file_path}: {e}",
+                exc_info=True,
+            )
             file_size = 0
             sha256 = "ERROR"
 
@@ -440,7 +445,9 @@ class ForensicScanner:
             try:
                 text = str(extract_file_text(actual_file_path) or "")
             except Exception as e:
-                logger.warning(f"Extraction error for {actual_file_path}: {e}")
+                logger.warning(
+                    f"Extraction error for {actual_file_path}: {e}", exc_info=True
+                )
                 text = ""
             if sha256 != "ERROR":
                 self.seen_texts[sha256] = text
@@ -466,4 +473,7 @@ class ForensicScanner:
             try:
                 resilient_rmtree(self.staging_dir)
             except Exception as e:
-                logger.warning(f"Error cleaning staging dir {self.staging_dir}: {e}")
+                logger.warning(
+                    f"Error cleaning staging dir {self.staging_dir}: {e}",
+                    exc_info=True,
+                )
