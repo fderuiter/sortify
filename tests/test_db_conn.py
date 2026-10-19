@@ -132,3 +132,95 @@ def test_concurrent_first_open_of_one_path_is_serialized(tmp_path):
 
     assert results == [1] * 8
     assert peak == 1
+
+
+def _fail_first_connect_with_disk_io_error(db_conn, real_connect, db_file):
+    """Make the first connect to db_file raise "disk I/O error"; others work."""
+    target = str(db_file.resolve())
+    failed = False
+
+    def connect(path, *args, **kwargs):
+        nonlocal failed
+        if not failed and str(path) == target:
+            failed = True
+            raise db_conn.sqlite3.OperationalError("disk I/O error")
+        return real_connect(path, *args, **kwargs)
+
+    return connect
+
+
+def _make_encrypted_db(tmp_path, key: str):
+    from app.core.crypto import SessionCrypto
+
+    db_file = tmp_path / "locked.db"
+    key_file = tmp_path / "locked.key"
+    key_file.write_text(key, encoding="utf-8")
+    crypto = SessionCrypto(key_file, db_file)
+    with patch("app.core.path_utils.resolve_db_crypto", return_value=crypto):
+        clear_connection_cache(only_current_and_inactive=False)
+        conn = get_db_connection(str(db_file))
+        conn.execute("CREATE TABLE t (id INT)")
+        conn.commit()
+        clear_connection_cache(only_current_and_inactive=False)
+    return db_file
+
+
+def test_disk_io_error_with_the_right_key_is_not_reported_as_decryption(tmp_path):
+    """A disk I/O error on a database the key still opens is a lock, not a bad key.
+
+    The open retries against a private copy; when that copy decrypts, the
+    original I/O error is raised unchanged so callers can retry.
+    """
+    import pytest
+
+    from app.core import db_conn
+    from app.core.crypto import SessionCrypto
+
+    if not db_conn.HAS_SQLCIPHER:
+        pytest.skip("needs SQLCipher")
+    db_file = _make_encrypted_db(tmp_path, "right_key_123")
+    crypto = SessionCrypto(tmp_path / "locked.key", db_file)
+
+    with (
+        patch("app.core.path_utils.resolve_db_crypto", return_value=crypto),
+        patch.object(
+            db_conn.sqlite3,
+            "connect",
+            side_effect=_fail_first_connect_with_disk_io_error(
+                db_conn, db_conn.sqlite3.connect, db_file
+            ),
+        ),
+    ):
+        clear_connection_cache(only_current_and_inactive=False)
+        with pytest.raises(db_conn.sqlite3.OperationalError, match="disk I/O error"):
+            get_db_connection(str(db_file))
+        clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_disk_io_error_with_the_wrong_key_is_reported_as_decryption(tmp_path):
+    """A disk I/O error on a database the key cannot open is a decryption failure."""
+    import pytest
+
+    from app.core import db_conn
+    from app.core.crypto import SessionCrypto
+
+    if not db_conn.HAS_SQLCIPHER:
+        pytest.skip("needs SQLCipher")
+    db_file = _make_encrypted_db(tmp_path, "right_key_123")
+    crypto = SessionCrypto(tmp_path / "locked.key", db_file)
+
+    with (
+        patch("app.core.path_utils.resolve_db_crypto", return_value=crypto),
+        patch.object(crypto, "get_raw_key", return_value="wrong_key_456"),
+        patch.object(
+            db_conn.sqlite3,
+            "connect",
+            side_effect=_fail_first_connect_with_disk_io_error(
+                db_conn, db_conn.sqlite3.connect, db_file
+            ),
+        ),
+    ):
+        clear_connection_cache(only_current_and_inactive=False)
+        with pytest.raises(db_conn.sqlite3.DatabaseError, match="Failed to decrypt"):
+            get_db_connection(str(db_file))
+        clear_connection_cache(only_current_and_inactive=False)
