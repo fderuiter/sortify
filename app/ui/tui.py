@@ -7538,7 +7538,7 @@ class AutoSorterTUI(A11yMixin, App):
                     self._handle_progress_update, update_or_prog, stage, **kwargs
                 )
 
-            MetadataPass.run(
+            bypassed = MetadataPass.run(
                 self.base_dir,
                 files,
                 self.settings,
@@ -7547,6 +7547,29 @@ class AutoSorterTUI(A11yMixin, App):
                 cancel_check=lambda: False,
                 source_dirs=s_dirs,
             )
+
+            # Files no metadata rule matched still need their text extracted and
+            # fitted, otherwise clustering sees no documents and the plan is empty.
+            bypassed_set = {str(f).replace("\\", "/") for f in (bypassed or [])}
+            items_to_extract = [
+                f for f in files if str(f).replace("\\", "/") not in bypassed_set
+            ]
+            if items_to_extract:
+                from app.core.extractor import build_corpus_generator
+
+                total = len(items_to_extract)
+                done = 0
+                for chunk in build_corpus_generator(
+                    base_dir=self.base_dir,
+                    items_to_sort=items_to_extract,
+                    progress_callback=lambda *args, **kwargs: None,
+                    max_workers=getattr(self.settings, "MAX_WORKERS", 2),
+                    db=self.app_session.db,
+                    settings=self.settings,
+                ):
+                    self.app_session.partial_fit(chunk)
+                    done += len(chunk)
+                    scan_progress_cb(done / total, f"Extracting text ({done}/{total})")
 
             # Load locks & ratings
             try:
@@ -8122,10 +8145,10 @@ class AutoSorterTUI(A11yMixin, App):
                             matching_ids.add(id(v))
                             has_match = True
                     else:
-                        sub_folder = (
-                            (Path(folder) / k).as_posix() if folder else k
+                        sub_folder = (Path(folder) / k).as_posix() if folder else k
+                        folder_direct_match = (
+                            query in k.lower() or query in sub_folder.lower()
                         )
-                        folder_direct_match = query in k.lower() or query in sub_folder.lower()
                         child_match = _walk(v, sub_folder)
                         if folder_direct_match or child_match:
                             matching_ids.add(id(v))
@@ -8168,9 +8191,7 @@ class AutoSorterTUI(A11yMixin, App):
                 )
             else:
                 matching_ids = (
-                    self._build_matching_node_ids(self.plan, query)
-                    if query
-                    else None
+                    self._build_matching_node_ids(self.plan, query) if query else None
                 )
                 nodes_added = self._build_tree_nodes(
                     self.plan,
@@ -8257,7 +8278,8 @@ class AutoSorterTUI(A11yMixin, App):
                             v,
                             current_folder=sub_folder,
                             query=query,
-                            parent_folder_matches=parent_folder_matches or folder_matches,
+                            parent_folder_matches=parent_folder_matches
+                            or folder_matches,
                             matching_ids=matching_ids,
                         )
                     )
