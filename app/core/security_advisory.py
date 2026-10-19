@@ -256,9 +256,6 @@ class SecurityAdvisoryClient:
         norm_repo = self.extract_repo_id(repo_id) if repo_id else None
         norm_hash = file_hash.strip().lower() if file_hash else None
         eff_timeout = min(float(timeout), MAX_API_TIMEOUT)
-        eff_fallback = (
-            fallback_policy.strip().lower() if fallback_policy else self.fallback_policy
-        )
 
         # 1. Fast In-Memory Cache Lookup (< 50ms)
         cached_result = self.get_cached_advisory(norm_repo, norm_hash)
@@ -271,6 +268,12 @@ class SecurityAdvisoryClient:
                 )
                 raise ModelVerificationError(details_msg)
             return cached_result
+
+        # Resolved only on a cache miss: the default policy loads AppSettings
+        # from disk, which a cached lookup has no use for.
+        eff_fallback = (
+            fallback_policy.strip().lower() if fallback_policy else self.fallback_policy
+        )
 
         # 2. Remote Security Advisory API Query
         # Bypassing thread-local socket sandboxing safely during advisory lookup
