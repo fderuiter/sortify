@@ -238,3 +238,18 @@ omit = [
 
 [tool.coverage.report]
 show_missing = true
+
+# Per-module floors for the code that moves, undoes and encrypts user files,
+# checked on Linux by scripts/check_coverage_floors.py with branch coverage on.
+# Set about two points under what main measured on 2026-10-19; raise a floor
+# when tests raise its module, never lower it to get a PR green. Target: 90.
+[tool.sortify.coverage-floors]
+"app/core/mover.py" = 74
+"app/core/history.py" = 66
+"app/core/resilient_file_ops.py" = 71
+"app/core/ledger.py" = 84
+"app/core/crypto.py" = 86
+"app/core/daemon.py" = 70
+"app/core/db_conn.py" = 71
+"app/core/verifier.py" = 82
+"app/core/path_utils.py" = 77
