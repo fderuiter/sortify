@@ -74,3 +74,29 @@ def test_preset_documents_resolution(tmp_path, monkeypatch):
     data = json.loads(stdout)
     assert data["status"] == "success"
     assert Path(data["target_directory"]).resolve() == docs_dir.resolve()
+
+
+@pytest.mark.xdist_group(name="cli_undo_presets")
+def test_undo_latest_twice_reaches_the_previous_sort(tmp_path, monkeypatch):
+    """A second `undo --latest` undoes the sort before, not the first undo's safety snapshot."""
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app_dir"))
+
+    undone = []
+    for name in ("first", "second"):
+        workspace = tmp_path / name
+        create_sample_corpus(workspace)
+        code, _out, err = run_cli(["sort", str(workspace), "--json"])
+        assert code == 0, f"Sort of {name} failed: {err}"
+
+    for _ in range(2):
+        code, out, err = run_cli(["undo", "--latest", "--json"])
+        assert code == 0, f"Undo failed: {err}"
+        undone.append(json.loads(out)["session_id"])
+
+    code, out, _err = run_cli(["undo", "--list", "--json"])
+    sessions = {s["session_id"]: s for s in json.loads(out)}
+    first_undo, second_undo = (sessions[sid] for sid in undone)
+
+    assert Path(first_undo["base_dir"]).name == "second"
+    assert Path(second_undo["base_dir"]).name == "first"
+    assert first_undo["status"] == second_undo["status"] == "rolled_back"

@@ -665,19 +665,8 @@ class IncrementalAnalyzer:
             plan_kwargs["degradation_reason"] = degradation_reason
             plan_kwargs["recovery_action"] = recovery_action
             plan_kwargs["suggested_recovery_action"] = recovery_action
-
-            try:
-                from app.ui.notifications import NotificationManager
-
-                NotificationManager.get_instance().notify(
-                    message=f"Sorting plan generated in degraded fallback mode: {degradation_reason}",
-                    type="warning",
-                    caption=f"Suggested recovery action: {recovery_action}",
-                )
-            except Exception as notif_err:
-                logging.debug(
-                    f"Failed to dispatch degradation notification: {notif_err}"
-                )
+            # Callers surface the degradation from these plan fields; core does
+            # not reach into the UI to notify.
 
         return SortingPlan(**plan_kwargs)
 

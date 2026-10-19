@@ -631,6 +631,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                     "core_migrations",
                     "core_ledger",
                     "core_history",
+                    "core_session_catalog",
                 ],
             ),
             DiagramSubgraph(
@@ -732,6 +733,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramNode(id="core_migrations", label="app.core.migrations"),
             DiagramNode(id="core_ledger", label="app.core.ledger", shape="database"),
             DiagramNode(id="core_history", label="app.core.history", shape="database"),
+            DiagramNode(id="core_session_catalog", label="app.core.session_catalog"),
             # Policy & Execution
             DiagramNode(
                 id="core_policy_engine", label="app.core.policy_engine", shape="rhombus"
@@ -821,6 +823,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramEdge(source="core_db", target="core_migrations"),
             DiagramEdge(source="core_ledger", target="core_db"),
             DiagramEdge(source="core_history", target="core_db"),
+            DiagramEdge(source="core_history", target="core_session_catalog"),
             DiagramEdge(
                 source="core_policy_engine", target="core_quarantine_interceptor"
             ),

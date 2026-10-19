@@ -192,10 +192,11 @@ def test_sorting_plan_diagnostic_metadata_contract():
     assert plan.get("recovery_action") == "RE_DOWNLOAD_MODEL"
 
 
-def test_incremental_analyzer_propagates_degraded_telemetry_and_dispatches_notification(
-    db, tmp_path
-):
-    """Verify IncrementalAnalyzer attaches model_status="DEGRADED_FALLBACK" and dispatches warning notification."""
+def test_incremental_analyzer_propagates_degraded_telemetry(db, tmp_path):
+    """Verify IncrementalAnalyzer attaches degraded-mode telemetry to the plan.
+
+    The UI reads these fields to warn the user; core does not notify the UI.
+    """
     registry = SharedModelRegistry.get_instance()
     registry.record_model_health(
         "onnx_embeddings",
@@ -207,25 +208,15 @@ def test_incremental_analyzer_propagates_degraded_telemetry_and_dispatches_notif
     analyzer = IncrementalAnalyzer(5, set(), db)
 
     notifications = []
-
-    def custom_handler(event):
-        notifications.append(event)
-
     notif_mgr = NotificationManager.get_instance()
-    notif_mgr.register_handler(custom_handler)
+    notif_mgr.register_handler(notifications.append)
 
     try:
-        # Generate sorting plan when system is in degraded state
         plan = analyzer.generate_sorting_plan(base_dir=str(tmp_path))
 
         assert plan.model_status == "DEGRADED_FALLBACK"
         assert "Model weights not found" in str(plan.degradation_reason)
         assert plan.recovery_action == "RE_DOWNLOAD_MODEL"
-
-        # Verify non-blocking notification dispatched
-        assert len(notifications) > 0
-        warning_notifs = [n for n in notifications if n.get("type") == "warning"]
-        assert len(warning_notifs) > 0
-        assert "degraded fallback mode" in warning_notifs[0]["message"].lower()
+        assert notifications == []
     finally:
-        notif_mgr._custom_handlers.remove(custom_handler)
+        notif_mgr._custom_handlers.remove(notifications.append)
