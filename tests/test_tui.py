@@ -2345,3 +2345,62 @@ def test_settings_modal_saves_speak_announcements(temp_workspace):
             assert results and results[0]["SPEAK_ANNOUNCEMENTS"] is True
 
     asyncio.run(_test())
+
+
+def test_sample_dataset_goes_to_subfolder_of_non_empty_folder(temp_workspace):
+    """[G] never writes sample files next to the user's own documents."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        before = sorted(os.listdir(temp_workspace))
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            with patch.object(app, "run_scan_worker") as scan_worker:
+                app.action_generate_sample_corpus()
+                await pilot.pause()
+                sample_dir = os.path.join(temp_workspace, "sortify-sample-dataset")
+                assert sorted(os.listdir(temp_workspace)) == sorted(
+                    before + ["sortify-sample-dataset"]
+                )
+                assert "demo_finance.txt" in os.listdir(sample_dir)
+                assert app.base_dir == sample_dir
+                assert app.source_dirs == [sample_dir]
+                scan_worker.assert_called_once()
+
+                # Pressing G again reuses the dataset instead of nesting or overwriting.
+                with open(os.path.join(sample_dir, "demo_finance.txt"), "w") as f:
+                    f.write("edited")
+                app.action_generate_sample_corpus()
+                await pilot.pause()
+                assert app.base_dir == sample_dir
+                assert not os.path.exists(
+                    os.path.join(sample_dir, "sortify-sample-dataset")
+                )
+                with open(os.path.join(sample_dir, "demo_finance.txt")) as f:
+                    assert f.read() == "edited"
+
+    asyncio.run(_test())
+
+
+def test_sample_dataset_fills_an_empty_folder_directly(tmp_path):
+    """In an empty folder, [G] writes the sample files right there."""
+    empty = tmp_path / "empty"
+    empty.mkdir()
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(empty))
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            with patch.object(app, "run_scan_worker"):
+                app.action_generate_sample_corpus()
+                await pilot.pause()
+            assert "demo_tech.txt" in os.listdir(empty)
+            assert app.base_dir == str(empty)
+
+    asyncio.run(_test())
