@@ -105,8 +105,9 @@ class DBWorker:
 
     def _run(self):
         try:
-            from app.core.shared_registry import _thread_local
+            from app.core.network_guard import _thread_local, install
 
+            install()
             _thread_local.sandboxed = True
             _thread_local.reason = "database worker execution"
         except Exception:
