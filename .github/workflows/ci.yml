@@ -131,6 +131,10 @@ jobs:
       run: |
         uv run python scripts/validate_imports.py
 
+    - name: Check dependency declarations
+      run: |
+        uv run deptry .
+
     - name: Validate Agent Prompts Manifest
       run: |
         uv run python scripts/prompt_manifest.py verify

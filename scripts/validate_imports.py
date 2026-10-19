@@ -11,12 +11,8 @@ import argparse
 import ast
 import re
 import sys
+import tomllib
 from pathlib import Path
-
-if sys.version_info >= (3, 11):
-    import tomllib
-else:
-    import tomli as tomllib
 
 # Recognized top-level module name to PyPI distribution package name mappings
 MODULE_TO_PACKAGE_MAP = {

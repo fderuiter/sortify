@@ -522,7 +522,6 @@ def test_main_cli_tui_invocation():
         args.daemon = False
         args.demo = False
         args.smoke_test = False
-        args.update_snapshots = False
         args.directory = "/path/to/sort"
         args.debug_layout = False
         mock_args.return_value = args

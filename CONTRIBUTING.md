@@ -50,6 +50,7 @@ Set `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` when running tests on
 | `validate-signatures` | `scripts/validate_signatures.py` | a public API or CLI signature changed without updating its baseline in `tests/snapshots/api/` |
 | `validate-architecture` | `scripts/validate_architecture.py` | a centralized helper (path validation, packaging checks, key lookup) is duplicated instead of reused |
 | `validate-imports` | `scripts/validate_imports.py` | `app/` imports a package that isn't a declared dependency |
+| `deptry` | `uv run deptry .` | a declared dependency is unused, an import comes only in transitively, or runtime code imports a dev-only package (exceptions are in `[tool.deptry]` in `pyproject.toml`) |
 | `validate-config-schema` | `scripts/validate_config.py` | `app/config.py` and `app/config_schema.json` disagree |
 | `validate-links` | `scripts/validate_links.py --local-only` | a URL in a changed file is malformed (CI also checks that external links resolve) |
 
