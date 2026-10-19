@@ -59,6 +59,33 @@ def _purge_overwrite_backups(base_dir: str, session_id: str) -> None:
         logging.warning(f"Could not purge overwrite backups in {backup_dir}: {err}")
 
 
+def _move_aside_blocking_parents(path: str, base_dir: str, db_conn) -> None:
+    """Move any file standing where a parent folder of ``path`` must go.
+
+    The user may have saved a file named like a folder that a sort emptied and
+    removed; undo moves it to a free name instead of failing to recreate the folder.
+    """
+    from app.core.mover import get_safe_path
+
+    parts = safe_relpath(path, base_dir).replace("\\", "/").split("/")
+    current = base_dir
+    for part in parts[:-1]:
+        current = os.path.join(current, part)
+        if not os.path.exists(current) or os.path.isdir(current):
+            continue
+        safe_current = get_safe_path(
+            os.path.dirname(current), os.path.basename(current)
+        )
+        _robust_move(current, safe_current)
+        rel_current = safe_relpath(current, base_dir).replace("\\", "/")
+        rel_safe = safe_relpath(safe_current, base_dir).replace("\\", "/")
+        with db_conn:
+            db_conn.execute(
+                "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                (rel_safe, base_dir, rel_current, rel_current),
+            )
+
+
 def _is_same_restored_path(actual: str, expected: str) -> bool:
     return os.path.normcase(os.path.abspath(actual)) == os.path.normcase(
         os.path.abspath(expected)
@@ -768,10 +795,17 @@ class HistoryManager:
                         raise ValueError(
                             f"Rollback halted: file missing at {destination_path}. Disk state restored from safety snapshot."
                         )
+                    elif not os.path.exists(orig_abs):
+                        # Deleted since the sort and not already back: nothing to restore.
+                        logging.warning(
+                            f"Skipping {destination_path}: it no longer exists."
+                        )
+                        continue
 
                 # Replay step reversal
                 if item_type == "file":
                     if curr_abs != orig_abs and os.path.exists(curr_abs):
+                        _move_aside_blocking_parents(orig_abs, base_dir, db_conn)
                         os.makedirs(os.path.dirname(orig_abs), exist_ok=True)
                         if os.path.exists(orig_abs) and not os.path.samefile(
                             curr_abs, orig_abs
@@ -1672,49 +1706,7 @@ class HistoryManager:
 
                             db_conn = get_db_connection(self.db.db_path)
 
-                            # Fix parent directory collisions
-                            parts = (
-                                safe_relpath(dst, base_dir)
-                                .replace("\\", "/")
-                                .split("/")
-                            )
-                            current = base_dir
-                            for part in parts[:-1]:
-                                current = os.path.join(current, part)
-                                if os.path.exists(current) and not os.path.isdir(
-                                    current
-                                ):
-                                    safe_current = get_safe_path(
-                                        os.path.dirname(current),
-                                        os.path.basename(current),
-                                    )
-                                    _robust_move(current, safe_current)
-                                    rel_current = safe_relpath(
-                                        current, base_dir
-                                    ).replace("\\", "/")
-                                    rel_safe = safe_relpath(
-                                        safe_current, base_dir
-                                    ).replace("\\", "/")
-                                    with db_conn:
-                                        db_conn.execute(
-                                            "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                            (
-                                                rel_safe,
-                                                base_dir,
-                                                rel_current,
-                                                rel_current,
-                                            ),
-                                        )
-                                        db_conn.execute(
-                                            "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
-                                            (
-                                                rel_safe,
-                                                len(rel_current) + 1,
-                                                base_dir,
-                                                rel_current + "/%",
-                                                rel_current + "/%",
-                                            ),
-                                        )
+                            _move_aside_blocking_parents(dst, base_dir, db_conn)
 
                             os.makedirs(os.path.dirname(dst), exist_ok=True)
                             if os.path.islink(dst):

@@ -257,6 +257,46 @@ def test_pii_scrubbing_and_release_pipeline():
     )
 
 
+def test_redaction_write_failure_is_not_released():
+    """If the redacted text cannot be written, the original must not be released."""
+    policies = [
+        {
+            "type": "keyword",
+            "expression": "subject",
+            "action": "redact",
+            "target_path": "Clean_Out",
+            "priority": 100,
+        }
+    ]
+    service = QuarantineInterceptorService(db=db, policies=policies)
+
+    sample_dir = os.path.join(_test_dir, "redact_write_failure")
+    os.makedirs(sample_dir, exist_ok=True)
+    sensitive_file = os.path.join(sample_dir, "trial_data.txt")
+    original = "Confidential Medical Report for Subject 101 with sensitive findings"
+    with open(sensitive_file, "w", encoding="utf-8") as f:
+        f.write(original)
+
+    job_id = service.stage_incoming_file(
+        source_path=sensitive_file, base_dir=sample_dir
+    )["job_id"]
+
+    with unittest.mock.patch(
+        "app.core.quarantine_interceptor.open",
+        side_effect=OSError("disk full"),
+        create=True,
+    ):
+        result = service.process_quarantine_job(job_id)
+
+    assert result["status"] == "DEAD_LETTER_QUEUE"
+    stored = db.get_quarantine_record(job_id)
+    assert stored["status"] == "MANUAL_REVIEW_REQUIRED"
+    audit_statuses = [entry["status"] for entry in stored["audit_log"]]
+    assert "REDACTED" not in audit_statuses
+    assert "RELEASED" not in audit_statuses
+    assert not os.path.exists(os.path.join(sample_dir, "Clean_Out", "trial_data.txt"))
+
+
 def test_policy_action_archive():
     """Test background worker execution for action: archive."""
     policies = [
