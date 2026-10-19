@@ -309,36 +309,30 @@ class SharedModelRegistry:
             from app.core.offline_loader import OfflineModelLoader
 
             easyocr_dir = OfflineModelLoader.resolve_model_path("easyocr")
-        except Exception:
-            from app.core.path_utils import get_meipass_dir
+        except Exception as e:
+            from app.core.path_utils import is_packaged
 
-            mei_dir = get_meipass_dir()
-            if mei_dir:
-                easyocr_dir = os.path.join(mei_dir, "offline_bundle", "easyocr")
+            # A packaged build only loads weights that passed verification
+            # (#722); falling back here would pick up the refused folder.
+            if is_packaged():
+                logging.error(f"OCR is unavailable: no verified EasyOCR model: {e}")
+                return None
+            try:
+                from app.core.path_utils import get_base_path
+
+                base_path = get_base_path(__file__)
+            except Exception:
+                base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
+            # The working directory is deliberately not searched: it is often
+            # a folder of untrusted files that this app is sorting.
+            local_easyocr_path = os.path.join(base_path, "offline_bundle", "easyocr")
+            easyocr_path = os.environ.get("EASYOCR_MODULE_PATH")
+            if os.path.exists(local_easyocr_path):
+                easyocr_dir = local_easyocr_path
+            elif easyocr_path:
+                easyocr_dir = os.path.join(easyocr_path, "model")
             else:
-                try:
-                    from app.core.path_utils import get_base_path
-
-                    base_path = get_base_path(__file__)
-                except Exception:
-                    base_path = os.path.dirname(
-                        os.path.dirname(os.path.abspath(__file__))
-                    )
-                local_easyocr_path = os.path.join(
-                    base_path, "offline_bundle", "easyocr"
-                )
-                cwd_easyocr_path = os.path.join(
-                    os.getcwd(), "offline_bundle", "easyocr"
-                )
-                easyocr_path = os.environ.get("EASYOCR_MODULE_PATH")
-                if os.path.exists(local_easyocr_path):
-                    easyocr_dir = local_easyocr_path
-                elif os.path.exists(cwd_easyocr_path):
-                    easyocr_dir = cwd_easyocr_path
-                elif easyocr_path:
-                    easyocr_dir = os.path.join(easyocr_path, "model")
-                else:
-                    easyocr_dir = os.path.expanduser("~/.EasyOCR/model")
+                easyocr_dir = os.path.expanduser("~/.EasyOCR/model")
 
         # Get settings
         from app.config import AppSettings
