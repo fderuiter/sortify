@@ -4,6 +4,10 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
+pytest.importorskip("requests")
+
 from scripts.auto_merge_controller import (
     AutoMergeAction,
     AutoMergeResult,
