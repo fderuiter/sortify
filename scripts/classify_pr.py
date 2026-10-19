@@ -13,21 +13,40 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any, Dict, List
 
-SENSITIVE_PATHS = [
-    r"^\.github/.*",
-    r"^SECURITY\.md$",
-    r"^PRIVACY\.md$",
-    r"^app/config\.py$",
-    r"^app/core/crypto\.py$",
-    r"^app/core/mover\.py$",
-    r"^app/core/history\.py$",
-    r"^app/core/session\.py$",
-    r"^app/core/quarantine_interceptor\.py$",
-    r"^scripts/.*",
-    r"^smart-autosorter\.spec$",
-    r"^network_rules\.json$",
-    r"^\.gitleaks\.toml$",
+# Paths that are never auto-merged and need the owner's approval (ADR 0009).
+# Written in CODEOWNERS syntax: each entry must also appear in
+# .github/CODEOWNERS, which tests/test_risk_classifier.py checks.
+PROTECTED_PATHS = [
+    ".github/",
+    "SECURITY.md",
+    "PRIVACY.md",
+    "app/config.py",
+    "app/core/crypto.py",
+    # Modules that can lose or corrupt a user's files (ADR 0005, ADR 0006)
+    "app/core/mover.py",
+    "app/core/resilient_file_ops.py",
+    "app/core/ledger.py",
+    "app/core/history.py",
+    "app/core/session.py",
+    "app/core/db.py",
+    "app/core/db_conn.py",
+    "app/core/db_worker.py",
+    "app/core/quarantine_interceptor.py",
+    "scripts/",
+    "smart-autosorter.spec",
+    "network_rules.json",
+    ".gitleaks.toml",
 ]
+
+
+def _protected_path_regex(pattern: str) -> str:
+    """Translate a PROTECTED_PATHS entry into an anchored regex for a repo path."""
+    if pattern.endswith("/"):
+        return f"^{re.escape(pattern)}.*"
+    return f"^{re.escape(pattern)}$"
+
+
+SENSITIVE_PATHS = [_protected_path_regex(p) for p in PROTECTED_PATHS]
 
 # Dependency manifests are sensitive unless the PR comes from Dependabot itself
 # (callers must set is_dependabot from the exact "dependabot[bot]" login, not
@@ -47,6 +66,32 @@ DOCS_PATHS = [
     r"^README\.md$",
     r"^mkdocs\.yml$",
 ]
+
+_DEPENDABOT_VERSION_RE = re.compile(
+    r"\bfrom\s+v?(?P<old>\d+(?:\.\d+)*)\S*\s+to\s+v?(?P<new>\d+(?:\.\d+)*)",
+    re.IGNORECASE,
+)
+
+
+def dependency_update_type_from_title(title: str) -> str:
+    """Classify a Dependabot title ("Bump x from 1.2.3 to 2.0.0") as major or minor.
+
+    A change in the first version component is major, and so is a change in the
+    second while the first is 0, as semver treats 0.x minors as breaking. Titles
+    without a single "from A to B" (grouped updates) count as major, so a person
+    reviews them.
+    """
+    matches = list(_DEPENDABOT_VERSION_RE.finditer(title))
+    if len(matches) != 1:
+        return "major"
+    old = [int(part) for part in matches[0].group("old").split(".")]
+    new = [int(part) for part in matches[0].group("new").split(".")]
+    if old[0] != new[0]:
+        return "major"
+    if old[0] == 0 and (old[1:2] or [0]) != (new[1:2] or [0]):
+        return "major"
+    return "minor"
+
 
 BOT_AUTHORS = {
     "dependabot[bot]",
@@ -165,7 +210,7 @@ def classify_pr(meta: PRMetadata) -> ClassificationResult:
         )
 
     # 5. Dependency check
-    if meta.is_dependabot or "dependencies" in meta.labels:
+    if meta.is_dependabot:
         if meta.dependency_update_type == "major":
             if risk_level not in ("sensitive", "high"):
                 risk_level = "high"
@@ -183,9 +228,8 @@ def classify_pr(meta: PRMetadata) -> ClassificationResult:
 
     # 7. Production code opt-in requirement
     is_docs_only = len(meta.changed_files) > 0 and len(non_docs_files) == 0
-    is_safe_dependabot = (
-        meta.is_dependabot or "dependencies" in meta.labels
-    ) and meta.dependency_update_type != "major"
+    # Only the exact Dependabot login counts: anyone can add a "dependencies" label.
+    is_safe_dependabot = meta.is_dependabot and meta.dependency_update_type != "major"
 
     if not is_docs_only and not is_safe_dependabot:
         if "automerge" not in meta.labels:

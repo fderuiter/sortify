@@ -1,14 +1,24 @@
 * @fderuiter
 
-# Sensitive paths requiring intentional code owner review
+# Protected paths: never auto-merged, the owner must approve (ADR 0009).
+# Keep in sync with PROTECTED_PATHS in scripts/classify_pr.py; a test checks it.
 .github/ @fderuiter
 SECURITY.md @fderuiter
 PRIVACY.md @fderuiter
 app/config.py @fderuiter
 app/core/crypto.py @fderuiter
 app/core/mover.py @fderuiter
+app/core/resilient_file_ops.py @fderuiter
+app/core/ledger.py @fderuiter
 app/core/history.py @fderuiter
 app/core/session.py @fderuiter
+app/core/db.py @fderuiter
+app/core/db_conn.py @fderuiter
+app/core/db_worker.py @fderuiter
 app/core/quarantine_interceptor.py @fderuiter
+scripts/ @fderuiter
+smart-autosorter.spec @fderuiter
+network_rules.json @fderuiter
+.gitleaks.toml @fderuiter
 tests/snapshots/api/ @fderuiter
 tests/snapshots/tui_svg/ @fderuiter

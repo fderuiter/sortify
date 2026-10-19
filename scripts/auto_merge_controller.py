@@ -22,13 +22,20 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
-from scripts.classify_pr import ClassificationResult, PRMetadata, classify_pr
+from scripts.classify_pr import (
+    ClassificationResult,
+    PRMetadata,
+    classify_pr,
+    dependency_update_type_from_title,
+)
 
 logger = logging.getLogger(__name__)
 
 REQUIRED_CI_CHECK = "Required CI"
 GITHUB_ACTIONS_APP_SLUG = "github-actions"
 DEPENDABOT_LOGIN = "dependabot[bot]"
+AUTOMERGE_OPT_IN_LABEL = "automerge"
+MAINTAINER_PERMISSIONS = {"admin", "maintain", "write"}
 
 
 class AutoMergeAction(str, Enum):
@@ -157,6 +164,15 @@ class GitHubClient:
         latest = max(runs, key=lambda run: run.get("id", 0))
         return latest.get("conclusion") or latest.get("status")
 
+    def list_issue_events(self, pr_number: int) -> List[Dict[str, Any]]:
+        """List the issue events (labelled, unlabelled, ...) of a PR."""
+        return self._get_paginated(f"issues/{pr_number}/events")
+
+    def get_collaborator_permission(self, login: str) -> str:
+        """Return a user's permission on the repository, or "none"."""
+        data = self._get(f"collaborators/{login}/permission")
+        return str(data.get("permission") or "none")
+
     def get_commit_verification(self, sha: str) -> Dict[str, Any]:
         """Fetch signature verification metadata for a given commit SHA."""
         data = self._get(f"commits/{sha}")
@@ -204,6 +220,35 @@ def is_pr_eligible_for_automerge(pr: Dict[str, Any]) -> bool:
     return "automerge:eligible" in labels
 
 
+def automerge_label_applied_by_maintainer(client: GitHubClient, pr_number: int) -> bool:
+    """Whether the latest ``automerge`` label on a PR was added by a maintainer.
+
+    The PR's author, or a bot with label rights, can add the label too, so the
+    opt-in only counts when a person with write access or above applied it
+    (ADR 0009). Any API failure counts as untrusted.
+    """
+    try:
+        events = client.list_issue_events(pr_number)
+        labelled = [
+            e
+            for e in events
+            if e.get("event") == "labeled"
+            and (e.get("label") or {}).get("name") == AUTOMERGE_OPT_IN_LABEL
+        ]
+        if not labelled:
+            return False
+        actor = labelled[-1].get("actor") or {}
+        login = actor.get("login", "")
+        if not login or actor.get("type") == "Bot" or login.endswith("[bot]"):
+            return False
+        return client.get_collaborator_permission(login) in MAINTAINER_PERMISSIONS
+    except Exception as exc:
+        logger.warning(
+            f"Could not verify who labelled PR #{pr_number} '{AUTOMERGE_OPT_IN_LABEL}': {exc}"
+        )
+        return False
+
+
 def build_pr_metadata(client: GitHubClient, full_pr: Dict[str, Any]) -> PRMetadata:
     """Collect classifier input for a PR from the GitHub API rather than from labels."""
     pr_number = full_pr["number"]
@@ -218,11 +263,13 @@ def build_pr_metadata(client: GitHubClient, full_pr: Dict[str, Any]) -> PRMetada
     title = full_pr.get("title", "")
     author = (full_pr.get("user") or {}).get("login", "")
     is_dependabot = author == DEPENDABOT_LOGIN
-    dependency_update_type = "minor"
-    if (is_dependabot or "dependencies" in labels) and (
-        "major" in title.lower() or "breaking" in title.lower()
+    dependency_update_type = (
+        dependency_update_type_from_title(title) if is_dependabot else "minor"
+    )
+    if AUTOMERGE_OPT_IN_LABEL in labels and not automerge_label_applied_by_maintainer(
+        client, pr_number
     ):
-        dependency_update_type = "major"
+        labels = [name for name in labels if name != AUTOMERGE_OPT_IN_LABEL]
 
     return PRMetadata(
         pr_number=pr_number,

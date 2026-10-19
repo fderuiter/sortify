@@ -8,6 +8,7 @@ from scripts.auto_merge_controller import (
     AutoMergeAction,
     AutoMergeResult,
     GitHubClient,
+    automerge_label_applied_by_maintainer,
     build_pr_metadata,
     is_pr_eligible_for_automerge,
     process_auto_merge_queue,
@@ -374,8 +375,10 @@ def test_build_pr_metadata_uses_api_data():
         VERIFIED_COMMIT,
         {"sha": "bad", "commit": {"verification": {"verified": False}}},
     ]
+    client.list_issue_events.return_value = [_label_event("fderuiter")]
+    client.get_collaborator_permission.return_value = "admin"
     pr = _eligible_pr(302, labels=["automerge", "dependencies"])
-    pr["title"] = "Bump foo: breaking change"
+    pr["title"] = "Bump foo from 1.0 to 2.0"
     pr["user"] = {"login": "notdependabot"}
 
     meta = build_pr_metadata(client, pr)
@@ -385,7 +388,107 @@ def test_build_pr_metadata_uses_api_data():
     assert meta.unverified_commit_shas == ["bad"]
     assert meta.labels == ["automerge", "dependencies"]
     assert meta.is_dependabot is False
-    assert meta.dependency_update_type == "major"
+    # Version parsing only applies to the real Dependabot login.
+    assert meta.dependency_update_type == "minor"
+
+
+def test_build_pr_metadata_reads_dependabot_versions():
+    client = MagicMock(spec=GitHubClient)
+    _stub_pr_contents(client, ["uv.lock"])
+    pr = _eligible_pr(303, labels=["dependencies"])
+    pr["user"] = {"login": "dependabot[bot]"}
+
+    pr["title"] = "Bump rich from 13.7.1 to 14.0.0"
+    assert build_pr_metadata(client, pr).dependency_update_type == "major"
+    pr["title"] = "Bump rich from 13.7.1 to 13.9.4"
+    assert build_pr_metadata(client, pr).dependency_update_type == "minor"
+
+
+def _label_event(login, actor_type="User", label="automerge"):
+    return {
+        "event": "labeled",
+        "label": {"name": label},
+        "actor": {"login": login, "type": actor_type},
+    }
+
+
+def test_automerge_label_counts_only_from_a_maintainer():
+    client = MagicMock(spec=GitHubClient)
+    client.list_issue_events.return_value = [_label_event("fderuiter")]
+    client.get_collaborator_permission.return_value = "admin"
+    assert automerge_label_applied_by_maintainer(client, 1) is True
+
+    client.get_collaborator_permission.return_value = "read"
+    assert automerge_label_applied_by_maintainer(client, 1) is False
+
+
+def test_automerge_label_from_a_bot_is_ignored():
+    client = MagicMock(spec=GitHubClient)
+    client.get_collaborator_permission.return_value = "write"
+    for event in (
+        _label_event("google-labs-stitch[bot]", actor_type="Bot"),
+        _label_event("github-actions[bot]"),
+    ):
+        client.list_issue_events.return_value = [event]
+        assert automerge_label_applied_by_maintainer(client, 1) is False
+
+
+def test_automerge_label_uses_the_latest_labelling():
+    client = MagicMock(spec=GitHubClient)
+    client.list_issue_events.return_value = [
+        _label_event("fderuiter"),
+        {"event": "unlabeled", "label": {"name": "automerge"}, "actor": {}},
+        _label_event("stitch-bot[bot]", actor_type="Bot"),
+    ]
+    client.get_collaborator_permission.return_value = "admin"
+    assert automerge_label_applied_by_maintainer(client, 1) is False
+
+
+def test_automerge_label_check_fails_closed_on_api_error():
+    client = MagicMock(spec=GitHubClient)
+    client.list_issue_events.side_effect = RuntimeError("403")
+    assert automerge_label_applied_by_maintainer(client, 1) is False
+
+
+def test_process_queue_ignores_automerge_label_added_by_pr_author():
+    """A bot that labels its own production PR 'automerge' is not merged."""
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 304, "labels": [{"name": "automerge:eligible"}], "draft": False}
+    ]
+    client.get_pull_request.return_value = _eligible_pr(
+        304, labels=["automerge:eligible", "automerge"]
+    )
+    client.get_commit_verification.return_value = {"verified": True}
+    _stub_pr_contents(client, ["app/core/analyzer.py"])
+    client.list_issue_events.return_value = [
+        _label_event("google-labs-stitch[bot]", actor_type="Bot")
+    ]
+    client.get_required_ci_conclusion.return_value = "success"
+
+    res = process_auto_merge_queue(client)
+    assert res.action == AutoMergeAction.NONE
+    client.merge_pull_request.assert_not_called()
+
+
+def test_process_queue_merges_production_pr_labelled_by_maintainer():
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 305, "labels": [{"name": "automerge:eligible"}], "draft": False}
+    ]
+    client.get_pull_request.return_value = _eligible_pr(
+        305, labels=["automerge:eligible", "automerge"]
+    )
+    client.get_commit_verification.return_value = {"verified": True}
+    _stub_pr_contents(client, ["app/core/analyzer.py"])
+    client.list_issue_events.return_value = [_label_event("fderuiter")]
+    client.get_collaborator_permission.return_value = "admin"
+    client.get_required_ci_conclusion.return_value = "success"
+    client.merge_pull_request.return_value = True
+
+    res = process_auto_merge_queue(client)
+    assert res.action == AutoMergeAction.MERGED
+    assert res.pr_id == 305
 
 
 def test_main_cli_output_merge(monkeypatch, capsys):
