@@ -7,8 +7,8 @@ import time
 import pytest
 from pydantic import ValidationError
 
-import app.core.diagram_schema as ds
-from app.core.diagram_schema import (
+import scripts.diagram_schema as ds
+from scripts.diagram_schema import (
     ComponentDiagramSpec,
     DiagramNode,
     LazyDiagramSpecsDict,
@@ -27,13 +27,13 @@ def _is_ci_or_parallel() -> bool:
 
 
 def test_diagram_schema_import_performance():
-    """Verify app.core.diagram_schema import latency is under 50ms with zero top-level spec instantiations."""
+    """Verify scripts.diagram_schema import latency is under 50ms with zero top-level spec instantiations."""
     ds.reset_diagram_specs_cache()
     assert len(ds._INSTANTIATED_SPECS) == 0
 
     # Test re-import latency when module is in sys.modules
     t0 = time.perf_counter()
-    import app.core.diagram_schema  # noqa: F401
+    import scripts.diagram_schema  # noqa: F401
 
     import_time_ms = (time.perf_counter() - t0) * 1000
     sla_threshold = 200.0 if _is_ci_or_parallel() else 50.0
