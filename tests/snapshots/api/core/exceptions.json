@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "9cf7dd5133ca1f742db1e8639f7edc1a16f6ea28e0b75bfa15016ac1f05dd3bd"
+    "checksum": "11af979abc799d137daed4c16a16dff7f5d50f8da68d712332967eba62cfae93"
   },
   "classes": [
     {
@@ -84,6 +84,11 @@
     },
     {
       "class_name": "OfflineModelLoadError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "PartialMoveError",
       "decorators": [],
       "methods": []
     },
