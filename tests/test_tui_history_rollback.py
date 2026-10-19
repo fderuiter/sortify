@@ -204,7 +204,7 @@ async def test_rollback_execution_success(tui_rollback_env):
 
         # Await worker execution
         await pilot.pause()
-        await pilot.pause()
+        await app.workers.wait_for_complete()
         await pilot.pause()
 
         # Files should now be restored to original locations
@@ -256,8 +256,9 @@ async def test_rollback_execution_missing_files_flow(tui_rollback_env):
         btn_confirm = confirm_screen.query_one("#btn-confirm-rollback", Button)
         btn_confirm.press()
 
+        # Await worker execution
         await pilot.pause()
-        await pilot.pause()
+        await app.workers.wait_for_complete()
         await pilot.pause()
 
         # Target2 should be restored to file2
@@ -297,8 +298,9 @@ async def test_rollback_execution_error_modal_on_failure(tui_rollback_env, monke
         btn_confirm = confirm_screen.query_one("#btn-confirm-rollback", Button)
         btn_confirm.press()
 
+        # Await worker execution
         await pilot.pause()
-        await pilot.pause()
+        await app.workers.wait_for_complete()
         await pilot.pause()
 
         # RollbackErrorModal should now be displayed

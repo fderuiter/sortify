@@ -100,7 +100,9 @@ def test_quarantine_vault_modal_records_loading_and_filtering(staged_quarantine_
 
         async with app.run_test() as pilot:
             await app.push_screen(modal)
-            await pilot.pause(0.5)
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
 
             table = modal.query_one("#quarantine-table", DataTable)
             assert table.row_count >= 1
@@ -152,7 +154,9 @@ def test_quarantine_vault_modal_release_action(staged_quarantine_item, tmp_path)
 
         async with app.run_test() as pilot:
             await app.push_screen(modal)
-            await pilot.pause(0.3)
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
 
             modal.execute_release_async(staged, str(dest_file))
             await app.workers.wait_for_complete()
@@ -183,7 +187,9 @@ def test_quarantine_vault_modal_dismiss_action(staged_quarantine_item):
 
         async with app.run_test() as pilot:
             await app.push_screen(modal)
-            await pilot.pause(0.3)
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
 
             modal.execute_dismiss_async(job_id)
             await app.workers.wait_for_complete()
@@ -213,7 +219,9 @@ def test_quarantine_vault_modal_reinspect_action(staged_quarantine_item):
 
         async with app.run_test() as pilot:
             await app.push_screen(modal)
-            await pilot.pause(0.3)
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
 
             modal.execute_reinspect_async(job_id)
             await app.workers.wait_for_complete()
