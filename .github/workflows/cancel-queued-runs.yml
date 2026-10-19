@@ -1,13 +1,39 @@
 name: Cancel All Runs
 
-# Manual-only cleanup: cancels every unfinished workflow run in this
-# repository, on every branch, whether it is queued, waiting or already
-# running. Only this cleanup run itself is spared.
+# Manual-only cleanup: cancels unfinished workflow runs in this repository.
+# With the defaults, one click cancels every queued and running run on every
+# branch. Runs of this workflow are never touched. With `requeue` ticked it
+# then re-runs the newest cancelled run of each workflow on each branch, so
+# every branch gets one fresh suite instead of a backlog.
 on:
   workflow_dispatch:
     inputs:
+      cancel_in_progress:
+        description: "Cancel runs that are already running"
+        type: boolean
+        default: true
+      cancel_queued:
+        description: "Cancel runs that have not started (queued, waiting, pending, requested)"
+        type: boolean
+        default: true
+      branch:
+        description: "Only this branch (empty = all branches)"
+        type: string
+        default: ""
+      workflow:
+        description: "Only this workflow, by name or file, e.g. CI Pipeline or ci.yml (empty = all)"
+        type: string
+        default: ""
+      force:
+        description: "Force-cancel, for runs stuck ignoring a normal cancel"
+        type: boolean
+        default: false
+      requeue:
+        description: "Afterwards re-run the newest cancelled run of each workflow, one per branch"
+        type: boolean
+        default: false
       dry_run:
-        description: "List the runs that would be cancelled without cancelling them"
+        description: "Only list what would be cancelled and re-run"
         type: boolean
         default: false
 
@@ -22,53 +48,121 @@ jobs:
   cancel:
     name: Cancel All Workflow Runs
     runs-on: ubuntu-latest
+    timeout-minutes: 30
     steps:
       - name: Cancel runs
         uses: actions/github-script@v9
         env:
+          CANCEL_IN_PROGRESS: ${{ inputs.cancel_in_progress }}
+          CANCEL_QUEUED: ${{ inputs.cancel_queued }}
+          BRANCH: ${{ inputs.branch }}
+          WORKFLOW: ${{ inputs.workflow }}
+          FORCE: ${{ inputs.force }}
+          REQUEUE: ${{ inputs.requeue }}
           DRY_RUN: ${{ inputs.dry_run }}
         with:
           script: |
-            const statuses = ['in_progress', 'queued', 'waiting', 'pending', 'requested'];
-            const dryRun = process.env.DRY_RUN === 'true';
+            const env = process.env;
+            const flag = (name) => env[name] === 'true';
+            const repo = { owner: context.repo.owner, repo: context.repo.repo };
+            const branch = (env.BRANCH || '').trim();
+            const workflow = (env.WORKFLOW || '').trim();
+            const dryRun = flag('DRY_RUN');
 
-            const seen = new Set();
-            let cancelled = 0;
-            let failed = 0;
+            const statuses = [];
+            if (flag('CANCEL_IN_PROGRESS')) statuses.push('in_progress');
+            if (flag('CANCEL_QUEUED')) statuses.push('queued', 'waiting', 'pending', 'requested');
+            if (statuses.length === 0) {
+              core.setFailed('Nothing to do: tick cancel_in_progress or cancel_queued.');
+              return;
+            }
+
+            const self = await github.rest.actions.getWorkflowRun({ ...repo, run_id: context.runId });
+            const selfWorkflowId = self.data.workflow_id;
+            const matchesWorkflow = (run) =>
+              !workflow ||
+              run.name === workflow ||
+              run.path === workflow ||
+              run.path.endsWith(`/${workflow}`);
+
+            const targets = new Map();
             for (const status of statuses) {
               const runs = await github.paginate(github.rest.actions.listWorkflowRunsForRepo, {
-                owner: context.repo.owner,
-                repo: context.repo.repo,
+                ...repo,
                 status,
                 per_page: 100,
+                ...(branch ? { branch } : {}),
               });
               for (const run of runs) {
-                // Never cancel this cleanup run itself.
-                if (run.id === context.runId || seen.has(run.id)) continue;
-                seen.add(run.id);
-                const label = `#${run.run_number} ${run.name} (${run.status}, ${run.head_branch}) ${run.html_url}`;
-                if (dryRun) {
-                  core.info(`Would cancel ${label}`);
-                  continue;
-                }
-                try {
-                  await github.rest.actions.cancelWorkflowRun({
-                    owner: context.repo.owner,
-                    repo: context.repo.repo,
-                    run_id: run.id,
-                  });
-                  cancelled += 1;
-                  core.info(`Cancelled ${label}`);
-                } catch (error) {
-                  // A run can start or finish between listing and cancelling.
-                  failed += 1;
-                  core.warning(`Could not cancel ${label}: ${error.message}`);
-                }
+                if (run.workflow_id === selfWorkflowId || !matchesWorkflow(run)) continue;
+                targets.set(run.id, run);
               }
             }
 
-            const summary = dryRun
-              ? `Dry run: ${seen.size} run(s) would be cancelled.`
-              : `Cancelled ${cancelled} run(s); ${failed} could not be cancelled.`;
-            core.info(summary);
-            await core.summary.addRaw(summary).write();
+            const describe = (run) =>
+              `#${run.run_number} ${run.name} on ${run.head_branch} (${run.status}) ${run.html_url}`;
+            const cancelPath = flag('FORCE')
+              ? 'POST /repos/{owner}/{repo}/actions/runs/{run_id}/force-cancel'
+              : 'POST /repos/{owner}/{repo}/actions/runs/{run_id}/cancel';
+
+            const cancelled = [];
+            let failed = 0;
+            for (const run of targets.values()) {
+              if (dryRun) {
+                core.info(`Would cancel ${describe(run)}`);
+                cancelled.push(run);
+                continue;
+              }
+              try {
+                await github.request(cancelPath, { ...repo, run_id: run.id });
+                cancelled.push(run);
+                core.info(`Cancelled ${describe(run)}`);
+              } catch (error) {
+                // A run can finish between listing and cancelling.
+                failed += 1;
+                core.warning(`Could not cancel ${describe(run)}: ${error.message}`);
+              }
+            }
+
+            const lines = [
+              `${dryRun ? 'Would cancel' : 'Cancelled'} ${cancelled.length} run(s)` +
+                (failed ? `; ${failed} could not be cancelled.` : '.'),
+            ];
+
+            if (flag('REQUEUE')) {
+              // Newest cancelled run per workflow and branch.
+              const newest = new Map();
+              for (const run of cancelled) {
+                const key = `${run.workflow_id}:${run.head_branch}`;
+                const current = newest.get(key);
+                if (!current || run.run_number > current.run_number) newest.set(key, run);
+              }
+
+              let requeued = 0;
+              for (const run of newest.values()) {
+                if (dryRun) {
+                  core.info(`Would re-run ${describe(run)}`);
+                  requeued += 1;
+                  continue;
+                }
+                // A run can only be re-run once its cancellation has finished.
+                const deadline = Date.now() + 5 * 60 * 1000;
+                let status = run.status;
+                while (status !== 'completed' && Date.now() < deadline) {
+                  await new Promise((resolve) => setTimeout(resolve, 5000));
+                  const latest = await github.rest.actions.getWorkflowRun({ ...repo, run_id: run.id });
+                  status = latest.data.status;
+                }
+                try {
+                  await github.rest.actions.reRunWorkflow({ ...repo, run_id: run.id });
+                  requeued += 1;
+                  core.info(`Re-ran ${describe(run)}`);
+                } catch (error) {
+                  core.warning(`Could not re-run ${describe(run)}: ${error.message}`);
+                }
+              }
+              lines.push(`${dryRun ? 'Would re-run' : 'Re-ran'} ${requeued} run(s), one per workflow and branch.`);
+            }
+
+            for (const line of lines) core.info(line);
+            await core.summary.addRaw(lines.join('\n\n')).write();
