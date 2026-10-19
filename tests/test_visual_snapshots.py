@@ -6,6 +6,7 @@ import re
 from unittest.mock import AsyncMock
 
 import pytest
+from textual.widgets._footer import FooterKey
 
 from app.config import AppSettings
 from app.ui.tui import (
@@ -124,6 +125,20 @@ def assert_svg_snapshot(snapshot_name: str, actual_svg: str) -> None:
     )
 
 
+async def _settle_main_screen(app, pilot) -> None:
+    """Wait until the main screen has finished filling itself in.
+
+    Textual fills the Footer through ``call_after_refresh``, so on a slow
+    runner a fixed number of pauses can screenshot an empty footer row.
+    """
+    for _ in range(50):
+        await pilot.pause()
+        if app.query(FooterKey):
+            break
+    await app.workers.wait_for_complete()
+    await pilot.pause()
+
+
 @pytest.fixture(autouse=True)
 def isolated_app_dir(monkeypatch, tmp_path):
     """Ensure AppSettings is isolated from persistent disk configuration changes."""
@@ -175,8 +190,7 @@ def test_tui_main_screen_snapshot():
         settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings)
         async with app.run_test(size=(100, 30)) as pilot:
-            for _ in range(2):
-                await pilot.pause()
+            await _settle_main_screen(app, pilot)
             svg = app.export_screenshot()
             assert_svg_snapshot("tui_main_screen", svg)
 
@@ -220,8 +234,7 @@ def test_tui_populated_plan_snapshot():
                 },
             }
             app.rebuild_tree()
-            for _ in range(2):
-                await pilot.pause()
+            await _settle_main_screen(app, pilot)
             svg = app.export_screenshot()
             assert_svg_snapshot("tui_populated_plan", svg)
 
