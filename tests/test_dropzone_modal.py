@@ -3,8 +3,9 @@
 import pytest
 from textual.app import App
 from textual.events import Paste
+from textual.widgets import Button
 
-from app.ui.tui import AutoSorterTUI, DropZoneModal
+from app.ui.tui import AutoSorterTUI, DropPlanConfirmModal, DropZoneModal
 
 
 class DummySettings:
@@ -83,8 +84,18 @@ async def test_dropzone_modal_paste_and_trigger(tmp_path):
         active_modal.on_paste(paste_evt)
         await pilot.pause()
 
-        # Trigger triage
+        # Trigger triage: it plans first and asks before moving anything.
         active_modal.trigger_drop_triage()
+        for _ in range(60):
+            await pilot.pause(0.1)
+            if isinstance(app.screen, DropPlanConfirmModal):
+                break
+        await pilot.pause()
+        assert isinstance(app.screen, DropPlanConfirmModal)
+        assert active_modal.processed_result is None
+        assert sample_file.exists()
+
+        app.screen.query_one("#btn-confirm-drop-plan", Button).press()
 
         # Wait for worker thread execution
         for _ in range(60):
@@ -95,6 +106,49 @@ async def test_dropzone_modal_paste_and_trigger(tmp_path):
         assert active_modal.processed_result is not None
         assert active_modal.processed_result["status"] == "success"
         assert active_modal.processed_result["processed_count"] == 1
+
+
+@pytest.mark.anyio
+async def test_dropzone_cancel_at_review_moves_nothing(tmp_path):
+    """Cancelling the plan review leaves every dropped file where it was."""
+    settings = DummySettings(tmp_path)
+    test_dir = tmp_path / "incoming"
+    test_dir.mkdir()
+    for i in range(3):
+        (test_dir / f"invoice_{i}.txt").write_text(f"Invoice total due {i}")
+        (test_dir / f"notes_{i}.txt").write_text(f"Python server deploy {i}")
+    before = sorted(p.name for p in test_dir.iterdir())
+
+    app = ModalTestApp(settings=settings, base_dir=str(tmp_path))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        dropzone = app.screen
+        dropzone.on_paste(
+            Paste(text="\n".join(str(p) for p in sorted(test_dir.iterdir())))
+        )
+        await pilot.pause()
+        dropzone.trigger_drop_triage()
+        for _ in range(100):
+            await pilot.pause(0.1)
+            if isinstance(app.screen, DropPlanConfirmModal):
+                break
+        await pilot.pause()
+        review = app.screen
+        assert isinstance(review, DropPlanConfirmModal)
+        assert "Nothing has been moved yet" in review.summary
+        audit = review.audit_a11y_compliance()
+        assert audit["compliant"] is True, audit["violations"]
+        assert app.focused is review.query_one("#btn-cancel-drop-plan", Button)
+
+        await pilot.press("escape")
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+
+        assert app.screen is dropzone
+        assert dropzone.processed_result is None
+        assert dropzone._pending_drop == []
+        assert sorted(p.name for p in test_dir.iterdir()) == before
 
 
 @pytest.mark.anyio

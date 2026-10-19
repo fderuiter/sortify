@@ -4068,6 +4068,85 @@ class DuplicateReviewModal(A11yMixin, ModalScreen[Optional[Dict[str, str]]]):
         self.dismiss(None)
 
 
+class DropPlanConfirmModal(A11yMixin, ModalScreen[bool]):
+    """Show the DropZone plan and ask before any file is moved."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    DropPlanConfirmModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 100;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    #drop-plan-tree {
+        height: auto;
+        max-height: 20;
+        overflow-y: auto;
+        border: solid $secondary;
+        padding: 0 1;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    """
+
+    def __init__(self, summary: str, plan_lines: List[str]):
+        super().__init__()
+        self.summary = summary
+        self.plan_lines = plan_lines
+
+    def compose(self) -> ComposeResult:
+        """Compose the plan preview with Move and Cancel buttons."""
+        with Vertical(classes="modal-box"):
+            yield Heading("Review DropZone Plan", level=1, classes="modal-title")
+            yield Label(self.summary, id="lbl-drop-plan-summary")
+            yield Static("\n".join(self.plan_lines), id="drop-plan-tree", markup=False)
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button("Cancel", id="btn-cancel-drop-plan")
+                btn_cancel.tooltip = "Close without moving any files"
+                yield btn_cancel
+                btn_move = Button(
+                    "Move Files", id="btn-confirm-drop-plan", variant="success"
+                )
+                btn_move.tooltip = (
+                    "Move the files as shown. You can undo it from History (Ctrl+Y)."
+                )
+                yield btn_move
+
+    def on_mount(self) -> None:
+        """Focus Cancel so Enter never moves files by accident."""
+        self.query_one("#btn-cancel-drop-plan", Button).focus()
+
+    @on(Button.Pressed, "#btn-confirm-drop-plan")
+    def action_confirm(self) -> None:
+        """Confirm the moves."""
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#btn-cancel-drop-plan")
+    def action_cancel(self) -> None:
+        """Cancel without moving anything."""
+        self.dismiss(False)
+
+
 class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     """Floating overlay modal dialog for quick drag-and-drop or paste file triage."""
 
@@ -4695,6 +4774,7 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
         """Dismiss dropzone modal."""
+        self._close_pending_drop()
         self.announce("Cancelled dropzone modal dialog.")
         self.dismiss(None)
 
@@ -4750,16 +4830,26 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             pass
         self.announce(msg, help_url=help_url)
 
+    def _close_pending_drop(self) -> None:
+        """Close the sessions of a planned but unexecuted drop."""
+        for item in getattr(self, "_pending_drop", []):
+            try:
+                item["session"].close()
+            except Exception:
+                pass
+        self._pending_drop = []
+
     @work(exclusive=True, thread=True)
     def run_drop_worker(self, target_paths: List[str]) -> None:
-        """Execute automated file classification and relocation in worker thread."""
+        """Plan the dropped items in a worker thread, then ask before moving."""
         app_ref = getattr(self, "_app_ref", None)
+        self._close_pending_drop()
+        pending: List[Dict[str, Any]] = []
         try:
             from app.core.extractor import build_corpus_generator
             from app.core.scanner import get_files_recursively
             from app.core.session import AppSession
 
-            processed_items = []
             for path in target_paths:
                 if os.path.isdir(path):
                     base_dir = path
@@ -4774,35 +4864,88 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                         f"Classifying {len(files)} file(s) in '{os.path.basename(path)}'...",
                     )
 
-                session = None
-                try:
-                    session = AppSession(self.settings, base_dir=base_dir)
-                    generator = build_corpus_generator(
-                        base_dir=base_dir,
-                        items_to_sort=files,
-                        progress_callback=lambda info=None: None,
-                        max_workers=getattr(self.settings, "MAX_WORKERS", 2),
-                        db=session.db,
-                        settings=self.settings,
-                    )
-                    for chunk in generator:
-                        session.partial_fit(chunk)
+                session = AppSession(self.settings, base_dir=base_dir)
+                pending.append({"path": path, "session": session, "plan": None})
+                generator = build_corpus_generator(
+                    base_dir=base_dir,
+                    items_to_sort=files,
+                    progress_callback=lambda info=None: None,
+                    max_workers=getattr(self.settings, "MAX_WORKERS", 2),
+                    db=session.db,
+                    settings=self.settings,
+                )
+                for chunk in generator:
+                    session.partial_fit(chunk)
+                pending[-1]["plan"] = session.generate_sorting_plan()
 
-                    plan = (
-                        session.generateSorting_plan()
-                        if hasattr(session, "generateSorting_plan")
-                        else session.generate_sorting_plan()
-                    )
-                    if app_ref:
-                        app_ref.call_from_thread(
-                            self.update_status_msg,
-                            "Relocating items according to generated sorting plan...",
-                        )
-                    summary = session.execute_moves(plan)
-                    processed_items.append({"path": path, "summary": summary})
+            self._pending_drop = pending
+            if app_ref:
+                app_ref.call_from_thread(self._confirm_pending_drop)
+            else:
+                self._confirm_pending_drop()
+        except Exception as e:
+            logger.exception(f"Error during dropzone classification: {e}")
+            self._pending_drop = pending
+            self._close_pending_drop()
+            if app_ref:
+                app_ref.call_from_thread(
+                    self.update_status_msg, f"Dropzone triage error: {e}"
+                )
+
+    def _confirm_pending_drop(self) -> None:
+        """Show what the drop would do and wait for the user's go-ahead."""
+        from app.core.domain_contracts import _make_json_serializable
+        from app.core.plan_format import format_plan_tree
+
+        lines: List[str] = []
+        total_files = total_folders = 0
+        for item in self._pending_drop:
+            plan = _make_json_serializable(item["plan"])
+            tree, n_files, n_folders = format_plan_tree(plan)
+            if not n_files:
+                continue
+            total_files += n_files
+            total_folders += n_folders
+            lines.append(f"In {item['session'].base_dir}:")
+            lines.extend(f"  {line}" for line in tree)
+
+        if not total_files:
+            self._close_pending_drop()
+            self.update_status_msg("Nothing to sort: no files could be classified.")
+            return
+
+        summary = (
+            f"Move {total_files} file(s) into {total_folders} folder(s)? "
+            "Nothing has been moved yet."
+        )
+        self.update_status_msg(f"Review the plan: {summary}")
+
+        def _on_answer(confirmed: Optional[bool]) -> None:
+            if confirmed:
+                self.update_status_msg(
+                    "Relocating items according to generated sorting plan..."
+                )
+                self.run_drop_execute_worker()
+            else:
+                self._close_pending_drop()
+                self.update_status_msg("Cancelled. No files were moved.")
+
+        self.app.push_screen(DropPlanConfirmModal(summary, lines), _on_answer)
+
+    @work(exclusive=True, thread=True)
+    def run_drop_execute_worker(self) -> None:
+        """Execute the confirmed drop plans in a worker thread."""
+        app_ref = getattr(self, "_app_ref", None)
+        pending = list(getattr(self, "_pending_drop", []))
+        self._pending_drop = []
+        processed_items = []
+        try:
+            for item in pending:
+                try:
+                    summary = item["session"].execute_moves(item["plan"])
+                    processed_items.append({"path": item["path"], "summary": summary})
                 finally:
-                    if session:
-                        session.close()
+                    item["session"].close()
 
             final_msg = f"Completed triage of {len(processed_items)} dropped item(s)!"
             if app_ref:
@@ -4821,7 +4964,12 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             except Exception:
                 pass
         except Exception as e:
-            logger.exception(f"Error during dropzone classification: {e}")
+            logger.exception(f"Error during dropzone relocation: {e}")
+            for item in pending:
+                try:
+                    item["session"].close()
+                except Exception:
+                    pass
             if app_ref:
                 app_ref.call_from_thread(
                     self.update_status_msg, f"Dropzone triage error: {e}"
