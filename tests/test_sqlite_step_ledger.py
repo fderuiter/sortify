@@ -10,7 +10,8 @@ from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
 from app.core.history import HistoryManager
 from app.core.mover import execute_moves
-from app.core.session import scan_abandoned_sessions_async
+from app.core.session_catalog import find_abandoned_sessions
+from app.core.store import open_store
 
 
 @pytest.fixture
@@ -258,7 +259,7 @@ def mock_session_base(tmp_path, monkeypatch):
 async def test_startup_recovery_triggers_uncommitted_batch_unwind(
     mock_session_base, tmp_path
 ):
-    """Verify that scan_abandoned_sessions_async detects uncommitted batch session with step ledger and triggers automatic recovery."""
+    """Verify that find_abandoned_sessions detects uncommitted batch session with step ledger and triggers automatic recovery."""
     session_id = "uncommitted-session-123"
     session_dir = mock_session_base / session_id
     session_dir.mkdir()
@@ -295,8 +296,8 @@ async def test_startup_recovery_triggers_uncommitted_batch_unwind(
         original_filename="uncommitted.txt",
     )
 
-    # 1. scan_abandoned_sessions_async must detect uncommitted session
-    abandoned = await scan_abandoned_sessions_async()
+    # 1. The legacy history imports into the store, which reports the session
+    abandoned = find_abandoned_sessions(open_store(tmp_path / "app"))
     assert len(abandoned) == 1
     assert abandoned[0]["session_id"] == session_id
     assert abandoned[0]["has_step_ledger"] is True

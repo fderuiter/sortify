@@ -1,15 +1,57 @@
 {
   "_metadata": {
-    "checksum": "99b026b7f494a2bac8c2d97f754ce381ca349a68265a78cbdfcdff3f58f1a2bb"
+    "checksum": "7b829c475168bb0d4be2f290403233b814e1802c586e4aca1804fad244418828"
   },
   "classes": [],
   "functions": [
     {
       "async": false,
       "decorators": [],
-      "name": "find_all_history_sessions",
-      "parameters": [],
+      "name": "find_abandoned_sessions",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "store"
+        },
+        {
+          "annotation": "Path | None",
+          "default": "None",
+          "name": "session_root"
+        }
+      ],
       "returns": "list"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "list_sessions",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "store"
+        }
+      ],
+      "returns": "list"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "mark_session_abandoned",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "session_id"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "store"
+        }
+      ],
+      "returns": "None"
     }
   ]
 }

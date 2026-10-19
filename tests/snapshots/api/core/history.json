@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "8194661c76160a4dc2c529d912bc27a34366ae4c76a2c67626de5419b09330e5"
+    "checksum": "bc92f66ddd06c9dd15510b331b5b6e45580b2e7bbe30e4174843b3714cb05928"
   },
   "classes": [
     {
@@ -264,9 +264,9 @@
       "name": "open_session_history",
       "parameters": [
         {
-          "annotation": "'str | os.PathLike[str] | None'",
+          "annotation": null,
           "default": "None",
-          "name": "history_db_path"
+          "name": "store"
         }
       ],
       "returns": "Iterator[HistoryManager]"
