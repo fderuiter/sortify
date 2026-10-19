@@ -3838,7 +3838,7 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
                 classes="shortcut-row",
             )
             yield Label(
-                "  G           - Create a sample dataset in the current folder",
+                "  G           - Create a sample dataset to try sorting on",
                 classes="shortcut-row",
             )
 
@@ -7331,18 +7331,40 @@ class AutoSorterTUI(A11yMixin, App):
         if self._is_text_control_focused():
             return
 
-        target_dir = self.base_dir or os.getcwd()
-        self.base_dir = target_dir
+        target_dir = self._sample_dataset_dir(self.base_dir or os.getcwd())
 
         from app.core.sample_corpus import generate_sample_corpus
 
         try:
-            generate_sample_corpus(target_dir, overwrite=True)
-            self.announce(f"Generated sample dataset in {target_dir}.")
-            self.action_scan_directory()
+            try:
+                generate_sample_corpus(target_dir, overwrite=False)
+                self.announce(f"Generated sample dataset in {target_dir}.")
+            except FileExistsError:
+                self.announce(f"Using the existing sample dataset in {target_dir}.")
         except Exception as exc:
             logger.error(f"Error generating sample dataset: {exc}")
             self.announce(f"Failed to generate sample dataset: {exc}")
+            return
+        self.base_dir = target_dir
+        self.source_dirs = [target_dir]
+        self.action_scan_directory()
+
+    SAMPLE_DATASET_DIRNAME = "sortify-sample-dataset"
+
+    def _sample_dataset_dir(self, folder: str) -> str:
+        """Pick where [G] writes sample files without mixing them into user files.
+
+        An empty folder (or the sample folder itself) is used as is; any other
+        folder gets a dedicated ``sortify-sample-dataset`` subfolder.
+        """
+        if os.path.basename(os.path.normpath(folder)) == self.SAMPLE_DATASET_DIRNAME:
+            return folder
+        try:
+            with os.scandir(folder) as entries:
+                is_empty = not any(entries)
+        except FileNotFoundError:
+            is_empty = True
+        return folder if is_empty else os.path.join(folder, self.SAMPLE_DATASET_DIRNAME)
 
     def action_open_settings(self) -> None:
         """Open settings modal screen."""
@@ -8624,7 +8646,7 @@ class AutoSorterTUI(A11yMixin, App):
         if data.get("is_empty_state"):
             action = data.get("action")
             if action == "generate_sample_corpus":
-                msg = "Empty workspace node. Press [G] to load sample dataset into active directory."
+                msg = "Empty workspace node. Press [G] to create a sample dataset to try sorting on."
             elif action == "select_dir":
                 msg = "Empty workspace node. Press [Ctrl+B] to select a different directory."
             else:
