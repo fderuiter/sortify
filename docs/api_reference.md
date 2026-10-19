@@ -134,6 +134,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.metadata
 
+## `app.core.migrations`
+
+::: app.core.migrations
+
 ## `app.core.mover`
 
 ::: app.core.mover
@@ -161,6 +165,10 @@ This document is automatically generated. Do not edit manually.
 ## `app.core.pipeline`
 
 ::: app.core.pipeline
+
+## `app.core.plan_format`
+
+::: app.core.plan_format
 
 ## `app.core.plugin_registry`
 
