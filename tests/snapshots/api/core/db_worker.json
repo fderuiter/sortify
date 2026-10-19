@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "8c39998409478fb63cc88995ef1ba5c953d1332125a05a3e50cfefbcb69bad07"
+    "checksum": "25ba6829f1211aa90b13dd607e900c15c17e4e31344ec2b6c26e53147dba9693"
   },
   "classes": [
     {
@@ -246,6 +246,11 @@
               "annotation": null,
               "default": null,
               "name": "self"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "stop_embeddings"
             }
           ],
           "returns": null

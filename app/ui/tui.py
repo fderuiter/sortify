@@ -5434,11 +5434,19 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     "⚠️ Warning: Rolling back will restore files to their original locations prior to this session. Any subsequent manual edits or file relocations in target folders may be unwound or overwritten."
                 )
 
-            yield Checkbox(
-                "Force rollback (ignore missing target files)",
-                value=False,
-                id="chk-ignore-missing",
-            )
+            if self.session_info.get("step_count"):
+                # Step-ledger sessions always skip files that are no longer
+                # at their sorted location, so a force option would do nothing.
+                yield Label(
+                    "Files that are no longer at their sorted location are skipped.",
+                    id="lbl-confirm-missing",
+                )
+            else:
+                yield Checkbox(
+                    "Roll back even if some sorted files are missing (they are skipped)",
+                    value=False,
+                    id="chk-ignore-missing",
+                )
 
             with Horizontal(classes="button-row"):
                 btn_cancel = Button(
@@ -5458,7 +5466,8 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     @on(Button.Pressed, "#btn-confirm-rollback")
     def action_confirm(self) -> None:
         """Confirm rollback action and dismiss modal with parameters."""
-        chk = self.query_one("#chk-ignore-missing", Checkbox)
+        checkboxes = self.query("#chk-ignore-missing").results(Checkbox)
+        chk = next(iter(checkboxes), None)
         self.dismiss(
             {
                 "confirmed": True,
@@ -5605,6 +5614,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             sessions = find_all_history_sessions()
         self.sessions = sessions or []
         self.base_dir = base_dir
+        self._rollback_in_progress = False
 
     def compose(self) -> ComposeResult:
         """Compose history view, export, and rollback modal widgets."""
@@ -5826,6 +5836,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             self.query_one("#btn-rollback-session", Button).disabled = True
             self.query_one("#btn-export", Button).disabled = True
             self.query_one("#btn-cancel", Button).disabled = True
+            self._rollback_in_progress = True
 
             lbl_status = self.query_one("#lbl-rollback-status", Label)
             lbl_status.update(f"⏳ Rolling back session {sid[:8]}... Please wait.")
@@ -5844,21 +5855,12 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     ) -> None:
         """Execute session rollback asynchronously in background worker thread."""
         try:
-            from app.config import get_app_dir
-            from app.core.cache import CacheManager
-            from app.core.db import Database
-            from app.core.db_worker import DBWorker
-            from app.core.history import HistoryManager
+            from app.core.history import open_session_history
 
-            target_db = history_db_path or str(get_app_dir() / "history.db")
-            db_worker = DBWorker()
-            db = Database(get_app_dir() / "autosorter.db", db_worker)
-            cache_mgr = CacheManager(str(get_app_dir() / "cache.db"), db_worker)
-            history_mgr = HistoryManager(db, cache_mgr, target_db)
-
-            restored_count = history_mgr.rollback(
-                session_id, ignore_missing=ignore_missing
-            )
+            with open_session_history(history_db_path) as history_mgr:
+                restored_count = history_mgr.rollback(
+                    session_id, ignore_missing=ignore_missing
+                )
 
             app_obj = getattr(self, "app", None)
             if app_obj and hasattr(app_obj, "call_from_thread"):
@@ -5876,6 +5878,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
     def _on_rollback_success(self, session_id: str, restored_count: int) -> None:
         """Handle successful session rollback completion on main thread."""
+        self._rollback_in_progress = False
         from app.main import find_all_history_sessions
 
         self.sessions = find_all_history_sessions()
@@ -5900,6 +5903,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
     def _on_rollback_failure(self, session_id: str, err: Exception) -> None:
         """Handle session rollback failure on main thread."""
+        self._rollback_in_progress = False
         lbl_status = self.query_one("#lbl-rollback-status", Label)
         lbl_status.update(f"❌ Rollback failed: {err}")
 
@@ -5943,7 +5947,10 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
-        """Cancel history export modal."""
+        """Cancel history export modal, unless a rollback is still running."""
+        if self._rollback_in_progress:
+            self.announce("Rollback in progress. Please wait for it to finish.")
+            return
         self.dismiss(None)
 
 

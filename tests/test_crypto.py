@@ -293,6 +293,64 @@ def test_copy_db_to_new_system_without_keyring(tmp_path, monkeypatch):
     assert decrypted == original_text
 
 
+def _disable_keyring(monkeypatch):
+    def mock_set_password(*args, **kwargs):
+        raise Exception("Keyring unavailable")
+
+    monkeypatch.setattr(keyring, "set_password", mock_set_password)
+    monkeypatch.setattr(keyring, "get_password", lambda *args, **kwargs: None)
+
+
+def test_legacy_migration_keeps_sibling_database_keys(tmp_path, monkeypatch):
+    """Opening one database must not destroy another database's legacy key."""
+    _disable_keyring(monkeypatch)
+    legacy_dir = tmp_path / ".keys"
+    legacy_dir.mkdir()
+    main_key = Fernet.generate_key()
+    history_key = Fernet.generate_key()
+    (legacy_dir / "sortify.db.key").write_bytes(main_key)
+    (legacy_dir / "history.db.key").write_bytes(history_key)
+    secret = Fernet(history_key).encrypt(b"history payload").decode("utf-8")
+
+    main = SessionCrypto(tmp_path / "secret.key", tmp_path / "sortify.db")
+    main.get_cipher()
+    assert main.get_raw_key() == main_key.decode("utf-8")
+    assert not (legacy_dir / "sortify.db.key").exists()
+    assert (legacy_dir / "history.db.key").read_bytes() == history_key
+
+    history = SessionCrypto(tmp_path / "secret.key", tmp_path / "history.db")
+    assert history.decrypt_text(secret) == "history payload"
+    assert not legacy_dir.exists()
+
+
+def test_legacy_migration_never_uses_another_databases_key(tmp_path, monkeypatch):
+    """A database with no legacy key of its own gets a new key, not a sibling's."""
+    _disable_keyring(monkeypatch)
+    legacy_dir = tmp_path / ".keys"
+    legacy_dir.mkdir()
+    history_key = Fernet.generate_key()
+    (legacy_dir / "history.db.key").write_bytes(history_key)
+
+    main = SessionCrypto(tmp_path / "secret.key", tmp_path / "sortify.db")
+    main.get_cipher()
+    assert main.get_raw_key() != history_key.decode("utf-8")
+    assert (legacy_dir / "history.db.key").read_bytes() == history_key
+
+
+def test_missing_key_with_rows_in_any_table_fails(tmp_path, monkeypatch):
+    """A lost key is an error for any populated database, not only `documents`."""
+    _disable_keyring(monkeypatch)
+    db_path = tmp_path / "history.db"
+    with closing(sqlite3.connect(db_path)) as conn:
+        conn.execute("CREATE TABLE moves (payload TEXT)")
+        conn.execute("INSERT INTO moves VALUES ('encrypted')")
+        conn.commit()
+
+    crypto = SessionCrypto(tmp_path / "secret.key", db_path)
+    with pytest.raises(CryptoError, match="key file is missing"):
+        crypto.get_cipher()
+
+
 def test_standard_sqlite_fallback_rejection(tmp_path, monkeypatch):
     """Verify that standard SQLite fallback connections are completely rejected during initialization."""
     from app.core import db_conn
