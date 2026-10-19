@@ -33,7 +33,7 @@ jobs:
           python-version: "3.12"
 
       - name: Install dependencies
-        run: uv sync --only-group dev
+        run: uv sync --frozen --only-group dev
 
       - name: Extract PR Metadata
         uses: actions/github-script@v9

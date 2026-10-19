@@ -1,5 +1,6 @@
 """Textual full-screen terminal interface with interactive tree and modal dialogs."""
 
+import difflib
 import logging
 import os
 import shutil
@@ -12,6 +13,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
+from rich.table import Table
 from rich.text import Text
 from textual import events, on, work
 from textual.app import App, ComposeResult
@@ -45,6 +47,134 @@ from app.core.text_utils import sanitize_secret_patterns
 from app.ui.heading import Heading
 
 logger = logging.getLogger(__name__)
+
+
+def _diff_highlight_paths(
+    src_path: str, tgt_path: str
+) -> Tuple[Text, Text]:
+    """Compute contrasting color diff highlighting for two path strings."""
+    if not src_path and not tgt_path:
+        return Text("(None)", style="dim"), Text("(None)", style="dim")
+
+    src_clean = src_path or "(None)"
+    tgt_clean = tgt_path or "(None)"
+
+    if src_clean == tgt_clean:
+        return Text(src_clean, style="dim white"), Text(tgt_clean, style="dim white")
+
+    matcher = difflib.SequenceMatcher(None, src_clean, tgt_clean)
+    src_formatted = Text()
+    tgt_formatted = Text()
+
+    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
+        if tag == "equal":
+            src_formatted.append(src_clean[i1:i2])
+            tgt_formatted.append(tgt_clean[j1:j2])
+        elif tag == "replace":
+            src_formatted.append(src_clean[i1:i2], style="bold red")
+            tgt_formatted.append(tgt_clean[j1:j2], style="bold green")
+        elif tag == "delete":
+            src_formatted.append(src_clean[i1:i2], style="bold red")
+        elif tag == "insert":
+            tgt_formatted.append(tgt_clean[j1:j2], style="bold green")
+
+    return src_formatted, tgt_formatted
+
+
+def format_side_by_side_path_comparison(
+    source_path: str,
+    target_path: str,
+    base_dir: Optional[str] = None,
+) -> Table:
+    """Render split side-by-side columns comparing source and target paths with contrasting color diffs."""
+    table = Table(
+        expand=True,
+        show_header=True,
+        header_style="bold cyan",
+        box=None,
+    )
+    table.add_column("Source Path (Current)", style="bold", ratio=1)
+    table.add_column("Target Path (Proposed)", style="bold", ratio=1)
+
+    src_norm = source_path.replace("\\", "/") if source_path else ""
+    tgt_norm = target_path.replace("\\", "/") if target_path else ""
+
+    base_norm = base_dir.replace("\\", "/") if base_dir else ""
+    if base_norm and not base_norm.endswith("/"):
+        base_norm += "/"
+
+    src_rel = (
+        src_norm[len(base_norm) :]
+        if base_norm and src_norm.lower().startswith(base_norm.lower())
+        else src_norm
+    )
+    tgt_rel = (
+        tgt_norm[len(base_norm) :]
+        if base_norm and tgt_norm.lower().startswith(base_norm.lower())
+        else tgt_norm
+    )
+
+    src_rel_fmt, tgt_rel_fmt = _diff_highlight_paths(src_rel, tgt_rel)
+    table.add_row(src_rel_fmt, tgt_rel_fmt)
+
+    if base_norm and (src_norm != src_rel or tgt_norm != tgt_rel):
+        src_full_fmt, tgt_full_fmt = _diff_highlight_paths(src_norm, tgt_norm)
+        table.add_row(src_full_fmt, tgt_full_fmt)
+
+    return table
+
+
+def format_folder_path_comparison(
+    files_info: List[Dict[str, Any]],
+    base_dir: Optional[str] = None,
+    max_items: int = 8,
+) -> Table:
+    """Render side-by-side path comparison table for items in a folder subtree."""
+    table = Table(
+        expand=True,
+        show_header=True,
+        header_style="bold cyan",
+        box=None,
+    )
+    table.add_column("Source Path (Current)", style="bold", ratio=1)
+    table.add_column("Target Path (Proposed)", style="bold", ratio=1)
+
+    if not files_info:
+        table.add_row(
+            Text("No files in folder", style="dim"),
+            Text("No files in folder", style="dim"),
+        )
+        return table
+
+    for fi in files_info[:max_items]:
+        src_path = fi.get("filepath", "")
+        key = fi.get("key") or fi.get("target_filename") or ""
+        folder = fi.get("folder", "")
+        target_fn = fi.get("target_filename") or key
+        tgt_rel = (
+            os.path.join(folder, target_fn).replace("\\", "/")
+            if folder and folder != "(Root)"
+            else target_fn
+        )
+
+        src_rel = src_path
+        if base_dir and src_path:
+            base_norm = base_dir.replace("\\", "/").rstrip("/") + "/"
+            src_norm = src_path.replace("\\", "/")
+            if src_norm.lower().startswith(base_norm.lower()):
+                src_rel = src_norm[len(base_norm) :]
+
+        src_fmt, tgt_fmt = _diff_highlight_paths(src_rel, tgt_rel)
+        table.add_row(src_fmt, tgt_fmt)
+
+    if len(files_info) > max_items:
+        remaining = len(files_info) - max_items
+        table.add_row(
+            Text(f"... and {remaining} more items", style="dim italic"),
+            Text(f"... and {remaining} more items", style="dim italic"),
+        )
+
+    return table
 
 
 class A11yMixin:
@@ -5230,8 +5360,187 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
         self.action_cancel()
 
 
+class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
+    """Confirmation modal dialog before executing session rollback."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel rollback dialog", show=True),
+    ]
+
+    CSS = """
+    RollbackConfirmModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.7);
+    }
+    .confirm-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $warning;
+        width: 85%;
+        max-width: 75;
+        height: auto;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $warning;
+        margin-bottom: 1;
+    }
+    .warning-box {
+        margin-top: 1;
+        margin-bottom: 1;
+        padding: 1;
+        background: $boost;
+        border: dashed $warning;
+        color: $text;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    """
+
+    def __init__(self, session_info: Dict[str, Any]):
+        super().__init__()
+        self.session_info = session_info
+
+    def compose(self) -> ComposeResult:
+        """Compose confirmation modal widgets."""
+        sid = self.session_info.get("session_id", "unknown")
+        b_dir = self.session_info.get("base_dir") or "N/A"
+        step_cnt = (
+            self.session_info.get("step_count")
+            or self.session_info.get("file_count")
+            or 0
+        )
+        ts = self.session_info.get("timestamp")
+        ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "N/A"
+
+        with Vertical(classes="confirm-box"):
+            yield Heading(
+                "Confirm Session Rollback",
+                level=1,
+                classes="modal-title",
+                id="confirm-title",
+            )
+            yield Label(f"Session ID: {sid}", id="lbl-confirm-sid")
+            yield Label(f"Base Directory: {b_dir}", id="lbl-confirm-dir")
+            yield Label(
+                f"Operations / Files to restore: {step_cnt}", id="lbl-confirm-ops"
+            )
+            yield Label(f"Session Timestamp: {ts_str}", id="lbl-confirm-ts")
+
+            with Vertical(classes="warning-box"):
+                yield Label(
+                    "⚠️ Warning: Rolling back will restore files to their original locations prior to this session. Any subsequent manual edits or file relocations in target folders may be unwound or overwritten."
+                )
+
+            yield Checkbox(
+                "Force rollback (ignore missing target files)",
+                value=False,
+                id="chk-ignore-missing",
+            )
+
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button(
+                    "Cancel", id="btn-cancel-rollback", variant="default"
+                )
+                yield btn_cancel
+                btn_confirm = Button(
+                    "Confirm Rollback", id="btn-confirm-rollback", variant="error"
+                )
+                yield btn_confirm
+
+    def on_mount(self) -> None:
+        """Focus confirm button and announce modal screen."""
+        self.query_one("#btn-confirm-rollback", Button).focus()
+        self.announce("Opened rollback confirmation modal dialog.")
+
+    @on(Button.Pressed, "#btn-confirm-rollback")
+    def action_confirm(self) -> None:
+        """Confirm rollback action and dismiss modal with parameters."""
+        chk = self.query_one("#chk-ignore-missing", Checkbox)
+        self.dismiss(
+            {
+                "confirmed": True,
+                "session_id": self.session_info.get("session_id"),
+                "ignore_missing": chk.value if chk else False,
+            }
+        )
+
+    @on(Button.Pressed, "#btn-cancel-rollback")
+    def action_cancel(self) -> None:
+        """Cancel rollback confirmation dialog."""
+        self.dismiss(None)
+
+
+class RollbackErrorModal(A11yMixin, ModalScreen[None]):
+    """Modal dialog displaying error messages encountered during session rollback."""
+
+    BINDINGS = [
+        Binding("escape", "close", "Close error dialog", show=True),
+    ]
+
+    CSS = """
+    RollbackErrorModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.7);
+    }
+    .error-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $error;
+        width: 85%;
+        max-width: 75;
+        height: auto;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $error;
+        margin-bottom: 1;
+    }
+    .error-text {
+        margin-top: 1;
+        margin-bottom: 1;
+        color: $text;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    """
+
+    def __init__(self, title: str = "Rollback Failed", error_message: str = ""):
+        super().__init__()
+        self.error_title = title
+        self.error_message = error_message
+
+    def compose(self) -> ComposeResult:
+        """Compose error modal widgets."""
+        with Vertical(classes="error-box"):
+            yield Heading(
+                self.error_title, level=1, classes="modal-title", id="error-title"
+            )
+            yield Label(
+                self.error_message, classes="error-text", id="lbl-error-message"
+            )
+            with Horizontal(classes="button-row"):
+                yield Button("Close", id="btn-close-error", variant="primary")
+
+    def on_mount(self) -> None:
+        """Focus close button and announce error message."""
+        self.query_one("#btn-close-error", Button).focus()
+        self.announce(f"Error dialog: {self.error_title}")
+
+    @on(Button.Pressed, "#btn-close-error")
+    def action_close(self) -> None:
+        """Dismiss error modal dialog."""
+        self.dismiss(None)
+
+
 class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
-    """Modal dialog for viewing session history records and exporting audit logs."""
+    """Modal dialog for viewing session history records, exporting audit logs, and rolling back sessions."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
@@ -5266,6 +5575,14 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         color: $text-muted;
         margin-bottom: 1;
     }
+    .details-box {
+        margin-top: 1;
+        margin-bottom: 1;
+        padding: 1;
+        background: $boost;
+        border: solid $accent;
+        color: $text;
+    }
     .button-row {
         margin-top: 1;
         height: 3;
@@ -5291,16 +5608,16 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         self.base_dir = base_dir
 
     def compose(self) -> ComposeResult:
-        """Compose history view and export modal widgets."""
+        """Compose history view, export, and rollback modal widgets."""
         with Vertical(classes="modal-box"):
             yield Heading(
-                "Session History & Audit Log Export [Ctrl+H]",
+                "Session History & Rollback Controls [Ctrl+H]",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
             )
             yield Label(
-                "Select a session row to export activity audit log:",
+                "Select a session row to export audit log or perform session rollback:",
                 classes="modal-subtitle",
             )
 
@@ -5309,7 +5626,13 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 sid = s.get("session_id", "unknown")
                 b_dir = s.get("base_dir") or "N/A"
                 status = s.get("status") or "completed"
-                options.append((f"{sid[:8]}... | {status} | {b_dir}", sid))
+                step_cnt = s.get("step_count") or s.get("file_count") or 0
+                options.append(
+                    (
+                        f"{sid[:8]}... | {status.upper()} | {step_cnt} file(s) | {b_dir}",
+                        sid,
+                    )
+                )
 
             if len(options) == 1 and not self.sessions:
                 options = [("No historical sessions found", "none")]
@@ -5320,10 +5643,19 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 id="select-history-session",
                 allow_blank=False,
             )
-            select_sess.tooltip = "Select historical session row for audit log export"
+            select_sess.tooltip = (
+                "Select historical session row for audit log export or session rollback"
+            )
             yield select_sess
 
-            yield Label("Output File Path:")
+            yield Label("Session Details:", classes="modal-subtitle")
+            yield Label(
+                "Select a session above to view details.",
+                id="lbl-session-details",
+                classes="details-box",
+            )
+
+            yield Label("Output File Path (Audit Log Export):")
             inp_path = Input(
                 value="./audit_log.csv",
                 placeholder="Enter export path (e.g. ./audit_log.csv)...",
@@ -5344,10 +5676,22 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             fmt_select.tooltip = "Select audit log output format"
             yield fmt_select
 
+            yield Label("", id="lbl-rollback-status")
+
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
-                btn_cancel.tooltip = "Cancel history export dialog"
+                btn_cancel.tooltip = "Cancel history dialog"
                 yield btn_cancel
+
+                btn_rollback = Button(
+                    "Rollback Session",
+                    id="btn-rollback-session",
+                    variant="warning",
+                    disabled=True,
+                )
+                btn_rollback.tooltip = "Revert file operations for selected session"
+                yield btn_rollback
+
                 btn_export = Button(
                     "Export Audit Log", id="btn-export", variant="primary"
                 )
@@ -5370,8 +5714,66 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     def on_mount(self) -> None:
         """Focus session select widget on mount and emit accessibility announcement."""
         self._update_layout(self.size.width)
-        self.query_one("#select-history-session", Select).focus()
-        self.announce("Opened session history export modal dialog.")
+        select_widget = self.query_one("#select-history-session", Select)
+        select_widget.focus()
+        self._update_selected_session_view(select_widget.value)
+        self.announce("Opened session history export and rollback modal dialog.")
+
+    @on(Select.Changed, "#select-history-session")
+    def on_session_changed(self, event: Select.Changed) -> None:
+        """Update session details label and button state when session selection changes."""
+        self._update_selected_session_view(event.value)
+
+    def _update_selected_session_view(self, session_val: Any) -> None:
+        """Update session details label and enable/disable rollback button based on selected session."""
+        try:
+            lbl_details = self.query_one("#lbl-session-details", Label)
+            btn_rollback = self.query_one("#btn-rollback-session", Button)
+        except Exception:
+            return
+
+        if not session_val or session_val in ("none", "all"):
+            lbl_details.update(
+                "Aggregate log across all historical sessions selected."
+                if session_val == "all"
+                else "No session selected."
+            )
+            btn_rollback.disabled = True
+            btn_rollback.tooltip = "Select an individual session to enable rollback"
+            return
+
+        target = None
+        for s in self.sessions:
+            if s.get("session_id") == session_val:
+                target = s
+                break
+
+        if not target:
+            lbl_details.update("Session information unavailable.")
+            btn_rollback.disabled = True
+            return
+
+        sid = target.get("session_id", "N/A")
+        status = target.get("status") or "completed"
+        b_dir = target.get("base_dir") or "N/A"
+        step_cnt = target.get("step_count") or target.get("file_count") or 0
+        ts = target.get("timestamp")
+        ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "N/A"
+
+        details_str = (
+            f"Session ID: {sid}\n"
+            f"Status: {status.upper()} | Operations/Files: {step_cnt}\n"
+            f"Timestamp: {ts_str}\n"
+            f"Base Directory: {b_dir}"
+        )
+        lbl_details.update(details_str)
+
+        if status.lower() == "rolled_back":
+            btn_rollback.disabled = True
+            btn_rollback.tooltip = "Session has already been rolled back"
+        else:
+            btn_rollback.disabled = False
+            btn_rollback.tooltip = "Revert file operations for selected session"
 
     @on(Button.Pressed, "#btn-export")
     def action_export_audit(self) -> None:
@@ -5395,6 +5797,150 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 "format": str(format_val),
             }
         )
+
+    @on(Button.Pressed, "#btn-rollback-session")
+    def action_rollback_session(self) -> None:
+        """Prompt confirmation and initiate asynchronous session rollback."""
+        session_val = self.query_one("#select-history-session", Select).value
+        if not session_val or session_val in ("none", "all"):
+            self.announce("Please select a specific session to rollback.")
+            return
+
+        target_sess = None
+        for s in self.sessions:
+            if s.get("session_id") == session_val:
+                target_sess = s
+                break
+
+        if not target_sess or str(target_sess.get("status")).lower() == "rolled_back":
+            self.announce("Selected session cannot be rolled back.")
+            return
+
+        def handle_confirm_result(result: Optional[Dict[str, Any]]) -> None:
+            if not result or not result.get("confirmed"):
+                return
+
+            sid = result["session_id"]
+            ignore_missing = result.get("ignore_missing", False)
+            db_path = target_sess.get("history_db_path")
+
+            self.query_one("#btn-rollback-session", Button).disabled = True
+            self.query_one("#btn-export", Button).disabled = True
+            self.query_one("#btn-cancel", Button).disabled = True
+
+            lbl_status = self.query_one("#lbl-rollback-status", Label)
+            lbl_status.update(f"⏳ Rolling back session {sid[:8]}... Please wait.")
+            self.announce(f"Executing rollback for session {sid[:8]}...")
+
+            self.run_rollback_worker(sid, ignore_missing, db_path)
+
+        self.app.push_screen(
+            RollbackConfirmModal(session_info=target_sess),
+            handle_confirm_result,
+        )
+
+    @work(thread=True)
+    def run_rollback_worker(
+        self, session_id: str, ignore_missing: bool, history_db_path: Optional[str]
+    ) -> None:
+        """Execute session rollback asynchronously in background worker thread."""
+        try:
+            from app.config import get_app_dir
+            from app.core.cache import CacheManager
+            from app.core.db import Database
+            from app.core.db_worker import DBWorker
+            from app.core.history import HistoryManager
+
+            target_db = history_db_path or str(get_app_dir() / "history.db")
+            db_worker = DBWorker()
+            db = Database(get_app_dir() / "autosorter.db", db_worker)
+            cache_mgr = CacheManager(str(get_app_dir() / "cache.db"), db_worker)
+            history_mgr = HistoryManager(db, cache_mgr, target_db)
+
+            restored_count = history_mgr.rollback(
+                session_id, ignore_missing=ignore_missing
+            )
+
+            app_obj = getattr(self, "app", None)
+            if app_obj and hasattr(app_obj, "call_from_thread"):
+                app_obj.call_from_thread(
+                    self._on_rollback_success, session_id, restored_count
+                )
+            else:
+                self._on_rollback_success(session_id, restored_count)
+        except Exception as err:
+            app_obj = getattr(self, "app", None)
+            if app_obj and hasattr(app_obj, "call_from_thread"):
+                app_obj.call_from_thread(self._on_rollback_failure, session_id, err)
+            else:
+                self._on_rollback_failure(session_id, err)
+
+    def _on_rollback_success(self, session_id: str, restored_count: int) -> None:
+        """Handle successful session rollback completion on main thread."""
+        from app.main import find_all_history_sessions
+
+        self.sessions = find_all_history_sessions()
+        self._refresh_session_options(selected_sid=session_id)
+
+        lbl_status = self.query_one("#lbl-rollback-status", Label)
+        lbl_status.update(
+            f"✅ Session successfully rolled back. ({restored_count} operations unwound)"
+        )
+
+        msg = f"Session {session_id[:8]}... successfully rolled back ({restored_count} file(s) restored)."
+        self.announce(msg)
+        try:
+            from app.ui.notifications import notify
+
+            notify(msg, type="info")
+        except Exception:
+            pass
+
+        self.query_one("#btn-cancel", Button).disabled = False
+        self.query_one("#btn-export", Button).disabled = False
+
+    def _on_rollback_failure(self, session_id: str, err: Exception) -> None:
+        """Handle session rollback failure on main thread."""
+        lbl_status = self.query_one("#lbl-rollback-status", Label)
+        lbl_status.update(f"❌ Rollback failed: {err}")
+
+        msg = f"Rollback failed for session {session_id[:8]}...: {err}"
+        self.announce(msg)
+        try:
+            from app.ui.notifications import notify
+
+            notify(msg, type="error")
+        except Exception:
+            pass
+
+        self.query_one("#btn-cancel", Button).disabled = False
+        self.query_one("#btn-export", Button).disabled = False
+        self.query_one("#btn-rollback-session", Button).disabled = False
+
+        self.app.push_screen(
+            RollbackErrorModal(title="Rollback Failed", error_message=str(err))
+        )
+
+    def _refresh_session_options(self, selected_sid: Optional[str] = None) -> None:
+        """Re-populate session select dropdown widget options after state update."""
+        select_sess = self.query_one("#select-history-session", Select)
+        options = [("All Sessions (Aggregate Audit Log)", "all")]
+        for s in self.sessions:
+            sid = s.get("session_id", "unknown")
+            b_dir = s.get("base_dir") or "N/A"
+            status = s.get("status") or "completed"
+            step_cnt = s.get("step_count") or s.get("file_count") or 0
+            options.append(
+                (f"{sid[:8]}... | {status.upper()} | {step_cnt} file(s) | {b_dir}", sid)
+            )
+
+        if len(options) == 1 and not self.sessions:
+            options = [("No historical sessions found", "none")]
+
+        select_sess.set_options(options)
+        if selected_sid:
+            select_sess.value = selected_sid
+        self._update_selected_session_view(select_sess.value)
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
@@ -6256,6 +6802,15 @@ class AutoSorterTUI(A11yMixin, App):
             tree.tooltip = "Interactive tree view of proposed file organization plan"
             yield tree
             with Vertical(id="right-meta-pane"):
+                yield Heading("Side-by-Side Path Comparison", level=2, classes="meta-header")
+                path_comp = Static(
+                    "Select a file or folder in the tree to compare source and target paths.",
+                    id="path-comparison",
+                )
+                path_comp.tooltip = (
+                    "Side-by-side split column view comparing source and destination target paths"
+                )
+                yield path_comp
                 yield Heading("Node Metadata Inspector", level=2, classes="meta-header")
                 meta_widget = Static(
                     "Select a node in the tree to inspect details.", id="meta-details"
@@ -7439,6 +7994,12 @@ class AutoSorterTUI(A11yMixin, App):
             else:
                 self._build_tree_nodes(self.plan, tree.root, current_folder="")
             tree.root.expand_all()
+            if tree.cursor_node and tree.cursor_node.data:
+                self._update_inspector(tree.cursor_node, announce=False)
+            elif getattr(self, "active_tree_node", None) and self.active_tree_node.data:
+                self._update_inspector(self.active_tree_node, announce=False)
+            else:
+                self._update_inspector(None, announce=False)
             self.run_validation_worker()
         except Exception as e:
             logger.error(f"Error rebuilding tree: {e}")
@@ -7667,8 +8228,10 @@ class AutoSorterTUI(A11yMixin, App):
                 )
                 self._build_tree_nodes(v, child_tree_node, current_folder=sub_folder)
 
-    def _update_inspector(self, node_or_data: Any = None) -> str:
-        """Update and return formatted metadata text for the inspector panel."""
+    def _update_inspector(
+        self, node_or_data: Any = None, announce: bool = True
+    ) -> str:
+        """Update and return formatted metadata text for the inspector panel and path comparison pane."""
         if node_or_data is None:
             node_or_data = self.active_tree_node
 
@@ -7678,6 +8241,12 @@ class AutoSorterTUI(A11yMixin, App):
         elif isinstance(node_or_data, dict):
             data = node_or_data
 
+        path_comp_widget = None
+        try:
+            path_comp_widget = self.query_one("#path-comparison", Static)
+        except Exception:
+            pass
+
         if not data or not isinstance(data, dict):
             msg = "Root folder of sorting plan."
             try:
@@ -7685,6 +8254,12 @@ class AutoSorterTUI(A11yMixin, App):
                 meta_widget.update(msg)
             except Exception:
                 pass
+            if path_comp_widget:
+                all_files = self._collect_file_nodes_from_dict(self.plan) if hasattr(self, "plan") and self.plan else []
+                if all_files:
+                    path_comp_widget.update(format_folder_path_comparison(all_files, self.base_dir))
+                else:
+                    path_comp_widget.update("Select a file or folder in the tree to compare source and target paths.")
             return msg
 
         if data.get("is_empty_state"):
@@ -7695,12 +8270,15 @@ class AutoSorterTUI(A11yMixin, App):
                 msg = "Empty workspace node. Press [Ctrl+B] to select a different directory."
             else:
                 msg = "Empty workspace node. No documents found in target directory."
-            self.announce(msg)
+            if announce:
+                self.announce(msg)
             try:
                 meta_widget = self.query_one("#meta-details", Static)
                 meta_widget.update(msg)
             except Exception:
                 pass
+            if path_comp_widget:
+                path_comp_widget.update("No documents available for path comparison.")
             return msg
 
         lines = []
@@ -7710,6 +8288,24 @@ class AutoSorterTUI(A11yMixin, App):
             locked = "Yes [LOCKED]" if data.get("is_locked") else "No"
             rating = data.get("rating") or "None"
             info = data.get("info") if isinstance(data.get("info"), dict) else {}
+
+            src_filepath = data.get("filepath") or info.get("filepath") or key
+            target_fn = info.get("target_filename") or key
+            target_folder = folder if folder != "(Root)" else ""
+            if self.base_dir and target_folder:
+                target_filepath = os.path.join(self.base_dir, target_folder, target_fn)
+            elif self.base_dir:
+                target_filepath = os.path.join(self.base_dir, target_fn)
+            else:
+                target_filepath = os.path.join(target_folder, target_fn) if target_folder else target_fn
+
+            if path_comp_widget:
+                table = format_side_by_side_path_comparison(
+                    source_path=src_filepath,
+                    target_path=target_filepath,
+                    base_dir=self.base_dir,
+                )
+                path_comp_widget.update(table)
 
             lines.append(f"[bold accent]File:[/bold accent] {key}")
             lines.append(f"[bold]Path:[/bold] {data.get('filepath')}")
@@ -7803,15 +8399,36 @@ class AutoSorterTUI(A11yMixin, App):
                     f"[bold warning]Collision Indicator:[/bold warning] [COLLISION: {pol_str}]"
                 )
 
-            self.announce(
-                f"Selected file '{key}' in folder '{folder}'. Locked: {locked}. Rating: {rating}."
-            )
+            if announce:
+                self.announce(
+                    f"Selected file '{key}' in folder '{folder}'. Locked: {locked}. Rating: {rating}."
+                )
         else:
             key = data.get("key", "")
             folder = data.get("folder", "")
+            folder_info = data.get("info", {})
+            child_files = (
+                self._collect_file_nodes_from_dict(folder_info)
+                if isinstance(folder_info, dict)
+                else []
+            )
+
+            if path_comp_widget:
+                if child_files:
+                    table = format_folder_path_comparison(
+                        files_info=child_files,
+                        base_dir=self.base_dir,
+                    )
+                    path_comp_widget.update(table)
+                else:
+                    path_comp_widget.update(
+                        f"Folder category '{key}' contains no document items."
+                    )
+
             lines.append(f"[bold accent]Folder Category:[/bold accent] {key}")
             lines.append(f"[bold]Relative Path:[/bold] {folder}")
-            self.announce(f"Selected folder category '{key}' at path '{folder}'.")
+            if announce:
+                self.announce(f"Selected folder category '{key}' at path '{folder}'.")
 
         text = "\n".join(lines)
         try:

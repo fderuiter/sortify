@@ -79,8 +79,16 @@ def _close_evicted_connection(key, conn):
 
 _connection_cache = BoundedMemoryCache(max_size=50, on_evict=_close_evicted_connection)
 _cache_lock = threading.RLock()
-_db_init_lock = threading.RLock()
+_path_init_locks = {}
+_path_locks_lock = threading.Lock()
 _disable_pytest_win_fallback = True
+
+
+def _get_path_init_lock(abs_path: str) -> threading.Lock:
+    with _path_locks_lock:
+        if abs_path not in _path_init_locks:
+            _path_init_locks[abs_path] = threading.Lock()
+        return _path_init_locks[abs_path]
 
 
 def clear_connection_cache(only_current_and_inactive: bool = True):
@@ -118,6 +126,8 @@ def clear_connection_cache(only_current_and_inactive: bool = True):
                 except Exception:
                     pass
             _connection_cache.clear()
+            with _path_locks_lock:
+                _path_init_locks.clear()
     gc.collect()
 
 
@@ -151,7 +161,8 @@ def get_db_connection(db_path: str):
         # Automatically clean up connections for dead threads to prevent resource and lock leaks on Windows
         clear_dead_thread_connections()
 
-    with _db_init_lock:
+    path_lock = _get_path_init_lock(abs_path)
+    with path_lock:
         with _cache_lock:
             if cache_key in _connection_cache:
                 return _connection_cache[cache_key]

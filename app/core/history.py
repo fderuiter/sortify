@@ -436,15 +436,40 @@ class HistoryManager:
             cur = conn.execute(
                 "SELECT session_id, timestamp, base_dir, status FROM sessions ORDER BY timestamp DESC"
             )
-            return [
-                {
-                    "session_id": r[0],
-                    "timestamp": r[1],
-                    "base_dir": r[2],
-                    "status": r[3],
-                }
-                for r in cur.fetchall()
-            ]
+            sessions = []
+            for r in cur.fetchall():
+                sid, ts, b_dir, status = r
+                step_count = 0
+                try:
+                    c = conn.execute(
+                        "SELECT COUNT(*) FROM step_ledger WHERE session_id = ?",
+                        (sid,),
+                    )
+                    step_count = c.fetchone()[0]
+                except Exception:
+                    pass
+
+                file_count = 0
+                try:
+                    c = conn.execute(
+                        "SELECT COUNT(*) FROM snapshot_files WHERE session_id = ?",
+                        (sid,),
+                    )
+                    file_count = c.fetchone()[0]
+                except Exception:
+                    pass
+
+                sessions.append(
+                    {
+                        "session_id": sid,
+                        "timestamp": ts,
+                        "base_dir": b_dir,
+                        "status": status,
+                        "step_count": step_count,
+                        "file_count": file_count,
+                    }
+                )
+            return sessions
 
     def check_missing_files(self, session_id: str) -> List[str]:
         """Check if any files from the snapshot are missing from the disk."""
@@ -1201,6 +1226,8 @@ class HistoryManager:
                             f"Failed to unwind step {step['step_id']}: {move_err}"
                         )
                         failed_unwinds.append((step, move_err))
+        elif snapshot_files:
+            return self._rollback_from_snapshot_internal(session_id, base_dir=base_dir)
 
         if failed_unwinds:
             first_err = failed_unwinds[0][1]
