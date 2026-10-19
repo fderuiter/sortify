@@ -4,7 +4,7 @@ This document is automatically generated. Do not edit manually.
 
 ## Configuration Parameters
 
-The following parameters are extracted directly from the application's configuration schema (`app.config.Settings`). Set them with `smart-autosorter config --set NAME VALUE`, in `~/.autosorter/settings.json`, or as an environment variable of the same name.
+The following parameters are extracted directly from the application's configuration schema (`app.config.Settings`). Set them with `smart-autosorter config --set NAME VALUE`, in `~/.autosorter/settings.json`, or as an environment variable with the `SORTIFY_` prefix (for example `SORTIFY_MAX_FOLDERS`).
 
 ### `CONTEXTUAL_RENAMING`
 - **Type**: `bool`

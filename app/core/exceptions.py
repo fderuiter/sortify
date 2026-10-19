@@ -103,3 +103,13 @@ class AuditExportError(SortifyBaseError, OSError):
     """Base exception for audit report export and file write operations."""
 
     pass
+
+
+class PartialMoveError(SortifyBaseError, RuntimeError):
+    """Raised when a folder was copied to its target but the source could only be partly removed.
+
+    The target holds the only complete copy, so it is kept. Not an OSError, so
+    move retries don't copy the leftover source again.
+    """
+
+    pass

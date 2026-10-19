@@ -267,8 +267,8 @@ def generate_admin_guide():
             "The following parameters are extracted directly from the application's "
             "configuration schema (`app.config.Settings`). Set them with "
             "`smart-autosorter config --set NAME VALUE`, in "
-            "`~/.autosorter/settings.json`, or as an environment variable of the "
-            "same name.\n\n"
+            "`~/.autosorter/settings.json`, or as an environment variable with "
+            "the `SORTIFY_` prefix (for example `SORTIFY_MAX_FOLDERS`).\n\n"
         )
 
         for name, field in Settings.model_fields.items():
