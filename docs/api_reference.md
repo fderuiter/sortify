@@ -162,6 +162,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.pipeline
 
+## `app.core.plan_format`
+
+::: app.core.plan_format
+
 ## `app.core.plugin_registry`
 
 ::: app.core.plugin_registry
