@@ -311,3 +311,24 @@ def test_plan_splitter_routes_jev_classifier_to_fast_path():
     assert "Uncategorized" in slow_plan
     assert "ai_doc.pdf" in slow_plan["Uncategorized"]
     assert "jev_doc.pdf" not in slow_plan.get("Finance", {})
+
+
+def test_unsplittable_sub_cluster_is_not_nested_under_its_own_name():
+    """Files of a sub-cluster that can't split further sit directly in its folder."""
+    strategy = RecursiveKMeansStrategy()
+    filenames = [f"fin{i}.txt" for i in range(1, 5)] + [
+        f"tech{i}.txt" for i in range(1, 5)
+    ]
+    documents = [
+        f"quarterly budget revenue invoice finance tax report {i}" for i in range(4)
+    ] + [f"database compiler python algorithm software code {i}" for i in range(4)]
+
+    plan, _ = strategy._generate_plan_inline(
+        filenames, documents, max_folders=5, stop_words=set()
+    )
+
+    plan = plan.plan if hasattr(plan, "plan") else plan
+    assert len(plan) == 2
+    for folder_name, children in plan.items():
+        assert folder_name not in children
+        assert all(child.get("__type__") == "file" for child in children.values())
