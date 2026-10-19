@@ -134,6 +134,7 @@ def test_read_only_guardrail(sample_plan_with_data, tmp_path):
     assert initial_files == final_files
 
 
+@pytest.mark.slow
 def test_export_performance_large_plan(tmp_path):
     large_plan = {}
     folder = large_plan.setdefault("Archive", {})
