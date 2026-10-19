@@ -14,6 +14,8 @@ def mock_non_interactive_stdin():
     """Return patch for sys.stdin as a non-interactive stream."""
     mock_stdin = MagicMock()
     mock_stdin.isatty.return_value = False
+    # pandas reads the console encoding from stdin on first import.
+    mock_stdin.encoding = "utf-8"
     return patch("sys.stdin", mock_stdin)
 
 
@@ -360,6 +362,21 @@ def test_headless_positional_path_autoroutes_to_sort():
 
 
 @pytest.mark.xdist_group(name="cli_subcommands")
+def test_headless_positional_path_only_previews():
+    """Test a bare path with no terminal previews the plan and moves nothing."""
+    with tempfile.TemporaryDirectory() as src_dir:
+        create_sample_corpus(src_dir)
+        before = sorted(p.relative_to(src_dir) for p in Path(src_dir).rglob("*"))
+        with mock_non_interactive_stdin():
+            code, stdout, stderr = run_cli([src_dir])
+        assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+        assert "previewing the plan only" in stderr
+        assert "no files were moved" in stderr
+        after = sorted(p.relative_to(src_dir) for p in Path(src_dir).rglob("*"))
+        assert after == before
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
 def test_headless_tui_flag_honored():
     """Test non-interactive invocation with explicit --tui flag calls TUI app launcher."""
     with mock_non_interactive_stdin(), patch("app.ui.tui.run_tui") as mock_run_tui:
@@ -377,6 +394,7 @@ def test_headless_explicit_sort_subcommand():
             code, stdout, stderr = run_cli(["sort", src_dir, "-q"])
             assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
             assert "finance_doc.txt" in stdout
+            assert not (Path(src_dir) / "finance_doc.txt").exists()
 
 
 @pytest.mark.xdist_group(name="cli_subcommands")
