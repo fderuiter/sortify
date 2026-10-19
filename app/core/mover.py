@@ -1478,18 +1478,24 @@ def _process_move_item(
         ):
             resilient_remove(dest_path)
 
-        if (
-            isinstance(shutil.move, (unittest.mock.Mock, unittest.mock.NonCallableMock))
-            or hasattr(shutil.move, "mock_add_spec")
-            or getattr(shutil.move, "__name__", "") == "mock_move"
-            or getattr(shutil.move, "__module__", "") != "shutil"
-        ):
-            shutil.move(source_path, dest_path)
-        else:
-            from app.core.resilient_file_ops import resilient_move
+        try:
+            if (
+                isinstance(
+                    shutil.move, (unittest.mock.Mock, unittest.mock.NonCallableMock)
+                )
+                or hasattr(shutil.move, "mock_add_spec")
+                or getattr(shutil.move, "__name__", "") == "mock_move"
+                or getattr(shutil.move, "__module__", "") != "shutil"
+            ):
+                shutil.move(source_path, dest_path)
+            else:
+                from app.core.resilient_file_ops import resilient_move
 
-            dest_path = resilient_move(source_path, dest_path)
-            rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
+                dest_path = resilient_move(source_path, dest_path)
+                rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
+        except Exception as err:
+            logging.error(f"Failed to move file {source_path} to {dest_path}: {err}")
+            raise
 
     if ledger and entry_id:
         with db_lock:
