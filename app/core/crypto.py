@@ -243,6 +243,25 @@ class SessionCrypto:
             self.legacy_isolated_dir / f"{self.db_path.name}.key"
         )
 
+    def _cleanup_legacy_key(self, legacy_path: Path, key: bytes) -> None:
+        """Securely delete a legacy `.keys` file once its key is safely migrated."""
+        if legacy_path.parent != self.legacy_isolated_dir or not legacy_path.is_file():
+            return
+        try:
+            if legacy_path.read_bytes().strip() != key:
+                return
+            if self.isolated_key_path.read_bytes().strip() != key:
+                return
+        except OSError as e:
+            logger.debug(f"Keeping legacy key '{legacy_path}': {e}")
+            return
+        try:
+            secure_delete_file(legacy_path)
+            if not any(self.legacy_isolated_dir.iterdir()):
+                self.legacy_isolated_dir.rmdir()
+        except Exception as e:
+            logger.warning(f"Failed to clean up legacy key '{legacy_path}': {e}")
+
     def get_cipher(self):
         """Get or initialize the Fernet cipher instance."""
         if self._cipher is not None:
@@ -278,6 +297,7 @@ class SessionCrypto:
 
             # 3. Legacy Fallback Migration and Cleanup
             legacy_key = None
+            legacy_source: Path | None = None
 
             # 3a. Legacy MD5 Keyring Lookup
             if key is None:
@@ -315,11 +335,15 @@ class SessionCrypto:
                 try:
                     with open(self.legacy_isolated_key_path, "rb") as f:
                         legacy_key = f.read().strip()
+                    legacy_source = self.legacy_isolated_key_path
                 except OSError as e:
                     logger.warning(
                         f"Failed to read legacy isolated key at '{self.legacy_isolated_key_path}': {e}"
                     )
 
+            # A copied key store names keys `<db name>_<hash>.key`; the hash
+            # encodes the old path, so match on the DB name. Never use another
+            # database's key, and refuse to guess between several candidates.
             if (
                 key is None
                 and legacy_key is None
@@ -327,17 +351,28 @@ class SessionCrypto:
                 and self.legacy_isolated_dir.is_dir()
             ):
                 try:
-                    for p in self.legacy_isolated_dir.iterdir():
-                        if p.is_file() and p.suffix == ".key":
-                            try:
-                                with open(p, "rb") as f:
-                                    legacy_key = f.read().strip()
-                                    if legacy_key:
-                                        break
-                            except OSError as e:
-                                logger.debug(
-                                    f"Failed to read legacy key candidate '{p}': {e}"
-                                )
+                    candidates = [
+                        p
+                        for p in self.legacy_isolated_dir.iterdir()
+                        if p.is_file()
+                        and p.suffix == ".key"
+                        and p.stem.startswith(f"{self.db_path.name}_")
+                    ]
+                    if len(candidates) == 1:
+                        try:
+                            with open(candidates[0], "rb") as f:
+                                legacy_key = f.read().strip() or None
+                            if legacy_key:
+                                legacy_source = candidates[0]
+                        except OSError as e:
+                            logger.debug(
+                                f"Failed to read legacy key candidate '{candidates[0]}': {e}"
+                            )
+                    elif len(candidates) > 1:
+                        logger.warning(
+                            f"Found {len(candidates)} legacy keys for '{self.db_path.name}' "
+                            f"in '{self.legacy_isolated_dir}'; not guessing which one to use."
+                        )
                 except OSError as e:
                     logger.warning(
                         f"Failed to iterate legacy isolated key directory '{self.legacy_isolated_dir}': {e}"
@@ -398,14 +433,12 @@ class SessionCrypto:
                         f"Failed to set keyring password during legacy migration: {e}"
                     )
 
-            # Always clean up legacy fallback keys if they exist (even if they weren't used to load the key)
-            if self.legacy_isolated_dir.exists():
-                try:
-                    secure_delete_dir(self.legacy_isolated_dir)
-                except Exception as e:
-                    logger.warning(
-                        f"Failed to clean up legacy key directory '{self.legacy_isolated_dir}': {e}"
-                    )
+            # Remove only this database's legacy key, and only once the
+            # migrated copy is verified. Sibling databases' keys stay put.
+            if key is not None:
+                self._cleanup_legacy_key(
+                    legacy_source or self.legacy_isolated_key_path, key
+                )
 
             # 4. Database Guard Check
             if key is None:
@@ -422,19 +455,21 @@ class SessionCrypto:
                     try:
                         from contextlib import closing
 
-                        has_docs = False
+                        # Any stored row may hold data encrypted with the lost
+                        # key, so only a database with no rows gets a new key.
+                        has_rows = False
                         with closing(sqlite3.connect(str(self.db_path))) as conn:
                             with closing(conn.cursor()) as cursor:
                                 cursor.execute(
-                                    "SELECT count(*) FROM sqlite_master WHERE type='table' AND name='documents'"
+                                    "SELECT name FROM sqlite_master WHERE type='table' AND name NOT LIKE 'sqlite_%'"
                                 )
-                                row = cursor.fetchone()
-                                if row and row[0] > 0:
-                                    cursor.execute("SELECT count(*) FROM documents")
-                                    d_row = cursor.fetchone()
-                                    if d_row and d_row[0] > 0:
-                                        has_docs = True
-                        if has_docs:
+                                for (table,) in cursor.fetchall():
+                                    quoted = '"' + table.replace('"', '""') + '"'
+                                    cursor.execute(f"SELECT 1 FROM {quoted} LIMIT 1")
+                                    if cursor.fetchone():
+                                        has_rows = True
+                                        break
+                        if has_rows:
                             raise CryptoError(
                                 "Database accessed but key file is missing."
                             )
