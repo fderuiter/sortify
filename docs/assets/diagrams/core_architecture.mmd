@@ -40,6 +40,7 @@ flowchart TD
         core_db_worker["app.core.db_worker"]
     end
     subgraph storage_persistence ["Storage & Database Persistence (app.core)"]
+        core_store[("app.core.store")]
         core_db[("app.core.db")]
         core_migrations["app.core.migrations"]
         core_ledger[("app.core.ledger")]
@@ -114,6 +115,8 @@ flowchart TD
     core_network_guard --> core_concurrency
     core_db --> core_cache
     core_db --> core_migrations
+    core_store --> core_db
+    core_store --> core_history
     core_ledger --> core_db
     core_history --> core_db
     core_history --> core_session_catalog

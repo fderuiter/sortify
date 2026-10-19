@@ -175,9 +175,15 @@ class Database:
     CURRENT_VERSION = MAIN_DB_MIGRATIONS[-1].version
     _active_instances = weakref.WeakSet()
 
-    def __init__(self, db_path: Path, worker: DBWorker):
+    def __init__(
+        self,
+        db_path: Path,
+        worker: DBWorker,
+        migrations: tuple[Migration, ...] = MAIN_DB_MIGRATIONS,
+    ):
         self.db_path = str(db_path)
         self.worker = worker
+        self.migrations = migrations
         Database._active_instances.add(self)
         from app.core.path_utils import resolve_db_crypto
 
@@ -198,7 +204,7 @@ class Database:
         """Initialize the core database and create tables if they do not exist."""
         conn = get_db_connection(self.db_path)
         with conn:
-            migrate(conn, MAIN_DB_MIGRATIONS, label=f"Database {self.db_path}")
+            migrate(conn, self.migrations, label=f"Database {self.db_path}")
 
             # Purge existing audio-derived or non-eligible index terms from legacy databases
             try:

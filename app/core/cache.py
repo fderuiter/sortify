@@ -31,6 +31,7 @@ from typing import (
 )
 
 from app.core.exceptions import CacheError
+from app.core.migrations import Migration, add_missing_columns, migrate
 
 if TYPE_CHECKING:
     from app.core.db_worker import DBWorker
@@ -300,12 +301,36 @@ class SparseMatrixLRUCache:
             return sum(self._doc_counts.values())
 
 
+def _cache_db_baseline(conn) -> None:
+    """Create the directory cache schema, or complete an older one."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS directory_cache (
+            source_directory TEXT PRIMARY KEY,
+            corpus TEXT,
+            locked_files TEXT,
+            index_to_word TEXT,
+            manual_folders TEXT
+        )
+    """)
+    add_missing_columns(conn, "directory_cache", {"manual_folders": "TEXT"})
+
+
+# Ordered schema migrations for cache.db. Never edit one after release.
+CACHE_DB_MIGRATIONS = (Migration(1, "baseline", _cache_db_baseline),)
+
+
 class CacheManager:
     """Manages the persistence of cached extraction data to an SQLite database."""
 
-    def __init__(self, db_path: str, worker: "DBWorker | Any"):
+    def __init__(
+        self,
+        db_path: str,
+        worker: "DBWorker | Any",
+        migrations: tuple[Migration, ...] = CACHE_DB_MIGRATIONS,
+    ):
         self.db_path = db_path
         self.worker = worker
+        self.migrations = migrations
         self._init_db()
 
     def _get_conn(self):
@@ -319,24 +344,7 @@ class CacheManager:
         conn = self._get_conn()
         try:
             with conn:
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS directory_cache (
-                        source_directory TEXT PRIMARY KEY,
-                        corpus TEXT,
-                        locked_files TEXT,
-                        index_to_word TEXT,
-                        manual_folders TEXT
-                    )
-                """)
-                # The connection may be sqlcipher3 or stdlib sqlite3, whose error
-                # classes differ, so check for the column instead of catching.
-                columns = {
-                    row[1] for row in conn.execute("PRAGMA table_info(directory_cache)")
-                }
-                if "manual_folders" not in columns:
-                    conn.execute(
-                        "ALTER TABLE directory_cache ADD COLUMN manual_folders TEXT"
-                    )
+                migrate(conn, self.migrations, label=f"Cache {self.db_path}")
         except Exception as e:
             logging.error(
                 f"Failed to initialize directory cache database: {e}", exc_info=True

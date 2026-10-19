@@ -108,3 +108,45 @@ def test_main_baseline_upgrades_legacy_v6_database(conn):
     assert "model_signature" in table_columns(conn, "document_vectors")
     assert {"quarantine_records", "jev_classification_cache"} <= _tables(conn)
     assert conn.execute("SELECT filepath FROM documents").fetchall() == [("f.txt",)]
+
+
+def test_history_baseline_completes_old_snapshot_tables(conn):
+    from app.core.history import HISTORY_DB_MIGRATIONS
+
+    # A history.db from before link metadata and hashes were recorded.
+    conn.execute(
+        "CREATE TABLE sessions (session_id TEXT PRIMARY KEY, timestamp REAL, "
+        "base_dir TEXT, status TEXT)"
+    )
+    conn.execute(
+        "CREATE TABLE snapshot_files (session_id TEXT, original_rel_path TEXT, "
+        "inode INTEGER, size INTEGER, mtime REAL)"
+    )
+    conn.execute(
+        "CREATE TABLE snapshot_documents (session_id TEXT, filepath TEXT, "
+        "file_hash TEXT, extracted_text TEXT)"
+    )
+    conn.commit()
+
+    assert migrate(conn, HISTORY_DB_MIGRATIONS, label="history") == 1
+
+    assert {"is_symlink", "file_hash", "link_type", "window_mode"} <= table_columns(
+        conn, "snapshot_files"
+    )
+    assert "user_verified_target_path" in table_columns(conn, "snapshot_documents")
+    assert "step_ledger" in _tables(conn)
+
+
+@pytest.mark.parametrize(
+    "module, attr, table",
+    [
+        ("app.core.cache", "CACHE_DB_MIGRATIONS", "directory_cache"),
+        ("app.core.ledger", "LEDGER_DB_MIGRATIONS", "key_audit_ledger"),
+    ],
+)
+def test_sidecar_baselines_create_their_tables(conn, module, attr, table):
+    import importlib
+
+    migrations = getattr(importlib.import_module(module), attr)
+    assert migrate(conn, migrations, label=module) == migrations[-1].version
+    assert table in _tables(conn)
