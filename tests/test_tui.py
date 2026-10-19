@@ -871,6 +871,11 @@ def test_tui_conflict_policy_settings_and_tree_indicator(temp_workspace):
 
                 assert app.settings.CONFLICT_POLICY == "overwrite"
 
+                # Saving settings starts a background rescan that replaces
+                # app.plan; let it finish so it can't overwrite the plan below.
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+
                 # Create colliding target file and rebuild tree
                 src_file = os.path.join(temp_workspace, "doc.pdf")
                 with open(src_file, "w") as f:
