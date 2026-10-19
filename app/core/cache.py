@@ -31,6 +31,7 @@ from typing import (
 )
 
 from app.core.exceptions import CacheError
+from app.core.migrations import Migration, add_missing_columns, migrate
 
 if TYPE_CHECKING:
     from app.core.db_worker import DBWorker
@@ -294,6 +295,24 @@ class SparseMatrixLRUCache:
             return sum(self._doc_counts.values())
 
 
+def _cache_db_baseline(conn) -> None:
+    """Create the directory cache schema, or complete an older one."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS directory_cache (
+            source_directory TEXT PRIMARY KEY,
+            corpus TEXT,
+            locked_files TEXT,
+            index_to_word TEXT,
+            manual_folders TEXT
+        )
+    """)
+    add_missing_columns(conn, "directory_cache", {"manual_folders": "TEXT"})
+
+
+# Ordered schema migrations for cache.db. Never edit one after release.
+CACHE_DB_MIGRATIONS = (Migration(1, "baseline", _cache_db_baseline),)
+
+
 class CacheManager:
     """Manages the persistence of cached extraction data to an SQLite database."""
 
@@ -313,23 +332,7 @@ class CacheManager:
         conn = self._get_conn()
         try:
             with conn:
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS directory_cache (
-                        source_directory TEXT PRIMARY KEY,
-                        corpus TEXT,
-                        locked_files TEXT,
-                        index_to_word TEXT,
-                        manual_folders TEXT
-                    )
-                """)
-                try:
-                    conn.execute(
-                        "ALTER TABLE directory_cache ADD COLUMN manual_folders TEXT"
-                    )
-                except Exception as alter_err:
-                    logging.debug(
-                        f"Column manual_folders alter execution skipped or failed: {alter_err}"
-                    )
+                migrate(conn, CACHE_DB_MIGRATIONS, label=f"Cache {self.db_path}")
         except Exception as e:
             logging.error(
                 f"Failed to initialize directory cache database: {e}", exc_info=True

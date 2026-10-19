@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any, Dict, Iterator, List
 
 from app.core.db_conn import get_db_connection
+from app.core.migrations import Migration, add_missing_columns, migrate
 from app.core.path_utils import is_junction_path, safe_relpath
 
 try:
@@ -60,6 +61,100 @@ def _is_same_restored_path(actual: str, expected: str) -> bool:
     )
 
 
+def _history_db_baseline(conn) -> None:
+    """Create the history schema, or complete one left by the old upgrade code."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS sessions (
+            session_id TEXT PRIMARY KEY,
+            timestamp REAL,
+            base_dir TEXT,
+            status TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS snapshot_files (
+            session_id TEXT,
+            original_rel_path TEXT,
+            inode INTEGER,
+            size INTEGER,
+            mtime REAL,
+            is_symlink INTEGER DEFAULT 0,
+            symlink_target TEXT,
+            link_type TEXT,
+            arguments TEXT,
+            description TEXT,
+            icon_file TEXT,
+            icon_index INTEGER,
+            work_dir TEXT,
+            window_mode INTEGER,
+            file_hash TEXT,
+            FOREIGN KEY(session_id) REFERENCES sessions(session_id)
+        )
+    """)
+    add_missing_columns(
+        conn,
+        "snapshot_files",
+        {
+            "is_symlink": "INTEGER DEFAULT 0",
+            "symlink_target": "TEXT",
+            "file_hash": "TEXT",
+            "link_type": "TEXT",
+            "arguments": "TEXT",
+            "description": "TEXT",
+            "icon_file": "TEXT",
+            "icon_index": "INTEGER",
+            "work_dir": "TEXT",
+            "window_mode": "INTEGER",
+        },
+    )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS snapshot_cache (
+            session_id TEXT PRIMARY KEY,
+            corpus TEXT,
+            locked_files TEXT,
+            index_to_word TEXT,
+            manual_folders TEXT,
+            FOREIGN KEY(session_id) REFERENCES sessions(session_id)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS snapshot_documents (
+            session_id TEXT,
+            filepath TEXT,
+            file_hash TEXT,
+            extracted_text TEXT,
+            user_verified_target_path TEXT,
+            FOREIGN KEY(session_id) REFERENCES sessions(session_id)
+        )
+    """)
+    add_missing_columns(
+        conn, "snapshot_documents", {"user_verified_target_path": "TEXT"}
+    )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS step_ledger (
+            step_id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT,
+            source_path TEXT,
+            target_path TEXT,
+            original_path TEXT,
+            original_filename TEXT,
+            is_cross_volume INTEGER DEFAULT 0,
+            is_collision_renamed INTEGER DEFAULT 0,
+            file_hash TEXT,
+            timestamp REAL,
+            status TEXT DEFAULT 'completed',
+            FOREIGN KEY(session_id) REFERENCES sessions(session_id)
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_step_ledger_session ON step_ledger(session_id)"
+    )
+
+
+# Ordered schema migrations for history.db. Never edit one after release.
+HISTORY_DB_MIGRATIONS = (Migration(1, "baseline", _history_db_baseline),)
+
+
 class HistoryManager:
     """Manages full directory snapshots and rollback functionality."""
 
@@ -74,125 +169,7 @@ class HistoryManager:
     def _init_db(self):
         conn = get_db_connection(self.db_path)
         with conn:
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS sessions (
-                    session_id TEXT PRIMARY KEY,
-                    timestamp REAL,
-                    base_dir TEXT,
-                    status TEXT
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS snapshot_files (
-                    session_id TEXT,
-                    original_rel_path TEXT,
-                    inode INTEGER,
-                    size INTEGER,
-                    mtime REAL,
-                    is_symlink INTEGER DEFAULT 0,
-                    symlink_target TEXT,
-                    link_type TEXT,
-                    arguments TEXT,
-                    description TEXT,
-                    icon_file TEXT,
-                    icon_index INTEGER,
-                    work_dir TEXT,
-                    window_mode INTEGER,
-                    file_hash TEXT,
-                    FOREIGN KEY(session_id) REFERENCES sessions(session_id)
-                )
-            """)
-            try:
-                conn.execute(
-                    "ALTER TABLE snapshot_files ADD COLUMN is_symlink INTEGER DEFAULT 0"
-                )
-            except Exception:
-                pass
-            try:
-                conn.execute(
-                    "ALTER TABLE snapshot_files ADD COLUMN symlink_target TEXT"
-                )
-            except Exception:
-                pass
-            try:
-                conn.execute("ALTER TABLE snapshot_files ADD COLUMN file_hash TEXT")
-            except Exception:
-                pass
-            try:
-                conn.execute("ALTER TABLE snapshot_files ADD COLUMN link_type TEXT")
-            except Exception:
-                pass
-            try:
-                conn.execute("ALTER TABLE snapshot_files ADD COLUMN arguments TEXT")
-            except Exception:
-                pass
-            try:
-                conn.execute("ALTER TABLE snapshot_files ADD COLUMN description TEXT")
-            except Exception:
-                pass
-            try:
-                conn.execute("ALTER TABLE snapshot_files ADD COLUMN icon_file TEXT")
-            except Exception:
-                pass
-            try:
-                conn.execute("ALTER TABLE snapshot_files ADD COLUMN icon_index INTEGER")
-            except Exception:
-                pass
-            try:
-                conn.execute("ALTER TABLE snapshot_files ADD COLUMN work_dir TEXT")
-            except Exception:
-                pass
-            try:
-                conn.execute(
-                    "ALTER TABLE snapshot_files ADD COLUMN window_mode INTEGER"
-                )
-            except Exception:
-                pass
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS snapshot_cache (
-                    session_id TEXT PRIMARY KEY,
-                    corpus TEXT,
-                    locked_files TEXT,
-                    index_to_word TEXT,
-                    manual_folders TEXT,
-                    FOREIGN KEY(session_id) REFERENCES sessions(session_id)
-                )
-            """)
-            try:
-                conn.execute(
-                    "ALTER TABLE snapshot_documents ADD COLUMN user_verified_target_path TEXT"
-                )
-            except Exception:
-                pass
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS snapshot_documents (
-                    session_id TEXT,
-                    filepath TEXT,
-                    file_hash TEXT,
-                    extracted_text TEXT,
-                    user_verified_target_path TEXT,
-                    FOREIGN KEY(session_id) REFERENCES sessions(session_id)
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS step_ledger (
-                    step_id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT,
-                    source_path TEXT,
-                    target_path TEXT,
-                    original_path TEXT,
-                    original_filename TEXT,
-                    is_cross_volume INTEGER DEFAULT 0,
-                    is_collision_renamed INTEGER DEFAULT 0,
-                    file_hash TEXT,
-                    timestamp REAL,
-                    status TEXT DEFAULT 'completed',
-                    FOREIGN KEY(session_id) REFERENCES sessions(session_id)
-                )
-            """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_step_ledger_session ON step_ledger(session_id)"
-            )
+            migrate(conn, HISTORY_DB_MIGRATIONS, label=f"History {self.db_path}")
 
     def _create_snapshot_internal(self, base_dir: str) -> str:
         session_id = str(uuid.uuid4())

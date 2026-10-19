@@ -12,6 +12,7 @@ from typing import Any, Dict, List, Optional
 
 from app.config import get_app_dir
 from app.core.db_conn import get_db_connection
+from app.core.migrations import Migration, migrate
 from app.core.text_utils import sanitize_secret_patterns
 
 logger = logging.getLogger(__name__)
@@ -80,6 +81,60 @@ def get_default_ledger_path() -> str:
     return str(get_app_dir() / "transaction_ledger.db")
 
 
+def _ledger_db_baseline(conn) -> None:
+    """Create the transaction and key-audit ledger schema."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS transaction_ledger (
+            entry_id TEXT PRIMARY KEY,
+            session_id TEXT NOT NULL,
+            base_dir TEXT NOT NULL,
+            source_path TEXT NOT NULL,
+            dest_path TEXT NOT NULL,
+            source_rel_path TEXT NOT NULL,
+            dest_rel_path TEXT NOT NULL,
+            current_dest TEXT,
+            file_hash TEXT,
+            status TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            updated_at REAL NOT NULL
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ledger_session ON transaction_ledger (session_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_ledger_status ON transaction_ledger (status)"
+    )
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS key_audit_ledger (
+            event_id TEXT PRIMARY KEY,
+            event_type TEXT NOT NULL,
+            db_path_hash TEXT NOT NULL,
+            session_id TEXT NOT NULL,
+            status TEXT NOT NULL,
+            created_at REAL NOT NULL,
+            metadata_json TEXT
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_key_audit_session ON key_audit_ledger (session_id)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_key_audit_event_type ON key_audit_ledger (event_type)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_key_audit_db_hash ON key_audit_ledger (db_path_hash)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_key_audit_created_at ON key_audit_ledger (created_at)"
+    )
+
+
+# Ordered schema migrations for the sidecar ledger. Never edit one after release.
+LEDGER_DB_MIGRATIONS = (Migration(1, "baseline", _ledger_db_baseline),)
+
+
 class TransactionLedger:
     """Persistent sidecar SQLite transaction ledger for tracking file moves and reconciliation."""
 
@@ -93,52 +148,7 @@ class TransactionLedger:
         with conn:
             conn.execute("PRAGMA temp_store = MEMORY")
             conn.execute("PRAGMA wal_autocheckpoint = 5000")
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS transaction_ledger (
-                    entry_id TEXT PRIMARY KEY,
-                    session_id TEXT NOT NULL,
-                    base_dir TEXT NOT NULL,
-                    source_path TEXT NOT NULL,
-                    dest_path TEXT NOT NULL,
-                    source_rel_path TEXT NOT NULL,
-                    dest_rel_path TEXT NOT NULL,
-                    current_dest TEXT,
-                    file_hash TEXT,
-                    status TEXT NOT NULL,
-                    created_at REAL NOT NULL,
-                    updated_at REAL NOT NULL
-                )
-            """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_ledger_session ON transaction_ledger (session_id)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_ledger_status ON transaction_ledger (status)"
-            )
-
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS key_audit_ledger (
-                    event_id TEXT PRIMARY KEY,
-                    event_type TEXT NOT NULL,
-                    db_path_hash TEXT NOT NULL,
-                    session_id TEXT NOT NULL,
-                    status TEXT NOT NULL,
-                    created_at REAL NOT NULL,
-                    metadata_json TEXT
-                )
-            """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_key_audit_session ON key_audit_ledger (session_id)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_key_audit_event_type ON key_audit_ledger (event_type)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_key_audit_db_hash ON key_audit_ledger (db_path_hash)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_key_audit_created_at ON key_audit_ledger (created_at)"
-            )
+            migrate(conn, LEDGER_DB_MIGRATIONS, label=f"Ledger {self.db_path}")
 
     def log_intent(
         self,
