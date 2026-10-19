@@ -440,6 +440,14 @@ def _resolve_pending_links(
                     raise
 
 
+_OWNED_HIDDEN_DIRS = {".branches"}
+
+
+def _is_foreign_hidden_dir(path: str) -> bool:
+    name = os.path.basename(os.path.normpath(path))
+    return name.startswith(".") and name not in _OWNED_HIDDEN_DIRS
+
+
 def _remove_empty_dirs(path: str, protected_paths: list[str] = None):
     """Recursively remove empty directories, respecting protected paths."""
     if protected_paths:
@@ -448,6 +456,12 @@ def _remove_empty_dirs(path: str, protected_paths: list[str] = None):
                 return
 
     if not os.path.isdir(path) or is_junction_path(path) or os.path.islink(path):
+        return
+
+    # Hidden directories (.git, .venv, ...) are not ours, and empty ones can be
+    # meaningful (e.g. .git/refs/tags), so leave them alone. ``.branches`` holds
+    # the sorter's own rollback safety copies and may be pruned.
+    if _is_foreign_hidden_dir(path):
         return
 
     for entry in os.listdir(path):
@@ -464,6 +478,42 @@ def _remove_empty_dirs(path: str, protected_paths: list[str] = None):
             resilient_remove(path)
         except OSError:
             pass
+
+
+def _prune_emptied_dirs(
+    dirs: set, base_dir: str, protected_paths: list[str] = None
+) -> None:
+    """Remove the given directories, and then their parents, while they are empty.
+
+    Stops at ``base_dir``, at hidden directories and at protected paths.
+    """
+    from app.core.resilient_file_ops import resilient_remove
+
+    base_norm = os.path.normcase(os.path.abspath(base_dir))
+    for start in sorted(dirs, key=len, reverse=True):
+        current = os.path.abspath(start)
+        while True:
+            cur_norm = os.path.normcase(current)
+            if cur_norm == base_norm or not is_subpath_or_equal(current, base_dir):
+                break
+            if _is_foreign_hidden_dir(current):
+                break
+            if protected_paths and any(
+                is_subpath_or_equal(current, p) for p in protected_paths
+            ):
+                break
+            if (
+                not os.path.isdir(current)
+                or is_junction_path(current)
+                or os.path.islink(current)
+                or os.listdir(current)
+            ):
+                break
+            try:
+                resilient_remove(current)
+            except OSError:
+                break
+            current = os.path.dirname(current)
 
 
 def _is_cross_volume(src: str, dst: str) -> bool:
@@ -1959,10 +2009,17 @@ class AsyncMoveEngine:
                             except OSError:
                                 pass
 
-                    for entry in os.listdir(base_dir):
-                        entry_path = os.path.join(base_dir, entry)
-                        if os.path.isdir(entry_path):
-                            _remove_empty_dirs(entry_path, protected_paths)
+                    # Only prune folders this session emptied, never pre-existing
+                    # empty or hidden ones elsewhere in the tree.
+                    with db_lock:
+                        moved_sources = [
+                            src for src in path_map if not os.path.lexists(src)
+                        ]
+                    _prune_emptied_dirs(
+                        {os.path.dirname(src) for src in moved_sources},
+                        base_dir,
+                        protected_paths,
+                    )
                 else:
                     for node in dirs_to_process:
                         summary["protected_folders"] += 1

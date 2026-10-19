@@ -1247,11 +1247,10 @@ class HistoryManager:
                         except Exception:
                             pass
 
-        from app.core.mover import _remove_empty_dirs
+        if base_dir:
+            from app.core.mover import _prune_emptied_dirs
 
-        for tdir in target_dirs_to_clean:
-            if os.path.exists(tdir) and os.path.isdir(tdir):
-                _remove_empty_dirs(tdir)
+            _prune_emptied_dirs(target_dirs_to_clean, base_dir)
 
         conn = get_db_connection(self.db_path)
         with conn:
