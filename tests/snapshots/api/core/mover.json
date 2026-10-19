@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "c0a0e4642ae31ccf2f2e38bdbe7d3aef2b5fcd7b880c36fcf52168fcb271ec66"
+    "checksum": "29fc081f8dc3bfc16f09f7fbf12c212cc5e04482c01718ffaa986bf84a127780"
   },
   "classes": [
     {
@@ -356,6 +356,24 @@
         }
       ],
       "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "overwrite_backup_dir",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "session_id"
+        }
+      ],
+      "returns": "str"
     },
     {
       "async": false,

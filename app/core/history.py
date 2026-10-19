@@ -37,6 +37,23 @@ def _remove_staging_leftovers(base_dir: str) -> None:
                     logging.warning(f"Could not remove staging file {name}: {exc}")
 
 
+def _purge_overwrite_backups(base_dir: str, session_id: str) -> None:
+    """Delete the files a pruned session's overwrites displaced (ADR 0005 point 3)."""
+    from app.core.mover import OVERWRITE_BACKUP_DIR, overwrite_backup_dir
+    from app.core.resilient_file_ops import resilient_rmtree
+
+    backup_dir = overwrite_backup_dir(base_dir, session_id)
+    if not os.path.isdir(backup_dir) or os.path.islink(backup_dir):
+        return
+    try:
+        resilient_rmtree(backup_dir)
+        root = os.path.join(base_dir, OVERWRITE_BACKUP_DIR)
+        if not os.listdir(root):
+            os.rmdir(root)
+    except OSError as err:
+        logging.warning(f"Could not purge overwrite backups in {backup_dir}: {err}")
+
+
 def _is_same_restored_path(actual: str, expected: str) -> bool:
     return os.path.normcase(os.path.abspath(actual)) == os.path.normcase(
         os.path.abspath(expected)
@@ -448,6 +465,7 @@ class HistoryManager:
             conn.execute("DELETE FROM snapshot_documents WHERE session_id = ?", (sid,))
             conn.execute("DELETE FROM step_ledger WHERE session_id = ?", (sid,))
             conn.execute("DELETE FROM sessions WHERE session_id = ?", (sid,))
+            _purge_overwrite_backups(base_dir, sid)
 
     def get_sessions(self) -> List[Dict[str, Any]]:
         """Retrieve a list of all historical sessions, ordered by time."""
