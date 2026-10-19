@@ -2,6 +2,7 @@
 
 import glob
 import os
+import re
 import sys
 from pathlib import Path
 
@@ -123,7 +124,6 @@ def _format_key(key: str) -> str:
 def _collect_bindings(source_path: str) -> dict:
     """Map class name to ``(title, [(keys, description)])`` from ``BINDINGS``."""
     import ast
-    import re
 
     with open(source_path, "r", encoding="utf-8") as f:
         tree = ast.parse(f.read())
@@ -195,6 +195,62 @@ def generate_keyboard_docs():
             f.write(table(extra))
 
 
+def _describe_type(annotation) -> str:
+    """Render a settings annotation compactly (``int``, ``list[str]``, ...)."""
+    import typing
+
+    if typing.get_origin(annotation) is typing.Literal:
+        return "str"
+    if typing.get_args(annotation):
+        text = str(annotation)
+    else:
+        text = getattr(annotation, "__name__", None) or str(annotation)
+    text = text.replace("typing.", "")
+    # Annotated item types (e.g. constrained strings) add noise, not meaning:
+    # keep the base type and drop the bracketed metadata.
+    while "Annotated[" in text:
+        start = text.index("Annotated[")
+        depth, end = 0, start + len("Annotated")
+        for end in range(end, len(text)):
+            depth += {"[": 1, "]": -1}.get(text[end], 0)
+            if depth == 0:
+                break
+        base = text[start + len("Annotated[") : end].split(",")[0]
+        text = text[:start] + base + text[end + 1 :]
+    return text
+
+
+def _describe_default(field) -> str:
+    """Render a field default, calling factories and summarizing long values."""
+    default = field.get_default(call_default_factory=True)
+    if isinstance(default, set):
+        default = sorted(default)
+    if isinstance(default, str):
+        try:
+            default = f"~/{Path(default).relative_to(Path.home()).as_posix()}"
+        except ValueError:
+            pass
+    if isinstance(default, (list, dict)) and len(repr(default)) > 80:
+        return f"{len(default)} built-in entries (see `app/config.py`)"
+    return f"`{default!r}`" if isinstance(default, str) else f"`{default}`"
+
+
+def _describe_bounds(field) -> str:
+    """Render numeric bounds and literal choices as a short phrase."""
+    import typing
+
+    if typing.get_origin(field.annotation) is typing.Literal:
+        return ", ".join(f"`{v}`" for v in typing.get_args(field.annotation))
+    symbols = {"gt": ">", "ge": ">=", "lt": "<", "le": "<="}
+    parts = []
+    for meta in field.metadata:
+        for attr, symbol in symbols.items():
+            value = getattr(meta, attr, None)
+            if value is not None:
+                parts.append(f"{symbol} {value}")
+    return ", ".join(parts)
+
+
 def generate_admin_guide():
     """Generate Admin Guide from config and scripts."""
     output_file = os.path.join("docs", "admin_guide.md")
@@ -208,36 +264,37 @@ def generate_admin_guide():
 
         f.write("## Configuration Parameters\n\n")
         f.write(
-            "The following parameters are extracted directly from the application's configuration schema (`app.config.Settings`).\n\n"
+            "The following parameters are extracted directly from the application's "
+            "configuration schema (`app.config.Settings`). Set them with "
+            "`smart-autosorter config --set NAME VALUE`, in "
+            "`~/.autosorter/settings.json`, or as an environment variable of the "
+            "same name.\n\n"
         )
 
         for name, field in Settings.model_fields.items():
-            default_val = field.default
-            if isinstance(default_val, set):
-                default_val = sorted(list(default_val))
-            elif isinstance(default_val, str):
-                try:
-                    rel_path = Path(default_val).relative_to(Path.home())
-                    default_val = f"~/{rel_path.as_posix()}"
-                except ValueError:
-                    pass
-
             f.write(f"### `{name}`\n")
-            f.write(f"- **Default**: `{default_val}`\n")
-            f.write(f"- **Required**: `{field.is_required()}`\n\n")
+            f.write(f"- **Type**: `{_describe_type(field.annotation)}`\n")
+            f.write(f"- **Default**: {_describe_default(field)}\n")
+            allowed = _describe_bounds(field)
+            if allowed:
+                f.write(f"- **Allowed**: {allowed}\n")
+            if field.description:
+                f.write(f"\n{field.description}\n")
+            f.write("\n")
 
         f.write("## Precedence Rules\n\n")
         f.write(
             "The application evaluates configuration parameters using a strict precedence hierarchy to determine how settings interact. The priority is applied as follows, from highest to lowest:\n\n"
         )
         f.write(
-            "1. **Local Settings File (`~/.autosorter/settings.json`):** This local configuration file takes absolute priority. Any parameters defined here will override environment variables and default properties.\n"
+            "1. **Command-Line Flags:** Flags such as `--max-folders`, `--strategy` and `--conflict-policy` override every other source for that run only.\n"
+            "2. **Local Settings File (`~/.autosorter/settings.json`):** Parameters defined here override environment variables and default properties.\n"
         )
         f.write(
-            "2. **Environment Variables (or `.env` file):** Variables configured in the environment take precedence over default parameters.\n"
+            "3. **Environment Variables (or `.env` file):** Variables configured in the environment take precedence over default parameters.\n"
         )
         f.write(
-            "3. **Default Parameters:** Base defaults are used as fallbacks if a setting is not explicitly defined in the local file or environment.\n\n"
+            "4. **Default Parameters:** Base defaults are used as fallbacks if a setting is not explicitly defined in the local file or environment.\n\n"
         )
 
         f.write("## Dynamic Configuration Saves\n\n")
