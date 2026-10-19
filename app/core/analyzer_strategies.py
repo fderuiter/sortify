@@ -1055,10 +1055,12 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             folder_name = sanitize_name(folder_name)
 
             if len(group) == len(documents):
+                # The partition can't be split any further. Below the top
+                # level the caller already named this folder, so add the
+                # files directly instead of nesting a same-named folder.
+                target = plan.setdefault(folder_name, {}) if depth == 1 else plan
                 for f in sub_filenames:
-                    if folder_name not in plan:
-                        plan[folder_name] = {}
-                    plan[folder_name][f] = {
+                    target[f] = {
                         "__type__": "file",
                         "relative_source": f,
                         "source_path": f,
