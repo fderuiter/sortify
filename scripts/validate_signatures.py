@@ -578,10 +578,9 @@ def main():
         ]
         if not target_modules:
             print(
-                f"Error: No matching modules found for specified path(s): {', '.join(args.module_paths)}",
-                file=sys.stderr,
+                f"No signature-monitored modules to validate among specified path(s): {', '.join(args.module_paths)}"
             )
-            sys.exit(1)
+            sys.exit(0)
     else:
         target_modules = all_modules
 

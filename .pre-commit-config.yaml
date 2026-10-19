@@ -42,7 +42,6 @@ repos:
         entry: uv run python scripts/validate_links.py --local-only
         language: system
         files: '\.(py|md)$'
-        pass_filenames: false
       - id: validate-config-schema
         name: Validate Configuration Schema
         entry: uv run python scripts/validate_config.py
@@ -60,18 +59,15 @@ repos:
         entry: uv run python scripts/validate_signatures.py
         language: system
         files: '(\.py$|tests/snapshots/.*)'
-        pass_filenames: false
       - id: validate-architecture
         name: Validate Architectural Guardrails and System Utilities
         entry: uv run python scripts/validate_architecture.py
         language: system
         files: '^app/.*\.py$'
-        pass_filenames: false
       - id: validate-imports
         name: Validate Import Gate and Direct Dependencies
         entry: uv run python scripts/validate_imports.py
         language: system
-        files: '(^app/.*\.py$|^pyproject\.toml$)'
-        pass_filenames: false
+        files: '(^app/.*\.py$|^pyproject\.toml$|^uv\.lock$)'
 
 

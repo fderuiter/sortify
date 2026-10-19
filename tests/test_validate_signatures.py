@@ -939,3 +939,10 @@ def test_validation_runner_detects_orphaned_snapshot_across_subdirectories(
     assert not orphaned_tui.exists()
     assert not orphaned_other.exists()
     assert actual_diff.exists()
+
+
+def test_validate_signatures_non_monitored_file(monkeypatch):
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py", "app/config.py"])
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+    assert exc_info.value.code == 0
