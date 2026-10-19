@@ -472,10 +472,22 @@ def test_diagram_toolchain_click_directives_and_fallback_svg():
     assert "🔗 Node A -&gt; Tooltip A" in fallback
 
 
+def _fake_render(cmd, mmd_path, out_path, fmt="svg"):
+    out_path.write_text("<svg>rendered</svg>", encoding="utf-8")
+    return True
+
+
 def test_diagram_toolchain_build_and_verify(tmp_path):
     from scripts.diagram_toolchain import build_diagrams
 
-    with patch("scripts.diagram_toolchain.render_diagram_artifact", return_value=True):
+    with (
+        patch("scripts.diagram_toolchain.find_mmdc_executable", return_value=["mmdc"]),
+        patch("scripts.diagram_toolchain.is_browser_available", return_value=True),
+        patch(
+            "scripts.diagram_toolchain.render_diagram_artifact",
+            side_effect=_fake_render,
+        ),
+    ):
         # Test build mode
         success = build_diagrams(output_dir=tmp_path, force=True, verify_only=False)
         assert success is True
@@ -487,6 +499,46 @@ def test_diagram_toolchain_build_and_verify(tmp_path):
             output_dir=tmp_path, force=False, verify_only=True
         )
         assert success_verify is True
+
+
+def test_diagram_toolchain_verify_flags_svgs_not_rendered_from_current_spec(
+    tmp_path,
+):
+    from scripts.diagram_toolchain import (
+        build_diagrams,
+        collect_all_specs,
+        svg_source_hash,
+    )
+
+    spec_id, spec = next(iter(collect_all_specs().items()))
+    with (
+        patch(
+            "scripts.diagram_toolchain.collect_all_specs", return_value={spec_id: spec}
+        ),
+        patch("scripts.diagram_toolchain.find_mmdc_executable", return_value=["mmdc"]),
+        patch("scripts.diagram_toolchain.is_browser_available", return_value=True),
+        patch(
+            "scripts.diagram_toolchain.render_diagram_artifact",
+            side_effect=_fake_render,
+        ),
+    ):
+        assert build_diagrams(output_dir=tmp_path, force=True) is True
+        svg_file = tmp_path / f"{spec_id}.svg"
+        assert svg_source_hash(svg_file) is not None
+        assert build_diagrams(output_dir=tmp_path, verify_only=True) is True
+
+        # The spec changed but the SVG was not re-rendered.
+        svg_file.write_text(
+            svg_file.read_text(encoding="utf-8").replace(
+                svg_source_hash(svg_file), "0" * 64
+            ),
+            encoding="utf-8",
+        )
+        assert build_diagrams(output_dir=tmp_path, verify_only=True) is False
+
+        # A build re-renders it even though the build cache says it is current.
+        assert build_diagrams(output_dir=tmp_path) is True
+        assert build_diagrams(output_dir=tmp_path, verify_only=True) is True
 
 
 def test_diagram_toolchain_cli_main_verify():
@@ -555,9 +607,10 @@ def test_diagram_toolchain_browserless_verify_and_build(tmp_path):
 
     reset_browser_cache()
     with patch("scripts.diagram_toolchain.is_browser_available", return_value=False):
-        # Test verify mode in browserless environment
+        # Verify never writes assets, so with nothing rendered yet it fails
         verify_ok = build_diagrams(output_dir=tmp_path, force=True, verify_only=True)
-        assert verify_ok is True
+        assert verify_ok is False
+        assert list(tmp_path.glob("*.svg")) == []
 
         # Test build mode in browserless environment
         build_ok = build_diagrams(output_dir=tmp_path, force=True, verify_only=False)
@@ -987,6 +1040,8 @@ def test_compile_diagram_assets_fails_when_a_diagram_fails():
 
     with patch("scripts.diagram_toolchain.build_diagrams", return_value=True):
         compile_diagram_assets()
+
+
 def test_format_key_matches_how_users_type_keys():
     assert _format_key("ctrl+s") == "Ctrl+S"
     assert _format_key("question_mark") == "?"

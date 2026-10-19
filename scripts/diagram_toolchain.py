@@ -25,6 +25,11 @@ if str(REPO_ROOT) not in sys.path:
 DEFAULT_OUTPUT_DIR = REPO_ROOT / "docs/assets/diagrams"
 CACHE_FILE_NAME = ".build_cache.json"
 
+# Each rendered SVG records the hash of the Mermaid source it was drawn from.
+# mermaid-cli output differs between runs, so comparing SVG bytes can't tell a
+# stale diagram from a fresh one; comparing source hashes can.
+_SOURCE_HASH_RE = re.compile(r"<!-- diagram-source-sha256: ([0-9a-f]{64}) -->")
+
 
 _BROWSER_AVAILABLE_CACHE: Optional[bool] = None
 
@@ -86,6 +91,24 @@ def is_browser_available(
 def get_sha256(content: str) -> str:
     """Compute SHA-256 hash of a string."""
     return hashlib.sha256(content.encode("utf-8")).hexdigest()
+
+
+def stamp_svg_source(svg_file: Path, source_hash: str) -> None:
+    """Record in a rendered SVG the hash of the Mermaid source it came from."""
+    svg = _SOURCE_HASH_RE.sub("", svg_file.read_text(encoding="utf-8")).rstrip()
+    svg_file.write_text(
+        f"{svg}\n<!-- diagram-source-sha256: {source_hash} -->\n",
+        encoding="utf-8",
+        newline="\n",
+    )
+
+
+def svg_source_hash(svg_file: Path) -> Optional[str]:
+    """Return the source hash a rendered SVG was stamped with, if any."""
+    if not svg_file.exists():
+        return None
+    match = _SOURCE_HASH_RE.search(svg_file.read_text(encoding="utf-8"))
+    return match.group(1) if match else None
 
 
 def find_mmdc_executable(verify_browser: bool = True) -> Optional[List[str]]:
@@ -556,10 +579,6 @@ def build_diagrams(
             all_success = False
             continue
 
-        previous_mmd = (
-            mmd_file.read_text(encoding="utf-8") if mmd_file.exists() else None
-        )
-
         # Write or update .mmd file
         with open(mmd_file, "w", encoding="utf-8", newline="\n") as f:
             f.write(mmd_content)
@@ -569,10 +588,22 @@ def build_diagrams(
             cached_entry.get("sha256") if isinstance(cached_entry, dict) else None
         )
 
-        needs_render = force or cached_hash != current_hash or not svg_file.exists()
+        rendered_hash = svg_source_hash(svg_file)
+        needs_render = (
+            force or cached_hash != current_hash or rendered_hash != current_hash
+        )
 
         if verify_only:
-            # In verification mode, check schema validity and syntax, then headless compilation or fallback notice
+            if rendered_hash != current_hash:
+                sys.stderr.write(
+                    f"Verification FAILED: {svg_file.name} was not rendered from the "
+                    f"current '{spec_id}' spec. Install @mermaid-js/mermaid-cli, run "
+                    "`uv run python scripts/diagram_toolchain.py build` and commit "
+                    "the SVG.\n"
+                )
+                all_success = False
+
+            # Check schema validity and syntax, then headless compilation or fallback notice
             if has_browser and mmdc_cmd:
                 temp_svg = output_dir / f".tmp_verify_{spec_id}.svg"
                 rendered_ok = render_diagram_artifact(
@@ -610,6 +641,7 @@ def build_diagrams(
 
         if has_browser and mmdc_cmd:
             if render_diagram_artifact(mmdc_cmd, mmd_file, svg_file, "svg"):
+                stamp_svg_source(svg_file, current_hash)
                 new_cache[spec_id] = {"sha256": current_hash}
             else:
                 sys.stderr.write(
@@ -621,7 +653,7 @@ def build_diagrams(
                 all_success = False
         elif svg_file.exists():
             # Never replace a rendered diagram with a text fallback.
-            if previous_mmd != mmd_content:
+            if rendered_hash != current_hash:
                 sys.stderr.write(
                     f"Warning: '{spec_id}' changed but mermaid-cli is unavailable, so "
                     f"{svg_file.name} is stale. Install @mermaid-js/mermaid-cli and "
