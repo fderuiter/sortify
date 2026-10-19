@@ -107,6 +107,34 @@ def test_get_vector_count_and_model_cache_footprint_helpers(tmp_path, monkeypatc
         worker.stop()
 
 
+async def _wait_for_screen(app, screen_cls, pilot, timeout_steps=50):
+    """Wait asynchronously for app.screen to match the expected screen class."""
+    for _ in range(timeout_steps):
+        if isinstance(app.screen, screen_cls):
+            return app.screen
+        await pilot.pause(0.1)
+    return app.screen
+
+
+async def _wait_for_widget(
+    container, selector, widget_type=None, pilot=None, timeout_steps=50
+):
+    """Wait asynchronously for a child widget matching selector to be mounted in container."""
+    for _ in range(timeout_steps):
+        try:
+            if widget_type:
+                return container.query_one(selector, widget_type)
+            return container.query_one(selector)
+        except Exception:
+            if pilot:
+                await pilot.pause(0.1)
+            else:
+                break
+    if widget_type:
+        return container.query_one(selector, widget_type)
+    return container.query_one(selector)
+
+
 @pytest.mark.anyio
 async def test_tui_scrub_artifacts_button_and_confirmation_modal(tmp_path, monkeypatch):
     """Verify clicking Scrub AI Artifacts opens ScrubArtifactsModal and removes database vectors and model cache files."""
@@ -148,16 +176,20 @@ async def test_tui_scrub_artifacts_button_and_confirmation_modal(tmp_path, monke
             await pilot.pause(0.2)
 
             # Press Scrub AI Artifacts button
-            btn_scrub = modal.query_one("#btn-scrub-artifacts", Button)
+            btn_scrub = await _wait_for_widget(
+                modal, "#btn-scrub-artifacts", Button, pilot=pilot
+            )
             btn_scrub.press()
-            await pilot.pause(0.3)
 
-            scrub_modal = app.screen
+            scrub_modal = await _wait_for_screen(app, ScrubArtifactsModal, pilot=pilot)
             assert isinstance(scrub_modal, ScrubArtifactsModal)
             assert scrub_modal.vector_count == 1
 
             # Confirm scrub
-            scrub_modal.query_one("#btn-confirm-scrub", Button).press()
+            confirm_btn = await _wait_for_widget(
+                scrub_modal, "#btn-confirm-scrub", Button, pilot=pilot
+            )
+            confirm_btn.press()
             for _ in range(30):
                 if not (model_dir / "weights.onnx").exists():
                     break
@@ -214,14 +246,18 @@ async def test_tui_toggling_consent_off_presents_revocation_prompt(
 
             # Toggle switch off
             sw.value = False
-            await pilot.pause(0.3)
 
-            revoke_modal = app.screen
+            revoke_modal = await _wait_for_screen(
+                app, ConsentRevocationModal, pilot=pilot
+            )
             assert isinstance(revoke_modal, ConsentRevocationModal)
             assert revoke_modal.vector_count == 1
 
             # Confirm consent revocation
-            revoke_modal.query_one("#btn-confirm-revoke", Button).press()
+            confirm_btn = await _wait_for_widget(
+                revoke_modal, "#btn-confirm-revoke", Button, pilot=pilot
+            )
+            confirm_btn.press()
             for _ in range(30):
                 if not (model_dir / "cached_model.bin").exists():
                     break
@@ -251,18 +287,27 @@ async def test_tui_cancelling_consent_revocation_reverts_switch(tmp_path, monkey
         modal = app.screen
         assert isinstance(modal, SettingsModal)
 
-        sw = modal.query_one("#switch-ai-consent", Switch)
+        from textual.widgets import TabbedContent
+
+        modal.query_one(
+            "#settings-tabbed-content", TabbedContent
+        ).active = "tab-ai-privacy"
+        await pilot.pause(0.2)
+
+        sw = await _wait_for_widget(modal, "#switch-ai-consent", Switch, pilot=pilot)
         assert sw.value is True
 
         # Toggle switch off
         sw.value = False
-        await pilot.pause(0.3)
 
-        revoke_modal = app.screen
+        revoke_modal = await _wait_for_screen(app, ConsentRevocationModal, pilot=pilot)
         assert isinstance(revoke_modal, ConsentRevocationModal)
 
         # Cancel revocation
-        revoke_modal.query_one("#btn-cancel-revoke", Button).press()
+        cancel_btn = await _wait_for_widget(
+            revoke_modal, "#btn-cancel-revoke", Button, pilot=pilot
+        )
+        cancel_btn.press()
         await pilot.pause(0.2)
 
         # Switch should revert back to True and consent should remain True

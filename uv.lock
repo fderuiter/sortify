@@ -5124,6 +5124,7 @@ dev = [
     { name = "pytest-timeout" },
     { name = "pytest-xdist" },
     { name = "reportlab" },
+    { name = "requests" },
     { name = "ruff" },
 ]
 docs = [
@@ -5187,6 +5188,7 @@ dev = [
     { name = "pytest-timeout", specifier = ">=2.4.0" },
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "reportlab", specifier = ">=5.0.0" },
+    { name = "requests" },
     { name = "ruff", specifier = ">=0.16.9" },
 ]
 docs = [
