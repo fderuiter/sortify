@@ -130,6 +130,7 @@ dev = [
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.8.0",
     "reportlab>=5.0.0",
+    "requests",
     "ruff>=0.16.9",
 ]
 
