@@ -15,6 +15,7 @@ site/
 .ruff_cache/
 dist/
 settings.json
+!.claude/settings.json
 sandbox/dataset/
 sandbox/*.db*
 autosorter.db
