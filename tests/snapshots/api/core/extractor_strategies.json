@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "c321e8d3e9fc878ee824d216ce01c48597cf9ca6e6716414366ff55384cbefaa"
+    "checksum": "3ca548d564123eb0c5fa62c66d47c204f8b1906f09c78b7bbaca2f594fcd98fc"
   },
   "classes": [
     {
@@ -272,6 +272,29 @@
             }
           ],
           "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "preview_pdf_density",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_path"
+            },
+            {
+              "annotation": "int",
+              "default": "50",
+              "name": "density_threshold"
+            }
+          ],
+          "returns": "list[dict]"
         }
       ]
     },

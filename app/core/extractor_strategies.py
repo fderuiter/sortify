@@ -375,6 +375,47 @@ class PdfExtractor:
             )
         return None
 
+    def preview_pdf_density(
+        self,
+        file_path: str,
+        density_threshold: int = 50,
+    ) -> list[dict]:
+        """Evaluate embedded text character density and vector paths per page without running heavy OCR inference."""
+        pages_analysis: list[dict] = []
+        try:
+            with open(file_path, "rb") as f:
+                reader = pypdf.PdfReader(f)
+                for idx, page in enumerate(reader.pages):
+                    embedded_text = ""
+                    try:
+                        embedded_text = page.extract_text() or ""
+                    except Exception as text_e:
+                        logging.warning(
+                            f"Error extracting embedded text on PDF page {idx + 1} of {file_path}: {text_e}"
+                        )
+
+                    char_count = len(embedded_text.strip())
+                    has_vector_paths = self._has_vector_graphics(page)
+                    is_dense_text = char_count >= density_threshold
+
+                    if is_dense_text and not has_vector_paths:
+                        predicted_status = "STANDARD"
+                    else:
+                        predicted_status = "RASTERIZED"
+
+                    pages_analysis.append(
+                        {
+                            "page_index": idx + 1,
+                            "char_count": char_count,
+                            "has_vector": has_vector_paths,
+                            "status": predicted_status,
+                        }
+                    )
+        except Exception as e:
+            logging.error(f"Failed to preview PDF density for {file_path}: {e}")
+
+        return pages_analysis
+
     def extract(
         self,
         file_path: str,
