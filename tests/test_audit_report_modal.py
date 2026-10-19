@@ -13,6 +13,19 @@ from app.ui.tui import AuditReportModal, AutoSorterTUI
 pytestmark = pytest.mark.xdist_group(name="tui")
 
 
+async def wait_for_rows(pilot, table: DataTable, expected: int) -> None:
+    """Pause until the filter handlers repopulate the table.
+
+    The Changed message hops from the widget to the modal, so one pause
+    is not always enough on a slow runner.
+    """
+    for _ in range(40):
+        if table.row_count == expected:
+            return
+        await pilot.pause(0.05)
+    assert table.row_count == expected
+
+
 @pytest.fixture
 def sample_audit_report(tmp_path):
     """Generate a sample audit report dict for modal testing."""
@@ -104,27 +117,20 @@ def test_audit_report_modal_search_and_filter(sample_audit_report):
             # Search by filename "doc1"
             search_inp = modal.query_one("#audit-search-input", Input)
             search_inp.value = "doc1"
-            await pilot.pause()
-
-            assert table.row_count == 1
+            await wait_for_rows(pilot, table, 1)
 
             # Clear search input
             search_inp.value = ""
-            await pilot.pause()
-            assert table.row_count == 4
+            await wait_for_rows(pilot, table, 4)
 
             # Filter by status MISMATCH_FAIL
             status_sel = modal.query_one("#audit-status-filter", Select)
             status_sel.value = "MISMATCH_FAIL"
-            await pilot.pause()
-
-            assert table.row_count == 1
+            await wait_for_rows(pilot, table, 1)
 
             # Filter by status UNVERIFIED
             status_sel.value = "UNVERIFIED"
-            await pilot.pause()
-
-            assert table.row_count == 1
+            await wait_for_rows(pilot, table, 1)
 
     asyncio.run(_test())
 

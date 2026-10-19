@@ -1,5 +1,6 @@
 """TUI Modal Views for Clinical Compliance Plugin."""
 
+import logging
 import os
 from pathlib import Path
 from typing import Any
@@ -14,6 +15,8 @@ from textual.widgets import Button, Input, Log
 from app.ui.heading import Heading
 from app.ui.notifications import TROUBLESHOOTING_URL
 from app.ui.tui import A11yMixin
+
+logger = logging.getLogger(__name__)
 
 
 class CROForensicModal(A11yMixin, ModalScreen[None]):
@@ -198,6 +201,7 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
             else:
                 self.announce(summary_msg)
         except Exception as e:
+            logger.warning("CRO forensic scan failed", exc_info=True)
             log_w.write_line(f"Execution error: {e} [Help: {help_url}]")
             err_msg = f"Forensic scan error: {e}"
             self._show_help_button(help_url)
