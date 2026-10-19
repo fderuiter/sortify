@@ -4542,9 +4542,12 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         for item in raw_items:
             abs_p = os.path.abspath(item)
             if os.path.isdir(abs_p):
+                # The scanner returns paths relative to the folder it walked.
                 files = get_files_recursively(abs_p)
                 for f_path in files:
-                    self._add_single_file_to_staging(f_path, protected)
+                    self._add_single_file_to_staging(
+                        os.path.join(abs_p, f_path), protected
+                    )
                     new_count += 1
             else:
                 self._add_single_file_to_staging(abs_p, protected)
@@ -4850,22 +4853,33 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             from app.core.scanner import get_files_recursively
             from app.core.session import AppSession
 
+            # Plan every staged file in a folder together, so a dropped folder
+            # is clustered as a whole instead of one file at a time.
+            groups: Dict[str, List[str]] = {}
             for path in target_paths:
                 if os.path.isdir(path):
-                    base_dir = path
-                    files = get_files_recursively(base_dir)
+                    groups.setdefault(path, []).extend(get_files_recursively(path))
                 else:
-                    base_dir = os.path.dirname(path)
-                    files = [path]
+                    groups.setdefault(os.path.dirname(path), []).append(
+                        os.path.basename(path)
+                    )
 
+            for base_dir, files in groups.items():
                 if app_ref:
                     app_ref.call_from_thread(
                         self.update_status_msg,
-                        f"Classifying {len(files)} file(s) in '{os.path.basename(path)}'...",
+                        f"Classifying {len(files)} file(s) in '{os.path.basename(base_dir)}'...",
                     )
 
                 session = AppSession(self.settings, base_dir=base_dir)
-                pending.append({"path": path, "session": session, "plan": None})
+                pending.append(
+                    {
+                        "path": base_dir,
+                        "session": session,
+                        "plan": None,
+                        "file_count": len(files),
+                    }
+                )
                 generator = build_corpus_generator(
                     base_dir=base_dir,
                     items_to_sort=files,
@@ -4943,16 +4957,23 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             for item in pending:
                 try:
                     summary = item["session"].execute_moves(item["plan"])
-                    processed_items.append({"path": item["path"], "summary": summary})
+                    processed_items.append(
+                        {
+                            "path": item["path"],
+                            "summary": summary,
+                            "file_count": item.get("file_count", 1),
+                        }
+                    )
                 finally:
                     item["session"].close()
 
-            final_msg = f"Completed triage of {len(processed_items)} dropped item(s)!"
+            file_count = sum(i["file_count"] for i in processed_items)
+            final_msg = f"Completed triage of {file_count} dropped item(s)!"
             if app_ref:
                 app_ref.call_from_thread(self.update_status_msg, final_msg)
             result_dict = {
                 "status": "success",
-                "processed_count": len(processed_items),
+                "processed_count": file_count,
                 "items": processed_items,
             }
             self.processed_result = result_dict
