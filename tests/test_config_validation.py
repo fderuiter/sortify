@@ -435,7 +435,7 @@ def test_app_settings_init_validation_error():
     """Test that AppSettings exits with code 1 if Settings initialization fails."""
     with (
         patch("sys.exit", side_effect=SystemExit) as mock_exit,
-        patch.dict(os.environ, {"MAX_WORKERS": "invalid"}),
+        patch.dict(os.environ, {"SORTIFY_MAX_WORKERS": "invalid"}),
     ):
         with pytest.raises(SystemExit):
             AppSettings()
@@ -819,3 +819,75 @@ def test_pyproject_build_system_hatchling_constraint():
     assert hatchling_req is not None, "hatchling must be in build-system.requires"
     assert ">=1.27.0" in hatchling_req, "hatchling must specify lower bound >=1.27.0"
     assert "<2.0.0" in hatchling_req, "hatchling must specify upper bound <2.0.0"
+
+
+def _fresh_app_settings(tmp_path, monkeypatch):
+    app_dir = tmp_path / "app"
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+    settings = AppSettings(filepath=str(app_dir / "settings.json"))
+    settings.flush()
+    return settings, app_dir
+
+
+def test_cwd_dotenv_is_ignored(tmp_path, monkeypatch):
+    """A `.env` in the working directory must not configure the app."""
+    cwd = tmp_path / "downloads"
+    cwd.mkdir()
+    (cwd / ".env").write_text(
+        "PROXY=http://attacker:8080\nSORTIFY_PROXY=http://attacker:8080\n"
+        "MAX_FOLDERS=11\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(cwd)
+
+    settings, _ = _fresh_app_settings(tmp_path, monkeypatch)
+
+    assert settings.PROXY != "http://attacker:8080"
+    assert settings.MAX_FOLDERS != 11
+
+
+def test_only_prefixed_environment_variables_apply(tmp_path, monkeypatch):
+    """`SORTIFY_MAX_FOLDERS` overrides the default; bare `MAX_WORKERS` doesn't."""
+    monkeypatch.setenv("SORTIFY_MAX_FOLDERS", "9")
+    monkeypatch.setenv("MAX_WORKERS", "17")
+
+    settings, _ = _fresh_app_settings(tmp_path, monkeypatch)
+
+    assert settings.MAX_FOLDERS == 9
+    assert settings.MAX_WORKERS != 17
+
+
+def test_app_dir_dotenv_applies(tmp_path, monkeypatch):
+    """A `.env` in the app directory may hold SORTIFY_ settings."""
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    (app_dir / ".env").write_text("SORTIFY_MAX_FOLDERS=6\n", encoding="utf-8")
+
+    settings, _ = _fresh_app_settings(tmp_path, monkeypatch)
+
+    assert settings.MAX_FOLDERS == 6
+
+
+def test_environment_values_are_not_persisted(tmp_path, monkeypatch):
+    """Env-derived values apply each run but never land in settings.json."""
+    monkeypatch.setenv("SORTIFY_MAX_FOLDERS", "9")
+
+    _, app_dir = _fresh_app_settings(tmp_path, monkeypatch)
+    saved = json.loads((app_dir / "settings.json").read_text(encoding="utf-8"))
+    assert "MAX_FOLDERS" not in saved
+
+    monkeypatch.delenv("SORTIFY_MAX_FOLDERS")
+    reloaded = AppSettings(filepath=str(app_dir / "settings.json"))
+    assert reloaded.MAX_FOLDERS == Settings.model_fields["MAX_FOLDERS"].default
+
+
+def test_explicit_change_of_env_value_is_persisted(tmp_path, monkeypatch):
+    """Setting an env-provided value explicitly saves it like any other change."""
+    monkeypatch.setenv("SORTIFY_MAX_FOLDERS", "9")
+    settings, app_dir = _fresh_app_settings(tmp_path, monkeypatch)
+
+    settings.MAX_FOLDERS = 5
+    settings.flush()
+
+    saved = json.loads((app_dir / "settings.json").read_text(encoding="utf-8"))
+    assert saved["MAX_FOLDERS"] == 5

@@ -291,7 +291,7 @@ def generate_admin_guide():
             "2. **Local Settings File (`~/.autosorter/settings.json`):** Parameters defined here override environment variables and default properties.\n"
         )
         f.write(
-            "3. **Environment Variables (or `.env` file):** Variables configured in the environment take precedence over default parameters.\n"
+            "3. **Environment Variables (or the app directory's `.env` file):** Only variables prefixed with `SORTIFY_` apply, for example `SORTIFY_MAX_FOLDERS=9`. A `.env` file is read only from the app directory (`~/.autosorter/.env`, or `$AUTOSORTER_APP_DIR/.env`), never from the current working directory. Values from the environment apply to each run but are not written to `settings.json`, so they keep working until the setting is changed explicitly.\n"
         )
         f.write(
             "4. **Default Parameters:** Base defaults are used as fallbacks if a setting is not explicitly defined in the local file or environment.\n\n"
