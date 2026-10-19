@@ -17,7 +17,10 @@ def test_wizard_modal_starter_templates_applied(tmp_path):
             app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
 
             async with app.run_test() as pilot:
-                await pilot.pause(0.2)
+                for _ in range(30):
+                    if isinstance(app.screen, WizardModal):
+                        break
+                    await pilot.pause(0.05)
                 modal = app.screen
                 assert isinstance(modal, WizardModal)
 
@@ -46,7 +49,12 @@ def test_template_gallery_modal_apply_packs(tmp_path):
                 await pilot.pause(0.1)
                 gallery_modal = TemplateGalleryModal(settings)
                 app.push_screen(gallery_modal)
-                await pilot.pause(0.1)
+                for _ in range(30):
+                    if isinstance(
+                        app.screen, TemplateGalleryModal
+                    ) and app.screen.query("#chk-gallery-legal_contracts"):
+                        break
+                    await pilot.pause(0.05)
 
                 assert isinstance(app.screen, TemplateGalleryModal)
 
@@ -82,13 +90,19 @@ def test_settings_modal_launches_template_gallery(tmp_path):
                 await pilot.pause(0.1)
                 settings_modal = SettingsModal(settings)
                 app.push_screen(settings_modal)
-                await pilot.pause(0.1)
+                for _ in range(30):
+                    if isinstance(app.screen, SettingsModal):
+                        break
+                    await pilot.pause(0.05)
 
                 assert isinstance(app.screen, SettingsModal)
 
                 # Trigger open template gallery button action
                 settings_modal.action_open_templates()
-                await pilot.pause(0.1)
+                for _ in range(30):
+                    if isinstance(app.screen, TemplateGalleryModal):
+                        break
+                    await pilot.pause(0.05)
 
                 # Verify TemplateGalleryModal is displayed
                 assert isinstance(app.screen, TemplateGalleryModal)
@@ -106,7 +120,12 @@ def test_wizard_modal_switch_and_checkbox_announcements(tmp_path):
             app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
 
             async with app.run_test() as pilot:
-                await pilot.pause(0.2)
+                for _ in range(30):
+                    if isinstance(app.screen, WizardModal) and app.screen.query(
+                        "#switch-consent"
+                    ):
+                        break
+                    await pilot.pause(0.05)
                 modal = app.screen
                 assert isinstance(modal, WizardModal)
 
@@ -157,7 +176,12 @@ def test_template_gallery_modal_checkbox_announcements(tmp_path):
                 await pilot.pause(0.1)
                 gallery_modal = TemplateGalleryModal(settings)
                 app.push_screen(gallery_modal)
-                await pilot.pause(0.1)
+                for _ in range(30):
+                    if isinstance(
+                        app.screen, TemplateGalleryModal
+                    ) and app.screen.query("#chk-gallery-legal_contracts"):
+                        break
+                    await pilot.pause(0.05)
 
                 assert isinstance(app.screen, TemplateGalleryModal)
 
@@ -188,7 +212,10 @@ def test_modal_unrecognized_controls_handled_gracefully(tmp_path):
             app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
 
             async with app.run_test() as pilot:
-                await pilot.pause(0.2)
+                for _ in range(30):
+                    if isinstance(app.screen, WizardModal):
+                        break
+                    await pilot.pause(0.05)
                 modal = app.screen
                 assert isinstance(modal, WizardModal)
 
@@ -207,4 +234,3 @@ def test_modal_unrecognized_controls_handled_gracefully(tmp_path):
                 assert not any(m == "" for m in messages)
 
     asyncio.run(_test())
-

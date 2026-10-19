@@ -857,7 +857,12 @@ def test_tui_conflict_policy_settings_and_tree_indicator(temp_workspace):
         with patch.object(AppSettings, "_save", return_value=None):
             async with app.run_test() as pilot:
                 app.action_open_settings()
-                await pilot.pause(0.1)
+                for _ in range(30):
+                    if isinstance(app.screen, SettingsModal) and app.screen.query(
+                        "#select-conflict-policy"
+                    ):
+                        break
+                    await pilot.pause(0.05)
 
                 modal = app.screen
                 assert isinstance(modal, SettingsModal)
@@ -894,7 +899,9 @@ def test_tui_conflict_policy_settings_and_tree_indicator(temp_workspace):
                 await pilot.pause(0.1)
 
                 tree = app.query_one("#plan-tree", Tree)
-                nodes_labels = [str(leaf.label) for leaf in tree.root.children[0].children]
+                nodes_labels = [
+                    str(leaf.label) for leaf in tree.root.children[0].children
+                ]
                 assert any("[COLLISION: OVERWRITE]" in lbl for lbl in nodes_labels)
 
     asyncio.run(_test())
@@ -2090,5 +2097,3 @@ def test_tui_generate_sample_corpus_keybindings(temp_workspace):
                 assert mock_action.call_count == 3
 
     asyncio.run(_test())
-
-
