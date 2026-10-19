@@ -45,6 +45,17 @@ jobs:
         run: |
           uv sync --frozen --group build
 
+      - name: Cache Model Weights
+        uses: actions/cache@v6
+        with:
+          path: |
+            offline_bundle/
+            ~/.EasyOCR/model/
+            ~/.cache/huggingface
+          key: model-weights-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'offline_bundle/**', 'app/core/prompt_manifest.py') }}
+          restore-keys: |
+            model-weights-${{ runner.os }}-
+
       - name: Build executable
         run: |
           uv run python scripts/build.py

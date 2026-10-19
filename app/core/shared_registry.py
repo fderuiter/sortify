@@ -738,7 +738,9 @@ class SharedModelRegistry:
                         expected_hashes.append(h)
             return expected_hashes
 
-    def get_expected_hash(self, filename: str, category: str | None = None) -> str | None:
+    def get_expected_hash(
+        self, filename: str, category: str | None = None
+    ) -> str | None:
         """Retrieve the expected SHA-256 hash for a filename, optionally scoped to a category."""
         with self._lock:
             if category is not None:
@@ -846,9 +848,7 @@ class SharedModelRegistry:
 
             mei_dir = get_meipass_dir()
             if mei_dir:
-                easyocr_dir = os.path.join(
-                    mei_dir, "offline_bundle", "easyocr"
-                )
+                easyocr_dir = os.path.join(mei_dir, "offline_bundle", "easyocr")
             else:
                 try:
                     from app.core.path_utils import get_base_path

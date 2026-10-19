@@ -1827,9 +1827,7 @@ class IncrementalAnalyzer:
 
             raw_plan = self._inject_hierarchy(clean_plan)
             validated_plan = _validate_sorting_plan_nodes(raw_plan)
-            return self._build_sorting_plan(
-                validated_plan, invalid_locks=invalid_locks
-            )
+            return self._build_sorting_plan(validated_plan, invalid_locks=invalid_locks)
 
         except Exception as e:
             logging.error(

@@ -203,6 +203,3 @@ def test_mathematical_equivalence():
             # followed by file1.txt and file2.txt.
             # Let's check that the matched examples appear in the prompt context.
             assert "file3.txt" in prompt or "sheets of baking finance" in prompt
-
-
-

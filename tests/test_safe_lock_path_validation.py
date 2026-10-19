@@ -54,10 +54,16 @@ def test_validate_lock_path_backward_compatibility():
 
 def test_sorting_plan_invalid_locks_property():
     """Verify SortingPlan and SortingPlanModel support invalid_locks property."""
-    plan = SortingPlan(invalid_locks={"file1.pdf": "Invalid lock path: contains traversal"})
+    plan = SortingPlan(
+        invalid_locks={"file1.pdf": "Invalid lock path: contains traversal"}
+    )
     assert plan.invalid_locks == {"file1.pdf": "Invalid lock path: contains traversal"}
-    assert plan["invalid_locks"] == {"file1.pdf": "Invalid lock path: contains traversal"}
-    assert plan.get("invalid_locks") == {"file1.pdf": "Invalid lock path: contains traversal"}
+    assert plan["invalid_locks"] == {
+        "file1.pdf": "Invalid lock path: contains traversal"
+    }
+    assert plan.get("invalid_locks") == {
+        "file1.pdf": "Invalid lock path: contains traversal"
+    }
 
     # Model validation
     model = SortingPlanModel(invalid_locks={"doc.docx": "Illegal char"})
@@ -107,9 +113,7 @@ def test_tui_scan_worker_announces_skipped_invalid_locks():
     app.base_dir = "/tmp/fake_workspace"
     app.settings = MagicMock()
 
-    mock_plan = SortingPlan(
-        invalid_locks={"bad_doc.txt": "Path traversal detected"}
-    )
+    mock_plan = SortingPlan(invalid_locks={"bad_doc.txt": "Path traversal detected"})
 
     mock_session = MagicMock()
     mock_session.generate_sorting_plan.return_value = mock_plan
@@ -119,13 +123,20 @@ def test_tui_scan_worker_announces_skipped_invalid_locks():
     def fake_announce(msg):
         announcements.append(msg)
 
-    with patch("app.core.session.AppSession", return_value=mock_session), \
-         patch("app.core.scanner.get_files_from_sources", return_value=["bad_doc.txt"]), \
-         patch("app.core.scanner.get_files_recursively", return_value=["bad_doc.txt"]), \
-         patch("app.core.metadata.MetadataPass.run"), \
-         patch.object(app, "call_from_thread", side_effect=lambda fn, *args, **kwargs: fn(*args, **kwargs) if callable(fn) else None), \
-         patch.object(app, "announce", side_effect=fake_announce):
-
+    with (
+        patch("app.core.session.AppSession", return_value=mock_session),
+        patch("app.core.scanner.get_files_from_sources", return_value=["bad_doc.txt"]),
+        patch("app.core.scanner.get_files_recursively", return_value=["bad_doc.txt"]),
+        patch("app.core.metadata.MetadataPass.run"),
+        patch.object(
+            app,
+            "call_from_thread",
+            side_effect=lambda fn, *args, **kwargs: (
+                fn(*args, **kwargs) if callable(fn) else None
+            ),
+        ),
+        patch.object(app, "announce", side_effect=fake_announce),
+    ):
         app.run_scan_worker.__wrapped__(app)
 
     assert any("bad lock path was skipped" in msg for msg in announcements)

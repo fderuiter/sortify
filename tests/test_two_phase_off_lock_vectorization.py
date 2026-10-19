@@ -32,7 +32,12 @@ def test_off_lock_term_frequency_precomputation(tmp_path: Path):
     doc2 = (base_dir, "doc2.txt", "hash2", "banana cherry date date")
 
     # Pre-set target path in DB
-    db.upsert_documents([(base_dir, "doc1.txt", "hash1", "placeholder"), (base_dir, "doc2.txt", "hash2", "placeholder")])
+    db.upsert_documents(
+        [
+            (base_dir, "doc1.txt", "hash1", "placeholder"),
+            (base_dir, "doc2.txt", "hash2", "placeholder"),
+        ]
+    )
     db.set_user_verified_target_path(base_dir, "doc1.txt", "folderA")
     db.set_user_verified_target_path(base_dir, "doc2.txt", "folderA")
 
@@ -45,7 +50,9 @@ def test_off_lock_term_frequency_precomputation(tmp_path: Path):
     assert len(call_threads) >= 2
     # Ensure compute_term_frequencies ran on caller thread or thread pool worker, NOT worker._thread
     for thread in call_threads:
-        assert thread != worker.thread, "Tokenization must occur off the DB worker thread"
+        assert thread != worker.thread, (
+            "Tokenization must occur off the DB worker thread"
+        )
 
     # Verify TF-IDF terms in DB match expected pre-computed counts
     stats_n, top_terms, doc_terms, doc_meta = db.get_tfidf_stats(base_dir)
@@ -183,7 +190,9 @@ def test_concurrent_read_write_responsiveness(tmp_path: Path):
 
     # Seed initial documents
     for i in range(20):
-        db.upsert_document(base_dir, f"file_{i}.txt", f"hash_{i}", f"content sample {i}")
+        db.upsert_document(
+            base_dir, f"file_{i}.txt", f"hash_{i}", f"content sample {i}"
+        )
         db.set_user_verified_target_path(base_dir, f"file_{i}.txt", "folder1")
 
     stop_flag = threading.Event()
@@ -219,7 +228,9 @@ def test_concurrent_read_write_responsiveness(tmp_path: Path):
     stop_flag.set()
     reader_thread.join(timeout=2.0)
 
-    assert len(read_errors) == 0, f"Read errors occurred during concurrent write: {read_errors}"
+    assert len(read_errors) == 0, (
+        f"Read errors occurred during concurrent write: {read_errors}"
+    )
     assert read_count[0] > 0, "Concurrent reads should execute during indexing"
 
     worker.stop()

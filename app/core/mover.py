@@ -225,8 +225,10 @@ def resolve_new_target(abs_target: str, path_map: dict) -> str:
         ).lower().startswith(target_clean + "/"):
             rel = safe_relpath(src_file_clean, abs_target)
             dst_file_str = str(dst_file)
-            if dst_file_str.replace("\\", "/").lower().endswith(
-                rel.replace("\\", "/").lower()
+            if (
+                dst_file_str.replace("\\", "/")
+                .lower()
+                .endswith(rel.replace("\\", "/").lower())
             ):
                 inferred = dst_file_str[: -len(rel)].rstrip("\\/")
                 if inferred:
@@ -253,7 +255,9 @@ def _update_path_map_entry(
         old_dest = path_map.get(src_key)
         path_map[src_key] = abs_dest
 
-        if old_dest and os.path.normcase(os.path.abspath(old_dest)) != os.path.normcase(abs_dest):
+        if old_dest and os.path.normcase(os.path.abspath(old_dest)) != os.path.normcase(
+            abs_dest
+        ):
             for k in list(path_map.keys()):
                 if k.startswith(src_key + os.sep):
                     rel = safe_relpath(k, src_key)
@@ -303,7 +307,9 @@ def _resolve_pending_links(
             new_abs_target, abs_target
         )
 
-        if needs_update and (os.path.lexists(dest_path) or os.path.lexists(source_path)):
+        if needs_update and (
+            os.path.lexists(dest_path) or os.path.lexists(source_path)
+        ):
             shadow_name = f"{dest_path}.shadow_{uuid.uuid4().hex}"
             dest_dir = os.path.dirname(dest_path)
             if not os.path.exists(dest_dir):
@@ -320,7 +326,9 @@ def _resolve_pending_links(
                     if not os.path.lexists(shadow_name):
                         raise RuntimeError("Shadow link creation failed validation.")
                     _safe_replace_link(shadow_name, dest_path)
-                    if not _is_same_path(dest_path, source_path) and os.path.lexists(source_path):
+                    if not _is_same_path(dest_path, source_path) and os.path.lexists(
+                        source_path
+                    ):
                         from app.core.resilient_file_ops import resilient_remove
 
                         resilient_remove(source_path)
@@ -329,7 +337,9 @@ def _resolve_pending_links(
                         from app.core.resilient_file_ops import resilient_remove
 
                         resilient_remove(shadow_name)
-                    if os.path.lexists(dest_path) and not _is_same_path(dest_path, source_path):
+                    if os.path.lexists(dest_path) and not _is_same_path(
+                        dest_path, source_path
+                    ):
                         from app.core.resilient_file_ops import resilient_remove
 
                         try:
@@ -348,9 +358,13 @@ def _resolve_pending_links(
                     if not (
                         os.path.lexists(shadow_name) or is_junction_path(shadow_name)
                     ):
-                        raise RuntimeError("Shadow junction creation failed validation.")
+                        raise RuntimeError(
+                            "Shadow junction creation failed validation."
+                        )
                     _safe_replace_link(shadow_name, dest_path)
-                    if not _is_same_path(dest_path, source_path) and os.path.lexists(source_path):
+                    if not _is_same_path(dest_path, source_path) and os.path.lexists(
+                        source_path
+                    ):
                         from app.core.resilient_file_ops import resilient_remove
 
                         resilient_remove(source_path)
@@ -359,7 +373,9 @@ def _resolve_pending_links(
                         from app.core.resilient_file_ops import resilient_remove
 
                         resilient_remove(shadow_name)
-                    if os.path.lexists(dest_path) and not _is_same_path(dest_path, source_path):
+                    if os.path.lexists(dest_path) and not _is_same_path(
+                        dest_path, source_path
+                    ):
                         from app.core.resilient_file_ops import resilient_remove
 
                         try:
@@ -375,7 +391,11 @@ def _resolve_pending_links(
             elif link_info["type"] == "lnk" and pylnk3:
                 try:
                     parsed = None
-                    lnk_candidate = dest_path if (dest_path and os.path.exists(dest_path)) else source_path
+                    lnk_candidate = (
+                        dest_path
+                        if (dest_path and os.path.exists(dest_path))
+                        else source_path
+                    )
                     if lnk_candidate and os.path.exists(lnk_candidate):
                         parsed = pylnk3.parse(lnk_candidate)
                     kwargs = {}
@@ -393,7 +413,9 @@ def _resolve_pending_links(
                     if not os.path.lexists(shadow_name):
                         raise RuntimeError("Shadow link creation failed validation.")
                     _safe_replace_link(shadow_name, dest_path)
-                    if not _is_same_path(dest_path, source_path) and os.path.lexists(source_path):
+                    if not _is_same_path(dest_path, source_path) and os.path.lexists(
+                        source_path
+                    ):
                         from app.core.resilient_file_ops import resilient_remove
 
                         resilient_remove(source_path)
@@ -402,7 +424,9 @@ def _resolve_pending_links(
                         from app.core.resilient_file_ops import resilient_remove
 
                         resilient_remove(shadow_name)
-                    if os.path.lexists(dest_path) and not _is_same_path(dest_path, source_path):
+                    if os.path.lexists(dest_path) and not _is_same_path(
+                        dest_path, source_path
+                    ):
                         from app.core.resilient_file_ops import resilient_remove
 
                         try:
@@ -760,7 +784,9 @@ def _execute_moves_recursive(
             if collision and conflict_policy == "overwrite":
                 dest_path = target_path
             else:
-                dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
+                dest_path = os.path.normpath(
+                    get_safe_path(dest_dir, filename, source_path)
+                )
             dest_path = unicodedata.normalize("NFC", dest_path)
             _update_path_map_entry(path_map, source_path, dest_path)
 
@@ -1660,7 +1686,10 @@ class AsyncMoveEngine:
             try:
                 sessions = history_manager.get_sessions()
                 for s in sessions:
-                    if _is_same_path(s["base_dir"], base_dir) and s["status"] == "active":
+                    if (
+                        _is_same_path(s["base_dir"], base_dir)
+                        and s["status"] == "active"
+                    ):
                         session_id = s["session_id"]
                         break
             except Exception:

@@ -127,7 +127,9 @@ def test_generative_naming_strategy_escalates_worker_error():
             wraps=strategy._get_cluster_keywords,
         ):
             # Calling _get_cluster_keywords should capture the worker error and fall back to super()._get_cluster_keywords
-            name = strategy._get_cluster_keywords(["Financial Invoice 2024", "Tax Document"])
+            name = strategy._get_cluster_keywords(
+                ["Financial Invoice 2024", "Tax Document"]
+            )
             # Since generative naming failed, rule-based keyword extraction extracts dominant keywords
             assert name != ""
             assert isinstance(name, str)

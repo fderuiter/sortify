@@ -54,16 +54,16 @@ class DBWorker:
     def _do_commit_session(self, session_id: str = None):
         if not self._active_session:
             return
-        if session_id and str(self._active_session.get("session_id")) != str(session_id):
+        if session_id and str(self._active_session.get("session_id")) != str(
+            session_id
+        ):
             return
         conn = self._active_session.get("conn")
         if conn:
             try:
                 conn.commit()
             except Exception as e:
-                logger.error(
-                    f"Error committing transaction session {session_id}: {e}"
-                )
+                logger.error(f"Error committing transaction session {session_id}: {e}")
                 try:
                     conn.rollback()
                 except Exception:
