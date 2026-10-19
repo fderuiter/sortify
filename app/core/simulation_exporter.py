@@ -1,5 +1,6 @@
 """Simulation Exporter for dry-run reports in JSON and HTML formats."""
 
+import contextlib
 import json
 import os
 import re
@@ -36,18 +37,15 @@ class SimulationExporter:
 
         # Build compiled regex for user home paths and secret triggers
         home_dirs = []
-        try:
+        # Path.home() raises RuntimeError when no home directory can be found.
+        with contextlib.suppress(RuntimeError, KeyError, OSError):
             ph = str(Path.home())
             if ph and len(ph.strip("\\/ ")) > 2:
                 home_dirs.append(ph)
-        except Exception:
-            pass
-        try:
+        with contextlib.suppress(RuntimeError, KeyError, OSError):
             eu = os.path.expanduser("~")
             if eu and len(eu.strip("\\/ ")) > 2 and eu not in home_dirs:
                 home_dirs.append(eu)
-        except Exception:
-            pass
         for env_var in ("USERPROFILE", "HOME", "HOMEPATH"):
             val = os.environ.get(env_var)
             if val and len(val.strip("\\/ ")) > 2 and val not in home_dirs:

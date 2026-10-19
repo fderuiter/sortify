@@ -181,7 +181,8 @@ class PatternTokenFormatter:
         except Exception as err:
             logger.warning(
                 f"Pattern token formatting failed for pattern '{pattern}': {err}. "
-                f"Falling back to original name."
+                f"Falling back to original name.",
+                exc_info=True,
             )
             if fallback_original:
                 return sanitize_name(fallback_original)
