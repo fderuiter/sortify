@@ -42,10 +42,6 @@ The following parameters are extracted directly from the application's configura
 - **Type**: `bool`
 - **Default**: `True`
 
-### `EXPLORER_INTEGRATION`
-- **Type**: `bool`
-- **Default**: `False`
-
 ### `SPEAK_ANNOUNCEMENTS`
 - **Type**: `bool`
 - **Default**: `False`

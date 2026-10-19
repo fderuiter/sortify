@@ -102,10 +102,6 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.history
 
-## `app.core.integration`
-
-::: app.core.integration
-
 ## `app.core.ipc`
 
 ::: app.core.ipc
