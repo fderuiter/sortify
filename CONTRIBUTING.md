@@ -54,7 +54,7 @@ Set `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` when running tests on
 | `validate-config-schema` | `scripts/validate_config.py` | `app/config.py` and `app/config_schema.json` disagree |
 | `validate-links` | `scripts/validate_links.py --local-only` | a URL in a changed file is malformed (CI also checks that external links resolve) |
 
-CI (`.github/workflows/ci.yml`) runs the same checks, a dependency audit and secret scan, then the test suite on Linux, Windows and macOS. The aggregate `Required CI` job is the merge gate.
+CI (`.github/workflows/ci.yml`) runs the same checks, a dependency audit and secret scan, then the test suite on Linux, Windows and macOS. The fast suite must keep line coverage of `app/` at 70% or above (`--cov-fail-under` in `ci.yml`). Tests run with a synchronous stand-in for the database write queue; mark a test `@pytest.mark.real_db_worker` to run it against the real asynchronous queue. The aggregate `Required CI` job is the merge gate.
 
 ## Updating baselines
 

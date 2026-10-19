@@ -226,7 +226,9 @@ jobs:
         SMOKE_TEST: "0"
       shell: bash
       run: |
-        if ! uv run pytest -m "not slow" -n auto --cov=app --cov-report=xml --cov-report=html --cov-report=term tests/; then
+        # Fast-suite coverage was 76% on Linux when this gate was set (#738); the
+        # margin leaves room for platform-specific skips on Windows and macOS.
+        if ! uv run pytest -m "not slow" -n auto --cov=app --cov-report=xml --cov-report=html --cov-report=term --cov-fail-under=70 tests/; then
           if [ -f pytest_failures.txt ]; then
             echo "=== PYTEST FAILURES ==="
             cat pytest_failures.txt
