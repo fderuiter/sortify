@@ -54,6 +54,39 @@ class OfflineModelLoader:
         """
         cls._registered_models[model_id] = {"expected_files": expected_files or []}
 
+    @staticmethod
+    def _integrity_id(model_id: str) -> str:
+        """Return the hash registry key for a model ID."""
+        return (
+            "generative_naming"
+            if model_id in ("generative_naming", "model")
+            else model_id
+        )
+
+    @classmethod
+    def _verify_candidate(cls, model_id: str, path: str) -> bool:
+        """Return True only if every registered file in `path` matches its hash.
+
+        Folders for models with no registered hashes are refused, since there
+        is nothing to verify them against.
+        """
+        from app.core.shared_registry import SharedModelRegistry
+
+        registry = SharedModelRegistry.get_instance()
+        integrity_id = cls._integrity_id(model_id)
+        if not registry.get_expected_hashes(integrity_id):
+            logger.error(
+                f"Refusing model folder '{path}' for '{model_id}': "
+                "no registered hashes to verify it against."
+            )
+            return False
+        try:
+            registry.verify_integrity(integrity_id, path)
+        except (HashVerificationError, OSError) as e:
+            logger.error(f"Refusing model folder '{path}' for '{model_id}': {e}")
+            return False
+        return True
+
     @classmethod
     def _find_sidecar_zip_candidates(cls) -> List[str]:
         """Find potential filesystem paths where smart-autosorter-models.zip may reside."""
@@ -75,10 +108,8 @@ class OfflineModelLoader:
         if mei_dir:
             candidates.append(os.path.join(mei_dir, "smart-autosorter-models.zip"))
 
-        candidates.append(os.path.join(os.getcwd(), "smart-autosorter-models.zip"))
-        candidates.append(
-            os.path.join(os.getcwd(), "dist", "smart-autosorter-models.zip")
-        )
+        # The working directory is deliberately not searched: it is often a
+        # folder of untrusted files (Downloads) that this app is sorting.
 
         try:
             base_dir = get_base_path()
@@ -129,10 +160,7 @@ class OfflineModelLoader:
         bool
             True if hydration and hash verification succeeded.
         """
-        import zipfile
-
         from app.core.progress import emit_progress
-        from app.core.shared_registry import SharedModelRegistry
 
         if target_dir is None:
             target_dir = os.path.expanduser("~/.smart-autosorter/offline_bundle")
@@ -159,6 +187,47 @@ class OfflineModelLoader:
             progress=0.1,
             stage="Verifying sidecar model package...",
         )
+
+        # Extract into a sibling staging folder and only move verified models
+        # into place, so weights that fail verification are never resolvable.
+        import shutil
+        import tempfile
+
+        staging_path = tempfile.mkdtemp(
+            prefix=".hydrate-", dir=os.path.dirname(target_path)
+        )
+        try:
+            cls._extract_and_verify(sidecar_zip_path, staging_path, progress_callback)
+            for item in os.listdir(staging_path):
+                dest = os.path.join(target_path, item)
+                if os.path.isdir(dest) and not os.path.islink(dest):
+                    shutil.rmtree(dest)
+                elif os.path.lexists(dest):
+                    os.remove(dest)
+                os.replace(os.path.join(staging_path, item), dest)
+        finally:
+            shutil.rmtree(staging_path, ignore_errors=True)
+
+        emit_progress(
+            progress_callback,
+            progress=1.0,
+            stage="Sidecar model hydration complete.",
+        )
+
+        return True
+
+    @classmethod
+    def _extract_and_verify(
+        cls,
+        sidecar_zip_path: str,
+        target_path: str,
+        progress_callback: Optional[Callable[..., Any]] = None,
+    ) -> None:
+        """Extract the sidecar archive into `target_path` and verify every model in it."""
+        import zipfile
+
+        from app.core.progress import emit_progress
+        from app.core.shared_registry import SharedModelRegistry
 
         try:
             with zipfile.ZipFile(sidecar_zip_path, "r") as zip_file:
@@ -204,8 +273,7 @@ class OfflineModelLoader:
             for item in os.listdir(target_path):
                 subpath = os.path.join(target_path, item)
                 if os.path.isdir(subpath):
-                    check_id = "generative_naming" if item == "model" else item
-                    registry.verify_integrity(check_id, subpath)
+                    registry.verify_integrity(cls._integrity_id(item), subpath)
         except HashVerificationError:
             raise
         except Exception as err:
@@ -221,14 +289,6 @@ class OfflineModelLoader:
             raise HashVerificationError(
                 f"Hydrated sidecar weights failed integrity check: {err}"
             ) from err
-
-        emit_progress(
-            progress_callback,
-            progress=1.0,
-            stage="Sidecar model hydration complete.",
-        )
-
-        return True
 
     @classmethod
     def resolve_model_path(
@@ -275,11 +335,8 @@ class OfflineModelLoader:
             meipass_path = os.path.join(mei_dir, "offline_bundle", folder_name)
             searched_paths.append(meipass_path)
 
-        # Precedence 3: Local workspace directory
-        workspace_path = os.path.join(os.getcwd(), "offline_bundle", folder_name)
-        searched_paths.append(workspace_path)
-
-        # Also resolve workspace path relative to path_utils base path
+        # Precedence 3: The app's own install or checkout directory (never the
+        # working directory, which may hold untrusted files)
         try:
             from app.core.path_utils import get_base_path
 
@@ -310,19 +367,18 @@ class OfflineModelLoader:
                     expected_files = meta.get("expected_files", [])
 
                     if expected_files:
-                        all_exist = True
-                        for f in expected_files:
-                            if not os.path.exists(os.path.join(path, f)):
-                                all_exist = False
-                                break
-                        if all_exist:
-                            return path
+                        present = all(
+                            os.path.exists(os.path.join(path, f))
+                            for f in expected_files
+                        )
                     else:
                         try:
-                            if os.listdir(path):
-                                return path
+                            present = bool(os.listdir(path))
                         except Exception as e:
                             logger.debug(f"Could not list directory '{path}': {e}")
+                            present = False
+                    if present and cls._verify_candidate(model_id, path):
+                        return path
             return None
 
         found_path = check_paths(searched_paths)

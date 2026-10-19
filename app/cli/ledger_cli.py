@@ -251,7 +251,7 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
             from app.core.cache import CacheManager
             from app.core.db_worker import DBWorker
             from app.core.history import HistoryManager
-            from app.main import find_all_history_sessions
+            from app.core.session_catalog import find_all_history_sessions
 
             target_db_path = None
             all_sessions = find_all_history_sessions()

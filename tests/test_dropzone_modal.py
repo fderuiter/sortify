@@ -1,5 +1,7 @@
 """Unit tests for DropZoneModal floating overlay and TUI integration."""
 
+import os
+
 import pytest
 from textual.app import App
 from textual.events import Paste
@@ -408,3 +410,49 @@ async def test_dropzone_responsive_narrow_layout(tmp_path):
 
         # Should have .narrow class applied
         assert active_modal.has_class("narrow")
+
+
+@pytest.mark.anyio
+async def test_dropzone_folder_drop_stages_and_moves_its_files(tmp_path):
+    """Dropping a folder stages every file in it as Ready and sorts them together."""
+    settings = DummySettings(tmp_path)
+    test_dir = tmp_path / "incoming"
+    test_dir.mkdir()
+    for i in range(3):
+        (test_dir / f"invoice_{i}.txt").write_text(f"Invoice total due {i}")
+        (test_dir / f"notes_{i}.txt").write_text(f"Python server deploy {i}")
+
+    app = ModalTestApp(settings=settings, base_dir=str(tmp_path))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        dropzone = app.screen
+        dropzone.on_paste(Paste(text=str(test_dir)))
+        await pilot.pause()
+
+        statuses = [item["status"] for item in dropzone.staged_items]
+        assert statuses == ["Ready"] * 6
+        assert all(os.path.isabs(item["path"]) for item in dropzone.staged_items)
+
+        dropzone.trigger_drop_triage()
+        for _ in range(100):
+            await pilot.pause(0.1)
+            if isinstance(app.screen, DropPlanConfirmModal):
+                break
+        await pilot.pause()
+        review = app.screen
+        assert isinstance(review, DropPlanConfirmModal)
+        assert "Move 6 file(s)" in review.summary
+        # One planning session for the whole folder, not one per file.
+        assert len(dropzone._pending_drop) == 1
+
+        review.query_one("#btn-confirm-drop-plan", Button).press()
+        for _ in range(100):
+            await pilot.pause(0.1)
+            if dropzone.processed_result is not None:
+                break
+
+        assert dropzone.processed_result["status"] == "success"
+        assert dropzone.processed_result["processed_count"] == 6
+        loose = [p for p in test_dir.iterdir() if p.is_file()]
+        assert loose == []
