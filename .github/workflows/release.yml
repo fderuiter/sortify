@@ -27,6 +27,7 @@ jobs:
   build-binaries:
     name: Build for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
+    timeout-minutes: 90
     strategy:
       fail-fast: false
       matrix:
@@ -127,6 +128,7 @@ jobs:
     needs: build-binaries
     if: github.event_name == 'release'
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     permissions:
       contents: write
       id-token: write
