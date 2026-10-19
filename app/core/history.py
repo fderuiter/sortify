@@ -791,6 +791,12 @@ class HistoryManager:
                         raise ValueError(
                             f"Rollback halted: file missing at {destination_path}. Disk state restored from safety snapshot."
                         )
+                    elif not os.path.exists(orig_abs):
+                        # Deleted since the sort and not already back: nothing to restore.
+                        logging.warning(
+                            f"Skipping {destination_path}: it no longer exists."
+                        )
+                        continue
 
                 # Replay step reversal
                 if item_type == "file":
