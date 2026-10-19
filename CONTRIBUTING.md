@@ -34,6 +34,7 @@ uv run ruff check . && uv run ruff format .
 uv run mypy app/
 uv run pre-commit run --all-files       # every hook, same as CI's static checks
 uv run docs --check                     # regenerate docs, audit links, build the site
+uv run mkdocs serve                     # preview the docs site at http://127.0.0.1:8000
 ```
 
 Set `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` when running tests on a machine without a usable keyring (CI does this).
@@ -65,6 +66,7 @@ Some checks compare against committed files. When you change them on purpose, re
 
 ## Code conventions
 
+- `.editorconfig` sets UTF-8, LF line endings and 4-space indents (2 for YAML and JSON).
 - Ruff enforces formatting, import order and numpy-style docstrings on `app/`.
 - Business logic goes in `app/core/`; the terminal UI in `app/ui/` should call into core rather than reimplement it.
 - Use the shared helpers in `app/core/path_utils.py`, `app/core/crypto.py` and `app/core/text_utils.py` for paths, packaging checks, keys and secret scrubbing. The [Contributor Guide](docs/contributor.md) lists them.
