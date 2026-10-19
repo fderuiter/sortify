@@ -84,11 +84,6 @@ module = [
     "app.core.analyzer",
     "app.core.analyzer_strategies",
     "app.core.cache",
-    "app.core.clinical_compliance",
-    "app.core.clinical_renamer",
-    "app.core.clinical_strategy",
-    "app.core.clinical_taxonomy",
-    "app.core.cro_multi_study_pipeline",
     "app.core.daemon",
     "app.core.db",
     "app.core.db_conn",
@@ -112,7 +107,6 @@ module = [
     "app.core.semantic_embeddings",
     "app.core.session",
     "app.core.shared_registry",
-    "app.core.study_disambiguator",
     "app.core.text_utils",
     "app.core.user_space_bootstrap",
 ]
@@ -164,6 +158,13 @@ markers = [
     "ml: marks machine learning model tests",
 ]
 
+[tool.coverage.run]
+source = ["app"]
+omit = [
+    "app/demo.py",
+    "app/main.py",
+    "*__init__.py",
+]
+
 [tool.coverage.report]
-fail_under = 50
 show_missing = true

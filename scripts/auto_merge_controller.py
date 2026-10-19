@@ -2,6 +2,13 @@
 
 Evaluates eligible PRs sequentially, updates branches behind main, verifies Required CI,
 and executes squash merges without resolving conflicts automatically.
+
+Trust model: nothing the PR under evaluation can set is trusted on its own. Labels
+and the ``automerge/classification`` status only pre-filter candidates; before merging,
+the controller re-runs the risk classifier from its own (default-branch) checkout on
+metadata fetched from the API, and it accepts ``Required CI`` only as a check run
+created by GitHub Actions, never as a plain commit status. Run it as a module
+(``python -m scripts.auto_merge_controller``) so the classifier import resolves.
 """
 
 from __future__ import annotations
@@ -15,7 +22,13 @@ from typing import Any, Dict, List, Optional
 
 import requests
 
+from scripts.classify_pr import ClassificationResult, PRMetadata, classify_pr
+
 logger = logging.getLogger(__name__)
+
+REQUIRED_CI_CHECK = "Required CI"
+GITHUB_ACTIONS_APP_SLUG = "github-actions"
+DEPENDABOT_LOGIN = "dependabot[bot]"
 
 
 class AutoMergeAction(str, Enum):
@@ -100,21 +113,49 @@ class GitHubClient:
                 return False
             raise
 
-    def get_commit_status_checks(self, sha: str) -> Dict[str, str]:
-        """Fetch status checks for a given commit SHA."""
-        data = self._get(f"commits/{sha}/status")
-        statuses = {}
-        for item in data.get("statuses", []):
-            statuses[item["context"]] = item["state"]
-        return statuses
+    def _get_paginated(
+        self, endpoint: str, params: Optional[Dict[str, Any]] = None
+    ) -> List[Any]:
+        items: List[Any] = []
+        page = 1
+        while True:
+            batch = self._get(
+                endpoint, params={**(params or {}), "per_page": 100, "page": page}
+            )
+            items.extend(batch)
+            if len(batch) < 100:
+                return items
+            page += 1
 
-    def get_check_runs(self, sha: str) -> Dict[str, str]:
-        """Fetch check runs for a given commit SHA."""
-        data = self._get(f"commits/{sha}/check-runs")
-        check_runs = {}
-        for run in data.get("check_runs", []):
-            check_runs[run["name"]] = run["conclusion"] or run["status"]
-        return check_runs
+    def list_pull_request_files(self, pr_number: int) -> List[Dict[str, Any]]:
+        """List the files changed by a pull request."""
+        return self._get_paginated(f"pulls/{pr_number}/files")
+
+    def list_pull_request_commits(self, pr_number: int) -> List[Dict[str, Any]]:
+        """List the commits of a pull request."""
+        return self._get_paginated(f"pulls/{pr_number}/commits")
+
+    def get_required_ci_conclusion(self, sha: str) -> Optional[str]:
+        """Return the conclusion of the latest GitHub Actions ``Required CI`` check run.
+
+        Commit statuses and check runs from other apps are ignored, because anything
+        holding a ``statuses: write`` token (including a workflow added by the PR
+        itself) can post a status with that name.
+        """
+        data = self._get(
+            f"commits/{sha}/check-runs",
+            params={"check_name": REQUIRED_CI_CHECK, "per_page": 100},
+        )
+        runs = [
+            run
+            for run in data.get("check_runs", [])
+            if run.get("name") == REQUIRED_CI_CHECK
+            and (run.get("app") or {}).get("slug") == GITHUB_ACTIONS_APP_SLUG
+        ]
+        if not runs:
+            return None
+        latest = max(runs, key=lambda run: run.get("id", 0))
+        return latest.get("conclusion") or latest.get("status")
 
     def get_commit_verification(self, sha: str) -> Dict[str, Any]:
         """Fetch signature verification metadata for a given commit SHA."""
@@ -161,6 +202,49 @@ def is_pr_eligible_for_automerge(pr: Dict[str, Any]) -> bool:
     ):
         return False
     return "automerge:eligible" in labels
+
+
+def build_pr_metadata(client: GitHubClient, full_pr: Dict[str, Any]) -> PRMetadata:
+    """Collect classifier input for a PR from the GitHub API rather than from labels."""
+    pr_number = full_pr["number"]
+    files = client.list_pull_request_files(pr_number)
+    commits = client.list_pull_request_commits(pr_number)
+    unverified = [
+        c["sha"]
+        for c in commits
+        if not ((c.get("commit") or {}).get("verification") or {}).get("verified")
+    ]
+    labels = [lbl["name"] for lbl in full_pr.get("labels", [])]
+    title = full_pr.get("title", "")
+    author = (full_pr.get("user") or {}).get("login", "")
+    is_dependabot = author == DEPENDABOT_LOGIN
+    dependency_update_type = "minor"
+    if (is_dependabot or "dependencies" in labels) and (
+        "major" in title.lower() or "breaking" in title.lower()
+    ):
+        dependency_update_type = "major"
+
+    return PRMetadata(
+        pr_number=pr_number,
+        title=title,
+        author=author,
+        is_draft=bool(full_pr.get("draft")),
+        labels=labels,
+        changed_files=[f["filename"] for f in files],
+        additions=sum(f.get("additions", 0) for f in files),
+        deletions=sum(f.get("deletions", 0) for f in files),
+        is_dependabot=is_dependabot,
+        dependency_update_type=dependency_update_type,
+        all_commits_verified=bool(commits) and not unverified,
+        unverified_commit_shas=unverified,
+    )
+
+
+def reclassify_pr(
+    client: GitHubClient, full_pr: Dict[str, Any]
+) -> ClassificationResult:
+    """Re-run the risk classifier with trusted code on API-sourced metadata."""
+    return classify_pr(build_pr_metadata(client, full_pr))
 
 
 def process_auto_merge_queue(client: GitHubClient) -> AutoMergeResult:
@@ -212,6 +296,16 @@ def process_auto_merge_queue(client: GitHubClient) -> AutoMergeResult:
             client.add_labels(pr_number, ["automerge:blocked", "risk:high"])
             continue
 
+        # Labels and the classification status can be set by the PR's own
+        # workflows, so recompute eligibility from trusted code before acting.
+        classification = reclassify_pr(client, full_pr)
+        if not classification.eligible:
+            logger.warning(
+                f"PR #{pr_number} is labelled eligible but trusted re-classification "
+                f"blocks it: {'; '.join(classification.blocking_reasons)}"
+            )
+            continue
+
         # Check if branch is behind main
         if mergeable_state == "behind":
             logger.info(f"PR #{pr_number} is behind main. Requesting branch update...")
@@ -229,22 +323,11 @@ def process_auto_merge_queue(client: GitHubClient) -> AutoMergeResult:
             )
             return AutoMergeResult(action=AutoMergeAction.UPDATED, pr_id=pr_number)
 
-        # Verify status checks on head SHA
-        check_runs = client.get_check_runs(head_sha)
-        statuses = client.get_commit_status_checks(head_sha)
-
-        required_ci_passed = (
-            check_runs.get("Required CI") == "success"
-            or statuses.get("Required CI") == "success"
-        )
-        classification_passed = (
-            check_runs.get("automerge/classification") == "success"
-            or statuses.get("automerge/classification") == "success"
-        )
-
-        if not (required_ci_passed and classification_passed):
+        # Verify Required CI on head SHA (GitHub Actions check run only)
+        required_ci = client.get_required_ci_conclusion(head_sha)
+        if required_ci != "success":
             logger.info(
-                f"PR #{pr_number} checks not green on head SHA (Required CI: {required_ci_passed}, automerge/classification: {classification_passed})."
+                f"PR #{pr_number} Required CI is not green on head SHA ({required_ci})."
             )
             continue
 

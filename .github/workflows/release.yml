@@ -6,6 +6,16 @@ on:
   push:
     tags:
       - 'v*'
+  # Dry-run the full build on PRs that change how releases are built, so a
+  # broken release pipeline is caught before a tag is pushed. Publishing steps
+  # below are gated on tags/releases and are skipped for these runs.
+  pull_request:
+    branches: [ main ]
+    paths:
+      - '.github/workflows/release.yml'
+      - 'scripts/build.py'
+      - 'smart-autosorter.spec'
+  workflow_dispatch:
 
 permissions:
   contents: write
@@ -17,6 +27,7 @@ jobs:
     name: Build for ${{ matrix.os }}
     runs-on: ${{ matrix.os }}
     strategy:
+      fail-fast: false
       matrix:
         include:
           - os: windows-latest
@@ -41,9 +52,11 @@ jobs:
         with:
           python-version: "3.12"
 
+      # The full build profile (scripts/build.py without --lite) refuses to
+      # run unless the ML packages from the `ml` extra are installed.
       - name: Install dependencies
         run: |
-          uv sync --frozen --group build
+          uv sync --frozen --extra ml --group build
 
       - name: Cache Model Weights
         uses: actions/cache@v6

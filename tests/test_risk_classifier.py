@@ -216,3 +216,34 @@ def test_bot_commit_signature_verification_paths():
     assert any(
         "unverified commit signatures" in r for r in res_unverified.blocking_reasons
     )
+
+
+def test_merge_tooling_scripts_are_sensitive():
+    for path in (
+        "scripts/classify_pr.py",
+        "scripts/auto_merge_controller.py",
+        "scripts/validate_imports.py",
+    ):
+        meta = PRMetadata(
+            pr_number=115,
+            title="chore: tweak",
+            author="stitch",
+            labels=["automerge"],
+            changed_files=[path],
+        )
+        res = classify_pr(meta)
+        assert res.eligible is False, path
+        assert res.risk_level == "sensitive"
+
+
+def test_dependency_manifests_sensitive_unless_dependabot():
+    meta = PRMetadata(
+        pr_number=116,
+        title="chore: add dependency",
+        author="stitch",
+        labels=["automerge", "dependencies"],
+        changed_files=["pyproject.toml", "uv.lock"],
+    )
+    res = classify_pr(meta)
+    assert res.eligible is False
+    assert res.risk_level == "sensitive"

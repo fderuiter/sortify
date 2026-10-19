@@ -1,7 +1,10 @@
 name: PR Risk Classifier
 
+# pull_request_target runs this workflow file and the classifier from the base
+# branch, so the PR being classified cannot change how it is classified. Never
+# check out or execute the PR's head here: this job holds a write token.
 on:
-  pull_request:
+  pull_request_target:
     types: [opened, synchronize, reopened, labeled, unlabeled, ready_for_review]
 
 concurrency:
@@ -20,20 +23,14 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v7
-
-      - name: Install uv
-        uses: astral-sh/setup-uv@v7
         with:
-          version: "latest"
-          enable-cache: true
+          ref: ${{ github.event.pull_request.base.sha }}
+          persist-credentials: false
 
       - name: Set up Python
         uses: actions/setup-python@v7
         with:
           python-version: "3.12"
-
-      - name: Install dependencies
-        run: uv sync --frozen --only-group dev
 
       - name: Extract PR Metadata
         uses: actions/github-script@v9
@@ -67,7 +64,7 @@ jobs:
             const additions = files.reduce((acc, f) => acc + f.additions, 0);
             const deletions = files.reduce((acc, f) => acc + f.deletions, 0);
             const labels = pr.labels.map(l => l.name);
-            const isDependabot = pr.user.login.includes('dependabot');
+            const isDependabot = pr.user.login === 'dependabot[bot]';
 
             let dependencyUpdateType = 'minor';
             if (isDependabot || labels.includes('dependencies')) {
@@ -96,7 +93,7 @@ jobs:
 
       - name: Run Classifier Script
         run: |
-          uv run python scripts/classify_pr.py --json-input pr_meta.json --output classification_result.json
+          python scripts/classify_pr.py --json-input pr_meta.json --output classification_result.json
 
       - name: Sync PR Labels & Post Status Check
         uses: actions/github-script@v9

@@ -1,22 +1,24 @@
 # Contributor Guide
 
-Welcome to the Smart AutoSorter AI Pro project! This guide will help you get started with testing and contributing.
+Welcome to the Smart AutoSorter AI Pro project! This page covers local setup and the architectural rules contributors must follow. Checks, baselines and pull request conventions are described in `CONTRIBUTING.md` at the repository root.
 
 ## Development Setup
 
-To set up your local development environment and sync dependencies, run the standard uv commands:
+To set up your local development environment and sync every dependency group (dev tools, docs, build), run:
 
 ![Contributor Onboarding Workflow](assets/diagrams/contributor_onboarding.svg)
 
 ```bash
-uv sync
+uv sync --all-groups
 uv run pre-commit install
 ```
+
+Add `--extra ml` to also install the optional OCR, audio and embedding libraries.
 
 Once the setup is complete, verify your environment by running the test suite:
 
 ```bash
-uv run pytest
+uv run pytest -m "not slow"
 ```
 
 ## Interactive CLI Demo Mode

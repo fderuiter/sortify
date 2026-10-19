@@ -1,6 +1,7 @@
 ---
 name: loop-me
 description: "Grill me about specs for the workflows I want to build, within this workspace."
+disable-model-invocation: true
 license: MIT
 metadata:
   author: Matt Pocock
