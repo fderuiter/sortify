@@ -1,5 +1,7 @@
 """Verification engine for proactive move validation."""
 
+import contextlib
+import logging
 import os
 import re
 from typing import Any
@@ -13,6 +15,8 @@ try:
     import pylnk3
 except ImportError:
     pylnk3 = None
+
+logger = logging.getLogger(__name__)
 
 
 def is_ml_available() -> bool:
@@ -28,7 +32,10 @@ def is_ml_available() -> bool:
         import torch  # noqa: F401
 
         return True
-    except (ImportError, Exception):
+    except Exception:
+        # A broken ML install can fail on import with more than ImportError
+        # (e.g. OSError from a missing native library).
+        logger.debug("ML dependencies are unavailable", exc_info=True)
         return False
 
 
@@ -68,7 +75,7 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
         mei = get_meipass_dir() or ""
         try:
             base = get_base_path(__file__)
-        except Exception:
+        except OSError:
             base = ""
         exe_dir = os.path.dirname(sys.executable) if is_packaged() else ""
 
@@ -101,13 +108,13 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
 
     try:
         base_path = get_base_path(__file__)
-    except Exception:
+    except OSError:
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
     try:
         user_bundle_path = str(get_app_dir() / "model")
-    except Exception:
+    except (OSError, RuntimeError):
         user_bundle_path = os.path.expanduser("~/.smart-autosorter/model")
 
     model_dir = None
@@ -156,7 +163,7 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
         registry = SharedModelRegistry.get_instance()
         try:
             registry.verify_integrity("generative_naming", model_dir)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure is reported as unhealthy
             if is_sandboxed:
                 raise ValueError(
                     f"AI generative model integrity check failed in sandboxed execution: {str(e)}"
@@ -183,7 +190,7 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     if registry.get_expected_hashes("easyocr"):
         try:
             registry.verify_integrity("easyocr", easyocr_dir)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure is reported as unhealthy
             if is_sandboxed:
                 raise ValueError(
                     f"OCR vision model integrity check failed in sandboxed execution: {str(e)}"
@@ -204,7 +211,7 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
             registry.verify_integrity("florence-2", florence_dir)
         except ModelWeightsNotFoundError:
             pass
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - any failure is reported as unhealthy
             if is_sandboxed:
                 raise ValueError(
                     f"Florence-2 vision model integrity check failed in sandboxed execution: {str(e)}"
@@ -607,10 +614,8 @@ class VirtualFilesystemTracker:
                 # Check if symbolic link
                 symlink_target = None
                 if os.path.islink(abs_file_path):
-                    try:
+                    with contextlib.suppress(OSError):
                         symlink_target = os.readlink(abs_file_path)
-                    except OSError:
-                        pass
 
                 # Check if Windows shortcut (.lnk)
                 shortcut_target = None
@@ -623,7 +628,11 @@ class VirtualFilesystemTracker:
                             lnk = pylnk3.parse(abs_file_path)
                             shortcut_target = lnk.path
                         except Exception:
-                            pass
+                            logger.debug(
+                                "Could not parse shortcut %s",
+                                abs_file_path,
+                                exc_info=True,
+                            )
 
                 try:
                     st = (
