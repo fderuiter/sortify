@@ -18,14 +18,8 @@ def escape_pragma_key(key_str: str) -> str:
     return str(key_str).replace("'", "''")
 
 
-# Run user-space bootstrapping to download, register, and verify precompiled native binaries
-try:
-    from app.core.user_space_bootstrap import bootstrap_binaries
-
-    bootstrap_binaries()
-except Exception as exc:
-    logger.error(f"User-space bootstrapping failed: {exc}")
-
+# sqlcipher3-wheels ships SQLCipher and OpenSSL statically linked into one
+# extension module, so the import needs no DLL or library-path setup.
 try:
     from sqlcipher3 import dbapi2 as sqlite3
 
