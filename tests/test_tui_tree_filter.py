@@ -248,3 +248,108 @@ def test_tui_tree_filter_no_matches_feedback(temp_workspace):
             assert "No matching tree nodes found for 'nonexistent_query_123'" in info_label
 
     asyncio.run(_test())
+
+
+def test_tui_tree_filter_select_all_only_affects_visible_nodes(temp_workspace):
+    """Verify pressing 'A' (Select All) when a tree search filter is active toggles only visible matching nodes."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            file1 = {
+                "__type__": "file",
+                "filepath": os.path.join(temp_workspace, "invoice_1.pdf"),
+                "target_filename": "invoice_1.pdf",
+                "is_checked": True,
+            }
+            file2 = {
+                "__type__": "file",
+                "filepath": os.path.join(temp_workspace, "invoice_2.pdf"),
+                "target_filename": "invoice_2.pdf",
+                "is_checked": True,
+            }
+            file3 = {
+                "__type__": "file",
+                "filepath": os.path.join(temp_workspace, "photo.jpg"),
+                "target_filename": "photo.jpg",
+                "is_checked": True,
+            }
+            app.plan = {
+                "Invoices": {
+                    "invoice_1.pdf": file1,
+                    "invoice_2.pdf": file2,
+                },
+                "Photos": {
+                    "photo.jpg": file3,
+                },
+            }
+            app.rebuild_tree()
+            await pilot.pause(0.05)
+
+            search_input = app.query_one("#tree-search-input", Input)
+            tree = app.query_one("#plan-tree", Tree)
+
+            # Filter to 'invoice'
+            search_input.value = "invoice"
+            await pilot.pause(0.05)
+
+            # Ensure focus is on tree, not search input, so 'a' hotkey triggers action_toggle_select_all
+            tree.focus()
+            await pilot.pause(0.05)
+
+            # All visible files (invoice_1, invoice_2) are checked, so pressing 'a' deselects visible items
+            await pilot.press("a")
+            await pilot.pause(0.05)
+
+            # Verify visible invoice files were unchecked
+            assert file1["is_checked"] is False
+            assert file2["is_checked"] is False
+            # Verify hidden photo file remains checked
+            assert file3["is_checked"] is True
+
+            # Pressing 'a' again re-selects visible items
+            await pilot.press("a")
+            await pilot.pause(0.05)
+
+            assert file1["is_checked"] is True
+            assert file2["is_checked"] is True
+            assert file3["is_checked"] is True
+
+    asyncio.run(_test())
+
+
+def test_tui_tree_filter_input_changes_do_not_trigger_plan_validation(temp_workspace, mocker):
+    """Verify typing into the search input filters tree nodes without invoking run_validation_worker."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            app.plan = {
+                "Docs": {
+                    "doc1.txt": {
+                        "__type__": "file",
+                        "filepath": os.path.join(temp_workspace, "doc1.txt"),
+                        "target_filename": "doc1.txt",
+                    }
+                }
+            }
+            app.rebuild_tree()
+            await pilot.pause(0.05)
+
+            validation_spy = mocker.spy(app, "run_validation_worker")
+
+            search_input = app.query_one("#tree-search-input", Input)
+            search_input.focus()
+            search_input.value = "doc"
+            await pilot.pause(0.1)
+
+            # Verify run_validation_worker was NOT called during filter input typing
+            assert validation_spy.call_count == 0
+
+    asyncio.run(_test())
