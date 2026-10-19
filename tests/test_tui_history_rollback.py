@@ -163,9 +163,29 @@ async def test_rollback_confirm_modal_flow(tui_rollback_env):
         lbl_sid = confirm_screen.query_one("#lbl-confirm-sid", Label)
         assert session_id in str(lbl_sid.render())
 
+        # Step-ledger sessions always skip missing files, so no force option (#742)
+        assert not confirm_screen.query("#chk-ignore-missing")
+        lbl_missing = confirm_screen.query_one("#lbl-confirm-missing", Label)
+        assert "skipped" in str(lbl_missing.render())
+
+
+@pytest.mark.anyio
+async def test_rollback_confirm_modal_offers_force_without_step_ledger(
+    tui_rollback_env,
+):
+    """Verify the force option is offered only for sessions without step-ledger rows (#742)."""
+    session_info = dict(tui_rollback_env["sessions"][0], step_count=0)
+    settings = tui_rollback_env["settings"]
+
+    app = AutoSorterTUI(settings=settings)
+    async with app.run_test() as pilot:
+        confirm_screen = RollbackConfirmModal(session_info=session_info)
+        app.push_screen(confirm_screen)
+        await pilot.pause()
+
         chk_force = confirm_screen.query_one("#chk-ignore-missing", Checkbox)
-        assert chk_force is not None
         assert not chk_force.value
+        assert not confirm_screen.query("#lbl-confirm-missing")
 
 
 @pytest.mark.anyio
@@ -246,12 +266,9 @@ async def test_rollback_execution_missing_files_flow(tui_rollback_env):
         btn_rollback.press()
         await pilot.pause()
 
-        # Confirm WITH ignore_missing checked
+        # Step-ledger sessions skip missing files without a force option
         confirm_screen = app.screen
         assert isinstance(confirm_screen, RollbackConfirmModal)
-
-        chk_force = confirm_screen.query_one("#chk-ignore-missing", Checkbox)
-        chk_force.value = True
 
         btn_confirm = confirm_screen.query_one("#btn-confirm-rollback", Button)
         btn_confirm.press()

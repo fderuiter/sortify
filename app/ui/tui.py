@@ -5434,11 +5434,19 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     "⚠️ Warning: Rolling back will restore files to their original locations prior to this session. Any subsequent manual edits or file relocations in target folders may be unwound or overwritten."
                 )
 
-            yield Checkbox(
-                "Force rollback (ignore missing target files)",
-                value=False,
-                id="chk-ignore-missing",
-            )
+            if self.session_info.get("step_count"):
+                # Step-ledger sessions always skip files that are no longer
+                # at their sorted location, so a force option would do nothing.
+                yield Label(
+                    "Files that are no longer at their sorted location are skipped.",
+                    id="lbl-confirm-missing",
+                )
+            else:
+                yield Checkbox(
+                    "Roll back even if some sorted files are missing (they are skipped)",
+                    value=False,
+                    id="chk-ignore-missing",
+                )
 
             with Horizontal(classes="button-row"):
                 btn_cancel = Button(
@@ -5458,7 +5466,8 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     @on(Button.Pressed, "#btn-confirm-rollback")
     def action_confirm(self) -> None:
         """Confirm rollback action and dismiss modal with parameters."""
-        chk = self.query_one("#chk-ignore-missing", Checkbox)
+        checkboxes = self.query("#chk-ignore-missing").results(Checkbox)
+        chk = next(iter(checkboxes), None)
         self.dismiss(
             {
                 "confirmed": True,
