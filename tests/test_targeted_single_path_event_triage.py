@@ -255,3 +255,57 @@ async def test_reconciliation_audit_enqueues_untracked_files(tmp_path):
     finally:
         daemon.stop()
         clear_connection_cache(only_current_and_inactive=False)
+
+
+@pytest.mark.anyio
+async def test_triage_moves_files_off_the_event_loop(tmp_path):
+    """Blocking sort work runs on the sort thread, so the loop stays responsive (#717)."""
+    import threading
+
+    from app.core.db_conn import clear_connection_cache
+
+    settings = DummySettings()
+    settings.AUTO_QUARANTINE_RATINGS = []
+    daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
+    daemon._is_running = True
+
+    test_file = tmp_path / "slow_invoice.pdf"
+    test_file.write_text("invoice text")
+
+    release = threading.Event()
+    move_threads = []
+
+    def slow_move(plan):
+        move_threads.append(threading.current_thread().name)
+        assert release.wait(10)
+        return {"moved": 1}
+
+    mock_app_session = mock.MagicMock()
+    mock_app_session.generate_sorting_plan.return_value = {
+        "Invoices": {"slow_invoice.pdf": {"__type__": "file"}}
+    }
+    mock_app_session.execute_moves.side_effect = slow_move
+
+    try:
+        with (
+            mock.patch.object(
+                daemon, "_get_or_create_session", return_value=mock_app_session
+            ),
+            mock.patch("app.core.daemon.MetadataPass.run"),
+        ):
+            triage = asyncio.create_task(daemon._triage_file_path(str(test_file)))
+            for _ in range(200):
+                if move_threads:
+                    break
+                await asyncio.sleep(0.01)
+            # The move is blocked, yet this coroutine keeps running.
+            assert move_threads and not triage.done()
+            release.set()
+            await asyncio.wait_for(triage, 10)
+
+        assert move_threads[0].startswith("daemon-sort")
+        assert threading.current_thread().name not in move_threads
+    finally:
+        release.set()
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
