@@ -680,6 +680,24 @@ def _print_plan_for_humans(
     print("\n".join(lines))
 
 
+def _reroot_plan(plan, dest_dir: str) -> dict:
+    """Re-key a plan's relative entries under ``--dest-dir``; absolute keys stay."""
+    dest_base = Path(dest_dir).resolve()
+    dest_base.mkdir(parents=True, exist_ok=True)
+    plan_items = (
+        plan.plan.items()
+        if hasattr(plan, "plan") and isinstance(plan.plan, dict)
+        else plan.items()
+    )
+    re_rooted_plan = {}
+    for k, v in plan_items:
+        if os.path.isabs(k):
+            re_rooted_plan[k] = v
+        else:
+            re_rooted_plan[str(dest_base / k)] = v
+    return re_rooted_plan
+
+
 def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
     """Execute document batch sorting or launch interactive TUI."""
     import json
@@ -731,51 +749,19 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
 
     session = None
     try:
-        from app.core.extractor import build_corpus_generator
-        from app.core.scanner import get_files_recursively
+        from app.core.pipeline import SortPipeline
         from app.core.session import AppSession
 
         session = AppSession(settings, base_dir=str(target_path))
-        files = get_files_recursively(str(target_path))
-
-        def progress_cb(info=None):
-            pass
-
-        generator = build_corpus_generator(
-            base_dir=str(target_path),
-            items_to_sort=files,
-            progress_callback=progress_cb,
-            max_workers=settings.MAX_WORKERS,
-            db=session.db,
-            chunk_size=50,
-            settings=settings,
-        )
-
-        for chunk in generator:
-            session.partial_fit(chunk)
-
-        plan = session.generate_sorting_plan()
+        pipeline = SortPipeline(session)
+        plan = pipeline.plan()
 
         dest_dir = getattr(args, "dest_dir", None)
         dry_run = getattr(args, "dry_run", False)
         json_output = getattr(args, "json", False)
 
         if dest_dir:
-            dest_base = Path(dest_dir).resolve()
-            dest_base.mkdir(parents=True, exist_ok=True)
-            re_rooted_plan = {}
-            plan_items = (
-                plan.plan.items()
-                if hasattr(plan, "plan") and isinstance(plan.plan, dict)
-                else plan.items()
-            )
-            for k, v in plan_items:
-                if os.path.isabs(k):
-                    re_rooted_plan[k] = v
-                else:
-                    new_key = str(dest_base / k)
-                    re_rooted_plan[new_key] = v
-            plan = re_rooted_plan
+            plan = _reroot_plan(plan, dest_dir)
 
         serializable_plan = _make_json_serializable(plan)
 
@@ -816,7 +802,7 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                 "plan": serializable_plan,
             }
         else:
-            summary = session.execute_moves(plan)
+            summary = pipeline.execute(plan)
             result = {
                 "status": "success",
                 "dry_run": False,
@@ -905,30 +891,13 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
 
     session = None
     try:
-        from app.core.extractor import build_corpus_generator
+        from app.core.pipeline import SortPipeline
         from app.core.scanner import get_files_recursively
         from app.core.session import AppSession
 
         session = AppSession(settings, base_dir=str(target_path))
         files = get_files_recursively(str(target_path))
-
-        def progress_cb(info=None):
-            pass
-
-        generator = build_corpus_generator(
-            base_dir=str(target_path),
-            items_to_sort=files,
-            progress_callback=progress_cb,
-            max_workers=settings.MAX_WORKERS,
-            db=session.db,
-            chunk_size=50,
-            settings=settings,
-        )
-
-        for chunk in generator:
-            session.partial_fit(chunk)
-
-        plan = session.generate_sorting_plan()
+        plan = SortPipeline(session).plan(files)
         serializable_plan = _make_json_serializable(plan)
 
         export_report_path = getattr(args, "export_report", None)
@@ -1275,7 +1244,6 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
 def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
     """Execute drop triage on specified target files or directories or launch TUI dropzone."""
     import json
-    from pathlib import Path
 
     apply_config_overrides(settings, args)
 
@@ -1327,57 +1295,26 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
     quiet = getattr(args, "quiet", False)
 
     processed_results = []
-    from app.core.extractor import build_corpus_generator
-    from app.core.scanner import get_files_recursively
+    from app.core.pipeline import SortPipeline, drop_scope
     from app.core.session import AppSession
 
     for path in validated_paths:
-        if os.path.isdir(path):
-            base_dir = path
-            files = get_files_recursively(base_dir)
-        else:
-            base_dir = os.path.dirname(path)
-            files = [path]
+        base_dir, files = drop_scope(path)
 
         session = None
         try:
             session = AppSession(settings, base_dir=base_dir)
-
-            generator = build_corpus_generator(
-                base_dir=base_dir,
-                items_to_sort=files,
-                progress_callback=lambda info=None: None,
-                max_workers=getattr(settings, "MAX_WORKERS", 2),
-                db=session.db,
-                settings=settings,
-            )
-            for chunk in generator:
-                session.partial_fit(chunk)
-
-            plan = session.generate_sorting_plan()
+            pipeline = SortPipeline(session)
+            plan = pipeline.plan(files)
 
             if dest_dir:
-                dest_base = Path(dest_dir).resolve()
-                dest_base.mkdir(parents=True, exist_ok=True)
-                re_rooted_plan = {}
-                plan_items = (
-                    plan.plan.items()
-                    if hasattr(plan, "plan") and isinstance(plan.plan, dict)
-                    else plan.items()
-                )
-                for k, v in plan_items:
-                    if os.path.isabs(k):
-                        re_rooted_plan[k] = v
-                    else:
-                        new_key = str(dest_base / k)
-                        re_rooted_plan[new_key] = v
-                plan = re_rooted_plan
+                plan = _reroot_plan(plan, dest_dir)
 
             serializable_plan = _make_json_serializable(plan)
             if dry_run:
                 summary = {"status": "dry_run", "plan": serializable_plan}
             else:
-                summary = session.execute_moves(plan)
+                summary = pipeline.execute(plan)
 
             processed_results.append(
                 {
