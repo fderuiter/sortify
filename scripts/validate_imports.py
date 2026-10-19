@@ -127,14 +127,23 @@ def extract_file_imports(file_path: Path) -> list[tuple[str, int]]:
     return imports
 
 
-def validate_imports(target_dir: Path, pyproject_path: Path) -> tuple[bool, list[dict]]:
+def validate_imports(
+    target_dir: Path,
+    pyproject_path: Path,
+    target_files: list[Path] | None = None,
+) -> tuple[bool, list[dict]]:
     """Scan Python files under target_dir and verify third-party imports against pyproject.toml."""
     core_deps, optional_deps, dev_deps = load_pyproject_dependencies(pyproject_path)
     all_declared_deps = core_deps | optional_deps | dev_deps
 
     violations = []
 
-    python_files = sorted(target_dir.rglob("*.py"))
+    if target_files is not None:
+        python_files = sorted(
+            [p for p in target_files if p.suffix == ".py" and p.exists()]
+        )
+    else:
+        python_files = sorted(target_dir.rglob("*.py"))
     for py_file in python_files:
         rel_path = py_file.relative_to(pyproject_path.parent)
         file_imports = extract_file_imports(py_file)
@@ -171,9 +180,15 @@ def main() -> int:
         default=Path(__file__).resolve().parent.parent,
         help="Root directory of the repository",
     )
+    parser.add_argument(
+        "files",
+        nargs="*",
+        default=[],
+        help="Optional staged file path(s) to validate imports for.",
+    )
     args = parser.parse_args()
 
-    repo_root = args.root_dir
+    repo_root = args.root_dir.resolve()
     pyproject_path = repo_root / "pyproject.toml"
     target_dir = repo_root / "app"
 
@@ -181,8 +196,38 @@ def main() -> int:
         print(f"Error: Target app directory not found at {target_dir}", file=sys.stderr)
         return 1
 
+    global_config_files = {"pyproject.toml", "uv.lock"}
+    is_full_scan = not args.files or any(
+        Path(f).name in global_config_files for f in args.files
+    )
+
+    if not is_full_scan:
+        staged_files = []
+        for f in args.files:
+            p = (
+                (repo_root / f).resolve()
+                if not Path(f).is_absolute()
+                else Path(f).resolve()
+            )
+            if (
+                p.suffix == ".py"
+                and p.exists()
+                and (target_dir in p.parents or p == target_dir)
+            ):
+                staged_files.append(p)
+        if not staged_files:
+            print(
+                "[IMPORT GATE PASS] No relevant staged Python files under app/ to validate."
+            )
+            return 0
+        target_files = staged_files
+    else:
+        target_files = None
+
     try:
-        success, violations = validate_imports(target_dir, pyproject_path)
+        success, violations = validate_imports(
+            target_dir, pyproject_path, target_files=target_files
+        )
     except Exception as e:
         print(f"Error executing import gate validation: {e}", file=sys.stderr)
         return 1
