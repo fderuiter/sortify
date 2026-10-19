@@ -29,49 +29,44 @@ repos:
         name: Validate Documentation
         entry: uv run docs --check --no-build
         language: system
-        files: '^(docs/|scripts/.*\.py|app/.*\.py|mkdocs\.yml|README\.md|PRIVACY\.md|SECURITY\.md)'
         pass_filenames: false
+        files: '^(docs/|scripts/.*\.py|app/.*\.py|mkdocs\.yml|README\.md|PRIVACY\.md|SECURITY\.md)'
       - id: validate-diagram-artifacts
         name: Validate Diagram Artifacts and Mermaid Compilation
         entry: uv run python scripts/diagram_toolchain.py --verify
         language: system
-        files: '^(app/ui/.*\.py|scripts/diagram_toolchain\.py|docs/assets/diagrams/.*|docs/.*\.md)$'
         pass_filenames: false
+        files: '^(app/ui/.*\.py|scripts/diagram_toolchain\.py|docs/assets/diagrams/.*|docs/.*\.md)$'
       - id: validate-links
         name: Validate External Links
         entry: uv run python scripts/validate_links.py --local-only
         language: system
         files: '\.(py|md)$'
-        pass_filenames: false
       - id: validate-config-schema
         name: Validate Configuration Schema
         entry: uv run python scripts/validate_config.py
         language: system
         files: '^app/config\.py$'
-        pass_filenames: false
       - id: validate-agent-prompts
         name: Validate Agent Prompts Manifest
         entry: uv run python scripts/prompt_manifest.py verify
         language: system
-        files: '^\.github/AGENTS/.*$'
         pass_filenames: false
+        files: '^\.github/AGENTS/.*$'
       - id: validate-signatures
         name: Validate API and CLI Signatures
         entry: uv run python scripts/validate_signatures.py
         language: system
         files: '(\.py$|tests/snapshots/.*)'
-        pass_filenames: false
       - id: validate-architecture
         name: Validate Architectural Guardrails and System Utilities
         entry: uv run python scripts/validate_architecture.py
         language: system
         files: '^app/.*\.py$'
-        pass_filenames: false
       - id: validate-imports
         name: Validate Import Gate and Direct Dependencies
         entry: uv run python scripts/validate_imports.py
         language: system
-        files: '(^app/.*\.py$|^pyproject\.toml$)'
-        pass_filenames: false
+        files: '(^app/.*\.py$|^pyproject\.toml$|^uv\.lock$)'
 
 
