@@ -184,57 +184,20 @@ def test_history_env(tmp_path):
 
 @pytest.fixture
 def socket_mock(monkeypatch):
-    """Fixture that selectively mocks socket connect operations only for test-created sockets,
-    preventing any potential background/system loopback connection failures on Windows.
+    """Replace the real socket connect calls behind the network guard with mocks.
+
+    The guard's sandbox check still runs, so tests can assert both that blocked
+    hosts raise and that allowed hosts reach the (mocked) real connect.
     """
-    import sys
     from unittest.mock import MagicMock
 
-    import app.core.shared_registry
+    from app.core import network_guard
 
-    real_connect = app.core.shared_registry._original_connect
-    real_connect_ex = app.core.shared_registry._original_connect_ex
-
-    def is_called_from_test():
-        try:
-            frame = sys._getframe()
-            while frame:
-                filename = getattr(frame.f_code, "co_filename", None)
-                if filename:
-                    filename_lower = filename.lower()
-                    if (
-                        "test_db_worker_sandbox" in filename_lower
-                        or "test_shared_registry" in filename_lower
-                        or "test_strategy_decryption_shared_pool" in filename_lower
-                    ):
-                        return True
-                frame = frame.f_back
-        except Exception:
-            pass
-        return False
-
+    network_guard.install()
     mock_connect = MagicMock()
     mock_connect_ex = MagicMock()
-
-    def side_effect_connect(self, address):
-        if is_called_from_test():
-            return mock_connect(self, address)
-        return real_connect(self, address)
-
-    def side_effect_connect_ex(self, address):
-        if is_called_from_test():
-            return mock_connect_ex(self, address)
-        return real_connect_ex(self, address)
-
-    mock_connect_wrapper = MagicMock(side_effect=side_effect_connect)
-    mock_connect_ex_wrapper = MagicMock(side_effect=side_effect_connect_ex)
-
-    monkeypatch.setattr(
-        app.core.shared_registry, "_original_connect", mock_connect_wrapper
-    )
-    monkeypatch.setattr(
-        app.core.shared_registry, "_original_connect_ex", mock_connect_ex_wrapper
-    )
+    monkeypatch.setattr(network_guard, "_real_connect", mock_connect)
+    monkeypatch.setattr(network_guard, "_real_connect_ex", mock_connect_ex)
 
     yield mock_connect, mock_connect_ex
 
