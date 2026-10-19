@@ -343,4 +343,3 @@ def test_autosorter_tui_announce_tui_log_sanitization(tmp_path):
     assert secret_key not in written_line
     assert home_path not in written_line
     assert "[Help: https://docs.sortify.ai/help]" in written_line
-

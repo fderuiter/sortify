@@ -23,7 +23,9 @@ class TestDynamicPathMapLinkResolution(unittest.TestCase):
         self.db_worker = DBWorker()
         db_path = Path(self.test_dir) / "test.db"
         self.db = Database(db_path, self.db_worker)
-        self.cache_manager = CacheManager(str(Path(self.test_dir) / "cache.db"), self.db_worker)
+        self.cache_manager = CacheManager(
+            str(Path(self.test_dir) / "cache.db"), self.db_worker
+        )
         self.history_manager = HistoryManager(
             self.db, self.cache_manager, str(Path(self.test_dir) / "history.db")
         )
@@ -31,6 +33,7 @@ class TestDynamicPathMapLinkResolution(unittest.TestCase):
     def tearDown(self):
         self.db_worker.stop()
         from app.core.db_conn import clear_connection_cache
+
         clear_connection_cache(only_current_and_inactive=False)
         shutil.rmtree(self.test_dir, ignore_errors=True)
 
@@ -58,18 +61,28 @@ class TestDynamicPathMapLinkResolution(unittest.TestCase):
         moves_list = VerificationEngine.get_moves(self.base_dir, plan)
         tracker.populate_from_moves(moves_list)
 
-        collisions_rename = tracker.check_collisions(moves_list, self.base_dir, conflict_policy="rename")
-        dup_targets_rename = [c for c in collisions_rename if c.get("type") == "duplicate_target"]
+        collisions_rename = tracker.check_collisions(
+            moves_list, self.base_dir, conflict_policy="rename"
+        )
+        dup_targets_rename = [
+            c for c in collisions_rename if c.get("type") == "duplicate_target"
+        ]
         self.assertEqual(dup_targets_rename, [])
 
-        collisions_skip = tracker.check_collisions(moves_list, self.base_dir, conflict_policy="skip")
-        dup_targets_skip = [c for c in collisions_skip if c.get("type") == "duplicate_target"]
+        collisions_skip = tracker.check_collisions(
+            moves_list, self.base_dir, conflict_policy="skip"
+        )
+        dup_targets_skip = [
+            c for c in collisions_skip if c.get("type") == "duplicate_target"
+        ]
         self.assertEqual(len(dup_targets_skip), 1)
 
     def test_update_path_map_entry_and_case_normalization(self):
         """Test path_map dynamic update and case-insensitive resolution."""
         path_map = {
-            os.path.normcase(os.path.abspath("/base/src/doc.pdf")): os.path.abspath("/base/Documents/doc.pdf")
+            os.path.normcase(os.path.abspath("/base/src/doc.pdf")): os.path.abspath(
+                "/base/Documents/doc.pdf"
+            )
         }
         src = os.path.abspath("/base/src/doc.pdf")
         new_dest = os.path.abspath("/base/Documents/doc_1.pdf")
