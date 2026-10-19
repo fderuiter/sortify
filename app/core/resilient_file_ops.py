@@ -4,7 +4,10 @@ Provides a centralized, single standardized retry timing and count profile on Wi
 for moving, deleting, hashing, and cleaning up directories.
 """
 
+import ctypes
+import errno
 import gc
+import hashlib
 import logging
 import os
 import shutil
@@ -53,6 +56,130 @@ def _is_same_path(p1: str, p2: str) -> bool:
     )
 
 
+_RENAME_NOREPLACE_LINUX = 1
+_RENAME_EXCL_DARWIN = 0x4
+_AT_FDCWD = -100
+_native_noreplace_fn = None
+_native_noreplace_loaded = False
+_NOREPLACE_UNSUPPORTED = {
+    errno.EINVAL,
+    errno.ENOSYS,
+    getattr(errno, "ENOTSUP", errno.EINVAL),
+    getattr(errno, "EOPNOTSUPP", errno.EINVAL),
+}
+
+
+def _load_native_noreplace():
+    """Return a callable ``(src_bytes, dst_bytes) -> errno`` for an exclusive rename, or None."""
+    global _native_noreplace_fn, _native_noreplace_loaded
+    if _native_noreplace_loaded:
+        return _native_noreplace_fn
+    _native_noreplace_loaded = True
+    try:
+        libc = ctypes.CDLL(None, use_errno=True)
+        if sys.platform.startswith("linux") and hasattr(libc, "renameat2"):
+            fn = libc.renameat2
+            fn.argtypes = [
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_int,
+                ctypes.c_char_p,
+                ctypes.c_uint,
+            ]
+            fn.restype = ctypes.c_int
+
+            def _call(src: bytes, dst: bytes) -> int:
+                if fn(_AT_FDCWD, src, _AT_FDCWD, dst, _RENAME_NOREPLACE_LINUX) == 0:
+                    return 0
+                return ctypes.get_errno()
+
+            _native_noreplace_fn = _call
+        elif sys.platform == "darwin" and hasattr(libc, "renamex_np"):
+            fn = libc.renamex_np
+            fn.argtypes = [ctypes.c_char_p, ctypes.c_char_p, ctypes.c_uint]
+            fn.restype = ctypes.c_int
+
+            def _call(src: bytes, dst: bytes) -> int:
+                if fn(src, dst, _RENAME_EXCL_DARWIN) == 0:
+                    return 0
+                return ctypes.get_errno()
+
+            _native_noreplace_fn = _call
+    except Exception:
+        _native_noreplace_fn = None
+    return _native_noreplace_fn
+
+
+def _rename_noreplace(src: str, dst: str) -> None:
+    """Rename ``src`` to ``dst`` atomically, never replacing an existing ``dst``.
+
+    Raises FileExistsError if ``dst`` exists, and OSError with ``errno.EXDEV``
+    when the paths are on different filesystems.
+    """
+    if IS_WINDOWS:
+        # Windows MoveFile semantics already refuse to replace an existing target.
+        os.rename(src, dst)
+        return
+
+    native = _load_native_noreplace()
+    if native is not None:
+        err = native(os.fsencode(src), os.fsencode(dst))
+        if err == 0:
+            return
+        if err == errno.EEXIST:
+            raise FileExistsError(err, os.strerror(err), dst)
+        if err not in _NOREPLACE_UNSUPPORTED:
+            raise OSError(err, os.strerror(err), src, None, dst)
+        # The filesystem does not support exclusive rename; fall back below.
+
+    if os.path.isdir(src) and not os.path.islink(src):
+        # Directories cannot be hard-linked. Reserve the name with an exclusive
+        # mkdir, then rename over the empty reservation.
+        os.mkdir(dst)
+        try:
+            os.rename(src, dst)
+        except OSError:
+            try:
+                os.rmdir(dst)
+            except OSError:
+                pass
+            raise
+        return
+
+    # link() fails with EEXIST if dst exists and EXDEV across filesystems.
+    os.link(src, dst, follow_symlinks=False)
+    try:
+        os.unlink(src)
+    except OSError:
+        os.unlink(dst)
+        raise
+
+
+def _is_cross_device_error(err: OSError) -> bool:
+    return err.errno == errno.EXDEV or getattr(err, "winerror", None) == 17
+
+
+def _hash_file(path: str) -> str:
+    digest = hashlib.sha256()
+    with open(path, "rb") as fh:
+        for block in iter(lambda: fh.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def _fsync_file(path: str) -> None:
+    try:
+        fd = os.open(path, os.O_RDONLY)
+    except OSError:
+        return
+    try:
+        os.fsync(fd)
+    except OSError:
+        pass
+    finally:
+        os.close(fd)
+
+
 def _cross_volume_atomic_move(src: str, dst: str) -> None:
     """Perform atomic non-clobber cross-volume file transfer with transient staging and target verification."""
     dst_dir = os.path.dirname(dst)
@@ -65,6 +192,8 @@ def _cross_volume_atomic_move(src: str, dst: str) -> None:
         raise FileExistsError(f"Target path already exists: {dst}")
 
     stage_path = os.path.join(dst_dir, f".tmp_stage_{uuid.uuid4().hex}")
+    is_regular_file = not os.path.isdir(src) and not os.path.islink(src)
+    published = False
 
     try:
         if os.path.isdir(src) and not os.path.islink(src):
@@ -73,44 +202,47 @@ def _cross_volume_atomic_move(src: str, dst: str) -> None:
             shutil.copy2(src, stage_path, follow_symlinks=False)
         else:
             shutil.copy2(src, stage_path)
+            _fsync_file(stage_path)
 
-        if os.path.lexists(dst):
-            raise FileExistsError(f"Target path already exists: {dst}")
+        # Stage and target share a directory, so this rename never crosses devices
+        # and fails instead of replacing a file that appeared meanwhile.
+        _rename_noreplace(stage_path, dst)
+        published = True
 
-        if IS_WINDOWS:
-            os.rename(stage_path, dst)
-        else:
-            try:
-                os.rename(stage_path, dst)
-            except FileExistsError:
-                raise
-            except OSError:
-                if os.path.lexists(dst):
-                    raise FileExistsError(f"Target path already exists: {dst}")
-                os.rename(stage_path, dst)
-
-        # Verify target availability and integrity before finalizing source file deletion
         if not os.path.lexists(dst):
             raise RuntimeError(
                 f"Target verification failed: {dst} does not exist after move."
             )
 
-        if not os.path.isdir(src) and not os.path.islink(src) and os.path.lexists(src):
-            src_sz = os.path.getsize(src)
-            dst_sz = os.path.getsize(dst)
-            if src_sz != dst_sz:
+        if is_regular_file and os.path.lexists(src):
+            if _hash_file(src) != _hash_file(dst):
                 raise RuntimeError(
-                    f"Target verification failed: Size mismatch ({dst_sz} vs {src_sz})."
+                    f"Target verification failed: content of {dst} does not match {src}."
                 )
 
         # Target verified! Now safely remove source file/directory.
-        resilient_remove(src)
+        if os.path.isdir(src) and not os.path.islink(src):
+            resilient_rmtree(src)
+        else:
+            resilient_remove(src)
 
     except Exception:
         # Clean up transient staging file upon failure
         if os.path.lexists(stage_path):
             try:
-                resilient_remove(stage_path)
+                if os.path.isdir(stage_path) and not os.path.islink(stage_path):
+                    resilient_rmtree(stage_path, ignore_errors=True)
+                else:
+                    resilient_remove(stage_path)
+            except Exception:
+                pass
+        # Remove a published copy that failed verification; the source is untouched.
+        if published and os.path.lexists(src) and os.path.lexists(dst):
+            try:
+                if os.path.isdir(dst) and not os.path.islink(dst):
+                    resilient_rmtree(dst, ignore_errors=True)
+                else:
+                    resilient_remove(dst)
             except Exception:
                 pass
         raise
@@ -129,13 +261,13 @@ def atomic_move_non_clobber(src: str, dst: str) -> None:
         os.makedirs(dst_dir, exist_ok=True)
 
     try:
-        os.rename(src, dst)
-        return
+        _rename_noreplace(src, dst)
     except FileExistsError:
         raise
-    except OSError:
+    except OSError as err:
+        if not _is_cross_device_error(err):
+            raise
         _cross_volume_atomic_move(src, dst)
-        return
 
 
 def resilient_move(src: str, dst: str) -> str:
