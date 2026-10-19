@@ -15,6 +15,7 @@ on:
       - '.github/workflows/release.yml'
       - 'scripts/build.py'
       - 'smart-autosorter.spec'
+      - 'scripts/verify_pe_dependencies.py'
   workflow_dispatch:
 
 # Building runs third-party code (dependencies, PyInstaller, Syft) and also

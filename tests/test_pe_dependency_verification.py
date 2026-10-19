@@ -14,6 +14,8 @@ def test_is_system_dll_whitelist():
     assert is_system_dll("kernel32.dll") is True
     assert is_system_dll("KERNEL32.DLL") is True
     assert is_system_dll("user32.dll") is True
+    # psutil and hf_xet link the Performance Data Helper, which ships with Windows
+    assert is_system_dll("pdh.dll") is True
     assert is_system_dll("advapi32.dll") is True
     assert is_system_dll("api-ms-win-core-synch-l1-1-0.dll") is True
     assert is_system_dll("ext-ms-win-gdi-desktop-l1-1-0.dll") is True
