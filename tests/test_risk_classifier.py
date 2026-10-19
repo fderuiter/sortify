@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 from pathlib import Path
 
 import pytest
@@ -11,6 +12,7 @@ from scripts.classify_pr import (
     PRMetadata,
     classify_pr,
     dependency_update_type_from_title,
+    main,
 )
 
 
@@ -323,3 +325,36 @@ def test_protected_paths_are_listed_in_codeowners():
     }
     missing = [p for p in PROTECTED_PATHS if p not in owned]
     assert not missing, f"Add to .github/CODEOWNERS: {missing}"
+
+
+@pytest.mark.parametrize(
+    ("title", "risk_label"),
+    [
+        ("Bump requests from 2.31.0 to 3.0.0", "risk:high"),
+        ("Bump requests from 2.31.0 to 2.32.0", "risk:low"),
+    ],
+)
+def test_main_derives_dependabot_update_type_from_title(
+    tmp_path, monkeypatch, capsys, title, risk_label
+):
+    """main() reads the update type off the title, ignoring any value in the JSON."""
+    meta_path = tmp_path / "pr_meta.json"
+    meta_path.write_text(
+        json.dumps(
+            {
+                "pr_number": 1,
+                "title": title,
+                "author": "dependabot[bot]",
+                "changed_files": ["pyproject.toml", "uv.lock"],
+                "additions": 4,
+                "deletions": 4,
+                "is_dependabot": True,
+                "dependency_update_type": "minor",
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("sys.argv", ["classify_pr.py", "--json-input", str(meta_path)])
+    main()
+    result = json.loads(capsys.readouterr().out)
+    assert risk_label in result["labels_to_add"]
