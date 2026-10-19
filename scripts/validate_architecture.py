@@ -1,5 +1,6 @@
 """Validates architectural constraints and utility anti-duplication rules across the project codebase."""
 
+import argparse
 import ast
 import builtins
 import copy
@@ -243,7 +244,9 @@ class UtilityAntiDuplicationVisitor(ast.NodeVisitor):
         self._check_function(node)
 
 
-def validate_codebase_duplication(errors: list) -> None:
+def validate_codebase_duplication(
+    errors: list, target_files: set[str] | None = None
+) -> None:
     """Traverse app/ directory to run primitive duplicate checks, canonical utility re-definition checks, and structural function hash comparison."""
     function_hashes = {}
 
@@ -265,28 +268,46 @@ def validate_codebase_duplication(errors: list) -> None:
                 continue
 
             # Run primitive duplicate pattern checks
-            prim_visitor = DuplicatePatternVisitor(filepath)
-            prim_visitor.visit(tree)
-            errors.extend(prim_visitor.errors)
+            if target_files is None or filepath in target_files:
+                prim_visitor = DuplicatePatternVisitor(filepath)
+                prim_visitor.visit(tree)
+                errors.extend(prim_visitor.errors)
 
             # Run AST anti-duplication visitor
+            file_errors = [] if target_files is not None else errors
             anti_dup_visitor = UtilityAntiDuplicationVisitor(
-                filepath, errors, function_hashes
+                filepath, file_errors, function_hashes
             )
             anti_dup_visitor.visit(tree)
+            if target_files is not None and filepath in target_files:
+                errors.extend(file_errors)
 
     # Compare normalized function hashes across distinct files
     for h, locs in function_hashes.items():
         distinct_files = {loc[0] for loc in locs}
         if len(distinct_files) > 1:
-            primary_file, primary_line, primary_name = locs[0]
-            for dup_file, dup_line, dup_name in locs[1:]:
-                if dup_file != primary_file:
-                    errors.append(
-                        f"{dup_file}:{dup_line}: Duplicate function body found for '{dup_name}'. "
-                        f"Structurally identical to function '{primary_name}' in {primary_file}:{primary_line}. "
-                        "Consolidate logic into a shared module."
-                    )
+            if target_files is None:
+                primary_file, primary_line, primary_name = locs[0]
+                for dup_file, dup_line, dup_name in locs[1:]:
+                    if dup_file != primary_file:
+                        errors.append(
+                            f"{dup_file}:{dup_line}: Duplicate function body found for '{dup_name}'. "
+                            f"Structurally identical to function '{primary_name}' in {primary_file}:{primary_line}. "
+                            "Consolidate logic into a shared module."
+                        )
+            else:
+                for curr_file, curr_line, curr_name in locs:
+                    if curr_file in target_files:
+                        other_locs = [
+                            (f, line, name) for f, line, name in locs if f != curr_file
+                        ]
+                        if other_locs:
+                            other_file, other_line, other_name = other_locs[0]
+                            errors.append(
+                                f"{curr_file}:{curr_line}: Duplicate function body found for '{curr_name}'. "
+                                f"Structurally identical to function '{other_name}' in {other_file}:{other_line}. "
+                                "Consolidate logic into a shared module."
+                            )
 
 
 def validate_diagram_schema_and_assets(errors: list) -> None:
@@ -340,15 +361,52 @@ def validate_diagram_schema_and_assets(errors: list) -> None:
 
 def main():
     """Execute all architectural validation checks."""
+    parser = argparse.ArgumentParser(
+        description="Validates architectural constraints and utility anti-duplication rules across the project codebase."
+    )
+    parser.add_argument(
+        "files",
+        nargs="*",
+        default=[],
+        help="Optional staged file path(s) to validate.",
+    )
+    args = parser.parse_args()
+
+    is_full_scan = not args.files
+
+    if not is_full_scan:
+        staged_py_files = set()
+        for f in args.files:
+            norm_f = f.replace("\\", "/")
+            if norm_f.endswith(".py") and os.path.exists(norm_f):
+                rel = os.path.relpath(norm_f, ".").replace("\\", "/")
+                if rel.startswith("app/") and "app/binaries" not in rel:
+                    staged_py_files.add(rel)
+        if not staged_py_files:
+            print(
+                "No relevant staged Python files under app/ to validate for architecture."
+            )
+            sys.exit(0)
+        target_files = staged_py_files
+    else:
+        target_files = None
+
     errors = []
 
     # Rule 1 & Rule 2: Async DB writes and UI blocking operations
     for root, _, files in os.walk("app"):
+        if "binaries" in root.split(os.sep) or "app/binaries" in root.replace(
+            "\\", "/"
+        ):
+            continue
         for file in files:
             if not file.endswith(".py"):
                 continue
 
             filepath = os.path.join(root, file).replace("\\", "/")
+            if target_files is not None and filepath not in target_files:
+                continue
+
             try:
                 with open(filepath, "r", encoding="utf-8") as f:
                     content = f.read()
@@ -441,10 +499,14 @@ def main():
             Visitor().visit(tree)
 
     # Rule 3: Anti-duplication, canonical utility registration, and primitive duplicate pattern checks
-    validate_codebase_duplication(errors)
+    validate_codebase_duplication(errors, target_files=target_files)
 
     # Rule 4: Validate Pydantic diagram specs and asset sync
-    validate_diagram_schema_and_assets(errors)
+    if is_full_scan or (
+        target_files is not None
+        and any("app/core" in f or "diagram" in f for f in target_files)
+    ):
+        validate_diagram_schema_and_assets(errors)
 
     if errors:
         print("Architectural Violations Found:")

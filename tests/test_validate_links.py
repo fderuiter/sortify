@@ -149,3 +149,33 @@ def test_main_local_only(mock_urlopen, monkeypatch, tmp_path):
         assert exc.code == 0
 
     mock_urlopen.assert_not_called()
+
+
+def test_validate_links_incremental_file(monkeypatch, tmp_path):
+    doc1 = tmp_path / "doc1.md"
+    doc1.write_text("See https://example.com", encoding="utf-8")
+    doc2 = tmp_path / "doc2.md"
+    doc2.write_text("See http://invalid-url-here", encoding="utf-8")
+
+    # Pass only doc1.md
+    monkeypatch.setattr(sys, "argv", ["validate_links.py", "--local-only", str(doc1)])
+    try:
+        main()
+    except SystemExit as exc:
+        assert exc.code == 0
+
+
+def test_validate_links_global_config_fallback(monkeypatch, tmp_path):
+    # Passing pyproject.toml forces fallback to get_all_target_files
+    mock_files = [str(tmp_path / "nonexistent.md")]
+    monkeypatch.setattr(
+        "scripts.validate_links.get_all_target_files",
+        lambda extensions=(".py", ".md"): mock_files,
+    )
+    monkeypatch.setattr(
+        sys, "argv", ["validate_links.py", "--local-only", "pyproject.toml"]
+    )
+    try:
+        main()
+    except SystemExit as exc:
+        assert exc.code == 0
