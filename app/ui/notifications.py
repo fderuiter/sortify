@@ -11,6 +11,12 @@ from app.core.text_utils import sanitize_secret_patterns
 
 logger = logging.getLogger(__name__)
 
+# Help buttons link to sections of docs/troubleshooting.md. There is no hosted
+# docs site, so they open the page on GitHub, which renders heading anchors.
+TROUBLESHOOTING_URL = (
+    "https://github.com/fderuiter/sortify/blob/main/docs/troubleshooting.md"
+)
+
 
 class NotificationMode(str, Enum):
     """Runtime environment modes for notification dispatching."""

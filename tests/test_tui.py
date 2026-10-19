@@ -12,6 +12,7 @@ import pytest
 from textual.widgets import Button, Input, Select, Static, Switch, Tree
 
 from app.config import AppSettings
+from app.ui.notifications import TROUBLESHOOTING_URL
 from app.ui.tui import (
     AutoSorterTUI,
     CROForensicModal,
@@ -1592,10 +1593,7 @@ def test_tui_cro_forensic_modal_help_button_and_error(temp_workspace):
             await pilot.pause(0.05)
 
             assert not btn_help.has_class("hidden")
-            assert (
-                modal.help_url
-                == "https://docs.smartautosorter.com/troubleshooting/#cro-forensic-ingestion"
-            )
+            assert modal.help_url == f"{TROUBLESHOOTING_URL}#cro-forensic-ingestion"
 
             # Trigger help action
             modal.action_help()
@@ -1628,10 +1626,7 @@ def test_tui_dropzone_modal_help_button_and_error(temp_workspace):
             await pilot.pause(0.05)
 
             assert not btn_help.has_class("hidden")
-            assert (
-                modal.help_url
-                == "https://docs.smartautosorter.com/troubleshooting/#dropzone-errors"
-            )
+            assert modal.help_url == f"{TROUBLESHOOTING_URL}#dropzone-errors"
 
             # Trigger Help action
             modal.action_help()
@@ -1689,10 +1684,7 @@ def test_tui_settings_modal_help_button_on_validation_error(temp_workspace):
             await pilot.pause(0.05)
 
             assert not btn_help.has_class("hidden")
-            assert (
-                modal.help_url
-                == "https://docs.smartautosorter.com/troubleshooting/#settings-configuration"
-            )
+            assert modal.help_url == f"{TROUBLESHOOTING_URL}#settings-configuration"
 
             modal.action_help()
             await pilot.pause(0.05)
