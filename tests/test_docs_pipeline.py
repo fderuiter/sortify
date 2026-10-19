@@ -1,6 +1,8 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.cli.generate_docs import (
     audit_handwritten_docs,
     get_handwritten_docs,
@@ -966,3 +968,15 @@ def test_update_security_md_scans_only_network_rules_targets(tmp_path, monkeypat
     assert "shipped.example.org" in security_md
     assert "fixture.example.net" not in security_md
     assert "stale" not in security_md
+
+
+def test_compile_diagram_assets_fails_when_a_diagram_fails():
+    """A diagram that doesn't render must fail the docs build, not just warn."""
+    from app.cli.generate_docs import compile_diagram_assets
+
+    with patch("scripts.diagram_toolchain.build_diagrams", return_value=False):
+        with pytest.raises(RuntimeError, match="failed schema validation or rendering"):
+            compile_diagram_assets()
+
+    with patch("scripts.diagram_toolchain.build_diagrams", return_value=True):
+        compile_diagram_assets()

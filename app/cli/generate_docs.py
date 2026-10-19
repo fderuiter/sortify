@@ -59,7 +59,11 @@ def compile_diagram_assets():
     """Compile diagram specifications into SVG/PNG visual assets and Mermaid files."""
     from scripts.diagram_toolchain import build_diagrams
 
-    build_diagrams(force=False, verify_only=False)
+    if not build_diagrams(force=False, verify_only=False):
+        raise RuntimeError(
+            "One or more diagrams failed schema validation or rendering; "
+            "see the messages above."
+        )
 
 
 def generate_ui_docs():

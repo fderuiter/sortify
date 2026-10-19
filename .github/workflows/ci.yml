@@ -133,6 +133,20 @@ jobs:
       run: |
         uv run python scripts/diagram_toolchain.py verify
 
+    - name: Set up Node
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: "22"
+
+    # docs --check renders every diagram with mermaid-cli. Without it the
+    # toolchain only checks syntax and a diagram Mermaid can't parse passes.
+    - name: Install Mermaid renderer
+      run: |
+        npm install --global @mermaid-js/mermaid-cli@12.0.0
+        # Fail here, not silently in docs --check, if headless Chrome can't start.
+        printf 'graph TD\n  A --> B\n' > "$RUNNER_TEMP/probe.mmd"
+        mmdc -i "$RUNNER_TEMP/probe.mmd" -o "$RUNNER_TEMP/probe.svg"
+
     - name: Validate Documentation and Integrity
       run: |
         uv run docs --check
