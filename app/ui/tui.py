@@ -6427,7 +6427,7 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
             dest_file_path = os.path.join(target_dir, os.path.basename(orig_rel))
             self.execute_release_async(record, dest_file_path)
 
-        self.push_screen(DirectorySelectModal(base_dir), _dir_selected_callback)
+        self.app.push_screen(DirectorySelectModal(base_dir), _dir_selected_callback)
 
     @work(thread=True)
     def execute_release_async(self, record: dict, dest_file_path: str) -> None:
