@@ -97,6 +97,7 @@ class Settings(BaseSettings):
     MAX_FEATURES: int = Field(default=3, gt=0, le=10)
     CLEANUP_EMPTY_FOLDERS: bool = Field(default=True)
     EXPLORER_INTEGRATION: bool = Field(default=False)
+    SPEAK_ANNOUNCEMENTS: bool = Field(default=False)
     KEYWORD_RULES: dict = Field(default_factory=dict)
     LEARNED_RULES: dict = Field(default_factory=dict)
     EXTENSION_CATEGORIES: dict = Field(default_factory=dict)

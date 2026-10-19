@@ -38,7 +38,7 @@ def test_release_workflow_attestations_and_sbom():
         "attestations": "write",
     }
     assert publish.get("needs") == "build-binaries"
-    assert "refs/tags/" in publish.get("if", "")
+    assert publish.get("if") == "github.event_name == 'release'"
 
     build_steps = jobs["build-binaries"].get("steps", [])
     checkouts = _steps_using(build_steps, "actions/checkout")
@@ -101,3 +101,19 @@ def test_publish_matrix_matches_build_matrix():
     os_names = {e["os_name"] for e in jobs["publish"]["strategy"]["matrix"]["include"]}
     # runner.os values on GitHub-hosted runners
     assert os_names == {"Windows", "Linux", "macOS"}
+
+
+def test_release_builds_and_publishes_once():
+    """A published release is the only publish trigger, and each asset has one uploader."""
+    workflow = _load_release_workflow()
+    # PyYAML reads the `on:` key as True.
+    triggers = workflow.get("on", workflow.get(True))
+    assert "push" not in triggers, "tag pushes would build and publish a second time"
+    assert triggers["release"] == {"types": ["published"]}
+
+    uploads = _steps_using(
+        workflow["jobs"]["publish"]["steps"], "softprops/action-gh-release"
+    )
+    models = [s for s in uploads if "smart-autosorter-models.zip" in s["with"]["files"]]
+    assert len(models) == 1
+    assert models[0].get("if") == "matrix.os_name == 'Linux'"

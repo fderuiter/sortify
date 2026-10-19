@@ -626,6 +626,60 @@ def find_all_history_sessions() -> list:
     return all_sessions
 
 
+def format_plan_tree(plan: dict) -> tuple[list[str], int, int]:
+    """Render a sorting plan as indented folder/file lines for humans.
+
+    Returns the lines plus the number of files and folders in the plan.
+    """
+    lines: list[str] = []
+    counts = {"files": 0, "folders": 0}
+
+    def _is_file(node) -> bool:
+        return node is None or (
+            isinstance(node, dict) and node.get("__type__") == "file"
+        )
+
+    def _walk(tree: dict, depth: int) -> None:
+        indent = "  " * depth
+        for name in sorted(k for k in tree if not str(k).startswith("__")):
+            node = tree[name]
+            if _is_file(node):
+                counts["files"] += 1
+                node = node or {}
+                target = node.get("target_filename") or name
+                source = node.get("relative_source") or node.get("source_path")
+                renamed = source and Path(str(source)).name != target
+                lines.append(
+                    f"{indent}{target}  (was {source})"
+                    if renamed
+                    else f"{indent}{target}"
+                )
+            elif isinstance(node, dict):
+                counts["folders"] += 1
+                lines.append(f"{indent}{name}/")
+                _walk(node, depth + 1)
+
+    if isinstance(plan, dict):
+        _walk(plan, 0)
+    return lines, counts["files"], counts["folders"]
+
+
+def _print_plan_for_humans(
+    plan: dict, target_path: Path, verb: str, quiet: bool = False
+) -> None:
+    """Print the plan tree to stdout and a one-line summary to stderr."""
+    lines, n_files, n_folders = format_plan_tree(plan)
+    if not lines:
+        print(f"Nothing to sort in '{target_path}'.", file=sys.stderr)
+        return
+    if not quiet:
+        print(
+            f"{verb} {n_files} file(s) into {n_folders} folder(s) in '{target_path}':",
+            file=sys.stderr,
+        )
+    print("\n".join(lines))
+
+
 def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
     """Execute document batch sorting or launch interactive TUI."""
     import json
@@ -779,14 +833,32 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
             sys.stdout.write(json.dumps(result, indent=2) + "\n")
             sys.stdout.flush()
         else:
+            _print_plan_for_humans(
+                serializable_plan,
+                target_path,
+                "Would move" if dry_run else "Moved",
+                quiet=quiet,
+            )
             if not quiet:
-                print(
-                    f"Batch sorting completed successfully for '{target_path}'.",
-                    file=sys.stderr,
-                )
                 if dry_run:
-                    print("Dry-run mode: no files were moved.", file=sys.stderr)
-            print(json.dumps(serializable_plan, indent=2))
+                    print(
+                        "Dry run: no files were moved. Run again without --dry-run "
+                        "to move them, or add --json for machine-readable output.",
+                        file=sys.stderr,
+                    )
+                else:
+                    report = (result.get("summary") or {}).get("audit_report") or {}
+                    failed = report.get("mismatch_fail_count") or 0
+                    if failed:
+                        print(
+                            f"Warning: {failed} file(s) failed verification after "
+                            "the move. Check the audit report.",
+                            file=sys.stderr,
+                        )
+                    print(
+                        "To undo this sort, run: smart-autosorter undo --latest",
+                        file=sys.stderr,
+                    )
 
         sys.exit(0)
     except Exception as e:
@@ -899,10 +971,12 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
         else:
             if not quiet:
                 print(
-                    f"Scan analysis completed for '{target_path}'. Scanned {len(files)} files.",
+                    f"Scanned {len(files)} file(s) in '{target_path}'. No files were moved.",
                     file=sys.stderr,
                 )
-            print(json.dumps(serializable_plan, indent=2))
+            _print_plan_for_humans(
+                serializable_plan, target_path, "Would move", quiet=quiet
+            )
 
         sys.exit(0)
     except Exception as e:
@@ -1339,9 +1413,30 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
     sys.exit(0)
 
 
-def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
+_CLI_EXAMPLES = """\
+examples:
+  smart-autosorter                         open the full-screen TUI
+  smart-autosorter sort ~/Downloads --dry-run
+                                           preview the plan without moving files
+  smart-autosorter sort ~/Downloads        sort the folder
+  smart-autosorter undo --latest           move the last sort's files back
+  smart-autosorter undo --list             list past sorts you can undo
+
+Run 'smart-autosorter <command> --help' for a command's options.
+"""
+
+
+def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentParser:
     """Build and return the main command-line argument parser for Smart AutoSorter AI Pro."""
-    parser = argparse.ArgumentParser(prog=prog, description="Smart AutoSorter AI Pro")
+    parser = argparse.ArgumentParser(
+        prog=prog,
+        description=(
+            "Smart AutoSorter AI Pro: sort a folder of documents into topic\n"
+            "folders, offline. Every move can be undone."
+        ),
+        epilog=_CLI_EXAMPLES,
+        formatter_class=argparse.RawDescriptionHelpFormatter,
+    )
     parser.add_argument(
         "-q",
         "--quiet",
@@ -1366,7 +1461,7 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     parser.add_argument(
         "--update-snapshots",
         action="store_true",
-        help="Regenerate reference baseline snapshots across all covered views",
+        help=argparse.SUPPRESS,  # developer tool: regenerate UI snapshots
     )
     parser.add_argument(
         "--daemon",
@@ -1376,7 +1471,7 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     parser.add_argument(
         "--debug-layout",
         action="store_true",
-        help="Enable visual debug outlines for UI elements in dev mode",
+        help=argparse.SUPPRESS,  # developer tool: outline UI elements
     )
     parser.add_argument(
         "--tui",
@@ -1386,7 +1481,7 @@ def build_parser(prog: str | None = "app/main.py") -> argparse.ArgumentParser:
     parser.add_argument(
         "--interactive",
         action="store_true",
-        help="Launch full-screen interactive TUI mode",
+        help="Same as --tui",
     )
     ai_consent_group = parser.add_mutually_exclusive_group()
     ai_consent_group.add_argument(

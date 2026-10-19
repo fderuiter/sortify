@@ -42,6 +42,10 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `False`
 - **Required**: `False`
 
+### `SPEAK_ANNOUNCEMENTS`
+- **Default**: `False`
+- **Required**: `False`
+
 ### `KEYWORD_RULES`
 - **Default**: `PydanticUndefined`
 - **Required**: `False`
@@ -253,14 +257,15 @@ Main command-line interface for Smart AutoSorter AI Pro.
 
 #### Top-Level Usage
 ```text
-usage: app/main.py [-h] [-q] [--no-color] [--demo] [--smoke-test]
-                   [--update-snapshots] [--daemon] [--debug-layout] [--tui]
-                   [--interactive]
-                   [--accept-ai-consent | --decline-ai-consent]
-                   [--skip-wizard] [--non-interactive]
-                   {sort,scan,config,daemon,undo,drop,ledger,quarantine} ...
+usage: smart-autosorter [-h] [-q] [--no-color] [--demo] [--smoke-test]
+                        [--daemon] [--tui] [--interactive]
+                        [--accept-ai-consent | --decline-ai-consent]
+                        [--skip-wizard] [--non-interactive]
+                        {sort,scan,config,daemon,undo,drop,ledger,quarantine}
+                        ...
 
-Smart AutoSorter AI Pro
+Smart AutoSorter AI Pro: sort a folder of documents into topic
+folders, offline. Every move can be undone.
 
 positional arguments:
   {sort,scan,config,daemon,undo,drop,ledger,quarantine}
@@ -286,13 +291,9 @@ options:
   --no-color            Disable ANSI color and style formatting
   --demo                Run interactive CLI demo mode
   --smoke-test          Run automated database smoke test and exit
-  --update-snapshots    Regenerate reference baseline snapshots across all
-                        covered views
   --daemon              Launch the persistent directory-watching daemon
-  --debug-layout        Enable visual debug outlines for UI elements in dev
-                        mode
   --tui                 Launch full-screen Textual TUI interface
-  --interactive         Launch full-screen interactive TUI mode
+  --interactive         Same as --tui
   --accept-ai-consent   Pre-configure AI consent as granted and bypass
                         onboarding wizard
   --decline-ai-consent  Pre-configure AI consent as declined and bypass
@@ -300,6 +301,16 @@ options:
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
+
+examples:
+  smart-autosorter                         open the full-screen TUI
+  smart-autosorter sort ~/Downloads --dry-run
+                                           preview the plan without moving files
+  smart-autosorter sort ~/Downloads        sort the folder
+  smart-autosorter undo --latest           move the last sort's files back
+  smart-autosorter undo --list             list past sorts you can undo
+
+Run 'smart-autosorter <command> --help' for a command's options.
 ```
 
 #### Non-Interactive / Headless Execution Guard
@@ -314,18 +325,19 @@ When executing `app/main.py` in non-interactive or detached standard input strea
 
 ##### `sort`
 ```text
-usage: app/main.py sort [-h] [--preset {demo,downloads,documents}] [--json]
-                        [--dest-dir DEST_DIR] [--dry-run] [-q] [--no-color]
-                        [--max-folders MAX_FOLDERS]
-                        [--strategy {default,generative,clinical_tmf,clinical_isf}]
-                        [--conflict-policy {skip,rename}]
-                        [--contextual-renaming] [--no-contextual-renaming]
-                        [--tui] [--interactive]
-                        [--accept-ai-consent | --decline-ai-consent]
-                        [--skip-wizard] [--non-interactive]
-                        [--export-report EXPORT_REPORT]
-                        [--report-format {html,json}]
-                        [directory]
+usage: smart-autosorter sort [-h] [--preset {demo,downloads,documents}]
+                             [--json] [--dest-dir DEST_DIR] [--dry-run] [-q]
+                             [--no-color] [--max-folders MAX_FOLDERS]
+                             [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                             [--conflict-policy {skip,rename}]
+                             [--contextual-renaming]
+                             [--no-contextual-renaming] [--tui]
+                             [--interactive]
+                             [--accept-ai-consent | --decline-ai-consent]
+                             [--skip-wizard] [--non-interactive]
+                             [--export-report EXPORT_REPORT]
+                             [--report-format {html,json}]
+                             [directory]
 
 positional arguments:
   directory             Target directory to sort
@@ -369,17 +381,19 @@ options:
 
 ##### `scan`
 ```text
-usage: app/main.py scan [-h] [--preset {demo,downloads,documents}] [--json]
-                        [-q] [--no-color] [--max-folders MAX_FOLDERS]
-                        [--strategy {default,generative,clinical_tmf,clinical_isf}]
-                        [--conflict-policy {skip,rename}]
-                        [--contextual-renaming] [--no-contextual-renaming]
-                        [--tui] [--interactive]
-                        [--accept-ai-consent | --decline-ai-consent]
-                        [--skip-wizard] [--non-interactive]
-                        [--export-report EXPORT_REPORT]
-                        [--report-format {html,json}]
-                        [directory]
+usage: smart-autosorter scan [-h] [--preset {demo,downloads,documents}]
+                             [--json] [-q] [--no-color]
+                             [--max-folders MAX_FOLDERS]
+                             [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                             [--conflict-policy {skip,rename}]
+                             [--contextual-renaming]
+                             [--no-contextual-renaming] [--tui]
+                             [--interactive]
+                             [--accept-ai-consent | --decline-ai-consent]
+                             [--skip-wizard] [--non-interactive]
+                             [--export-report EXPORT_REPORT]
+                             [--report-format {html,json}]
+                             [directory]
 
 positional arguments:
   directory             Target directory to scan
@@ -420,16 +434,17 @@ options:
 
 ##### `config`
 ```text
-usage: app/main.py config [-h] [--show] [--json] [--set KEY VALUE] [-q]
-                          [--no-color] [--max-folders MAX_FOLDERS]
-                          [--strategy {default,generative,clinical_tmf,clinical_isf}]
-                          [--conflict-policy {skip,rename}]
-                          [--contextual-renaming] [--no-contextual-renaming]
-                          [--tui] [--interactive]
-                          [--accept-ai-consent | --decline-ai-consent]
-                          [--skip-wizard] [--non-interactive]
-                          [--export-report EXPORT_REPORT]
-                          [--report-format {html,json}]
+usage: smart-autosorter config [-h] [--show] [--json] [--set KEY VALUE] [-q]
+                               [--no-color] [--max-folders MAX_FOLDERS]
+                               [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                               [--conflict-policy {skip,rename}]
+                               [--contextual-renaming]
+                               [--no-contextual-renaming] [--tui]
+                               [--interactive]
+                               [--accept-ai-consent | --decline-ai-consent]
+                               [--skip-wizard] [--non-interactive]
+                               [--export-report EXPORT_REPORT]
+                               [--report-format {html,json}]
 
 options:
   -h, --help            show this help message and exit
@@ -466,17 +481,18 @@ options:
 
 ##### `daemon`
 ```text
-usage: app/main.py daemon [-h] [--watch] [-q] [--no-color]
-                          [--max-folders MAX_FOLDERS]
-                          [--strategy {default,generative,clinical_tmf,clinical_isf}]
-                          [--conflict-policy {skip,rename}]
-                          [--contextual-renaming] [--no-contextual-renaming]
-                          [--tui] [--interactive]
-                          [--accept-ai-consent | --decline-ai-consent]
-                          [--skip-wizard] [--non-interactive]
-                          [--export-report EXPORT_REPORT]
-                          [--report-format {html,json}]
-                          [action] [directory]
+usage: smart-autosorter daemon [-h] [--watch] [-q] [--no-color]
+                               [--max-folders MAX_FOLDERS]
+                               [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                               [--conflict-policy {skip,rename}]
+                               [--contextual-renaming]
+                               [--no-contextual-renaming] [--tui]
+                               [--interactive]
+                               [--accept-ai-consent | --decline-ai-consent]
+                               [--skip-wizard] [--non-interactive]
+                               [--export-report EXPORT_REPORT]
+                               [--report-format {html,json}]
+                               [action] [directory]
 
 positional arguments:
   action                Action (start, status, health, metrics, pause, resume,
@@ -516,17 +532,18 @@ options:
 
 ##### `undo`
 ```text
-usage: app/main.py undo [-h] [--session-id SESSION_ID] [--list] [--latest]
-                        [--force] [--json] [-q] [--no-color]
-                        [--max-folders MAX_FOLDERS]
-                        [--strategy {default,generative,clinical_tmf,clinical_isf}]
-                        [--conflict-policy {skip,rename}]
-                        [--contextual-renaming] [--no-contextual-renaming]
-                        [--tui] [--interactive]
-                        [--accept-ai-consent | --decline-ai-consent]
-                        [--skip-wizard] [--non-interactive]
-                        [--export-report EXPORT_REPORT]
-                        [--report-format {html,json}]
+usage: smart-autosorter undo [-h] [--session-id SESSION_ID] [--list]
+                             [--latest] [--force] [--json] [-q] [--no-color]
+                             [--max-folders MAX_FOLDERS]
+                             [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                             [--conflict-policy {skip,rename}]
+                             [--contextual-renaming]
+                             [--no-contextual-renaming] [--tui]
+                             [--interactive]
+                             [--accept-ai-consent | --decline-ai-consent]
+                             [--skip-wizard] [--non-interactive]
+                             [--export-report EXPORT_REPORT]
+                             [--report-format {html,json}]
 
 options:
   -h, --help            show this help message and exit
@@ -567,18 +584,19 @@ options:
 
 ##### `drop`
 ```text
-usage: app/main.py drop [-h] [--preset {demo,downloads,documents}]
-                        [--dest-dir DEST_DIR] [--dry-run] [--json] [-q]
-                        [--no-color] [--max-folders MAX_FOLDERS]
-                        [--strategy {default,generative,clinical_tmf,clinical_isf}]
-                        [--conflict-policy {skip,rename}]
-                        [--contextual-renaming] [--no-contextual-renaming]
-                        [--tui] [--interactive]
-                        [--accept-ai-consent | --decline-ai-consent]
-                        [--skip-wizard] [--non-interactive]
-                        [--export-report EXPORT_REPORT]
-                        [--report-format {html,json}]
-                        paths [paths ...]
+usage: smart-autosorter drop [-h] [--preset {demo,downloads,documents}]
+                             [--dest-dir DEST_DIR] [--dry-run] [--json] [-q]
+                             [--no-color] [--max-folders MAX_FOLDERS]
+                             [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                             [--conflict-policy {skip,rename}]
+                             [--contextual-renaming]
+                             [--no-contextual-renaming] [--tui]
+                             [--interactive]
+                             [--accept-ai-consent | --decline-ai-consent]
+                             [--skip-wizard] [--non-interactive]
+                             [--export-report EXPORT_REPORT]
+                             [--report-format {html,json}]
+                             paths [paths ...]
 
 positional arguments:
   paths                 Target file or directory paths to process
@@ -621,7 +639,7 @@ options:
 
 ##### `ledger`
 ```text
-usage: app/main.py ledger [-h] {status,reconcile,purge,export} ...
+usage: smart-autosorter ledger [-h] {status,reconcile,purge,export} ...
 
 positional arguments:
   {status,reconcile,purge,export}
@@ -640,7 +658,7 @@ options:
 
 ##### `quarantine`
 ```text
-usage: app/main.py quarantine [-h] {list,inspect,process,release} ...
+usage: smart-autosorter quarantine [-h] {list,inspect,process,release} ...
 
 positional arguments:
   {list,inspect,process,release}

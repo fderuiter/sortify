@@ -127,7 +127,8 @@ def test_tui_scan_worker_announces_skipped_invalid_locks():
         patch("app.core.session.AppSession", return_value=mock_session),
         patch("app.core.scanner.get_files_from_sources", return_value=["bad_doc.txt"]),
         patch("app.core.scanner.get_files_recursively", return_value=["bad_doc.txt"]),
-        patch("app.core.metadata.MetadataPass.run"),
+        patch("app.core.metadata.MetadataPass.run", return_value=[]),
+        patch("app.core.extractor.build_corpus_generator", return_value=iter([])),
         patch.object(
             app,
             "call_from_thread",

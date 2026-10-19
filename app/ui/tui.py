@@ -228,6 +228,14 @@ class A11yMixin:
             except Exception:
                 pass
 
+    def _speech_enabled(self) -> bool:
+        """Return whether the user opted in to spoken status messages."""
+        settings = getattr(self, "settings", None)
+        try:
+            return bool(getattr(settings, "SPEAK_ANNOUNCEMENTS", False))
+        except Exception:
+            return False
+
     def _get_speech_binary(self) -> Optional[str]:
         """Resolve available speech synthesis executable based on host platform.
 
@@ -289,8 +297,11 @@ class A11yMixin:
             pass
 
         if not forwarded:
-            # Check speech binary presence via _get_speech_binary before launching subprocess
-            speech_bin = self._get_speech_binary()
+            # Speaking aloud is opt-in: screen-reader users already hear the
+            # status bar, and everyone else should not hear every message.
+            speech_bin = (
+                self._get_speech_binary() if self._speech_enabled() else None
+            )
 
             if speech_bin:
                 speech_thread = self._speech_thread
@@ -1962,6 +1973,15 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                         tooltip="Toggle AI contextual file renaming",
                     )
 
+                    yield LabeledSwitch(
+                        label="Speak Status Messages Aloud",
+                        value=bool(
+                            getattr(self.settings, "SPEAK_ANNOUNCEMENTS", False)
+                        ),
+                        switch_id="switch-speak-announcements",
+                        tooltip="Read each status message aloud with the system speech command (say / spd-say)",
+                    )
+
                     btn_scrub = Button(
                         "Scrub AI Artifacts",
                         id="btn-scrub-artifacts",
@@ -2245,6 +2265,10 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             ctx_renaming = bool(getattr(self.settings, "CONTEXTUAL_RENAMING", False))
         try:
+            speak = self.query_one("#switch-speak-announcements", Switch).value
+        except Exception:
+            speak = bool(getattr(self.settings, "SPEAK_ANNOUNCEMENTS", False))
+        try:
             ai_consent = self.query_one("#switch-ai-consent", Switch).value
         except Exception:
             ai_consent = bool(getattr(self.settings, "AI_CONSENT_GRANTED", False))
@@ -2273,6 +2297,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             "CLINICAL_SMART_RENAMING": clin_renaming,
             "CONTEXTUAL_RENAMING": ctx_renaming,
             "AI_CONSENT_GRANTED": ai_consent,
+            "SPEAK_ANNOUNCEMENTS": speak,
         }
         self.announce("Saved application settings.")
         self.dismiss(res)
@@ -7353,6 +7378,8 @@ class AutoSorterTUI(A11yMixin, App):
                     self.settings.CONTEXTUAL_RENAMING = res["CONTEXTUAL_RENAMING"]
                 if "AI_CONSENT_GRANTED" in res:
                     self.settings.AI_CONSENT_GRANTED = res["AI_CONSENT_GRANTED"]
+                if "SPEAK_ANNOUNCEMENTS" in res:
+                    self.settings.SPEAK_ANNOUNCEMENTS = res["SPEAK_ANNOUNCEMENTS"]
                 if "PDF_TEXT_DENSITY_THRESHOLD" in res:
                     self.settings.PDF_TEXT_DENSITY_THRESHOLD = res[
                         "PDF_TEXT_DENSITY_THRESHOLD"
@@ -7538,7 +7565,7 @@ class AutoSorterTUI(A11yMixin, App):
                     self._handle_progress_update, update_or_prog, stage, **kwargs
                 )
 
-            MetadataPass.run(
+            bypassed = MetadataPass.run(
                 self.base_dir,
                 files,
                 self.settings,
@@ -7547,6 +7574,29 @@ class AutoSorterTUI(A11yMixin, App):
                 cancel_check=lambda: False,
                 source_dirs=s_dirs,
             )
+
+            # Files no metadata rule matched still need their text extracted and
+            # fitted, otherwise clustering sees no documents and the plan is empty.
+            bypassed_set = {str(f).replace("\\", "/") for f in (bypassed or [])}
+            items_to_extract = [
+                f for f in files if str(f).replace("\\", "/") not in bypassed_set
+            ]
+            if items_to_extract:
+                from app.core.extractor import build_corpus_generator
+
+                total = len(items_to_extract)
+                done = 0
+                for chunk in build_corpus_generator(
+                    base_dir=self.base_dir,
+                    items_to_sort=items_to_extract,
+                    progress_callback=lambda *args, **kwargs: None,
+                    max_workers=getattr(self.settings, "MAX_WORKERS", 2),
+                    db=self.app_session.db,
+                    settings=self.settings,
+                ):
+                    self.app_session.partial_fit(chunk)
+                    done += len(chunk)
+                    scan_progress_cb(done / total, f"Extracting text ({done}/{total})")
 
             # Load locks & ratings
             try:
@@ -8122,10 +8172,10 @@ class AutoSorterTUI(A11yMixin, App):
                             matching_ids.add(id(v))
                             has_match = True
                     else:
-                        sub_folder = (
-                            (Path(folder) / k).as_posix() if folder else k
+                        sub_folder = (Path(folder) / k).as_posix() if folder else k
+                        folder_direct_match = (
+                            query in k.lower() or query in sub_folder.lower()
                         )
-                        folder_direct_match = query in k.lower() or query in sub_folder.lower()
                         child_match = _walk(v, sub_folder)
                         if folder_direct_match or child_match:
                             matching_ids.add(id(v))
@@ -8168,9 +8218,7 @@ class AutoSorterTUI(A11yMixin, App):
                 )
             else:
                 matching_ids = (
-                    self._build_matching_node_ids(self.plan, query)
-                    if query
-                    else None
+                    self._build_matching_node_ids(self.plan, query) if query else None
                 )
                 nodes_added = self._build_tree_nodes(
                     self.plan,
@@ -8257,7 +8305,8 @@ class AutoSorterTUI(A11yMixin, App):
                             v,
                             current_folder=sub_folder,
                             query=query,
-                            parent_folder_matches=parent_folder_matches or folder_matches,
+                            parent_folder_matches=parent_folder_matches
+                            or folder_matches,
                             matching_ids=matching_ids,
                         )
                     )
@@ -9279,6 +9328,8 @@ def run_tui(
         )
         sys.exit(1)
 
+    _start_multiprocessing_resource_tracker()
+
     app = AutoSorterTUI(
         settings=settings,
         base_dir=base_dir,
@@ -9286,6 +9337,24 @@ def run_tui(
         non_interactive=non_interactive,
     )
     app.run()
+
+
+def _start_multiprocessing_resource_tracker() -> None:
+    """Start multiprocessing's resource tracker while stderr is still a real fd.
+
+    The tracker starts lazily with the first spawned process and passes
+    ``sys.stderr.fileno()`` to its child. Textual replaces ``sys.stderr``
+    while running, so starting it later (when clustering spawns its worker)
+    fails with ``ValueError: bad value(s) in fds_to_keep``.
+    """
+    if sys.platform == "win32":
+        return
+    try:
+        from multiprocessing import resource_tracker
+
+        resource_tracker.ensure_running()
+    except Exception as e:
+        logger.warning(f"Could not start multiprocessing resource tracker: {e}")
 
 
 @dataclass

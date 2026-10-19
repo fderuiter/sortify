@@ -1,7 +1,11 @@
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
+import pytest
+
 from app.cli.generate_docs import (
+    _collect_bindings,
+    _format_key,
     audit_handwritten_docs,
     get_handwritten_docs,
     main,
@@ -202,6 +206,7 @@ def test_main_detects_unsynced_files_on_check():
             patch("app.cli.generate_docs.generate_api_docs"),
             patch("app.cli.generate_docs.generate_ui_docs"),
             patch("app.cli.generate_docs.generate_admin_guide"),
+            patch("app.cli.generate_docs.generate_keyboard_docs"),
             patch("app.cli.generate_docs.update_security_md"),
             patch("app.cli.generate_docs.validate_mermaid_diagrams", return_value=[]),
             patch("app.cli.generate_docs.audit_handwritten_docs", return_value=[]),
@@ -265,6 +270,7 @@ def test_main_clean_on_check():
             patch("app.cli.generate_docs.generate_api_docs"),
             patch("app.cli.generate_docs.generate_ui_docs"),
             patch("app.cli.generate_docs.generate_admin_guide"),
+            patch("app.cli.generate_docs.generate_keyboard_docs"),
             patch("app.cli.generate_docs.update_security_md"),
             patch("app.cli.generate_docs.validate_mermaid_diagrams", return_value=[]),
             patch("app.cli.generate_docs.audit_handwritten_docs", return_value=[]),
@@ -966,3 +972,52 @@ def test_update_security_md_scans_only_network_rules_targets(tmp_path, monkeypat
     assert "shipped.example.org" in security_md
     assert "fixture.example.net" not in security_md
     assert "stale" not in security_md
+
+
+def test_compile_diagram_assets_fails_when_a_diagram_fails():
+    """A diagram that doesn't render must fail the docs build, not just warn."""
+    from app.cli.generate_docs import compile_diagram_assets
+
+    with patch("scripts.diagram_toolchain.build_diagrams", return_value=False):
+        with pytest.raises(RuntimeError, match="failed schema validation or rendering"):
+            compile_diagram_assets()
+
+    with patch("scripts.diagram_toolchain.build_diagrams", return_value=True):
+        compile_diagram_assets()
+def test_format_key_matches_how_users_type_keys():
+    assert _format_key("ctrl+s") == "Ctrl+S"
+    assert _format_key("question_mark") == "?"
+    assert _format_key("escape") == "Esc"
+    assert _format_key("f1") == "F1"
+    assert _format_key("x") == "x"
+    assert _format_key("G") == "Shift+G"
+    assert _format_key("shift+g") == "Shift+G"
+
+
+def test_collect_bindings_groups_keys_by_description(tmp_path):
+    src = tmp_path / "tui.py"
+    src.write_text(
+        "class HelpModal:\n"
+        "    BINDINGS = [\n"
+        '        Binding("escape", "close", "Close dialog"),\n'
+        '        Binding("f1", "close", "Close dialog", show=False),\n'
+        "    ]\n"
+        "class AutoSorterTUI:\n"
+        '    BINDINGS = [Binding("ctrl+s", "scan_directory", "Scan")]\n'
+    )
+    found = _collect_bindings(str(src))
+    assert found["HelpModal"] == ("Help", [(["Esc", "F1"], "Close dialog")])
+    assert found["AutoSorterTUI"][1] == [(["Ctrl+S"], "Scan")]
+
+
+def test_keyboard_shortcuts_page_is_in_sync():
+    """The committed page must match the TUI bindings (run `uv run docs`)."""
+    from app.cli.generate_docs import generate_keyboard_docs
+
+    page = Path("docs/keyboard_shortcuts.md")
+    before = page.read_text(encoding="utf-8")
+    try:
+        generate_keyboard_docs()
+        assert page.read_text(encoding="utf-8") == before
+    finally:
+        page.write_text(before, encoding="utf-8", newline="\n")

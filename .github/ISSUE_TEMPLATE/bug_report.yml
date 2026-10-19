@@ -1,0 +1,50 @@
+name: Bug report
+description: Something sorted, moved, displayed or crashed the wrong way.
+labels: ["bug"]
+body:
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What did you do, what did you expect, and what happened instead?
+    validations:
+      required: true
+  - type: textarea
+    id: reproduce
+    attributes:
+      label: Steps to reproduce
+      description: Commands or TUI steps. A `--dry-run --json` plan is very helpful for sorting bugs.
+      placeholder: |
+        1. smart-autosorter sort ~/Downloads --dry-run --json
+        2. ...
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: Version or commit
+      description: Release version, or `git rev-parse --short HEAD` when running from source.
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows
+        - macOS
+        - Linux
+    validations:
+      required: true
+  - type: dropdown
+    id: interface
+    attributes:
+      label: Interface
+      options:
+        - Terminal UI
+        - CLI (sort / scan / undo / ...)
+        - Daemon
+  - type: textarea
+    id: logs
+    attributes:
+      label: Logs or error output
+      description: Remove file names or document text you don't want to share.
+      render: text
