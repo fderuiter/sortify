@@ -628,6 +628,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                 title="Storage & Database Persistence (app.core)",
                 nodes=[
                     "core_db",
+                    "core_migrations",
                     "core_ledger",
                     "core_history",
                 ],
@@ -728,6 +729,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramNode(id="core_db_worker", label="app.core.db_worker"),
             # Storage
             DiagramNode(id="core_db", label="app.core.db", shape="database"),
+            DiagramNode(id="core_migrations", label="app.core.migrations"),
             DiagramNode(id="core_ledger", label="app.core.ledger", shape="database"),
             DiagramNode(id="core_history", label="app.core.history", shape="database"),
             # Policy & Execution
@@ -816,6 +818,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramEdge(source="core_shared_registry", target="core_network_guard"),
             DiagramEdge(source="core_network_guard", target="core_concurrency"),
             DiagramEdge(source="core_db", target="core_cache"),
+            DiagramEdge(source="core_db", target="core_migrations"),
             DiagramEdge(source="core_ledger", target="core_db"),
             DiagramEdge(source="core_history", target="core_db"),
             DiagramEdge(
