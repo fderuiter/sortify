@@ -70,9 +70,6 @@ packages = ["app"]
 
 [tool.ruff]
 line-length = 88
-exclude = [
-    "app/binaries",
-]
 
 [tool.ruff.lint]
 select = ["E", "F", "I", "D", "D417"]
@@ -98,7 +95,6 @@ error-on-warning = false
 
 [tool.ty.src]
 include = ["app"]
-exclude = ["app/binaries"]
 
 [tool.ty.analysis]
 # Optional `ml` extra and `docs` group packages, imported lazily behind guards.
@@ -148,7 +144,6 @@ include = [
     "app/core/session.py",
     "app/core/shared_registry.py",
     "app/core/text_utils.py",
-    "app/core/user_space_bootstrap.py",
 ]
 
 [tool.ty.overrides.rules]

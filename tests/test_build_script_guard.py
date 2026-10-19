@@ -113,7 +113,6 @@ def test_build_script_cpu_profile_success():
             patch("importlib.util.find_spec") as mock_find_spec,
             patch("sys.exit", side_effect=SystemExit) as mock_exit,
             patch("scripts.build.download_and_prepare_weights") as mock_download,
-            patch("scripts.build.update_binaries_and_manifest") as mock_update_bin,
             patch("os.path.exists", return_value=True),
             patch("scripts.build.bundle_license"),
             patch(
@@ -192,7 +191,6 @@ def test_build_script_cpu_profile_scan_fails_if_gpu_binaries_exist():
             patch("importlib.util.find_spec") as mock_find_spec,
             patch("sys.exit", side_effect=SystemExit) as mock_exit,
             patch("scripts.build.download_and_prepare_weights") as mock_download,
-            patch("scripts.build.update_binaries_and_manifest") as mock_update_bin,
             patch("os.path.exists", return_value=True),
             patch("scripts.build.bundle_license"),
             patch(
