@@ -276,7 +276,7 @@ class ForensicScanner:
                 if content_type == "text/plain" and "attachment" not in disposition:
                     charset = part.get_content_charset() or "utf-8"
                     payload = part.get_payload(decode=True)
-                    if payload:
+                    if isinstance(payload, bytes) and payload:
                         body_text += payload.decode(charset, errors="ignore") + "\n"
 
                 elif "attachment" in disposition or part.get_filename():
@@ -285,7 +285,7 @@ class ForensicScanner:
                         os.makedirs(destination_dir, exist_ok=True)
                         att_path = os.path.join(destination_dir, filename)
                         payload = part.get_payload(decode=True)
-                        if payload:
+                        if isinstance(payload, bytes) and payload:
                             with open(att_path, "wb") as af:
                                 af.write(payload)
                             extracted_attachments.append(att_path)
