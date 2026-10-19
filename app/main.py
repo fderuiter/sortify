@@ -1708,13 +1708,18 @@ def main():
         "undo",
         "drop",
     )
+    # `smart-autosorter [flags] DIR`: a directory with no subcommand. Every
+    # top-level option is a flag, so the first non-flag argument is either a
+    # subcommand or that directory, wherever it appears among the flags.
     legacy_directory = None
-    if (
-        len(sys.argv) > 1
-        and not sys.argv[1].startswith("-")
-        and sys.argv[1] not in known_subcommands
-    ):
-        legacy_directory = sys.argv.pop(1)
+    for index, arg in enumerate(sys.argv[1:], start=1):
+        if arg == "--":
+            break
+        if arg.startswith("-"):
+            continue
+        if arg not in known_subcommands:
+            legacy_directory = sys.argv.pop(index)
+        break
 
     args = parser.parse_args()
     if legacy_directory and not getattr(args, "directory", None):
