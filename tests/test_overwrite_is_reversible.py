@@ -104,3 +104,35 @@ def test_pruning_a_session_purges_its_backups(tmp_path):
 
     _purge_overwrite_backups(base_dir, "keep")
     assert not os.path.exists(os.path.join(base_dir, OVERWRITE_BACKUP_DIR))
+
+
+def test_undo_matches_paths_written_with_other_separators(
+    test_history_env, monkeypatch
+):
+    """Undo must treat two spellings of one path as the same file.
+
+    On Windows the scanner returns backslash paths while the snapshot stores
+    forward slashes, so the restore loop saw ``Docs\\report.txt`` and
+    ``Docs/report.txt`` as different files and moved the wrong one back.
+    A ``./`` segment gives the same mismatch on any platform.
+    """
+    import app.core.scanner as scanner
+
+    base_dir, db, _cache, history_manager, _worker = test_history_env
+    src, dst = _setup(base_dir)
+    execute_moves(base_dir, PLAN, db, history_manager, OverwriteSettings())
+    session_id = _latest_session(history_manager)
+
+    real_scan = scanner.get_files_recursively
+
+    def scan_with_other_spelling(*args, **kwargs):
+        return [
+            os.path.join(os.path.dirname(p), ".", os.path.basename(p))
+            for p in real_scan(*args, **kwargs)
+        ]
+
+    monkeypatch.setattr(scanner, "get_files_recursively", scan_with_other_spelling)
+    history_manager.unwind_session(session_id, db=db)
+
+    assert _read(src) == "new report"
+    assert _read(dst) == "old report"
