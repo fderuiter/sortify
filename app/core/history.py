@@ -994,7 +994,7 @@ class HistoryManager:
                 db_paths.append(p_abs)
 
         try:
-            from app.main import find_all_history_sessions
+            from app.core.session_catalog import find_all_history_sessions
 
             discovered_sessions = find_all_history_sessions()
             for s in discovered_sessions:

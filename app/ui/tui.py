@@ -5820,7 +5820,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     ):
         super().__init__()
         if sessions is None:
-            from app.main import find_all_history_sessions
+            from app.core.session_catalog import find_all_history_sessions
 
             sessions = find_all_history_sessions()
         self.sessions = sessions or []
@@ -6090,7 +6090,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     def _on_rollback_success(self, session_id: str, restored_count: int) -> None:
         """Handle successful session rollback completion on main thread."""
         self._rollback_in_progress = False
-        from app.main import find_all_history_sessions
+        from app.core.session_catalog import find_all_history_sessions
 
         self.sessions = find_all_history_sessions()
         self._refresh_session_options(selected_sid=session_id)
@@ -7804,6 +7804,12 @@ class AutoSorterTUI(A11yMixin, App):
                     or "Re-download model bundle"
                 )
                 msg = f"Scan complete (DEGRADED FALLBACK MODE: {reason}. Suggested action: {rec_action}). Analyzed {len(files)} files."
+                self.call_from_thread(
+                    self.notify,
+                    f"Sorting plan generated in degraded fallback mode: {reason}",
+                    title=f"Suggested recovery action: {rec_action}",
+                    severity="warning",
+                )
             else:
                 msg = f"Scan complete. Analyzed {len(files)} files into proposed plan."
 
@@ -7862,7 +7868,7 @@ class AutoSorterTUI(A11yMixin, App):
         """Trigger session history view and audit log export modal screen."""
         if self._is_text_control_focused(allow_tree_search=True):
             return
-        from app.main import find_all_history_sessions
+        from app.core.session_catalog import find_all_history_sessions
 
         sessions = find_all_history_sessions()
 

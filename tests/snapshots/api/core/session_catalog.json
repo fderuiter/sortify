@@ -1,0 +1,15 @@
+{
+  "_metadata": {
+    "checksum": "99b026b7f494a2bac8c2d97f754ce381ca349a68265a78cbdfcdff3f58f1a2bb"
+  },
+  "classes": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "find_all_history_sessions",
+      "parameters": [],
+      "returns": "list"
+    }
+  ]
+}
