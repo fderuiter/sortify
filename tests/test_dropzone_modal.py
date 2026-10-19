@@ -6,6 +6,7 @@ import pytest
 from textual.app import App
 from textual.events import Paste
 from textual.widgets import Button
+from textual.worker import WorkerCancelled
 
 from app.ui.tui import AutoSorterTUI, DropPlanConfirmModal, DropZoneModal
 
@@ -49,6 +50,30 @@ class ModalTestApp(App):
         self.push_screen(DropZoneModal(settings=self.settings, base_dir=self.base_dir))
 
 
+async def _wait_for(app, pilot, condition) -> None:
+    """Let the drop workers run until ``condition()`` holds.
+
+    The workers hand results to the UI with ``call_from_thread``, which
+    blocks until the UI has applied them, so each round waits for running
+    workers to finish rather than for a fixed time. That keeps a slow
+    runner from timing out, while the round limit stops a broken flow
+    from hanging the test.
+    """
+    for _ in range(50):
+        await pilot.pause()
+        for worker in list(app.workers):
+            try:
+                await worker.wait()
+            except WorkerCancelled:
+                # The execute worker dismisses its own screen once the
+                # result is set, which cancels it: it has still finished.
+                pass
+        if condition():
+            await pilot.pause()
+            return
+    pytest.fail("Drop flow never reached the expected state")
+
+
 @pytest.mark.anyio
 async def test_dropzone_modal_a11y_compliance(tmp_path):
     """Verify DropZoneModal satisfies WCAG 2.1 accessibility requirements."""
@@ -88,22 +113,16 @@ async def test_dropzone_modal_paste_and_trigger(tmp_path):
 
         # Trigger triage: it plans first and asks before moving anything.
         active_modal.trigger_drop_triage()
-        for _ in range(60):
-            await pilot.pause(0.1)
-            if isinstance(app.screen, DropPlanConfirmModal):
-                break
-        await pilot.pause()
+        await _wait_for(
+            app, pilot, lambda: isinstance(app.screen, DropPlanConfirmModal)
+        )
         assert isinstance(app.screen, DropPlanConfirmModal)
         assert active_modal.processed_result is None
         assert sample_file.exists()
 
         app.screen.query_one("#btn-confirm-drop-plan", Button).press()
 
-        # Wait for worker thread execution
-        for _ in range(60):
-            await pilot.pause(0.1)
-            if active_modal.processed_result is not None:
-                break
+        await _wait_for(app, pilot, lambda: active_modal.processed_result is not None)
 
         assert active_modal.processed_result is not None
         assert active_modal.processed_result["status"] == "success"
@@ -131,11 +150,9 @@ async def test_dropzone_cancel_at_review_moves_nothing(tmp_path):
         )
         await pilot.pause()
         dropzone.trigger_drop_triage()
-        for _ in range(100):
-            await pilot.pause(0.1)
-            if isinstance(app.screen, DropPlanConfirmModal):
-                break
-        await pilot.pause()
+        await _wait_for(
+            app, pilot, lambda: isinstance(app.screen, DropPlanConfirmModal)
+        )
         review = app.screen
         assert isinstance(review, DropPlanConfirmModal)
         assert "Nothing has been moved yet" in review.summary
@@ -435,11 +452,9 @@ async def test_dropzone_folder_drop_stages_and_moves_its_files(tmp_path):
         assert all(os.path.isabs(item["path"]) for item in dropzone.staged_items)
 
         dropzone.trigger_drop_triage()
-        for _ in range(100):
-            await pilot.pause(0.1)
-            if isinstance(app.screen, DropPlanConfirmModal):
-                break
-        await pilot.pause()
+        await _wait_for(
+            app, pilot, lambda: isinstance(app.screen, DropPlanConfirmModal)
+        )
         review = app.screen
         assert isinstance(review, DropPlanConfirmModal)
         assert "Move 6 file(s)" in review.summary
@@ -447,10 +462,7 @@ async def test_dropzone_folder_drop_stages_and_moves_its_files(tmp_path):
         assert len(dropzone._pending_drop) == 1
 
         review.query_one("#btn-confirm-drop-plan", Button).press()
-        for _ in range(100):
-            await pilot.pause(0.1)
-            if dropzone.processed_result is not None:
-                break
+        await _wait_for(app, pilot, lambda: dropzone.processed_result is not None)
 
         assert dropzone.processed_result["status"] == "success"
         assert dropzone.processed_result["processed_count"] == 6
