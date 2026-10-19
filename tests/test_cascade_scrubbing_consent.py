@@ -116,7 +116,9 @@ async def _wait_for_screen(app, screen_cls, pilot, timeout_steps=50):
     return app.screen
 
 
-async def _wait_for_widget(container, selector, widget_type=None, pilot=None, timeout_steps=50):
+async def _wait_for_widget(
+    container, selector, widget_type=None, pilot=None, timeout_steps=50
+):
     """Wait asynchronously for a child widget matching selector to be mounted in container."""
     for _ in range(timeout_steps):
         try:
@@ -174,7 +176,9 @@ async def test_tui_scrub_artifacts_button_and_confirmation_modal(tmp_path, monke
             await pilot.pause(0.2)
 
             # Press Scrub AI Artifacts button
-            btn_scrub = await _wait_for_widget(modal, "#btn-scrub-artifacts", Button, pilot=pilot)
+            btn_scrub = await _wait_for_widget(
+                modal, "#btn-scrub-artifacts", Button, pilot=pilot
+            )
             btn_scrub.press()
 
             scrub_modal = await _wait_for_screen(app, ScrubArtifactsModal, pilot=pilot)
@@ -182,7 +186,9 @@ async def test_tui_scrub_artifacts_button_and_confirmation_modal(tmp_path, monke
             assert scrub_modal.vector_count == 1
 
             # Confirm scrub
-            confirm_btn = await _wait_for_widget(scrub_modal, "#btn-confirm-scrub", Button, pilot=pilot)
+            confirm_btn = await _wait_for_widget(
+                scrub_modal, "#btn-confirm-scrub", Button, pilot=pilot
+            )
             confirm_btn.press()
             for _ in range(30):
                 if not (model_dir / "weights.onnx").exists():
@@ -241,12 +247,16 @@ async def test_tui_toggling_consent_off_presents_revocation_prompt(
             # Toggle switch off
             sw.value = False
 
-            revoke_modal = await _wait_for_screen(app, ConsentRevocationModal, pilot=pilot)
+            revoke_modal = await _wait_for_screen(
+                app, ConsentRevocationModal, pilot=pilot
+            )
             assert isinstance(revoke_modal, ConsentRevocationModal)
             assert revoke_modal.vector_count == 1
 
             # Confirm consent revocation
-            confirm_btn = await _wait_for_widget(revoke_modal, "#btn-confirm-revoke", Button, pilot=pilot)
+            confirm_btn = await _wait_for_widget(
+                revoke_modal, "#btn-confirm-revoke", Button, pilot=pilot
+            )
             confirm_btn.press()
             for _ in range(30):
                 if not (model_dir / "cached_model.bin").exists():
@@ -278,7 +288,10 @@ async def test_tui_cancelling_consent_revocation_reverts_switch(tmp_path, monkey
         assert isinstance(modal, SettingsModal)
 
         from textual.widgets import TabbedContent
-        modal.query_one("#settings-tabbed-content", TabbedContent).active = "tab-ai-privacy"
+
+        modal.query_one(
+            "#settings-tabbed-content", TabbedContent
+        ).active = "tab-ai-privacy"
         await pilot.pause(0.2)
 
         sw = await _wait_for_widget(modal, "#switch-ai-consent", Switch, pilot=pilot)
@@ -291,7 +304,9 @@ async def test_tui_cancelling_consent_revocation_reverts_switch(tmp_path, monkey
         assert isinstance(revoke_modal, ConsentRevocationModal)
 
         # Cancel revocation
-        cancel_btn = await _wait_for_widget(revoke_modal, "#btn-cancel-revoke", Button, pilot=pilot)
+        cancel_btn = await _wait_for_widget(
+            revoke_modal, "#btn-cancel-revoke", Button, pilot=pilot
+        )
         cancel_btn.press()
         await pilot.pause(0.2)
 
