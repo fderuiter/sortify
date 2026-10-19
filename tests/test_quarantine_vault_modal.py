@@ -155,7 +155,8 @@ def test_quarantine_vault_modal_release_action(staged_quarantine_item, tmp_path)
             await pilot.pause(0.3)
 
             modal.execute_release_async(staged, str(dest_file))
-            await pilot.pause(0.5)
+            await app.workers.wait_for_complete()
+            await pilot.pause()
 
             rec = db.get_quarantine_record(job_id)
             assert rec is not None
@@ -185,7 +186,8 @@ def test_quarantine_vault_modal_dismiss_action(staged_quarantine_item):
             await pilot.pause(0.3)
 
             modal.execute_dismiss_async(job_id)
-            await pilot.pause(0.5)
+            await app.workers.wait_for_complete()
+            await pilot.pause()
 
             rec = db.get_quarantine_record(job_id)
             assert rec is not None
@@ -214,7 +216,8 @@ def test_quarantine_vault_modal_reinspect_action(staged_quarantine_item):
             await pilot.pause(0.3)
 
             modal.execute_reinspect_async(job_id)
-            await pilot.pause(0.5)
+            await app.workers.wait_for_complete()
+            await pilot.pause()
 
             rec = db.get_quarantine_record(job_id)
             assert rec is not None

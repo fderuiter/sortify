@@ -610,7 +610,8 @@ class DensitySlider(Widget):
         self.min_value = min_value
         self.max_value = max_value
         self.step = step
-        self.value = max(min_value, min(max_value, value))
+        # set_reactive avoids a pre-mount watcher firing with the class default.
+        self.set_reactive(DensitySlider.value, max(min_value, min(max_value, value)))
 
     def watch_value(self, new_value: int) -> None:
         """Emit Changed event on value change."""
