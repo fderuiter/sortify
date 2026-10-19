@@ -1,6 +1,7 @@
 ---
 name: claude-handoff
 description: "Hand the current conversation off to a fresh background agent that picks up the work immediately."
+disable-model-invocation: true
 license: MIT
 metadata:
   author: Matt Pocock

@@ -1,6 +1,7 @@
 ---
 name: handoff
 description: "Compact the current conversation into a handoff document for another agent to pick up."
+disable-model-invocation: true
 license: MIT
 metadata:
   author: Matt Pocock
