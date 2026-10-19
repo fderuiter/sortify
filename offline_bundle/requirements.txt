@@ -24,7 +24,7 @@ easyocr==1.7.2
     # via smart-autosorter (pyproject.toml)
 et-xmlfile==2.0.0
     # via openpyxl
-filelock==4.1.1
+filelock==4.2.0
     # via torch
 frozenlist==1.8.0
     # via
@@ -62,7 +62,7 @@ lazy-loader==0.6
 lxml==6.1.3
     # via python-docx
 markupsafe==3.0.4
-more-itertools==11.2.0
+more-itertools==11.2.1
     # via
     #   jaraco-classes
     #   jaraco-functools
@@ -120,11 +120,11 @@ pydantic==2.14.1
     # via pydantic-settings
 pydantic-core==2.50.1
     # via pydantic
-pydantic-settings==2.15.0
+pydantic-settings==2.16.0
     # via smart-autosorter (pyproject.toml)
 pylnk3==0.4.3
     # via smart-autosorter (pyproject.toml)
-pypdf==6.20.1
+pypdf==6.21.0
     # via smart-autosorter (pyproject.toml)
 python-bidi==0.6.11
     # via easyocr
@@ -169,7 +169,7 @@ textual==8.2.8
     # via smart-autosorter (pyproject.toml)
 threadpoolctl==3.7.0
     # via scikit-learn
-tifffile==2026.9.20
+tifffile==2026.10.15
     # via scikit-image
 torch==2.14.1
     # via
