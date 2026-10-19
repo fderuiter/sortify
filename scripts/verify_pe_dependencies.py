@@ -84,6 +84,7 @@ STANDARD_SYSTEM_DLLS: Set[str] = {
     "credui.dll",
     "gpapi.dll",
     "cabinet.dll",
+    "pdh.dll",  # Performance Data Helper; psutil and hf_xet link it
 }
 
 
