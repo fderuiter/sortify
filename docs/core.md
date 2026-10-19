@@ -11,15 +11,15 @@ The system uses a two-phase pipeline to convert documents into structured sortin
 ![Multi-Format Text Extraction Flow](assets/diagrams/core_text_extraction.svg)
 
 1. **Extraction (`app.core.extractor`)**:
-    - The extractor reads raw files across multiple supported formats (TXT, CSV, PDF, DOCX, XLSX).
+    - The extractor reads raw files across multiple supported formats (TXT, CSV, PDF, DOCX, XLSX/XLS, plus images via OCR and audio via Whisper when the `ml` extra is installed).
     - It maps each file to its raw text payload using robust exception-handling to ensure that a failure in one document does not crash the entire run.
     - An asynchronous generator (`build_corpus_generator`) processes these files concurrently in a thread pool, yielding chunks of extracted text to keep memory usage low.
 
 2. **Analysis (`app.core.analyzer`)**:
     - Extracted text chunks are fed incrementally into the `IncrementalAnalyzer`.
-    - `TfidfVectorizer` transforms the text into sparse numerical embeddings.
-    - `NMF` is used to perform incremental topic modeling.
-    - Finally, a recursive clustering function creates a hierarchical sorting plan based on the dominant topics, identifying sub-topics where appropriate.
+    - `TfidfVectorizer` transforms the text into sparse vectors; when the optional ONNX model is installed, sentence embeddings are used instead.
+    - `MiniBatchKMeans` groups the vectors, and the strategy recurses into each group to build a hierarchical sorting plan with sub-folders where appropriate.
+    - Each folder is named from its documents' top TF-IDF terms, or by a local LLM when AI-assisted naming is enabled.
 
 ## Multi-Study Clinical Ingestion Pipeline
 

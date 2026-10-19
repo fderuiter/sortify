@@ -1,8 +1,13 @@
 repos:
   - repo: https://github.com/pre-commit/pre-commit-hooks
-    rev: v4.6.0
+    rev: v5.0.0
     hooks:
       - id: check-added-large-files
+      - id: check-case-conflict
+      - id: check-json
+      - id: check-toml
+      - id: check-yaml
+        args: ['--unsafe']  # mkdocs.yml uses a !!python/name tag
       - id: check-merge-conflict
       - id: debug-statements
       - id: no-commit-to-branch

@@ -13,7 +13,7 @@ Please provide a summary of the changes in this pull request.
 ## Documentation Synchronization Check
 
 - [ ] I have updated the docstrings for any new or modified public APIs.
-- [ ] I have verified that the documentation builds locally without errors.
+- [ ] I have run `uv run docs --check` and committed any regenerated files.
 - [ ] I have included the necessary API reference updates if applicable.
 
 ## Database & Configuration Check
@@ -21,8 +21,8 @@ Please provide a summary of the changes in this pull request.
 - [ ] I have verified that database schema migrations execute sequentially and have been tested.
 - [ ] I have verified that configuration schema mutations, bounds, and validations have been tested.
 
-## UI, Accessibility & Responsive Layout Check
+## Terminal UI Check
 
-- [ ] I have verified component rendering in the standalone component catalog across desktop and narrow mobile viewports (e.g. 320px/375px).
-- [ ] I have verified label overflow, wrapping, and text truncation handling on narrow viewports.
-- [ ] I have verified web accessibility standards compliance (ARIA labels, keyboard focusability, alt text) for new or updated interface elements.
+- [ ] For TUI changes, I have run the app (`uv run smart-autosorter --tui`) and checked the affected screens at a narrow terminal width (80 columns).
+- [ ] Keyboard navigation and screen-reader announcements still work for new or changed widgets.
+- [ ] I have updated TUI snapshots (`UPDATE_SNAPSHOTS=1 uv run pytest tests/test_visual_snapshots.py -n 0`) only for intended visual changes.
