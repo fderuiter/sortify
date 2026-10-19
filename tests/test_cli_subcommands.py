@@ -4,6 +4,7 @@ import io
 import json
 import os
 import tempfile
+import time
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -560,3 +561,50 @@ def test_sort_dry_run_prints_readable_plan_not_json():
         assert "Would move" in stderr
         assert "no files were moved" in stderr
         assert sorted(os.listdir(src_dir)) == before
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_config_set_persists_to_disk(tmp_path, monkeypatch):
+    """Test `config --set` writes the value to settings.json before exiting."""
+    app_dir = tmp_path / "app_dir"
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+
+    import subprocess
+    import sys
+
+    # A real process: the bug is the debounced save dying with the interpreter.
+    repo_root = Path(__file__).parent.parent.resolve()
+    result = subprocess.run(
+        [sys.executable, "-m", "app.main", "config", "--set", "MAX_FOLDERS", "7"],
+        capture_output=True,
+        text=True,
+        cwd=repo_root,
+        env={**os.environ, "PYTHONPATH": str(repo_root)},
+        timeout=120,
+    )
+    assert result.returncode == 0, result.stderr
+
+    saved = json.loads((app_dir / "settings.json").read_text(encoding="utf-8"))
+    assert saved["MAX_FOLDERS"] == 7
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_one_off_flags_are_not_persisted(tmp_path, monkeypatch):
+    """Test per-run flags on `scan` don't become the saved defaults."""
+    app_dir = tmp_path / "app_dir"
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+    src_dir = tmp_path / "workspace"
+    create_sample_corpus(src_dir)
+
+    code, _, stderr = run_cli(["config", "--set", "MAX_FOLDERS", "7"])
+    assert code == 0, stderr
+    code, _, stderr = run_cli(
+        ["scan", str(src_dir), "--max-folders", "3", "--decline-ai-consent", "--json"]
+    )
+    assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+
+    # Let any debounced save from the scan run (0.5 s timer) land first.
+    time.sleep(1.0)
+    saved = json.loads((app_dir / "settings.json").read_text(encoding="utf-8"))
+    assert saved["MAX_FOLDERS"] == 7
+    assert saved.get("AI_CONSENT_GRANTED") is None
