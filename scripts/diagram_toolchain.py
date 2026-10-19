@@ -678,8 +678,7 @@ def main():
 
     args = parser.parse_args()
 
-    cmd_action = args.command
-    is_verify = cmd_action == "verify" or args.verify_flag
+    is_verify = args.command == "verify" or args.verify_flag
 
     if is_verify:
         print("Executing diagram toolchain verification gate...")

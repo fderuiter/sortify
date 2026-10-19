@@ -49,7 +49,9 @@ from app.ui.heading import Heading
 logger = logging.getLogger(__name__)
 
 
-def _diff_highlight_paths(src_path: str, tgt_path: str) -> Tuple[Text, Text]:
+def _diff_highlight_paths(
+    src_path: str, tgt_path: str
+) -> Tuple[Text, Text]:
     """Compute contrasting color diff highlighting for two path strings."""
     if not src_path and not tgt_path:
         return Text("(None)", style="dim"), Text("(None)", style="dim")
@@ -6800,14 +6802,14 @@ class AutoSorterTUI(A11yMixin, App):
             tree.tooltip = "Interactive tree view of proposed file organization plan"
             yield tree
             with Vertical(id="right-meta-pane"):
-                yield Heading(
-                    "Side-by-Side Path Comparison", level=2, classes="meta-header"
-                )
+                yield Heading("Side-by-Side Path Comparison", level=2, classes="meta-header")
                 path_comp = Static(
                     "Select a file or folder in the tree to compare source and target paths.",
                     id="path-comparison",
                 )
-                path_comp.tooltip = "Side-by-side split column view comparing source and destination target paths"
+                path_comp.tooltip = (
+                    "Side-by-side split column view comparing source and destination target paths"
+                )
                 yield path_comp
                 yield Heading("Node Metadata Inspector", level=2, classes="meta-header")
                 meta_widget = Static(
@@ -8226,7 +8228,9 @@ class AutoSorterTUI(A11yMixin, App):
                 )
                 self._build_tree_nodes(v, child_tree_node, current_folder=sub_folder)
 
-    def _update_inspector(self, node_or_data: Any = None, announce: bool = True) -> str:
+    def _update_inspector(
+        self, node_or_data: Any = None, announce: bool = True
+    ) -> str:
         """Update and return formatted metadata text for the inspector panel and path comparison pane."""
         if node_or_data is None:
             node_or_data = self.active_tree_node
@@ -8251,19 +8255,11 @@ class AutoSorterTUI(A11yMixin, App):
             except Exception:
                 pass
             if path_comp_widget:
-                all_files = (
-                    self._collect_file_nodes_from_dict(self.plan)
-                    if hasattr(self, "plan") and self.plan
-                    else []
-                )
+                all_files = self._collect_file_nodes_from_dict(self.plan) if hasattr(self, "plan") and self.plan else []
                 if all_files:
-                    path_comp_widget.update(
-                        format_folder_path_comparison(all_files, self.base_dir)
-                    )
+                    path_comp_widget.update(format_folder_path_comparison(all_files, self.base_dir))
                 else:
-                    path_comp_widget.update(
-                        "Select a file or folder in the tree to compare source and target paths."
-                    )
+                    path_comp_widget.update("Select a file or folder in the tree to compare source and target paths.")
             return msg
 
         if data.get("is_empty_state"):
@@ -8301,11 +8297,7 @@ class AutoSorterTUI(A11yMixin, App):
             elif self.base_dir:
                 target_filepath = os.path.join(self.base_dir, target_fn)
             else:
-                target_filepath = (
-                    os.path.join(target_folder, target_fn)
-                    if target_folder
-                    else target_fn
-                )
+                target_filepath = os.path.join(target_folder, target_fn) if target_folder else target_fn
 
             if path_comp_widget:
                 table = format_side_by_side_path_comparison(

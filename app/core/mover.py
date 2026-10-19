@@ -1480,9 +1480,7 @@ def _process_move_item(
 
         try:
             if (
-                isinstance(
-                    shutil.move, (unittest.mock.Mock, unittest.mock.NonCallableMock)
-                )
+                isinstance(shutil.move, (unittest.mock.Mock, unittest.mock.NonCallableMock))
                 or hasattr(shutil.move, "mock_add_spec")
                 or getattr(shutil.move, "__name__", "") == "mock_move"
                 or getattr(shutil.move, "__module__", "") != "shutil"
