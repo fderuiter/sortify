@@ -37,6 +37,34 @@ def _remove_staging_leftovers(base_dir: str) -> None:
                     logging.warning(f"Could not remove staging file {name}: {exc}")
 
 
+def _same_content(path_a: str, path_b: str) -> bool:
+    """Return True only when both paths are regular files with identical bytes."""
+    try:
+        if os.path.samefile(path_a, path_b):
+            return True
+    except OSError:
+        return False
+    if not (os.path.isfile(path_a) and os.path.isfile(path_b)):
+        return False
+    if os.path.islink(path_a) or os.path.islink(path_b):
+        return False
+    try:
+        if os.path.getsize(path_a) != os.path.getsize(path_b):
+            return False
+        from app.core.resilient_file_ops import resilient_file_hash
+
+        # Raw bytes, not the metadata-insensitive digest get_file_hash uses.
+        return resilient_file_hash(path_a) == resilient_file_hash(path_b)
+    except OSError:
+        return False
+
+
+def _is_same_restored_path(actual: str, expected: str) -> bool:
+    return os.path.normcase(os.path.abspath(actual)) == os.path.normcase(
+        os.path.abspath(expected)
+    )
+
+
 class HistoryManager:
     """Manages full directory snapshots and rollback functionality."""
 
@@ -1197,28 +1225,31 @@ class HistoryManager:
             for step in steps_reverse:
                 target_path = step["target_path"]
                 source_path = step["source_path"]
-                file_hash = step["file_hash"]
 
                 if os.path.lexists(target_path):
                     target_dirs_to_clean.add(os.path.dirname(target_path))
                     os.makedirs(os.path.dirname(source_path), exist_ok=True)
 
                     try:
-                        if os.path.lexists(source_path):
+                        if os.path.lexists(source_path) and _same_content(
+                            source_path, target_path
+                        ):
+                            # An identical copy is already back in place.
                             from app.core.resilient_file_ops import resilient_remove
 
                             resilient_remove(target_path)
                         else:
-                            resilient_move(target_path, source_path)
+                            # resilient_move never replaces an existing file: if
+                            # something else now occupies source_path, the moved
+                            # file is restored next to it under a suffixed name.
+                            restored_path = resilient_move(target_path, source_path)
+                            if not _is_same_restored_path(restored_path, source_path):
+                                logging.warning(
+                                    f"Undo conflict: {source_path} is occupied by a different file; "
+                                    f"restored {target_path} to {restored_path} instead."
+                                )
+                                source_path = restored_path
                         unwound_count += 1
-
-                        if file_hash and os.path.exists(source_path):
-                            try:
-                                from app.core.extractor import get_file_hash
-
-                                _ = get_file_hash(source_path)
-                            except Exception:
-                                pass
 
                         if db and base_dir:
                             try:
@@ -1234,8 +1265,6 @@ class HistoryManager:
                             except Exception:
                                 pass
                     except Exception as move_err:
-                        import logging
-
                         logging.error(
                             f"Failed to unwind step {step['step_id']}: {move_err}"
                         )
