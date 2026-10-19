@@ -35,7 +35,7 @@ uv run smart-autosorter --demo                  # sorts a generated sample corpu
 uv run smart-autosorter --help                  # all subcommands and flags
 ```
 
-Subcommands: `sort`, `scan`, `config`, `daemon`, `undo`, `drop`, `ledger` and `quarantine`. Settings are layered: defaults, then environment variables, then `~/.autosorter/settings.json`, then CLI flags (for example `--max-folders`, which caps folders per level and defaults to 12).
+Subcommands: `sort`, `scan`, `config`, `daemon`, `undo`, `drop`, `ledger` and `quarantine`. Settings are layered: defaults, then `SORTIFY_`-prefixed environment variables (or `~/.autosorter/.env`), then `~/.autosorter/settings.json`, then CLI flags (for example `--max-folders`, which caps folders per level and defaults to 12).
 
 The first run asks for consent before downloading the optional ~80 MB embedding model from Hugging Face. Pass `--decline-ai-consent` to stay fully offline with TF-IDF clustering. See the [User Guide](docs/user_guide.md) and [Troubleshooting](docs/troubleshooting.md).
 

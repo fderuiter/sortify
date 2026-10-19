@@ -450,12 +450,30 @@ class Settings(BaseSettings):
         "where",
     }
 
+    # Only SORTIFY_-prefixed variables apply, and `.env` is read from the app
+    # directory (see `app_env_file()`), never from the working directory.
     model_config = SettingsConfigDict(
-        env_file=".env",
+        env_prefix="SORTIFY_",
+        env_file=None,
         env_file_encoding="utf-8",
         extra="ignore",
         validate_assignment=True,
     )
+
+
+def app_env_file() -> Path:
+    """Return the optional `.env` file that may hold SORTIFY_ settings."""
+    return get_app_dir() / ".env"
+
+
+def _env_sourced_keys(env_file: Path) -> set[str]:
+    """Return the setting names that the environment or `env_file` provides."""
+    from pydantic_settings import DotEnvSettingsSource, EnvSettingsSource
+
+    keys = set(EnvSettingsSource(Settings)().keys())
+    if env_file.is_file():
+        keys |= set(DotEnvSettingsSource(Settings, env_file=env_file)().keys())
+    return {k for k in keys if k in Settings.model_fields}
 
 
 class AppSettings:
@@ -476,8 +494,12 @@ class AppSettings:
         self._observers = defaultdict(list)
         self._observer_lock = threading.Lock()
 
+        env_file = app_env_file()
         try:
-            self._settings_model = Settings()
+            self._settings_model = Settings(_env_file=env_file)
+            # Environment values apply each run but are never written to
+            # settings.json, unless the setting is explicitly changed.
+            self._env_sourced_keys = _env_sourced_keys(env_file)
         except ValidationError as e:
             print(f"Configuration error: {e}", file=sys.stderr)
             sys.exit(1)
@@ -547,6 +569,7 @@ class AppSettings:
                 if hasattr(self._settings_model, key):
                     try:
                         setattr(self._settings_model, key, value)
+                        self._env_sourced_keys.discard(key)
                     except (ValueError, ValidationError) as e:
                         if not has_validation_errors:
                             logging.warning(
@@ -620,6 +643,8 @@ class AppSettings:
         with self._lock:
             data = self._settings_model.model_dump(mode="json")
             data.update(self._transient_values)
+            for key in self._env_sourced_keys:
+                data.pop(key, None)
         try:
             # Encrypt PROXY setting if present and not already encrypted
             proxy_val = data.get("PROXY", "")
@@ -817,12 +842,14 @@ class AppSettings:
             "_observers",
             "_observer_lock",
             "_transient_values",
+            "_env_sourced_keys",
         ):
             super().__setattr__(name, value)
         else:
             if name == "MAX_AUDIO_WORKERS":
                 name = "AUDIO_MAX_WORKERS"
             self._transient_values.pop(name, None)
+            self._env_sourced_keys.discard(name)
             if name == "PROXY" and value != "<DECRYPTION_FAILED>":
                 super().__setattr__("_raw_encrypted_proxy", None)
             setattr(self._settings_model, name, value)
