@@ -668,12 +668,9 @@ class ContinuousWatchdogDaemon:
                         asyncio.gather(*pending, return_exceptions=True)
                     )
 
-                if getattr(self, "_app_session", None):
-                    try:
-                        self._app_session.close()
-                    except Exception:
-                        pass
-                    self._app_session = None
+                # Don't close the session here: cancelling a task doesn't stop
+                # the move it started on the sort thread. stop() closes it once
+                # that thread has drained.
                 loop.close()
 
         self._execution_thread = ContextPropagatingThread(
