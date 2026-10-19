@@ -72,50 +72,92 @@ convention = "numpy"
 [tool.ruff.format]
 docstring-code-format = true
 
-[tool.mypy]
-ignore_missing_imports = true
-implicit_optional = true
+[tool.ty.environment]
+python-version = "3.12"
 
-[[tool.mypy.overrides]]
-module = [
-    "app.ui.*",
-    "app.cli.*",
-    "app.main",
-    "app.core.analyzer",
-    "app.core.analyzer_strategies",
-    "app.core.cache",
-    "app.core.daemon",
-    "app.core.db",
-    "app.core.db_conn",
-    "app.core.db_worker",
-    "app.core.downloader",
-    "app.core.env_helper",
-    "app.core.extractor",
-    "app.core.extractor_strategies",
-    "app.core.file_renamer",
-    "app.core.forensic_scanner",
-    "app.core.hashes_registry",
-    "app.core.integration",
-    "app.core.jev_classifier",
-    "app.core.ledger",
-    "app.core.link_manager",
-    "app.core.metadata",
-    "app.core.offline_loader",
-    "app.core.path_utils",
-    "app.core.quarantine_interceptor",
-    "app.core.scanner",
-    "app.core.semantic_embeddings",
-    "app.core.session",
-    "app.core.shared_registry",
-    "app.core.text_utils",
-    "app.core.user_space_bootstrap",
+[tool.ty.terminal]
+error-on-warning = false
+
+[tool.ty.src]
+include = ["app"]
+exclude = ["app/binaries"]
+
+[tool.ty.analysis]
+# Optional `ml` extra and `docs` group packages, imported lazily behind guards.
+allowed-unresolved-imports = [
+    "easyocr",
+    "llama_cpp",
+    "mkdocs",
+    "onnxruntime",
+    "torch",
+    "transformers",
 ]
-ignore_errors = true
+
+[tool.ty.rules]
+# `def f(x: str = None)` is used throughout; mypy ran with implicit_optional.
+invalid-parameter-default = "ignore"
+
+# Modules mypy skipped with ignore_errors. Shrink this list as modules are typed.
+[[tool.ty.overrides]]
+include = [
+    "app/ui/**",
+    "app/cli/**",
+    "app/main.py",
+    "app/core/analyzer.py",
+    "app/core/analyzer_strategies.py",
+    "app/core/cache.py",
+    "app/core/daemon.py",
+    "app/core/db.py",
+    "app/core/db_conn.py",
+    "app/core/db_worker.py",
+    "app/core/downloader.py",
+    "app/core/env_helper.py",
+    "app/core/extractor.py",
+    "app/core/extractor_strategies.py",
+    "app/core/file_renamer.py",
+    "app/core/forensic_scanner.py",
+    "app/core/hashes_registry.py",
+    "app/core/integration.py",
+    "app/core/jev_classifier.py",
+    "app/core/ledger.py",
+    "app/core/link_manager.py",
+    "app/core/metadata.py",
+    "app/core/offline_loader.py",
+    "app/core/path_utils.py",
+    "app/core/quarantine_interceptor.py",
+    "app/core/scanner.py",
+    "app/core/semantic_embeddings.py",
+    "app/core/session.py",
+    "app/core/shared_registry.py",
+    "app/core/text_utils.py",
+    "app/core/user_space_bootstrap.py",
+]
+
+[tool.ty.overrides.rules]
+all = "ignore"
+
+# Modules mypy passed only because it skips the bodies of unannotated functions.
+# ty checks them, so their findings are warnings until fixed.
+[[tool.ty.overrides]]
+include = [
+    "app/core/crypto.py",
+    "app/core/diagram_schema.py",
+    "app/core/history.py",
+    "app/core/mover.py",
+    "app/core/policy_engine.py",
+    "app/core/resilient_file_ops.py",
+    "app/demo.py",
+]
+
+[tool.ty.overrides.rules]
+invalid-argument-type = "warn"
+invalid-method-override = "warn"
+no-matching-overload = "warn"
+unresolved-attribute = "warn"
 
 [dependency-groups]
 dev = [
     "deptry",
-    "mypy>=2.3.1",
     "pefile>=2023.2.7",
     "pre-commit>=4.6.2",
     "pytest>=8.4.2",
@@ -126,6 +168,7 @@ dev = [
     "reportlab>=5.0.0",
     "requests",
     "ruff>=0.16.9",
+    "ty>=0.0.89",
 ]
 
 docs = [

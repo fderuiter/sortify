@@ -19,7 +19,7 @@ Dependency groups (PEP 735, in `pyproject.toml`):
 
 | Group | Used for |
 |---|---|
-| `dev` | pytest, ruff, mypy, pre-commit and the repo validators |
+| `dev` | pytest, ruff, ty, pre-commit and the repo validators |
 | `docs` | MkDocs site build |
 | `build` | PyInstaller executables (`scripts/build.py`) |
 | `notebooks` | Jupyter |
@@ -31,7 +31,7 @@ uv run smart-autosorter --demo          # end-to-end run on a generated sample c
 uv run pytest -m "not slow"             # fast suite, parallel by default (pytest-xdist)
 uv run pytest -m slow -n 0              # ML, snapshot and integration tests
 uv run ruff check . && uv run ruff format .
-uv run mypy app/
+uv run ty check                         # type check app/ (config in pyproject.toml)
 uv run pre-commit run --all-files       # every hook, same as CI's static checks
 uv run docs --check                     # regenerate docs, audit links, build the site
 uv run mkdocs serve                     # preview the docs site at http://127.0.0.1:8000
@@ -41,7 +41,7 @@ Set `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` when running tests on
 
 ## What the hooks and CI check
 
-`.pre-commit-config.yaml` runs ruff (lint and format) plus the repo's own validators in `scripts/`:
+`.pre-commit-config.yaml` runs ruff (lint and format), ty (type check) plus the repo's own validators in `scripts/`:
 
 | Hook | Script | Fails when |
 |---|---|---|
@@ -53,7 +53,7 @@ Set `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` when running tests on
 | `validate-config-schema` | `scripts/validate_config.py` | `app/config.py` and `app/config_schema.json` disagree |
 | `validate-links` | `scripts/validate_links.py --local-only` | a URL in a changed file is malformed (CI also checks that external links resolve) |
 
-CI (`.github/workflows/ci.yml`) runs the same checks, mypy, a dependency audit and secret scan, then the test suite on Linux, Windows and macOS. The aggregate `Required CI` job is the merge gate.
+CI (`.github/workflows/ci.yml`) runs the same checks, a dependency audit and secret scan, then the test suite on Linux, Windows and macOS. The aggregate `Required CI` job is the merge gate.
 
 ## Updating baselines
 

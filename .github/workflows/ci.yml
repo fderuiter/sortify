@@ -53,7 +53,7 @@ jobs:
       uses: raven-actions/actionlint@v2
 
   type-check:
-    name: Type Check (MyPy)
+    name: Type Check (ty)
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
@@ -71,11 +71,11 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --frozen --only-group dev
+        uv sync --frozen
 
-    - name: Run MyPy Type Check
+    - name: Run ty Type Check
       run: |
-        uv run mypy app/
+        uv run ty check --output-format github
 
   static-checks:
     name: Static Checks
