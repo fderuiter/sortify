@@ -2,10 +2,11 @@
 
 Mock at **system boundaries** only:
 
-- External APIs (payment, email, etc.)
-- Databases (sometimes - prefer test DB)
+- External APIs (Hugging Face downloads, the security-advisory lookup, LLM backends)
+- Heavy optional libraries behind the `[ml]` extra (torch, easyocr, transformers)
+- Databases (sometimes; prefer a real temporary SQLCipher DB)
 - Time/randomness
-- File system (sometimes)
+- File system (rarely; `tmp_path` is cheap and real)
 
 Don't mock:
 
@@ -21,35 +22,30 @@ At system boundaries, design interfaces that are easy to mock:
 
 Pass external dependencies in rather than creating them internally:
 
-```typescript
-// Easy to mock
-function processPayment(order, paymentClient) {
-  return paymentClient.charge(order.total);
-}
+```python
+# Easy to mock
+def download_model(name: str, client: HubClient) -> Path:
+    return client.fetch(name)
 
-// Hard to mock
-function processPayment(order) {
-  const client = new StripeClient(process.env.STRIPE_KEY);
-  return client.charge(order.total);
-}
+# Hard to mock
+def download_model(name: str) -> Path:
+    client = HubClient(token=os.environ["HF_TOKEN"])
+    return client.fetch(name)
 ```
 
 **2. Prefer SDK-style interfaces over generic fetchers**
 
 Create specific functions for each external operation instead of one generic function with conditional logic:
 
-```typescript
-// GOOD: Each function is independently mockable
-const api = {
-  getUser: (id) => fetch(`/users/${id}`),
-  getOrders: (userId) => fetch(`/users/${userId}/orders`),
-  createOrder: (data) => fetch('/orders', { method: 'POST', body: data }),
-};
+```python
+# GOOD: Each function is independently mockable
+class AdvisoryClient:
+    def get_advisories(self, model_id: str) -> list[Advisory]: ...
+    def get_model_hash(self, model_id: str) -> str: ...
 
-// BAD: Mocking requires conditional logic inside the mock
-const api = {
-  fetch: (endpoint, options) => fetch(endpoint, options),
-};
+# BAD: Mocking requires conditional logic inside the mock
+class AdvisoryClient:
+    def request(self, path: str, **params) -> dict: ...
 ```
 
 The SDK approach means:
@@ -57,3 +53,8 @@ The SDK approach means:
 - No conditional logic in test setup
 - Easier to see which endpoints a test exercises
 - Type safety per endpoint
+
+## In this repo
+
+- Fake missing ML packages by inserting synthetic modules into `sys.modules` (see `monkeypatch.setitem(sys.modules, "torch", fake_torch)`), not by patching deep attribute paths inside `app/`.
+- Never add a test-only branch to production code (`PYTEST_CURRENT_TEST`, `"unittest.mock" in sys.modules`). Inject the dependency instead, so the test runs the same path production runs.

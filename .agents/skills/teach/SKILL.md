@@ -1,6 +1,7 @@
 ---
 name: teach
 description: "Teach the user a new skill or concept, within this workspace."
+disable-model-invocation: true
 license: MIT
 metadata:
   author: Matt Pocock

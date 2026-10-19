@@ -8,7 +8,7 @@ A["Directory Selection"]
 B(["File Extraction &amp; Generator"])
 C(["Chunked Yielding"])
 D(["Incremental Analyzer (partial_fit)"])
-E(["TF-IDF &amp; NMF Clustering"])
+E(["TF-IDF / Embeddings + K-Means Clustering"])
 F(["Recursive Topic Grouping"])
 G[("Generate Sorting Plan")]
 H["UI Tree Rendering"]

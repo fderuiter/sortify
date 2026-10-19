@@ -1,95 +1,62 @@
 ---
 name: setup-pre-commit
-description: "Set up Husky pre-commit hooks with lint-staged (Prettier), type checking, and tests in the current repo. Use when user wants to add pre-commit hooks, set up Husky, configure lint-staged, or add commit-time formatting/typechecking/testing."
+description: "Add or change a commit-time check in this repo's pre-commit framework config (`.pre-commit-config.yaml`). Use when the user wants a new hook, a hook scoped to staged files, or commit-time formatting, linting, type checking or validation."
 license: MIT
 metadata:
-  author: Matt Pocock
-  version: "1.0"
+  author: Matt Pocock (adapted for Sortify)
+  version: "1.1"
 ---
 
 # Setup Pre-Commit Hooks
 
-## What This Sets Up
-
-- **Husky** pre-commit hook
-- **lint-staged** running Prettier on all staged files
-- **Prettier** config (if missing)
-- **typecheck** and **test** scripts in the pre-commit hook
+Sortify uses the Python [pre-commit](https://pre-commit.com) framework, driven through `uv`. The config already exists; this skill adds or changes hooks in it. It never introduces a second hook system (Husky, lint-staged, a hand-written `.git/hooks/pre-commit`).
 
 ## Steps
 
-### 1. Detect package manager
+### 1. Read what is there
 
-Check for `package-lock.json` (npm), `pnpm-lock.yaml` (pnpm), `yarn.lock` (yarn), `bun.lockb` (bun). Use whichever is present. Default to npm if unclear.
+Read `.pre-commit-config.yaml`. Note the two kinds of hook it holds:
 
-### 2. Install dependencies
+- **Upstream hooks** under a `repo: <git URL>` entry with a pinned `rev`.
+- **Local hooks** under `repo: local`, run as `language: system` with an `entry` that starts with `uv run`, so they use the project's locked tool versions.
 
-Install as devDependencies:
+If the check the user wants already exists, stop and point at it.
 
-```
-husky lint-staged prettier
-```
+### 2. Pick the hook shape
 
-### 3. Initialize Husky
+- A tool already in the `dev` dependency group (ruff, mypy, pytest) → a **local** hook with `entry: uv run <tool> ...`. Adding a new tool means adding it to the `dev` group in `pyproject.toml` first, with `uv add --group dev <tool>`.
+- A generic file check that `pre-commit/pre-commit-hooks` already ships → add its `id` to that existing upstream entry.
+- A repo validator under `scripts/` → a local hook with `entry: uv run python scripts/<name>.py`.
 
-```bash
-npx husky init
-```
+### 3. Scope it to the files it checks
 
-This creates `.husky/` dir and adds `prepare: "husky"` to package.json.
+- Set `files:` (a regex) or `types: [python]` so the hook runs only when relevant files are staged.
+- Leave `pass_filenames` at its default (true) when the tool accepts file arguments, so it checks only staged files. Set `pass_filenames: false` only for whole-repo checks, and give those a tight `files:` regex so they don't run on every commit.
+- Keep commit-time hooks fast. Anything over a few seconds (the full test suite, mypy on the whole repo, builds) belongs in CI, not here.
 
-### 4. Create `.husky/pre-commit`
+### 4. Write the hook
 
-Write this file (no shebang needed for Husky v9+):
+Match the style of the neighbouring local hooks:
 
-```
-npx lint-staged
-npm run typecheck
-npm run test
-```
-
-**Adapt**: Replace `npm` with detected package manager. If repo has no `typecheck` or `test` script in package.json, omit those lines and tell the user.
-
-### 5. Create `.lintstagedrc`
-
-```json
-{
-  "*": "prettier --ignore-unknown --write"
-}
+```yaml
+      - id: mypy-staged
+        name: MyPy (staged files)
+        entry: uv run mypy
+        language: system
+        types: [python]
 ```
 
-### 6. Create `.prettierrc` (if missing)
+### 5. Verify
 
-Only create if no Prettier config exists. Use these defaults:
+- [ ] `uv run pre-commit validate-config` passes
+- [ ] `uv run pre-commit run <id> --all-files` runs the new hook and its result is what you expect
+- [ ] Staging one relevant file and running `uv run pre-commit run <id>` triggers it; staging an unrelated file skips it
 
-```json
-{
-  "useTabs": false,
-  "tabWidth": 2,
-  "printWidth": 80,
-  "singleQuote": false,
-  "trailingComma": "es5",
-  "semi": true,
-  "arrowParens": "always"
-}
-```
+### 6. Commit
 
-### 7. Verify
-
-- [ ] `.husky/pre-commit` exists and is executable
-- [ ] `.lintstagedrc` exists
-- [ ] `prepare` script in package.json is `"husky"`
-- [ ] `prettier` config exists
-- [ ] Run `npx lint-staged` to verify it works
-
-### 8. Commit
-
-Stage all changed/created files and commit with message: `Add pre-commit hooks (husky + lint-staged + prettier)`
-
-This will run through the new pre-commit hooks: a good smoke test that everything works.
+Commit `.pre-commit-config.yaml` (and `pyproject.toml` / `uv.lock` if a tool was added) on a feature branch. The `no-commit-to-branch` hook blocks commits to `main`.
 
 ## Notes
 
-- Husky v9+ doesn't need shebangs in hook files
-- `prettier --ignore-unknown` skips files Prettier can't parse (images, etc.)
-- The pre-commit runs lint-staged first (fast, staged-only), then full typecheck and tests
+- Contributors install the hooks with `uv run pre-commit install`.
+- `uv run pre-commit autoupdate` bumps the `rev` of upstream hooks; review the diff before committing it.

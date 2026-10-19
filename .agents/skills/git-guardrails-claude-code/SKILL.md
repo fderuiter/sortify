@@ -29,7 +29,7 @@ Ask the user: install for **this project only** (`.claude/settings.json`) or **a
 
 ### 2. Copy the hook script
 
-The bundled script is at: [scripts/block-dangerous-git.sh](./references/block-dangerous-git.sh)
+The bundled script is at: [references/block-dangerous-git.sh](references/block-dangerous-git.sh)
 
 Copy it to the target location based on scope:
 

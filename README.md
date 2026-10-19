@@ -1,80 +1,72 @@
 # Smart AutoSorter AI Pro
 
-Smart AutoSorter AI Pro is a machine-learning based document organization tool.
-
-It extracts text from various file formats, uses TF-IDF and NMF to cluster files by semantic topics, and safely organizes them into a structured directory hierarchy.
+Smart AutoSorter AI Pro (package `smart-autosorter`, shown as "Sortify AI Pro" in the terminal UI) is a local, offline-first document organizer. It scans a folder, extracts the text of each file, routes files by rules or by content clustering, and moves them into a generated folder tree. Every run is recorded so it can be undone.
 
 ## Features
-- **Semantic Clustering:** Understands themes in your documents.
-- **Robust Extraction:** Supports PDF, DOCX, CSV, and XLSX.
-- **Modern UI:** Lightweight terminal user interface and interactive CLI workflows.
 
-## System Limits & Constraints
-To ensure optimal performance and accuracy, Smart AutoSorter AI Pro enforces the following hardcoded constraints:
-- **Supported File Formats:** Only `.txt`, `.docx`, `.csv`, `.xlsx`, `.xls`, and `.pdf` files are supported for text extraction and clustering.
-- **Minimum File Requirement:** At least 3 supported files are required to enable AI-driven clustering. If fewer files are present, sorting will not proceed optimally.
-- **Maximum Folders:** The AI will generate an upper limit of 12 subdirectories for organizing the documents.
-- **Miscellaneous Folder:** Any files with insufficient text, low semantic scores, or unreadable data are automatically moved to a fallback `Miscellaneous` folder.
+- **Rules first, clustering second.** Locked paths, compliance policies, a sensitivity classifier, keyword and learned rules, extension categories and previous placements are applied before anything is clustered.
+- **Content clustering.** Remaining documents are vectorized with TF-IDF (or ONNX sentence embeddings when the optional model is installed) and grouped with `MiniBatchKMeans`, recursing into sub-folders. Folders are named from each cluster's top TF-IDF terms, or by a local LLM when AI-assisted naming is enabled.
+- **Many formats.** Text is extracted from `.txt`, `.docx`, `.csv`, `.xlsx`, `.xls` and `.pdf`; images (`.png`, `.jpg`, `.jpeg`) via OCR and audio (`.mp3`, `.wav`, `.m4a`) via Whisper when the `ml` extra is installed. Other files are sorted into extension categories.
+- **Safe moves.** A dry-run verifier checks the plan for collisions, path-length and boundary problems before anything moves; moves are journaled and can be rolled back with `undo`.
+- **Encrypted local state.** Extracted text and vectors live in a SQLCipher database with column-level encryption; the key is kept in the OS keyring, with a permission-restricted key file as fallback.
+- **Three ways to run it:** a Textual terminal UI, a scriptable CLI, and a folder-watching daemon.
 
-## Installation and Execution
+## Installing
 
-Smart AutoSorter AI Pro is distributed as a zero-config standalone executable. You do not need to install Python, system packages, or manage dependencies.
+No release has been published yet, so run it from source. You need [uv](https://docs.astral.sh/uv/) and Python 3.12 (uv installs it for you from `.python-version`).
 
-### Windows
-1. Download the `SmartAutoSorter-Windows.exe` from the latest release.
-2. Double-click the executable to launch the application instantly.
-
-### Linux
-1. Download the `SmartAutoSorter-Linux` binary from the latest release.
-2. Make the file executable: `chmod +x SmartAutoSorter-Linux`
-3. Run the application: `./SmartAutoSorter-Linux`
-
-For core contributors and development setup, please refer to the [Contributor Guide](docs/contributor.md).
-
-## Architecture
-
-The application is structured to strictly separate business logic from the user interface:
-
-- **app/cli/**: Modular CLI subcommand registry and domain-specific command handlers (`ledger`, `quarantine`).
-- **app/core/**: Contains the core business logic, security helpers, text extraction, machine learning models, and file operations.
-- **app/ui/**: Terminal User Interface (Textual TUI) and notification dispatchers.
-
-## Terminal UI and Visual Snapshot Testing
-
-To catch UI structural and visual regressions before they reach the user, we employ visual snapshot testing frameworks (`tests/test_visual_snapshots.py`).
-
-To run the UI snapshot tests:
 ```bash
-uv run pytest tests/test_visual_snapshots.py
+git clone https://github.com/fderuiter/sortify.git
+cd sortify
+uv sync                 # core install
+uv sync --extra ml      # optional: OCR, audio transcription, embeddings, LLM naming
 ```
 
-If you intentionally alter the structure of the sorting tree or UI components, you must update the golden snapshots:
+Once tagged releases exist, the release workflow publishes self-contained archives for Windows, Linux and macOS (`smart-autosorter-<OS>` with a SHA-256 checksum and SBOM).
+
+## Usage
+
 ```bash
-UPDATE_SNAPSHOTS=1 uv run pytest tests/test_visual_snapshots.py
+uv run smart-autosorter                         # open the terminal UI
+uv run smart-autosorter sort ~/Downloads --dry-run
+uv run smart-autosorter scan ~/Downloads --json  # plan only, never moves files
+uv run smart-autosorter undo --latest
+uv run smart-autosorter --demo                  # sorts a generated sample corpus
+uv run smart-autosorter --help                  # all subcommands and flags
 ```
-Commit the updated snapshot files located in `tests/snapshots/` so reviewers can verify the visual and structural differences.
-## Security & Privacy
 
-For details regarding our security posture, vulnerability reporting, and network dependencies, please read our [Security Policy](SECURITY.md). 
-To understand how your data is processed locally and stored, please refer to our [Privacy Policy](PRIVACY.md).
+Subcommands: `sort`, `scan`, `config`, `daemon`, `undo`, `drop`, `ledger` and `quarantine`. Settings are layered: defaults, then environment variables, then `~/.autosorter/settings.json`, then CLI flags (for example `--max-folders`, which caps folders per level and defaults to 12).
 
-## Documentation
-Check the `docs/` folder for the MkDocs configuration or run `uv run mkdocs build` to build the site.
+The first run asks for consent before downloading the optional ~80 MB embedding model from Hugging Face. Pass `--decline-ai-consent` to stay fully offline with TF-IDF clustering. See the [User Guide](docs/user_guide.md) and [Troubleshooting](docs/troubleshooting.md).
 
-## Architectural Overview
+## Project layout
 
-This repository strictly separates the presentation layer from business logic.
+| Path | What lives there |
+|---|---|
+| `app/main.py` | CLI entry point and argument parser |
+| `app/cli/` | Subcommand handlers (`ledger`, `quarantine`) and the docs generator |
+| `app/core/` | Pipeline: scanning, extraction, analysis, verification, moves, history, database, crypto, daemon |
+| `app/ui/` | Textual terminal UI and notifications |
+| `app/plugins/` | Bundled plugins (clinical TMF/ISF compliance) |
+| `app/config.py` | Pydantic settings model (`config_schema.json` is its JSON schema) |
+| `scripts/` | Build, docs, diagram and repository validation tools |
+| `tests/` | Pytest suite, including TUI snapshot tests under `tests/snapshots/` |
+| `docs/` | MkDocs site sources |
+
+The [architecture guide](docs/architecture.md) walks through the data flow.
 
 ![Core Architecture Diagram](docs/assets/diagrams/core_architecture.svg)
 
-*   **`app/config.py`**: Defines global configuration constants, machine learning parameters, and NLP stop words.
+## Contributing
 
-### `app/core/` Package (Business Logic & Intelligence)
-This package contains the domain logic and data manipulation features. New extraction or processing logic should be added here.
-*   **`app/core/extractor.py`**: Data ingestion layer. Parses and extracts text asynchronously from PDFs, Word docs, and Excel files.
-*   **`app/core/analyzer.py`**: Core intelligence engine. Uses NLP and unsupervised Machine Learning (TF-IDF and NMF) to cluster document themes.
-*   **`app/core/mover.py`**: Manages physical file organization according to the AI's plan.
+See [CONTRIBUTING.md](CONTRIBUTING.md) for setup, checks and pull request conventions. The short version:
 
-### `app/ui/` Package (Presentation Layer)
-This package contains all Terminal User Interface code.
-*   **`app/ui/tui.py`**: Active Textual terminal user interface and accessibility auditing hooks.
+```bash
+uv sync --all-groups
+uv run pre-commit install
+uv run pytest -m "not slow"
+```
+
+## Security and privacy
+
+Documents are processed on your machine. Network access is limited to the optional model download and a security-advisory lookup for that model; see [PRIVACY.md](PRIVACY.md). Report vulnerabilities as described in [SECURITY.md](SECURITY.md).

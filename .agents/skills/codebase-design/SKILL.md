@@ -74,26 +74,25 @@ Good interfaces make testing natural:
 
 1. **Accept dependencies, don't create them.**
 
-   ```typescript
-   // Testable
-   function processOrder(order, paymentGateway) {}
+   ```python
+   # Testable
+   def execute_moves(plan: SortPlan, ledger: MoveLedger) -> MoveReport: ...
 
-   // Hard to test
-   function processOrder(order) {
-     const gateway = new StripeGateway();
-   }
+   # Hard to test
+   def execute_moves(plan: SortPlan) -> MoveReport:
+       ledger = MoveLedger(get_default_db_path())
    ```
 
 2. **Return results, don't produce side effects.**
 
-   ```typescript
-   // Testable
-   function calculateDiscount(cart): Discount {}
+   ```python
+   # Testable
+   def plan_moves(documents: list[Document]) -> SortPlan: ...
 
-   // Hard to test
-   function applyDiscount(cart): void {
-     cart.total -= discount;
-   }
+   # Hard to test
+   def plan_and_move(documents: list[Document]) -> None:
+       for doc in documents:
+           shutil.move(doc.path, choose_target(doc))
    ```
 
 3. **Small surface area.** Fewer methods = fewer tests needed. Fewer params = simpler test setup.
@@ -109,10 +108,10 @@ Good interfaces make testing natural:
 ## Rejected framings
 
 - **Depth as ratio of implementation-lines to interface-lines** (Ousterhout): rewards padding the implementation. We use depth-as-leverage instead.
-- **"Interface" as the TypeScript `interface` keyword or a class's public methods**: too narrow: interface here includes every fact a caller must know.
+- **"Interface" as a `Protocol`/ABC or a class's public methods**: too narrow: interface here includes every fact a caller must know.
 - **"Boundary"**: overloaded with DDD's bounded context. Say **seam** or **interface**.
 
 ## Going deeper
 
-- **Deepening a cluster given its dependencies**, see [DEEPENING.md](DEEPENING.md): dependency categories, seam discipline, and replace-don't-layer testing.
-- **Exploring alternative interfaces**, see [DESIGN-IT-TWICE.md](DESIGN-IT-TWICE.md): spin up parallel sub-agents to design the interface several radically different ways, then compare on depth, locality, and seam placement.
+- **Deepening a cluster given its dependencies**, see [DEEPENING.md](references/DEEPENING.md): dependency categories, seam discipline, and replace-don't-layer testing.
+- **Exploring alternative interfaces**, see [DESIGN-IT-TWICE.md](references/DESIGN-IT-TWICE.md): spin up parallel sub-agents to design the interface several radically different ways, then compare on depth, locality, and seam placement.

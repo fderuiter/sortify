@@ -8,9 +8,20 @@ from scripts.auto_merge_controller import (
     AutoMergeAction,
     AutoMergeResult,
     GitHubClient,
+    build_pr_metadata,
     is_pr_eligible_for_automerge,
     process_auto_merge_queue,
 )
+
+VERIFIED_COMMIT = {"sha": "c1", "commit": {"verification": {"verified": True}}}
+
+
+def _stub_pr_contents(client, filenames, labels=None):
+    """Make the API-sourced re-classification see the given files and commits."""
+    client.list_pull_request_files.return_value = [
+        {"filename": name, "additions": 1, "deletions": 0} for name in filenames
+    ]
+    client.list_pull_request_commits.return_value = [VERIFIED_COMMIT]
 
 
 def test_is_pr_eligible_for_automerge():
@@ -88,11 +99,8 @@ def test_process_queue_merges_eligible_pr():
         "verified": True,
         "reason": "valid",
     }
-    client.get_check_runs.return_value = {
-        "Required CI": "success",
-        "automerge/classification": "success",
-    }
-    client.get_commit_status_checks.return_value = {}
+    _stub_pr_contents(client, ["docs/guide.md"])
+    client.get_required_ci_conclusion.return_value = "success"
     client.merge_pull_request.return_value = True
 
     res = process_auto_merge_queue(client)
@@ -127,6 +135,7 @@ def test_process_queue_updates_behind_branch():
         "verified": True,
         "reason": "valid",
     }
+    _stub_pr_contents(client, ["docs/guide.md"])
     client.update_branch.return_value = True
 
     res = process_auto_merge_queue(client)
@@ -157,8 +166,8 @@ def test_process_queue_does_not_update_blocked_mergeable_state():
         "verified": True,
         "reason": "valid",
     }
-    client.get_check_runs.return_value = {}
-    client.get_commit_status_checks.return_value = {}
+    _stub_pr_contents(client, ["docs/guide.md"])
+    client.get_required_ci_conclusion.return_value = None
 
     res = process_auto_merge_queue(client)
     assert res.action == AutoMergeAction.NONE
@@ -186,6 +195,7 @@ def test_process_queue_handles_branch_update_conflict():
         "verified": True,
         "reason": "valid",
     }
+    _stub_pr_contents(client, ["docs/guide.md"])
     client.update_branch.return_value = False  # Conflict on update
 
     res = process_auto_merge_queue(client)
@@ -250,6 +260,132 @@ def test_process_queue_bot_commit_verification():
     assert res.pr_id is None
     client.add_labels.assert_called_once_with(205, ["automerge:blocked", "risk:high"])
     client.merge_pull_request.assert_not_called()
+
+
+def _eligible_pr(number, sha="sha_head", labels=None):
+    return {
+        "number": number,
+        "title": "docs: tweak",
+        "draft": False,
+        "state": "open",
+        "head": {"sha": sha},
+        "mergeable": True,
+        "mergeable_state": "clean",
+        "user": {"login": "stitch"},
+        "labels": [{"name": name} for name in (labels or ["automerge:eligible"])],
+    }
+
+
+def test_process_queue_reclassifies_and_blocks_self_approved_pr():
+    """A PR that labels itself eligible but touches a sensitive path is not merged."""
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 300, "labels": [{"name": "automerge:eligible"}], "draft": False}
+    ]
+    client.get_pull_request.return_value = _eligible_pr(300)
+    client.get_commit_verification.return_value = {"verified": True}
+    _stub_pr_contents(client, ["scripts/classify_pr.py"])
+    client.get_required_ci_conclusion.return_value = "success"
+
+    res = process_auto_merge_queue(client)
+    assert res.action == AutoMergeAction.NONE
+    client.merge_pull_request.assert_not_called()
+    client.update_branch.assert_not_called()
+
+
+def test_process_queue_requires_green_required_ci_check_run():
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 301, "labels": [{"name": "automerge:eligible"}], "draft": False}
+    ]
+    client.get_pull_request.return_value = _eligible_pr(301)
+    client.get_commit_verification.return_value = {"verified": True}
+    _stub_pr_contents(client, ["docs/guide.md"])
+    client.get_required_ci_conclusion.return_value = "failure"
+
+    res = process_auto_merge_queue(client)
+    assert res.action == AutoMergeAction.NONE
+    client.merge_pull_request.assert_not_called()
+
+
+def test_get_required_ci_conclusion_ignores_non_actions_check_runs():
+    client = GitHubClient("fake_token", "owner", "repo")
+    client._get = MagicMock(
+        return_value={
+            "check_runs": [
+                {
+                    "id": 9,
+                    "name": "Required CI",
+                    "conclusion": "success",
+                    "app": {"slug": "some-other-app"},
+                },
+                {
+                    "id": 5,
+                    "name": "Required CI",
+                    "conclusion": "failure",
+                    "app": {"slug": "github-actions"},
+                },
+            ]
+        }
+    )
+    assert client.get_required_ci_conclusion("sha") == "failure"
+    client._get.assert_called_once_with(
+        "commits/sha/check-runs",
+        params={"check_name": "Required CI", "per_page": 100},
+    )
+
+
+def test_get_required_ci_conclusion_uses_latest_actions_run():
+    client = GitHubClient("fake_token", "owner", "repo")
+    client._get = MagicMock(
+        return_value={
+            "check_runs": [
+                {
+                    "id": 1,
+                    "name": "Required CI",
+                    "conclusion": "failure",
+                    "app": {"slug": "github-actions"},
+                },
+                {
+                    "id": 2,
+                    "name": "Required CI",
+                    "conclusion": "success",
+                    "app": {"slug": "github-actions"},
+                },
+            ]
+        }
+    )
+    assert client.get_required_ci_conclusion("sha") == "success"
+
+
+def test_get_required_ci_conclusion_missing_returns_none():
+    client = GitHubClient("fake_token", "owner", "repo")
+    client._get = MagicMock(return_value={"check_runs": []})
+    assert client.get_required_ci_conclusion("sha") is None
+
+
+def test_build_pr_metadata_uses_api_data():
+    client = MagicMock(spec=GitHubClient)
+    client.list_pull_request_files.return_value = [
+        {"filename": "app/x.py", "additions": 3, "deletions": 2},
+        {"filename": "docs/y.md", "additions": 1, "deletions": 0},
+    ]
+    client.list_pull_request_commits.return_value = [
+        VERIFIED_COMMIT,
+        {"sha": "bad", "commit": {"verification": {"verified": False}}},
+    ]
+    pr = _eligible_pr(302, labels=["automerge", "dependencies"])
+    pr["title"] = "Bump foo: breaking change"
+    pr["user"] = {"login": "notdependabot"}
+
+    meta = build_pr_metadata(client, pr)
+    assert meta.changed_files == ["app/x.py", "docs/y.md"]
+    assert (meta.additions, meta.deletions) == (4, 2)
+    assert meta.all_commits_verified is False
+    assert meta.unverified_commit_shas == ["bad"]
+    assert meta.labels == ["automerge", "dependencies"]
+    assert meta.is_dependabot is False
+    assert meta.dependency_update_type == "major"
 
 
 def test_main_cli_output_merge(monkeypatch, capsys):

@@ -9096,11 +9096,9 @@ class AutoSorterTUI(A11yMixin, App):
             return
         self._set_rating_for_selected("negative")
 
-    def action_quit(self) -> None:
-        """Quit application [Ctrl+Q]."""
-        if self._is_text_control_focused(allow_tree_search=True):
-            return
-        super().action_quit()
+    async def action_quit(self) -> None:
+        """Quit application [Ctrl+Q], from any focused widget."""
+        await super().action_quit()
 
     def _set_rating_for_selected(self, rating: str) -> None:
         node = self._get_active_node()

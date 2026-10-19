@@ -1,17 +1,18 @@
 # Good and Bad Tests
 
+Examples use pytest, the runner this repo uses. Function names are illustrative, not real APIs.
+
 ## Good Tests
 
 **Integration-style**: Test through real interfaces, not mocks of internal parts.
 
-```typescript
-// GOOD: Tests observable behavior
-test("user can checkout with valid cart", async () => {
-  const cart = createCart();
-  cart.add(product);
-  const result = await checkout(cart, paymentMethod);
-  expect(result.status).toBe("confirmed");
-});
+```python
+# GOOD: Tests observable behavior
+def test_sort_moves_invoices_into_finance_folder(tmp_path):
+    (tmp_path / "invoice_042.txt").write_text("Invoice total due: $1,200")
+    result = sort_directory(tmp_path, preset="finance")
+    assert (tmp_path / "Finance" / "invoice_042.txt").exists()
+    assert result.moved == 1
 ```
 
 Characteristics:
@@ -26,13 +27,12 @@ Characteristics:
 
 **Implementation-detail tests**: Coupled to internal structure.
 
-```typescript
-// BAD: Tests implementation details
-test("checkout calls paymentService.process", async () => {
-  const mockPayment = jest.mock(paymentService);
-  await checkout(cart, payment);
-  expect(mockPayment.process).toHaveBeenCalledWith(cart.total);
-});
+```python
+# BAD: Tests implementation details
+def test_sort_calls_resilient_move(mocker, tmp_path):
+    spy = mocker.patch("app.core.mover.resilient_move")
+    sort_directory(tmp_path)
+    spy.assert_called_once()
 ```
 
 Red flags:
@@ -44,34 +44,31 @@ Red flags:
 - Test name describes HOW not WHAT
 - Verifying through external means instead of interface
 
-```typescript
-// BAD: Bypasses interface to verify
-test("createUser saves to database", async () => {
-  await createUser({ name: "Alice" });
-  const row = await db.query("SELECT * FROM users WHERE name = ?", ["Alice"]);
-  expect(row).toBeDefined();
-});
+```python
+# BAD: Bypasses interface to verify
+def test_undo_deletes_ledger_row(db):
+    session = run_sort(db)
+    undo(session.id)
+    assert db.execute("SELECT * FROM transaction_ledger").fetchall() == []
 
-// GOOD: Verifies through interface
-test("createUser makes user retrievable", async () => {
-  const user = await createUser({ name: "Alice" });
-  const retrieved = await getUser(user.id);
-  expect(retrieved.name).toBe("Alice");
-});
+# GOOD: Verifies through interface
+def test_undo_restores_original_paths(tmp_path):
+    original = tmp_path / "report.docx"
+    original.write_bytes(b"...")
+    session = run_sort(tmp_path)
+    undo(session.id)
+    assert original.exists()
 ```
 
 **Tautological tests**: Expected value restates the implementation, so the test passes by construction.
 
-```typescript
-// BAD: Expected value is recomputed the way the code computes it
-test("calculateTotal sums line items", () => {
-  const items = [{ price: 10 }, { price: 5 }];
-  const expected = items.reduce((sum, i) => sum + i.price, 0);
-  expect(calculateTotal(items)).toBe(expected);
-});
+```python
+# BAD: Expected value is recomputed the way the code computes it
+def test_folder_name_joins_top_terms():
+    terms = ["invoice", "tax"]
+    assert name_cluster(terms) == "-".join(terms[:2])
 
-// GOOD: Expected value is an independent, known literal
-test("calculateTotal sums line items", () => {
-  expect(calculateTotal([{ price: 10 }, { price: 5 }])).toBe(15);
-});
+# GOOD: Expected value is an independent, known literal
+def test_folder_name_joins_top_terms():
+    assert name_cluster(["invoice", "tax", "receipt"]) == "invoice-tax"
 ```

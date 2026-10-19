@@ -23,10 +23,18 @@ SENSITIVE_PATHS = [
     r"^app/core/history\.py$",
     r"^app/core/session\.py$",
     r"^app/core/quarantine_interceptor\.py$",
-    r"^scripts/build\.py$",
+    r"^scripts/.*",
     r"^smart-autosorter\.spec$",
     r"^network_rules\.json$",
     r"^\.gitleaks\.toml$",
+]
+
+# Dependency manifests are sensitive unless the PR comes from Dependabot itself
+# (callers must set is_dependabot from the exact "dependabot[bot]" login, not
+# from a label), so routine Dependabot bumps can still be auto-merged.
+DEPENDENCY_MANIFEST_PATHS = [
+    r"^pyproject\.toml$",
+    r"^uv\.lock$",
 ]
 
 BASELINE_PATHS = [
@@ -123,7 +131,10 @@ def classify_pr(meta: PRMetadata) -> ClassificationResult:
     non_docs_files = []
 
     for path in meta.changed_files:
-        is_sens = any(re.match(pat, path) for pat in SENSITIVE_PATHS)
+        is_sens = any(re.match(pat, path) for pat in SENSITIVE_PATHS) or (
+            not meta.is_dependabot
+            and any(re.match(pat, path) for pat in DEPENDENCY_MANIFEST_PATHS)
+        )
         if is_sens:
             sensitive_file_matches.append(path)
 

@@ -20,8 +20,8 @@ The issue may sit in `ready-for-agent` for days or weeks. The codebase will chan
 
 Describe **what** the system should do, not **how** to implement it. The agent will explore the codebase fresh and make its own implementation decisions.
 
-- **Good:** "The `SkillConfig` type should accept an optional `schedule` field of type `CronExpression`"
-- **Bad:** "Open src/types/skill.ts and add a schedule field on line 42"
+- **Good:** "`Settings` should accept an optional `quiet_hours` field that pauses the daemon's re-sort during that window"
+- **Bad:** "Open app/config.py and add a quiet_hours field on line 142"
 - **Good:** "When a user runs `/triage` with no arguments, they should see a summary of issues needing attention"
 - **Bad:** "Add a switch statement in the main handler function"
 
@@ -194,8 +194,8 @@ The triage thing is broken. Look at the main file and fix it.
 The function around line 150 has the issue.
 
 **Files to change:**
-- src/triage/handler.ts (line 150)
-- src/types.ts (line 42)
+- app/core/mover.py (line 150)
+- app/core/history.py (line 42)
 ```
 
 This is bad because:
