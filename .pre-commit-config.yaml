@@ -74,6 +74,12 @@ repos:
         entry: uv run python scripts/validate_architecture.py
         language: system
         files: '^app/.*\.py$'
+      - id: deptry
+        name: Check dependency declarations
+        entry: uv run deptry .
+        language: system
+        pass_filenames: false
+        files: '(\.py$|^pyproject\.toml$|^uv\.lock$)'
       - id: validate-imports
         name: Validate Import Gate and Direct Dependencies
         entry: uv run python scripts/validate_imports.py

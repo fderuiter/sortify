@@ -1396,11 +1396,6 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         help="Run automated database smoke test and exit",
     )
     parser.add_argument(
-        "--update-snapshots",
-        action="store_true",
-        help=argparse.SUPPRESS,  # developer tool: regenerate UI snapshots
-    )
-    parser.add_argument(
         "--daemon",
         action="store_true",
         help="Launch the persistent directory-watching daemon",
@@ -1770,14 +1765,6 @@ def main():
             sys.stdout = ANSIStrippingWriter(sys.stdout)
         if sys.stderr is not None:
             sys.stderr = ANSIStrippingWriter(sys.stderr)
-
-    if getattr(args, "update_snapshots", False) is True:
-        import pytest
-
-        print("Regenerating baseline snapshots across all covered views...")
-        os.environ["UPDATE_SNAPSHOTS"] = "1"
-        exit_code = pytest.main(["tests/test_visual_snapshots.py"])
-        sys.exit(exit_code)
 
     if getattr(args, "smoke_test", False) is True:
         run_smoke_test()

@@ -185,6 +185,7 @@ dev = [
     "pytest-mock>=3.15.1",
     "pytest-timeout>=2.4.0",
     "pytest-xdist>=3.8.0",
+    "pyyaml>=6.0",
     "reportlab>=5.0.0",
     "requests",
     "ruff>=0.16.9",
@@ -209,6 +210,18 @@ build = [
     "pefile>=2023.2.7",
     "sqlcipher3-wheels==0.5.7",
 ]
+
+[tool.deptry]
+# The `docs` group and the scripts in scripts/ are contributor tooling, so their
+# imports may come from dev-only groups.
+known_first_party = ["app", "scripts"]
+
+[tool.deptry.package_module_name_map]
+llama-cpp-python = "llama_cpp"
+
+[tool.deptry.per_rule_ignores]
+# Dev-only tools imported by scripts/ and by the repo-only docs generator.
+DEP004 = ["mkdocs", "pefile", "PyInstaller", "requests", "yaml"]
 
 [tool.pytest.ini_options]
 pythonpath = [

@@ -107,8 +107,6 @@ def main():
     main_expected = [
         "--demo",
         "Run interactive CLI demo mode",
-        "--update-snapshots",
-        "Regenerate reference baseline snapshots",
         "--tui",
         "Launch full-screen Textual TUI interface",
     ]
