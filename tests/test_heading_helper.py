@@ -110,6 +110,7 @@ def test_app_settings(tmp_path, monkeypatch):
     return settings
 
 
+@pytest.mark.slow
 def test_all_modals_heading_accessibility_compliance(test_app_settings, tmp_path):
     """Verify all modal screens use semantic Headings without accessibility violations."""
     modals = [
