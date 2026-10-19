@@ -13,6 +13,7 @@ import os
 import shutil
 import stat
 import sys
+import threading
 import time
 import uuid
 from contextlib import contextmanager
@@ -61,6 +62,14 @@ _RENAME_EXCL_DARWIN = 0x4
 _AT_FDCWD = -100
 _native_noreplace_fn = None
 _native_noreplace_loaded = False
+# Serialises the last-resort check-then-rename within this process.
+_noreplace_fallback_lock = threading.Lock()
+_LINK_UNSUPPORTED = {
+    errno.EPERM,
+    errno.EMLINK,
+    getattr(errno, "ENOTSUP", errno.EPERM),
+    getattr(errno, "EOPNOTSUPP", errno.EPERM),
+}
 _NOREPLACE_UNSUPPORTED = {
     errno.EINVAL,
     errno.ENOSYS,
@@ -147,7 +156,18 @@ def _rename_noreplace(src: str, dst: str) -> None:
         return
 
     # link() fails with EEXIST if dst exists and EXDEV across filesystems.
-    os.link(src, dst, follow_symlinks=False)
+    try:
+        os.link(src, dst, follow_symlinks=False)
+    except OSError as err:
+        if err.errno not in _LINK_UNSUPPORTED:
+            raise
+        # No hard links either (e.g. FAT/exFAT): check-then-rename, serialised
+        # so this process's own workers can't race each other.
+        with _noreplace_fallback_lock:
+            if os.path.lexists(dst):
+                raise FileExistsError(errno.EEXIST, os.strerror(errno.EEXIST), dst)
+            os.rename(src, dst)
+        return
     try:
         os.unlink(src)
     except OSError:
@@ -167,7 +187,10 @@ def _hash_file(path: str) -> str:
     return digest.hexdigest()
 
 
-def _fsync_file(path: str) -> None:
+def _fsync_path(path: str) -> None:
+    """Flush a file, or a directory entry on POSIX, to disk; best effort."""
+    if IS_WINDOWS and os.path.isdir(path):
+        return
     try:
         fd = os.open(path, os.O_RDONLY)
     except OSError:
@@ -192,7 +215,6 @@ def _cross_volume_atomic_move(src: str, dst: str) -> None:
         raise FileExistsError(f"Target path already exists: {dst}")
 
     stage_path = os.path.join(dst_dir, f".tmp_stage_{uuid.uuid4().hex}")
-    is_regular_file = not os.path.isdir(src) and not os.path.islink(src)
     published = False
 
     try:
@@ -202,23 +224,23 @@ def _cross_volume_atomic_move(src: str, dst: str) -> None:
             shutil.copy2(src, stage_path, follow_symlinks=False)
         else:
             shutil.copy2(src, stage_path)
-            _fsync_file(stage_path)
+            _fsync_path(stage_path)
+            # Verify the durable copy before it becomes visible at dst.
+            if _hash_file(src) != _hash_file(stage_path):
+                raise RuntimeError(
+                    f"Target verification failed: copy of {src} does not match the source."
+                )
 
         # Stage and target share a directory, so this rename never crosses devices
         # and fails instead of replacing a file that appeared meanwhile.
         _rename_noreplace(stage_path, dst)
         published = True
+        _fsync_path(dst_dir or ".")
 
         if not os.path.lexists(dst):
             raise RuntimeError(
                 f"Target verification failed: {dst} does not exist after move."
             )
-
-        if is_regular_file and os.path.lexists(src):
-            if _hash_file(src) != _hash_file(dst):
-                raise RuntimeError(
-                    f"Target verification failed: content of {dst} does not match {src}."
-                )
 
         # Target verified! Now safely remove source file/directory.
         if os.path.isdir(src) and not os.path.islink(src):

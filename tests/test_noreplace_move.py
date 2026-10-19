@@ -107,3 +107,27 @@ def test_cross_volume_content_mismatch_keeps_source(tmp_path):
     assert src.read_bytes() == b"original bytes"
     assert not dst.exists()
     assert not [n for n in os.listdir(dst.parent) if n.startswith(".tmp_stage_")]
+
+
+@pytest.mark.skipif(os.name == "nt", reason="POSIX link fallback")
+def test_filesystem_without_hard_links_still_refuses_to_replace(tmp_path):
+    real_link = os.link
+
+    def no_links(*args, **kwargs):
+        raise OSError(errno.EPERM, "Operation not permitted")
+
+    with (
+        patch.object(rfo, "_native_noreplace_loaded", True),
+        patch.object(rfo, "_native_noreplace_fn", None),
+        patch("os.link", side_effect=no_links),
+    ):
+        assert _race_same_name_moves(tmp_path) == 0
+
+        src = tmp_path / "x.txt"
+        src.write_text("new")
+        taken = tmp_path / "taken.txt"
+        taken.write_text("old")
+        with pytest.raises(FileExistsError):
+            atomic_move_non_clobber(str(src), str(taken))
+        assert taken.read_text() == "old"
+    assert os.link is real_link
