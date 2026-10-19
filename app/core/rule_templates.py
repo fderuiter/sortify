@@ -4,8 +4,11 @@ Provides built-in starter rule template packs covering common document workflows
 and safe merging utilities that preserve custom user rules.
 """
 
+import logging
 from dataclasses import dataclass, field
 from typing import Any, Dict, List, Optional
+
+logger = logging.getLogger(__name__)
 
 
 @dataclass
@@ -222,6 +225,7 @@ def apply_starter_templates(
         try:
             settings._save()
         except Exception:
-            pass
+            # The rules still apply for this session; only persisting them failed.
+            logger.warning("Could not save the applied rule template.", exc_info=True)
 
     return new_keywords, new_policies

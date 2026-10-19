@@ -1,10 +1,13 @@
 """Centralized native semantic heading helper module for accessible TUI and GUI views."""
 
+import logging
 from typing import Any, Dict, Optional
 
 from rich.console import RenderableType
 from textual.reactive import reactive
 from textual.widgets import Label
+
+logger = logging.getLogger(__name__)
 
 
 class Heading(Label):
@@ -97,6 +100,8 @@ class Heading(Label):
         try:
             text = str(self.render())
         except Exception:
+            # Unmounted widgets can fail to render; export the raw content.
+            logger.debug("Heading render failed; using raw content", exc_info=True)
             text = str(getattr(self, "renderable", getattr(self, "_content", "")))
         return f'<{self.tag} role="heading" aria-level="{self.level}"{id_attr}{class_attr}>{text}</{self.tag}>'
 

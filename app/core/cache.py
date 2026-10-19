@@ -8,10 +8,10 @@ import time
 
 try:
     import sqlite3
-except Exception:
+except ImportError:
     try:
         from sqlcipher3 import dbapi2 as sqlite3
-    except Exception:
+    except ImportError:
         import types
 
         sqlite3 = types.ModuleType("sqlite3")
@@ -81,7 +81,9 @@ class BoundedMemoryCache(Generic[K, V]):
                 try:
                     self.on_evict(key, val)
                 except Exception as e:
-                    logging.error(f"Error in on_evict callback for key {key}: {e}")
+                    logging.error(
+                        f"Error in on_evict callback for key {key}: {e}", exc_info=True
+                    )
 
     def get(self, key: K, default: Any = None) -> Any:
         """Retrieve an item from the cache, updating its LRU position if valid."""
@@ -114,7 +116,8 @@ class BoundedMemoryCache(Generic[K, V]):
                         self.on_evict(evicted_key, evicted_val)
                     except Exception as e:
                         logging.error(
-                            f"Error in on_evict callback for key {evicted_key}: {e}"
+                            f"Error in on_evict callback for key {evicted_key}: {e}",
+                            exc_info=True,
                         )
 
     def put(self, key: K, value: V, ttl: float | None = None) -> None:
@@ -148,7 +151,10 @@ class BoundedMemoryCache(Generic[K, V]):
                     try:
                         self.on_evict(key, val)
                     except Exception as e:
-                        logging.error(f"Error in on_evict callback during clear: {e}")
+                        logging.error(
+                            f"Error in on_evict callback during clear: {e}",
+                            exc_info=True,
+                        )
             self._cache.clear()
 
     def keys(self) -> list[K]:
@@ -322,13 +328,14 @@ class CacheManager:
                         manual_folders TEXT
                     )
                 """)
-                try:
+                # The connection may be sqlcipher3 or stdlib sqlite3, whose error
+                # classes differ, so check for the column instead of catching.
+                columns = {
+                    row[1] for row in conn.execute("PRAGMA table_info(directory_cache)")
+                }
+                if "manual_folders" not in columns:
                     conn.execute(
                         "ALTER TABLE directory_cache ADD COLUMN manual_folders TEXT"
-                    )
-                except Exception as alter_err:
-                    logging.debug(
-                        f"Column manual_folders alter execution skipped or failed: {alter_err}"
                     )
         except Exception as e:
             logging.error(
