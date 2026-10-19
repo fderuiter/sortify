@@ -25,6 +25,12 @@ repos:
         entry: uv run ruff check --force-exclude
         language: system
         types: [python]
+      - id: ty-check
+        name: Ty Type Check
+        entry: uv run ty check
+        language: system
+        pass_filenames: false
+        files: '^(app/.*\.py|pyproject\.toml)$'
       - id: forbid-cache-files
         name: Block cache files, virtual environments, and bytecode
         entry: Cannot commit cache files, bytecode, or virtual environments. Please clean your workspace.
