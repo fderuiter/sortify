@@ -115,6 +115,7 @@ def test_build_script_cpu_profile_success():
             patch("scripts.build.download_and_prepare_weights") as mock_download,
             patch("scripts.build.update_binaries_and_manifest") as mock_update_bin,
             patch("os.path.exists", return_value=True),
+            patch("scripts.build.bundle_license"),
             patch(
                 "os.walk",
                 return_value=[
@@ -193,6 +194,7 @@ def test_build_script_cpu_profile_scan_fails_if_gpu_binaries_exist():
             patch("scripts.build.download_and_prepare_weights") as mock_download,
             patch("scripts.build.update_binaries_and_manifest") as mock_update_bin,
             patch("os.path.exists", return_value=True),
+            patch("scripts.build.bundle_license"),
             patch(
                 "os.walk",
                 return_value=[
@@ -274,6 +276,7 @@ def test_build_script_target_verification_success(tmp_path):
     dist_dir.mkdir(parents=True, exist_ok=True)
     exe_ext = ".exe" if sys.platform == "win32" else ""
     (dist_dir / f"smart-autosorter{exe_ext}").write_text("mock_cli")
+    (tmp_path / "LICENSE").write_text("GNU GENERAL PUBLIC LICENSE\n")
 
     original_cwd = os.getcwd()
     os.chdir(tmp_path)
@@ -298,6 +301,7 @@ def test_build_script_target_verification_success(tmp_path):
                 )
                 assert "Verification passed" in printed_messages
                 assert not (dist_dir / "smart-autosorter.desktop").exists()
+                assert (dist_dir / "LICENSE").exists()
     finally:
         os.chdir(original_cwd)
 
@@ -381,3 +385,28 @@ def test_verify_scientific_binaries_missing_binaries(tmp_path):
         with pytest.raises(SystemExit):
             verify_scientific_binaries(str(dist_dir))
         mock_exit.assert_called_once_with(1)
+
+
+def test_bundle_license_copies_license_into_bundle(tmp_path, monkeypatch):
+    from scripts.build import bundle_license
+
+    (tmp_path / "LICENSE").write_text("GNU GENERAL PUBLIC LICENSE\n", encoding="utf-8")
+    bundle = tmp_path / "dist" / "smart-autosorter"
+    bundle.mkdir(parents=True)
+    monkeypatch.chdir(tmp_path)
+
+    bundle_license(str(bundle))
+
+    assert (bundle / "LICENSE").read_text(encoding="utf-8").startswith("GNU GENERAL")
+
+
+def test_bundle_license_fails_without_license(tmp_path, monkeypatch):
+    from scripts.build import bundle_license
+
+    bundle = tmp_path / "bundle"
+    bundle.mkdir()
+    monkeypatch.chdir(tmp_path)
+
+    with pytest.raises(SystemExit):
+        bundle_license(str(bundle))
+    assert not (bundle / "LICENSE").exists()

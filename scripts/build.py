@@ -378,6 +378,19 @@ def download_and_prepare_weights():
     package_sidecar_models()
 
 
+def bundle_license(dist_dir):
+    """Copy LICENSE to the top of the bundle; the GPL requires it to ship with binaries."""
+    import shutil
+    from pathlib import Path
+
+    license_src = Path("LICENSE")
+    if not license_src.is_file():
+        print("Error: LICENSE not found; refusing to build a bundle without it.")
+        sys.exit(1)
+    shutil.copy2(license_src, Path(dist_dir) / "LICENSE")
+    print(f"Bundled LICENSE into {dist_dir}")
+
+
 def package_sidecar_models():
     """Package offline_bundle model weights into smart-autosorter-models.zip sidecar artifact."""
     import zipfile
@@ -557,6 +570,8 @@ def main():
         print(
             f"Verification passed: Verified executable target (smart-autosorter{exe_ext}) in {dist_dir}"
         )
+
+        bundle_license(dist_dir)
 
         if not is_lite:
             verify_scientific_binaries(dist_dir)
