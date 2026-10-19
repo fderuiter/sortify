@@ -172,6 +172,46 @@ def test_quarantine_vault_modal_release_action(staged_quarantine_item, tmp_path)
     asyncio.run(_test())
 
 
+def test_quarantine_vault_release_button_opens_directory_picker(
+    staged_quarantine_item, tmp_path
+):
+    """Pressing Release opens the folder picker and releases into the chosen folder."""
+    from app.ui.tui import DirectorySelectModal
+
+    staged, db, base_dir = staged_quarantine_item
+    job_id = staged["job_id"]
+    dest_dir = tmp_path / "released_target"
+    dest_dir.mkdir()
+
+    async def _test():
+        modal = QuarantineVaultModal(db=db, base_dir="")
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings)
+
+        async with app.run_test() as pilot:
+            await app.push_screen(modal)
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            modal.selected_job_id = job_id
+            modal.query_one("#btn-quarantine-release", Button).press()
+            await pilot.pause()
+            assert isinstance(app.screen, DirectorySelectModal)
+
+            app.screen.dismiss(str(dest_dir))
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            rec = db.get_quarantine_record(job_id)
+            assert rec["status"] == "RELEASED"
+            assert (dest_dir / "confidential_record.pdf").exists()
+
+    asyncio.run(_test())
+
+
 def test_quarantine_vault_modal_dismiss_action(staged_quarantine_item):
     """Test dismissing a quarantine item and verifying status DISMISSED without moving file."""
     staged, db, base_dir = staged_quarantine_item
