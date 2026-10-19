@@ -25,10 +25,12 @@ pre-installed Chromium at `/opt/pw-browsers/chromium-1194/chrome-linux/chrome`
 ## Build
 
 ```bash
-uv sync          # ~15s; Python 3.12 is fetched by uv per .python-version
+uv sync --frozen --all-groups   # ~15s; Python 3.12 is fetched by uv per .python-version
 ```
 
-The `[ml]` extra (torch, easyocr, llama-cpp...) is not needed: ML imports
+Use `--all-groups`, as CI does: a plain `uv sync` leaves out test plugins,
+and about 60 async tests then fail with "async def functions are not
+natively supported". The `[ml]` extra (torch, easyocr, llama-cpp...) is not needed: ML imports
 are lazy and TF-IDF clustering works without it.
 
 ## Run the TUI (agent path)
@@ -79,9 +81,8 @@ tmux send-keys -t drv "quit" Enter
 ## Run the real TUI binary in tmux
 
 Use this when the bug might be in startup/argument handling rather than in
-`AutoSorterTUI` itself. Until the clustering subprocess bug below is fixed,
-Ctrl+S here still shows "Empty Workspace"; check `$D/app/autosorter.log`
-for `fds_to_keep`:
+`AutoSorterTUI` itself. Ctrl+S should show `Budget-Balance` and
+`Cluster-Backend` in the tree; `C-e` then moves the files:
 
 ```bash
 D=$(mktemp -d); mkdir $D/inbox; for i in 1 2 3 4; do
@@ -113,34 +114,29 @@ redirected. A sort of the 8-file corpus takes ~13s.
 ## Test
 
 ```bash
-uv run pytest -m "not slow" -q                 # pytest-xdist, -n auto from pyproject
+uv run pytest -m "not slow" -n auto tests/ -q  # what CI runs; ~5 min
 uv run pytest tests/test_visual_snapshots.py   # TUI SVG snapshots (slow marker)
 ```
 
 ## Gotchas
 
-- **Clustering spawns a subprocess, which breaks inside Textual.** Once
-  Textual has replaced `sys.stderr`, multiprocessing's resource tracker
-  dies with `ValueError: bad value(s) in fds_to_keep`;
-  `generate_sorting_plan` logs "Failed during generate_sorting_plan" to
-  `autosorter.log` and returns `{}`, so the tree shows "Empty Workspace"
-  while the status bar says "Analyzed 8 files". This hits the real TUI
-  (verified under tmux). The driver calls `resource_tracker.ensure_running()`
-  before `run_test()`, so the driver does NOT reproduce it; use the tmux
-  path above to test a fix for it.
+- **Clustering spawns a subprocess, which breaks inside Textual** unless
+  multiprocessing's resource tracker is started before Textual replaces
+  `sys.stderr`: `ValueError: bad value(s) in fds_to_keep` in
+  `autosorter.log`, a `{}` plan, and an "Empty Workspace" tree while the
+  status bar says "Analyzed 8 files". `run_tui` starts the tracker (#792);
+  the driver does the same before `run_test()`. If you see that symptom,
+  grep `autosorter.log` for `fds_to_keep`.
 - Ctrl+S runs `MetadataPass` first; files it routes by rule (keywords,
   extensions) skip text extraction, and the rest go through
   `build_corpus_generator` + `partial_fit` (`run_scan_worker` in
   `app/ui/tui.py`), the same as CLI `sort`.
 - **Never redirect stderr of the real TUI** (`2>file`): Textual draws to
   stderr, so the whole UI goes into the file and tmux shows raw escapes.
-- **Bare `smart-autosorter --tui DIR` fails** with "invalid choice" (the
-  legacy positional dir only parses when it comes first). Use
-  `smart-autosorter sort DIR --tui`.
 - **State leaks across runs.** Sessions live under `AUTOSORTER_APP_DIR`
   (default `~/.autosorter`); key files go to `~/.sortify/keys` regardless.
-  A previously undone session reappears as an "Interrupted Session
-  Detected" modal on the next TUI start. The driver isolates both by
+  A crashed or killed sort shows up as "Interrupted Session Detected" on
+  the next TUI start. The driver isolates both by
   default; for the CLI set `AUTOSORTER_APP_DIR` (and `HOME`) to a temp dir.
 - Textual SVGs pull Fira Code from cdnjs, which the container proxy
   blocks; the PNG renders with a fallback monospace font. Proxy
@@ -158,8 +154,8 @@ uv run pytest tests/test_visual_snapshots.py   # TUI SVG snapshots (slow marker)
 
 | Symptom | Fix |
 |---|---|
-| `app/main.py: error: argument subcommand: invalid choice: '/tmp/...'` | put the dir after `sort`: `smart-autosorter sort DIR --tui` |
 | tmux pane full of `[?1049h[48;5;17m...` | you redirected stderr of the TUI; remove `2>` |
 | Tree shows "Empty Workspace" after `press ctrl+s` + `idle` | `fds_to_keep` in `autosorter.log` (resource tracker not pre-started), or fewer than 3 text files in `--dir` |
+| ~60 async tests fail with "async def functions are not natively supported" | `uv sync --frozen --all-groups` |
 | `ss` prints "png conversion failed" | no Chromium found; open the `.svg` instead |
 | Startup shows "Interrupted Session Detected" | stale `AUTOSORTER_APP_DIR`; use a fresh one (driver default) |
