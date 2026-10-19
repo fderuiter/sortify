@@ -846,11 +846,11 @@ ARCHITECTURE_DATAFLOW_SPEC = DataFlowDiagramSpec(
         ),
         ProcessNode(
             id="E",
-            label="TF-IDF & NMF Clustering",
+            label="TF-IDF / Embeddings + K-Means Clustering",
             url="docs/user_guide.md#ai-clustering-constraints",
             tooltip="Clustering Step",
             step_number=5,
-            step_description="Cluster file features with TF-IDF & NMF",
+            step_description="Cluster file features with TF-IDF or embeddings and MiniBatchKMeans",
         ),
         ProcessNode(
             id="F",
@@ -1619,7 +1619,7 @@ ML_ANALYZER_CLUSTERING_SPEC = ComponentDiagramSpec(
         DiagramNode(id="A", label="Extracted Corpus"),
         DiagramNode(id="B", label="TF-IDF Vectorizer"),
         DiagramNode(id="C", label="Incremental Ingestion: partial_fit"),
-        DiagramNode(id="D", label="NMF Topic Modeling / Vector Embeddings"),
+        DiagramNode(id="D", label="Optional ONNX Sentence Embeddings"),
         DiagramNode(id="E", label="Recursive KMeans Clustering"),
         DiagramNode(id="F", label="Generate Dynamic Folder Structure & Sorting Plan"),
     ],
@@ -1938,11 +1938,11 @@ def _create_architecture_dataflow_spec() -> DataFlowDiagramSpec:
             ),
             ProcessNode(
                 id="E",
-                label="TF-IDF & NMF Clustering",
+                label="TF-IDF / Embeddings + K-Means Clustering",
                 url="docs/user_guide.md#ai-clustering-constraints",
                 tooltip="Clustering Step",
                 step_number=5,
-                step_description="Cluster file features with TF-IDF & NMF",
+                step_description="Cluster file features with TF-IDF or embeddings and MiniBatchKMeans",
             ),
             ProcessNode(
                 id="F",
@@ -2782,7 +2782,7 @@ def _create_ml_analyzer_clustering_spec() -> ComponentDiagramSpec:
             DiagramNode(id="A", label="Extracted Corpus"),
             DiagramNode(id="B", label="TF-IDF Vectorizer"),
             DiagramNode(id="C", label="Incremental Ingestion: partial_fit"),
-            DiagramNode(id="D", label="NMF Topic Modeling / Vector Embeddings"),
+            DiagramNode(id="D", label="Optional ONNX Sentence Embeddings"),
             DiagramNode(id="E", label="Recursive KMeans Clustering"),
             DiagramNode(
                 id="F", label="Generate Dynamic Folder Structure & Sorting Plan"

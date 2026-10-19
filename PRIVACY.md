@@ -2,16 +2,21 @@
 
 ## Local Data Processing
 
-Smart AutoSorter AI Pro is built around a privacy-first architecture. All processing of your documents, including text extraction and semantic clustering, occurs entirely on your local machine.
+Smart AutoSorter AI Pro is built around a privacy-first architecture. All processing of your documents, including text extraction, classification and clustering, happens on your own machine. Document contents, file names and the resulting folder structure are never sent to external servers or third parties.
 
-We utilize local libraries to ensure your data is processed securely and efficiently:
-- **SQLite:** Used for local data and cache storage.
-- **scikit-learn:** Utilized for offline document clustering and thematic analysis.
+The main local libraries involved are:
+- **SQLCipher (SQLite):** local storage for extracted text, vectors, history and caches.
+- **scikit-learn:** offline TF-IDF vectorization and clustering.
+- **Optional `ml` extra:** local OCR, audio transcription, sentence embeddings and LLM folder naming. These models run on your machine.
 
-## Telemetry and Data Sharing
+## Network Access
 
-Your data stays with you. We reiterate that **user data does not leave the local machine**. The application does not include any telemetry, tracking, or cloud-based analytics. Your documents, their contents, and the resulting organizational structure are never sent to external servers or third parties.
+The application has no telemetry, tracking or analytics. It makes network requests only for:
+- **Model downloads.** With your consent (asked on first run), the embedding model is downloaded from Hugging Face. Declining keeps the app fully offline and uses TF-IDF clustering only.
+- **Model security advisories.** Before a downloaded or side-loaded model is used, the app checks `security.huggingface.co` for advisories. The request contains the model's repository id and the model file's SHA-256 hash, never anything about your documents. The endpoint is configurable through the `SECURITY_ADVISORY_ENDPOINT` setting.
 
 ## Data Storage and Encryption
 
-While we prioritize keeping your data on your local device, it is important to be aware of how the data is stored. We explicitly disclose that the **local storage for document text and embeddings is unencrypted**. This includes any caches stored in the local SQLite databases. If you are processing sensitive documents, we strongly recommend relying on full-disk encryption provided by your operating system (such as BitLocker for Windows or LUKS for Linux) to secure your data at rest.
+Local databases are encrypted at rest. Each database is encrypted with SQLCipher, and extracted text and vectors are additionally encrypted per column. The key is stored in your operating system's keyring, or in a key file readable only by your user account when no keyring is available. If the SQLCipher library can't be loaded on a platform, the app logs a security warning and falls back to plain SQLite pages; the per-column encryption of extracted text and vectors still applies.
+
+Undo history and session data are kept in your user profile and the system temp folder. Deleting `~/.autosorter/` (or the folder set in `AUTOSORTER_APP_DIR`) removes stored settings and caches.
