@@ -46,9 +46,10 @@ Press `[?]` or `[F1]` for the full list of shortcuts and `[Ctrl+Q]` to quit. Eve
 
 ### From the command line
 ```bash
-smart-autosorter scan ~/Downloads --json      # print the plan, move nothing
-smart-autosorter sort ~/Downloads --dry-run   # verify the plan without moving
-smart-autosorter sort ~/Downloads             # sort in place
+smart-autosorter scan ~/Downloads            # print the proposed folder tree, move nothing
+smart-autosorter scan ~/Downloads --json     # the same plan as JSON, for scripts
+smart-autosorter sort ~/Downloads --dry-run  # verify the plan without moving
+smart-autosorter sort ~/Downloads            # sort in place
 smart-autosorter sort ~/Downloads --dest-dir ~/Sorted
 ```
 
@@ -57,6 +58,8 @@ Useful options for `sort` and `scan`:
 - `--strategy`: `default` (keyword clustering), `generative` (local LLM folder names, needs the `ml` extra), or the clinical `clinical_tmf` / `clinical_isf` strategies.
 - `--conflict-policy skip|rename`: what to do when a destination file already exists.
 - `--export-report FILE --report-format html|json`: save an audit report of the run.
+- `--preset demo|downloads|documents`: use a standard folder instead of naming one.
+- `-q` / `--quiet` and `--no-color`: less output, and plain text for logs or terminals without color.
 
 ## How Files Are Placed
 

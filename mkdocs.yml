@@ -41,6 +41,10 @@ nav:
       - adr/0003-single-writer-database-thread.md
       - adr/0004-clustering-in-a-spawned-subprocess.md
       - adr/0005-moves-never-destroy-unverified-bytes.md
+      - adr/0006-one-move-ledger-replayed-for-undo.md
+      - adr/0007-one-sort-pipeline-behind-a-composition-root.md
+      - adr/0008-one-app-store-with-numbered-migrations.md
+      - adr/0009-auto-merge-gate-by-path-tier.md
     - Auto-Merge Policy: auto_merge_policy.md
     - Branch Protection Rules: branch_protection.md
     - Contributor Guide: contributor.md
