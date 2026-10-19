@@ -1342,856 +1342,812 @@ class HistoryManager:
         ignore_missing: bool = False,
     ):
         conn = get_db_connection(self.db_path)
-        try:
-            if not base_dir:
-                with conn:
-                    cur = conn.execute(
-                        "SELECT base_dir FROM sessions WHERE session_id = ?",
-                        (session_id,),
-                    )
-                    row = cur.fetchone()
-                    if not row:
-                        raise ValueError("Session not found")
-                    base_dir = row[0]
-
-            if not safety_session_id:
-                safety_session_id = self._create_snapshot_internal(base_dir)
-
+        if not base_dir:
             with conn:
+                cur = conn.execute(
+                    "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise ValueError("Session not found")
+                base_dir = row[0]
+
+        if not safety_session_id:
+            safety_session_id = self._create_snapshot_internal(base_dir)
+
+        with conn:
+            try:
+                cur = conn.execute(
+                    """
+                    SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash,
+                           link_type, arguments, description, icon_file, icon_index, work_dir, window_mode
+                    FROM snapshot_files WHERE session_id = ?
+                    """,
+                    (session_id,),
+                )
+                snapshot_files = cur.fetchall()
+            except Exception:
                 try:
                     cur = conn.execute(
-                        """
-                        SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash,
-                               link_type, arguments, description, icon_file, icon_index, work_dir, window_mode
-                        FROM snapshot_files WHERE session_id = ?
-                        """,
+                        "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash FROM snapshot_files WHERE session_id = ?",
                         (session_id,),
                     )
-                    snapshot_files = cur.fetchall()
+                    snapshot_files = [
+                        (*row, None, None, None, None, 0, None, None)
+                        for row in cur.fetchall()
+                    ]
                 except Exception:
+                    cur = conn.execute(
+                        "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?",
+                        (session_id,),
+                    )
+                    snapshot_files = [
+                        (*row, None, None, None, None, None, 0, None, None)
+                        for row in cur.fetchall()
+                    ]
+
+            from app.core.scanner import get_files_recursively
+
+            current_files = get_files_recursively(base_dir, include_hidden=True)
+
+            with conn:
+                inode_counts: dict[Any, Any] = {}
+                current_inodes: dict[Any, Any] = {}
+                active_files_by_rel_path: dict[Any, Any] = {}
+                active_files_by_sig: dict[Any, Any] = {}
+                active_files_by_size: dict[Any, Any] = {}
+                inodes_reliable = True
+
+                for rel_path in current_files:
+                    abs_path = os.path.join(base_dir, rel_path)
                     try:
-                        cur = conn.execute(
-                            "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash FROM snapshot_files WHERE session_id = ?",
-                            (session_id,),
-                        )
-                        snapshot_files = [
-                            (*row, None, None, None, None, 0, None, None)
-                            for row in cur.fetchall()
-                        ]
-                    except Exception:
-                        cur = conn.execute(
-                            "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?",
-                            (session_id,),
-                        )
-                        snapshot_files = [
-                            (*row, None, None, None, None, None, 0, None, None)
-                            for row in cur.fetchall()
-                        ]
+                        st = os.lstat(abs_path)
+                    except OSError:
+                        continue
 
-                from app.core.scanner import get_files_recursively
+                    ino = st.st_ino
+                    size = st.st_size
+                    mtime = st.st_mtime
+                    is_symlink = 1 if os.path.islink(abs_path) else 0
+                    symlink_target = os.readlink(abs_path) if is_symlink else None
 
-                current_files = get_files_recursively(base_dir, include_hidden=True)
+                    inode_counts[ino] = inode_counts.get(ino, 0) + 1
+                    if ino == 0 or inode_counts[ino] > 1:
+                        inodes_reliable = False
 
-                with conn:
-                    inode_counts: dict[Any, Any] = {}
-                    current_inodes: dict[Any, Any] = {}
-                    active_files_by_rel_path: dict[Any, Any] = {}
-                    active_files_by_sig: dict[Any, Any] = {}
-                    active_files_by_size: dict[Any, Any] = {}
-                    inodes_reliable = True
+                    sig = (size, mtime, is_symlink, symlink_target)
+                    current_inodes[ino] = (abs_path, sig)
+                    active_files_by_rel_path[rel_path.lower().replace("\\", "/")] = sig
 
-                    for rel_path in current_files:
-                        abs_path = os.path.join(base_dir, rel_path)
+                    if sig not in active_files_by_sig:
+                        active_files_by_sig[sig] = []
+                    active_files_by_sig[sig].append(abs_path)
+
+                    if size not in active_files_by_size:
+                        active_files_by_size[size] = []
+                    active_files_by_size[size].append(abs_path)
+
+                print("DEBUG ROLLBACK: inodes_reliable =", inodes_reliable, flush=True)
+                print("DEBUG ROLLBACK: current_files =", current_files, flush=True)
+                print(
+                    "DEBUG ROLLBACK: snapshot_files =",
+                    [(r[0], r[1], r[2], r[3], r[6]) for r in snapshot_files],
+                    flush=True,
+                )
+                print(
+                    "DEBUG ROLLBACK: active_files_by_size =",
+                    active_files_by_size,
+                    flush=True,
+                )
+                print(
+                    "DEBUG ROLLBACK: active_files_by_sig =",
+                    active_files_by_sig,
+                    flush=True,
+                )
+
+                # First compute all intended moves
+                moves = []
+
+                def verify_hash(abs_path, expected_hash, expected_size=0):
+                    if not expected_hash:
+                        return True
+                    EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
+                    import sys
+
+                    # On Windows, we allow up to 30 attempts (with 0.1s sleep, up to 3 seconds total)
+                    # to let NTFS flushes, sharing violations, and anti-virus locks settle.
+                    max_attempts = 30 if sys.platform == "win32" else 10
+                    sleep_time = 0.1 if sys.platform == "win32" else 0.05
+
+                    for attempt in range(max_attempts):
                         try:
-                            st = os.lstat(abs_path)
-                        except OSError:
-                            continue
+                            from app.core.extractor import get_file_hash
 
-                        ino = st.st_ino
-                        size = st.st_size
-                        mtime = st.st_mtime
-                        is_symlink = 1 if os.path.islink(abs_path) else 0
-                        symlink_target = os.readlink(abs_path) if is_symlink else None
+                            h = get_file_hash(abs_path)
+                            if h == expected_hash:
+                                return True
 
-                        inode_counts[ino] = inode_counts.get(ino, 0) + 1
-                        if ino == 0 or inode_counts[ino] > 1:
-                            inodes_reliable = False
-
-                        sig = (size, mtime, is_symlink, symlink_target)
-                        current_inodes[ino] = (abs_path, sig)
-                        active_files_by_rel_path[
-                            rel_path.lower().replace("\\", "/")
-                        ] = sig
-
-                        if sig not in active_files_by_sig:
-                            active_files_by_sig[sig] = []
-                        active_files_by_sig[sig].append(abs_path)
-
-                        if size not in active_files_by_size:
-                            active_files_by_size[size] = []
-                        active_files_by_size[size].append(abs_path)
-
-                    print(
-                        "DEBUG ROLLBACK: inodes_reliable =", inodes_reliable, flush=True
-                    )
-                    print("DEBUG ROLLBACK: current_files =", current_files, flush=True)
-                    print(
-                        "DEBUG ROLLBACK: snapshot_files =",
-                        [(r[0], r[1], r[2], r[3], r[6]) for r in snapshot_files],
-                        flush=True,
-                    )
-                    print(
-                        "DEBUG ROLLBACK: active_files_by_size =",
-                        active_files_by_size,
-                        flush=True,
-                    )
-                    print(
-                        "DEBUG ROLLBACK: active_files_by_sig =",
-                        active_files_by_sig,
-                        flush=True,
-                    )
-
-                    # First compute all intended moves
-                    moves = []
-
-                    def verify_hash(abs_path, expected_hash, expected_size=0):
-                        if not expected_hash:
-                            return True
-                        EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                        import sys
-
-                        # On Windows, we allow up to 30 attempts (with 0.1s sleep, up to 3 seconds total)
-                        # to let NTFS flushes, sharing violations, and anti-virus locks settle.
-                        max_attempts = 30 if sys.platform == "win32" else 10
-                        sleep_time = 0.1 if sys.platform == "win32" else 0.05
-
-                        for attempt in range(max_attempts):
-                            try:
-                                from app.core.extractor import get_file_hash
-
-                                h = get_file_hash(abs_path)
-                                if h == expected_hash:
-                                    return True
-
-                                # On Windows, always retry if the hash doesn't match yet
-                                if sys.platform == "win32":
-                                    import gc
-
-                                    gc.collect()
-                                    time.sleep(sleep_time)
-                                    continue
-
-                                if (
-                                    h == EMPTY_SHA256
-                                    and expected_hash != EMPTY_SHA256
-                                    and expected_size > 0
-                                ):
-                                    import gc
-
-                                    gc.collect()
-                                    time.sleep(sleep_time)
-                                    continue
-                                return False
-                            except Exception:
+                            # On Windows, always retry if the hash doesn't match yet
+                            if sys.platform == "win32":
                                 import gc
 
                                 gc.collect()
                                 time.sleep(sleep_time)
-                        return False
+                                continue
 
-                    symlinks_to_restore = []
-                    shortcuts_to_restore = []
+                            if (
+                                h == EMPTY_SHA256
+                                and expected_hash != EMPTY_SHA256
+                                and expected_size > 0
+                            ):
+                                import gc
+
+                                gc.collect()
+                                time.sleep(sleep_time)
+                                continue
+                            return False
+                        except Exception:
+                            import gc
+
+                            gc.collect()
+                            time.sleep(sleep_time)
+                    return False
+
+                symlinks_to_restore = []
+                shortcuts_to_restore = []
+                for (
+                    rel_path,
+                    inode,
+                    size,
+                    mtime,
+                    is_symlink,
+                    symlink_target,
+                    file_hash,
+                    link_type,
+                    arguments,
+                    description,
+                    icon_file,
+                    icon_index,
+                    work_dir,
+                    window_mode,
+                ) in snapshot_files:
+                    target_abs = os.path.join(base_dir, rel_path)
+                    current_abs = None
+                    target_sig = (size, mtime, is_symlink, symlink_target)
+
+                    is_lnk = (
+                        1
+                        if (link_type == "lnk" or rel_path.lower().endswith(".lnk"))
+                        else 0
+                    )
+                    is_link_entity = bool(is_symlink or is_lnk)
+
+                    if inodes_reliable and inode in current_inodes:
+                        abs_path, current_sig = current_inodes[inode]
+                        if is_link_entity:
+                            current_abs = abs_path
+                            del current_inodes[inode]
+                        else:
+                            if current_sig[2] == is_symlink:
+                                if not is_symlink or current_sig[3] == symlink_target:
+                                    if verify_hash(abs_path, file_hash, size):
+                                        current_abs = abs_path
+                                        del current_inodes[inode]
+
+                    if not current_abs:
+                        curr_sig = active_files_by_rel_path.get(
+                            rel_path.lower().replace("\\", "/")
+                        )
+                        if is_link_entity:
+                            if curr_sig is not None:
+                                current_abs = target_abs
+                        else:
+                            if curr_sig == target_sig:
+                                candidate_abs = target_abs
+                                if verify_hash(candidate_abs, file_hash, size):
+                                    current_abs = candidate_abs
+                                    if (
+                                        curr_sig in active_files_by_sig
+                                        and current_abs in active_files_by_sig[curr_sig]
+                                    ):
+                                        active_files_by_sig[curr_sig].remove(
+                                            current_abs
+                                        )
+                        if not current_abs:
+                            if not is_link_entity:
+                                if (
+                                    target_sig in active_files_by_sig
+                                    and active_files_by_sig[target_sig]
+                                ):
+                                    for idx, cand_path in enumerate(
+                                        active_files_by_sig[target_sig]
+                                    ):
+                                        if verify_hash(cand_path, file_hash, size):
+                                            current_abs = active_files_by_sig[
+                                                target_sig
+                                            ].pop(idx)
+                                            break
+                                if not current_abs:
+                                    if (
+                                        size in active_files_by_size
+                                        and active_files_by_size[size]
+                                    ):
+                                        for idx, cand_path in enumerate(
+                                            active_files_by_size[size]
+                                        ):
+                                            if verify_hash(cand_path, file_hash, size):
+                                                current_abs = active_files_by_size[
+                                                    size
+                                                ].pop(idx)
+                                                break
+
+                    print(
+                        f"DEBUG ROLLBACK FILE {rel_path}: current_abs resolved to = {current_abs}",
+                        flush=True,
+                    )
+                    if not current_abs:
+                        if not is_link_entity and not ignore_missing:
+                            raise ValueError(
+                                f"Rollback validation failed: file hash mismatch or missing for {rel_path}"
+                            )
+
+                    if is_link_entity:
+                        if current_abs and current_abs != target_abs:
+                            try:
+                                from app.core.resilient_file_ops import resilient_remove
+
+                                resilient_remove(current_abs)
+                            except OSError:
+                                pass
+                        if is_symlink or link_type == "junction":
+                            symlinks_to_restore.append(
+                                (target_abs, symlink_target, link_type)
+                            )
+                        elif is_lnk:
+                            shortcuts_to_restore.append(
+                                (
+                                    target_abs,
+                                    symlink_target,
+                                    arguments,
+                                    description,
+                                    icon_file,
+                                    icon_index,
+                                    work_dir,
+                                    window_mode,
+                                )
+                            )
+                    else:
+                        if current_abs:
+                            same_file = False
+                            if os.path.exists(current_abs) and os.path.exists(
+                                target_abs
+                            ):
+                                try:
+                                    same_file = os.path.samefile(
+                                        current_abs, target_abs
+                                    )
+                                except OSError:
+                                    pass
+                            if not same_file:
+                                if current_abs != target_abs:
+                                    moves.append((current_abs, target_abs))
+
+                planned_target_rels = {
+                    safe_relpath(m[1], base_dir).lower().replace("\\", "/")
+                    for m in moves
+                }
+
+                try:
+                    cur = conn.execute(
+                        "SELECT filepath, file_hash, extracted_text, user_verified_target_path FROM snapshot_documents WHERE session_id = ?",
+                        (session_id,),
+                    )
+                    snapshot_docs = cur.fetchall()
+                    snapshot_docs_dict = {
+                        r[0].replace("\\", "/"): (
+                            r[0].replace("\\", "/"),
+                            r[1],
+                            r[2],
+                            r[3] if len(r) > 3 else None,
+                        )
+                        for r in snapshot_docs
+                    }
+                except Exception:
+                    cur = conn.execute(
+                        "SELECT filepath, file_hash, extracted_text FROM snapshot_documents WHERE session_id = ?",
+                        (session_id,),
+                    )
+                    snapshot_docs = cur.fetchall()
+                    snapshot_docs_dict = {
+                        r[0].replace("\\", "/"): (
+                            r[0].replace("\\", "/"),
+                            r[1],
+                            r[2],
+                            None,
+                        )
+                        for r in snapshot_docs
+                    }
+
+                # Write rollback journal before any modifications or relocations
+                try:
+                    import json
+                    from pathlib import Path
+
+                    journal_path = Path(self.db_path).parent / "rollback_journal.json"
+                    journal_data = {
+                        "session_id": session_id,
+                        "safety_session_id": safety_session_id,
+                        "base_dir": base_dir,
+                        "moves": moves,
+                        "symlinks": symlinks_to_restore,
+                        "shortcuts": shortcuts_to_restore,
+                    }
+                    with open(journal_path, "w") as f:
+                        json.dump(journal_data, f, indent=2)
+                except Exception as ex:
+                    import logging
+
+                    logging.warning(f"Failed to write rollback journal: {ex}")
+
+                # 1. Pre-Move Synchronization
+                db_conn = get_db_connection(self.db.db_path)
+                with db_conn:
+                    docs_to_upsert = []
+                    for fp, r in snapshot_docs_dict.items():
+                        if fp.lower().replace("\\", "/") not in planned_target_rels:
+                            verified_target = r[3] if len(r) > 3 else None
+                            docs_to_upsert.append(
+                                (base_dir, r[0], r[1], r[2], verified_target)
+                            )
+                    if docs_to_upsert:
+                        db_conn.executemany(
+                            """
+                            INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, user_verified_target_path)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(base_dir, filepath) DO UPDATE SET
+                             file_hash=excluded.file_hash,
+                             extracted_text=excluded.extracted_text,
+                             user_verified_target_path=excluded.user_verified_target_path
+                            """,
+                            docs_to_upsert,
+                        )
+
+                # Execute moves safely to avoid overwriting during cyclic renames
+                try:
+                    failed_moves = []
+                    for src, dst in moves:
+                        try:
+                            from app.core.mover import get_safe_path
+
+                            db_conn = get_db_connection(self.db.db_path)
+
+                            # Fix parent directory collisions
+                            parts = (
+                                safe_relpath(dst, base_dir)
+                                .replace("\\", "/")
+                                .split("/")
+                            )
+                            current = base_dir
+                            for part in parts[:-1]:
+                                current = os.path.join(current, part)
+                                if os.path.exists(current) and not os.path.isdir(
+                                    current
+                                ):
+                                    safe_current = get_safe_path(
+                                        os.path.dirname(current),
+                                        os.path.basename(current),
+                                    )
+                                    _robust_move(current, safe_current)
+                                    rel_current = safe_relpath(
+                                        current, base_dir
+                                    ).replace("\\", "/")
+                                    rel_safe = safe_relpath(
+                                        safe_current, base_dir
+                                    ).replace("\\", "/")
+                                    with db_conn:
+                                        db_conn.execute(
+                                            "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                            (
+                                                rel_safe,
+                                                base_dir,
+                                                rel_current,
+                                                rel_current,
+                                            ),
+                                        )
+                                        db_conn.execute(
+                                            "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
+                                            (
+                                                rel_safe,
+                                                len(rel_current) + 1,
+                                                base_dir,
+                                                rel_current + "/%",
+                                                rel_current + "/%",
+                                            ),
+                                        )
+
+                            os.makedirs(os.path.dirname(dst), exist_ok=True)
+                            if os.path.islink(dst):
+                                try:
+                                    from app.core.resilient_file_ops import (
+                                        resilient_remove,
+                                    )
+
+                                    resilient_remove(dst)
+                                except OSError:
+                                    pass
+
+                            rel_src = safe_relpath(src, base_dir).replace("\\", "/")
+                            rel_dst = safe_relpath(dst, base_dir).replace("\\", "/")
+
+                            if os.path.exists(dst) and not os.path.samefile(src, dst):
+                                is_cyclic = False
+                                for m_src, m_dst in moves:
+                                    if m_src == dst:
+                                        is_cyclic = True
+                                        break
+
+                                if is_cyclic:
+                                    # Cyclic rename conflict -> isolate to safe transient path
+                                    branch_rel_temp = os.path.join(
+                                        ".branches", safety_session_id, rel_dst
+                                    ).replace("\\", "/")
+                                    temp_dst = os.path.join(base_dir, branch_rel_temp)
+                                    os.makedirs(
+                                        os.path.dirname(temp_dst), exist_ok=True
+                                    )
+                                    _robust_move(dst, temp_dst)
+
+                                    with db_conn:
+                                        db_conn.execute(
+                                            "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                            (
+                                                branch_rel_temp,
+                                                base_dir,
+                                                rel_dst,
+                                                rel_dst,
+                                            ),
+                                        )
+
+                                    for i, (m_src, m_dst) in enumerate(moves):
+                                        if m_src == dst:
+                                            moves[i] = (temp_dst, m_dst)
+                                else:
+                                    # Non-cyclic inline rename (Requirement 2)
+                                    safe_dst = get_safe_path(
+                                        os.path.dirname(dst), os.path.basename(dst)
+                                    )
+                                    _robust_move(dst, safe_dst)
+
+                                    safe_rel = safe_relpath(safe_dst, base_dir).replace(
+                                        "\\", "/"
+                                    )
+                                    with db_conn:
+                                        db_conn.execute(
+                                            "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                            (safe_rel, base_dir, rel_dst, rel_dst),
+                                        )
+                                        db_conn.execute(
+                                            "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
+                                            (
+                                                safe_rel,
+                                                len(rel_dst) + 1,
+                                                base_dir,
+                                                rel_dst + "/%",
+                                                rel_dst + "/%",
+                                            ),
+                                        )
+
+                                _robust_move(src, dst)
+                            else:
+                                if not os.path.exists(dst):
+                                    _robust_move(src, dst)
+
+                            with db_conn:
+                                db_conn.execute(
+                                    "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                    (base_dir, rel_src, rel_src),
+                                )
+                                rel_dst_norm = rel_dst.replace("\\", "/")
+                                snapshot_doc = (
+                                    snapshot_docs_dict.get(rel_dst_norm)
+                                    or snapshot_docs_dict.get(rel_dst)
+                                    or snapshot_docs_dict.get(
+                                        rel_dst.replace("/", "\\")
+                                    )
+                                )
+                                if snapshot_doc:
+                                    verified_target = (
+                                        snapshot_doc[3]
+                                        if len(snapshot_doc) > 3
+                                        else None
+                                    )
+                                    db_conn.execute(
+                                        """
+                                        INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, user_verified_target_path)
+                            VALUES (?, ?, ?, ?, ?)
+                            ON CONFLICT(base_dir, filepath) DO UPDATE SET
+                                file_hash=excluded.file_hash,
+                                extracted_text=excluded.extracted_text,
+                                user_verified_target_path=excluded.user_verified_target_path
+                                        """,
+                                        (
+                                            base_dir,
+                                            rel_dst,
+                                            snapshot_doc[1],
+                                            snapshot_doc[2],
+                                            verified_target,
+                                        ),
+                                    )
+                        except Exception as move_err:
+                            import logging
+
+                            logging.error(
+                                f"Failed to move {src} to {dst} during recovery: {move_err}"
+                            )
+                            failed_moves.append((src, dst, move_err))
+
+                    if failed_moves:
+                        first_err = failed_moves[0][2]
+                        raise PermissionError(
+                            f"Recovery incomplete: {len(failed_moves)} file(s) failed to restore. Safety storage preserved. Error: {first_err}"
+                        )
+
+                    # Restore symlinks and junctions after standard files
+                    for target_abs, symlink_target, l_type in symlinks_to_restore:
+                        if (
+                            os.path.exists(target_abs)
+                            or os.path.islink(target_abs)
+                            or is_junction_path(target_abs)
+                        ):
+                            if os.path.islink(target_abs) or is_junction_path(
+                                target_abs
+                            ):
+                                try:
+                                    from app.core.resilient_file_ops import (
+                                        resilient_remove,
+                                    )
+
+                                    resilient_remove(target_abs)
+                                except OSError:
+                                    pass
+                            else:
+                                from app.core.mover import get_safe_path
+
+                                safe_path = get_safe_path(
+                                    os.path.dirname(target_abs),
+                                    os.path.basename(target_abs),
+                                )
+                                _robust_move(target_abs, safe_path)
+
+                                rel_target = safe_relpath(target_abs, base_dir).replace(
+                                    "\\", "/"
+                                )
+                                rel_safe = safe_relpath(safe_path, base_dir).replace(
+                                    "\\", "/"
+                                )
+                                db_conn = get_db_connection(self.db.db_path)
+                                with db_conn:
+                                    db_conn.execute(
+                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                        (rel_safe, base_dir, rel_target, rel_target),
+                                    )
+                                    db_conn.execute(
+                                        "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
+                                        (
+                                            rel_safe,
+                                            len(rel_target) + 1,
+                                            base_dir,
+                                            rel_target + "/%",
+                                            rel_target + "/%",
+                                        ),
+                                    )
+                        try:
+                            os.makedirs(os.path.dirname(target_abs), exist_ok=True)
+                            if l_type == "junction":
+                                from app.core.mover import _create_junction
+
+                                _create_junction(symlink_target, target_abs)
+                            else:
+                                os.symlink(symlink_target, target_abs)
+                        except OSError as e:
+                            import logging
+
+                            logging.warning(
+                                f"Failed to recreate link at {target_abs}: {e}"
+                            )
+
+                    # Restore Windows shortcuts after standard files and symlinks
                     for (
-                        rel_path,
-                        inode,
-                        size,
-                        mtime,
-                        is_symlink,
-                        symlink_target,
-                        file_hash,
-                        link_type,
+                        target_abs,
+                        lnk_target,
                         arguments,
                         description,
                         icon_file,
                         icon_index,
                         work_dir,
                         window_mode,
-                    ) in snapshot_files:
-                        target_abs = os.path.join(base_dir, rel_path)
-                        current_abs = None
-                        target_sig = (size, mtime, is_symlink, symlink_target)
-
-                        is_lnk = (
-                            1
-                            if (link_type == "lnk" or rel_path.lower().endswith(".lnk"))
-                            else 0
-                        )
-                        is_link_entity = bool(is_symlink or is_lnk)
-
-                        if inodes_reliable and inode in current_inodes:
-                            abs_path, current_sig = current_inodes[inode]
-                            if is_link_entity:
-                                current_abs = abs_path
-                                del current_inodes[inode]
-                            else:
-                                if current_sig[2] == is_symlink:
-                                    if (
-                                        not is_symlink
-                                        or current_sig[3] == symlink_target
-                                    ):
-                                        if verify_hash(abs_path, file_hash, size):
-                                            current_abs = abs_path
-                                            del current_inodes[inode]
-
-                        if not current_abs:
-                            curr_sig = active_files_by_rel_path.get(
-                                rel_path.lower().replace("\\", "/")
-                            )
-                            if is_link_entity:
-                                if curr_sig is not None:
-                                    current_abs = target_abs
-                            else:
-                                if curr_sig == target_sig:
-                                    candidate_abs = target_abs
-                                    if verify_hash(candidate_abs, file_hash, size):
-                                        current_abs = candidate_abs
-                                        if (
-                                            curr_sig in active_files_by_sig
-                                            and current_abs
-                                            in active_files_by_sig[curr_sig]
-                                        ):
-                                            active_files_by_sig[curr_sig].remove(
-                                                current_abs
-                                            )
-                            if not current_abs:
-                                if not is_link_entity:
-                                    if (
-                                        target_sig in active_files_by_sig
-                                        and active_files_by_sig[target_sig]
-                                    ):
-                                        for idx, cand_path in enumerate(
-                                            active_files_by_sig[target_sig]
-                                        ):
-                                            if verify_hash(cand_path, file_hash, size):
-                                                current_abs = active_files_by_sig[
-                                                    target_sig
-                                                ].pop(idx)
-                                                break
-                                    if not current_abs:
-                                        if (
-                                            size in active_files_by_size
-                                            and active_files_by_size[size]
-                                        ):
-                                            for idx, cand_path in enumerate(
-                                                active_files_by_size[size]
-                                            ):
-                                                if verify_hash(
-                                                    cand_path, file_hash, size
-                                                ):
-                                                    current_abs = active_files_by_size[
-                                                        size
-                                                    ].pop(idx)
-                                                    break
-
-                        print(
-                            f"DEBUG ROLLBACK FILE {rel_path}: current_abs resolved to = {current_abs}",
-                            flush=True,
-                        )
-                        if not current_abs:
-                            if not is_link_entity and not ignore_missing:
-                                raise ValueError(
-                                    f"Rollback validation failed: file hash mismatch or missing for {rel_path}"
-                                )
-
-                        if is_link_entity:
-                            if current_abs and current_abs != target_abs:
+                    ) in shortcuts_to_restore:
+                        if os.path.exists(target_abs) or os.path.islink(target_abs):
+                            if os.path.islink(
+                                target_abs
+                            ) or target_abs.lower().endswith(".lnk"):
                                 try:
                                     from app.core.resilient_file_ops import (
                                         resilient_remove,
                                     )
 
-                                    resilient_remove(current_abs)
+                                    resilient_remove(target_abs)
                                 except OSError:
                                     pass
-                            if is_symlink or link_type == "junction":
-                                symlinks_to_restore.append(
-                                    (target_abs, symlink_target, link_type)
-                                )
-                            elif is_lnk:
-                                shortcuts_to_restore.append(
-                                    (
-                                        target_abs,
-                                        symlink_target,
-                                        arguments,
-                                        description,
-                                        icon_file,
-                                        icon_index,
-                                        work_dir,
-                                        window_mode,
-                                    )
-                                )
-                        else:
-                            if current_abs:
-                                same_file = False
-                                if os.path.exists(current_abs) and os.path.exists(
-                                    target_abs
-                                ):
-                                    try:
-                                        same_file = os.path.samefile(
-                                            current_abs, target_abs
-                                        )
-                                    except OSError:
-                                        pass
-                                if not same_file:
-                                    if current_abs != target_abs:
-                                        moves.append((current_abs, target_abs))
-
-                    planned_target_rels = {
-                        safe_relpath(m[1], base_dir).lower().replace("\\", "/")
-                        for m in moves
-                    }
-
-                    try:
-                        cur = conn.execute(
-                            "SELECT filepath, file_hash, extracted_text, user_verified_target_path FROM snapshot_documents WHERE session_id = ?",
-                            (session_id,),
-                        )
-                        snapshot_docs = cur.fetchall()
-                        snapshot_docs_dict = {
-                            r[0].replace("\\", "/"): (
-                                r[0].replace("\\", "/"),
-                                r[1],
-                                r[2],
-                                r[3] if len(r) > 3 else None,
-                            )
-                            for r in snapshot_docs
-                        }
-                    except Exception:
-                        cur = conn.execute(
-                            "SELECT filepath, file_hash, extracted_text FROM snapshot_documents WHERE session_id = ?",
-                            (session_id,),
-                        )
-                        snapshot_docs = cur.fetchall()
-                        snapshot_docs_dict = {
-                            r[0].replace("\\", "/"): (
-                                r[0].replace("\\", "/"),
-                                r[1],
-                                r[2],
-                                None,
-                            )
-                            for r in snapshot_docs
-                        }
-
-                    # Write rollback journal before any modifications or relocations
-                    try:
-                        import json
-                        from pathlib import Path
-
-                        journal_path = (
-                            Path(self.db_path).parent / "rollback_journal.json"
-                        )
-                        journal_data = {
-                            "session_id": session_id,
-                            "safety_session_id": safety_session_id,
-                            "base_dir": base_dir,
-                            "moves": moves,
-                            "symlinks": symlinks_to_restore,
-                            "shortcuts": shortcuts_to_restore,
-                        }
-                        with open(journal_path, "w") as f:
-                            json.dump(journal_data, f, indent=2)
-                    except Exception as ex:
-                        import logging
-
-                        logging.warning(f"Failed to write rollback journal: {ex}")
-
-                    # 1. Pre-Move Synchronization
-                    db_conn = get_db_connection(self.db.db_path)
-                    with db_conn:
-                        docs_to_upsert = []
-                        for fp, r in snapshot_docs_dict.items():
-                            if fp.lower().replace("\\", "/") not in planned_target_rels:
-                                verified_target = r[3] if len(r) > 3 else None
-                                docs_to_upsert.append(
-                                    (base_dir, r[0], r[1], r[2], verified_target)
-                                )
-                        if docs_to_upsert:
-                            db_conn.executemany(
-                                """
-                                INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, user_verified_target_path)
-                            VALUES (?, ?, ?, ?, ?)
-                            ON CONFLICT(base_dir, filepath) DO UPDATE SET
-                                 file_hash=excluded.file_hash,
-                                 extracted_text=excluded.extracted_text,
-                                 user_verified_target_path=excluded.user_verified_target_path
-                                """,
-                                docs_to_upsert,
-                            )
-
-                    # Execute moves safely to avoid overwriting during cyclic renames
-                    try:
-                        failed_moves = []
-                        for src, dst in moves:
-                            try:
+                            else:
                                 from app.core.mover import get_safe_path
 
-                                db_conn = get_db_connection(self.db.db_path)
-
-                                # Fix parent directory collisions
-                                parts = (
-                                    safe_relpath(dst, base_dir)
-                                    .replace("\\", "/")
-                                    .split("/")
+                                safe_path = get_safe_path(
+                                    os.path.dirname(target_abs),
+                                    os.path.basename(target_abs),
                                 )
-                                current = base_dir
-                                for part in parts[:-1]:
-                                    current = os.path.join(current, part)
-                                    if os.path.exists(current) and not os.path.isdir(
-                                        current
-                                    ):
-                                        safe_current = get_safe_path(
-                                            os.path.dirname(current),
-                                            os.path.basename(current),
-                                        )
-                                        _robust_move(current, safe_current)
-                                        rel_current = safe_relpath(
-                                            current, base_dir
-                                        ).replace("\\", "/")
-                                        rel_safe = safe_relpath(
-                                            safe_current, base_dir
-                                        ).replace("\\", "/")
-                                        with db_conn:
-                                            db_conn.execute(
-                                                "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                                (
-                                                    rel_safe,
-                                                    base_dir,
-                                                    rel_current,
-                                                    rel_current,
-                                                ),
-                                            )
-                                            db_conn.execute(
-                                                "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
-                                                (
-                                                    rel_safe,
-                                                    len(rel_current) + 1,
-                                                    base_dir,
-                                                    rel_current + "/%",
-                                                    rel_current + "/%",
-                                                ),
-                                            )
+                                _robust_move(target_abs, safe_path)
 
-                                os.makedirs(os.path.dirname(dst), exist_ok=True)
-                                if os.path.islink(dst):
-                                    try:
-                                        from app.core.resilient_file_ops import (
-                                            resilient_remove,
-                                        )
-
-                                        resilient_remove(dst)
-                                    except OSError:
-                                        pass
-
-                                rel_src = safe_relpath(src, base_dir).replace("\\", "/")
-                                rel_dst = safe_relpath(dst, base_dir).replace("\\", "/")
-
-                                if os.path.exists(dst) and not os.path.samefile(
-                                    src, dst
-                                ):
-                                    is_cyclic = False
-                                    for m_src, m_dst in moves:
-                                        if m_src == dst:
-                                            is_cyclic = True
-                                            break
-
-                                    if is_cyclic:
-                                        # Cyclic rename conflict -> isolate to safe transient path
-                                        branch_rel_temp = os.path.join(
-                                            ".branches", safety_session_id, rel_dst
-                                        ).replace("\\", "/")
-                                        temp_dst = os.path.join(
-                                            base_dir, branch_rel_temp
-                                        )
-                                        os.makedirs(
-                                            os.path.dirname(temp_dst), exist_ok=True
-                                        )
-                                        _robust_move(dst, temp_dst)
-
-                                        with db_conn:
-                                            db_conn.execute(
-                                                "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                                (
-                                                    branch_rel_temp,
-                                                    base_dir,
-                                                    rel_dst,
-                                                    rel_dst,
-                                                ),
-                                            )
-
-                                        for i, (m_src, m_dst) in enumerate(moves):
-                                            if m_src == dst:
-                                                moves[i] = (temp_dst, m_dst)
-                                    else:
-                                        # Non-cyclic inline rename (Requirement 2)
-                                        safe_dst = get_safe_path(
-                                            os.path.dirname(dst), os.path.basename(dst)
-                                        )
-                                        _robust_move(dst, safe_dst)
-
-                                        safe_rel = safe_relpath(
-                                            safe_dst, base_dir
-                                        ).replace("\\", "/")
-                                        with db_conn:
-                                            db_conn.execute(
-                                                "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                                (safe_rel, base_dir, rel_dst, rel_dst),
-                                            )
-                                            db_conn.execute(
-                                                "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
-                                                (
-                                                    safe_rel,
-                                                    len(rel_dst) + 1,
-                                                    base_dir,
-                                                    rel_dst + "/%",
-                                                    rel_dst + "/%",
-                                                ),
-                                            )
-
-                                    _robust_move(src, dst)
-                                else:
-                                    if not os.path.exists(dst):
-                                        _robust_move(src, dst)
-
+                                rel_target = safe_relpath(target_abs, base_dir).replace(
+                                    "\\", "/"
+                                )
+                                rel_safe = safe_relpath(safe_path, base_dir).replace(
+                                    "\\", "/"
+                                )
+                                db_conn = get_db_connection(self.db.db_path)
                                 with db_conn:
                                     db_conn.execute(
-                                        "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                        (base_dir, rel_src, rel_src),
+                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                        (rel_safe, base_dir, rel_target, rel_target),
                                     )
-                                    rel_dst_norm = rel_dst.replace("\\", "/")
-                                    snapshot_doc = (
-                                        snapshot_docs_dict.get(rel_dst_norm)
-                                        or snapshot_docs_dict.get(rel_dst)
-                                        or snapshot_docs_dict.get(
-                                            rel_dst.replace("/", "\\")
-                                        )
+                                    db_conn.execute(
+                                        "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
+                                        (
+                                            rel_safe,
+                                            len(rel_target) + 1,
+                                            base_dir,
+                                            rel_target + "/%",
+                                            rel_target + "/%",
+                                        ),
                                     )
-                                    if snapshot_doc:
-                                        verified_target = (
-                                            snapshot_doc[3]
-                                            if len(snapshot_doc) > 3
-                                            else None
-                                        )
-                                        db_conn.execute(
-                                            """
-                                            INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, user_verified_target_path)
-                                VALUES (?, ?, ?, ?, ?)
-                                ON CONFLICT(base_dir, filepath) DO UPDATE SET
-                                    file_hash=excluded.file_hash,
-                                    extracted_text=excluded.extracted_text,
-                                    user_verified_target_path=excluded.user_verified_target_path
-                                            """,
-                                            (
-                                                base_dir,
-                                                rel_dst,
-                                                snapshot_doc[1],
-                                                snapshot_doc[2],
-                                                verified_target,
-                                            ),
-                                        )
-                            except Exception as move_err:
-                                import logging
-
-                                logging.error(
-                                    f"Failed to move {src} to {dst} during recovery: {move_err}"
-                                )
-                                failed_moves.append((src, dst, move_err))
-
-                        if failed_moves:
-                            first_err = failed_moves[0][2]
-                            raise PermissionError(
-                                f"Recovery incomplete: {len(failed_moves)} file(s) failed to restore. Safety storage preserved. Error: {first_err}"
-                            )
-
-                        # Restore symlinks and junctions after standard files
-                        for target_abs, symlink_target, l_type in symlinks_to_restore:
-                            if (
-                                os.path.exists(target_abs)
-                                or os.path.islink(target_abs)
-                                or is_junction_path(target_abs)
-                            ):
-                                if os.path.islink(target_abs) or is_junction_path(
-                                    target_abs
-                                ):
-                                    try:
-                                        from app.core.resilient_file_ops import (
-                                            resilient_remove,
-                                        )
-
-                                        resilient_remove(target_abs)
-                                    except OSError:
-                                        pass
-                                else:
-                                    from app.core.mover import get_safe_path
-
-                                    safe_path = get_safe_path(
-                                        os.path.dirname(target_abs),
-                                        os.path.basename(target_abs),
-                                    )
-                                    _robust_move(target_abs, safe_path)
-
-                                    rel_target = safe_relpath(
-                                        target_abs, base_dir
-                                    ).replace("\\", "/")
-                                    rel_safe = safe_relpath(
-                                        safe_path, base_dir
-                                    ).replace("\\", "/")
-                                    db_conn = get_db_connection(self.db.db_path)
-                                    with db_conn:
-                                        db_conn.execute(
-                                            "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                            (
-                                                rel_safe,
-                                                base_dir,
-                                                rel_target,
-                                                rel_target,
-                                            ),
-                                        )
-                                        db_conn.execute(
-                                            "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
-                                            (
-                                                rel_safe,
-                                                len(rel_target) + 1,
-                                                base_dir,
-                                                rel_target + "/%",
-                                                rel_target + "/%",
-                                            ),
-                                        )
-                            try:
+                        try:
+                            if pylnk3 and lnk_target:
                                 os.makedirs(os.path.dirname(target_abs), exist_ok=True)
-                                if l_type == "junction":
-                                    from app.core.mover import _create_junction
-
-                                    _create_junction(symlink_target, target_abs)
-                                else:
-                                    os.symlink(symlink_target, target_abs)
-                            except OSError as e:
-                                import logging
-
-                                logging.warning(
-                                    f"Failed to recreate link at {target_abs}: {e}"
+                                kwargs = {
+                                    "arguments": arguments,
+                                    "description": description,
+                                    "icon_file": icon_file,
+                                    "icon_index": icon_index or 0,
+                                    "work_dir": work_dir,
+                                    "window_mode": window_mode,
+                                }
+                                pylnk3.for_file(
+                                    lnk_target, lnk_name=target_abs, **kwargs
                                 )
+                            else:
+                                os.makedirs(os.path.dirname(target_abs), exist_ok=True)
+                                with open(target_abs, "w") as f:
+                                    f.write("")
+                        except Exception as e:
+                            import logging
 
-                        # Restore Windows shortcuts after standard files and symlinks
-                        for (
-                            target_abs,
-                            lnk_target,
-                            arguments,
-                            description,
-                            icon_file,
-                            icon_index,
-                            work_dir,
-                            window_mode,
-                        ) in shortcuts_to_restore:
-                            if os.path.exists(target_abs) or os.path.islink(target_abs):
-                                if os.path.islink(
-                                    target_abs
-                                ) or target_abs.lower().endswith(".lnk"):
-                                    try:
-                                        from app.core.resilient_file_ops import (
-                                            resilient_remove,
-                                        )
-
-                                        resilient_remove(target_abs)
-                                    except OSError:
-                                        pass
-                                else:
-                                    from app.core.mover import get_safe_path
-
-                                    safe_path = get_safe_path(
-                                        os.path.dirname(target_abs),
-                                        os.path.basename(target_abs),
-                                    )
-                                    _robust_move(target_abs, safe_path)
-
-                                    rel_target = safe_relpath(
-                                        target_abs, base_dir
-                                    ).replace("\\", "/")
-                                    rel_safe = safe_relpath(
-                                        safe_path, base_dir
-                                    ).replace("\\", "/")
-                                    db_conn = get_db_connection(self.db.db_path)
-                                    with db_conn:
-                                        db_conn.execute(
-                                            "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                            (
-                                                rel_safe,
-                                                base_dir,
-                                                rel_target,
-                                                rel_target,
-                                            ),
-                                        )
-                                        db_conn.execute(
-                                            "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
-                                            (
-                                                rel_safe,
-                                                len(rel_target) + 1,
-                                                base_dir,
-                                                rel_target + "/%",
-                                                rel_target + "/%",
-                                            ),
-                                        )
-                            try:
-                                if pylnk3 and lnk_target:
-                                    os.makedirs(
-                                        os.path.dirname(target_abs), exist_ok=True
-                                    )
-                                    kwargs = {
-                                        "arguments": arguments,
-                                        "description": description,
-                                        "icon_file": icon_file,
-                                        "icon_index": icon_index or 0,
-                                        "work_dir": work_dir,
-                                        "window_mode": window_mode,
-                                    }
-                                    pylnk3.for_file(
-                                        lnk_target, lnk_name=target_abs, **kwargs
-                                    )
-                                else:
-                                    os.makedirs(
-                                        os.path.dirname(target_abs), exist_ok=True
-                                    )
-                                    with open(target_abs, "w") as f:
-                                        f.write("")
-                            except Exception as e:
-                                import logging
-
-                                logging.warning(
-                                    f"Failed to recreate Windows shortcut at {target_abs}: {e}"
-                                )
-
-                    except Exception as e:
-                        conn.execute(
-                            "UPDATE sessions SET status = 'failed' WHERE session_id = ?",
-                            (session_id,),
-                        )
-                        conn.commit()
-                        raise e
-
-                    # Clean up any leftover/orphaned files that were copied during the failed transfer
-                    # but are not in the snapshot files.
-                    from app.core.scanner import get_files_recursively
-
-                    try:
-                        import gc
-                        import time
-
-                        gc.collect()
-                        time.sleep(0.1)
-                        current_files_after_restore = get_files_recursively(
-                            base_dir, include_hidden=True
-                        )
-                        snapshot_rel_paths = {
-                            r[0].lower().replace("\\", "/") for r in snapshot_files
-                        }
-                        for rel_path in current_files_after_restore:
-                            norm_rel_path = rel_path.lower().replace("\\", "/")
-                            if norm_rel_path not in snapshot_rel_paths:
-                                abs_path = os.path.join(base_dir, rel_path)
-                                if os.path.lexists(abs_path) and not os.path.isdir(
-                                    abs_path
-                                ):
-                                    try:
-                                        from app.core.resilient_file_ops import (
-                                            resilient_remove,
-                                        )
-
-                                        resilient_remove(abs_path)
-                                    except OSError:
-                                        pass
-                    except Exception:
-                        pass
-
-                    # Clean empty directories
-                    from app.config import AppSettings
-                    from app.core.mover import _remove_empty_dirs
-
-                    try:
-                        app_settings = AppSettings()
-                        protected_paths = getattr(app_settings, "PROTECTED_PATHS", [])
-                        protected_paths = [os.path.normpath(p) for p in protected_paths]
-                    except Exception:
-                        protected_paths = None
-
-                    for entry in os.listdir(base_dir):
-                        entry_path = os.path.join(base_dir, entry)
-                        if os.path.isdir(entry_path):
-                            try:
-                                _remove_empty_dirs(entry_path, protected_paths)
-                            except Exception:
-                                pass
-
-                    # Restore Cache
-                    cur = conn.execute(
-                        "SELECT corpus, locked_files, index_to_word, manual_folders FROM snapshot_cache WHERE session_id = ?",
-                        (session_id,),
-                    )
-                    row = cur.fetchone()
-                    cache_conn = self.cache_manager._get_conn()
-                    with cache_conn:
-                        if row:
-                            cache_conn.execute(
-                                """
-                                INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
-                                VALUES (?, ?, ?, ?, ?)
-                                ON CONFLICT(source_directory) DO UPDATE SET
-                                    corpus=excluded.corpus,
-                                    locked_files=excluded.locked_files,
-                                    index_to_word=excluded.index_to_word,
-                                    manual_folders=excluded.manual_folders
-                                """,
-                                (base_dir, row[0], row[1], row[2], row[3]),
-                            )
-                        else:
-                            cache_conn.execute(
-                                "DELETE FROM directory_cache WHERE source_directory = ?",
-                                (base_dir,),
+                            logging.warning(
+                                f"Failed to recreate Windows shortcut at {target_abs}: {e}"
                             )
 
+                except Exception as e:
                     conn.execute(
-                        "UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?",
+                        "UPDATE sessions SET status = 'failed' WHERE session_id = ?",
                         (session_id,),
                     )
-                    self.db.invalidate_cache(base_dir)
-                    try:
-                        from app.core.shared_registry import SharedModelRegistry
+                    conn.commit()
+                    raise e
 
-                        jev_engine = (
-                            SharedModelRegistry.get_instance().get_jev_classifier()
+                # Clean up any leftover/orphaned files that were copied during the failed transfer
+                # but are not in the snapshot files.
+                from app.core.scanner import get_files_recursively
+
+                try:
+                    import gc
+                    import time
+
+                    gc.collect()
+                    time.sleep(0.1)
+                    current_files_after_restore = get_files_recursively(
+                        base_dir, include_hidden=True
+                    )
+                    snapshot_rel_paths = {
+                        r[0].lower().replace("\\", "/") for r in snapshot_files
+                    }
+                    for rel_path in current_files_after_restore:
+                        norm_rel_path = rel_path.lower().replace("\\", "/")
+                        if norm_rel_path not in snapshot_rel_paths:
+                            abs_path = os.path.join(base_dir, rel_path)
+                            if os.path.lexists(abs_path) and not os.path.isdir(
+                                abs_path
+                            ):
+                                try:
+                                    from app.core.resilient_file_ops import (
+                                        resilient_remove,
+                                    )
+
+                                    resilient_remove(abs_path)
+                                except OSError:
+                                    pass
+                except Exception:
+                    pass
+
+                # Clean empty directories
+                from app.config import AppSettings
+                from app.core.mover import _remove_empty_dirs
+
+                try:
+                    app_settings = AppSettings()
+                    protected_paths = getattr(app_settings, "PROTECTED_PATHS", [])
+                    protected_paths = [os.path.normpath(p) for p in protected_paths]
+                except Exception:
+                    protected_paths = None
+
+                for entry in os.listdir(base_dir):
+                    entry_path = os.path.join(base_dir, entry)
+                    if os.path.isdir(entry_path):
+                        try:
+                            _remove_empty_dirs(entry_path, protected_paths)
+                        except Exception:
+                            pass
+
+                # Restore Cache
+                cur = conn.execute(
+                    "SELECT corpus, locked_files, index_to_word, manual_folders FROM snapshot_cache WHERE session_id = ?",
+                    (session_id,),
+                )
+                row = cur.fetchone()
+                cache_conn = self.cache_manager._get_conn()
+                with cache_conn:
+                    if row:
+                        cache_conn.execute(
+                            """
+                            INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
+                            VALUES (?, ?, ?, ?, ?)
+                            ON CONFLICT(source_directory) DO UPDATE SET
+                                corpus=excluded.corpus,
+                                locked_files=excluded.locked_files,
+                                index_to_word=excluded.index_to_word,
+                                manual_folders=excluded.manual_folders
+                            """,
+                            (base_dir, row[0], row[1], row[2], row[3]),
                         )
-                        if jev_engine and hasattr(jev_engine, "clear_cache"):
-                            jev_engine.clear_cache()
-                    except Exception:
-                        pass
-
-                    # Clean delete of rollback journal file
-                    try:
-                        from pathlib import Path
-
-                        journal_path = (
-                            Path(self.db_path).parent / "rollback_journal.json"
+                    else:
+                        cache_conn.execute(
+                            "DELETE FROM directory_cache WHERE source_directory = ?",
+                            (base_dir,),
                         )
-                        if journal_path.exists():
-                            journal_path.unlink()
-                    except Exception as ex:
-                        import logging
 
-                        logging.warning(f"Failed to delete rollback journal: {ex}")
+                conn.execute(
+                    "UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?",
+                    (session_id,),
+                )
+                self.db.invalidate_cache(base_dir)
+                try:
+                    from app.core.shared_registry import SharedModelRegistry
 
-        finally:
-            try:
-                conn.close()
-            except Exception:
-                pass
+                    jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
+                    if jev_engine and hasattr(jev_engine, "clear_cache"):
+                        jev_engine.clear_cache()
+                except Exception:
+                    pass
+
+                # Clean delete of rollback journal file
+                try:
+                    from pathlib import Path
+
+                    journal_path = Path(self.db_path).parent / "rollback_journal.json"
+                    if journal_path.exists():
+                        journal_path.unlink()
+                except Exception as ex:
+                    import logging
+
+                    logging.warning(f"Failed to delete rollback journal: {ex}")
 
         return len(moves)
 
@@ -2203,30 +2159,23 @@ class HistoryManager:
             conn = get_db_connection(self.db_path)
             step_count = 0
             base_dir = None
-            try:
-                with conn:
-                    try:
-                        cur = conn.execute(
-                            "SELECT COUNT(*) FROM step_ledger WHERE session_id = ?",
-                            (session_id,),
-                        )
-                        step_count = cur.fetchone()[0]
-                    except Exception:
-                        step_count = 0
-
+            with conn:
+                try:
                     cur = conn.execute(
-                        "SELECT base_dir FROM sessions WHERE session_id = ?",
+                        "SELECT COUNT(*) FROM step_ledger WHERE session_id = ?",
                         (session_id,),
                     )
-                    row = cur.fetchone()
-                    if not row:
-                        raise ValueError("Session not found")
-                    base_dir = row[0]
-            finally:
-                try:
-                    conn.close()
+                    step_count = cur.fetchone()[0]
                 except Exception:
-                    pass
+                    step_count = 0
+
+                cur = conn.execute(
+                    "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
+                )
+                row = cur.fetchone()
+                if not row:
+                    raise ValueError("Session not found")
+                base_dir = row[0]
 
             # Pre-rollback safety snapshot created BEFORE any file system write operation
             safety_session_id = None

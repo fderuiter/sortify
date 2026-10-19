@@ -1027,16 +1027,12 @@ class SharedModelRegistry:
         if model_id in self._models and self._models[model_id] is not None:
             return self._models[model_id]
 
-        from app.core.jev_classifier import JevClassifierEngine
-
-        settings = getattr(self, "_cached_settings", None)
-        if settings is not None and getattr(settings, "AI_CONSENT_GRANTED", True) is False:
-            return JevClassifierEngine()
-
         model_lock = self._get_model_lock(model_id)
         with model_lock:
             if model_id in self._models and self._models[model_id] is not None:
                 return self._models[model_id]
+
+            from app.core.jev_classifier import JevClassifierEngine
 
             engine = JevClassifierEngine()
             with self._lock:

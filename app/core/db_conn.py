@@ -156,12 +156,7 @@ def get_db_connection(db_path: str):
 
     with _cache_lock:
         if cache_key in _connection_cache:
-            conn = _connection_cache[cache_key]
-            try:
-                conn.execute("SELECT 1")
-                return conn
-            except Exception:
-                _connection_cache.pop(cache_key, None)
+            return _connection_cache[cache_key]
 
         # Automatically clean up connections for dead threads to prevent resource and lock leaks on Windows
         clear_dead_thread_connections()

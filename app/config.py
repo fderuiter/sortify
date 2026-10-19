@@ -92,8 +92,6 @@ class Settings(BaseSettings):
     AI_ASSISTED_NAMING: bool = Field(default=False)
     PRESERVE_HIERARCHY: bool = Field(default=False)
     MAX_FOLDERS: int = Field(default=12, gt=0, le=50)
-    LICENSE_KEY: str = Field(default="")
-    IS_PRO_TIER: bool = Field(default=False)
     MAX_WORKERS: int = Field(default=4, gt=0, le=64)
     MAX_DEPTH: int = Field(default=5, gt=0, le=10)
     MAX_FEATURES: int = Field(default=3, gt=0, le=10)
