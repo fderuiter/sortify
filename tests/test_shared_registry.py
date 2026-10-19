@@ -462,12 +462,12 @@ def test_sandbox_address_resolution_allows_local():
     mock_gfq = MagicMock(return_value="localhost")
 
     with (
-        patch("app.core.shared_registry._original_getaddrinfo", mock_gai),
-        patch("app.core.shared_registry._original_gethostbyname", mock_ghn),
-        patch("app.core.shared_registry._original_gethostbyname_ex", mock_ghne),
-        patch("app.core.shared_registry._original_gethostbyaddr", mock_gha),
-        patch("app.core.shared_registry._original_getnameinfo", mock_gni),
-        patch("app.core.shared_registry._original_getfqdn", mock_gfq),
+        patch("app.core.network_guard._real_getaddrinfo", mock_gai),
+        patch("app.core.network_guard._real_gethostbyname", mock_ghn),
+        patch("app.core.network_guard._real_gethostbyname_ex", mock_ghne),
+        patch("app.core.network_guard._real_gethostbyaddr", mock_gha),
+        patch("app.core.network_guard._real_getnameinfo", mock_gni),
+        patch("app.core.network_guard._real_getfqdn", mock_gfq),
         block_external_network(),
     ):
         # 1. getaddrinfo
@@ -503,12 +503,15 @@ def test_sandbox_address_resolution_allows_local():
 
 def test_sandbox_address_resolution_inactive_allows_all():
     """Verify that external lookups are permitted and call original methods when block is inactive."""
+    from app.core.network_guard import install
+
+    install()
     mock_gai = MagicMock(return_value=[])
     mock_ghn = MagicMock(return_value="93.184.216.34")
 
     with (
-        patch("app.core.shared_registry._original_getaddrinfo", mock_gai),
-        patch("app.core.shared_registry._original_gethostbyname", mock_ghn),
+        patch("app.core.network_guard._real_getaddrinfo", mock_gai),
+        patch("app.core.network_guard._real_gethostbyname", mock_ghn),
     ):
         res1 = socket.getaddrinfo("example.com", 80)
         assert res1 == []
@@ -519,31 +522,38 @@ def test_sandbox_address_resolution_inactive_allows_all():
         mock_ghn.assert_called_once_with("example.com")
 
 
-def test_sandbox_address_resolution_supports_mocks():
-    """Verify that mock/magic mock interfaces are supported and don't cause failures or blocks."""
-    from app.core.shared_registry import block_external_network
+def test_import_does_not_patch_socket():
+    """Importing core modules leaves the stdlib socket functions untouched."""
+    import subprocess
+    import sys
 
-    # If the original getaddrinfo is a Mock, it should bypass sandbox and return mock's value
-    mock_orig = MagicMock(return_value="mocked-result")
+    cmd = [
+        sys.executable,
+        "-c",
+        "import socket; real = socket.getaddrinfo, socket.socket.connect; "
+        "import app.core.shared_registry, app.core.network_guard; "
+        "assert (socket.getaddrinfo, socket.socket.connect) == real",
+    ]
+    res = subprocess.run(cmd, capture_output=True, text=True)
+    assert res.returncode == 0, res.stderr
 
-    with (
-        patch("app.core.shared_registry._original_getaddrinfo", mock_orig),
-        block_external_network(),
-    ):
-        res = socket.getaddrinfo("example.com", 80)
-        assert res == "mocked-result"
-        mock_orig.assert_called_once_with("example.com", 80)
 
-    # If host argument is a Mock, it should also bypass and be processed by original
-    mock_host = MagicMock()
-    mock_orig_host = MagicMock(return_value="mocked-host-result")
-    with (
-        patch("app.core.shared_registry._original_getaddrinfo", mock_orig_host),
-        block_external_network(),
-    ):
-        res_host = socket.getaddrinfo(mock_host, 80)
-        assert res_host == "mocked-host-result"
-        mock_orig_host.assert_called_once_with(mock_host, 80)
+def test_network_guard_install_is_idempotent():
+    """Installing twice keeps the wrappers and uninstall restores the originals."""
+    from app.core import network_guard
+
+    was_installed = network_guard.is_installed()
+    network_guard.install()
+    network_guard.install()
+    assert socket.getaddrinfo is network_guard.safe_getaddrinfo
+    assert socket.socket.connect is network_guard.safe_connect
+    network_guard.uninstall()
+    try:
+        assert socket.getaddrinfo is network_guard._real_getaddrinfo
+        assert socket.socket.connect is network_guard._real_connect
+    finally:
+        if was_installed:
+            network_guard.install()
 
 
 def test_hardware_helpers():

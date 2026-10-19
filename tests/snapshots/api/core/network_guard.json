@@ -1,0 +1,188 @@
+{
+  "_metadata": {
+    "checksum": "eca153774bdb3d8fa7034d7c88d202f491791d7822affe156dabe86d6fe66f2b"
+  },
+  "classes": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [
+        "@contextmanager"
+      ],
+      "name": "block_external_network",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": "'worker execution'",
+          "name": "reason"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "install",
+      "parameters": [],
+      "returns": "None"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_installed",
+      "parameters": [],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "safe_connect",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "self"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "address"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "safe_connect_ex",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "self"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "address"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "safe_getaddrinfo",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "*args"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "**kwargs"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "safe_getfqdn",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "*args"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "**kwargs"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "safe_gethostbyaddr",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "*args"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "**kwargs"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "safe_gethostbyname",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "*args"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "**kwargs"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "safe_gethostbyname_ex",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "*args"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "**kwargs"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "safe_getnameinfo",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "*args"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "**kwargs"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "uninstall",
+      "parameters": [],
+      "returns": "None"
+    }
+  ]
+}

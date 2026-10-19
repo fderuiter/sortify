@@ -105,8 +105,9 @@ class DBWorker:
 
     def _run(self):
         try:
-            from app.core.shared_registry import _thread_local
+            from app.core.network_guard import _thread_local, install
 
+            install()
             _thread_local.sandboxed = True
             _thread_local.reason = "database worker execution"
         except Exception:
@@ -149,7 +150,9 @@ class DBWorker:
                         )
                         self._do_rollback_session(sess_id)
                     except Exception as rollback_err:
-                        logger.error(f"Failed during automatic transaction rollback: {rollback_err}")
+                        logger.error(
+                            f"Failed during automatic transaction rollback: {rollback_err}"
+                        )
                 if result_q is not None:
                     result_q.put(("error", e))
             finally:
@@ -309,14 +312,19 @@ class DBWorker:
             except Exception:
                 pass
 
-    def stop(self):
-        """Gracefully stop the worker thread and wait for it to finish."""
-        try:
-            from app.core.semantic_embeddings import SemanticEmbeddingManager
+    def stop(self, stop_embeddings: bool = True):
+        """Gracefully stop the worker thread and wait for it to finish.
 
-            SemanticEmbeddingManager.stop_all()
-        except Exception:
-            pass
+        ``stop_embeddings`` also stops every SemanticEmbeddingManager in the
+        process; pass False when stopping a short-lived worker inside a running app.
+        """
+        if stop_embeddings:
+            try:
+                from app.core.semantic_embeddings import SemanticEmbeddingManager
+
+                SemanticEmbeddingManager.stop_all()
+            except Exception:
+                pass
 
         with self._lock:
             if self._stopped:

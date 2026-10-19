@@ -133,6 +133,8 @@ jobs:
   build-and-test:
     name: Build & Test
     strategy:
+      # Let every OS finish so a failure on one doesn't hide the others' results.
+      fail-fast: false
       matrix:
         os: [ubuntu-latest, windows-latest, macos-latest]
     runs-on: ${{ matrix.os }}

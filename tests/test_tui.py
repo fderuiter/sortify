@@ -2,6 +2,7 @@
 
 import asyncio
 import os
+import re
 import tempfile
 from unittest.mock import AsyncMock, MagicMock, patch
 
@@ -870,6 +871,11 @@ def test_tui_conflict_policy_settings_and_tree_indicator(temp_workspace):
                 await pilot.pause(0.1)
 
                 assert app.settings.CONFLICT_POLICY == "overwrite"
+
+                # Saving settings starts a background rescan that replaces
+                # app.plan; let it finish so it can't overwrite the plan below.
+                await app.workers.wait_for_complete()
+                await pilot.pause()
 
                 # Create colliding target file and rebuild tree
                 src_file = os.path.join(temp_workspace, "doc.pdf")
@@ -2112,5 +2118,142 @@ def test_ctrl_q_quits_from_tree_and_search_input(temp_workspace, focus_search):
             await pilot.press("ctrl+q")
             await pilot.pause()
             assert app.return_code == 0
+
+    asyncio.run(_test())
+
+
+def test_scan_and_execute_are_refused_while_moves_are_running(temp_workspace):
+    """Ctrl+S and Ctrl+E during a running move keep the live session and plan."""
+    import threading
+
+    release_moves = threading.Event()
+    moves_started = threading.Event()
+
+    def _slow_moves(plan, progress_callback=None):
+        moves_started.set()
+        release_moves.wait(timeout=10)
+        return {"moved": 1, "failed": 0}
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            session = MagicMock()
+            session.base_dir = temp_workspace
+            session.execute_moves.side_effect = _slow_moves
+            app.app_session = session
+            app.plan = {
+                "Invoices": {
+                    "document_1.pdf": {
+                        "__type__": "file",
+                        "filepath": os.path.join(temp_workspace, "document_1.pdf"),
+                        "target_filename": "document_1.pdf",
+                        "relative_source": "document_1.pdf",
+                    }
+                }
+            }
+            app.rebuild_tree()
+            await pilot.pause()
+
+            with (
+                patch(
+                    "app.core.verifier.VerificationEngine.get_duplicate_groups",
+                    return_value=[],
+                ),
+                patch.object(app, "run_scan_worker") as scan_worker,
+                patch.object(app, "action_open_audit_report"),
+                patch.object(app, "announce", wraps=app.announce) as announce,
+            ):
+                await pilot.press("ctrl+e")
+                await asyncio.to_thread(moves_started.wait, 5)
+
+                await pilot.press("ctrl+s")
+                await pilot.press("ctrl+e")
+                await pilot.pause()
+
+                scan_worker.assert_not_called()
+                session.close.assert_not_called()
+                assert session.execute_moves.call_count == 1
+                busy = [
+                    c.args[0]
+                    for c in announce.call_args_list
+                    if "still being moved" in c.args[0]
+                ]
+                assert len(busy) == 2
+
+                release_moves.set()
+                await app.workers.wait_for_complete()
+                await pilot.pause()
+
+                # The automatic rescan runs once the move has finished.
+                scan_worker.assert_called_once()
+
+    asyncio.run(_test())
+
+
+def _cheat_sheet_key_label(key: str) -> str:
+    named = {
+        "plus": "+",
+        "minus": "-",
+        "question_mark": "?",
+        "space": "Space",
+        "shift+g": "G",
+    }
+    if key in named:
+        return named[key]
+    if key.startswith("ctrl+"):
+        return "Ctrl+" + key[len("ctrl+") :].upper()
+    return key.upper() if len(key) == 1 else key.capitalize()
+
+
+def test_cheat_sheet_lists_every_main_screen_shortcut(temp_workspace):
+    """Bindings hidden from the footer must still be discoverable via ? / F1."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test(size=(120, 40)) as pilot:
+            app.action_open_cheat_sheet()
+            await pilot.pause()
+            rows = [
+                re.split(r"\s{2,}- ", str(label.render()).strip(), maxsplit=1)[0]
+                for label in app.screen.query(".shortcut-row")
+            ]
+            listed_keys = " | ".join(rows).lower()
+            missing = [
+                b.key
+                for b in AutoSorterTUI.BINDINGS
+                if _cheat_sheet_key_label(b.key).lower() not in listed_keys
+            ]
+            assert missing == []
+
+    asyncio.run(_test())
+
+
+def test_footer_shows_core_workflow_shortcuts_only():
+    """The footer stays short enough that Scan and Quit are always visible."""
+    shown = {b.action for b in AutoSorterTUI.BINDINGS if b.show}
+    assert {"scan_directory", "execute_sort", "select_dir", "quit"} <= shown
+    assert len(shown) <= 8
+
+
+def test_empty_state_tells_user_how_to_start(temp_workspace):
+    """With no plan, the inspector and status line point at Ctrl+S / Ctrl+B."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            meta = str(app.query_one("#meta-details", Static).render())
+            assert "Press Ctrl+S to scan" in meta
+            assert temp_workspace in meta.replace("\n", "")
 
     asyncio.run(_test())

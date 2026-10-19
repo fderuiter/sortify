@@ -136,7 +136,11 @@ def test_tui_scan_worker_announces_skipped_invalid_locks():
             ),
         ),
         patch.object(app, "announce", side_effect=fake_announce),
+        # The worker body runs without a running app here, so the tree rebuild
+        # (which starts a Textual validation worker) can't run; stub it out.
+        patch.object(app, "rebuild_tree") as rebuild_tree,
     ):
         app.run_scan_worker.__wrapped__(app)
 
+    rebuild_tree.assert_called_once()
     assert any("bad lock path was skipped" in msg for msg in announcements)

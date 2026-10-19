@@ -3741,6 +3741,32 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
                 classes="shortcut-row",
             )
 
+            yield Heading("Selecting Files:", level=2, classes="section-title")
+            yield Label(
+                "  Space       - Check / uncheck the selected file or folder",
+                classes="shortcut-row",
+            )
+            yield Label(
+                "  a           - Check or uncheck everything",
+                classes="shortcut-row",
+            )
+            yield Label(
+                "  v           - Range select from the last checked node",
+                classes="shortcut-row",
+            )
+            yield Label(
+                "  x / i       - Exclude / include the checked files",
+                classes="shortcut-row",
+            )
+            yield Label(
+                "  r           - Move the checked files to another folder",
+                classes="shortcut-row",
+            )
+            yield Label(
+                "  Ctrl+F      - Search the plan tree",
+                classes="shortcut-row",
+            )
+
             yield Heading("Application Operations:", level=2, classes="section-title")
             yield Label(
                 "  Ctrl+S      - Scan directory and generate plan",
@@ -3756,7 +3782,7 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
             )
             yield Label("  Ctrl+E      - Execute sorting plan", classes="shortcut-row")
             yield Label(
-                "  Ctrl+B      - Browse / select target directory",
+                "  Ctrl+B      - Choose the folder to sort",
                 classes="shortcut-row",
             )
             yield Label(
@@ -3771,6 +3797,23 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
             )
             yield Label(
                 "  Ctrl+C      - Open CRO multi-study forensic ingestion",
+                classes="shortcut-row",
+            )
+
+            yield Label(
+                "  Ctrl+D      - Open DropZone to sort dropped files",
+                classes="shortcut-row",
+            )
+            yield Label(
+                "  Ctrl+A      - Open the audit report of the last run",
+                classes="shortcut-row",
+            )
+            yield Label(
+                "  Ctrl+M      - Open the model manager",
+                classes="shortcut-row",
+            )
+            yield Label(
+                "  G           - Create a sample dataset in the current folder",
                 classes="shortcut-row",
             )
 
@@ -5434,11 +5477,19 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     "⚠️ Warning: Rolling back will restore files to their original locations prior to this session. Any subsequent manual edits or file relocations in target folders may be unwound or overwritten."
                 )
 
-            yield Checkbox(
-                "Force rollback (ignore missing target files)",
-                value=False,
-                id="chk-ignore-missing",
-            )
+            if self.session_info.get("step_count"):
+                # Step-ledger sessions always skip files that are no longer
+                # at their sorted location, so a force option would do nothing.
+                yield Label(
+                    "Files that are no longer at their sorted location are skipped.",
+                    id="lbl-confirm-missing",
+                )
+            else:
+                yield Checkbox(
+                    "Roll back even if some sorted files are missing (they are skipped)",
+                    value=False,
+                    id="chk-ignore-missing",
+                )
 
             with Horizontal(classes="button-row"):
                 btn_cancel = Button(
@@ -5458,7 +5509,8 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     @on(Button.Pressed, "#btn-confirm-rollback")
     def action_confirm(self) -> None:
         """Confirm rollback action and dismiss modal with parameters."""
-        chk = self.query_one("#chk-ignore-missing", Checkbox)
+        checkboxes = self.query("#chk-ignore-missing").results(Checkbox)
+        chk = next(iter(checkboxes), None)
         self.dismiss(
             {
                 "confirmed": True,
@@ -5605,6 +5657,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             sessions = find_all_history_sessions()
         self.sessions = sessions or []
         self.base_dir = base_dir
+        self._rollback_in_progress = False
 
     def compose(self) -> ComposeResult:
         """Compose history view, export, and rollback modal widgets."""
@@ -5826,6 +5879,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             self.query_one("#btn-rollback-session", Button).disabled = True
             self.query_one("#btn-export", Button).disabled = True
             self.query_one("#btn-cancel", Button).disabled = True
+            self._rollback_in_progress = True
 
             lbl_status = self.query_one("#lbl-rollback-status", Label)
             lbl_status.update(f"⏳ Rolling back session {sid[:8]}... Please wait.")
@@ -5844,21 +5898,12 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     ) -> None:
         """Execute session rollback asynchronously in background worker thread."""
         try:
-            from app.config import get_app_dir
-            from app.core.cache import CacheManager
-            from app.core.db import Database
-            from app.core.db_worker import DBWorker
-            from app.core.history import HistoryManager
+            from app.core.history import open_session_history
 
-            target_db = history_db_path or str(get_app_dir() / "history.db")
-            db_worker = DBWorker()
-            db = Database(get_app_dir() / "autosorter.db", db_worker)
-            cache_mgr = CacheManager(str(get_app_dir() / "cache.db"), db_worker)
-            history_mgr = HistoryManager(db, cache_mgr, target_db)
-
-            restored_count = history_mgr.rollback(
-                session_id, ignore_missing=ignore_missing
-            )
+            with open_session_history(history_db_path) as history_mgr:
+                restored_count = history_mgr.rollback(
+                    session_id, ignore_missing=ignore_missing
+                )
 
             app_obj = getattr(self, "app", None)
             if app_obj and hasattr(app_obj, "call_from_thread"):
@@ -5876,6 +5921,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
     def _on_rollback_success(self, session_id: str, restored_count: int) -> None:
         """Handle successful session rollback completion on main thread."""
+        self._rollback_in_progress = False
         from app.main import find_all_history_sessions
 
         self.sessions = find_all_history_sessions()
@@ -5900,6 +5946,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
     def _on_rollback_failure(self, session_id: str, err: Exception) -> None:
         """Handle session rollback failure on main thread."""
+        self._rollback_in_progress = False
         lbl_status = self.query_one("#lbl-rollback-status", Label)
         lbl_status.update(f"❌ Rollback failed: {err}")
 
@@ -5943,7 +5990,10 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
-        """Cancel history export modal."""
+        """Cancel history export modal, unless a rollback is still running."""
+        if self._rollback_in_progress:
+            self.announce("Rollback in progress. Please wait for it to finish.")
+            return
         self.dismiss(None)
 
 
@@ -6427,7 +6477,7 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
             dest_file_path = os.path.join(target_dir, os.path.basename(orig_rel))
             self.execute_release_async(record, dest_file_path)
 
-        self.push_screen(DirectorySelectModal(base_dir), _dir_selected_callback)
+        self.app.push_screen(DirectorySelectModal(base_dir), _dir_selected_callback)
 
     @work(thread=True)
     def execute_release_async(self, record: dict, dest_file_path: str) -> None:
@@ -6628,33 +6678,33 @@ class AutoSorterTUI(A11yMixin, App):
 
     BINDINGS = [
         Binding("space", "toggle_selection", "Toggle Checkbox", show=True),
-        Binding("x", "exclude_selected", "Exclude Checked", show=True),
-        Binding("i", "include_selected", "Include Checked", show=True),
-        Binding("r", "reassign_selected", "Reassign Checked", show=True),
-        Binding("v", "visual_range_select", "Range Select", show=True),
-        Binding("a", "toggle_select_all", "Select/Deselect All", show=True),
-        Binding("ctrl+l", "toggle_lock", "Lock/Unlock", show=True),
-        Binding("ctrl+r", "rename_node", "Rename Node", show=True),
-        Binding("ctrl+n", "new_folder", "New Folder", show=True),
-        Binding("plus", "rate_positive", "Rating (+)", show=True),
-        Binding("minus", "rate_negative", "Rating (-)", show=True),
-        Binding("ctrl+o", "open_settings", "Settings", show=True),
-        Binding("ctrl+m", "open_model_manager", "Model Manager", show=True),
-        Binding("ctrl+w", "open_wizard", "Wizard", show=True),
-        Binding("ctrl+c", "open_cro_forensic", "CRO Ingest", show=True),
-        Binding("ctrl+d", "open_dropzone", "DropZone", show=True),
+        Binding("x", "exclude_selected", "Exclude Checked", show=False),
+        Binding("i", "include_selected", "Include Checked", show=False),
+        Binding("r", "reassign_selected", "Reassign Checked", show=False),
+        Binding("v", "visual_range_select", "Range Select", show=False),
+        Binding("a", "toggle_select_all", "Select/Deselect All", show=False),
+        Binding("ctrl+l", "toggle_lock", "Lock/Unlock", show=False),
+        Binding("ctrl+r", "rename_node", "Rename Node", show=False),
+        Binding("ctrl+n", "new_folder", "New Folder", show=False),
+        Binding("plus", "rate_positive", "Rating (+)", show=False),
+        Binding("minus", "rate_negative", "Rating (-)", show=False),
+        Binding("ctrl+o", "open_settings", "Settings", show=False),
+        Binding("ctrl+m", "open_model_manager", "Model Manager", show=False),
+        Binding("ctrl+w", "open_wizard", "Wizard", show=False),
+        Binding("ctrl+c", "open_cro_forensic", "CRO Ingest", show=False),
+        Binding("ctrl+d", "open_dropzone", "DropZone", show=False),
         Binding("ctrl+s", "scan_directory", "Scan", show=True),
-        Binding("ctrl+h", "open_history", "History View", show=True),
-        Binding("ctrl+u", "open_quarantine_vault", "Quarantine Vault", show=True),
+        Binding("ctrl+h", "open_history", "History View", show=False),
+        Binding("ctrl+u", "open_quarantine_vault", "Quarantine Vault", show=False),
         Binding("ctrl+e", "execute_sort", "Execute Plan", show=True),
-        Binding("ctrl+a", "open_audit_report", "Audit Report", show=True),
-        Binding("ctrl+p", "open_extraction_preview", "Extraction Preview", show=True),
+        Binding("ctrl+a", "open_audit_report", "Audit Report", show=False),
+        Binding("ctrl+p", "open_extraction_preview", "Extraction Preview", show=False),
         Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
         Binding("ctrl+f", "focus_search", "Search Tree", show=True),
         Binding("g", "generate_sample_corpus", "Sample Dataset", show=False),
         Binding("G", "generate_sample_corpus", "Sample Dataset", show=False),
         Binding("shift+g", "generate_sample_corpus", "Sample Dataset", show=False),
-        Binding("question_mark", "open_cheat_sheet", "Help (?)", show=True),
+        Binding("question_mark", "open_cheat_sheet", "Help", show=True),
         Binding("f1", "open_cheat_sheet", "Help (F1)", show=False),
         Binding("ctrl+q", "quit", "Quit", show=True),
     ]
@@ -6963,6 +7013,12 @@ class AutoSorterTUI(A11yMixin, App):
         """Handle viewport resize lifecycle event to update dual-pane container layout."""
         self._update_layout(event.size.width)
 
+    def _start_hint(self) -> str:
+        """Tell a user with no plan yet which key starts the workflow."""
+        if self.base_dir:
+            return f"No plan yet. Press Ctrl+S to scan {self.base_dir}, or Ctrl+B to choose another folder."
+        return "No plan yet. Press Ctrl+B to choose a folder to sort."
+
     def on_mount(self) -> None:
         """Mount event handler."""
         self._update_layout(self.size.width)
@@ -6985,7 +7041,7 @@ class AutoSorterTUI(A11yMixin, App):
             tree.focus()
         except Exception:
             pass
-        self.announce("Sortify AI Pro TUI initialized and ready.")
+        self.announce(f"Ready. {self._start_hint()}")
         self.check_abandoned_sessions()
 
         env_non_interactive = os.environ.get("NON_INTERACTIVE")
@@ -7413,9 +7469,40 @@ class AutoSorterTUI(A11yMixin, App):
         ):
             self.action_select_dir()
             return
+        if self._announce_if_busy("scan"):
+            return
+        self._start_scan()
 
+    def _start_scan(self) -> None:
+        """Announce and launch the scan worker without the busy guard."""
         self.announce(f"Scanning directories: {', '.join(self.source_dirs)} ...")
         self.run_scan_worker()
+
+    def _running_pipeline_worker(self) -> Optional[str]:
+        """Return the name of a running scan or execute worker, if any."""
+        for worker in self.workers:
+            if worker.is_running and worker.name in (
+                "run_scan_worker",
+                "run_execute_worker",
+            ):
+                return worker.name
+        return None
+
+    def _announce_if_busy(self, action: str) -> bool:
+        """Refuse to start ``action`` while a scan or move is still running.
+
+        Both workers share the default exclusive group, so starting one cancels
+        the other and replaces the AppSession that a running move depends on.
+        """
+        running = self._running_pipeline_worker()
+        if running is None:
+            return False
+        if running == "run_execute_worker":
+            msg = f"Files are still being moved. Wait for it to finish before you {action}."
+        else:
+            msg = f"A scan is still running. Wait for it to finish before you {action}."
+        self.announce(msg, priority="assertive")
+        return True
 
     @work(exclusive=True, thread=True)
     def run_scan_worker(self) -> None:
@@ -7626,6 +7713,8 @@ class AutoSorterTUI(A11yMixin, App):
             return
         if not self.plan or not self.app_session:
             self.announce("No plan available to execute. Run [Ctrl+S] Scan first.")
+            return
+        if self._announce_if_busy("execute the plan"):
             return
 
         exec_plan = self._get_executable_plan()
@@ -7916,7 +8005,6 @@ class AutoSorterTUI(A11yMixin, App):
             )
             msg = f"Execution completed successfully! Summary: {summary}"
             self.call_from_thread(self.announce, msg)
-            self.call_from_thread(self.action_scan_directory)
 
             audit_report = (
                 summary.get("audit_report") if isinstance(summary, dict) else None
@@ -7935,6 +8023,8 @@ class AutoSorterTUI(A11yMixin, App):
 
             if audit_report:
                 self.call_from_thread(self.action_open_audit_report, audit_report)
+            # Rescan last: the scan worker replaces the AppSession this worker uses.
+            self.call_from_thread(self._start_scan)
         except Exception as e:
             logger.error(f"Error executing moves: {e}")
             self.call_from_thread(self.announce, f"Execution error: {e}")
@@ -8456,7 +8546,11 @@ class AutoSorterTUI(A11yMixin, App):
             pass
 
         if not data or not isinstance(data, dict):
-            msg = "Root folder of sorting plan."
+            msg = (
+                "Root folder of sorting plan."
+                if getattr(self, "plan", None)
+                else self._start_hint()
+            )
             try:
                 meta_widget = self.query_one("#meta-details", Static)
                 meta_widget.update(msg)

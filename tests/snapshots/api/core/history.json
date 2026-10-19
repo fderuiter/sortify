@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "5afd369162c7e02dc81fcdd66566505ce8d23123199710246f90756e4ffda0aa"
+    "checksum": "fd28e8e016c4b12e3decd5c602b5c9d0a7428dc044e1a883269740da9b8ac39d"
   },
   "classes": [
     {
@@ -250,5 +250,21 @@
       ]
     }
   ],
-  "functions": []
+  "functions": [
+    {
+      "async": false,
+      "decorators": [
+        "@contextmanager"
+      ],
+      "name": "open_session_history",
+      "parameters": [
+        {
+          "annotation": "'str | os.PathLike[str] | None'",
+          "default": "None",
+          "name": "history_db_path"
+        }
+      ],
+      "returns": "Iterator[HistoryManager]"
+    }
+  ]
 }
