@@ -77,3 +77,58 @@ def test_concurrent_db_conn_access(tmp_path):
         assert len(results) == 10
         assert all(r == 1 for r in results)
         clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_concurrent_first_open_of_one_path_is_serialized(tmp_path):
+    """Threads opening the same new database never run its setup at the same time.
+
+    Setup switches the database to WAL, which needs an exclusive lock; on Windows
+    two threads doing it at once fail with "database is locked" (#741).
+    """
+    import concurrent.futures
+    import threading
+    import time
+
+    from app.core import db_conn
+    from app.core.crypto import SessionCrypto
+
+    db_file = tmp_path / "serialized.db"
+    key_file = tmp_path / "serialized.key"
+    key_file.write_text("serialized_secret_key_123", encoding="utf-8")
+    crypto = SessionCrypto(key_file, db_file)
+
+    real_connect = db_conn.sqlite3.connect
+    active = 0
+    peak = 0
+    counter_lock = threading.Lock()
+
+    def tracking_connect(*args, **kwargs):
+        nonlocal active, peak
+        with counter_lock:
+            active += 1
+            peak = max(peak, active)
+        try:
+            time.sleep(0.02)
+            return real_connect(*args, **kwargs)
+        finally:
+            with counter_lock:
+                active -= 1
+
+    with (
+        patch("app.core.path_utils.resolve_db_crypto", return_value=crypto),
+        patch.object(db_conn.sqlite3, "connect", side_effect=tracking_connect),
+    ):
+        clear_connection_cache(only_current_and_inactive=False)
+        barrier = threading.Barrier(8)
+
+        def worker():
+            barrier.wait()
+            return get_db_connection(str(db_file)).execute("SELECT 1").fetchone()[0]
+
+        with concurrent.futures.ThreadPoolExecutor(max_workers=8) as executor:
+            results = list(executor.map(lambda _: worker(), range(8)))
+
+        clear_connection_cache(only_current_and_inactive=False)
+
+    assert results == [1] * 8
+    assert peak == 1
