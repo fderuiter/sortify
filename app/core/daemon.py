@@ -221,7 +221,7 @@ class ContinuousWatchdogDaemon:
         self._sort_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
 
         # Process-isolated worker management
-        self._sorting_process: Optional[multiprocessing.Process] = None
+        self._sorting_process: Optional[multiprocessing.process.BaseProcess] = None
         self._proc_cancel_event: Optional[Any] = None
         self._rerun_pending: bool = False
 
@@ -615,9 +615,11 @@ class ContinuousWatchdogDaemon:
     def _get_or_create_session(self) -> AppSession:
         """Thread-safe lazy initialization of the daemon AppSession."""
         with self._lock:
-            if getattr(self, "_app_session", None) is None:
-                self._app_session = AppSession(self.settings, self.base_dir)
-            return self._app_session
+            session = getattr(self, "_app_session", None)
+            if session is None:
+                session = AppSession(self.settings, self.base_dir)
+                self._app_session = session
+            return session
 
     def _start_pipeline_event_loop(self):
         """Initialize and launch the background asyncio event loop thread for streaming event processing."""
@@ -784,9 +786,10 @@ class ContinuousWatchdogDaemon:
             return self._cancel_event.is_set() or not self._is_running
 
         try:
-            if getattr(self.settings, "_save_timer", None) is not None:
+            save_timer = getattr(self.settings, "_save_timer", None)
+            if save_timer is not None:
                 try:
-                    self.settings._save_timer.cancel()
+                    save_timer.cancel()
                 except Exception:
                     pass
                 self.settings._save()
@@ -1224,9 +1227,10 @@ class ContinuousWatchdogDaemon:
         self._event_queue = None
 
         with self._lock:
-            if getattr(self, "_app_session", None):
+            session = getattr(self, "_app_session", None)
+            if session:
                 try:
-                    self._app_session.close()
+                    session.close()
                 except Exception:
                     pass
                 self._app_session = None
@@ -1241,10 +1245,12 @@ class ContinuousWatchdogDaemon:
 
             # Track the start time of the first event in a sequence
             now = time.time()
-            if getattr(self, "_first_event_time", None) is None:
-                self._first_event_time = now
+            first_event_time = getattr(self, "_first_event_time", None)
+            if first_event_time is None:
+                first_event_time = now
+                self._first_event_time = first_event_time
 
-            elapsed = now - self._first_event_time
+            elapsed = now - first_event_time
             debounce_delay = getattr(self.settings, "DEBOUNCE_DELAY", 0.6)
             max_debounce_delay = getattr(self.settings, "MAX_DEBOUNCE_DELAY", 5.0)
 
@@ -1363,9 +1369,10 @@ class ContinuousWatchdogDaemon:
 
         # Dynamic reload of settings
         try:
-            if getattr(self.settings, "_save_timer", None) is not None:
+            save_timer = getattr(self.settings, "_save_timer", None)
+            if save_timer is not None:
                 try:
-                    self.settings._save_timer.cancel()
+                    save_timer.cancel()
                 except Exception:
                     pass
                 self.settings._save()

@@ -64,10 +64,8 @@ class ExtractionResult(BaseModel):
     def __contains__(self, item: Any) -> bool:
         """Check substring or attribute membership."""
         if isinstance(item, str):
-            if hasattr(self, item) or (
-                getattr(self, "__pydantic_extra__", None) is not None
-                and item in self.__pydantic_extra__
-            ):
+            extra = getattr(self, "__pydantic_extra__", None)
+            if hasattr(self, item) or (extra is not None and item in extra):
                 return True
             return item in str(self)
         return False
@@ -275,7 +273,7 @@ def extract_file_text(
 
 def fast_triage_extract(
     file_path: str, settings=None, db=None, base_dir: str | None = None
-) -> str:
+) -> ExtractionResult:
     """Fast-tier synchronous extractor for native text and metadata (<50ms)."""
     return extract_file_text(
         file_path, settings=settings, fast_triage=True, db=db, base_dir=base_dir

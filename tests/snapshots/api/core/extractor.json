@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "1760ee6a7609cbf9adb896ba2321f7cb96b16ead439135a578d8b09c25388c4d"
+    "checksum": "51386b4afda3cde3a6d08beafdd88c410495853ec2b81d4ca889adbc81d55c6e"
   },
   "classes": [
     {
@@ -278,7 +278,7 @@
           "name": "base_dir"
         }
       ],
-      "returns": "str"
+      "returns": "ExtractionResult"
     },
     {
       "async": false,

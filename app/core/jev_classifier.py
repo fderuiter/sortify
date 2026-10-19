@@ -442,11 +442,12 @@ class JevClassifierEngine:
         try:
             self.memory_cache.clear()
             if self.db_path:
+                db_path = self.db_path
 
                 def _write_delete_all():
                     from app.core.db_conn import get_db_connection
 
-                    conn = get_db_connection(self.db_path)
+                    conn = get_db_connection(db_path)
                     with conn:
                         conn.execute("DELETE FROM jev_classification_cache")
 
@@ -470,11 +471,12 @@ class JevClassifierEngine:
                 self.memory_cache.invalidate(k)
 
             if self.db_path:
+                db_path = self.db_path
 
                 def _write_delete():
                     from app.core.db_conn import get_db_connection
 
-                    conn = get_db_connection(self.db_path)
+                    conn = get_db_connection(db_path)
                     with conn:
                         conn.execute(
                             "DELETE FROM jev_classification_cache WHERE file_path = ?",
@@ -552,7 +554,8 @@ class JevClassifierEngine:
         self, stat_key: Tuple[str, float, int], result: JevClassificationResult
     ) -> None:
         """Persist a classification result into SQLite database via DBWorker."""
-        if not self.db_path:
+        db_path = self.db_path
+        if not db_path:
             return
         abs_path, mtime, size = stat_key
         try:
@@ -562,7 +565,7 @@ class JevClassifierEngine:
             def _write_upsert():
                 from app.core.db_conn import get_db_connection
 
-                conn = get_db_connection(self.db_path)
+                conn = get_db_connection(db_path)
                 with conn:
                     conn.execute(
                         """INSERT INTO jev_classification_cache (
