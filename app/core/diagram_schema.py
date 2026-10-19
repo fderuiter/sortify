@@ -8,6 +8,16 @@ from pydantic import BaseModel, Field, field_validator
 ALLOWED_URL_SCHEMES = {"http", "https", "mailto", "file"}
 
 
+_EDGE_LABEL_SPECIAL_CHARS = set("()[]{}|<>")
+
+
+def _edge_label(label: str) -> str:
+    """Quote a flowchart edge label when it contains Mermaid shape delimiters."""
+    if any(ch in _EDGE_LABEL_SPECIAL_CHARS for ch in label):
+        return '"' + label.replace('"', "#quot;") + '"'
+    return label
+
+
 class DiagramNode(BaseModel, defer_build=True):
     """Specification model for a single diagram node vertex."""
 
@@ -113,7 +123,7 @@ class ComponentDiagramSpec(BaseModel, defer_build=True):
                     lines.append(f"    {format_node(node)}")
 
             for edge in self.edges:
-                lbl_part = f"|{edge.label}|" if edge.label else ""
+                lbl_part = f"|{_edge_label(edge.label)}|" if edge.label else ""
                 lines.append(
                     f"    {edge.source} {edge.arrow_type}{lbl_part} {edge.target}"
                 )
@@ -478,7 +488,7 @@ class DataFlowDiagramSpec(BaseModel):
                         lbl_text = f"{lbl_text}: {edge.contract}"
                     else:
                         lbl_text = edge.contract
-                lbl_part = f"|{lbl_text}|" if lbl_text else ""
+                lbl_part = f"|{_edge_label(lbl_text)}|" if lbl_text else ""
                 lines.append(
                     f"    {edge.source} {edge.arrow_type}{lbl_part} {edge.target}"
                 )

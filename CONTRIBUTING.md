@@ -62,7 +62,7 @@ Some checks compare against committed files. When you change them on purpose, re
 - **Generated docs:** `uv run docs` rewrites the generated pages and `SECURITY.md`.
 - **API and CLI signatures:** `uv run python scripts/validate_signatures.py --update`.
 - **TUI snapshots:** `UPDATE_SNAPSHOTS=1 uv run pytest tests/test_visual_snapshots.py -n 0`, then commit `tests/snapshots/tui_svg/`.
-- **Diagrams:** edit the spec in `app/core/diagram_schema.py`, then `uv run python scripts/diagram_toolchain.py build` (needs Node and `@mermaid-js/mermaid-cli`).
+- **Diagrams:** edit the spec in `app/core/diagram_schema.py`, then run `uv run python scripts/diagram_toolchain.py build` and commit the `.mmd` and `.svg` files in `docs/assets/diagrams/`. Rendering needs Node and mermaid-cli (`npm install -g @mermaid-js/mermaid-cli`, which also fetches the headless Chrome it uses). Without it the build keeps the existing SVGs and warns that a changed diagram is stale.
 
 ## Code conventions
 

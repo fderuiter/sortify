@@ -1,7 +1,7 @@
 """Schema-Driven Diagram Compiler and External CLI Toolchain.
 
 Compiles declarative diagram schemas into canonical Mermaid (.mmd) files,
-validates syntax, and renders visual SVG and PNG diagram assets using @mermaid-js/mermaid-cli.
+validates syntax, and renders SVG diagram assets using @mermaid-js/mermaid-cli.
 """
 
 import argparse
@@ -66,7 +66,7 @@ def is_browser_available(
                 "white",
             ]
             res = subprocess.run(
-                probe_cmd, capture_output=True, text=True, check=False, timeout=2
+                probe_cmd, capture_output=True, text=True, check=False, timeout=60
             )
             if (
                 res.returncode == 0
@@ -462,7 +462,7 @@ def render_diagram_artifact(
     ]
     try:
         res = subprocess.run(
-            cmd, capture_output=True, text=True, check=False, timeout=10
+            cmd, capture_output=True, text=True, check=False, timeout=60
         )
         if res.returncode != 0:
             sys.stderr.write(
@@ -485,7 +485,7 @@ def build_diagrams(
     force: bool = False,
     verify_only: bool = False,
 ) -> bool:
-    """Compile diagram specifications into .mmd, SVG, and PNG assets."""
+    """Compile diagram specifications into .mmd and SVG assets."""
     os.chdir(REPO_ROOT)
     if not output_dir.is_absolute():
         output_dir = REPO_ROOT / output_dir
@@ -526,7 +526,6 @@ def build_diagrams(
     for spec_id, spec in specs.items():
         mmd_file = output_dir / f"{spec_id}.mmd"
         svg_file = output_dir / f"{spec_id}.svg"
-        png_file = output_dir / f"{spec_id}.png"
 
         try:
             mmd_content = spec.to_mermaid()
@@ -557,6 +556,10 @@ def build_diagrams(
             all_success = False
             continue
 
+        previous_mmd = (
+            mmd_file.read_text(encoding="utf-8") if mmd_file.exists() else None
+        )
+
         # Write or update .mmd file
         with open(mmd_file, "w", encoding="utf-8", newline="\n") as f:
             f.write(mmd_content)
@@ -566,12 +569,7 @@ def build_diagrams(
             cached_entry.get("sha256") if isinstance(cached_entry, dict) else None
         )
 
-        needs_render = (
-            force
-            or cached_hash != current_hash
-            or not svg_file.exists()
-            or (has_browser and not png_file.exists())
-        )
+        needs_render = force or cached_hash != current_hash or not svg_file.exists()
 
         if verify_only:
             # In verification mode, check schema validity and syntax, then headless compilation or fallback notice
@@ -596,10 +594,8 @@ def build_diagrams(
                         f"Verified spec '{spec_id}' -> {mmd_file.name} (headless compilation successful)."
                     )
             else:
-                fallback_svg = generate_fallback_svg(spec.title, mmd_content)
-                if not svg_file.exists() or force or cached_hash != current_hash:
-                    with open(svg_file, "w", encoding="utf-8", newline="\n") as f:
-                        f.write(fallback_svg)
+                # Verification never writes assets: without a browser it used to
+                # overwrite rendered SVGs with text fallbacks on every run.
                 print(
                     f"Verified spec '{spec_id}' -> {mmd_file.name} (validated syntax, click directives, and schema)."
                 )
@@ -613,10 +609,7 @@ def build_diagrams(
         print(f"Compiling diagram asset: {spec_id} ...")
 
         if has_browser and mmdc_cmd:
-            svg_ok = render_diagram_artifact(mmdc_cmd, mmd_file, svg_file, "svg")
-            png_ok = render_diagram_artifact(mmdc_cmd, mmd_file, png_file, "png")
-
-            if svg_ok and png_ok:
+            if render_diagram_artifact(mmdc_cmd, mmd_file, svg_file, "svg"):
                 new_cache[spec_id] = {"sha256": current_hash}
             else:
                 sys.stderr.write(
@@ -626,6 +619,14 @@ def build_diagrams(
                 with open(svg_file, "w", encoding="utf-8", newline="\n") as f:
                     f.write(fallback_svg)
                 all_success = False
+        elif svg_file.exists():
+            # Never replace a rendered diagram with a text fallback.
+            if previous_mmd != mmd_content:
+                sys.stderr.write(
+                    f"Warning: '{spec_id}' changed but mermaid-cli is unavailable, so "
+                    f"{svg_file.name} is stale. Install @mermaid-js/mermaid-cli and "
+                    "re-run the diagram build.\n"
+                )
         else:
             print(
                 f"Browser engine unavailable. Creating fallback text-based SVG for '{spec_id}'."
@@ -633,7 +634,6 @@ def build_diagrams(
             fallback_svg = generate_fallback_svg(spec.title, mmd_content)
             with open(svg_file, "w", encoding="utf-8", newline="\n") as f:
                 f.write(fallback_svg)
-            new_cache[spec_id] = {"sha256": current_hash, "fallback": True}
 
     if not verify_only:
         save_cache(cache_path, new_cache)
