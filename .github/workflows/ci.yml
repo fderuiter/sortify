@@ -7,9 +7,12 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
+# A new push to a PR supersedes the run in progress. On main, a run in
+# progress always finishes, so main gets a result even when merges land
+# faster than CI runs; only the newest waiting run is kept.
 concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: true
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Least privilege: jobs that need more ask for it themselves.
 permissions:
