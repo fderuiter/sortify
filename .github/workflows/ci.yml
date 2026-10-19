@@ -11,18 +11,21 @@ concurrency:
   group: ci-${{ github.event.pull_request.number || github.ref }}
   cancel-in-progress: true
 
+# Least privilege: jobs that need more ask for it themselves.
 permissions:
   contents: read
-  actions: write
-  security-events: write
 
 jobs:
   security-and-audit:
     name: Security & Audit
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read  # gitleaks-action lists the PR's commits
     steps:
     - uses: actions/checkout@v7
       with:
+        persist-credentials: false
         fetch-depth: 0
 
     - name: Install uv
@@ -57,6 +60,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
 
     - name: Install uv
       uses: astral-sh/setup-uv@v7
@@ -82,6 +87,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
 
     - name: Install uv
       uses: astral-sh/setup-uv@v7
@@ -145,6 +152,8 @@ jobs:
       PYTHON_KEYRING_BACKEND: keyring.backends.fail.Keyring
     steps:
     - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
 
     - name: Install uv
       uses: astral-sh/setup-uv@v7
@@ -243,10 +252,15 @@ jobs:
   changes:
     name: Detect Documentation Changes
     runs-on: ubuntu-latest
+    permissions:
+      contents: read
+      pull-requests: read  # paths-filter lists the PR's files
     outputs:
       docs: ${{ steps.filter.outputs.docs }}
     steps:
     - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
     - uses: dorny/paths-filter@v4
       id: filter
       with:
@@ -255,6 +269,7 @@ jobs:
             - 'docs/**'
             - 'mkdocs.yml'
 
+  # The only job that keeps checkout credentials: mkdocs gh-deploy pushes.
   doc-deploy:
     name: Doc Deploy
     needs: [static-checks, changes]
@@ -290,6 +305,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
 
     - name: Cache Model Weights and Assets
       uses: actions/cache@v6
@@ -336,6 +353,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
     - uses: actions/checkout@v7
+      with:
+        persist-credentials: false
 
     - name: Cache Offline Wheel Downloads
       uses: actions/cache@v6
