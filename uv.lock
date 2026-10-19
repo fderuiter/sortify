@@ -4080,6 +4080,7 @@ build = [
     { name = "sqlcipher3-wheels" },
 ]
 dev = [
+    { name = "anyio" },
     { name = "deptry" },
     { name = "pefile" },
     { name = "pre-commit" },
@@ -4143,6 +4144,7 @@ build = [
     { name = "sqlcipher3-wheels", specifier = "==0.5.7" },
 ]
 dev = [
+    { name = "anyio", specifier = ">=4.15.1" },
     { name = "deptry" },
     { name = "pefile", specifier = ">=2023.2.7" },
     { name = "pre-commit", specifier = ">=4.6.2" },
