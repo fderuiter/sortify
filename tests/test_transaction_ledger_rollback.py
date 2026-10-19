@@ -64,7 +64,7 @@ def test_schema_migration_v6(tmp_path):
     with closing(get_db_connection(db_path)) as conn, conn:
         cursor = conn.cursor()
         cursor.execute("PRAGMA user_version")
-        assert cursor.fetchone()[0] == 6
+        assert cursor.fetchone()[0] == Database.CURRENT_VERSION
 
         cursor.execute(
             "SELECT name FROM sqlite_master WHERE type='table' AND name='transaction_ledger'"

@@ -126,6 +126,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.metadata
 
+## `app.core.migrations`
+
+::: app.core.migrations
+
 ## `app.core.mover`
 
 ::: app.core.mover
