@@ -5,11 +5,15 @@ loops, use a clean environment stripped of PyInstaller reference variables,
 can resolve decoupled modules from the local cache, and do not pop up terminal windows.
 """
 
+import contextlib
+import logging
 import os
 import subprocess
 import sys
 
 from app.config import get_app_dir
+
+logger = logging.getLogger(__name__)
 
 MACOS_SANDBOX_PROFILE = "(version 1)\n(allow default)\n(deny network-outbound)\n"
 
@@ -24,6 +28,7 @@ def check_linux_sandbox_support() -> bool:
         )
         return res.returncode == 0
     except Exception:
+        logger.debug("Linux sandbox probe failed", exc_info=True)
         return False
 
 
@@ -40,6 +45,7 @@ def check_macos_sandbox_support() -> bool:
         )
         return res.returncode == 0
     except Exception:
+        logger.debug("macOS sandbox probe failed", exc_info=True)
         return False
 
 
@@ -174,10 +180,8 @@ if sys.platform == "win32":
         """A subclass of Popen that executes child processes under a restricted token on Windows."""
 
         def _close_pipe_fds(self, *args, **kwargs):
-            try:
+            with contextlib.suppress(OSError):
                 super()._close_pipe_fds(*args, **kwargs)
-            except OSError:
-                pass
 
         def _execute_child(self, *args, **kwargs):
             # Safe extraction helper for variable signatures across Python versions
@@ -348,7 +352,7 @@ if sys.platform == "win32":
                     null_fd = os.open("NUL", os.O_RDWR)
                     os.set_inheritable(null_fd, True)
                     null_handle = msvcrt.get_osfhandle(null_fd)
-                except Exception:
+                except OSError:
                     null_handle = None
 
                 if not si.hStdInput:
@@ -384,9 +388,14 @@ if sys.platform == "win32":
                                 setattr(si, handle_name, dup)
                                 duplicated_handles.append(dup)
                             except Exception:
-                                pass
+                                logger.debug(
+                                    f"Could not duplicate {handle_name} as inheritable",
+                                    exc_info=True,
+                                )
                 except Exception:
-                    pass
+                    logger.debug(
+                        "Could not make standard handles inheritable", exc_info=True
+                    )
 
             # Convert cmd line
             if isinstance(child_args, list):
@@ -416,15 +425,13 @@ if sys.platform == "win32":
                 )
             finally:
                 if null_fd is not None:
-                    try:
+                    with contextlib.suppress(OSError):
                         os.close(null_fd)
-                    except Exception:
-                        pass
                 for dup in duplicated_handles:
                     try:
                         kernel32.CloseHandle(dup)
                     except Exception:
-                        pass
+                        logger.debug("Could not close duplicated handle", exc_info=True)
 
             # Close primary token as we no longer need it to spawn
             kernel32.CloseHandle(primary_token)
@@ -495,26 +502,24 @@ def check_windows_sandbox_support() -> bool:
             try:
                 proc.wait(timeout=1.0)
             finally:
-                try:
+                with contextlib.suppress(OSError):
                     if proc.stdout:
                         proc.stdout.close()
-                except Exception:
-                    pass
-                try:
+                with contextlib.suppress(OSError):
                     if proc.stderr:
                         proc.stderr.close()
-                except Exception:
-                    pass
             return True
         except Exception as probe_e:
             import logging
 
             logging.warning(
-                f"Windows sandboxing live probe failed: {probe_e}. Disabling sandboxing."
+                f"Windows sandboxing live probe failed: {probe_e}. Disabling sandboxing.",
+                exc_info=True,
             )
             return False
 
     except Exception:
+        logger.debug("Windows sandbox API check failed", exc_info=True)
         return False
 
 
@@ -722,6 +727,7 @@ def is_cuda_available() -> bool:
 
         return torch.cuda.is_available()
     except Exception:
+        logger.debug("CUDA availability check failed", exc_info=True)
         return False
 
 
@@ -738,4 +744,5 @@ def is_mps_available() -> bool:
 
         return hasattr(torch.backends, "mps") and torch.backends.mps.is_available()
     except Exception:
+        logger.debug("MPS availability check failed", exc_info=True)
         return False

@@ -2,6 +2,8 @@
 """CLI tool for testing ML extraction and analysis in an isolated sandbox environment."""
 
 import argparse
+import contextlib
+import logging
 import os
 import shutil
 import sys
@@ -13,6 +15,8 @@ SANDBOX_DIR = os.path.join(BASE_DIR, "sandbox", "dataset")
 GOLDEN_DIR = os.path.join(BASE_DIR, "sandbox", "dataset_golden")
 SANDBOX_DB_PATH = os.path.join(BASE_DIR, "sandbox", "sandbox.db")
 
+logger = logging.getLogger(__name__)
+
 
 def reset_sandbox():
     """Restores the sandbox dataset to its original state from the golden dataset."""
@@ -21,7 +25,7 @@ def reset_sandbox():
 
         clear_connection_cache(only_current_and_inactive=False)
     except Exception:
-        pass
+        logger.debug("Could not clear DB connection cache", exc_info=True)
 
     db_path = SANDBOX_DB_PATH
     try:
@@ -31,21 +35,17 @@ def reset_sandbox():
         if crypto.isolated_key_path.exists():
             crypto.isolated_key_path.unlink()
     except Exception:
-        pass
+        logger.debug("Could not remove sandbox isolated key", exc_info=True)
     if os.path.exists(SANDBOX_DIR):
         shutil.rmtree(SANDBOX_DIR)
     if os.path.exists(SANDBOX_DB_PATH):
-        try:
+        with contextlib.suppress(OSError):
             os.remove(SANDBOX_DB_PATH)
-        except Exception:
-            pass
     for ext in ("-wal", "-shm"):
         sidecar = f"{SANDBOX_DB_PATH}{ext}"
         if os.path.exists(sidecar):
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(sidecar)
-            except Exception:
-                pass
     shutil.copytree(GOLDEN_DIR, SANDBOX_DIR)
     print("Sandbox dataset has been reset to its original state.", file=sys.stderr)
 
@@ -125,13 +125,13 @@ def analyze_all(json_output=False):
             SharedWorkerPool.shutdown_instance(wait=False)
             SharedModelRegistry.get_instance().unload_all_models()
         except Exception:
-            pass
+            logger.debug("Could not shut down shared worker pool", exc_info=True)
         try:
             from app.core.db_conn import clear_connection_cache
 
             clear_connection_cache(only_current_and_inactive=False)
         except Exception:
-            pass
+            logger.debug("Could not clear DB connection cache", exc_info=True)
 
     import json
 

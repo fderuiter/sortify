@@ -132,6 +132,9 @@ class SharedModelRegistry:
                 return 2
             return limit
         except Exception:
+            logging.debug(
+                "Could not read MODEL_THREADS; using 2 threads", exc_info=True
+            )
             return 2
 
     def apply_onnx_thread_limits(self):
@@ -315,13 +318,22 @@ class SharedModelRegistry:
             # A packaged build only loads weights that passed verification
             # (#722); falling back here would pick up the refused folder.
             if is_packaged():
-                logging.error(f"OCR is unavailable: no verified EasyOCR model: {e}")
+                logging.error(
+                    f"OCR is unavailable: no verified EasyOCR model: {e}",
+                    exc_info=True,
+                )
                 return None
+            logging.debug(
+                "No verified EasyOCR model; searching fallback paths", exc_info=True
+            )
             try:
                 from app.core.path_utils import get_base_path
 
                 base_path = get_base_path(__file__)
             except Exception:
+                logging.debug(
+                    "Could not resolve base path; using package parent", exc_info=True
+                )
                 base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             # The working directory is deliberately not searched: it is often
             # a folder of untrusted files that this app is sorting.
@@ -392,7 +404,8 @@ class SharedModelRegistry:
                 info = (langs, use_gpu)
             except Exception as e:
                 logging.error(
-                    f"Failed to load EasyOCR reader with languages {langs} and gpu={use_gpu}: {e}. Falling back to 'en' and cpu."
+                    f"Failed to load EasyOCR reader with languages {langs} and gpu={use_gpu}: {e}. Falling back to 'en' and cpu.",
+                    exc_info=True,
                 )
                 try:
                     import easyocr
@@ -408,7 +421,8 @@ class SharedModelRegistry:
                     info = (["en"], False)
                 except Exception as ex:
                     logging.critical(
-                        f"Critical: Fallback EasyOCR initialization failed: {ex}"
+                        f"Critical: Fallback EasyOCR initialization failed: {ex}",
+                        exc_info=True,
                     )
                     reader = None
                     info = (None, None)
@@ -459,6 +473,9 @@ class SharedModelRegistry:
                         )
                         task = "text2text-generation"
                     except Exception:
+                        logging.debug(
+                            "Not a seq2seq model; loading as causal LM", exc_info=True
+                        )
                         model = AutoModelForCausalLM.from_pretrained(
                             model_path, local_files_only=True
                         )
@@ -534,7 +551,7 @@ class SharedModelRegistry:
                 if hasattr(torch.mps, "empty_cache"):
                     torch.mps.empty_cache()
         except Exception:
-            pass
+            logging.debug("Torch device cache cleanup failed", exc_info=True)
 
     def is_model_loaded(self, model_id: str) -> bool:
         """Check if a specific model or model type is currently loaded in memory."""
@@ -594,7 +611,9 @@ class SharedModelRegistry:
                         try:
                             obj.unload()
                         except Exception:
-                            pass
+                            logging.debug(
+                                f"Unloading model '{lock_key}' failed", exc_info=True
+                            )
 
         if unloaded:
             self._free_memory()
@@ -622,7 +641,9 @@ class SharedModelRegistry:
                         try:
                             obj.unload()
                         except Exception:
-                            pass
+                            logging.debug(
+                                f"Unloading model '{lock_key}' failed", exc_info=True
+                            )
 
         with self._lock:
             self._models.clear()
@@ -687,7 +708,7 @@ class SharedWorkerPool:
             try:
                 res = offline_wrapped_fn(*args, **kwargs)
                 fut.set_result(res)
-            except Exception as exc:
+            except Exception as exc:  # noqa: BLE001 - forwarded to the Future, as executor.submit does
                 fut.set_exception(exc)
             return fut
 
@@ -735,7 +756,7 @@ class SharedWorkerPool:
             except TypeError:
                 self._executor.shutdown(wait=wait)
             except Exception:
-                pass
+                logging.debug("Shared worker pool shutdown failed", exc_info=True)
         SharedWorkerPool._instance = None
 
     @classmethod
@@ -745,7 +766,7 @@ class SharedWorkerPool:
             try:
                 cls._instance._executor.shutdown(wait=wait, cancel_futures=True)
             except Exception:
-                pass
+                logging.debug("Shared worker pool shutdown failed", exc_info=True)
             cls._instance = None
 
 

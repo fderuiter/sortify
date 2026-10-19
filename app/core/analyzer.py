@@ -246,7 +246,10 @@ def pre_fetch_historical_corpus(
         stored_dimensions = db.get_model_metadata("active_model_dimensions")
         stored_version = db.get_model_metadata("active_model_version")
     except Exception as e:
-        logging.error(f"Failed to fetch model metadata for pre-fetched corpus: {e}")
+        logging.error(
+            f"Failed to fetch model metadata for pre-fetched corpus: {e}",
+            exc_info=True,
+        )
         stored_signature = None
         stored_dimensions = None
         stored_version = None
@@ -272,7 +275,9 @@ def pre_fetch_historical_corpus(
             )
             rows = cursor.fetchall()
     except Exception as e:
-        logging.error(f"Failed to query historical documents from DB: {e}")
+        logging.error(
+            f"Failed to query historical documents from DB: {e}", exc_info=True
+        )
         return validate_corpus_prefetch_batch(
             {"model_metadata": model_metadata, "examples": []}
         )
@@ -289,6 +294,7 @@ def pre_fetch_historical_corpus(
             dec = crypto_obj.decrypt_text(enc_text)
             return dec if dec is not None else ""
         except Exception:
+            logging.debug("Could not decrypt historical example text", exc_info=True)
             return ""
 
     def _safe_decrypt_and_parse_vector(crypto_obj, vector_str):
@@ -300,6 +306,9 @@ def pre_fetch_historical_corpus(
             decrypted_str = crypto_obj.decrypt_vector(vector_str)
             return json.loads(decrypted_str) if decrypted_str else None
         except Exception:
+            logging.debug(
+                "Could not decrypt or parse historical example vector", exc_info=True
+            )
             return None
 
     # Store raw candidate payloads without initial decryption
@@ -386,7 +395,10 @@ def pre_fetch_historical_corpus(
                         )
                     ranked = True
             except Exception as e:
-                logging.error(f"Semantic ranking of historical examples failed: {e}")
+                logging.error(
+                    f"Semantic ranking of historical examples failed: {e}",
+                    exc_info=True,
+                )
 
         if not ranked:
             # Fallback: TF-IDF ranking
@@ -424,7 +436,10 @@ def pre_fetch_historical_corpus(
                         }
                     )
             except Exception as e:
-                logging.error(f"TF-IDF ranking of historical examples failed: {e}")
+                logging.error(
+                    f"TF-IDF ranking of historical examples failed: {e}",
+                    exc_info=True,
+                )
                 selected_examples = []
                 for c in candidates[:max_examples]:
                     v = _safe_decrypt_and_parse_vector(db.crypto, c["vector_str"])
@@ -480,6 +495,10 @@ class IncrementalAnalyzer:
                 try:
                     base_path = get_base_path(__file__)
                 except Exception:
+                    logging.debug(
+                        "Could not resolve base path; using package parent",
+                        exc_info=True,
+                    )
                     base_path = os.path.dirname(
                         os.path.dirname(os.path.abspath(__file__))
                     )
@@ -487,6 +506,10 @@ class IncrementalAnalyzer:
                 try:
                     user_bundle_path = str(get_app_dir() / "model")
                 except Exception:
+                    logging.debug(
+                        "Could not resolve app dir; using home model path",
+                        exc_info=True,
+                    )
                     user_bundle_path = os.path.expanduser("~/.smart-autosorter/model")
 
                 if os.path.exists(local_bundle_path):
@@ -512,7 +535,7 @@ class IncrementalAnalyzer:
             try:
                 self.embedding_manager.stop()
             except Exception:
-                pass
+                logging.debug("Embedding manager stop failed", exc_info=True)
         if getattr(self, "strategy_name", None):
             try:
                 from app.core.analyzer_strategies import clustering_registry
@@ -521,7 +544,7 @@ class IncrementalAnalyzer:
                 if strategy and hasattr(strategy, "_fallback_to_pytorch"):
                     strategy._fallback_to_pytorch()
             except Exception:
-                pass
+                logging.debug("Clustering strategy reset failed", exc_info=True)
 
     def partial_fit(
         self, base_dir: str, new_corpus: dict, runtime_settings=None
@@ -1047,7 +1070,8 @@ class IncrementalAnalyzer:
                                         continue
                         except Exception as e:
                             logging.warning(
-                                f"Internal Jev classification fallback failed for '{f}': {e}"
+                                f"Internal Jev classification fallback failed for '{f}': {e}",
+                                exc_info=True,
                             )
 
                     remaining_ai_files.append(f)
@@ -1402,7 +1426,8 @@ class IncrementalAnalyzer:
                             pre_fetched_vectors = vectors
                         except Exception as e:
                             logging.error(
-                                f"Lazy semantic vector generation/caching failed: {e}. Falling back to standard TF-IDF."
+                                f"Lazy semantic vector generation/caching failed: {e}. Falling back to standard TF-IDF.",
+                                exc_info=True,
                             )
                             pre_fetched_vectors = None
 
@@ -1423,7 +1448,10 @@ class IncrementalAnalyzer:
                                     raw_corpus
                                 )
                         except Exception as e:
-                            logging.error(f"Failed to pre-fetch historical corpus: {e}")
+                            logging.error(
+                                f"Failed to pre-fetch historical corpus: {e}",
+                                exc_info=True,
+                            )
 
                     plan, error = strategy.generate_plan(
                         ai_filenames,
@@ -1843,7 +1871,7 @@ class IncrementalAnalyzer:
                     if strategy and hasattr(strategy, "clear_isolated_state"):
                         strategy.clear_isolated_state()
             except Exception:
-                pass
+                logging.debug("Clearing isolated strategy state failed", exc_info=True)
 
 
 FileAnalyzer = IncrementalAnalyzer
@@ -1880,7 +1908,9 @@ def run_incremental_training_in_background(session: Any, base_dir: str) -> None:
                 ):
                     session.analyzer.embedding_manager.generate_embedding(text)
             except Exception:
-                pass
+                logging.debug(
+                    f"Embedding generation failed for '{filepath}'", exc_info=True
+                )
             new_corpus[filepath] = {"text": text, "hash": f_hash}
     if new_corpus:
         if hasattr(session.analyzer, "partial_fit"):
