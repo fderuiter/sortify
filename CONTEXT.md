@@ -35,7 +35,7 @@ A named starting folder for a sort (`demo`, `downloads`, `documents`).
 _Avoid_: profile, template
 
 **Conflict policy**:
-What a move does when its target path is already taken (`skip` or `rename`).
+What a move does when its target path is already taken: `skip`, `rename` or `overwrite`. Under ADR 0005, `overwrite` moves the existing file aside so undo can restore it (#766).
 _Avoid_: collision mode
 
 ### Routing and clustering
