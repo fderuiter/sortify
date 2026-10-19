@@ -411,7 +411,7 @@ async def test_escape_does_not_close_history_modal_mid_rollback(
         return 2
 
     monkeypatch.setattr("app.core.history.HistoryManager.rollback", blocking_rollback)
-    monkeypatch.setattr("app.main.find_all_history_sessions", lambda: sessions)
+    monkeypatch.setattr("app.core.session_catalog.find_all_history_sessions", lambda: sessions)
 
     app = AutoSorterTUI(settings=settings)
     async with app.run_test() as pilot:

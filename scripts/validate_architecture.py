@@ -55,6 +55,25 @@ ALLOWED_FOR_SESSIONS = {"app/core/path_utils.py"}
 ALLOWED_FOR_KEYS = {"app/core/path_utils.py"}
 ALLOWED_FOR_CHARS = {"app/core/path_utils.py"}
 
+# Import layering: each package prefix lists the modules it must never import,
+# including function-local imports. The most specific matching prefix wins.
+# Tooling (scripts/, sandbox_cli, pytest) is never a runtime dependency of app/.
+_TOOLING = ("scripts", "sandbox_cli", "pytest")
+IMPORT_LAYER_RULES = {
+    "app.core": ("app.ui", "app.cli", "app.main", "app.plugins") + _TOOLING,
+    "app.plugins": ("app.cli", "app.main") + _TOOLING,
+    "app.ui": ("app.cli", "app.main") + _TOOLING,
+    "app.cli": ("app.ui", "app.main") + _TOOLING,
+    "app.main": _TOOLING,
+}
+
+# Modules exempt from IMPORT_LAYER_RULES, with the reason.
+IMPORT_LAYER_EXEMPT = {
+    # Documentation generator: renders every CLI's --help, including app.main,
+    # sandbox_cli and scripts/, so it has to import them.
+    "app.cli.generate_docs",
+}
+
 
 def compute_normalized_ast_hash(node: ast.AST) -> str:
     """Compute SHA256 hash of a function AST node after normalizing docstrings, type annotations, and local variable names."""
@@ -359,6 +378,45 @@ def validate_diagram_schema_and_assets(errors: list) -> None:
         errors.append(f"Failed diagram schema validation check: {e}")
 
 
+def _module_name(filepath: str) -> str:
+    parts = list(Path(filepath).with_suffix("").parts)
+    if parts[-1] == "__init__":
+        parts.pop()
+    return ".".join(parts)
+
+
+def _matches(name: str, prefix: str) -> bool:
+    return name == prefix or name.startswith(prefix + ".")
+
+
+def validate_import_layers(errors: list, filepath: str, tree: ast.AST) -> None:
+    """Flag imports that cross a layer boundary in IMPORT_LAYER_RULES.
+
+    Walks the whole tree, so imports hidden inside functions are caught too.
+    """
+    module = _module_name(filepath)
+    if module in IMPORT_LAYER_EXEMPT:
+        return
+    layers = [p for p in IMPORT_LAYER_RULES if _matches(module, p)]
+    if not layers:
+        return
+    forbidden = IMPORT_LAYER_RULES[max(layers, key=len)]
+
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Import):
+            names = [alias.name for alias in node.names]
+        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
+            names = [node.module]
+        else:
+            continue
+        for name in names:
+            for banned in forbidden:
+                if _matches(name, banned):
+                    errors.append(
+                        f"{filepath}:{node.lineno}: Layer violation: '{module}' imports '{name}' ('{banned}' is off-limits here)"
+                    )
+
+
 def main():
     """Execute all architectural validation checks."""
     parser = argparse.ArgumentParser(
@@ -413,6 +471,8 @@ def main():
                 tree = ast.parse(content, filename=filepath)
             except SyntaxError:
                 continue
+
+            validate_import_layers(errors, filepath, tree)
 
             is_ui_file = "app/ui" in filepath
 
