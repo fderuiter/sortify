@@ -185,3 +185,49 @@ dependencies = []
     )
     exit_code = main()
     assert exit_code == 1
+
+
+def test_main_cli_incremental(monkeypatch, tmp_path):
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text('[project]\ndependencies = ["pillow"]', encoding="utf-8")
+
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    good_file = app_dir / "good.py"
+    good_file.write_text("import PIL", encoding="utf-8")
+    bad_file = app_dir / "bad.py"
+    bad_file.write_text("import requests", encoding="utf-8")
+
+    # Only pass good_file -> should pass
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["validate_imports.py", "--root-dir", str(tmp_path), "app/good.py"],
+    )
+    assert main() == 0
+
+    # Pass bad_file -> should fail
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["validate_imports.py", "--root-dir", str(tmp_path), "app/bad.py"],
+    )
+    assert main() == 1
+
+
+def test_main_cli_global_config_fallback(monkeypatch, tmp_path):
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text("[project]\ndependencies = []", encoding="utf-8")
+
+    app_dir = tmp_path / "app"
+    app_dir.mkdir()
+    bad_file = app_dir / "bad.py"
+    bad_file.write_text("import requests", encoding="utf-8")
+
+    # Passing pyproject.toml triggers full scan -> catches bad.py and fails
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["validate_imports.py", "--root-dir", str(tmp_path), "pyproject.toml"],
+    )
+    assert main() == 1
