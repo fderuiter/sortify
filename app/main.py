@@ -1127,8 +1127,18 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
                 "base_dir": None,
             }
     elif latest_flag:
-        if all_sessions:
-            target_session = all_sessions[0]
+        from app.core.history import UNDO_SNAPSHOT_STATUS
+
+        # Skip sorts already undone and the safety snapshots undo itself
+        # takes, so running `undo --latest` again reaches the previous sort.
+        undoable = [
+            s
+            for s in all_sessions
+            if str(s.get("status", "")).lower()
+            not in ("rolled_back", UNDO_SNAPSHOT_STATUS)
+        ]
+        if undoable:
+            target_session = undoable[0]
         else:
             msg = "Error: No historical sorting sessions available to undo."
             if json_output:
