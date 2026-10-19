@@ -98,6 +98,103 @@ def generate_ui_docs():
             f.write(f"::: {module_name}\n\n")
 
 
+_KEY_NAMES = {
+    "escape": "Esc",
+    "question_mark": "?",
+    "space": "Space",
+    "plus": "+",
+    "minus": "-",
+    "enter": "Enter",
+    "tab": "Tab",
+}
+
+
+def _format_key(key: str) -> str:
+    """Render a Textual key name (e.g. ``ctrl+s``) the way users type it."""
+    if len(key) == 1:
+        return f"Shift+{key}" if key.isupper() else key
+    parts = key.split("+")
+    rendered = [
+        _KEY_NAMES.get(p, p.upper() if len(p) <= 2 else p.title()) for p in parts
+    ]
+    return "+".join(rendered)
+
+
+def _collect_bindings(source_path: str) -> dict:
+    """Map class name to ``(title, [(keys, description)])`` from ``BINDINGS``."""
+    import ast
+    import re
+
+    with open(source_path, "r", encoding="utf-8") as f:
+        tree = ast.parse(f.read())
+
+    found = {}
+    for node in tree.body:
+        if not isinstance(node, ast.ClassDef):
+            continue
+        for stmt in node.body:
+            if not (
+                isinstance(stmt, ast.Assign)
+                and any(getattr(t, "id", None) == "BINDINGS" for t in stmt.targets)
+                and isinstance(stmt.value, (ast.List, ast.Tuple))
+            ):
+                continue
+            rows = {}
+            for call in stmt.value.elts:
+                if not (isinstance(call, ast.Call) and len(call.args) >= 3):
+                    continue
+                key, _action, desc = (
+                    a.value if isinstance(a, ast.Constant) else None
+                    for a in call.args[:3]
+                )
+                if not (isinstance(key, str) and isinstance(desc, str)):
+                    continue
+                # Several keys can share one description (e.g. ? and F1).
+                keys = rows.setdefault(desc, [])
+                label = _format_key(key)
+                if label not in keys:
+                    keys.append(label)
+            title = re.sub(r"(?<!^)(?=[A-Z])", " ", node.name.removesuffix("Modal"))
+            found[node.name] = (title, [(keys, desc) for desc, keys in rows.items()])
+    return found
+
+
+def generate_keyboard_docs():
+    """Generate the keyboard shortcut reference from the TUI ``BINDINGS``."""
+    bindings = _collect_bindings(os.path.join("app", "ui", "tui.py"))
+    output_file = os.path.join("docs", "keyboard_shortcuts.md")
+
+    def table(rows):
+        lines = ["| Keys | Action |", "|---|---|"]
+        for keys, desc in rows:
+            lines.append(f"| {' / '.join(f'`{k}`' for k in keys)} | {desc} |")
+        return "\n".join(lines) + "\n\n"
+
+    with open(output_file, "w", encoding="utf-8", newline="\n") as f:
+        f.write("# Keyboard Shortcuts\n\n")
+        f.write(
+            "This page is generated from the terminal UI's key bindings "
+            "(`app/ui/tui.py`). Do not edit it manually.\n\n"
+        )
+        f.write("Press `?` or `F1` in the app to see these shortcuts.\n\n")
+
+        main = bindings.pop("AutoSorterTUI", None)
+        if main:
+            f.write("## Main Window\n\n")
+            f.write(table(main[1]))
+
+        f.write("## Dialogs\n\n")
+        f.write("`Esc` closes or cancels any dialog.\n\n")
+        for name in sorted(bindings):
+            title, rows = bindings[name]
+            # Dialogs whose only keys are close/help are covered by the line above.
+            extra = [r for r in rows if not set(r[0]) <= {"Esc", "?", "F1"}]
+            if not extra:
+                continue
+            f.write(f"### {title}\n\n")
+            f.write(table(extra))
+
+
 def generate_admin_guide():
     """Generate Admin Guide from config and scripts."""
     output_file = os.path.join("docs", "admin_guide.md")
@@ -473,6 +570,7 @@ def get_handwritten_docs():
         "docs/api_reference.md",
         "docs/ui.md",
         "docs/admin_guide.md",
+        "docs/keyboard_shortcuts.md",
         "SECURITY.md",
     }
     docs = []
@@ -630,6 +728,7 @@ def main():
         Path("docs/api_reference.md").as_posix(),
         Path("docs/ui.md").as_posix(),
         Path("docs/admin_guide.md").as_posix(),
+        Path("docs/keyboard_shortcuts.md").as_posix(),
         "SECURITY.md",
     ]
 
@@ -652,6 +751,7 @@ def main():
         ("generate_api_docs", generate_api_docs),
         ("generate_ui_docs", generate_ui_docs),
         ("generate_admin_guide", generate_admin_guide),
+        ("generate_keyboard_docs", generate_keyboard_docs),
         ("update_security_md", update_security_md),
     ]
 

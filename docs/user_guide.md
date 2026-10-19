@@ -42,7 +42,7 @@ Reopen the wizard any time with `[Ctrl+W]`.
 3. Review the plan. `[Ctrl+F]` searches the tree, `[Space]` checks items, `[Ctrl+L]` locks a file in place, `[Ctrl+R]` renames a folder and `[Ctrl+N]` creates one. Drag-and-drop moves files between folders.
 4. Press `[Ctrl+E]` to execute. You can review duplicates first, and an audit report is shown when the moves finish.
 
-Press `[?]` or `[F1]` for the full list of shortcuts and `[Ctrl+Q]` to quit.
+Press `[?]` or `[F1]` for the full list of shortcuts and `[Ctrl+Q]` to quit. Every shortcut is also listed in [Keyboard Shortcuts](keyboard_shortcuts.md).
 
 ### From the command line
 ```bash
@@ -82,7 +82,7 @@ smart-autosorter undo --list           # show recent sessions
 smart-autosorter undo --latest         # roll back the most recent run
 smart-autosorter undo --session-id ID  # roll back a specific run
 ```
-In the TUI, `[Ctrl+H]` opens the history view.
+In the TUI, `[Ctrl+Y]` opens the history view.
 
 ## Settings
 
