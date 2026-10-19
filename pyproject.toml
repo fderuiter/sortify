@@ -64,7 +64,6 @@ ml = [
 
 [project.scripts]
 smart-autosorter = "app.main:main"
-docs = "app.cli.generate_docs:main"
 
 [tool.hatch.build.targets.wheel]
 packages = ["app"]
@@ -160,7 +159,6 @@ all = "ignore"
 [[tool.ty.overrides]]
 include = [
     "app/core/crypto.py",
-    "app/core/diagram_schema.py",
     "app/core/history.py",
     "app/core/mover.py",
     "app/core/policy_engine.py",

@@ -16,7 +16,7 @@ from pathlib import Path
 from typing import TYPE_CHECKING, Dict, List, Optional
 
 if TYPE_CHECKING:
-    from app.core.diagram_schema import BaseDiagramSpec
+    from scripts.diagram_schema import BaseDiagramSpec
 
 REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
@@ -323,7 +323,7 @@ def check_no_raw_mermaid_in_docs(docs_dir: Optional[Path] = None) -> bool:
 
 def collect_all_specs() -> Dict[str, "BaseDiagramSpec"]:
     """Collect all registered system diagram specifications."""
-    from app.core.diagram_schema import (
+    from scripts.diagram_schema import (
         BaseDiagramSpec,
         get_all_diagram_specs,
     )
@@ -439,7 +439,7 @@ def parse_and_validate_click_directives(mmd_content: str) -> List[str]:
                 url_candidate = m_quotes[0]
                 if url_candidate:
                     try:
-                        from app.core.diagram_schema import DiagramNode
+                        from scripts.diagram_schema import DiagramNode
 
                         DiagramNode.validate_url_scheme(url_candidate)
                     except ValueError as ve:

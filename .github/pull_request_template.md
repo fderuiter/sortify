@@ -13,7 +13,7 @@ Please provide a summary of the changes in this pull request.
 ## Documentation Synchronization Check
 
 - [ ] I have updated the docstrings for any new or modified public APIs.
-- [ ] I have run `uv run docs --check` and committed any regenerated files.
+- [ ] I have run `uv run python scripts/generate_docs.py --check` and committed any regenerated files.
 - [ ] I have included the necessary API reference updates if applicable.
 
 ## Database & Configuration Check
