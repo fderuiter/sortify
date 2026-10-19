@@ -144,8 +144,6 @@ uv run pytest tests/test_visual_snapshots.py   # TUI SVG snapshots (slow marker)
 - **No OS keyring in the container**: every DB open logs "Keyring lookup
   failed ... No recommended backend" to stderr. Harmless; keys fall back to
   files. That is why the commands above use `2>/dev/null`.
-- **Plan folders nest twice** (`Budget-Balance/Budget-Balance/fin1.txt`)
-  from the recursive KMeans on this small corpus, in both CLI and TUI.
 - **`undo` leaves the empty generated folders behind**; only files move back.
 - After Ctrl+E the TUI rescans the now-sorted folder, so the status bar
   shows the scan message, not the move result. Check `files` or the modal.
