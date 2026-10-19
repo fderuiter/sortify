@@ -158,30 +158,17 @@ include = [
     "app/main.py",
     "app/core/analyzer.py",
     "app/core/analyzer_strategies.py",
-    "app/core/cache.py",
     "app/core/daemon.py",
     "app/core/db.py",
     "app/core/db_conn.py",
     "app/core/db_worker.py",
-    "app/core/downloader.py",
-    "app/core/env_helper.py",
     "app/core/extractor.py",
     "app/core/extractor_strategies.py",
-    "app/core/file_renamer.py",
     "app/core/forensic_scanner.py",
-    "app/core/hashes_registry.py",
     "app/core/jev_classifier.py",
-    "app/core/ledger.py",
-    "app/core/link_manager.py",
-    "app/core/metadata.py",
-    "app/core/offline_loader.py",
-    "app/core/path_utils.py",
     "app/core/quarantine_interceptor.py",
-    "app/core/scanner.py",
     "app/core/semantic_embeddings.py",
     "app/core/session.py",
-    "app/core/shared_registry.py",
-    "app/core/text_utils.py",
 ]
 
 [tool.ty.overrides.rules]
@@ -191,12 +178,8 @@ all = "ignore"
 # ty checks them, so their findings are warnings until fixed.
 [[tool.ty.overrides]]
 include = [
-    "app/core/crypto.py",
     "app/core/history.py",
     "app/core/mover.py",
-    "app/core/policy_engine.py",
-    "app/core/resilient_file_ops.py",
-    "app/demo.py",
 ]
 
 [tool.ty.overrides.rules]
