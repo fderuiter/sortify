@@ -2093,3 +2093,24 @@ def test_tui_generate_sample_corpus_keybindings(temp_workspace):
                 assert mock_action.call_count == 3
 
     asyncio.run(_test())
+
+
+@pytest.mark.parametrize("focus_search", [False, True])
+def test_ctrl_q_quits_from_tree_and_search_input(temp_workspace, focus_search):
+    """Ctrl+Q exits the app whether the tree or the search input has focus."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            await pilot.pause()
+            if focus_search:
+                app.query_one("#tree-search-input", Input).focus()
+                await pilot.pause()
+            await pilot.press("ctrl+q")
+            await pilot.pause()
+            assert app.return_code == 0
+
+    asyncio.run(_test())
