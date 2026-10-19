@@ -105,7 +105,8 @@ class PluginRegistry:
             clustering_registry.register(name, strategy)
         except Exception as e:
             logger.debug(
-                f"Note: Could not automatically register strategy into ClusteringRegistry: {e}"
+                f"Note: Could not automatically register strategy into ClusteringRegistry: {e}",
+                exc_info=True,
             )
 
     def get_clustering_strategy(self, name: str) -> Optional[Any]:

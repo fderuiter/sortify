@@ -8,6 +8,7 @@ from typing import Optional
 
 from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
+from app.core.migrations import Migration, add_missing_columns, migrate
 
 AUDIO_EXTENSIONS = (
     ".mp3",
@@ -26,10 +27,152 @@ AUDIO_EXTENSIONS = (
 )
 
 
+def _main_db_baseline(conn) -> None:
+    """Bring a new or pre-migration main database to the schema of version 7.
+
+    Versions 1 to 6 were set by the old ad hoc upgrade code, so this works on
+    any of them: it creates missing tables and indexes and adds missing columns.
+    """
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS documents (
+            base_dir TEXT,
+            filepath TEXT,
+            file_hash TEXT,
+            extracted_text TEXT,
+            user_verified_target_path TEXT,
+            rating TEXT,
+            PRIMARY KEY (base_dir, filepath)
+        )
+    """)
+    add_missing_columns(
+        conn, "documents", {"user_verified_target_path": "TEXT", "rating": "TEXT"}
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_documents_file_hash ON documents (base_dir, file_hash)"
+    )
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tfidf_vocab (
+            base_dir TEXT,
+            term TEXT,
+            df INTEGER,
+            PRIMARY KEY (base_dir, term)
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tfidf_doc_terms (
+            base_dir TEXT,
+            filepath TEXT,
+            term TEXT,
+            tf INTEGER,
+            PRIMARY KEY (base_dir, filepath, term)
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tfidf_doc_terms_path ON tfidf_doc_terms (base_dir, filepath)"
+    )
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS tfidf_matrix_cache (
+            base_dir TEXT,
+            filepath TEXT,
+            term TEXT,
+            weight REAL,
+            PRIMARY KEY (base_dir, filepath, term)
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tfidf_matrix_cache_base ON tfidf_matrix_cache (base_dir)"
+    )
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_tfidf_matrix_cache_file ON tfidf_matrix_cache (base_dir, filepath)"
+    )
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS model_metadata (
+            key TEXT PRIMARY KEY,
+            value TEXT
+        )
+    """)
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS document_vectors (
+            base_dir TEXT,
+            filepath TEXT,
+            vector TEXT,
+            model_signature TEXT,
+            PRIMARY KEY (base_dir, filepath),
+            FOREIGN KEY (base_dir, filepath) REFERENCES documents(base_dir, filepath) ON DELETE CASCADE
+        )
+    """)
+    add_missing_columns(conn, "document_vectors", {"model_signature": "TEXT"})
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS transaction_ledger (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            step_number INTEGER NOT NULL,
+            base_dir TEXT NOT NULL,
+            source_path TEXT NOT NULL,
+            destination_path TEXT NOT NULL,
+            file_hash TEXT,
+            item_type TEXT DEFAULT 'file',
+            metadata TEXT,
+            timestamp REAL
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_transaction_ledger_session ON transaction_ledger (session_id, step_number)"
+    )
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS quarantine_records (
+            job_id TEXT PRIMARY KEY,
+            base_dir TEXT NOT NULL,
+            original_filepath TEXT NOT NULL,
+            staged_filepath TEXT NOT NULL,
+            file_hash TEXT,
+            status TEXT NOT NULL,
+            policy_action TEXT,
+            audit_log TEXT,
+            created_at REAL,
+            updated_at REAL,
+            error_message TEXT
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_quarantine_records_base_dir ON quarantine_records (base_dir, status)"
+    )
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS jev_classification_cache (
+            file_path TEXT PRIMARY KEY,
+            mtime REAL NOT NULL,
+            size INTEGER NOT NULL,
+            category TEXT NOT NULL,
+            sensitivity_rating TEXT NOT NULL,
+            sensitivity_score REAL NOT NULL,
+            archival_priority INTEGER NOT NULL,
+            archival_priority_score REAL NOT NULL,
+            confidence REAL NOT NULL,
+            is_classified INTEGER NOT NULL,
+            metadata TEXT NOT NULL,
+            updated_at REAL NOT NULL
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_jev_cache_lookup ON jev_classification_cache (file_path, mtime, size)"
+    )
+
+
+# Ordered schema migrations for the main database. Never edit one after release;
+# add a new entry instead. Numbering starts at 7 because the old upgrade code
+# already used user_version 1 to 6.
+MAIN_DB_MIGRATIONS = (Migration(7, "baseline", _main_db_baseline),)
+
+
 class Database:
     """SQLite database abstraction for persistent storage of document state."""
 
-    CURRENT_VERSION = 6
+    CURRENT_VERSION = MAIN_DB_MIGRATIONS[-1].version
     _active_instances = weakref.WeakSet()
 
     def __init__(self, db_path: Path, worker: DBWorker):
@@ -55,78 +198,7 @@ class Database:
         """Initialize the core database and create tables if they do not exist."""
         conn = get_db_connection(self.db_path)
         with conn:
-            cursor = conn.cursor()
-            cursor.execute("PRAGMA user_version")
-            db_version = cursor.fetchone()[0]
-
-            if db_version == 0:
-                conn.execute("""
-                    CREATE TABLE IF NOT EXISTS documents (
-                        base_dir TEXT,
-                        filepath TEXT,
-                        file_hash TEXT,
-                        extracted_text TEXT,
-                        user_verified_target_path TEXT,
-                        rating TEXT,
-                        PRIMARY KEY (base_dir, filepath)
-                    )
-                """)
-                conn.execute(
-                    "CREATE INDEX IF NOT EXISTS idx_documents_file_hash ON documents (base_dir, file_hash)"
-                )
-                conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
-            elif db_version < self.CURRENT_VERSION:
-                if db_version == 1:
-                    conn.execute(
-                        "ALTER TABLE documents ADD COLUMN user_verified_target_path TEXT"
-                    )
-                if db_version <= 3:
-                    conn.execute(
-                        "CREATE INDEX IF NOT EXISTS idx_documents_file_hash ON documents (base_dir, file_hash)"
-                    )
-                conn.execute(f"PRAGMA user_version = {self.CURRENT_VERSION}")
-
-            try:
-                conn.execute("ALTER TABLE documents ADD COLUMN rating TEXT")
-            except Exception:
-                pass
-
-            # Initialize TF-IDF tables
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS tfidf_vocab (
-                    base_dir TEXT,
-                    term TEXT,
-                    df INTEGER,
-                    PRIMARY KEY (base_dir, term)
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS tfidf_doc_terms (
-                    base_dir TEXT,
-                    filepath TEXT,
-                    term TEXT,
-                    tf INTEGER,
-                    PRIMARY KEY (base_dir, filepath, term)
-                )
-            """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_tfidf_doc_terms_path ON tfidf_doc_terms (base_dir, filepath)"
-            )
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS tfidf_matrix_cache (
-                    base_dir TEXT,
-                    filepath TEXT,
-                    term TEXT,
-                    weight REAL,
-                    PRIMARY KEY (base_dir, filepath, term)
-                )
-            """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_tfidf_matrix_cache_base ON tfidf_matrix_cache (base_dir)"
-            )
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_tfidf_matrix_cache_file ON tfidf_matrix_cache (base_dir, filepath)"
-            )
+            migrate(conn, MAIN_DB_MIGRATIONS, label=f"Database {self.db_path}")
 
             # Purge existing audio-derived or non-eligible index terms from legacy databases
             try:
@@ -155,90 +227,6 @@ class Database:
                 conn.execute("DELETE FROM tfidf_vocab WHERE df <= 0")
             except Exception:
                 pass
-
-            # Initialize decoupled vector and metadata tables unconditionally
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS model_metadata (
-                    key TEXT PRIMARY KEY,
-                    value TEXT
-                )
-            """)
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS document_vectors (
-                    base_dir TEXT,
-                    filepath TEXT,
-                    vector TEXT,
-                    model_signature TEXT,
-                    PRIMARY KEY (base_dir, filepath),
-                    FOREIGN KEY (base_dir, filepath) REFERENCES documents(base_dir, filepath) ON DELETE CASCADE
-                )
-            """)
-            try:
-                conn.execute(
-                    "ALTER TABLE document_vectors ADD COLUMN model_signature TEXT"
-                )
-            except Exception:
-                pass
-
-            # Initialize transaction ledger table for atomic batch relocation steps
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS transaction_ledger (
-                    id INTEGER PRIMARY KEY AUTOINCREMENT,
-                    session_id TEXT NOT NULL,
-                    step_number INTEGER NOT NULL,
-                    base_dir TEXT NOT NULL,
-                    source_path TEXT NOT NULL,
-                    destination_path TEXT NOT NULL,
-                    file_hash TEXT,
-                    item_type TEXT DEFAULT 'file',
-                    metadata TEXT,
-                    timestamp REAL
-                )
-            """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_transaction_ledger_session ON transaction_ledger (session_id, step_number)"
-            )
-
-            # Initialize quarantine staging records table for atomic compliance state tracking
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS quarantine_records (
-                    job_id TEXT PRIMARY KEY,
-                    base_dir TEXT NOT NULL,
-                    original_filepath TEXT NOT NULL,
-                    staged_filepath TEXT NOT NULL,
-                    file_hash TEXT,
-                    status TEXT NOT NULL,
-                    policy_action TEXT,
-                    audit_log TEXT,
-                    created_at REAL,
-                    updated_at REAL,
-                    error_message TEXT
-                )
-            """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_quarantine_records_base_dir ON quarantine_records (base_dir, status)"
-            )
-
-            # Initialize Jev classification two-tier cache table
-            conn.execute("""
-                CREATE TABLE IF NOT EXISTS jev_classification_cache (
-                    file_path TEXT PRIMARY KEY,
-                    mtime REAL NOT NULL,
-                    size INTEGER NOT NULL,
-                    category TEXT NOT NULL,
-                    sensitivity_rating TEXT NOT NULL,
-                    sensitivity_score REAL NOT NULL,
-                    archival_priority INTEGER NOT NULL,
-                    archival_priority_score REAL NOT NULL,
-                    confidence REAL NOT NULL,
-                    is_classified INTEGER NOT NULL,
-                    metadata TEXT NOT NULL,
-                    updated_at REAL NOT NULL
-                )
-            """)
-            conn.execute(
-                "CREATE INDEX IF NOT EXISTS idx_jev_cache_lookup ON jev_classification_cache (file_path, mtime, size)"
-            )
 
             # Purge existing unencrypted vector cache on startup to prevent reading insecure data
             cursor = conn.cursor()

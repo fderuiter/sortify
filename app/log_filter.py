@@ -52,11 +52,13 @@ class LogScrubbingFilter(logging.Filter):
         if isinstance(record.msg, str) and self._has_encrypted_credentials(record.msg):
             return False
 
+        # A logging filter must never raise, and logging the failure from inside
+        # a filter would recurse, so a malformed record is checked field by field.
         try:
             formatted_msg = record.getMessage()
             if self._has_encrypted_credentials(formatted_msg):
                 return False
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
         if isinstance(record.args, tuple):
@@ -73,9 +75,9 @@ class LogScrubbingFilter(logging.Filter):
 
         # Pre-format exception info and check it
         if record.exc_info and not record.exc_text:
-            try:
+            try:  # noqa: SIM105 - see getMessage above
                 record.exc_text = "".join(traceback.format_exception(*record.exc_info))
-            except Exception:
+            except Exception:  # noqa: BLE001, S110
                 pass
 
         if record.exc_text and self._has_encrypted_credentials(record.exc_text):

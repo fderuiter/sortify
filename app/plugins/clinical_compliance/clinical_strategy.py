@@ -172,7 +172,10 @@ class ClinicalTMFStrategy(IsolatedStrategyMixin):
                 )
                 logger.info(f"Generated compliance audit reports in {base_dir_val}")
             except Exception as e:
-                logger.warning(f"Could not write audit reports to {base_dir_val}: {e}")
+                logger.warning(
+                    f"Could not write audit reports to {base_dir_val}: {e}",
+                    exc_info=True,
+                )
 
         validated_plan = _validate_sorting_plan_nodes(plan)
         return SortingPlan(plan=validated_plan), 0.0

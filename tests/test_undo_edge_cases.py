@@ -120,10 +120,6 @@ def test_undo_never_destroys_a_file_that_blocks_a_folder_it_must_restore(
     assert _contents(base_dir) == ["report", "user's new file"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#866: the step-ledger undo doesn't move a blocking file aside",
-)
 def test_undo_moves_a_blocking_file_aside_and_restores_the_folder(
     test_history_env,
 ):
@@ -212,10 +208,6 @@ def test_forced_undo_with_a_deleted_sorted_file_keeps_the_rest(test_history_env)
     assert _contents(base_dir) == ["keep"]
 
 
-@pytest.mark.xfail(
-    strict=True,
-    reason="#865: undo --force still hash-checks the file it skipped",
-)
 def test_forced_undo_with_a_deleted_sorted_file_succeeds(test_history_env):
     base_dir, db, _cache, history_manager, _worker = test_history_env
     session_id = _sort_two_then_delete_one(base_dir, db, history_manager)

@@ -1,0 +1,98 @@
+{
+  "_metadata": {
+    "checksum": "cf54390cff7bdfe8a9db531b3eaa8fa235a852c6290ad5576eefd15993792190"
+  },
+  "classes": [
+    {
+      "class_name": "Migration",
+      "decorators": [
+        "@dataclass(frozen=True)"
+      ],
+      "methods": []
+    },
+    {
+      "class_name": "StoreTooNewError",
+      "decorators": [],
+      "methods": []
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "add_missing_columns",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "conn"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "table"
+        },
+        {
+          "annotation": "dict[str, str]",
+          "default": null,
+          "name": "columns"
+        }
+      ],
+      "returns": "None"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "migrate",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "conn"
+        },
+        {
+          "annotation": "Sequence[Migration]",
+          "default": null,
+          "name": "migrations"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "label"
+        }
+      ],
+      "returns": "int"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "schema_version",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "conn"
+        }
+      ],
+      "returns": "int"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "table_columns",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "conn"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "table"
+        }
+      ],
+      "returns": "set[str]"
+    }
+  ]
+}

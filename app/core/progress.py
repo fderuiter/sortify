@@ -163,9 +163,9 @@ def emit_progress(
                     pass
             callback()
         except Exception as e:
-            logger.debug(f"Error invoking legacy progress callback: {e}")
+            logger.debug(f"Error invoking legacy progress callback: {e}", exc_info=True)
     except Exception as e:
-        logger.debug(f"Error invoking progress callback: {e}")
+        logger.debug(f"Error invoking progress callback: {e}", exc_info=True)
 
 
 __all__ = ["ProgressUpdate", "emit_progress"]
