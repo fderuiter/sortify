@@ -1,5 +1,5 @@
 ---
-status: proposed (2026-10-19)
+status: accepted (2026-10-19)
 ---
 
 # One app store, versioned by numbered migrations
