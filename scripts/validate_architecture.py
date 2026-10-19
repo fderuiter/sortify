@@ -67,12 +67,9 @@ IMPORT_LAYER_RULES = {
     "app.main": _TOOLING,
 }
 
-# Modules exempt from IMPORT_LAYER_RULES, with the reason.
-IMPORT_LAYER_EXEMPT = {
-    # Documentation generator: renders every CLI's --help, including app.main,
-    # sandbox_cli and scripts/, so it has to import them.
-    "app.cli.generate_docs",
-}
+# Modules exempt from IMPORT_LAYER_RULES, with the reason. The docs generator
+# that needed an exemption now lives in scripts/, outside the layering.
+IMPORT_LAYER_EXEMPT: set[str] = set()
 
 
 def compute_normalized_ast_hash(node: ast.AST) -> str:
