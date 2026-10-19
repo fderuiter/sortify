@@ -5,6 +5,9 @@ import pytest
 
 from app.cli.generate_docs import (
     _collect_bindings,
+    _describe_bounds,
+    _describe_default,
+    _describe_type,
     _format_key,
     audit_handwritten_docs,
     get_handwritten_docs,
@@ -1021,3 +1024,18 @@ def test_keyboard_shortcuts_page_is_in_sync():
         assert page.read_text(encoding="utf-8") == before
     finally:
         page.write_text(before, encoding="utf-8", newline="\n")
+
+
+def test_config_reference_describes_types_defaults_and_bounds():
+    from app.config import Settings
+
+    fields = Settings.model_fields
+    assert _describe_type(fields["IGNORED_EXTENSIONS"].annotation) == "list[str]"
+    assert _describe_type(fields["MAX_FOLDERS"].annotation) == "int"
+    assert _describe_bounds(fields["MAX_FOLDERS"]) == "> 0, <= 50"
+    assert (
+        _describe_bounds(fields["CONFLICT_POLICY"]) == "`skip`, `rename`, `overwrite`"
+    )
+    # default_factory fields used to render as "PydanticUndefined".
+    assert _describe_default(fields["KEYWORD_RULES"]) == "`{}`"
+    assert "built-in entries" in _describe_default(fields["STOP_WORDS"])

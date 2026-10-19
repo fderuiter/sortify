@@ -4,207 +4,230 @@ This document is automatically generated. Do not edit manually.
 
 ## Configuration Parameters
 
-The following parameters are extracted directly from the application's configuration schema (`app.config.Settings`).
+The following parameters are extracted directly from the application's configuration schema (`app.config.Settings`). Set them with `smart-autosorter config --set NAME VALUE`, in `~/.autosorter/settings.json`, or as an environment variable of the same name.
 
 ### `CONTEXTUAL_RENAMING`
+- **Type**: `bool`
 - **Default**: `False`
-- **Required**: `False`
 
 ### `AI_ASSISTED_NAMING`
+- **Type**: `bool`
 - **Default**: `False`
-- **Required**: `False`
 
 ### `PRESERVE_HIERARCHY`
+- **Type**: `bool`
 - **Default**: `False`
-- **Required**: `False`
 
 ### `MAX_FOLDERS`
+- **Type**: `int`
 - **Default**: `12`
-- **Required**: `False`
+- **Allowed**: > 0, <= 50
 
 ### `MAX_WORKERS`
+- **Type**: `int`
 - **Default**: `4`
-- **Required**: `False`
+- **Allowed**: > 0, <= 64
 
 ### `MAX_DEPTH`
+- **Type**: `int`
 - **Default**: `5`
-- **Required**: `False`
+- **Allowed**: > 0, <= 10
 
 ### `MAX_FEATURES`
+- **Type**: `int`
 - **Default**: `3`
-- **Required**: `False`
+- **Allowed**: > 0, <= 10
 
 ### `CLEANUP_EMPTY_FOLDERS`
+- **Type**: `bool`
 - **Default**: `True`
-- **Required**: `False`
 
 ### `EXPLORER_INTEGRATION`
+- **Type**: `bool`
 - **Default**: `False`
-- **Required**: `False`
 
 ### `SPEAK_ANNOUNCEMENTS`
+- **Type**: `bool`
 - **Default**: `False`
-- **Required**: `False`
 
 ### `KEYWORD_RULES`
-- **Default**: `PydanticUndefined`
-- **Required**: `False`
+- **Type**: `dict`
+- **Default**: `{}`
 
 ### `LEARNED_RULES`
-- **Default**: `PydanticUndefined`
-- **Required**: `False`
+- **Type**: `dict`
+- **Default**: `{}`
 
 ### `EXTENSION_CATEGORIES`
-- **Default**: `PydanticUndefined`
-- **Required**: `False`
+- **Type**: `dict`
+- **Default**: `{}`
 
 ### `POLICIES`
-- **Default**: `PydanticUndefined`
-- **Required**: `False`
+- **Type**: `list[dict]`
+- **Default**: `[]`
 
 ### `VISUAL_TIMEOUT`
+- **Type**: `int`
 - **Default**: `30`
-- **Required**: `False`
+- **Allowed**: > 0
 
 ### `IMAGE_MAX_DIMENSION`
+- **Type**: `int`
 - **Default**: `1000`
-- **Required**: `False`
+- **Allowed**: > 0
 
 ### `IMAGE_SKIP_THRESHOLD`
+- **Type**: `int`
 - **Default**: `3000`
-- **Required**: `False`
+- **Allowed**: > 0
 
 ### `PDF_TEXT_DENSITY_THRESHOLD`
+- **Type**: `int`
 - **Default**: `50`
-- **Required**: `False`
+- **Allowed**: >= 0
 
 ### `MODEL_THREADS`
+- **Type**: `int`
 - **Default**: `2`
-- **Required**: `False`
+- **Allowed**: >= 1, <= 32
 
 ### `GRAMMAR_CACHE_SIZE`
+- **Type**: `int`
 - **Default**: `16`
-- **Required**: `False`
+- **Allowed**: > 0, <= 256
 
 ### `SNAPSHOT_RETENTION_DAYS`
+- **Type**: `int`
 - **Default**: `30`
-- **Required**: `False`
+- **Allowed**: > 0
 
 ### `PROTECTED_PATHS`
-- **Default**: `PydanticUndefined`
-- **Required**: `False`
+- **Type**: `list[str]`
+- **Default**: `[]`
 
 ### `AUTO_QUARANTINE_RATINGS`
+- **Type**: `list[str]`
 - **Default**: `['CRITICAL', 'HIGH']`
-- **Required**: `False`
 
 ### `QUARANTINE_DIR_NAME`
-- **Default**: `_Compliance_Quarantine`
-- **Required**: `False`
+- **Type**: `str`
+- **Default**: `'_Compliance_Quarantine'`
 
 ### `PROXY`
-- **Default**: ``
-- **Required**: `False`
+- **Type**: `str`
+- **Default**: `''`
 
 ### `SECURITY_ADVISORY_ENDPOINT`
-- **Default**: `https://security.huggingface.co/api/advisories`
-- **Required**: `False`
+- **Type**: `str`
+- **Default**: `'https://security.huggingface.co/api/advisories'`
 
 ### `SECURITY_ADVISORY_CACHE_TTL`
+- **Type**: `int`
 - **Default**: `3600`
-- **Required**: `False`
+- **Allowed**: >= 1
 
 ### `SECURITY_ADVISORY_FALLBACK_POLICY`
-- **Default**: `permissive`
-- **Required**: `False`
+- **Type**: `str`
+- **Default**: `'permissive'`
+- **Allowed**: `strict`, `permissive`
 
 ### `OCR_GPU_ENABLED`
+- **Type**: `bool`
 - **Default**: `False`
-- **Required**: `False`
 
 ### `AUDIO_GPU_ENABLED`
+- **Type**: `bool`
 - **Default**: `False`
-- **Required**: `False`
 
 ### `AUDIO_MAX_WORKERS`
+- **Type**: `int`
 - **Default**: `2`
-- **Required**: `False`
+- **Allowed**: > 0, <= 64
 
 ### `PLUGINS`
-- **Default**: `PydanticUndefined`
-- **Required**: `False`
+- **Type**: `list[str]`
+- **Default**: `[]`
 
 ### `OCR_LANGUAGES`
-- **Default**: `en`
-- **Required**: `False`
+- **Type**: `str`
+- **Default**: `'en'`
 
 ### `VISION_ENGINE`
-- **Default**: `easyocr`
-- **Required**: `False`
+- **Type**: `str`
+- **Default**: `'easyocr'`
+- **Allowed**: `easyocr`, `florence-2`
 
 ### `CONFLICT_POLICY`
-- **Default**: `rename`
-- **Required**: `False`
+- **Type**: `str`
+- **Default**: `'rename'`
+- **Allowed**: `skip`, `rename`, `overwrite`
 
 ### `SORTING_STRATEGY`
-- **Default**: `default`
-- **Required**: `False`
+- **Type**: `str`
+- **Default**: `'default'`
 
 ### `CLINICAL_SMART_RENAMING`
+- **Type**: `bool`
 - **Default**: `False`
-- **Required**: `False`
 
 ### `CLINICAL_GENERATE_AUDIT_REPORT`
+- **Type**: `bool`
 - **Default**: `True`
-- **Required**: `False`
 
 ### `COHERENCE_THRESHOLD`
+- **Type**: `float`
 - **Default**: `0.5`
-- **Required**: `False`
+- **Allowed**: >= 0.0, <= 1.0
 
 ### `DEBOUNCE_DELAY`
+- **Type**: `float`
 - **Default**: `0.6`
-- **Required**: `False`
+- **Allowed**: > 0.0
 
 ### `MAX_DEBOUNCE_DELAY`
+- **Type**: `float`
 - **Default**: `5.0`
-- **Required**: `False`
+- **Allowed**: > 0.0
 
 ### `TABULAR_MAX_SHEETS`
+- **Type**: `int`
 - **Default**: `10`
-- **Required**: `False`
+- **Allowed**: > 0
 
 ### `TABULAR_MAX_ROWS`
+- **Type**: `int`
 - **Default**: `10000`
-- **Required**: `False`
+- **Allowed**: > 0
 
 ### `TABULAR_MAX_CHARACTERS`
+- **Type**: `int`
 - **Default**: `50000`
-- **Required**: `False`
+- **Allowed**: > 0
 
 ### `IGNORED_EXTENSIONS`
+- **Type**: `list[str]`
 - **Default**: `['.crdownload', '.tmp', '.download']`
-- **Required**: `False`
 
 ### `AI_CONSENT_GRANTED`
+- **Type**: `bool | None`
 - **Default**: `None`
-- **Required**: `False`
 
 ### `LOG_FILE`
-- **Default**: `~/.autosorter/autosorter.log`
-- **Required**: `False`
+- **Type**: `str`
+- **Default**: `'~/.autosorter/autosorter.log'`
 
 ### `STOP_WORDS`
-- **Default**: `['about', 'all', 'also', 'and', 'are', 'because', 'been', 'but', 'can', 'com', 'could', 'csv', 'docx', 'don', 'for', 'from', 'get', 'has', 'have', 'how', 'inc', 'into', 'like', 'much', 'nan', 'not', 'only', 'other', 'out', 'over', 'page', 'pdf', 'should', 'site', 'some', 'team', 'than', 'that', 'the', 'their', 'there', 'these', 'this', 'through', 'txt', 'unnamed', 'was', 'well', 'what', 'when', 'where', 'which', 'who', 'will', 'with', 'would', 'xls', 'xlsx', 'your']`
-- **Required**: `False`
+- **Type**: `set[str]`
+- **Default**: 59 built-in entries (see `app/config.py`)
 
 ## Precedence Rules
 
 The application evaluates configuration parameters using a strict precedence hierarchy to determine how settings interact. The priority is applied as follows, from highest to lowest:
 
-1. **Local Settings File (`~/.autosorter/settings.json`):** This local configuration file takes absolute priority. Any parameters defined here will override environment variables and default properties.
-2. **Environment Variables (or `.env` file):** Variables configured in the environment take precedence over default parameters.
-3. **Default Parameters:** Base defaults are used as fallbacks if a setting is not explicitly defined in the local file or environment.
+1. **Command-Line Flags:** Flags such as `--max-folders`, `--strategy` and `--conflict-policy` override every other source for that run only.
+2. **Local Settings File (`~/.autosorter/settings.json`):** Parameters defined here override environment variables and default properties.
+3. **Environment Variables (or `.env` file):** Variables configured in the environment take precedence over default parameters.
+4. **Default Parameters:** Base defaults are used as fallbacks if a setting is not explicitly defined in the local file or environment.
 
 ## Dynamic Configuration Saves
 
