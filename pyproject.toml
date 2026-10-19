@@ -5,9 +5,22 @@ build-backend = "hatchling.build"
 [project]
 name = "smart-autosorter"
 version = "0.1.0"
-description = "AI File Organizer Pro"
+description = "Local, offline-first document organizer that sorts folders by rules and content clustering"
 readme = "README.md"
 requires-python = ">=3.12,<4"
+authors = [{ name = "Frederick de Ruiter" }]
+keywords = ["file-organizer", "document-clustering", "tui", "offline", "tf-idf"]
+classifiers = [
+    "Development Status :: 3 - Alpha",
+    "Environment :: Console",
+    "Intended Audience :: End Users/Desktop",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Desktop Environment :: File Managers",
+    "Topic :: Text Processing :: Indexing",
+]
 dependencies = [
     "pandas",
     "scikit-learn",
@@ -32,6 +45,11 @@ dependencies = [
     "pydantic",
     "psutil",
 ]
+
+[project.urls]
+Homepage = "https://github.com/fderuiter/sortify"
+Issues = "https://github.com/fderuiter/sortify/issues"
+Documentation = "https://github.com/fderuiter/sortify/tree/main/docs"
 
 [project.optional-dependencies]
 ml = [
@@ -171,8 +189,9 @@ dev = [
 ]
 
 docs = [
-    "mkdocs>=1.6.1",
-    "mkdocs-material>=9.7.7",
+    # MkDocs 2.0 drops the plugin system mkdocstrings and Material rely on.
+    "mkdocs>=1.6.1,<2",
+    "mkdocs-material>=9.7.7,<10",
     "mkdocstrings[python]>=1.0.6",
 ]
 
