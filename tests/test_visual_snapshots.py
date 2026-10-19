@@ -220,6 +220,9 @@ def test_tui_populated_plan_snapshot():
                 },
             }
             app.rebuild_tree()
+            # rebuild_tree starts the validation worker on a thread, and its
+            # result re-enables Execute; wait for it so slow runners match.
+            await app.workers.wait_for_complete()
             for _ in range(2):
                 await pilot.pause()
             svg = app.export_screenshot()
