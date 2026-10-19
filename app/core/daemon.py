@@ -1,7 +1,9 @@
 """Continuous background watchdog service daemon."""
 
 import asyncio
+import concurrent.futures
 import contextlib
+import functools
 import logging
 import multiprocessing
 import os
@@ -212,6 +214,11 @@ class ContinuousWatchdogDaemon:
 
         # We run the actual sorting loop on a dedicated background execution thread
         self._execution_thread = None
+
+        # Triage's blocking work (staging, planning, moving, training) runs here,
+        # one job at a time, so the event loop stays free for IPC and queueing
+        # and the shared analyzer is never used from two threads at once (#717).
+        self._sort_executor: Optional[concurrent.futures.ThreadPoolExecutor] = None
 
         # Process-isolated worker management
         self._sorting_process: Optional[multiprocessing.Process] = None
@@ -739,6 +746,17 @@ class ContinuousWatchdogDaemon:
                 with self._lock:
                     self._active_triage_paths.discard(norm_p)
 
+    async def _in_sort_thread(self, fn, /, *args, **kwargs):
+        """Run blocking sort work on the daemon's sort thread and await it."""
+        if self._sort_executor is None:
+            self._sort_executor = concurrent.futures.ThreadPoolExecutor(
+                max_workers=1, thread_name_prefix="daemon-sort"
+            )
+        loop = asyncio.get_running_loop()
+        return await loop.run_in_executor(
+            self._sort_executor, functools.partial(fn, *args, **kwargs)
+        )
+
     async def _triage_file_path(self, abs_path: str):
         """Targeted triage on a single item path using QuarantineInterceptorService staging and compliance policy evaluation."""
         if not os.path.exists(abs_path):
@@ -793,7 +811,8 @@ class ContinuousWatchdogDaemon:
         )
 
         try:
-            staged_info = interceptor.stage_incoming_file(
+            staged_info = await self._in_sort_thread(
+                interceptor.stage_incoming_file,
                 source_path=abs_path,
                 base_dir=self.base_dir,
                 original_relative_path=rel_path,
@@ -863,19 +882,29 @@ class ContinuousWatchdogDaemon:
         if not os.path.exists(abs_path):
             return
 
-        MetadataPass.run(
-            self.base_dir, [rel_path], self.settings, app_session.db, None, cancel_check
+        await self._in_sort_thread(
+            MetadataPass.run,
+            self.base_dir,
+            [rel_path],
+            self.settings,
+            app_session.db,
+            None,
+            cancel_check,
         )
 
         if cancel_check():
             return
 
-        fast_path_plan = app_session.generate_sorting_plan(
-            fast_path_only=True, target_paths=[rel_path]
+        fast_path_plan = await self._in_sort_thread(
+            app_session.generate_sorting_plan,
+            fast_path_only=True,
+            target_paths=[rel_path],
         )
         if fast_path_plan:
             with self.scoped_move_phase(plan=fast_path_plan):
-                summary = app_session.execute_moves(fast_path_plan)
+                summary = await self._in_sort_thread(
+                    app_session.execute_moves, fast_path_plan
+                )
             logger.info(
                 f"Targeted Fast-Path triage completed for {rel_path}: {summary}"
             )
@@ -893,19 +922,22 @@ class ContinuousWatchdogDaemon:
             from app.core.shared_registry import SharedModelRegistry
 
             jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
-            jev_res = jev_engine.classify(abs_path)
+            jev_res = await self._in_sort_thread(jev_engine.classify, abs_path)
             if (
                 jev_res
                 and getattr(jev_res, "is_classified", False)
                 and getattr(jev_res, "confidence", 0.0) >= 0.5
             ):
-                jev_plan = app_session.generate_sorting_plan(
+                jev_plan = await self._in_sort_thread(
+                    app_session.generate_sorting_plan,
                     fast_path_only=True,
                     jev_results={rel_path: jev_res, abs_path: jev_res},
                 )
                 if jev_plan:
                     with self.scoped_move_phase(plan=jev_plan):
-                        summary = app_session.execute_moves(jev_plan)
+                        summary = await self._in_sort_thread(
+                            app_session.execute_moves, jev_plan
+                        )
                     logger.info(
                         f"Targeted Jev Fast-Path triage completed for {rel_path}: {summary}"
                     )
@@ -929,18 +961,22 @@ class ContinuousWatchdogDaemon:
                 break
             if not was_skipped:
                 chunk = {item: {"text": text, "hash": file_hash}}
-                await asyncio.to_thread(app_session.partial_fit, chunk)
+                await self._in_sort_thread(app_session.partial_fit, chunk)
                 chunk.clear()
 
         if cancel_check():
             return
 
-        slow_path_plan = app_session.generate_sorting_plan(
-            fast_path_only=False, target_paths=[rel_path]
+        slow_path_plan = await self._in_sort_thread(
+            app_session.generate_sorting_plan,
+            fast_path_only=False,
+            target_paths=[rel_path],
         )
         if slow_path_plan:
             with self.scoped_move_phase(plan=slow_path_plan):
-                summary = app_session.execute_moves(slow_path_plan)
+                summary = await self._in_sort_thread(
+                    app_session.execute_moves, slow_path_plan
+                )
             logger.info(
                 f"Targeted Slow-Path AI triage completed for {rel_path}: {summary}"
             )
@@ -1181,6 +1217,11 @@ class ContinuousWatchdogDaemon:
 
         if self._execution_thread and self._execution_thread.is_alive():
             self._execution_thread.join(timeout=3.0)
+
+        # Let an in-flight move finish before the session it uses is closed.
+        executor, self._sort_executor = self._sort_executor, None
+        if executor is not None:
+            executor.shutdown(wait=True, cancel_futures=True)
 
         self._event_loop = None
         self._event_queue = None
