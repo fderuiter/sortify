@@ -256,7 +256,9 @@ class SessionCrypto:
 
             # 1. OS Keyring Lookup (SHA-256)
             try:
-                key_str = keyring.get_password(self.keyring_service, self.keyring_account)
+                key_str = keyring.get_password(
+                    self.keyring_service, self.keyring_account
+                )
                 if key_str:
                     key = key_str.encode("utf-8")
             except Exception as e:
@@ -433,7 +435,9 @@ class SessionCrypto:
                                     if d_row and d_row[0] > 0:
                                         has_docs = True
                         if has_docs:
-                            raise CryptoError("Database accessed but key file is missing.")
+                            raise CryptoError(
+                                "Database accessed but key file is missing."
+                            )
                     except sqlite3.DatabaseError:
                         # If it's encrypted with SQLCipher, sqlite3 will fail with "file is not a database"
                         # which means it's an existing DB! We cannot read it without a key.
@@ -628,7 +632,9 @@ class SessionCrypto:
         with _key_mgmt_lock:
             try:
                 new_key_bytes = (
-                    new_key_str.encode("utf-8") if new_key_str else Fernet.generate_key()
+                    new_key_str.encode("utf-8")
+                    if new_key_str
+                    else Fernet.generate_key()
                 )
                 new_raw_key = new_key_bytes.decode("utf-8")
 

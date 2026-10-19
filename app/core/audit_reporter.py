@@ -69,7 +69,13 @@ def generate_audit_report(
             or ""
         )
 
-        if override_status in (VERIFIED_PASS, MISMATCH_FAIL, MOVE_FAIL, SKIPPED, UNVERIFIED):
+        if override_status in (
+            VERIFIED_PASS,
+            MISMATCH_FAIL,
+            MOVE_FAIL,
+            SKIPPED,
+            UNVERIFIED,
+        ):
             status = override_status
         elif err_msg or item.get("move_failed"):
             status = MOVE_FAIL

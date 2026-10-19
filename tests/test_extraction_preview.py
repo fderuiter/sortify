@@ -100,7 +100,9 @@ def test_settings_modal_extraction_tab(tmp_path):
             assert input_density.value == "75"
 
             # Check density slider initial value
-            slider_density = modal.query_one("#slider-pdf-density-threshold", DensitySlider)
+            slider_density = modal.query_one(
+                "#slider-pdf-density-threshold", DensitySlider
+            )
             assert slider_density.value == 75
 
     import asyncio

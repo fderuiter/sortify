@@ -366,7 +366,9 @@ def verify_temp_file_hash(temp_path: str, target_path: str) -> bool:
                 )
 
         expected_str = (
-            ", ".join(expected_hashes) if len(expected_hashes) > 1 else expected_hashes[0]
+            ", ".join(expected_hashes)
+            if len(expected_hashes) > 1
+            else expected_hashes[0]
         )
         raise ModelVerificationError(
             f"Cryptographic signature verification failed for {filename}.\n"
@@ -564,7 +566,9 @@ def run_background_download(
                         net_err, NetworkError
                     ):
                         raise
-                    if isinstance(net_err, NetworkError) and "Invalid proxy configuration" in str(net_err):
+                    if isinstance(
+                        net_err, NetworkError
+                    ) and "Invalid proxy configuration" in str(net_err):
                         raise net_err
 
                     retries += 1

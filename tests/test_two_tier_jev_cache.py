@@ -291,4 +291,3 @@ def test_stale_entry_invalidation_and_corrupted_metadata(tmp_path: Path):
     assert res2 is not None
     assert res2.category == "Financial Reports"
     assert res2.metadata == {}  # Graceful fallback to empty dict
-

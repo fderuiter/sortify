@@ -124,17 +124,17 @@ def test_db_worker_reentrant_write_on_worker_thread():
     """Verify that re-entrant execute_write and execute_write_async calls on the worker thread run inline without deadlocking."""
     db_worker = DBWorker()
     try:
+
         def outer_task():
             # Call execute_write re-entrantly from inside worker thread
             res1 = db_worker.execute_write(lambda: "reentrant_sync_ok")
-            
+
             # Call execute_write_async re-entrantly
             db_worker.execute_write_async(lambda: None)
-            
+
             return res1
 
         res = db_worker.execute_write(outer_task)
         assert res == "reentrant_sync_ok"
     finally:
         db_worker.stop()
-

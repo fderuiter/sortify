@@ -281,7 +281,9 @@ def test_domain_contracts_containment_checks():
     assert "unknown_field" not in node
 
     # 3. SortingPlanModel
-    plan = SortingPlanModel(nodes={"node1": {}}, model_status="HEALTHY", extra_info="test")
+    plan = SortingPlanModel(
+        nodes={"node1": {}}, model_status="HEALTHY", extra_info="test"
+    )
     assert "node1" in plan
     assert "nodes" in plan
     assert "model_status" in plan
@@ -309,4 +311,3 @@ def test_domain_contracts_containment_checks():
     assert "metadata" in vector_payload
     assert "extra_v" in vector_payload
     assert "missing" not in vector_payload
-

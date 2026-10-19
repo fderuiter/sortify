@@ -121,7 +121,9 @@ def test_grammar_cache_lru_eviction():
             # 4. C compiled (B evicted)
             # 5. A hit (no compile)
             # 6. B compiled (C evicted)
-            compiled_grammars = [call.args[0] for call in mock_from_string.call_args_list]
+            compiled_grammars = [
+                call.args[0] for call in mock_from_string.call_args_list
+            ]
             assert compiled_grammars == [
                 grammar_a,
                 grammar_b,

@@ -161,4 +161,3 @@ def test_conflict_policy_overwrite(tmp_path):
     assert not source_file.exists()
     assert collision_file.exists()
     assert collision_file.read_text() == "source_content"
-

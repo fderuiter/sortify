@@ -34,6 +34,7 @@ def test_resilient_move_retries_transient_lock(tmp_path, monkeypatch):
     src.write_text("content")
 
     from app.core import resilient_file_ops
+
     original_atomic_move = resilient_file_ops.atomic_move_non_clobber
 
     attempts = [0]
@@ -44,7 +45,9 @@ def test_resilient_move_retries_transient_lock(tmp_path, monkeypatch):
             raise PermissionError("File in use by another process")
         return original_atomic_move(s, d)
 
-    monkeypatch.setattr("app.core.resilient_file_ops.atomic_move_non_clobber", mock_atomic_move)
+    monkeypatch.setattr(
+        "app.core.resilient_file_ops.atomic_move_non_clobber", mock_atomic_move
+    )
     monkeypatch.setattr("app.core.resilient_file_ops.RETRY_DELAY", 0.01)
 
     resilient_move(str(src), str(dst))
@@ -92,9 +95,7 @@ def test_unrecoverable_error_preserves_safety_storage_and_session(
     assert os.path.exists(session_dir)
 
 
-def test_trapped_files_redetected_on_subsequent_scan(
-    tmp_path, mock_session_base
-):
+def test_trapped_files_redetected_on_subsequent_scan(tmp_path, mock_session_base):
     """Test that trapped files in .branches/<sid> remain detected on subsequent application launches."""
     base_dir = str(tmp_path / "work_dir")
     os.makedirs(base_dir, exist_ok=True)
