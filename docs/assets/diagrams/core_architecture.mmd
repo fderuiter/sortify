@@ -43,6 +43,7 @@ flowchart TD
         core_store[("app.core.store")]
         core_db[("app.core.db")]
         core_migrations["app.core.migrations"]
+        core_moves[("app.core.moves")]
         core_ledger[("app.core.ledger")]
         core_history[("app.core.history")]
         core_session_catalog["app.core.session_catalog"]
@@ -117,6 +118,8 @@ flowchart TD
     core_db --> core_migrations
     core_store --> core_db
     core_store --> core_history
+    core_store --> core_moves
+    core_history --> core_moves
     core_ledger --> core_db
     core_history --> core_db
     core_history --> core_session_catalog

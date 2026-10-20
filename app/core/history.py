@@ -10,6 +10,7 @@ from typing import Any, Dict, Iterator, List
 
 from app.core.db_conn import get_db_connection
 from app.core.migrations import Migration, add_missing_columns, migrate
+from app.core.moves import MoveLedger, migrate_add_moves
 from app.core.path_utils import is_junction_path, safe_relpath
 
 try:
@@ -183,7 +184,10 @@ def _history_db_baseline(conn) -> None:
 
 
 # Ordered schema migrations for history.db. Never edit one after release.
-HISTORY_DB_MIGRATIONS = (Migration(1, "baseline", _history_db_baseline),)
+HISTORY_DB_MIGRATIONS = (
+    Migration(1, "baseline", _history_db_baseline),
+    Migration(2, "moves", migrate_add_moves),
+)
 
 
 class HistoryManager:
@@ -199,6 +203,8 @@ class HistoryManager:
         self.db_path = db_path or str(Path(db.db_path).parent / "history.db")
         self.migrations = migrations
         self._init_db()
+        # The move ledger (ADR 0006) lives in this database and writes through its worker.
+        self.moves = MoveLedger(self.db_path, getattr(db, "worker", None))
 
     def _init_db(self):
         conn = get_db_connection(self.db_path)
@@ -475,6 +481,7 @@ class HistoryManager:
             conn.execute("DELETE FROM snapshot_cache WHERE session_id = ?", (sid,))
             conn.execute("DELETE FROM snapshot_documents WHERE session_id = ?", (sid,))
             conn.execute("DELETE FROM step_ledger WHERE session_id = ?", (sid,))
+            conn.execute("DELETE FROM moves WHERE session_id = ?", (sid,))
             conn.execute("DELETE FROM sessions WHERE session_id = ?", (sid,))
             _purge_overwrite_backups(base_dir, sid)
 
