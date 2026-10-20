@@ -24,6 +24,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.layout
 
+## `app.ui.modals.drop_zone`
+
+::: app.ui.modals.drop_zone
+
 ## `app.ui.modals.edit`
 
 ::: app.ui.modals.edit
