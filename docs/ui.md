@@ -20,6 +20,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.heading
 
+## `app.ui.layout`
+
+::: app.ui.layout
+
 ## `app.ui.notifications`
 
 ::: app.ui.notifications
