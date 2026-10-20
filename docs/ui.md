@@ -36,6 +36,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.modals.models
 
+## `app.ui.modals.reports`
+
+::: app.ui.modals.reports
+
 ## `app.ui.modals.rules`
 
 ::: app.ui.modals.rules
