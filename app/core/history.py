@@ -1080,19 +1080,6 @@ class HistoryManager:
             if os.path.exists(p_abs):
                 db_paths.append(p_abs)
 
-        try:
-            from app.core.session_catalog import find_all_history_sessions
-
-            discovered_sessions = find_all_history_sessions()
-            for s in discovered_sessions:
-                hist_path = s.get("history_db_path")
-                if hist_path:
-                    abs_hist = str(Path(hist_path).resolve())
-                    if abs_hist not in db_paths and os.path.exists(abs_hist):
-                        db_paths.append(abs_hist)
-        except Exception:
-            pass
-
         if not db_paths and self.db_path:
             db_paths.append(str(Path(self.db_path).resolve()))
 
@@ -2302,29 +2289,18 @@ class HistoryManager:
 
 
 @contextmanager
-def open_session_history(
-    history_db_path: "str | os.PathLike[str] | None" = None,
-) -> Iterator[HistoryManager]:
-    """Yield a HistoryManager bound to the databases of one sort session.
+def open_session_history(store=None) -> Iterator[HistoryManager]:
+    """Yield a HistoryManager on the app store, with its own DBWorker.
 
-    A session keeps its ``autosorter.db`` and ``cache.db`` next to its
-    ``history.db``, so a rollback must update those rather than the global
-    databases in the app dir. Without a path, the app dir's ``history.db`` is used.
     The DBWorker opened here is stopped on exit.
     """
-    from app.config import get_app_dir
-    from app.core.cache import CacheManager
-    from app.core.db import Database
     from app.core.db_worker import DBWorker
+    from app.core.store import open_store
 
-    history_db = (
-        Path(history_db_path) if history_db_path else get_app_dir() / "history.db"
-    )
-    session_dir = history_db.parent
+    store = store or open_store()
     db_worker = DBWorker()
     try:
-        db = Database(session_dir / "autosorter.db", db_worker)
-        cache_mgr = CacheManager(str(session_dir / "cache.db"), db_worker)
-        yield HistoryManager(db, cache_mgr, str(history_db))
+        db = store.database(db_worker)
+        yield store.history(db, store.cache(db_worker))
     finally:
         db_worker.stop(stop_embeddings=False)

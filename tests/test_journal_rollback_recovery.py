@@ -7,7 +7,8 @@ from unittest.mock import patch
 import pytest
 
 from app.core.db_conn import get_db_connection
-from app.core.session import scan_abandoned_sessions_async
+from app.core.session_catalog import find_abandoned_sessions
+from app.core.store import open_store
 
 
 @pytest.fixture
@@ -89,7 +90,7 @@ def test_normal_rollback_writes_and_deletes_journal(test_history_env):
 
 @pytest.mark.anyio
 async def test_scanner_detects_interrupted_rollback(mock_session_base, tmp_path):
-    """Verify that scan_abandoned_sessions_async correctly detects rollback_journal.json."""
+    """A rollback journal an older version left in a session folder is found."""
     session_id = "interrupted-session-123"
     session_dir = mock_session_base / session_id
     session_dir.mkdir()
@@ -107,7 +108,7 @@ async def test_scanner_detects_interrupted_rollback(mock_session_base, tmp_path)
     with open(journal_path, "w") as f:
         json.dump(journal_data, f, indent=2)
 
-    abandoned = await scan_abandoned_sessions_async()
+    abandoned = find_abandoned_sessions(open_store(tmp_path / "app"))
 
     assert len(abandoned) == 1
     session_info = abandoned[0]
@@ -116,6 +117,7 @@ async def test_scanner_detects_interrupted_rollback(mock_session_base, tmp_path)
     assert session_info["is_rollback_recovery"] is True
     assert session_info["status"] == "interrupted_rollback"
     assert session_info["journal_path"] == str(journal_path)
+    assert session_info["session_dir"] == str(session_dir)
 
 
 def test_step_rollback_deletes_journal_on_success(test_history_env):

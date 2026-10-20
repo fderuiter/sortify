@@ -1,5 +1,6 @@
 """Robust Local Verification with Automatic Reconstruction for ONNX Semantic Embeddings."""
 
+import contextlib
 import hashlib
 import logging
 import os
@@ -42,7 +43,7 @@ def set_low_priority():
             # THREAD_PRIORITY_BELOW_NORMAL is -1. Using ctypes is extremely robust and does not depend on pywin32
             ctypes.windll.kernel32.SetThreadPriority(handle, -1)
     except Exception:
-        pass
+        logging.debug("Could not lower thread priority", exc_info=True)
 
 
 class ModelProperties(tuple):
@@ -63,6 +64,7 @@ def _parse_onnx_type(node_type_str) -> "np.dtype":
         try:
             node_type_str = str(node_type_str)
         except Exception:
+            logging.debug("Could not stringify ONNX node type", exc_info=True)
             return np.int64
 
     if "MagicMock" in node_type_str:
@@ -129,7 +131,7 @@ def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
     if onnx_file and os.path.exists(onnx_file):
         try:
             mtime = os.path.getmtime(onnx_file)
-        except Exception:
+        except OSError:
             mtime = 0.0
 
         cache_key = (model_path, onnx_file, mtime)
@@ -143,6 +145,7 @@ def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
         try:
             signature = resilient_file_hash(onnx_file)
         except Exception:
+            logging.debug("Could not hash ONNX model %s", onnx_file, exc_info=True)
             signature = f"sig_{os.path.basename(onnx_file)}"
 
         # Try reading dimensions from the model if onnxruntime is available
@@ -160,21 +163,22 @@ def get_active_model_properties(model_path: str | None) -> tuple[str, int, str]:
                 is_valid = False
                 registry.unload_model(f"onnx_{onnx_file}")
         except Exception:
+            logging.debug(
+                "Could not read ONNX model dimensions for %s", onnx_file, exc_info=True
+            )
             is_valid = False
             try:
                 from app.core.shared_registry import SharedModelRegistry
 
                 SharedModelRegistry.get_instance().unload_model(f"onnx_{onnx_file}")
             except Exception:
-                pass
+                logging.debug("Could not unload ONNX model", exc_info=True)
 
         version_file = os.path.join(os.path.dirname(onnx_file), "version.txt")
         if os.path.exists(version_file):
-            try:
+            with contextlib.suppress(OSError, UnicodeDecodeError):
                 with open(version_file, "r") as vf:
                     version = vf.read().strip()
-            except Exception:
-                pass
 
         props = ModelProperties(signature, dimensions, version, is_valid)
         with _model_properties_cache_lock:
@@ -201,7 +205,7 @@ class SemanticEmbeddingManager:
             try:
                 inst.stop()
             except Exception:
-                pass
+                logging.debug("Failed to stop embedding manager", exc_info=True)
 
     def __init__(
         self,
@@ -389,7 +393,7 @@ class SemanticEmbeddingManager:
             try:
                 registry.unload_model(f"onnx_{onnx_file}")
             except Exception:
-                pass
+                logging.debug("Could not unload ONNX model", exc_info=True)
             if isinstance(e, ModelValidationError):
                 raise e
             raise ModelValidationError(
@@ -501,7 +505,9 @@ class SemanticEmbeddingManager:
                         # Cooperative pause to ensure UI thread remains highly responsive
                         time.sleep(0.02)
         except Exception as e:
-            logging.error(f"Error during background vector reconstruction: {e}")
+            logging.error(
+                f"Error during background vector reconstruction: {e}", exc_info=True
+            )
         finally:
             logging.info("Background vector reconstruction finished.")
             try:
@@ -516,9 +522,12 @@ class SemanticEmbeddingManager:
                                 try:
                                     conn.close()
                                 except Exception:
-                                    pass
+                                    logging.debug(
+                                        "Failed to close DB connection",
+                                        exc_info=True,
+                                    )
             except Exception:
-                pass
+                logging.debug("Failed to release thread DB connections", exc_info=True)
 
     def _generate_fallback_embedding(self, text: str | None) -> list[float]:
         """Generate deterministic, unit L2-normalized fallback vector embedding."""
@@ -806,7 +815,9 @@ class SemanticEmbeddingManager:
                     retrieved_vectors[fp] = vec
                     new_vectors_to_upsert.append((fp, vec))
             except Exception as e:
-                logging.error(f"Failed to generate embedding for {fp}: {e}")
+                logging.error(
+                    f"Failed to generate embedding for {fp}: {e}", exc_info=True
+                )
 
         if new_vectors_to_upsert:
             for i in range(0, len(new_vectors_to_upsert), chunk_size):

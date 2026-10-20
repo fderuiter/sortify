@@ -84,7 +84,7 @@ convention = "numpy"
 "scripts/*" = ["D", "BLE001", "S110", "SIM105"]
 ".agents/*" = ["BLE001", "S110", "SIM105"]
 "app/core/metadata.py" = ["F841"]
-"app/core/verifier.py" = ["F401", "E741", "BLE001", "S110", "SIM105"]
+"app/core/verifier.py" = ["F401", "E741"]
 
 # Exception-handling baseline for #783: files that predate the rule. Fix a file
 # and delete its line; never add one.
@@ -96,14 +96,10 @@ convention = "numpy"
 "app/core/db.py" = ["BLE001", "S110", "SIM105"]
 "app/core/db_conn.py" = ["BLE001", "S110", "SIM105"]
 "app/core/db_worker.py" = ["BLE001", "S110", "SIM105"]
-"app/core/extractor_strategies.py" = ["BLE001", "S110", "SIM105"]
 "app/core/history.py" = ["BLE001", "S110", "SIM105"]
-"app/core/ipc.py" = ["BLE001", "S110", "SIM105"]
 "app/core/ledger.py" = ["BLE001", "S110", "SIM105"]
 "app/core/mover.py" = ["BLE001", "S110", "SIM105"]
-"app/core/path_utils.py" = ["BLE001", "S110", "SIM105"]
 "app/core/resilient_file_ops.py" = ["BLE001", "S110", "SIM105"]
-"app/core/semantic_embeddings.py" = ["BLE001", "S110", "SIM105"]
 "app/core/session.py" = ["BLE001", "S110", "SIM105"]
 "app/main.py" = ["BLE001", "S110", "SIM105"]
 "app/ui/tui.py" = ["BLE001", "S110", "SIM105"]

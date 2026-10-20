@@ -82,6 +82,7 @@ flowchart TD
     core_daemon --> core_pipeline
     core_pipeline --> core_session
     core_session --> core_folder_lock
+    core_session --> core_store
     core_pipeline --> core_extractor
     app_main --> core_session
     app_tui --> core_session
@@ -122,7 +123,7 @@ flowchart TD
     core_history --> core_moves
     core_ledger --> core_db
     core_history --> core_db
-    core_history --> core_session_catalog
+    core_session_catalog --> core_store
     core_policy_engine --> core_quarantine_interceptor
     core_quarantine_interceptor --> core_domain_contracts
     core_policy_engine --> core_mover

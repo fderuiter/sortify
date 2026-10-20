@@ -777,6 +777,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramEdge(source="core_daemon", target="core_pipeline"),
             DiagramEdge(source="core_pipeline", target="core_session"),
             DiagramEdge(source="core_session", target="core_folder_lock"),
+            DiagramEdge(source="core_session", target="core_store"),
             DiagramEdge(source="core_pipeline", target="core_extractor"),
             DiagramEdge(source="app_main", target="core_session"),
             DiagramEdge(source="app_tui", target="core_session"),
@@ -821,7 +822,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramEdge(source="core_history", target="core_moves"),
             DiagramEdge(source="core_ledger", target="core_db"),
             DiagramEdge(source="core_history", target="core_db"),
-            DiagramEdge(source="core_history", target="core_session_catalog"),
+            DiagramEdge(source="core_session_catalog", target="core_store"),
             DiagramEdge(
                 source="core_policy_engine", target="core_quarantine_interceptor"
             ),

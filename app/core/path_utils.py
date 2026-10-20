@@ -1,7 +1,9 @@
 """Utility functions for handling paths and sanitizing filenames."""
 
+import contextlib
 import functools
 import getpass
+import logging
 import os
 import re
 import sys
@@ -10,6 +12,8 @@ from pathlib import Path
 from typing import Any, Optional
 
 from pydantic import BaseModel
+
+logger = logging.getLogger(__name__)
 
 RESERVED_NAMES = {
     "CON",
@@ -85,7 +89,7 @@ def _get_long_path_name(path_str: str) -> str | None:
             res = ctypes.windll.kernel32.GetLongPathNameW(path_str, buf, buf_size)
         if 0 < res < buf_size and buf.value:
             return buf.value
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 - reached from the log filter; logging here would recurse
         pass
     return None
 
@@ -106,7 +110,7 @@ def _get_short_path_name(path_str: str) -> str | None:
             res = ctypes.windll.kernel32.GetShortPathNameW(path_str, buf, buf_size)
         if 0 < res < buf_size and buf.value:
             return buf.value
-    except Exception:
+    except Exception:  # noqa: BLE001, S110 - reached from the log filter; logging here would recurse
         pass
     return None
 
@@ -125,19 +129,16 @@ def _get_compiled_home_patterns(
     if home_dir_str:
         home_dirs.append(home_dir_str)
 
-    try:
+    # Reached from the log filter, which must never raise: stay blind here.
+    with contextlib.suppress(Exception):
         ph = str(Path.home())
         if ph and ph not in home_dirs:
             home_dirs.append(ph)
-    except Exception:
-        pass
 
-    try:
+    with contextlib.suppress(Exception):
         eu = os.path.expanduser("~")
         if eu and eu not in home_dirs:
             home_dirs.append(eu)
-    except Exception:
-        pass
 
     for val in (userprofile, home_env, homepath):
         if val and val not in home_dirs:
@@ -157,7 +158,7 @@ def _get_compiled_home_patterns(
                 short_p = _get_short_path_name(h_dir)
                 if short_p and short_p not in home_dirs:
                     home_dirs.append(short_p)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - reached from the log filter; logging here would recurse
             pass
 
     home_dirs = sorted(home_dirs, key=len, reverse=True)
@@ -193,10 +194,8 @@ def _get_compiled_home_patterns(
             + r"[\/\\]+".join([re.escape(p) for p in body_parts])
             + r"(?=[\\/]|[^a-zA-Z0-9_-]|$)"
         )
-        try:
+        with contextlib.suppress(Exception):
             patterns.append(re.compile(pattern_str, flags=re.IGNORECASE))
-        except Exception:
-            pass
 
     return tuple(patterns)
 
@@ -212,7 +211,7 @@ def scrub_user_home_paths(text: str, home_dir: str | Path | None = None) -> str:
             hd_str = str(home_dir)
             if hd_str:
                 home_dir_str = hd_str
-        except Exception:
+        except Exception:  # noqa: BLE001, S110 - called by the log filter, which must never raise or log
             pass
 
     userprofile = os.environ.get("USERPROFILE")
@@ -225,9 +224,9 @@ def scrub_user_home_paths(text: str, home_dir: str | Path | None = None) -> str:
     )
 
     for pattern in patterns:
-        try:
+        try:  # noqa: SIM105 - see home_dir above
             text = pattern.sub("<USER_HOME>", text)
-        except Exception:
+        except Exception:  # noqa: BLE001, S110
             pass
 
     return text
@@ -307,10 +306,9 @@ def get_base_path(caller_file_path: str = None) -> str:
 def get_sanitized_username() -> str:
     """Get the sanitized operating system username for safe user-isolated directory naming."""
     raw_user = None
-    try:
+    # getuser raises ImportError/KeyError on 3.12 and OSError from 3.13 when no user is found.
+    with contextlib.suppress(ImportError, KeyError, OSError):
         raw_user = getpass.getuser()
-    except Exception:
-        pass
 
     if not raw_user:
         raw_user = (
@@ -784,16 +782,14 @@ def safe_relpath(path: str | Path, start: str | Path | None = None) -> str:
     start_str = str(start)
 
     try:
-        try:
+        with contextlib.suppress(OSError, ValueError):
             real_p = os.path.realpath(path_str)
             real_s = os.path.realpath(start_str)
             rel = os.path.relpath(real_p, real_s)
             if not rel.startswith(".."):
                 return rel
-        except Exception:
-            pass
         return os.path.relpath(path_str, start_str)
-    except (ValueError, TypeError, Exception):
+    except (OSError, ValueError, TypeError):
         return os.path.abspath(path_str)
 
 
@@ -836,6 +832,7 @@ def check_local_models_exist() -> bool:
     try:
         base_path = get_base_path(__file__)
     except Exception:
+        logger.debug("Could not resolve base path for model lookup", exc_info=True)
         base_path = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 
     local_model_dir = os.path.join(base_path, "offline_bundle", "model")
@@ -845,6 +842,7 @@ def check_local_models_exist() -> bool:
 
         user_model_dir = get_app_dir() / "model"
     except Exception:
+        logger.debug("Could not resolve app dir for model lookup", exc_info=True)
         user_model_dir = Path("~/.smart-autosorter/model").expanduser()
 
     mei = get_meipass_dir()

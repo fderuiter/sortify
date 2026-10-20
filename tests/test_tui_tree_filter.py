@@ -3,7 +3,6 @@
 import asyncio
 import os
 import tempfile
-from unittest.mock import AsyncMock
 
 import pytest
 from textual.widgets import Input, Tree
@@ -18,7 +17,7 @@ pytestmark = pytest.mark.xdist_group(name="tui")
 def isolated_app_dir(monkeypatch, tmp_path):
     """Ensure AppSettings is isolated from persistent disk configuration changes."""
     import app.config
-    import app.core.session
+    import app.core.session_catalog
 
     monkeypatch.setenv("FORCE_COLOR", "1")
     monkeypatch.setenv("COLORTERM", "truecolor")
@@ -29,11 +28,7 @@ def isolated_app_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(
         app.config.AppSettings, "_trigger_save", lambda self: self._save()
     )
-    monkeypatch.setattr(
-        app.core.session,
-        "scan_abandoned_sessions_async",
-        AsyncMock(return_value=[]),
-    )
+    monkeypatch.setattr(app.core.session_catalog, "find_abandoned_sessions", lambda: [])
 
 
 @pytest.fixture
@@ -86,7 +81,10 @@ def test_tui_tree_search_input_layout(temp_workspace):
             search_input = app.query_one("#tree-search-input", Input)
             assert search_input is not None
             assert search_input.placeholder == "Search tree nodes..."
-            assert search_input.tooltip == "Real-time search input field to filter preview tree nodes"
+            assert (
+                search_input.tooltip
+                == "Real-time search input field to filter preview tree nodes"
+            )
 
             # Query plan tree
             tree = app.query_one("#plan-tree", Tree)
@@ -183,7 +181,11 @@ def test_tui_tree_filter_dynamic_substring_matching(temp_workspace):
             assert not any("Marketing_Docs" in label for label in filtered_root_labels)
 
             # Verify child leaf inside Financial_Reports
-            fin_node = next(node for node in tree.root.children if "Financial_Reports" in str(node.label))
+            fin_node = next(
+                node
+                for node in tree.root.children
+                if "Financial_Reports" in str(node.label)
+            )
             child_labels = [str(child.label) for child in fin_node.children]
             assert any("Q1_Invoice_2024.pdf" in label for label in child_labels)
             assert not any("Q2_Tax_Summary.docx" in label for label in child_labels)
@@ -269,7 +271,9 @@ def test_tui_tree_filter_no_matches_feedback(temp_workspace):
 
             assert len(tree.root.children) == 1
             info_label = str(tree.root.children[0].label)
-            assert "No matching tree nodes found for 'nonexistent_query_123'" in info_label
+            assert (
+                "No matching tree nodes found for 'nonexistent_query_123'" in info_label
+            )
 
     asyncio.run(_test())
 
@@ -344,7 +348,9 @@ def test_tui_tree_filter_select_all_only_affects_visible_nodes(temp_workspace):
     asyncio.run(_test())
 
 
-def test_tui_tree_filter_input_changes_do_not_trigger_plan_validation(temp_workspace, mocker):
+def test_tui_tree_filter_input_changes_do_not_trigger_plan_validation(
+    temp_workspace, mocker
+):
     """Verify typing into the search input filters tree nodes without invoking run_validation_worker."""
 
     async def _test():

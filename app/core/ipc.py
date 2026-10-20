@@ -1,6 +1,7 @@
 """Async IPC server and client for daemon status telemetry and process control."""
 
 import asyncio
+import contextlib
 import json
 import logging
 import os
@@ -40,6 +41,7 @@ def is_process_alive(pid: int) -> bool:
             kernel32.CloseHandle(handle)
             return is_alive
         except Exception:
+            logger.debug("Could not query process %s", pid, exc_info=True)
             return False
     else:
         try:
@@ -59,7 +61,7 @@ def read_pid_file(base_dir: str) -> Optional[Dict[str, Any]]:
             data = json.load(f)
             if isinstance(data, dict) and "pid" in data:
                 return data
-    except Exception as e:
+    except (OSError, ValueError) as e:
         logger.warning(f"Failed to read or parse PID file at {pid_path}: {e}")
     return None
 
@@ -94,12 +96,12 @@ class DaemonIPCServer:
             ):
                 try:
                     os.unlink(stale_sock)
-                except Exception as e:
+                except OSError as e:
                     logger.warning(f"Failed to remove stale socket {stale_sock}: {e}")
             if os.path.exists(self.pid_path):
                 try:
                     os.unlink(self.pid_path)
-                except Exception as e:
+                except OSError as e:
                     logger.warning(
                         f"Failed to remove stale pid file {self.pid_path}: {e}"
                     )
@@ -130,10 +132,8 @@ class DaemonIPCServer:
                 self.socket_path = default_sock
 
             if os.path.exists(self.socket_path):
-                try:
+                with contextlib.suppress(OSError):
                     os.unlink(self.socket_path)
-                except Exception:
-                    pass
 
             self.server = await asyncio.start_unix_server(
                 self._handle_client, path=self.socket_path
@@ -142,7 +142,7 @@ class DaemonIPCServer:
             # Restrict socket permissions on POSIX
             try:
                 os.chmod(self.socket_path, 0o600)
-            except Exception as e:
+            except OSError as e:
                 logger.warning(f"Failed to set 0600 permissions on IPC socket: {e}")
 
         self.is_running = True
@@ -157,12 +157,12 @@ class DaemonIPCServer:
         try:
             with open(self.pid_path, "w", encoding="utf-8") as f:
                 json.dump(pid_info, f, indent=2)
-            try:
+            with contextlib.suppress(OSError):
                 os.chmod(self.pid_path, 0o600)
-            except Exception:
-                pass
         except Exception as e:
-            logger.error(f"Failed to write PID lockfile at {self.pid_path}: {e}")
+            logger.error(
+                f"Failed to write PID lockfile at {self.pid_path}: {e}", exc_info=True
+            )
 
         logger.info(f"IPC server listening on {self.socket_path}")
 
@@ -186,14 +186,14 @@ class DaemonIPCServer:
             except (asyncio.CancelledError, ConnectionResetError, BrokenPipeError):
                 break
             except Exception as e:
-                logger.error(f"IPC request processing error: {e}")
+                logger.error(f"IPC request processing error: {e}", exc_info=True)
                 break
 
         try:
             writer.close()
             await writer.wait_closed()
         except Exception:
-            pass
+            logger.debug("Failed to close IPC client connection", exc_info=True)
 
     async def _process_rpc_line(self, line_str: str) -> Dict[str, Any]:
         """Parse line string as JSON-RPC 2.0 and return response dictionary."""
@@ -228,7 +228,7 @@ class DaemonIPCServer:
             result = await self._dispatch_method(method.lower(), params)
             return {"jsonrpc": "2.0", "id": req_id, "result": result}
         except Exception as e:
-            logger.error(f"Method '{method}' execution failed: {e}")
+            logger.error(f"Method '{method}' execution failed: {e}", exc_info=True)
             return {
                 "jsonrpc": "2.0",
                 "id": req_id,
@@ -356,14 +356,14 @@ class DaemonIPCServer:
             try:
                 self.server.close()
             except Exception:
-                pass
+                logger.debug("Failed to close IPC server", exc_info=True)
             self.server = None
 
         if self.socket_path and not self.socket_path.startswith("tcp://"):
             if os.path.exists(self.socket_path):
                 try:
                     os.unlink(self.socket_path)
-                except Exception as e:
+                except OSError as e:
                     logger.warning(
                         f"Failed to remove socket file {self.socket_path}: {e}"
                     )
@@ -371,7 +371,7 @@ class DaemonIPCServer:
         if os.path.exists(self.pid_path):
             try:
                 os.unlink(self.pid_path)
-            except Exception as e:
+            except OSError as e:
                 logger.warning(f"Failed to remove PID lockfile {self.pid_path}: {e}")
 
         logger.info("IPC server stopped and lockfiles cleaned.")
@@ -439,6 +439,6 @@ class DaemonIPCClient:
                     writer.close()
                     await writer.wait_closed()
                 except Exception:
-                    pass
+                    logger.debug("Failed to close IPC client connection", exc_info=True)
 
         return await asyncio.wait_for(_communicate(), timeout=timeout)
