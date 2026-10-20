@@ -76,6 +76,19 @@ def sync_db_worker(request):
 
 
 @pytest.fixture(autouse=True)
+def inline_clustering(request, monkeypatch):
+    """Cluster in-process so tests can patch and inspect strategy state.
+
+    Mark a test ``subprocess_clustering`` to run the spawned child-process path.
+    """
+    if request.node.get_closest_marker("subprocess_clustering"):
+        return
+    from app.core.analyzer_strategies import RecursiveKMeansStrategy
+
+    monkeypatch.setattr(RecursiveKMeansStrategy, "run_in_subprocess", False)
+
+
+@pytest.fixture(autouse=True)
 def cleanup_db_connections():
     """Ensure database connections are closed after each test to prevent Windows file locking issues."""
     yield

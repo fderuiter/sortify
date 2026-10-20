@@ -255,46 +255,43 @@ def test_worker_failure_triggers_buffer_zeroing():
             pass
 
 
+@pytest.mark.subprocess_clustering
 def test_parallel_vs_inline_clustering_identical_outputs():
     """Verify parallel clustering with encrypted IPC produces identical output to inline execution."""
-    os.environ["FORCE_MULTIPROCESSING_CLUSTERING"] = "1"
-    try:
-        filenames = ["doc1.txt", "doc2.txt", "doc3.txt", "doc4.txt"]
-        documents = [
-            "pizza restaurant dinner mozzarella pepperoni",
-            "consulting services python web application development",
-            "restaurant wings delivery pizza mozzarella",
-            "python backend consulting application django development",
-        ]
-        pre_fetched_vectors = [
-            [0.1, 0.2, 0.3],
-            [0.9, 0.8, 0.7],
-            [0.12, 0.22, 0.32],
-            [0.88, 0.78, 0.68],
-        ]
+    filenames = ["doc1.txt", "doc2.txt", "doc3.txt", "doc4.txt"]
+    documents = [
+        "pizza restaurant dinner mozzarella pepperoni",
+        "consulting services python web application development",
+        "restaurant wings delivery pizza mozzarella",
+        "python backend consulting application django development",
+    ]
+    pre_fetched_vectors = [
+        [0.1, 0.2, 0.3],
+        [0.9, 0.8, 0.7],
+        [0.12, 0.22, 0.32],
+        [0.88, 0.78, 0.68],
+    ]
 
-        strategy_parallel = RecursiveKMeansStrategy()
-        plan_parallel, err_parallel = strategy_parallel.generate_plan(
-            filenames=filenames,
-            documents=documents,
-            max_folders=2,
-            stop_words={"the", "and"},
-            pre_fetched_vectors=pre_fetched_vectors,
-        )
+    strategy_parallel = RecursiveKMeansStrategy()
+    plan_parallel, err_parallel = strategy_parallel.generate_plan(
+        filenames=filenames,
+        documents=documents,
+        max_folders=2,
+        stop_words={"the", "and"},
+        pre_fetched_vectors=pre_fetched_vectors,
+    )
 
-        strategy_inline = RecursiveKMeansStrategy()
-        plan_inline, err_inline = strategy_inline._generate_plan_inline(
-            filenames=filenames,
-            documents=documents,
-            max_folders=2,
-            stop_words={"the", "and"},
-            pre_fetched_vectors=pre_fetched_vectors,
-        )
+    strategy_inline = RecursiveKMeansStrategy()
+    plan_inline, err_inline = strategy_inline._generate_plan_inline(
+        filenames=filenames,
+        documents=documents,
+        max_folders=2,
+        stop_words={"the", "and"},
+        pre_fetched_vectors=pre_fetched_vectors,
+    )
 
-        assert plan_parallel == plan_inline
-        assert err_parallel == pytest.approx(err_inline)
-    finally:
-        os.environ.pop("FORCE_MULTIPROCESSING_CLUSTERING", None)
+    assert plan_parallel == plan_inline
+    assert err_parallel == pytest.approx(err_inline)
 
 
 def test_malicious_pickled_payload_rejection():

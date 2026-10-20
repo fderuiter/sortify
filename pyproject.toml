@@ -220,6 +220,7 @@ markers = [
     "integration: marks integration tests",
     "ml: marks machine learning model tests",
     "real_db_worker: run against the real asynchronous DBWorker write queue instead of the synchronous test stand-in",
+    "subprocess_clustering: run RecursiveKMeansStrategy in its spawned child process instead of inline",
 ]
 
 [tool.coverage.run]
