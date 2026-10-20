@@ -32,6 +32,11 @@ def tui_rollback_env(tmp_path, monkeypatch):
 
     # The TUI opens the default app store, so point it at this test's store.
     monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app"))
+    # The session below stays unfinished, and the startup recovery prompt
+    # would otherwise open over the history modal once its scan returns.
+    monkeypatch.setattr(
+        "app.core.session_catalog.find_abandoned_sessions", lambda *a, **k: []
+    )
     store = open_store(tmp_path / "app", legacy_session_root=tmp_path / "none")
     db_worker = DBWorker()
     autosorter_db = store.database(db_worker)
