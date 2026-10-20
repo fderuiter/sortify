@@ -34,7 +34,9 @@ flowchart TD
         core_hashes_registry["app.core.hashes_registry"]
     end
     subgraph concurrency_shared ["Concurrency & Shared Registry (app.core)"]
-        core_shared_registry["app.core.shared_registry (SharedWorkerPool)"]
+        core_shared_registry["app.core.shared_registry (re-exports)"]
+        core_model_registry["app.core.model_registry"]
+        core_worker_pool["app.core.worker_pool (SharedWorkerPool)"]
         core_concurrency["app.core.concurrency"]
         core_network_guard["app.core.network_guard"]
         core_db_worker["app.core.db_worker"]
@@ -109,11 +111,14 @@ flowchart TD
     core_semantic_embeddings --> core_cache
     core_jev_classifier --> core_cache
     core_hashes_registry --> core_crypto
-    core_shared_registry --> core_mover
-    core_shared_registry --> core_extractor
-    core_db_worker --> core_shared_registry
-    core_shared_registry --> core_concurrency
-    core_shared_registry --> core_network_guard
+    core_worker_pool --> core_mover
+    core_worker_pool --> core_extractor
+    core_db_worker --> core_worker_pool
+    core_shared_registry --> core_model_registry
+    core_shared_registry --> core_worker_pool
+    core_worker_pool --> core_concurrency
+    core_worker_pool --> core_network_guard
+    core_model_registry --> core_network_guard
     core_network_guard --> core_concurrency
     core_db --> core_cache
     core_db --> core_migrations

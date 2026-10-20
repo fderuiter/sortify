@@ -126,6 +126,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.migrations
 
+## `app.core.model_registry`
+
+::: app.core.model_registry
+
 ## `app.core.mover`
 
 ::: app.core.mover
@@ -233,6 +237,10 @@ This document is automatically generated. Do not edit manually.
 ## `app.core.verifier`
 
 ::: app.core.verifier
+
+## `app.core.worker_pool`
+
+::: app.core.worker_pool
 
 ## `app.demo`
 
