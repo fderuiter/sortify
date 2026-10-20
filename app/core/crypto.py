@@ -1,5 +1,6 @@
 """Cryptographic management for envelope encryption."""
 
+import contextlib
 import hashlib
 import json
 import logging
@@ -21,15 +22,15 @@ _audit_thread_local = threading.local()
 
 try:
     import numpy as np
-except Exception:
+except ImportError:
     np = None  # type: ignore[assignment]
 
 try:
     import sqlite3
-except Exception:
+except ImportError:
     try:
         from sqlcipher3 import dbapi2 as sqlite3  # type: ignore[no-redef]
-    except Exception:
+    except ImportError:
         sqlite3 = None  # type: ignore[assignment]
 
 
@@ -50,7 +51,10 @@ def get_fallback_keys_dir() -> Path:
         try:
             home = str(Path.home())
         except Exception as e:
-            logger.debug(f"Path.home() resolution failed in get_fallback_keys_dir: {e}")
+            logger.debug(
+                f"Path.home() resolution failed in get_fallback_keys_dir: {e}",
+                exc_info=True,
+            )
             home = os.path.expanduser("~")
     return Path(home) / ".sortify" / "keys"
 
@@ -73,7 +77,7 @@ def secure_delete_file(file_path: Path):
                             f"fsync failed during secure file deletion of '{file_path}': {fsync_err}"
                         )
             file_path.unlink()
-    except Exception as e:
+    except OSError as e:
         logger.warning(
             f"Failed to overwrite file '{file_path}' during secure deletion: {e}"
         )
@@ -96,7 +100,7 @@ def secure_delete_dir(dir_path: Path):
             elif item.is_dir():
                 secure_delete_dir(item)
         dir_path.rmdir()
-    except Exception as e:
+    except OSError as e:
         logger.warning(
             f"Failed to securely delete directory '{dir_path}', using rmtree fallback: {e}"
         )
@@ -259,7 +263,7 @@ class SessionCrypto:
             secure_delete_file(legacy_path)
             if not any(self.legacy_isolated_dir.iterdir()):
                 self.legacy_isolated_dir.rmdir()
-        except Exception as e:
+        except OSError as e:
             logger.warning(f"Failed to clean up legacy key '{legacy_path}': {e}")
 
     def get_cipher(self):
@@ -280,7 +284,7 @@ class SessionCrypto:
                 )
                 if key_str:
                     key = key_str.encode("utf-8")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - keyring backends raise anything; logged without traceback
                 logger.warning(
                     f"Keyring lookup failed for account '{self.keyring_account}': {e}"
                 )
@@ -307,7 +311,7 @@ class SessionCrypto:
                     )
                     if legacy_key_str:
                         legacy_key = legacy_key_str.encode("utf-8")
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - keyring backends raise anything; logged without traceback
                     logger.warning(
                         f"Legacy MD5 keyring lookup failed for account '{self.legacy_md5_keyring_account}': {e}"
                     )
@@ -428,7 +432,7 @@ class SessionCrypto:
                         self.keyring_account,
                         legacy_key.decode("utf-8"),
                     )
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - keyring backends raise anything; logged without traceback
                     logger.warning(
                         f"Failed to set keyring password during legacy migration: {e}"
                     )
@@ -498,7 +502,7 @@ class SessionCrypto:
                     )
                     if verify_str and verify_str.encode("utf-8") == key:
                         saved_to_keyring = True
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - keyring backends raise anything; logged without traceback
                     logger.warning(f"Failed to store generated key in OS keyring: {e}")
 
                 if not saved_to_keyring:
@@ -592,8 +596,11 @@ class SessionCrypto:
         if self._cipher is None:
             try:
                 self.get_cipher()
-            except Exception:
-                pass
+            except Exception as e:  # noqa: BLE001 - fall through to the key stores below
+                # Exception type only: never risk echoing key material here.
+                logger.debug(
+                    f"get_cipher() failed in get_raw_key, reading key stores: {type(e).__name__}"
+                )
         if hasattr(self, "_key") and self._key:
             return self._key.decode("utf-8")
         # Fallback (same hierarchy)
@@ -602,7 +609,7 @@ class SessionCrypto:
             key_str = keyring.get_password(self.keyring_service, self.keyring_account)
             if key_str:
                 key = key_str.encode("utf-8")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - keyring backends raise anything; logged without traceback
             logger.warning(f"Keyring lookup failed in get_raw_key: {e}")
         if key is None and self.isolated_key_path.exists():
             try:
@@ -617,7 +624,7 @@ class SessionCrypto:
                 )
                 if legacy_key_str:
                     key = legacy_key_str.encode("utf-8")
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - keyring backends raise anything; logged without traceback
                 logger.warning(f"Legacy keyring lookup failed in get_raw_key: {e}")
         if key is None and self.legacy_md5_isolated_key_path.exists():
             try:
@@ -658,10 +665,8 @@ class SessionCrypto:
     def _write_isolated_key(self, key: bytes) -> None:
         """Replace the key file atomically, so a failed write keeps the old key."""
         self.isolated_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
-        try:
+        with contextlib.suppress(OSError):
             os.chmod(self.isolated_dir, 0o700)
-        except OSError:
-            pass
         tmp_path = self.isolated_key_path.with_name(
             self.isolated_key_path.name + ".tmp"
         )
@@ -673,10 +678,8 @@ class SessionCrypto:
                 os.fsync(f.fileno())
             os.replace(tmp_path, self.isolated_key_path)
         except BaseException:
-            try:
+            with contextlib.suppress(OSError):
                 os.remove(tmp_path)
-            except OSError:
-                pass
             raise
 
     def _store_rotated_key(self, key: bytes) -> None:
@@ -690,11 +693,16 @@ class SessionCrypto:
             # entry left there would hide the new key.
             try:
                 keyring.delete_password(self.keyring_service, self.keyring_account)
-            except Exception:
-                pass
+            except Exception as del_err:  # noqa: BLE001 - keyring backends raise anything
+                logger.debug(
+                    f"Keyring delete failed during key rotation: {type(del_err).__name__}"
+                )
             try:
                 stale = keyring.get_password(self.keyring_service, self.keyring_account)
-            except Exception:
+            except Exception as get_err:  # noqa: BLE001 - keyring backends raise anything
+                logger.debug(
+                    f"Keyring re-read failed during key rotation: {type(get_err).__name__}"
+                )
                 stale = None
             if stale and stale != raw:
                 raise CryptoError(
@@ -715,7 +723,7 @@ class SessionCrypto:
             raise
         try:
             keyring.set_password(self.keyring_service, self.keyring_account, raw)
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - keyring backends raise anything; logged without traceback
             logger.warning(f"Could not restore the old key in the keyring: {e}")
         try:
             self._write_isolated_key(old_key)
@@ -802,7 +810,11 @@ class SessionCrypto:
                 self._key = new_key_bytes
                 try:
                     self._cipher = Fernet(new_key_bytes)
-                except Exception:
+                except Exception as e:  # noqa: BLE001 - the new key needn't be a Fernet key
+                    # Exception type only: never risk echoing key material here.
+                    logger.debug(
+                        f"New key is not a Fernet key; cipher left unset: {type(e).__name__}"
+                    )
                     self._cipher = None
 
                 # Audit SUCCESS
@@ -913,8 +925,9 @@ class SessionCrypto:
                     self._vector_parsed_cache.pop(next(iter(self._vector_parsed_cache)))
                 self._vector_parsed_cache[cipher_bytes] = parsed
             return parsed
-        except Exception as e:
-            logger.warning(f"Failed to decrypt or parse vector: {e}")
+        except Exception as e:  # noqa: BLE001 - any decrypt/parse failure means no vector
+            # Exception type only: decode/parse errors can quote plaintext.
+            logger.warning(f"Failed to decrypt or parse vector: {type(e).__name__}")
             return None
 
 

@@ -88,11 +88,8 @@ convention = "numpy"
 
 # Exception-handling baseline for #783: files that predate the rule. Fix a file
 # and delete its line; never add one.
-"app/cli/generate_docs.py" = ["BLE001", "S110", "SIM105"]
 "app/cli/ledger_cli.py" = ["BLE001", "S110"]
 "app/core/analyzer_strategies.py" = ["BLE001", "S110", "SIM105"]
-"app/core/crypto.py" = ["BLE001", "S110", "SIM105"]
-"app/core/daemon.py" = ["BLE001", "S110", "SIM105"]
 "app/core/db.py" = ["BLE001", "S110", "SIM105"]
 "app/core/db_conn.py" = ["BLE001", "S110", "SIM105"]
 "app/core/db_worker.py" = ["BLE001", "S110", "SIM105"]

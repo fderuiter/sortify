@@ -45,7 +45,7 @@ def lower_process_priority() -> None:
             p.nice(19)
         return
     except Exception:
-        pass
+        logger.debug("psutil priority lowering failed; trying fallback", exc_info=True)
 
     # Standard library fallback if psutil is not available or fails
     if sys.platform == "win32":
@@ -56,15 +56,15 @@ def lower_process_priority() -> None:
             handle = ctypes.windll.kernel32.GetCurrentProcess()
             ctypes.windll.kernel32.SetPriorityClass(handle, BELOW_NORMAL_PRIORITY_CLASS)
         except Exception:
-            pass
+            logger.debug("Win32 SetPriorityClass failed", exc_info=True)
     else:
         if hasattr(os, "nice"):
             try:
                 current = os.nice(0)
                 if current < 19:
                     os.nice(19 - current)
-            except Exception:
-                pass
+            except OSError:
+                logger.debug("os.nice() failed", exc_info=True)
 
 
 def _run_sorting_process_entry(
@@ -448,7 +448,9 @@ class ContinuousWatchdogDaemon:
                         paths_to_add.add(norm_d)
                         self._add_parent_paths(norm_d, paths_to_add)
             except Exception:
-                pass
+                logger.debug(
+                    "Could not resolve plan moves for the move guard", exc_info=True
+                )
             paths_to_add.update(self._extract_plan_paths(plan))
 
         with self._lock:
@@ -545,6 +547,10 @@ class ContinuousWatchdogDaemon:
                         jev_res, "archival_priority_score", 0.0
                     )
             except Exception:
+                logger.debug(
+                    f"Jev priority classification failed for {file_path}",
+                    exc_info=True,
+                )
                 change_event.archival_priority = 5
                 change_event.archival_priority_score = 0.0
 
@@ -641,7 +647,7 @@ class ContinuousWatchdogDaemon:
             try:
                 loop.run_until_complete(self._ipc_server.start())
             except Exception as e:
-                logger.error(f"Failed to start daemon IPC server: {e}")
+                logger.error(f"Failed to start daemon IPC server: {e}", exc_info=True)
 
             self._worker_tasks = [
                 loop.create_task(self._triage_worker(i))
@@ -658,7 +664,9 @@ class ContinuousWatchdogDaemon:
                     try:
                         self._ipc_server.stop()
                     except Exception:
-                        pass
+                        logger.debug(
+                            "Failed to stop IPC server on loop exit", exc_info=True
+                        )
                     self._ipc_server = None
                 for task in self._worker_tasks:
                     task.cancel()
@@ -792,11 +800,11 @@ class ContinuousWatchdogDaemon:
                 try:
                     save_timer.cancel()
                 except Exception:
-                    pass
+                    logger.debug("Failed to cancel settings save timer", exc_info=True)
                 self.settings._save()
             self.settings.load()
         except Exception:
-            pass
+            logger.debug("Failed to reload settings before triage", exc_info=True)
 
         if cancel_check():
             return
@@ -945,7 +953,8 @@ class ContinuousWatchdogDaemon:
                     return
         except Exception as e:
             logger.warning(
-                f"Jev fast-path triage failed for {rel_path}: {e}. Falling back to slow-path AI processing."
+                f"Jev fast-path triage failed for {rel_path}: {e}. Falling back to slow-path AI processing.",
+                exc_info=True,
             )
 
         if cancel_check():
@@ -1103,7 +1112,9 @@ class ContinuousWatchdogDaemon:
                 finally:
                     session.close()
             except Exception as e:
-                logger.error(f"Error processing dropped path {abs_path}: {e}")
+                logger.error(
+                    f"Error processing dropped path {abs_path}: {e}", exc_info=True
+                )
                 errors.append(f"Processing error for {abs_path}: {e}")
 
         status_res = "success" if processed_items else ("error" if errors else "no_op")
@@ -1164,7 +1175,7 @@ class ContinuousWatchdogDaemon:
                 try:
                     self._proc_cancel_event.set()
                 except Exception:
-                    pass
+                    logger.debug("Failed to signal worker cancel event", exc_info=True)
             self._first_event_time = None
 
             if self._debounce_timer:
@@ -1184,22 +1195,25 @@ class ContinuousWatchdogDaemon:
                         proc.kill()
                         proc.join(timeout=1.0)
                 except Exception as e:
-                    logger.error(f"Error terminating background worker process: {e}")
+                    logger.error(
+                        f"Error terminating background worker process: {e}",
+                        exc_info=True,
+                    )
             else:
                 try:
                     proc.join(timeout=1.0)
                 except Exception:
-                    pass
+                    logger.debug("Failed to join worker process", exc_info=True)
             try:
                 proc.close()
             except Exception:
-                pass
+                logger.debug("Failed to close worker process", exc_info=True)
 
         if self._ipc_server:
             try:
                 self._ipc_server.stop()
             except Exception as e:
-                logger.error(f"Error stopping IPC server: {e}")
+                logger.error(f"Error stopping IPC server: {e}", exc_info=True)
             finally:
                 self._ipc_server = None
 
@@ -1208,7 +1222,7 @@ class ContinuousWatchdogDaemon:
                 self.observer.stop()
                 self.observer.join()
             except Exception as e:
-                logger.error(f"Error stopping observer: {e}")
+                logger.error(f"Error stopping observer: {e}", exc_info=True)
             finally:
                 self.observer = None
 
@@ -1233,7 +1247,7 @@ class ContinuousWatchdogDaemon:
                 try:
                     session.close()
                 except Exception:
-                    pass
+                    logger.debug("Failed to close daemon app session", exc_info=True)
                 self._app_session = None
 
         logger.info("Watchdog daemon stopped.")
@@ -1267,7 +1281,7 @@ class ContinuousWatchdogDaemon:
                 try:
                     self._proc_cancel_event.set()
                 except Exception:
-                    pass
+                    logger.debug("Failed to signal worker cancel event", exc_info=True)
 
             # Reset cancel event for the upcoming run
             self._cancel_event = threading.Event()
@@ -1333,12 +1347,12 @@ class ContinuousWatchdogDaemon:
         try:
             proc.join()
         except Exception:
-            pass
+            logger.debug("Failed to join worker process", exc_info=True)
 
         try:
             proc.close()
         except Exception:
-            pass
+            logger.debug("Failed to close worker process", exc_info=True)
 
         should_rerun = False
         with self._lock:
@@ -1375,11 +1389,11 @@ class ContinuousWatchdogDaemon:
                 try:
                     save_timer.cancel()
                 except Exception:
-                    pass
+                    logger.debug("Failed to cancel settings save timer", exc_info=True)
                 self.settings._save()
             self.settings.load()
         except Exception as e:
-            logger.error(f"Error loading settings dynamically: {e}")
+            logger.error(f"Error loading settings dynamically: {e}", exc_info=True)
 
         # Setup isolated event loop for this background thread to process async tasks
         loop = asyncio.new_event_loop()
@@ -1496,7 +1510,7 @@ class ContinuousWatchdogDaemon:
             try:
                 loop.close()
             except Exception:
-                pass
+                logger.debug("Failed to close sorting event loop", exc_info=True)
 
 
 def start_daemon(settings: AppSettings, base_dir: str = None):
