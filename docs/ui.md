@@ -40,6 +40,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.modals.rules
 
+## `app.ui.modals.settings`
+
+::: app.ui.modals.settings
+
 ## `app.ui.notifications`
 
 ::: app.ui.notifications
