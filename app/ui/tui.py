@@ -575,37 +575,14 @@ class AutoSorterTUI(
 
     def _do_recovery_rollback(self, session_info: Dict[str, Any]) -> None:
         """Rollback interrupted sorting operation."""
-        import shutil
+        from app.core.session_catalog import roll_back_abandoned_session
 
-        from app.core.pipeline import SortPipeline
-        from app.core.session import AppSession
-
-        base_dir = session_info.get("base_dir") or self.base_dir
         session_id = session_info.get("session_id")
-        rollback_success = False
-        if base_dir and session_id:
-            try:
-                temp_session = AppSession(
-                    self.settings, base_dir, session_id=session_id
-                )
-                try:
-                    result = SortPipeline(temp_session).undo(
-                        session_id, ignore_missing=True
-                    )
-                finally:
-                    temp_session.close()
-                rollback_success = result.ok
-                if not result.ok:
-                    logger.error(
-                        f"Session rollback left files in place: {result.failed}"
-                    )
-            except Exception as e:
-                logger.error(f"Error during session rollback: {e}")
-
-        session_dir = session_info.get("session_dir")
-        if rollback_success:
-            if session_dir and os.path.exists(session_dir):
-                shutil.rmtree(session_dir, ignore_errors=True)
+        info = {
+            **session_info,
+            "base_dir": session_info.get("base_dir") or self.base_dir,
+        }
+        if roll_back_abandoned_session(self.settings, info):
             self.announce(f"Rolled back session '{session_id}'.")
         else:
             self.announce(
@@ -617,16 +594,9 @@ class AutoSorterTUI(
 
     def _do_recovery_clean(self, session_info: Dict[str, Any]) -> None:
         """Leave an abandoned session as it is and stop offering to recover it."""
-        from app.core.session_catalog import mark_session_abandoned
+        from app.core.session_catalog import forget_abandoned_session
 
-        journal_path = session_info.get("journal_path")
-        if journal_path:
-            try:
-                os.remove(journal_path)
-            except OSError:
-                logger.warning("Could not remove rollback journal %s", journal_path)
-        elif session_info.get("session_id"):
-            mark_session_abandoned(session_info["session_id"])
+        forget_abandoned_session(session_info)
         self.announce(f"Cleaned session files for '{session_info.get('session_id')}'.")
 
     def _get_ai_status_badge(self) -> str:

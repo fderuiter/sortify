@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "7b829c475168bb0d4be2f290403233b814e1802c586e4aca1804fad244418828"
+    "checksum": "ce2c9952eda6dd1e2fe8f59a5f3980323d84b18759a25f1516a7f13ca401441f"
   },
   "classes": [],
   "functions": [
@@ -21,6 +21,24 @@
         }
       ],
       "returns": "list"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "forget_abandoned_session",
+      "parameters": [
+        {
+          "annotation": "dict",
+          "default": null,
+          "name": "session_info"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "store"
+        }
+      ],
+      "returns": "None"
     },
     {
       "async": false,
@@ -52,6 +70,24 @@
         }
       ],
       "returns": "None"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "roll_back_abandoned_session",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "settings"
+        },
+        {
+          "annotation": "dict",
+          "default": null,
+          "name": "session_info"
+        }
+      ],
+      "returns": "bool"
     }
   ]
 }
