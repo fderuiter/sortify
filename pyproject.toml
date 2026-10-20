@@ -100,6 +100,7 @@ convention = "numpy"
 "app/core/session.py" = ["BLE001", "S110", "SIM105"]
 "app/main.py" = ["BLE001", "S110", "SIM105"]
 "app/ui/a11y.py" = ["BLE001", "S110", "SIM105"]
+"app/ui/modals/*.py" = ["BLE001", "S110", "SIM105"]
 "app/ui/tui.py" = ["BLE001", "S110", "SIM105"]
 
 [tool.ruff.format]
