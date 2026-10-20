@@ -75,6 +75,19 @@ def sync_db_worker(request):
         yield
 
 
+@pytest.fixture
+def session_db(tmp_path):
+    """A real Database for a stand-in AppSession, so quarantine staging hits real tables."""
+    from app.core.db import Database
+    from app.core.db_worker import DBWorker
+
+    worker = DBWorker()
+    try:
+        yield Database(tmp_path / "session.db", worker)
+    finally:
+        worker.stop(stop_embeddings=False)
+
+
 @pytest.fixture(autouse=True)
 def inline_clustering(request, monkeypatch):
     """Cluster in-process so tests can patch and inspect strategy state.

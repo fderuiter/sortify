@@ -2049,13 +2049,6 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             torch = sys.modules.get("torch")
             if torch is None:
                 import torch
-            elif (
-                hasattr(torch, "__spec__")
-                and type(torch.__spec__).__name__ == "MagicMock"
-            ):
-                from importlib.machinery import ModuleSpec
-
-                torch.__spec__ = ModuleSpec("torch", None)
 
             from app.core.shared_registry import SharedModelRegistry
 
