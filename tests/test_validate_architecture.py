@@ -189,3 +189,42 @@ def test_app_has_no_import_time_global_patches():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         validate_import_time_globals(errors, str(path), tree)
     assert errors == []
+
+
+def _detection_errors(source):
+    import ast
+
+    from scripts.validate_architecture import validate_no_test_detection
+
+    errors = []
+    validate_no_test_detection(errors, "app/core/x.py", ast.parse(source))
+    return errors
+
+
+def test_test_detection_flags_mock_checks_and_pytest_env():
+    assert _detection_errors("import unittest.mock\n")
+    assert _detection_errors("from unittest import mock\n")
+    assert _detection_errors("from unittest.mock import MagicMock\n")
+    assert _detection_errors("def f(x):\n    return isinstance(x, MagicMock)\n")
+    assert _detection_errors("import unittest\nunittest.mock.NonCallableMock\n")
+    assert _detection_errors('import os\nos.environ.get("PYTEST_CURRENT_TEST")\n')
+    assert _detection_errors('hasattr(obj, "mock_add_spec")\n')
+
+
+def test_test_detection_allows_ordinary_code():
+    assert not _detection_errors("import unittest\nimport shutil\n")
+    assert not _detection_errors('import os\nos.environ.get("SORTIFY_DEBUG")\n')
+    assert not _detection_errors("mock_mode = False\n")
+
+
+def test_app_has_no_test_detection():
+    import ast
+    from pathlib import Path
+
+    from scripts.validate_architecture import validate_no_test_detection
+
+    errors = []
+    for path in Path("app").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        validate_no_test_detection(errors, str(path), tree)
+    assert errors == []

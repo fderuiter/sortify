@@ -238,17 +238,17 @@ def test_multi_batch_move_failure_keeps_database_matching_disk(
         }
     }
 
-    # Monkeypatch shutil.move to fail on file2.txt
-    import shutil
+    # Make the mover's file move fail on file2.txt
+    from app.core import resilient_file_ops
 
-    orig_shutil_move = shutil.move
+    orig_resilient_move = resilient_file_ops.resilient_move
 
     def mock_failing_move(src, dst):
         if "file2.txt" in src:
             raise PermissionError("Simulated permission error on file2.txt")
-        return orig_shutil_move(src, dst)
+        return orig_resilient_move(src, dst)
 
-    monkeypatch.setattr("shutil.move", mock_failing_move)
+    monkeypatch.setattr("app.core.resilient_file_ops.resilient_move", mock_failing_move)
 
     with pytest.raises(PermissionError, match="Simulated permission error"):
         execute_moves(
