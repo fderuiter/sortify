@@ -14,15 +14,7 @@ import pytest
 from app.core.analyzer_strategies import RecursiveKMeansStrategy
 from app.core.shared_registry import SharedModelRegistry
 
-pytestmark = [pytest.mark.slow, pytest.mark.ml]
-
-
-@pytest.fixture(autouse=True)
-def force_multiprocessing():
-    """Ensure that the multiprocessing code path is executed even during pytest."""
-    os.environ["FORCE_MULTIPROCESSING_CLUSTERING"] = "1"
-    yield
-    os.environ.pop("FORCE_MULTIPROCESSING_CLUSTERING", None)
+pytestmark = [pytest.mark.slow, pytest.mark.ml, pytest.mark.subprocess_clustering]
 
 
 def test_multiprocess_clustering_execution():
