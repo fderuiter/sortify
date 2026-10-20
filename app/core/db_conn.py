@@ -2,10 +2,10 @@
 
 import logging
 import os
-import sqlite3 as _stdlib_sqlite3
 import sys
 import threading
 from pathlib import Path
+from typing import Any
 
 from app.core.cache import BoundedMemoryCache
 
@@ -19,25 +19,30 @@ def escape_pragma_key(key_str: str) -> str:
     return str(key_str).replace("'", "''")
 
 
+# The frozen build leaves out the unencrypted stdlib driver on purpose
+# (smart-autosorter.spec), so it may be missing.
+try:
+    import sqlite3 as _stdlib_sqlite3
+except ImportError:
+    _stdlib_sqlite3 = None
+
 # sqlcipher3-wheels ships SQLCipher and OpenSSL statically linked into one
 # extension module, so the import needs no DLL or library-path setup. Callers
-# use this module's ``sqlite3`` handle; ``sys.modules["sqlite3"]`` stays the
-# standard library's, so third-party ``import sqlite3`` is unaffected. Without
-# SQLCipher the handle is the stdlib module and opening a store raises (#711).
+# use this module's ``sqlite3`` handle; ``sys.modules["sqlite3"]`` is left
+# alone, so third-party ``import sqlite3`` is unaffected. Without SQLCipher,
+# opening a store raises (#711), before the handle is used.
+sqlite3: Any
 try:
     from sqlcipher3 import dbapi2 as sqlite3
 
     HAS_SQLCIPHER = True
 except ImportError:
-    import sqlite3
-
+    sqlite3 = _stdlib_sqlite3
     HAS_SQLCIPHER = False
 
 # Database errors from either driver; sqlcipher3's classes don't subclass sqlite3's.
-DB_ERRORS: tuple[type[Exception], ...] = (
-    (sqlite3.Error,)
-    if sqlite3 is _stdlib_sqlite3
-    else (sqlite3.Error, _stdlib_sqlite3.Error)
+DB_ERRORS: tuple[type[Exception], ...] = tuple(
+    dict.fromkeys(m.Error for m in (sqlite3, _stdlib_sqlite3) if m is not None)
 )
 
 

@@ -132,3 +132,30 @@ def test_concurrent_first_open_of_one_path_is_serialized(tmp_path):
 
     assert results == [1] * 8
     assert peak == 1
+
+
+def test_import_leaves_stdlib_sqlite3_alone():
+    import subprocess
+    import sys
+
+    code = (
+        "import sqlite3, sys, app.core.db_conn as d; "
+        "assert sys.modules['sqlite3'] is sqlite3; "
+        "assert sqlite3.__name__ == 'sqlite3'; "
+        "assert sqlite3.Error in d.DB_ERRORS"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_import_works_without_stdlib_sqlite3():
+    # The frozen build excludes the stdlib driver (smart-autosorter.spec).
+    import subprocess
+    import sys
+
+    code = (
+        "import sys; sys.modules['sqlite3'] = None; "
+        "import app.core.db_conn as d; "
+        "assert d.HAS_SQLCIPHER == (d.sqlite3 is not None); "
+        "assert all(isinstance(e, type) for e in d.DB_ERRORS)"
+    )
+    subprocess.run([sys.executable, "-c", code], check=True)
