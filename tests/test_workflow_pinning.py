@@ -38,3 +38,29 @@ def test_setup_uv_pins_an_exact_uv_version(path):
             assert re.fullmatch(r"\d+\.\d+\.\d+", version), (
                 f"{path.name}: setup-uv must pin an exact uv version, got {version!r}"
             )
+
+
+@pytest.mark.parametrize("path", WORKFLOWS, ids=lambda p: p.name)
+def test_model_weight_caches_restore_only_on_an_exact_key(path):
+    """A prefix restore would hand a run weights saved for another manifest."""
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+    for step in _steps(workflow):
+        if "actions/cache@" not in step.get("uses", ""):
+            continue
+        cache = step.get("with") or {}
+        if str(cache.get("key", "")).startswith("model-weights-"):
+            assert "restore-keys" not in cache, (
+                f"{path.name}: {step.get('name')!r} restores model weights by prefix"
+            )
+
+
+@pytest.mark.parametrize("path", WORKFLOWS, ids=lambda p: p.name)
+def test_every_job_declares_a_timeout(path):
+    """Without one, a hung job holds a runner for GitHub's six-hour default."""
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+    missing = [
+        name
+        for name, job in (workflow.get("jobs") or {}).items()
+        if "uses" not in job and "timeout-minutes" not in job
+    ]
+    assert not missing, f"{path.name}: jobs without timeout-minutes: {missing}"
