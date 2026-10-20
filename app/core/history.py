@@ -10,7 +10,7 @@ from typing import Any, Dict, Iterator, List
 
 from app.core.db_conn import get_db_connection
 from app.core.migrations import Migration, add_missing_columns, migrate
-from app.core.moves import MoveLedger, migrate_add_moves
+from app.core.moves import FAILED, INTENT, Move, MoveLedger, migrate_add_moves
 from app.core.path_utils import is_junction_path, safe_relpath
 
 try:
@@ -91,6 +91,55 @@ def _is_same_restored_path(actual: str, expected: str) -> bool:
     return os.path.normcase(os.path.abspath(actual)) == os.path.normcase(
         os.path.abspath(expected)
     )
+
+
+def _holds_bytes(path: str, sha256: str | None) -> bool:
+    """Return whether ``path`` exists and, when a hash is known, has those bytes."""
+    if not os.path.lexists(path):
+        return False
+    if not sha256 or os.path.islink(path) or not os.path.isfile(path):
+        return True
+    from app.core.extractor import get_file_hash
+
+    try:
+        return get_file_hash(path) == sha256
+    except OSError:
+        return False
+
+
+def _find_moved_file(move: Move, claimed: set[str]) -> str | None:
+    """Return where ``move`` left its file, or None if it never moved or is gone.
+
+    A ``done`` or ``verified`` row names the path. An ``intent`` row was cut off
+    by a crash: the file is still at ``src`` if the move never ran, at ``dst``
+    if it did, or at a suffixed name next to ``dst`` if the move had to pick
+    another name. ``claimed`` holds paths other rows account for.
+    """
+    if move.state == FAILED:
+        return None
+    if move.state != INTENT:
+        return move.dst if os.path.lexists(move.dst) else None
+    if os.path.lexists(move.src):
+        return None
+    if move.dst not in claimed and _holds_bytes(move.dst, move.src_sha256):
+        return move.dst
+    if not move.src_sha256:
+        return None
+    folder = os.path.dirname(move.dst)
+    stem = os.path.splitext(os.path.basename(move.dst))[0]
+    try:
+        names = sorted(os.listdir(folder))
+    except OSError:
+        return None
+    for name in names:
+        candidate = os.path.join(folder, name)
+        if (
+            name.startswith(stem)
+            and candidate not in claimed
+            and _holds_bytes(candidate, move.src_sha256)
+        ):
+            return candidate
+    return None
 
 
 def _history_db_baseline(conn) -> None:
@@ -1225,6 +1274,8 @@ class HistoryManager:
     def _unwind_session_internal(self, session_id: str, db=None) -> int:
         if db:
             db.invalidate_cache()
+        if moves := self.moves.list_moves(session_id):
+            return self._replay_moves_backwards(session_id, moves, db=db)
         steps = self.get_step_ledger(session_id)
 
         conn = get_db_connection(self.db_path)
@@ -1336,6 +1387,120 @@ class HistoryManager:
             db.invalidate_cache()
 
         return unwound_count
+
+    def _replay_moves_backwards(self, session_id: str, moves: list[Move], db=None):
+        """Undo a session by walking its ``moves`` rows from last to first (ADR 0006).
+
+        Each moved file goes back to ``src``, and any file its move displaced
+        goes back to ``dst``. A file that is gone is skipped, and one that changed
+        since the sort is left in place and reported as a conflict. If something
+        else now occupies ``src``, the file is restored next to it under a
+        suffixed name, so nothing is overwritten. Returns the number of files
+        moved back.
+        """
+        from app.core.mover import _prune_emptied_dirs
+        from app.core.resilient_file_ops import (
+            resilient_move,
+            resilient_remove,
+            same_file_content,
+        )
+
+        conn = get_db_connection(self.db_path)
+        with conn:
+            row = conn.execute(
+                "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
+            ).fetchone()
+        base_dir = row[0] if row else None
+
+        claimed = {m.dst for m in moves if m.state not in (INTENT, FAILED)}
+        docs_conn = get_db_connection(self.db.db_path)
+        dirs_to_prune = set()
+        restored = 0
+        conflicts = []
+        failures = []
+        for move in reversed(moves):
+            # The sort may have created the destination folder even if the move failed.
+            dirs_to_prune.add(os.path.dirname(move.dst))
+            try:
+                moved = _find_moved_file(move, claimed)
+                # Rows the mover wrote carry the size of the bytes it hashed; rows
+                # imported from step_ledger may hold a text hash instead (#844).
+                if (
+                    moved
+                    and move.size is not None
+                    and not _holds_bytes(moved, move.src_sha256)
+                ):
+                    logging.error(
+                        f"Undo conflict: {moved} changed since the sort; left it in place."
+                    )
+                    conflicts.append(moved)
+                    moved = None
+                if moved:
+                    claimed.add(moved)
+                    dirs_to_prune.add(os.path.dirname(moved))
+                    if base_dir:
+                        _move_aside_blocking_parents(move.src, base_dir, docs_conn)
+                    os.makedirs(os.path.dirname(move.src), exist_ok=True)
+                    restored_to = move.src
+                    if os.path.lexists(move.src) and same_file_content(move.src, moved):
+                        # An identical copy is already back in place.
+                        resilient_remove(moved)
+                    else:
+                        restored_to = resilient_move(moved, move.src)
+                        if not _is_same_restored_path(restored_to, move.src):
+                            logging.warning(
+                                f"Undo conflict: {move.src} is occupied by a different file; "
+                                f"restored {moved} to {restored_to} instead."
+                            )
+                    restored += 1
+                    if db and base_dir:
+                        try:
+                            db.update_document_path(
+                                base_dir,
+                                safe_relpath(moved, base_dir).replace("\\", "/"),
+                                safe_relpath(restored_to, base_dir).replace("\\", "/"),
+                            )
+                        except Exception as err:
+                            logging.warning(
+                                f"Could not update the document path for {restored_to}: {err}"
+                            )
+                if move.displaced and os.path.lexists(move.displaced):
+                    dirs_to_prune.add(os.path.dirname(move.displaced))
+                    put_back = resilient_move(move.displaced, move.dst)
+                    if not _is_same_restored_path(put_back, move.dst):
+                        logging.warning(
+                            f"Undo conflict: {move.dst} is occupied; restored the file "
+                            f"an overwrite displaced to {put_back} instead."
+                        )
+            except Exception as err:
+                logging.error(f"Failed to undo move {session_id}#{move.seq}: {err}")
+                failures.append(err)
+
+        if base_dir and os.path.exists(base_dir):
+            _remove_staging_leftovers(base_dir)
+            _prune_emptied_dirs(dirs_to_prune, base_dir)
+
+        if failures:
+            raise PermissionError(
+                f"Recovery incomplete: {len(failures)} move(s) failed to undo. "
+                f"Error: {failures[0]}"
+            )
+        if conflicts:
+            raise ValueError(
+                f"Rollback incomplete: file hash mismatch for {len(conflicts)} file(s) "
+                f"that changed since the sort, left in place (e.g. {conflicts[0]})."
+            )
+
+        with conn:
+            conn.execute(
+                "UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?",
+                (session_id,),
+            )
+            conn.execute("DELETE FROM step_ledger WHERE session_id = ?", (session_id,))
+
+        if db:
+            db.invalidate_cache()
+        return restored
 
     def _rollback_from_snapshot_internal(
         self,
@@ -2093,7 +2258,7 @@ class HistoryManager:
                 safety_session_id = self._create_snapshot_internal(base_dir)
                 self._mark_undo_snapshot(safety_session_id)
 
-            if step_count > 0:
+            if step_count > 0 or self.moves.list_moves(session_id):
                 result = self._unwind_session_internal(session_id, db=self.db)
             elif steps := self.db.get_transaction_steps(session_id):
                 result = self._rollback_from_steps(

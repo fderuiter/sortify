@@ -20,8 +20,10 @@ VERIFIED = "verified"
 FAILED = "failed"
 MOVE_STATES = (INTENT, DONE, VERIFIED, FAILED)
 
-# The states each state may follow.
+# The states each state may follow. An intent row stays an intent while its
+# displacement is recorded.
 _ALLOWED_FROM = {
+    INTENT: (INTENT,),
     DONE: (INTENT,),
     VERIFIED: (DONE,),
     FAILED: (INTENT,),
@@ -154,6 +156,10 @@ class MoveLedger:
     ) -> None:
         """Record that the move finished at ``dst``, having moved ``displaced`` aside."""
         self._change_state(session_id, seq, DONE, dst=dst, displaced=displaced)
+
+    def record_displacement(self, session_id: str, seq: int, displaced: str) -> None:
+        """Record, before it happens, where the file at the move's ``dst`` is moved aside to."""
+        self._change_state(session_id, seq, INTENT, displaced=displaced)
 
     def mark_verified(self, session_id: str, seq: int) -> None:
         """Record that the file at the move's destination has the source's hash."""
