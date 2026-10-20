@@ -470,6 +470,56 @@ def validate_settings_keys(
             )
 
 
+def _is_global_target(target: ast.AST) -> bool:
+    """True for ``sys.modules[...]`` or an attribute chain rooted at ``socket``."""
+    if isinstance(target, ast.Subscript):
+        value = target.value
+        return (
+            isinstance(value, ast.Attribute)
+            and value.attr == "modules"
+            and isinstance(value.value, ast.Name)
+            and value.value.id == "sys"
+        )
+    if isinstance(target, ast.Attribute):
+        root = target.value
+        while isinstance(root, ast.Attribute):
+            root = root.value
+        return isinstance(root, ast.Name) and root.id == "socket"
+    return False
+
+
+def validate_import_time_globals(errors: list, filepath: str, tree: ast.AST) -> None:
+    """Flag module-level writes to ``sys.modules[...]`` or ``socket.*`` (#711).
+
+    Such patches belong in an explicit install() that an entrypoint calls, so
+    statements inside functions are allowed; class bodies run at import and
+    are checked.
+    """
+    pending = list(ast.iter_child_nodes(tree))
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, (ast.AugAssign, ast.AnnAssign)):
+            targets = [node.target]
+        elif isinstance(node, ast.Delete):
+            targets = node.targets
+        else:
+            targets = []
+        for target in targets:
+            for part in ast.walk(target):
+                if _is_global_target(part):
+                    errors.append(
+                        f"{filepath}:{node.lineno}: Import-time global patch: "
+                        f"'{ast.unparse(part)}' is assigned at module level; "
+                        "move it into an explicit install() called from an entrypoint"
+                    )
+                    break
+        pending.extend(ast.iter_child_nodes(node))
+
+
 def main():
     """Execute all architectural validation checks."""
     parser = argparse.ArgumentParser(
@@ -524,6 +574,8 @@ def main():
 
             validate_import_layers(errors, filepath, tree)
             validate_settings_keys(errors, filepath, tree, declared_settings)
+
+            validate_import_time_globals(errors, filepath, tree)
 
             is_ui_file = "app/ui" in filepath
 
