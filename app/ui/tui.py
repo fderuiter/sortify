@@ -37,6 +37,7 @@ from app.ui.a11y import A11yMixin
 from app.ui.a11y import A11yViolation as A11yViolation
 from app.ui.a11y import inspect_tui_component as inspect_tui_component
 from app.ui.heading import Heading
+from app.ui.layout import ResponsiveLayoutMixin
 from app.ui.notifications import TROUBLESHOOTING_URL
 from app.ui.widgets.density_slider import DensitySlider
 from app.ui.widgets.labeled_switch import LabeledSwitch
@@ -54,7 +55,7 @@ logger = logging.getLogger(__name__)
 EXECUTE_NEEDS_SCAN_TOOLTIP = "Execution disabled: Scan a folder first [Ctrl+S]"
 
 
-class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
+class RenameModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]):
     """Modal dialog for renaming a file or folder node with pattern token formatting support."""
 
     BINDINGS = [
@@ -189,17 +190,6 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
                 btn_confirm.tooltip = "Confirm renaming action"
                 yield btn_confirm
 
-    def _update_layout(self, width: int) -> None:
-        """Update modal layout based on viewport width breakpoint."""
-        if width < 80:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle modal viewport resize event."""
-        self._update_layout(event.size.width)
-
     def on_mount(self) -> None:
         """Focus input field on mount and emit screen reader announcement."""
         self._update_layout(self.size.width)
@@ -241,7 +231,7 @@ class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
         self.action_confirm()
 
 
-class NewFolderModal(A11yMixin, ModalScreen[Optional[str]]):
+class NewFolderModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]):
     """Modal dialog for creating a new folder node in the plan."""
 
     BINDINGS = [
@@ -307,17 +297,6 @@ class NewFolderModal(A11yMixin, ModalScreen[Optional[str]]):
                 btn_confirm.tooltip = "Confirm new folder category creation"
                 yield btn_confirm
 
-    def _update_layout(self, width: int) -> None:
-        """Update modal layout based on viewport width breakpoint."""
-        if width < 80:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle modal viewport resize event."""
-        self._update_layout(event.size.width)
-
     def on_mount(self) -> None:
         """Focus input field on mount and emit screen reader announcement."""
         self._update_layout(self.size.width)
@@ -346,7 +325,7 @@ class NewFolderModal(A11yMixin, ModalScreen[Optional[str]]):
         self.action_confirm()
 
 
-class ReassignModal(A11yMixin, ModalScreen[Optional[str]]):
+class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]):
     """Modal dialog for reassigning checked file nodes to a target category folder."""
 
     BINDINGS = [
@@ -422,17 +401,6 @@ class ReassignModal(A11yMixin, ModalScreen[Optional[str]]):
                 btn_confirm.tooltip = "Confirm bulk reassignment"
                 yield btn_confirm
 
-    def _update_layout(self, width: int) -> None:
-        """Update modal layout based on viewport width breakpoint."""
-        if width < 80:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle modal viewport resize event."""
-        self._update_layout(event.size.width)
-
     def on_mount(self) -> None:
         """Focus input field on mount and emit announcement."""
         self._update_layout(self.size.width)
@@ -468,7 +436,9 @@ class ReassignModal(A11yMixin, ModalScreen[Optional[str]]):
         self.action_confirm()
 
 
-class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]]]):
+class DirectorySelectModal(
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Union[str, List[str]]]]
+):
     """Modal dialog for choosing target base directory or presets."""
 
     BINDINGS = [
@@ -654,17 +624,6 @@ class DirectorySelectModal(A11yMixin, ModalScreen[Optional[Union[str, List[str]]
             st.update(self._format_sources_display())
         except Exception:
             pass
-
-    def _update_layout(self, width: int) -> None:
-        """Update modal layout based on viewport width breakpoint."""
-        if width < 80:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle modal viewport resize event."""
-        self._update_layout(event.size.width)
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit screen reader announcement."""
@@ -1138,7 +1097,9 @@ class ConsentRevocationModal(A11yMixin, ModalScreen[bool]):
         self.dismiss(False)
 
 
-class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
+class SettingsModal(
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Dict[str, Any]]]
+):
     """Modal dialog for modifying application settings."""
 
     BINDINGS = [
@@ -1415,17 +1376,6 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 btn_save = Button("Save Settings", id="btn-save", variant="primary")
                 btn_save.tooltip = "Save modified application settings"
                 yield btn_save
-
-    def _update_layout(self, width: int) -> None:
-        """Update modal layout based on viewport width breakpoint."""
-        if width < 80:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle modal viewport resize event."""
-        self._update_layout(event.size.width)
 
     def on_mount(self) -> None:
         """Focus initial input field on mount and emit announcement."""
@@ -1896,7 +1846,7 @@ class ExtractionPreviewModal(A11yMixin, ModalScreen[Optional[int]]):
         self.dismiss(None)
 
 
-class ModelManagerModal(A11yMixin, ModalScreen[None]):
+class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     """Modal screen for interactive local ONNX model management."""
 
     BINDINGS = [
@@ -2028,17 +1978,6 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
                 btn_close = Button("Close", id="btn-close", variant="default")
                 btn_close.tooltip = "Close Model Management dialog"
                 yield btn_close
-
-    def _update_layout(self, width: int) -> None:
-        """Update layout based on viewport width breakpoint."""
-        if width < 80:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle modal viewport resize event."""
-        self._update_layout(event.size.width)
 
     def on_mount(self) -> None:
         """Focus initial input, set polling timer, and announce modal launch."""
@@ -2218,7 +2157,7 @@ class ModelManagerModal(A11yMixin, ModalScreen[None]):
         self.dismiss(None)
 
 
-class TemplateGalleryModal(A11yMixin, ModalScreen[None]):
+class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     """Modal screen for browsing and applying starter rule template packs."""
 
     BINDINGS = [
@@ -2328,17 +2267,6 @@ class TemplateGalleryModal(A11yMixin, ModalScreen[None]):
                 btn_apply.tooltip = "Merge selected template packs into settings"
                 yield btn_apply
 
-    def _update_layout(self, width: int) -> None:
-        """Update modal layout based on viewport width breakpoint."""
-        if width < 80:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle modal viewport resize event."""
-        self._update_layout(event.size.width)
-
     def on_mount(self) -> None:
         """Focus initial checkbox on mount and emit announcement."""
         self._update_layout(self.size.width)
@@ -2424,7 +2352,7 @@ class TemplateGalleryModal(A11yMixin, ModalScreen[None]):
         self.dismiss(None)
 
 
-class RuleImportModal(A11yMixin, ModalScreen[Optional[Any]]):
+class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any]]):
     """Modal screen for selecting, inspecting, and merging external rules (Hazel & DropIt)."""
 
     BINDINGS = [
@@ -2544,17 +2472,6 @@ class RuleImportModal(A11yMixin, ModalScreen[Optional[Any]]):
                 btn_merge.tooltip = "Safely merge extracted rules into settings without overwriting custom rules"
                 yield btn_merge
 
-    def _update_layout(self, width: int) -> None:
-        """Update modal layout based on width breakpoint."""
-        if width < 80:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle resize events."""
-        self._update_layout(event.size.width)
-
     def on_mount(self) -> None:
         """Focus initial input field on mount and set up preview tables."""
         self._update_layout(self.size.width)
@@ -2673,7 +2590,7 @@ class RuleImportModal(A11yMixin, ModalScreen[Optional[Any]]):
         self.dismiss(None)
 
 
-class WizardModal(A11yMixin, ModalScreen[None]):
+class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     """Modal dialog for model onboarding wizard."""
 
     BINDINGS = [
@@ -2787,17 +2704,6 @@ class WizardModal(A11yMixin, ModalScreen[None]):
                     "Save AI consent setting and complete onboarding wizard"
                 )
                 yield btn_finish
-
-    def _update_layout(self, width: int) -> None:
-        """Update modal layout based on viewport width breakpoint."""
-        if width < 80:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle modal viewport resize event."""
-        self._update_layout(event.size.width)
 
     def on_mount(self) -> None:
         """Focus switch on mount and emit screen reader announcement."""
@@ -2914,7 +2820,9 @@ class WizardModal(A11yMixin, ModalScreen[None]):
         self.dismiss(None)
 
 
-class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
+class SessionRecoveryModal(
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
+):
     """Modal dialog for recovering interrupted file sorting sessions."""
 
     BINDINGS = [
@@ -2996,17 +2904,6 @@ class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
                 btn_resume.tooltip = "Resume pending file moves for interrupted run"
                 yield btn_resume
 
-    def _update_layout(self, width: int) -> None:
-        """Update modal layout based on viewport width breakpoint."""
-        if width < 80:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle modal viewport resize event."""
-        self._update_layout(event.size.width)
-
     def on_mount(self) -> None:
         """Focus resume button on mount and emit screen reader announcement."""
         self._update_layout(self.size.width)
@@ -3047,7 +2944,7 @@ class SessionRecoveryModal(A11yMixin, ModalScreen[Optional[str]]):
         self.dismiss(None)
 
 
-class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
+class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     """Modal dialog displaying categorized TUI keyboard shortcuts cheat sheet."""
 
     BINDINGS = [
@@ -3222,17 +3119,6 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
                 btn_close.tooltip = "Close keyboard shortcut cheat sheet modal dialog"
                 yield btn_close
 
-    def _update_layout(self, width: int) -> None:
-        """Update modal layout based on viewport width breakpoint."""
-        if width < 80:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle modal viewport resize event."""
-        self._update_layout(event.size.width)
-
     def on_mount(self) -> None:
         """Focus close button on mount and emit screen reader announcement."""
         self._update_layout(self.size.width)
@@ -3246,7 +3132,9 @@ class ShortcutCheatSheetModal(A11yMixin, ModalScreen[None]):
         self.dismiss(None)
 
 
-class DuplicateReviewModal(A11yMixin, ModalScreen[Optional[Dict[str, str]]]):
+class DuplicateReviewModal(
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Dict[str, str]]]
+):
     """Modal dialog for pre-move interactive duplicate cluster review and resolution."""
 
     BINDINGS = [
@@ -3397,10 +3285,6 @@ class DuplicateReviewModal(A11yMixin, ModalScreen[Optional[Dict[str, str]]]):
         else:
             self.remove_class("narrow")
 
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle modal resize event."""
-        self._update_layout(event.size.width)
-
     def on_mount(self) -> None:
         """Focus initial widget on mount and announce to screen reader."""
         self._update_layout(self.size.width)
@@ -3520,7 +3404,9 @@ class DropPlanConfirmModal(A11yMixin, ModalScreen[bool]):
         self.dismiss(False)
 
 
-class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
+class DropZoneModal(
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Dict[str, Any]]]
+):
     """Floating overlay modal dialog for quick drag-and-drop or paste file triage."""
 
     BINDINGS = [
@@ -3765,17 +3651,6 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     "Start automated classification and relocation on dropped paths"
                 )
                 yield btn_process
-
-    def _update_layout(self, width: int) -> None:
-        """Update modal layout based on viewport width breakpoint."""
-        if width < 80:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle modal viewport resize event."""
-        self._update_layout(event.size.width)
 
     def _format_size(self, size_bytes: int) -> str:
         """Format size in bytes to human readable string."""
@@ -4367,7 +4242,9 @@ class DropZoneModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 )
 
 
-class ExportReportModal(A11yMixin, ModalScreen[Optional[Tuple[str, str]]]):
+class ExportReportModal(
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Tuple[str, str]]]
+):
     """Modal dialog for exporting dry-run simulation reports."""
 
     BINDINGS = [
@@ -4459,17 +4336,6 @@ class ExportReportModal(A11yMixin, ModalScreen[Optional[Tuple[str, str]]]):
                 btn_export = Button("Export Report", id="btn-export", variant="primary")
                 btn_export.tooltip = "Export simulation report to disk"
                 yield btn_export
-
-    def _update_layout(self, width: int) -> None:
-        """Update layout based on viewport width breakpoint."""
-        if width < 80:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle viewport resize event."""
-        self._update_layout(event.size.width)
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit accessibility announcement."""
@@ -5149,7 +5015,9 @@ class RollbackErrorModal(A11yMixin, ModalScreen[None]):
         self.dismiss(None)
 
 
-class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
+class HistoryModal(
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Dict[str, Any]]]
+):
     """Modal dialog for viewing session history records, exporting audit logs, and rolling back sessions."""
 
     BINDINGS = [
@@ -5310,17 +5178,6 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     "Export audit log file for selected session history row"
                 )
                 yield btn_export
-
-    def _update_layout(self, width: int) -> None:
-        """Update layout based on viewport width breakpoint."""
-        if width < 80:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle viewport resize event."""
-        self._update_layout(event.size.width)
 
     def on_mount(self) -> None:
         """Focus session select widget on mount and emit accessibility announcement."""
@@ -5553,7 +5410,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         self.dismiss(None)
 
 
-class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
+class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     """Interactive Modal Screen for Compliance Quarantine Vault & Audit Log Review."""
 
     BINDINGS = [
@@ -5773,16 +5630,6 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
                 btn_close = Button("Close (Esc)", id="btn-quarantine-close")
                 btn_close.tooltip = "Close quarantine vault dialog"
                 yield btn_close
-
-    def _update_layout(self, width: int) -> None:
-        if width < 80:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle screen resize events to update dynamic narrow layout."""
-        self._update_layout(event.size.width)
 
     def on_mount(self) -> None:
         """Initialize data table columns and trigger initial record fetch on mount."""
@@ -6141,7 +5988,7 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
         self.fetch_records_async()
 
 
-class AutoSorterTUI(A11yMixin, App):
+class AutoSorterTUI(ResponsiveLayoutMixin, A11yMixin, App):
     """Textual full-screen interactive TUI application for Sortify AI Pro."""
 
     TITLE = "Sortify AI Pro - Terminal UI"
@@ -6482,10 +6329,6 @@ class AutoSorterTUI(A11yMixin, App):
                 dual_pane.remove_class("narrow")
         except Exception:
             pass
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle viewport resize lifecycle event to update dual-pane container layout."""
-        self._update_layout(event.size.width)
 
     def _start_hint(self) -> str:
         """Tell a user with no plan yet which key starts the workflow."""
