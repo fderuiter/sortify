@@ -5,17 +5,6 @@ import json
 import logging
 import threading
 import time
-
-try:
-    import sqlite3
-except ImportError:
-    try:
-        from sqlcipher3 import dbapi2 as sqlite3
-    except ImportError:
-        import types
-
-        sqlite3 = types.ModuleType("sqlite3")
-        sqlite3.Error = Exception  # ty: ignore[unresolved-attribute]
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
@@ -358,6 +347,9 @@ class CacheManager:
 
     def load_cache(self, source_directory: str):
         """Load cached analysis results from the database for a specific directory."""
+        # Imported here: db_conn imports this module.
+        from app.core.db_conn import DB_ERRORS
+
         try:
             conn = self._get_conn()
             with conn:
@@ -376,7 +368,7 @@ class CacheManager:
                     set(json.loads(manual_folders_raw)) if manual_folders_raw else set()
                 )
                 return corpus, locked_files, index_to_word, manual_folders
-        except (sqlite3.Error, json.JSONDecodeError) as e:
+        except (*DB_ERRORS, json.JSONDecodeError) as e:
             logging.error(
                 f"Query or JSON parsing error loading cache for directory '{source_directory}': {e}",
                 exc_info=True,

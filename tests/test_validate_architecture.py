@@ -149,3 +149,43 @@ def test_declared_settings_keys_include_fields_and_property_aliases():
     assert {"MAX_QUEUE_CAPACITY", "DEDUP_WINDOW", "WORKER_TIMEOUT"} <= keys
     assert "MAX_SPREADSHEET_ROWS" in keys
     assert "WORKER_CONCURRENCY" not in keys
+
+
+def _global_errors(source):
+    import ast
+
+    from scripts.validate_architecture import validate_import_time_globals
+
+    errors = []
+    validate_import_time_globals(errors, "app/core/x.py", ast.parse(source))
+    return errors
+
+
+def test_import_time_globals_flag_module_level_patches():
+    assert _global_errors('import sys\nsys.modules["sqlite3"] = object()\n')
+    assert _global_errors("import socket\nsocket.socket.connect = None\n")
+    assert _global_errors(
+        'import sys\ntry:\n    import x\nexcept ImportError:\n    sys.modules["x"] = None\n'
+    )
+    assert _global_errors("import socket\nclass C:\n    socket.getfqdn = None\n")
+
+
+def test_import_time_globals_allow_install_functions_and_reads():
+    assert not _global_errors(
+        "import socket\ndef install():\n    socket.getfqdn = None\n"
+    )
+    assert not _global_errors('import sys\ntorch = sys.modules["torch"]\n')
+    assert not _global_errors('import sys\nsys.modules["torch"].set_num_threads(1)\n')
+
+
+def test_app_has_no_import_time_global_patches():
+    import ast
+    from pathlib import Path
+
+    from scripts.validate_architecture import validate_import_time_globals
+
+    errors = []
+    for path in Path("app").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        validate_import_time_globals(errors, str(path), tree)
+    assert errors == []

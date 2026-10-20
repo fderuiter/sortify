@@ -5,14 +5,6 @@ import json
 import os
 from typing import Any, Dict, Optional, Tuple
 
-try:
-    import sqlite3
-except Exception:
-    try:
-        from sqlcipher3 import dbapi2 as sqlite3
-    except Exception:
-        sqlite3 = None
-
 from app.config import get_app_dir
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.domain_contracts import _make_json_serializable
