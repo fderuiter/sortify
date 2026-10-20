@@ -1,5 +1,6 @@
 """Defines document extraction strategies for various file types."""
 
+import contextlib
 import csv
 import io
 import logging
@@ -34,7 +35,7 @@ def extract_text_from_image(
         try:
             settings = AppSettings()
         except Exception:
-            pass
+            logging.debug("Could not load AppSettings, using defaults", exc_info=True)
 
     try:
         from PIL import Image
@@ -51,7 +52,7 @@ def extract_text_from_image(
                 if isinstance(sz, tuple) and len(sz) == 2:
                     width, height = sz
             except Exception:
-                pass
+                logging.debug("Could not read image size", exc_info=True)
 
         if isinstance(width, (int, float)) and isinstance(height, (int, float)):
             max_dimension = (
@@ -68,7 +69,7 @@ def extract_text_from_image(
                 )
                 image = image.resize((new_width, new_height), Image.Resampling.LANCZOS)
     except Exception as e:
-        logging.error(f"Failed preprocessing image: {e}")
+        logging.error(f"Failed preprocessing image: {e}", exc_info=True)
 
     vision_engine = (
         getattr(settings, "VISION_ENGINE", "easyocr") if settings else "easyocr"
@@ -89,7 +90,8 @@ def extract_text_from_image(
                     return extracted.strip()
         except Exception as e:
             logging.warning(
-                f"Florence-2 vision engine processing failed for {file_path or 'image'}, falling back to EasyOCR: {e}"
+                f"Florence-2 vision engine processing failed for {file_path or 'image'}, falling back to EasyOCR: {e}",
+                exc_info=True,
             )
 
     # Fallback to standard OCR (EasyOCR)
@@ -107,7 +109,7 @@ def extract_text_from_image(
         extracted_text = " ".join([res[1] for res in results])
         return extracted_text.strip()
     except Exception as e:
-        logging.error(f"OCR processing failed: {e}")
+        logging.error(f"OCR processing failed: {e}", exc_info=True)
         return ""
 
 
@@ -150,7 +152,9 @@ class CsvExtractor:
             try:
                 settings = AppSettings()
             except Exception:
-                pass
+                logging.debug(
+                    "Could not load AppSettings, using defaults", exc_info=True
+                )
 
         max_rows = getattr(
             settings,
@@ -203,7 +207,9 @@ class XlsxExtractor:
             try:
                 settings = AppSettings()
             except Exception:
-                pass
+                logging.debug(
+                    "Could not load AppSettings, using defaults", exc_info=True
+                )
 
         max_sheets = getattr(
             settings,
@@ -267,7 +273,8 @@ class XlsxExtractor:
 
         except Exception as e:
             logging.debug(
-                f"openpyxl read-only streaming extraction failed or non-xlsx format for {file_path}: {e}. Falling back to pandas."
+                f"openpyxl read-only streaming extraction failed or non-xlsx format for {file_path}: {e}. Falling back to pandas.",
+                exc_info=True,
             )
 
         # Fallback method: pandas.read_excel with nrows
@@ -279,6 +286,10 @@ class XlsxExtractor:
                 sheet_names = xl.sheet_names[:max_sheets]
                 xl.close()
             except Exception:
+                logging.debug(
+                    f"Could not list Excel sheets for {file_path}, reading the first",
+                    exc_info=True,
+                )
                 sheet_names = [0]
 
             for sheet_name in sheet_names:
@@ -302,7 +313,9 @@ class XlsxExtractor:
             return "\n".join(extracted_lines) if extracted_lines else ""
 
         except Exception as e:
-            logging.error(f"Excel extraction failed for {file_path}: {e}")
+            logging.error(
+                f"Excel extraction failed for {file_path}: {e}", exc_info=True
+            )
             raise
 
 
@@ -355,7 +368,7 @@ class PdfExtractor:
         try:
             page.extract_text(visitor_operand_before=visitor_op)
         except Exception:
-            pass
+            logging.debug("Vector graphics scan of PDF page failed", exc_info=True)
 
         return has_vector
 
@@ -371,7 +384,8 @@ class PdfExtractor:
                 return pil_image
         except Exception as e:
             logging.warning(
-                f"Full-page rasterization via pypdfium2 failed for page {page_idx + 1} of {file_path}: {e}"
+                f"Full-page rasterization via pypdfium2 failed for page {page_idx + 1} of {file_path}: {e}",
+                exc_info=True,
             )
         return None
 
@@ -391,7 +405,8 @@ class PdfExtractor:
                         embedded_text = page.extract_text() or ""
                     except Exception as text_e:
                         logging.warning(
-                            f"Error extracting embedded text on PDF page {idx + 1} of {file_path}: {text_e}"
+                            f"Error extracting embedded text on PDF page {idx + 1} of {file_path}: {text_e}",
+                            exc_info=True,
                         )
 
                     char_count = len(embedded_text.strip())
@@ -412,7 +427,9 @@ class PdfExtractor:
                         }
                     )
         except Exception as e:
-            logging.error(f"Failed to preview PDF density for {file_path}: {e}")
+            logging.error(
+                f"Failed to preview PDF density for {file_path}: {e}", exc_info=True
+            )
 
         return pages_analysis
 
@@ -430,7 +447,9 @@ class PdfExtractor:
             try:
                 settings = AppSettings()
             except Exception:
-                pass
+                logging.debug(
+                    "Could not load AppSettings, using defaults", exc_info=True
+                )
 
         density_threshold = (
             getattr(settings, "PDF_TEXT_DENSITY_THRESHOLD", 50) if settings else 50
@@ -463,7 +482,8 @@ class PdfExtractor:
                         embedded_text = page.extract_text() or ""
                     except Exception as text_e:
                         logging.warning(
-                            f"Error extracting embedded text on PDF page {page_num} of {file_path}: {text_e}"
+                            f"Error extracting embedded text on PDF page {page_num} of {file_path}: {text_e}",
+                            exc_info=True,
                         )
 
                     has_vector_paths = self._has_vector_graphics(page)
@@ -528,12 +548,14 @@ class PdfExtractor:
                                         embedded_ocr_text += extracted + " "
                                 except Exception as img_e:
                                     logging.warning(
-                                        f"Image decoding exception on page {page_num} of {file_path}: {img_e}"
+                                        f"Image decoding exception on page {page_num} of {file_path}: {img_e}",
+                                        exc_info=True,
                                     )
                                     decoding_error = True
                         except Exception as e:
                             logging.warning(
-                                f"Failed accessing page images on page {page_num} of {file_path}: {e}"
+                                f"Failed accessing page images on page {page_num} of {file_path}: {e}",
+                                exc_info=True,
                             )
                             decoding_error = True
 
@@ -574,7 +596,7 @@ class PdfExtractor:
                         page_texts.append(page_text)
 
         except Exception as e:
-            logging.error(f"Failed PDF extraction for {file_path}: {e}")
+            logging.error(f"Failed PDF extraction for {file_path}: {e}", exc_info=True)
 
         combined_text = "\n".join(page_texts).strip()
         logging.info(
@@ -597,7 +619,7 @@ class ImageExtractor:
             # Try to load the image data to catch truncation/corruption
             image.load()
         except Exception as e:
-            logging.error(f"Corrupt image file {file_path}: {e}")
+            logging.error(f"Corrupt image file {file_path}: {e}", exc_info=True)
             return "[STATUS:ERROR: Corrupt Image File]"
 
         try:
@@ -611,7 +633,7 @@ class ImageExtractor:
                 return "[STATUS:ERROR: Vision Model Offline]"
             return extracted_text
         except Exception as e:
-            logging.error(f"Failed to process image {file_path}: {e}")
+            logging.error(f"Failed to process image {file_path}: {e}", exc_info=True)
             return "[STATUS:ERROR: Vision Model Failure]"
 
 
@@ -620,11 +642,9 @@ def get_audio_duration(file_path: str) -> float:
     import os
 
     ext = os.path.splitext(file_path)[1].lower()
-    try:
+    with contextlib.suppress(OSError, ValueError):
         if os.path.getsize(file_path) == 0:
             return 0.0
-    except Exception:
-        pass
 
     if ext == ".wav":
         try:
@@ -636,19 +656,21 @@ def get_audio_duration(file_path: str) -> float:
                 if rate > 0:
                     return frames / float(rate)
         except Exception as e:
-            logging.debug(f"Failed to get WAV duration for {file_path}: {e}")
+            logging.debug(
+                f"Failed to get WAV duration for {file_path}: {e}", exc_info=True
+            )
     elif ext == ".mp3":
         try:
             size = os.path.getsize(file_path)
             return size / 16000.0  # Assumes 128 kbps average
         except Exception as e:
-            logging.debug(f"Failed to get MP3 size for {file_path}: {e}")
+            logging.debug(f"Failed to get MP3 size for {file_path}: {e}", exc_info=True)
     elif ext == ".m4a":
         try:
             size = os.path.getsize(file_path)
             return size / 12000.0  # Assumes 96 kbps average
         except Exception as e:
-            logging.debug(f"Failed to get M4A size for {file_path}: {e}")
+            logging.debug(f"Failed to get M4A size for {file_path}: {e}", exc_info=True)
 
     return 100.0
 
@@ -714,11 +736,9 @@ class AudioExtractor:
             if not path.lower().endswith(".wav"):
                 return False
             # To support existing unit tests that use 0-byte dummy WAV files:
-            try:
+            with contextlib.suppress(OSError, ValueError):
                 if os.path.getsize(path) == 0:
                     return True
-            except Exception:
-                pass
             try:
                 with wave.open(path, "rb") as f:
                     return (
@@ -727,6 +747,7 @@ class AudioExtractor:
                         and f.getcomptype() == "NONE"
                     )
             except Exception:
+                logging.debug(f"Could not read WAV header of {path}", exc_info=True)
                 return False
 
         transcoded_path = None
@@ -770,7 +791,9 @@ class AudioExtractor:
                         )
                         return f"[STATUS:ERROR: FFmpeg transcoding failed: {res.stderr.strip()}]"
                 except Exception as e:
-                    logging.error(f"FFmpeg process execution failed: {e}")
+                    logging.error(
+                        f"FFmpeg process execution failed: {e}", exc_info=True
+                    )
                     return f"[STATUS:ERROR: FFmpeg process execution failed: {str(e)}]"
 
                 target_file_path = transcoded_path
@@ -851,10 +874,13 @@ class AudioExtractor:
                 except Exception as e:
                     if dev != "cpu":
                         logging.warning(
-                            f"Failed to spawn Whisper on GPU device {dev}, retrying on CPU: {e}"
+                            f"Failed to spawn Whisper on GPU device {dev}, retrying on CPU: {e}",
+                            exc_info=True,
                         )
                         continue
-                    logging.error(f"Failed to spawn Whisper process: {e}")
+                    logging.error(
+                        f"Failed to spawn Whisper process: {e}", exc_info=True
+                    )
                     return f"[STATUS:ERROR: {str(e)}]"
 
             transcription_lines = []
@@ -876,12 +902,10 @@ class AudioExtractor:
                     for line in iter(stream.readline, ""):
                         queue_obj.put(line)
                 except Exception:
-                    pass
+                    logging.debug("Reading Whisper output stream failed", exc_info=True)
                 finally:
-                    try:
+                    with contextlib.suppress(OSError):
                         stream.close()
-                    except Exception:
-                        pass
 
             from app.core.shared_registry import ContextPropagatingThread
 
@@ -901,7 +925,9 @@ class AudioExtractor:
                         try:
                             process.terminate()
                         except Exception as e:
-                            logging.warning(f"Failed to terminate process: {e}")
+                            logging.warning(
+                                f"Failed to terminate process: {e}", exc_info=True
+                            )
                         try:
                             process.wait(timeout=0.1)
                         except subprocess.TimeoutExpired:
@@ -911,13 +937,21 @@ class AudioExtractor:
                             try:
                                 process.kill()
                             except Exception as e:
-                                logging.warning(f"Failed to kill process: {e}")
+                                logging.warning(
+                                    f"Failed to kill process: {e}", exc_info=True
+                                )
                             try:
                                 process.wait(timeout=0.1)
                             except Exception:
-                                pass
+                                logging.debug(
+                                    "Whisper process did not exit after kill",
+                                    exc_info=True,
+                                )
                         except Exception:
-                            pass
+                            logging.debug(
+                                "Waiting for Whisper process to exit failed",
+                                exc_info=True,
+                            )
                         return "[STATUS:CANCELLED]"
 
                     # 2. Check if reader thread has finished and queue is empty
@@ -943,7 +977,9 @@ class AudioExtractor:
                                 progress_callback, val, stage="Transcribing audio..."
                             )
                         except Exception:
-                            pass
+                            logging.debug(
+                                "Could not report Whisper progress", exc_info=True
+                            )
                     else:
                         match_long = ts_long.search(line_str)
                         if match_long:
@@ -962,7 +998,9 @@ class AudioExtractor:
                                     stage="Transcribing audio...",
                                 )
                             except Exception:
-                                pass
+                                logging.debug(
+                                    "Could not report Whisper progress", exc_info=True
+                                )
                         else:
                             match_short = ts_short.search(line_str)
                             if match_short:
@@ -980,7 +1018,10 @@ class AudioExtractor:
                                         stage="Transcribing audio...",
                                     )
                                 except Exception:
-                                    pass
+                                    logging.debug(
+                                        "Could not report Whisper progress",
+                                        exc_info=True,
+                                    )
 
                     # Clean the line by stripping out timestamp parts
                     clean_line = line_str
@@ -1000,7 +1041,9 @@ class AudioExtractor:
                     )
 
             except Exception as e:
-                logging.error(f"Error during Whisper transcription execution: {e}")
+                logging.error(
+                    f"Error during Whisper transcription execution: {e}", exc_info=True
+                )
                 return f"[STATUS:ERROR: {str(e)}]"
 
             return " ".join(transcription_lines)
@@ -1014,7 +1057,8 @@ class AudioExtractor:
                     )
                 except Exception as e:
                     logging.warning(
-                        f"Failed to remove temporary transcoded file {transcoded_path}: {e}"
+                        f"Failed to remove temporary transcoded file {transcoded_path}: {e}",
+                        exc_info=True,
                     )
 
 
