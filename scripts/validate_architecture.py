@@ -410,6 +410,66 @@ def validate_import_layers(errors: list, filepath: str, tree: ast.AST) -> None:
                     )
 
 
+SETTINGS_SOURCE = "app/config.py"
+
+
+def declared_settings_keys(
+    config_path: str = os.path.join(os.path.dirname(__file__), "..", SETTINGS_SOURCE),
+) -> set[str]:
+    """Return the field and property names declared on the `Settings` model.
+
+    Read from the source rather than imported, so the check needs no app imports.
+    """
+    with open(config_path, "r", encoding="utf-8") as f:
+        tree = ast.parse(f.read(), filename=config_path)
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == "Settings":
+            keys = set()
+            for stmt in node.body:
+                if isinstance(stmt, ast.AnnAssign) and isinstance(
+                    stmt.target, ast.Name
+                ):
+                    keys.add(stmt.target.id)
+                elif isinstance(stmt, ast.FunctionDef):
+                    keys.add(stmt.name)
+            return keys
+    raise ValueError(f"No Settings class found in {config_path}")
+
+
+def _is_settings_receiver(node: ast.AST) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id.endswith("settings")
+    if isinstance(node, ast.Attribute):
+        return node.attr.endswith("settings")
+    return False
+
+
+def validate_settings_keys(
+    errors: list, filepath: str, tree: ast.AST, declared: set[str]
+) -> None:
+    """Flag `getattr(settings, "KEY", ...)` reads of keys `Settings` doesn't declare.
+
+    `AppSettings` raises for unknown keys, so such a read always falls back to
+    its default and the setting can never be configured.
+    """
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "getattr"
+            and len(node.args) >= 2
+            and _is_settings_receiver(node.args[0])
+            and isinstance(node.args[1], ast.Constant)
+            and isinstance(node.args[1].value, str)
+        ):
+            continue
+        key = node.args[1].value
+        if key.isupper() and key not in declared:
+            errors.append(
+                f"{filepath}:{node.lineno}: Undeclared setting '{key}' is read from settings; declare it on Settings in {SETTINGS_SOURCE} or drop the read"
+            )
+
+
 def main():
     """Execute all architectural validation checks."""
     parser = argparse.ArgumentParser(
@@ -443,6 +503,7 @@ def main():
         target_files = None
 
     errors = []
+    declared_settings = declared_settings_keys()
 
     # Rule 1 & Rule 2: Async DB writes and UI blocking operations
     for root, _, files in os.walk("app"):
@@ -462,6 +523,7 @@ def main():
                 continue
 
             validate_import_layers(errors, filepath, tree)
+            validate_settings_keys(errors, filepath, tree, declared_settings)
 
             is_ui_file = "app/ui" in filepath
 

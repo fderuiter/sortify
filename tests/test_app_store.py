@@ -112,9 +112,7 @@ def test_imports_old_sessions_once_and_reencrypts_text(tmp_path, worker, base_di
     assert _count(store, "step_ledger") == 1
 
 
-def test_newer_session_wins_when_two_indexed_the_same_file(
-    tmp_path, worker, base_dir
-):
+def test_newer_session_wins_when_two_indexed_the_same_file(tmp_path, worker, base_dir):
     import os
 
     sessions = tmp_path / "sessions"

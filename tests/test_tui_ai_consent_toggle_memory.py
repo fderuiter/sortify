@@ -27,9 +27,7 @@ async def test_settings_modal_has_ai_consent_toggle(tmp_path):
     settings = AppSettings(filepath=settings_file)
     settings.AI_CONSENT_GRANTED = True
 
-    app = AutoSorterTUI(
-        settings=settings, base_dir=str(tmp_path), skip_wizard=True
-    )
+    app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path), skip_wizard=True)
     async with app.run_test() as pilot:
         app.action_open_settings()
         await pilot.pause(0.1)
@@ -59,9 +57,7 @@ async def test_revoking_consent_unloads_in_memory_models_immediately(tmp_path):
     assert registry.is_model_loaded("onnx") is True
     assert registry.is_model_loaded("easyocr") is True
 
-    app = AutoSorterTUI(
-        settings=settings, base_dir=str(tmp_path), skip_wizard=True
-    )
+    app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path), skip_wizard=True)
     async with app.run_test() as pilot:
         # Open settings and revoke AI consent
         app.action_open_settings()
@@ -119,7 +115,9 @@ def test_disabling_consent_prevents_ai_predictions_in_renamer(tmp_path):
     mock_embedding_mgr.is_mock = False
     mock_embedding_mgr.is_reconstruction_active.return_value = False
 
-    renamer = FileRenamerEngine(runtime_settings=settings, embedding_manager=mock_embedding_mgr)
+    renamer = FileRenamerEngine(
+        runtime_settings=settings, embedding_manager=mock_embedding_mgr
+    )
 
     doc_text = "Detailed quarterly financial budget report analysis summary document."
     filename = "report.docx"
@@ -164,15 +162,15 @@ def test_disabling_consent_leaves_cached_model_files_on_disk_untouched(tmp_path)
 
 
 @pytest.mark.anyio
-async def test_changing_consent_state_updates_status_bar_badge_and_announcements(tmp_path):
+async def test_changing_consent_state_updates_status_bar_badge_and_announcements(
+    tmp_path,
+):
     """Verify changing consent state immediately updates header warning labels and status notifications."""
     settings_file = str(tmp_path / "settings.json")
     settings = AppSettings(filepath=settings_file)
     settings.AI_CONSENT_GRANTED = False
 
-    app = AutoSorterTUI(
-        settings=settings, base_dir=str(tmp_path), skip_wizard=True
-    )
+    app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path), skip_wizard=True)
     async with app.run_test() as pilot:
         from textual.widgets import Static
 

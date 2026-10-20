@@ -1838,11 +1838,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                         "Protected Directories (comma-separated):",
                         classes="field-label",
                     )
-                    prot = getattr(
-                        self.settings,
-                        "PROTECTED_PATHS",
-                        getattr(self.settings, "PROTECTED_DIRECTORIES", []),
-                    )
+                    prot = getattr(self.settings, "PROTECTED_PATHS", [])
                     prot_str = (
                         ", ".join(prot)
                         if isinstance(prot, (list, tuple, set))
@@ -1886,13 +1882,7 @@ class SettingsModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     yield inp_max_f
 
                     yield Label("Worker Concurrency (Threads):", classes="field-label")
-                    conc_str = str(
-                        getattr(
-                            self.settings,
-                            "MAX_WORKERS",
-                            getattr(self.settings, "WORKER_CONCURRENCY", 4),
-                        )
-                    )
+                    conc_str = str(getattr(self.settings, "MAX_WORKERS", 4))
                     inp_conc = Input(
                         value=conc_str, placeholder="4", id="input-concurrency"
                     )

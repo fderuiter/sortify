@@ -185,6 +185,26 @@ The following parameters are extracted directly from the application's configura
 - **Default**: `5.0`
 - **Allowed**: > 0.0
 
+### `MAX_QUEUE_CAPACITY`
+- **Type**: `int`
+- **Default**: `1000`
+- **Allowed**: > 0
+
+### `DEDUP_WINDOW`
+- **Type**: `float`
+- **Default**: `0.5`
+- **Allowed**: >= 0.0
+
+### `RECONCILIATION_INTERVAL`
+- **Type**: `float`
+- **Default**: `30.0`
+- **Allowed**: > 0.0
+
+### `WORKER_TIMEOUT`
+- **Type**: `float`
+- **Default**: `300.0`
+- **Allowed**: >= 0.0
+
 ### `TABULAR_MAX_SHEETS`
 - **Type**: `int`
 - **Default**: `10`
