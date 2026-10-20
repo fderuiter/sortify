@@ -3,7 +3,6 @@
 import asyncio
 import os
 import re
-from unittest.mock import AsyncMock
 
 import pytest
 
@@ -151,7 +150,7 @@ async def settled_screenshot(app, pilot, max_pauses: int = 100) -> str:
 def isolated_app_dir(monkeypatch, tmp_path):
     """Ensure AppSettings is isolated from persistent disk configuration changes."""
     import app.config
-    import app.core.session
+    import app.core.session_catalog
     from app.core.plugin_registry import PluginRegistry
 
     PluginRegistry.reset_instance()
@@ -166,11 +165,7 @@ def isolated_app_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(
         app.config.AppSettings, "_trigger_save", lambda self: self._save()
     )
-    monkeypatch.setattr(
-        app.core.session,
-        "scan_abandoned_sessions_async",
-        AsyncMock(return_value=[]),
-    )
+    monkeypatch.setattr(app.core.session_catalog, "find_abandoned_sessions", lambda: [])
     for k in list(os.environ.keys()):
         if k.startswith("AUTOSORTER_") and k != "AUTOSORTER_APP_DIR":
             monkeypatch.delenv(k, raising=False)

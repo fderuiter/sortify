@@ -1902,14 +1902,11 @@ class Database:
                 )
 
         try:
-            from app.config import get_app_dir
+            from app.core.store import open_store
 
-            default_db_path = os.path.abspath(str(get_app_dir() / "autosorter.db"))
-            if default_db_path not in scrubbed_paths and os.path.exists(
-                default_db_path
-            ):
-                default_db = cls(Path(default_db_path), DBWorker())
-                default_db.clear_all_document_vectors()
+            store = open_store()
+            if os.path.abspath(str(store.path)) not in scrubbed_paths:
+                store.database(DBWorker()).clear_all_document_vectors()
         except Exception as e:
             logging.debug(f"Failed to scrub default database vectors: {e}")
 

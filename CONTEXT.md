@@ -19,7 +19,7 @@ One end-to-end run: discover, metadata pre-pass, extract, plan, verify, execute.
 _Avoid_: organize, job, run (alone)
 
 **Session**:
-The record of one sort's moves, identified by a session id, with its own per-session database and history. A session is the unit of undo.
+The record of one sort's moves, identified by a session id and kept as rows in the app store (ADR 0008). A session is the unit of undo.
 _Avoid_: transaction, batch
 
 **Plan**:

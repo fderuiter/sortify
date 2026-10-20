@@ -7,7 +7,7 @@ import os
 import sys
 from pathlib import Path
 
-from app.config import AppSettings, get_app_dir
+from app.config import AppSettings
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.quarantine_interceptor import QuarantineInterceptorService
@@ -157,10 +157,12 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
         sys.exit(2)
 
     db_path = getattr(args, "db_path", None)
-    db_path_obj = (
-        Path(db_path).resolve() if db_path else (get_app_dir() / "autosorter.db")
-    )
-    db = Database(db_path_obj, DBWorker())
+    if db_path:
+        db = Database(Path(db_path).resolve(), DBWorker())
+    else:
+        from app.core.store import open_store
+
+        db = open_store().database(DBWorker())
 
     from app.cli import json_default
 

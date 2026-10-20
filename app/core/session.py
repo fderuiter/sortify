@@ -15,158 +15,7 @@ except Exception:
 
 from app.config import get_app_dir
 from app.core.analyzer import IncrementalAnalyzer
-from app.core.cache import CacheManager
-from app.core.db import Database
 from app.core.domain_contracts import _make_json_serializable
-from app.core.history import HistoryManager
-
-
-async def scan_abandoned_sessions_async():
-    """Scan for unclosed session folders containing active session databases or failed/active sessions with trapped files."""
-    import asyncio
-
-    def _scan():
-        from app.core.path_utils import get_session_base_dir
-
-        session_base = get_session_base_dir()
-        abandoned = []
-        if not session_base.exists():
-            return abandoned
-
-        for session_dir in session_base.iterdir():
-            if not session_dir.is_dir():
-                continue
-
-            journal_path = session_dir / "rollback_journal.json"
-            if journal_path.exists():
-                try:
-                    with open(journal_path, "r") as f:
-                        jdata = json.load(f)
-                    abandoned.append(
-                        {
-                            "session_id": jdata.get("session_id"),
-                            "safety_session_id": jdata.get("safety_session_id"),
-                            "base_dir": jdata.get("base_dir"),
-                            "session_dir": str(session_dir),
-                            "journal_path": str(journal_path),
-                            "is_rollback_recovery": True,
-                            "status": "interrupted_rollback",
-                        }
-                    )
-                    continue
-                except Exception:
-                    pass
-
-            history_db = session_dir / "history.db"
-            if not history_db.exists():
-                continue
-
-            try:
-                import sqlite3 as std_sqlite3
-
-                from app.core.db_conn import get_db_connection
-
-                conn = None
-                rows = []
-                try:
-                    conn = std_sqlite3.connect(str(history_db), timeout=30.0)
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC"
-                    )
-                    rows = cursor.fetchall()
-                except Exception:
-                    if conn:
-                        try:
-                            conn.close()
-                        except Exception:
-                            pass
-                    conn = get_db_connection(str(history_db))
-                    cursor = conn.cursor()
-                    cursor.execute(
-                        "SELECT session_id, base_dir, status FROM sessions ORDER BY timestamp DESC"
-                    )
-                    rows = cursor.fetchall()
-
-                trapped_sessions = []
-                for row in rows:
-                    sid, base_dir, status = row
-                    step_count = 0
-                    try:
-                        cursor.execute(
-                            "SELECT COUNT(*) FROM step_ledger WHERE session_id = ?",
-                            (sid,),
-                        )
-                        res = cursor.fetchone()
-                        step_count = res[0] if res else 0
-                    except Exception:
-                        step_count = 0
-
-                    branch_dir = os.path.join(base_dir, ".branches", sid)
-                    has_trapped = False
-                    if os.path.exists(branch_dir):
-                        for root, dirs, files in os.walk(branch_dir):
-                            if files:
-                                has_trapped = True
-                                break
-
-                    if step_count > 0 and status in ("active", "uncommitted", "failed"):
-                        abandoned.append(
-                            {
-                                "session_id": sid,
-                                "base_dir": base_dir,
-                                "session_dir": str(session_dir),
-                                "status": status,
-                                "has_step_ledger": True,
-                                "step_count": step_count,
-                                "uncommitted_batch": True,
-                                "has_trapped_files": has_trapped,
-                                "safety_folder": branch_dir if has_trapped else None,
-                            }
-                        )
-                        break
-
-                    if status in ("active", "failed", "uncommitted") and has_trapped:
-                        trapped_sessions.append(
-                            {
-                                "session_id": sid,
-                                "base_dir": base_dir,
-                                "session_dir": str(session_dir),
-                                "status": status,
-                                "has_trapped_files": True,
-                                "safety_folder": branch_dir,
-                            }
-                        )
-
-                if trapped_sessions:
-                    abandoned.extend(trapped_sessions)
-                elif not abandoned:
-                    plan_path = session_dir / "plan.json"
-                    if plan_path.exists() and rows:
-                        for row in rows:
-                            sid, base_dir, status = row
-                            if status == "active":
-                                abandoned.append(
-                                    {
-                                        "session_id": sid,
-                                        "base_dir": base_dir,
-                                        "session_dir": str(session_dir),
-                                        "plan_path": str(plan_path),
-                                        "status": status,
-                                        "has_trapped_files": False,
-                                    }
-                                )
-                                break
-                try:
-                    cursor.close()
-                except Exception:
-                    pass
-            except Exception:
-                pass
-
-        return abandoned
-
-    return await asyncio.to_thread(_scan)
 
 
 class AppSession:
@@ -175,7 +24,9 @@ class AppSession:
     # Seconds a move waits for another sort of the same folder to finish (ADR 0007).
     folder_lock_timeout = 10.0
 
-    def __init__(self, settings, base_dir=None, session_id=None, source_dirs=None):
+    def __init__(
+        self, settings, base_dir=None, session_id=None, source_dirs=None, store=None
+    ):
         self.settings = settings
         if source_dirs:
             norm_dirs = []
@@ -199,24 +50,21 @@ class AppSession:
         self.session_id, self.session_dir = setup_session_directory(session_id)
 
         from app.core.db_worker import DBWorker
+        from app.core.store import open_store
 
+        # Every session reads and writes the one app store (ADR 0008).
+        self.store = store or open_store()
         self.db_worker = DBWorker()
-        self.db = Database(self.session_dir / "autosorter.db", self.db_worker)
-        self.cache_manager = CacheManager(
-            str(self.session_dir / "cache.db"), self.db_worker
-        )
-        self.history_manager = HistoryManager(
-            self.db, self.cache_manager, str(self.session_dir / "history.db")
-        )
+        self.db = self.store.database(self.db_worker)
+        self.cache_manager = self.store.cache(self.db_worker)
+        self.history_manager = self.store.history(self.db, self.cache_manager)
 
         if getattr(self.settings, "AI_CONSENT_GRANTED", None):
             try:
                 from app.core.shared_registry import SharedModelRegistry
 
                 jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
-                jev_engine.set_database(
-                    str(self.session_dir / "autosorter.db"), self.db_worker
-                )
+                jev_engine.set_database(str(self.store.path), self.db_worker)
             except Exception:
                 pass
 
@@ -435,23 +283,9 @@ class AppSession:
         except Exception:
             pass
         if self.session_dir and os.path.exists(self.session_dir):
-            has_history = False
-            history_db = self.session_dir / "history.db"
-            if history_db.exists():
-                try:
-                    from app.core.db_conn import get_db_connection
+            from app.core.resilient_file_ops import resilient_rmtree
 
-                    conn = get_db_connection(str(history_db))
-                    with conn:
-                        cur = conn.execute("SELECT COUNT(*) FROM sessions")
-                        row = cur.fetchone()
-                        has_history = bool(row and row[0] > 0)
-                except Exception:
-                    pass
-            if not has_history:
-                from app.core.resilient_file_ops import resilient_rmtree
-
-                resilient_rmtree(self.session_dir, ignore_errors=True)
+            resilient_rmtree(self.session_dir, ignore_errors=True)
 
 
 def split_plan_phases(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:

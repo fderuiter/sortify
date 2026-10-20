@@ -194,8 +194,14 @@ def test_db_worker_session_timeout(temp_db_and_worker):
     assert db.get_document(base_dir, "timed_out/data.txt") is None
 
 
-def test_multi_batch_move_failure_auto_rollback(temp_db_and_worker, monkeypatch):
-    """Verify multi-batch execute_moves rolls back database changes when a mid-batch physical move fails."""
+def test_multi_batch_move_failure_keeps_database_matching_disk(
+    temp_db_and_worker, monkeypatch
+):
+    """A move that fails mid-sort leaves each document recorded where its file is.
+
+    Each batch commits on its own (ADR 0008 puts every table in one store, so no
+    write lock spans the sort), so file1's committed move stays recorded.
+    """
     db, worker, temp_dir = temp_db_and_worker
     base_dir = temp_dir
 
@@ -253,12 +259,18 @@ def test_multi_batch_move_failure_auto_rollback(temp_db_and_worker, monkeypatch)
             batch_size=1,  # Force batch size of 1 to create multiple batches
         )
 
-    # Verify that database updates for file1 (which moved in batch 1) were completely rolled back!
-    doc1 = db.get_document(base_dir, "src/file1.txt")
-    doc1_moved = db.get_document(base_dir, "dst/file1.txt")
-
-    assert doc1 is not None, "Original DB record for file1 must remain post-rollback"
-    assert doc1_moved is None, "Moved DB record for file1 must be rolled back"
+    on_disk = {
+        os.path.relpath(os.path.join(root, name), base_dir).replace(os.sep, "/")
+        for root, _dirs, names in os.walk(base_dir)
+        for name in names
+        if name.endswith(".txt")
+    }
+    recorded = {
+        p
+        for p in ("src/file1.txt", "src/file2.txt", "plan/dst/file1.txt")
+        if db.get_document(base_dir, p) is not None
+    }
+    assert recorded == on_disk
 
 
 def test_non_session_operations_continue_safely(temp_db_and_worker):

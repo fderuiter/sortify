@@ -4,8 +4,7 @@ import argparse
 import json
 import sys
 
-from app.config import AppSettings, get_app_dir
-from app.core.db import Database
+from app.config import AppSettings
 from app.core.ledger import TransactionLedger, get_default_ledger_path
 
 
@@ -168,8 +167,9 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
         elif ledger_cmd == "reconcile":
             try:
                 from app.core.db_worker import DBWorker
+                from app.core.store import open_store
 
-                db = Database(get_app_dir() / "autosorter.db", DBWorker())
+                db = open_store().database(DBWorker())
             except Exception:
                 pass
 
@@ -248,26 +248,14 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
                 ext = ".csv" if fmt == "csv" else ".json"
                 output_path = f"audit_log_{session_id or 'all'}{ext}"
 
-            from app.core.cache import CacheManager
             from app.core.db_worker import DBWorker
-            from app.core.history import HistoryManager
-            from app.core.session_catalog import find_all_history_sessions
+            from app.core.store import open_store
 
-            target_db_path = None
-            all_sessions = find_all_history_sessions()
-            if session_id:
-                for s in all_sessions:
-                    if s.get("session_id") == session_id:
-                        target_db_path = s.get("history_db_path")
-                        break
-            if not target_db_path:
-                target_db_path = str(get_app_dir() / "history.db")
-
+            store = open_store()
             worker = DBWorker()
             try:
-                db = Database(get_app_dir() / "autosorter.db", worker)
-                cache_mgr = CacheManager(str(get_app_dir() / "cache.db"), worker)
-                history_mgr = HistoryManager(db, cache_mgr, target_db_path)
+                db = store.database(worker)
+                history_mgr = store.history(db, store.cache(worker))
                 export_res = history_mgr.export_audit_log(
                     output_path=output_path,
                     session_id=session_id,
