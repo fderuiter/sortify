@@ -342,3 +342,92 @@ def test_a_file_never_moves_without_its_intent_row(env, monkeypatch):
 
     assert (base_dir / "a.txt").read_bytes() == b"alpha", summary
     assert not (base_dir / "Docs" / "a.txt").exists()
+
+
+# Step 4 of #714: undo replays only the moves table.
+
+
+def _v2_store_with_transaction_steps(path, base_dir):
+    with closing(sqlite3.connect(path)) as conn:
+        migrate(conn, STORE_MIGRATIONS[:2], label="store")
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) "
+            "VALUES ('old', 1.0, ?, 'completed')",
+            (str(base_dir),),
+        )
+        conn.executemany(
+            "INSERT INTO transaction_ledger (session_id, step_number, base_dir, "
+            "source_path, destination_path, file_hash, timestamp) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?)",
+            [
+                ("old", 1, str(base_dir), "a.txt", "Docs/a.txt", "h-a", 1.0),
+                ("old", 2, str(base_dir), "b.txt", "Docs/b.txt", "h-b", 2.0),
+                ("new", 1, str(base_dir), "c.txt", "Docs/c.txt", "h-c", 3.0),
+            ],
+        )
+        conn.execute(
+            "INSERT INTO moves (session_id, seq, src, dst, state) "
+            "VALUES ('new', 1, '/elsewhere/c.txt', '/elsewhere/Docs/c.txt', 'done')"
+        )
+        conn.commit()
+
+
+def test_store_migration_builds_moves_from_the_transaction_ledger(tmp_path):
+    base_dir = tmp_path / "Downloads"
+    _v2_store_with_transaction_steps(tmp_path / "v2.db", base_dir)
+
+    with closing(sqlite3.connect(tmp_path / "v2.db")) as conn:
+        migrate(conn, STORE_MIGRATIONS, label="store")
+        rows = conn.execute(
+            "SELECT session_id, seq, src, dst, src_sha256, state FROM moves "
+            "ORDER BY session_id, seq"
+        ).fetchall()
+
+    assert rows == [
+        ("new", 1, "/elsewhere/c.txt", "/elsewhere/Docs/c.txt", None, "done"),
+        (
+            "old",
+            1,
+            str(base_dir / "a.txt"),
+            str(base_dir / "Docs" / "a.txt"),
+            "h-a",
+            "done",
+        ),
+        (
+            "old",
+            2,
+            str(base_dir / "b.txt"),
+            str(base_dir / "Docs" / "b.txt"),
+            "h-b",
+            "done",
+        ),
+    ]
+
+
+def test_undo_restores_a_sort_recorded_only_in_the_transaction_ledger(tmp_path):
+    base_dir = tmp_path / "Downloads"
+    (base_dir / "Docs").mkdir(parents=True)
+    (base_dir / "Docs" / "a.txt").write_bytes(b"alpha")
+    (base_dir / "Docs" / "b.txt").write_bytes(b"beta")
+    (tmp_path / "app").mkdir()
+    _v2_store_with_transaction_steps(tmp_path / "app" / "sortify.db", base_dir)
+
+    store = open_store(tmp_path / "app", legacy_session_root=tmp_path / "none")
+    worker = DBWorker()
+    try:
+        history = store.history(store.database(worker), store.cache(worker))
+        assert history.rollback("old") == 2
+    finally:
+        worker.stop()
+
+    assert (base_dir / "a.txt").read_bytes() == b"alpha"
+    assert (base_dir / "b.txt").read_bytes() == b"beta"
+    assert not (base_dir / "Docs").exists()
+
+
+def test_undo_of_a_session_with_no_moves_says_so(env):
+    base_dir, _db, history = env
+    session_id = history.create_snapshot(str(base_dir))
+
+    with pytest.raises(ValueError, match="no recorded moves"):
+        history.rollback(session_id)

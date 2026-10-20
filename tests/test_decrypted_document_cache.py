@@ -186,8 +186,15 @@ def test_rollback_invalidates_cache(cache_test_env):
     base_dir, db, history, _ = cache_test_env
     db.upsert_document(base_dir, "doc1.txt", "hash1", "text1")
 
-    # Create a snapshot
+    # Create a snapshot and record one sorted move
     session_id = history.create_snapshot(base_dir)
+    src = os.path.join(base_dir, "doc1.txt")
+    dst = os.path.join(base_dir, "Sorted", "doc1.txt")
+    os.makedirs(os.path.dirname(dst), exist_ok=True)
+    with open(dst, "w") as f:
+        f.write("text1")
+    seq = history.moves.record_intent(session_id, src, dst)
+    history.moves.mark_done(session_id, seq, dst)
 
     # Populate cache
     db.get_all_documents(base_dir)

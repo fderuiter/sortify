@@ -68,6 +68,10 @@ def tui_rollback_env(tmp_path, monkeypatch):
         target_path=str(target2),
         file_hash="hash2",
     )
+    # Undo replays the moves ledger (ADR 0006).
+    for src, dst in ((file1, target1), (file2, target2)):
+        seq = history_mgr.moves.record_intent(session_id, str(src), str(dst))
+        history_mgr.moves.mark_done(session_id, seq, str(dst))
 
     sessions = history_mgr.get_sessions()
     for s in sessions:

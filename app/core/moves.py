@@ -8,6 +8,7 @@ the source's, or ``failed``. Writes go through the database's single writer
 (ADR 0003) and do no file I/O.
 """
 
+import os
 import time
 from dataclasses import dataclass
 from typing import Callable, Protocol
@@ -110,6 +111,52 @@ def import_step_ledger(conn) -> int:
         """
     )
     return max(cursor.rowcount, 0)
+
+
+def import_transaction_ledger(conn) -> int:
+    """Copy ``transaction_ledger`` rows into ``moves`` as ``done``, for sessions with no moves yet.
+
+    Older sorts cleared their ``step_ledger`` once they finished and kept only
+    these rows, with paths relative to the session's folder. Returns the number
+    of rows copied. Runs inside the caller's transaction.
+    """
+    columns = {row[1] for row in conn.execute('PRAGMA table_info("transaction_ledger")')}
+    if not {"session_id", "step_number", "base_dir", "source_path"} <= columns:
+        return 0
+    rows = conn.execute(
+        """
+        SELECT session_id, step_number, base_dir, source_path, destination_path,
+               file_hash, timestamp
+        FROM transaction_ledger
+        WHERE session_id NOT IN (SELECT DISTINCT session_id FROM moves)
+        ORDER BY session_id, step_number, id
+        """
+    ).fetchall()
+    seqs: dict[str, int] = {}
+    values = []
+    for session_id, _step, base_dir, src, dst, file_hash, timestamp in rows:
+        seqs[session_id] = seqs.get(session_id, 0) + 1
+        values.append(
+            (
+                session_id,
+                seqs[session_id],
+                os.path.normpath(os.path.join(base_dir, src)),
+                os.path.normpath(os.path.join(base_dir, dst)),
+                file_hash,
+                timestamp,
+                timestamp,
+            )
+        )
+    conn.executemany(
+        """
+        INSERT INTO moves (
+            session_id, seq, src, dst, src_sha256, size, displaced, state,
+            error, created_at, updated_at
+        ) VALUES (?, ?, ?, ?, ?, NULL, NULL, 'done', NULL, ?, ?)
+        """,
+        values,
+    )
+    return len(values)
 
 
 def migrate_add_moves(conn) -> None:

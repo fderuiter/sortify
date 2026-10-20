@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "bc92f66ddd06c9dd15510b331b5b6e45580b2e7bbe30e4174843b3714cb05928"
+    "checksum": "5d3794d51a57fc8ead4afea332849e6fac1fc76528fe5c98713ef0719ff965ea"
   },
   "classes": [
     {
@@ -39,24 +39,6 @@
             }
           ],
           "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "check_missing_files",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
-            }
-          ],
-          "returns": "List[str]"
         },
         {
           "async": false,

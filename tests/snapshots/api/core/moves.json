@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "b85c617fa2077a0847e012fbbd9a8680656ebc6502bdd2784ee4a5ed8d97fc5f"
+    "checksum": "2962cdaa579b73bcff1f4ebd84f6858c10e409894927e4477c99dc5dc6e7abad"
   },
   "classes": [
     {
@@ -226,6 +226,19 @@
       "async": false,
       "decorators": [],
       "name": "import_step_ledger",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "conn"
+        }
+      ],
+      "returns": "int"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "import_transaction_ledger",
       "parameters": [
         {
           "annotation": null,

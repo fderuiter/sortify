@@ -1,12 +1,9 @@
 import json
 import os
 import shutil
-from pathlib import Path
-from unittest.mock import patch
 
 import pytest
 
-from app.core.db_conn import get_db_connection
 from app.core.session_catalog import find_abandoned_sessions
 from app.core.store import open_store
 
@@ -24,68 +21,6 @@ def mock_session_base(tmp_path, monkeypatch):
         "app.core.path_utils.get_session_base_dir", mock_get_session_base_dir
     )
     return session_base
-
-
-def test_normal_rollback_writes_and_deletes_journal(test_history_env):
-    """Verify that a normal rollback writes a physical journal and deletes it upon success."""
-    base_dir, db, cache, history_manager, db_worker = test_history_env
-
-    # 1. Create source file
-    file_src = os.path.join(base_dir, "test_doc.txt")
-    with open(file_src, "w") as f:
-        f.write("source content")
-
-    db.upsert_document(base_dir, "test_doc.txt", "hash_val", "extracted text")
-
-    # 2. Take a snapshot
-    session_id = history_manager.create_snapshot(base_dir)
-
-    # 3. Move file to simulate organization
-    file_dst = os.path.join(base_dir, "organized", "test_doc.txt")
-    os.makedirs(os.path.dirname(file_dst), exist_ok=True)
-    shutil.move(file_src, file_dst)
-
-    # Update DB document path to organized
-    def _update_db():
-        conn = get_db_connection(db.db_path)
-        with conn:
-            conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
-
-    db.worker.execute_write(_update_db)
-    db.upsert_document(
-        base_dir,
-        os.path.join("organized", "test_doc.txt"),
-        "hash_val",
-        "extracted text",
-    )
-
-    # 4. Mock the internal move execution to verify journal file exists right before file relocation
-    from app.core.history import _robust_move
-
-    original_robust_move = _robust_move
-    journal_found_during_move = False
-    journal_path = Path(history_manager.db_path).parent / "rollback_journal.json"
-
-    def mock_robust_move(src, dst):
-        nonlocal journal_found_during_move
-        if journal_path.exists():
-            journal_found_during_move = True
-            # Read contents of journal
-            with open(journal_path, "r") as jf:
-                jdata = json.load(jf)
-                assert jdata["session_id"] == session_id
-                assert "safety_session_id" in jdata
-                assert jdata["base_dir"] == base_dir
-        return original_robust_move(src, dst)
-
-    with patch("app.core.history._robust_move", side_effect=mock_robust_move):
-        history_manager.rollback(session_id)
-
-    # 5. Assertions
-    assert journal_found_during_move is True, (
-        "Journal was not written before file relocations!"
-    )
-    assert not journal_path.exists(), "Journal was not deleted on successful rollback!"
 
 
 @pytest.mark.anyio
@@ -120,47 +55,8 @@ async def test_scanner_detects_interrupted_rollback(mock_session_base, tmp_path)
     assert session_info["session_dir"] == str(session_dir)
 
 
-def test_step_rollback_deletes_journal_on_success(test_history_env):
-    """A completed ledger-step rollback must not leave a journal behind.
-
-    A leftover journal makes the next start report the finished undo as an
-    interrupted rollback and offer to resume it.
-    """
-    from app.core.extractor import get_file_hash
-
-    base_dir, db, cache, history_manager, db_worker = test_history_env
-
-    moved = os.path.join(base_dir, "Finance", "report.txt")
-    os.makedirs(os.path.dirname(moved), exist_ok=True)
-    with open(moved, "w") as f:
-        f.write("quarterly revenue")
-
-    steps = [
-        {
-            "step_number": 1,
-            "source_path": "report.txt",
-            "destination_path": os.path.join("Finance", "report.txt"),
-            "file_hash": get_file_hash(moved),
-            "item_type": "file",
-            "metadata": None,
-        }
-    ]
-    journal_path = Path(history_manager.db_path).parent / "rollback_journal.json"
-
-    db.worker.execute_write(
-        lambda: history_manager._rollback_from_steps(
-            "session-1", steps, base_dir, safety_session_id=None
-        )
-    )
-
-    assert os.path.exists(os.path.join(base_dir, "report.txt"))
-    assert not journal_path.exists(), (
-        "Journal was left behind after a successful step rollback"
-    )
-
-
 def test_rollback_leaves_no_active_sessions(test_history_env):
-    """After a successful undo, no session (including its safety snapshot) stays active."""
+    """After a successful undo, no session stays active."""
     base_dir, db, cache, history_manager, db_worker = test_history_env
 
     src = os.path.join(base_dir, "report.txt")
@@ -170,7 +66,10 @@ def test_rollback_leaves_no_active_sessions(test_history_env):
     session_id = history_manager.create_snapshot(base_dir)
 
     os.makedirs(os.path.join(base_dir, "Finance"))
-    shutil.move(src, os.path.join(base_dir, "Finance", "report.txt"))
+    dst = os.path.join(base_dir, "Finance", "report.txt")
+    shutil.move(src, dst)
+    seq = history_manager.moves.record_intent(session_id, src, dst)
+    history_manager.moves.mark_done(session_id, seq, dst)
 
     history_manager.rollback(session_id)
 

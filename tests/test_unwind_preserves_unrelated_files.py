@@ -21,7 +21,8 @@ def test_unwind_keeps_hidden_and_new_files(test_history_env):
     src = os.path.join(base_dir, "a.txt")
     dst = os.path.join(base_dir, "Cat", "a.txt")
     os.rename(src, dst)
-    history_manager.log_step(session_id, src, dst)
+    seq = history_manager.moves.record_intent(session_id, src, dst)
+    history_manager.moves.mark_done(session_id, seq, dst)
 
     with open(os.path.join(base_dir, "new_download.pdf"), "w") as fh:
         fh.write("user data")

@@ -233,6 +233,8 @@ def test_cross_volume_relocation_recording_and_unwind(ledger_env):
     # Move file physically to target
     os.makedirs(os.path.dirname(target_file), exist_ok=True)
     shutil.move(src_file, target_file)
+    seq = history_manager.moves.record_intent(session_id, src_file, target_file)
+    history_manager.moves.mark_done(session_id, seq, target_file)
 
     # Unwind cross-volume relocation
     unwound = history_manager.unwind_session(session_id, db=db)

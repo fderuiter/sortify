@@ -8,7 +8,13 @@ import pytest
 from app.core.db_conn import get_db_connection
 
 
-def test_incremental_sync_and_stop_on_failure(test_history_env):
+def _record_move(history_manager, session_id, src, dst):
+    """Record a finished move in the moves ledger, as the sorter does (ADR 0006)."""
+    seq = history_manager.moves.record_intent(session_id, src, dst)
+    history_manager.moves.mark_done(session_id, seq, dst)
+
+
+def test_incremental_sync_on_partial_rollback_failure(test_history_env):
     base_dir, db, cache, history_manager, db_worker = test_history_env
 
     # Create two files
@@ -31,7 +37,9 @@ def test_incremental_sync_and_stop_on_failure(test_history_env):
     file2_dst = os.path.join(base_dir, "folder", "file2.txt")
     os.makedirs(os.path.dirname(file1_dst), exist_ok=True)
     shutil.move(file1_src, file1_dst)
+    _record_move(history_manager, session_id, file1_src, file1_dst)
     shutil.move(file2_src, file2_dst)
+    _record_move(history_manager, session_id, file2_src, file2_dst)
 
     def _delete():
         conn = get_db_connection(db.db_path)
@@ -42,17 +50,19 @@ def test_incremental_sync_and_stop_on_failure(test_history_env):
     db.upsert_document(base_dir, os.path.join("folder", "file1.txt"), "hash1", "text1")
     db.upsert_document(base_dir, os.path.join("folder", "file2.txt"), "hash2", "text2")
 
-    # Mock _robust_move to fail on the second file
-    from app.core.history import _robust_move
+    # Mock resilient_move to fail on the second file
+    from app.core.resilient_file_ops import resilient_move
 
-    original_robust_move = _robust_move
+    original_resilient_move = resilient_move
 
-    def mock_robust_move(src, dst):
+    def mock_resilient_move(src, dst):
         if "file2.txt" in src or "file2.txt" in dst:
             raise OSError("Mocked permission error on file2")
-        return original_robust_move(src, dst)
+        return original_resilient_move(src, dst)
 
-    with patch("app.core.history._robust_move", side_effect=mock_robust_move):
+    with patch(
+        "app.core.resilient_file_ops.resilient_move", side_effect=mock_resilient_move
+    ):
         with pytest.raises(OSError, match="Mocked permission error on file2"):
             history_manager.rollback(session_id)
 
@@ -78,7 +88,7 @@ def test_incremental_sync_and_stop_on_failure(test_history_env):
     assert "folder/file1.txt" not in filepaths
     assert "file2.txt" not in filepaths
 
-    # 4. Session status should be 'failed'
+    # 4. The session is not marked rolled back, so the undo can be retried
     conn = get_db_connection(history_manager.db_path)
     with conn:
         cur = conn.execute(
@@ -86,7 +96,7 @@ def test_incremental_sync_and_stop_on_failure(test_history_env):
         )
         status = cur.fetchone()[0]
 
-    assert status == "failed"
+    assert status == "active"
 
 
 def test_rollback_cyclic_collision(test_history_env):
@@ -107,8 +117,11 @@ def test_rollback_cyclic_collision(test_history_env):
     # Swap A and B
     temp = os.path.join(base_dir, "temp.txt")
     shutil.move(file1_src, temp)
+    _record_move(history_manager, session_id, file1_src, temp)
     shutil.move(file2_src, file1_src)
+    _record_move(history_manager, session_id, file2_src, file1_src)
     shutil.move(temp, file2_src)
+    _record_move(history_manager, session_id, temp, file2_src)
 
     def _delete():
         conn = get_db_connection(db.db_path)

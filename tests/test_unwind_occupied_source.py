@@ -12,7 +12,8 @@ def _sort_one_file(base_dir, history_manager, name="report.txt", content="ORIGIN
     os.makedirs(dst_dir)
     dst = os.path.join(dst_dir, name)
     os.rename(src, dst)
-    history_manager.log_step(session_id, src, dst)
+    seq = history_manager.moves.record_intent(session_id, src, dst)
+    history_manager.moves.mark_done(session_id, seq, dst)
     return session_id, src, dst
 
 

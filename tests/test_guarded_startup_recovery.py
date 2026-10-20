@@ -32,6 +32,12 @@ def mock_session_base(tmp_path, monkeypatch):
     return session_base
 
 
+def _record_move(history_manager, session_id, src, dst):
+    """Record a finished move in the moves ledger, as the sorter does (ADR 0006)."""
+    seq = history_manager.moves.record_intent(session_id, src, dst)
+    history_manager.moves.mark_done(session_id, seq, dst)
+
+
 def test_resilient_move_retries_transient_lock(tmp_path, monkeypatch):
     """Test that resilient_move retries and succeeds when transient locks occur."""
     from app.core.resilient_file_ops import resilient_move
@@ -83,6 +89,7 @@ def test_unrecoverable_error_preserves_safety_storage_and_session(
     os.makedirs(branch_dir, exist_ok=True)
     trapped_file = os.path.join(branch_dir, "document.pdf")
     shutil.move(file_src, trapped_file)
+    _record_move(app_session.history_manager, session_id, file_src, trapped_file)
 
     # Attempt rollback while mocking resilient_move to always raise PermissionError
     with patch(
@@ -149,6 +156,7 @@ def test_recovery_completes_and_cleans_up_after_fixing_permissions(
     os.makedirs(branch_dir, exist_ok=True)
     trapped_file = os.path.join(branch_dir, "photo.jpg")
     shutil.move(file_src, trapped_file)
+    _record_move(app_session.history_manager, session_id, file_src, trapped_file)
 
     # 1. Rollback fails first time
     with patch(

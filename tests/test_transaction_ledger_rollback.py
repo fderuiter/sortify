@@ -133,8 +133,8 @@ def test_transaction_ledger_batch_logging(transaction_env):
     assert hashes.get("doc2.pdf") == hash2
 
 
-def test_reverse_step_rollback_with_safety_snapshot(transaction_env):
-    """Test that rollback replays transaction step entries in reverse order and generates a safety snapshot."""
+def test_reverse_rollback_restores_files_and_documents(transaction_env):
+    """Test that rollback replays the session's moves in reverse and restores files and documents."""
     base_dir, db, history_manager, db_worker = transaction_env
 
     f1 = os.path.join(base_dir, "fileA.txt")
@@ -192,10 +192,6 @@ def test_reverse_step_rollback_with_safety_snapshot(transaction_env):
     docB = db.get_document(base_dir, "fileB.txt")
     assert docA is not None
     assert docB is not None
-
-    # Verify safety snapshot session was created
-    updated_sessions = history_manager.get_sessions()
-    assert len(updated_sessions) >= 2
 
 
 def test_hash_mismatch_leaves_the_changed_file_in_place(transaction_env):
