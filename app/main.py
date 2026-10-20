@@ -256,35 +256,26 @@ def run_smoke_test():
 def _extract_bool_arg(
     args: argparse.Namespace, attr: str, default: bool = False
 ) -> bool:
-    """Safely extract boolean flag from CLI args namespace, handling MagicMock objects in tests."""
-    from unittest.mock import MagicMock
-
-    val = getattr(args, attr, default)
-    if isinstance(val, MagicMock):
-        return default
-    return bool(val)
+    """Read a boolean flag from the CLI args namespace, defaulting when absent."""
+    return bool(getattr(args, attr, default))
 
 
 def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
     """Apply command-line argument overrides to AppSettings for this run only."""
-    from unittest.mock import MagicMock
-
     max_folders = getattr(args, "max_folders", None)
-    if max_folders is not None and not isinstance(max_folders, MagicMock):
+    if max_folders is not None:
         settings.override("MAX_FOLDERS", max_folders)
 
     strategy = getattr(args, "strategy", None)
-    if strategy is not None and not isinstance(strategy, MagicMock):
+    if strategy is not None:
         settings.override("SORTING_STRATEGY", strategy)
 
     conflict_policy = getattr(args, "conflict_policy", None)
-    if conflict_policy is not None and not isinstance(conflict_policy, MagicMock):
+    if conflict_policy is not None:
         settings.override("CONFLICT_POLICY", conflict_policy)
 
     contextual_renaming = getattr(args, "contextual_renaming", None)
-    if contextual_renaming is not None and not isinstance(
-        contextual_renaming, MagicMock
-    ):
+    if contextual_renaming is not None:
         settings.override("CONTEXTUAL_RENAMING", contextual_renaming)
 
     # Handle AI consent flags and environment variables
