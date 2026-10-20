@@ -44,6 +44,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.modals.settings
 
+## `app.ui.modals.wizard`
+
+::: app.ui.modals.wizard
+
 ## `app.ui.notifications`
 
 ::: app.ui.notifications
