@@ -28,3 +28,19 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.tui
 
+## `app.ui.widgets.density_slider`
+
+::: app.ui.widgets.density_slider
+
+## `app.ui.widgets.labeled_switch`
+
+::: app.ui.widgets.labeled_switch
+
+## `app.ui.widgets.path_diff`
+
+::: app.ui.widgets.path_diff
+
+## `app.ui.widgets.vim_tree`
+
+::: app.ui.widgets.vim_tree
+

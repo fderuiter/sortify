@@ -1,6 +1,5 @@
 """Textual full-screen terminal interface with interactive tree and modal dialogs."""
 
-import difflib
 import logging
 import os
 import sys
@@ -9,16 +8,12 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set, Tuple, Union
 
-from rich.table import Table
 from rich.text import Text
 from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
-from textual.message import Message
-from textual.reactive import reactive
 from textual.screen import ModalScreen
-from textual.widget import Widget
 from textual.widgets import (
     Button,
     Checkbox,
@@ -43,317 +38,20 @@ from app.ui.a11y import A11yViolation as A11yViolation
 from app.ui.a11y import inspect_tui_component as inspect_tui_component
 from app.ui.heading import Heading
 from app.ui.notifications import TROUBLESHOOTING_URL
+from app.ui.widgets.density_slider import DensitySlider
+from app.ui.widgets.labeled_switch import LabeledSwitch
+from app.ui.widgets.path_diff import (
+    _diff_highlight_paths as _diff_highlight_paths,
+)
+from app.ui.widgets.path_diff import (
+    format_folder_path_comparison,
+    format_side_by_side_path_comparison,
+)
+from app.ui.widgets.vim_tree import VimTree
 
 logger = logging.getLogger(__name__)
 
 EXECUTE_NEEDS_SCAN_TOOLTIP = "Execution disabled: Scan a folder first [Ctrl+S]"
-
-
-def _diff_highlight_paths(src_path: str, tgt_path: str) -> Tuple[Text, Text]:
-    """Compute contrasting color diff highlighting for two path strings."""
-    if not src_path and not tgt_path:
-        return Text("(None)", style="dim"), Text("(None)", style="dim")
-
-    src_clean = src_path or "(None)"
-    tgt_clean = tgt_path or "(None)"
-
-    if src_clean == tgt_clean:
-        return Text(src_clean, style="dim white"), Text(tgt_clean, style="dim white")
-
-    matcher = difflib.SequenceMatcher(None, src_clean, tgt_clean)
-    src_formatted = Text()
-    tgt_formatted = Text()
-
-    for tag, i1, i2, j1, j2 in matcher.get_opcodes():
-        if tag == "equal":
-            src_formatted.append(src_clean[i1:i2])
-            tgt_formatted.append(tgt_clean[j1:j2])
-        elif tag == "replace":
-            src_formatted.append(src_clean[i1:i2], style="bold red")
-            tgt_formatted.append(tgt_clean[j1:j2], style="bold green")
-        elif tag == "delete":
-            src_formatted.append(src_clean[i1:i2], style="bold red")
-        elif tag == "insert":
-            tgt_formatted.append(tgt_clean[j1:j2], style="bold green")
-
-    return src_formatted, tgt_formatted
-
-
-def format_side_by_side_path_comparison(
-    source_path: str,
-    target_path: str,
-    base_dir: Optional[str] = None,
-) -> Table:
-    """Render split side-by-side columns comparing source and target paths with contrasting color diffs."""
-    table = Table(
-        expand=True,
-        show_header=True,
-        header_style="bold cyan",
-        box=None,
-    )
-    table.add_column("Source Path (Current)", style="bold", ratio=1)
-    table.add_column("Target Path (Proposed)", style="bold", ratio=1)
-
-    src_norm = source_path.replace("\\", "/") if source_path else ""
-    tgt_norm = target_path.replace("\\", "/") if target_path else ""
-
-    base_norm = base_dir.replace("\\", "/") if base_dir else ""
-    if base_norm and not base_norm.endswith("/"):
-        base_norm += "/"
-
-    src_rel = (
-        src_norm[len(base_norm) :]
-        if base_norm and src_norm.lower().startswith(base_norm.lower())
-        else src_norm
-    )
-    tgt_rel = (
-        tgt_norm[len(base_norm) :]
-        if base_norm and tgt_norm.lower().startswith(base_norm.lower())
-        else tgt_norm
-    )
-
-    src_rel_fmt, tgt_rel_fmt = _diff_highlight_paths(src_rel, tgt_rel)
-    table.add_row(src_rel_fmt, tgt_rel_fmt)
-
-    if base_norm and (src_norm != src_rel or tgt_norm != tgt_rel):
-        src_full_fmt, tgt_full_fmt = _diff_highlight_paths(src_norm, tgt_norm)
-        table.add_row(src_full_fmt, tgt_full_fmt)
-
-    return table
-
-
-def format_folder_path_comparison(
-    files_info: List[Dict[str, Any]],
-    base_dir: Optional[str] = None,
-    max_items: int = 8,
-) -> Table:
-    """Render side-by-side path comparison table for items in a folder subtree."""
-    table = Table(
-        expand=True,
-        show_header=True,
-        header_style="bold cyan",
-        box=None,
-    )
-    table.add_column("Source Path (Current)", style="bold", ratio=1)
-    table.add_column("Target Path (Proposed)", style="bold", ratio=1)
-
-    if not files_info:
-        table.add_row(
-            Text("No files in folder", style="dim"),
-            Text("No files in folder", style="dim"),
-        )
-        return table
-
-    for fi in files_info[:max_items]:
-        src_path = fi.get("filepath", "")
-        key = fi.get("key") or fi.get("target_filename") or ""
-        folder = fi.get("folder", "")
-        target_fn = fi.get("target_filename") or key
-        tgt_rel = (
-            os.path.join(folder, target_fn).replace("\\", "/")
-            if folder and folder != "(Root)"
-            else target_fn
-        )
-
-        src_rel = src_path
-        if base_dir and src_path:
-            base_norm = base_dir.replace("\\", "/").rstrip("/") + "/"
-            src_norm = src_path.replace("\\", "/")
-            if src_norm.lower().startswith(base_norm.lower()):
-                src_rel = src_norm[len(base_norm) :]
-
-        src_fmt, tgt_fmt = _diff_highlight_paths(src_rel, tgt_rel)
-        table.add_row(src_fmt, tgt_fmt)
-
-    if len(files_info) > max_items:
-        remaining = len(files_info) - max_items
-        table.add_row(
-            Text(f"... and {remaining} more items", style="dim italic"),
-            Text(f"... and {remaining} more items", style="dim italic"),
-        )
-
-    return table
-
-
-class LabeledSwitch(Horizontal):
-    """A horizontal container combining a Switch and an associated Label with container-level click delegation."""
-
-    DEFAULT_CSS = """
-    LabeledSwitch {
-        margin-top: 1;
-        margin-bottom: 1;
-        height: 3;
-        align: left middle;
-    }
-    """
-
-    def __init__(
-        self,
-        label: str,
-        value: bool = False,
-        switch_id: str | None = None,
-        tooltip: str | None = None,
-        *,
-        name: str | None = None,
-        id: str | None = None,
-        classes: str | None = None,
-        disabled: bool = False,
-    ) -> None:
-        cls_list = ["switch-row"]
-        if classes:
-            cls_list.append(classes)
-        super().__init__(
-            name=name,
-            id=id,
-            classes=" ".join(cls_list),
-            disabled=disabled,
-        )
-        self.label_text = label
-        effective_switch_id = switch_id or (
-            id if id and id.startswith("switch-") else None
-        )
-        self.switch = Switch(value=value, id=effective_switch_id)
-        if tooltip:
-            self.tooltip = tooltip
-            self.switch.tooltip = tooltip
-        formatted_label = label if label.startswith(" ") else f" {label}"
-        self.label_widget = Label(formatted_label)
-
-    def compose(self) -> ComposeResult:
-        """Yield child Switch and Label controls."""
-        yield self.switch
-        yield self.label_widget
-
-    @property
-    def value(self) -> bool:
-        """Get the underlying switch value."""
-        return self.switch.value
-
-    @value.setter
-    def value(self, val: bool) -> None:
-        """Set the underlying switch value."""
-        self.switch.value = val
-
-    def _is_switch_target(self, target: Any) -> bool:
-        """Check if target widget is the child switch or contained within it."""
-        if target is None:
-            return False
-        curr = target
-        while curr is not None and curr is not self:
-            if curr is self.switch:
-                return True
-            curr = getattr(curr, "parent", None)
-        return False
-
-    def on_click(self, event: events.Click) -> None:
-        """Handle mouse click events on container or label by toggling and focusing the switch."""
-        if self.disabled or self.switch.disabled:
-            return
-
-        target_widget = getattr(event, "widget", getattr(event, "control", None))
-        if not self._is_switch_target(target_widget):
-            self.switch.value = not self.switch.value
-            self.switch.focus()
-            event.stop()
-        else:
-            self.switch.focus()
-
-
-class DensitySlider(Widget):
-    """Interactive slider widget for text density threshold adjustment."""
-
-    can_focus = True
-    value = reactive(50)
-
-    DEFAULT_CSS = """
-    DensitySlider {
-        width: 100%;
-        height: 1;
-        margin-top: 1;
-        margin-bottom: 1;
-    }
-    DensitySlider:focus {
-        color: $accent;
-        text-style: bold;
-    }
-    """
-
-    class Changed(Message):
-        """Event posted when slider value changes."""
-
-        def __init__(self, slider: "DensitySlider", value: int) -> None:
-            self.slider = slider
-            self.value = value
-            super().__init__()
-
-        @property
-        def control(self) -> Widget:
-            """Return control widget associated with this message."""
-            return self.slider
-
-    def __init__(
-        self,
-        value: int = 50,
-        min_value: int = 0,
-        max_value: int = 500,
-        step: int = 5,
-        *,
-        name: str | None = None,
-        id: str | None = None,
-        classes: str | None = None,
-        disabled: bool = False,
-    ) -> None:
-        super().__init__(name=name, id=id, classes=classes, disabled=disabled)
-        self.min_value = min_value
-        self.max_value = max_value
-        self.step = step
-        # set_reactive avoids a pre-mount watcher firing with the class default.
-        self.set_reactive(DensitySlider.value, max(min_value, min(max_value, value)))
-
-    def watch_value(self, new_value: int) -> None:
-        """Emit Changed event on value change."""
-        self.post_message(self.Changed(self, new_value))
-
-    def on_key(self, event: events.Key) -> None:
-        """Handle keyboard key events to update slider position."""
-        if event.key in ("left", "down"):
-            self.value = max(self.min_value, self.value - self.step)
-            event.stop()
-        elif event.key in ("right", "up"):
-            self.value = min(self.max_value, self.value + self.step)
-            event.stop()
-        elif event.key == "page_down":
-            self.value = max(self.min_value, self.value - self.step * 5)
-            event.stop()
-        elif event.key == "page_up":
-            self.value = min(self.max_value, self.value + self.step * 5)
-            event.stop()
-        elif event.key == "home":
-            self.value = self.min_value
-            event.stop()
-        elif event.key == "end":
-            self.value = self.max_value
-            event.stop()
-
-    def on_click(self, event: events.Click) -> None:
-        """Handle mouse click to jump slider to position."""
-        width = self.size.width
-        if width > 0:
-            pct = max(0.0, min(1.0, event.x / float(width)))
-            new_val = self.min_value + int(pct * (self.max_value - self.min_value))
-            rem = new_val % self.step
-            if rem != 0:
-                new_val = new_val - rem + (self.step if rem >= self.step / 2 else 0)
-            self.value = max(self.min_value, min(self.max_value, new_val))
-
-    def render(self) -> str:
-        """Render visual slider bar string representation."""
-        width = max(10, self.size.width - 8) if self.size.width > 8 else 20
-        pct = (self.value - self.min_value) / max(1, (self.max_value - self.min_value))
-        pos = int(pct * (width - 1))
-        pos = max(0, min(width - 1, pos))
-        bar = "━" * pos + "●" + "─" * (width - 1 - pos)
-        return f"[{bar}] {self.value}"
 
 
 class RenameModal(A11yMixin, ModalScreen[Optional[str]]):
@@ -6441,90 +6139,6 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
             f"Re-inspection completed for '{job_id}'. Resulting status: {new_st}."
         )
         self.fetch_records_async()
-
-
-class VimTree(Tree):
-    """Tree control with native vim motion navigation (h, j, k, l)."""
-
-    def on_key(self, event: events.Key) -> None:
-        """Handle key events for native vim tree navigation."""
-        if not self.has_focus:
-            return
-
-        if event.key == "j":
-            self.action_cursor_down()
-            if getattr(self.app, "visual_select_active", False) and self.cursor_node:
-                self.app.register_visual_selected_node(self.cursor_node)
-            event.stop()
-            event.prevent_default()
-        elif event.key == "k":
-            self.action_cursor_up()
-            if getattr(self.app, "visual_select_active", False) and self.cursor_node:
-                self.app.register_visual_selected_node(self.cursor_node)
-            event.stop()
-            event.prevent_default()
-        elif event.key == "h":
-            node = self.cursor_node
-            if node:
-                if node.is_expanded and node.children:
-                    node.collapse()
-                else:
-                    self.action_cursor_parent()
-            event.stop()
-            event.prevent_default()
-        elif event.key == "l":
-            node = self.cursor_node
-            if node:
-                if not node.is_expanded and (node.children or node.allow_expand):
-                    node.expand()
-                elif node.is_expanded and node.children:
-                    self.action_cursor_down()
-            event.stop()
-            event.prevent_default()
-        elif event.key in ("space", " "):
-            if hasattr(self.app, "action_toggle_selection"):
-                self.app.action_toggle_selection()
-            event.stop()
-            event.prevent_default()
-        elif event.key in ("x", "X"):
-            if hasattr(self.app, "action_exclude_selected"):
-                self.app.action_exclude_selected()
-            event.stop()
-            event.prevent_default()
-        elif event.key in ("i", "I"):
-            if hasattr(self.app, "action_include_selected"):
-                self.app.action_include_selected()
-            event.stop()
-            event.prevent_default()
-        elif event.key in ("r", "R"):
-            if hasattr(self.app, "action_reassign_selected"):
-                self.app.action_reassign_selected()
-            event.stop()
-            event.prevent_default()
-        elif event.key in ("v", "V"):
-            if hasattr(self.app, "action_visual_range_select"):
-                self.app.action_visual_range_select()
-            event.stop()
-            event.prevent_default()
-        elif event.key in ("a", "A"):
-            if hasattr(self.app, "action_toggle_select_all"):
-                self.app.action_toggle_select_all()
-            event.stop()
-            event.prevent_default()
-        elif event.key in ("g", "G", "shift+g"):
-            if hasattr(self.app, "action_generate_sample_corpus"):
-                self.app.action_generate_sample_corpus()
-            event.stop()
-            event.prevent_default()
-        elif event.key in ("enter", "return"):
-            node = self.cursor_node
-            if node:
-                if node.children or node.allow_expand:
-                    node.toggle()
-                else:
-                    self.select_node(node)
-            event.stop()
-            event.prevent_default()
 
 
 class AutoSorterTUI(A11yMixin, App):
