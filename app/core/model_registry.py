@@ -99,10 +99,7 @@ class SharedModelRegistry:
                 from app.config import AppSettings
 
                 settings = AppSettings()
-                from unittest.mock import Mock
-
-                if not isinstance(settings, Mock) and not isinstance(AppSettings, Mock):
-                    self._cached_settings = settings
+                self._cached_settings = settings
             limit = getattr(settings, "MODEL_THREADS", 2)
             if not isinstance(limit, int) or limit < 1 or limit > 32:
                 return 2

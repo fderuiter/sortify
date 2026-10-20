@@ -65,14 +65,11 @@ def test_multiprocess_clustering_execution():
 
     # Verify OS niceness/priority on Unix-like platforms
     if sys.platform != "win32":
-        assert strategy._last_worker_niceness is not None
-        if "CI" not in os.environ and "PYTEST_CURRENT_TEST" not in os.environ:
-            if sys.platform == "darwin":
-                assert strategy._last_worker_niceness in (9, 19)
-            else:
-                assert strategy._last_worker_niceness == 19
+        # The spawned child lowers its own priority, outside the test process.
+        if sys.platform == "darwin":
+            assert strategy._last_worker_niceness in (9, 19)
         else:
-            assert strategy._last_worker_niceness >= 0
+            assert strategy._last_worker_niceness == 19
 
 
 def test_multiprocess_clustering_cancellation():
