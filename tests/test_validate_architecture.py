@@ -115,3 +115,37 @@ def test_import_layers_allow_downward_and_similar_names():
 def test_import_layers_have_no_docs_generator_exemption():
     # The docs generator moved to scripts/, so app.cli gets no exemption.
     assert _layer_errors("app/cli/generate_docs.py", "import sandbox_cli\n")
+
+
+def _settings_key_errors(
+    source, declared=frozenset({"MAX_WORKERS", "MAX_SPREADSHEET_ROWS"})
+):
+    import ast
+
+    from scripts.validate_architecture import validate_settings_keys
+
+    errors = []
+    validate_settings_keys(errors, "app/core/x.py", ast.parse(source), set(declared))
+    return errors
+
+
+def test_settings_keys_flag_undeclared_getattr_reads():
+    assert _settings_key_errors('getattr(settings, "WORKER_CONCURRENCY", 4)\n')
+    assert _settings_key_errors('getattr(self.settings, "PROTECTED_DIRECTORIES")\n')
+    assert _settings_key_errors('getattr(runtime_settings, "MOVE_CHUNK_SIZE", None)\n')
+
+
+def test_settings_keys_allow_declared_keys_and_unrelated_getattrs():
+    assert not _settings_key_errors('getattr(settings, "MAX_WORKERS", 4)\n')
+    assert not _settings_key_errors('getattr(settings, "MAX_SPREADSHEET_ROWS", 10)\n')
+    assert not _settings_key_errors('getattr(settings, "cancel_check", None)\n')
+    assert not _settings_key_errors('getattr(obj, "UNDECLARED", None)\n')
+
+
+def test_declared_settings_keys_include_fields_and_property_aliases():
+    from scripts.validate_architecture import declared_settings_keys
+
+    keys = declared_settings_keys()
+    assert {"MAX_QUEUE_CAPACITY", "DEDUP_WINDOW", "WORKER_TIMEOUT"} <= keys
+    assert "MAX_SPREADSHEET_ROWS" in keys
+    assert "WORKER_CONCURRENCY" not in keys

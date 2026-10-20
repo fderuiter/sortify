@@ -1489,23 +1489,13 @@ class AsyncMoveEngine:
             or getattr(runtime_settings, "cancel_event", None)
         )
 
-        effective_chunk_size = (
-            self.chunk_size
-            or getattr(runtime_settings, "MOVE_CHUNK_SIZE", None)
-            or getattr(runtime_settings, "CHUNK_SIZE", None)
-            or batch_size
-        )
+        effective_chunk_size = self.chunk_size or batch_size
 
         effective_max_workers = (
             self.max_workers or getattr(runtime_settings, "MAX_WORKERS", None) or 1
         )
 
-        effective_priority = (
-            priority
-            or getattr(runtime_settings, "priority", None)
-            or getattr(runtime_settings, "MOVE_PRIORITY", None)
-            or getattr(runtime_settings, "PRIORITY", None)
-        )
+        effective_priority = priority or getattr(runtime_settings, "priority", None)
 
         move_items = _collect_move_items(base_dir, plan, priority=effective_priority)
         total_items = len(move_items)
