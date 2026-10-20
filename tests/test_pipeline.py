@@ -149,3 +149,55 @@ def test_cancelled_result_says_so():
 
     assert not result.ok
     assert result.describe() == "Cancelled: 0 moved."
+
+
+def _files_in(folder) -> list[str]:
+    return sorted(p.name for p in Path(folder).rglob("*") if p.is_file())
+
+
+def test_execute_reports_the_session_it_recorded(session):
+    _plan, result = SortPipeline(session).run()
+
+    assert result.session_id
+
+
+def test_undo_puts_every_sorted_file_back(session):
+    pipeline = SortPipeline(session)
+    _plan, sorted_result = pipeline.run()
+
+    result = pipeline.undo(sorted_result.session_id)
+
+    assert result.ok
+    assert result.session_id == sorted_result.session_id
+    assert sorted(Path(p).name for p in result.moved) == [
+        "finance_doc.txt",
+        "health_doc.txt",
+        "tech_doc.txt",
+    ]
+    assert result.describe() == "3 moved."
+    for name in ("finance_doc.txt", "health_doc.txt", "tech_doc.txt"):
+        assert (Path(session.base_dir) / name).is_file()
+
+
+def test_undo_reports_a_file_changed_since_the_sort_as_failed(session):
+    pipeline = SortPipeline(session)
+    _plan, sorted_result = pipeline.run()
+    base = Path(session.base_dir)
+    (changed,) = [p for p in base.rglob("tech_doc.txt")]
+    changed.write_text("Edited after the sort.")
+
+    result = pipeline.undo(sorted_result.session_id)
+
+    assert not result.ok
+    assert [Path(p).name for p, _reason in result.failed] == ["tech_doc.txt"]
+    assert sorted(Path(p).name for p in result.moved) == [
+        "finance_doc.txt",
+        "health_doc.txt",
+    ]
+    assert changed.is_file()
+    assert not (base / "tech_doc.txt").exists()
+
+
+def test_undo_of_an_unknown_session_raises(session):
+    with pytest.raises(ValueError):
+        SortPipeline(session).undo("no-such-session")

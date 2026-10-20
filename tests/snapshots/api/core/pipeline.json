@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "30c89ac4ae631e27fc8e2d6b123019f13efeadf5ac8965e7469441de03df6d14"
+    "checksum": "641184d49da4b63c895b3df6a9088aa192aa198a40143b0d75bbd1383065b3a0"
   },
   "classes": [
     {
@@ -138,6 +138,29 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "undo",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "ignore_missing"
+            }
+          ],
+          "returns": "SortResult"
         }
       ]
     },

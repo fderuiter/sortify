@@ -1531,6 +1531,7 @@ class AsyncMoveEngine:
         step_counter = [1]
         has_flushed_db = False
         summary: dict[str, Any] = {
+            "session_id": session_id,
             "deleted_folders": 0,
             "protected_folders": 0,
             "cancelled": False,
