@@ -848,7 +848,7 @@ class IncrementalAnalyzer:
                     PolicyEngine.evaluate_policies(
                         f,
                         doc,
-                        cast(str, status_match),
+                        status_match,
                         sorted_policies,
                         return_halting=True,
                         is_sorted=True,
@@ -1464,12 +1464,9 @@ class IncrementalAnalyzer:
                         self.stop_words,
                         max_depth,
                         max_features,
-                        # The ClusteringStrategy protocol annotates these as
-                        # List[list] / list | dict, but strategies accept None
-                        # vector slots and a validated CorpusPreFetchBatchModel.
-                        pre_fetched_vectors=cast(Any, pre_fetched_vectors),
+                        pre_fetched_vectors=pre_fetched_vectors,
                         cancel_check=cancel_check,
-                        pre_fetched_corpus=cast(Any, pre_fetched_corpus),
+                        pre_fetched_corpus=pre_fetched_corpus,
                     )
                     if hasattr(plan, "plan") and isinstance(plan.plan, dict):
                         plan = plan.plan

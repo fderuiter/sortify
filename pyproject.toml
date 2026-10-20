@@ -136,12 +136,9 @@ invalid-parameter-default = "ignore"
 include = [
     "app/ui/**",
     "app/cli/**",
-    "app/main.py",
-    "app/core/analyzer_strategies.py",
     "app/core/db.py",
     "app/core/db_conn.py",
     "app/core/db_worker.py",
-    "app/core/extractor_strategies.py",
     "app/core/quarantine_interceptor.py",
     "app/core/semantic_embeddings.py",
     "app/core/session.py",

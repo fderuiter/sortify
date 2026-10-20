@@ -67,7 +67,7 @@ class PolicyEngine:
 
     @staticmethod
     def match_policy(
-        rule: dict, file_path: str, doc_text: str, status_match: str
+        rule: dict, file_path: str, doc_text: str, status_match: str | None
     ) -> bool:
         """Evaluate a single compliance policy rule against a file."""
         rule_type = (
@@ -129,7 +129,7 @@ class PolicyEngine:
         cls,
         file_path: str,
         doc_text: str,
-        status_match: str,
+        status_match: str | None,
         policies: list[dict],
         return_halting: bool = False,
         is_sorted: bool = False,

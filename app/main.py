@@ -9,6 +9,7 @@ import os
 import re
 import sys
 from pathlib import Path
+from typing import Any, cast
 
 from app.config import AppSettings
 from app.core.domain_contracts import _make_json_serializable
@@ -838,7 +839,7 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
                     )
         sys.exit(0)
 
-    target_session = None
+    target_session: dict[str, Any] | None = None
     if session_id_arg:
         for s in all_sessions:
             if s["session_id"] == session_id_arg:
@@ -874,7 +875,8 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
                 print(msg, file=sys.stderr)
             sys.exit(1)
 
-    target_session_id = target_session["session_id"]
+    # --latest is the default, so a branch above picked a session or exited.
+    target_session_id: str = cast(dict[str, Any], target_session)["session_id"]
 
     try:
         from app.core.history import open_session_history
