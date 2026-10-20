@@ -224,10 +224,6 @@ async def test_daemon_triage_unclassified_fallback(tmp_path):
 
 
 @pytest.mark.anyio
-@pytest.mark.xfail(
-    strict=True,
-    reason="#907: quarantine release leaves a random_file_1.dat duplicate behind",
-)
 async def test_daemon_triage_leaves_no_duplicate(tmp_path):
     from app.core.db_conn import clear_connection_cache
 
