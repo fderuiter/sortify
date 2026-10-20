@@ -22,6 +22,7 @@ from app.core.resilient_file_ops import (
     _set_posix_mode,
     atomic_quarantine_relocation,
     resilient_file_hash,
+    resilient_remove,
 )
 from app.core.text_utils import sanitize_secret_patterns
 
@@ -164,6 +165,19 @@ class QuarantineInterceptorService:
             return fallback_dir
 
         return candidate_dir
+
+    @staticmethod
+    def _is_same_content(staged_path: str, dest_path: str) -> bool:
+        """Whether `dest_path` already holds exactly the bytes staged at `staged_path`."""
+        if not (os.path.isfile(staged_path) and os.path.isfile(dest_path)):
+            return False
+        if os.path.samefile(staged_path, dest_path):
+            return False
+        try:
+            return resilient_file_hash(staged_path) == resilient_file_hash(dest_path)
+        except Exception:
+            logger.debug("Could not compare staged and release files", exc_info=True)
+            return False
 
     def stage_incoming_file(
         self,
@@ -603,8 +617,15 @@ class QuarantineInterceptorService:
                 os.makedirs(dest_dir, exist_ok=True)
                 dest_file_path = os.path.join(dest_dir, os.path.basename(orig_rel_path))
 
+                # Releasing back over the unchanged original (the daemon stages a
+                # copy and leaves the original in place): keep the original rather
+                # than relocating the staged copy to a free `<name>_1` (#907).
+                release_source = staged_path
+                if self._is_same_content(staged_path, dest_file_path):
+                    release_source = None
+
                 with atomic_quarantine_relocation(
-                    staged_path, dest_file_path
+                    release_source, dest_file_path
                 ) as actual_dest:
                     self.db.update_quarantine_status(
                         job_id=job_id,
@@ -627,6 +648,8 @@ class QuarantineInterceptorService:
                         final_hash,
                         str(extracted_text),
                     )
+                if release_source is None and os.path.exists(staged_path):
+                    resilient_remove(staged_path)
 
             res = self.db.get_quarantine_record(job_id)
             if isinstance(res, dict):
