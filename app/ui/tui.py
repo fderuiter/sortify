@@ -7338,6 +7338,7 @@ class AutoSorterTUI(A11yMixin, App):
         """Rollback interrupted sorting operation."""
         import shutil
 
+        from app.core.pipeline import SortPipeline
         from app.core.session import AppSession
 
         base_dir = session_info.get("base_dir") or self.base_dir
@@ -7348,14 +7349,17 @@ class AutoSorterTUI(A11yMixin, App):
                 temp_session = AppSession(
                     self.settings, base_dir, session_id=session_id
                 )
-                if hasattr(temp_session, "rollback"):
-                    temp_session.rollback(session_id, True)
-                elif hasattr(temp_session, "history_manager"):
-                    temp_session.history_manager.unwind_session(
-                        session_id, temp_session.db
+                try:
+                    result = SortPipeline(temp_session).undo(
+                        session_id, ignore_missing=True
                     )
-                temp_session.close()
-                rollback_success = True
+                finally:
+                    temp_session.close()
+                rollback_success = result.ok
+                if not result.ok:
+                    logger.error(
+                        f"Session rollback left files in place: {result.failed}"
+                    )
             except Exception as e:
                 logger.error(f"Error during session rollback: {e}")
 
