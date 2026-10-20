@@ -67,20 +67,6 @@ from app.main import main
 sys.exit(main())
 """
 
-# A crash after a file has moved but before its ledger row is written leaves
-# that file in its new folder, and undo still reports success. The single move
-# ledger in ADR 0006 (#714) fixes this; strict xfail turns into a failure the
-# day it does, so whoever lands the fix removes these marks.
-UNRESTORED_REASON = (
-    "crash between a move and its ledger update leaves the file unrestored "
-    "while undo reports success (ADR 0006, #714)"
-)
-UNRESTORED_AFTER_CRASH = pytest.mark.xfail(strict=True, reason=UNRESTORED_REASON)
-# Moves run on several workers, so a crash before the k-th move can still catch
-# another worker between its move and its ledger update. That race hits some
-# runs and not others, so this mark can't be strict.
-UNRESTORED_SOMETIMES = pytest.mark.xfail(strict=False, reason=UNRESTORED_REASON)
-
 TOPICS = {
     "fin": "quarterly revenue budget invoice tax ledger profit expense balance fiscal",
     "tech": "python kubernetes docker server deployment api database backend cluster",
@@ -145,9 +131,9 @@ def _cli(work: Path, *args: str, crash_at: int = 0, crash_mode: str = "after"):
     [
         (1, "before", 1),
         (2, "after", 1),
-        pytest.param(3, "before", 17, marks=UNRESTORED_SOMETIMES),
-        pytest.param(4, "after", 17, marks=UNRESTORED_AFTER_CRASH),
-        pytest.param(5, "after", 30, marks=UNRESTORED_AFTER_CRASH),
+        (3, "before", 17),
+        (4, "after", 17),
+        (5, "after", 30),
         (6, "after", 0),  # no crash: a full sort, then undo
     ],
 )

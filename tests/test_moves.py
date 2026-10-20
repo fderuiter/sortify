@@ -218,3 +218,127 @@ def test_store_builds_moves_for_old_sessions_it_imports(tmp_path):
         (2, "/d/b.txt", "done"),
     ]
     assert [m.src for m in ledger.list_moves("s2")] == ["/d/x.txt"]
+
+
+# Step 3 of #714: undo replays the moves table.
+
+
+def _cut_off_after_intent(history, session_id, seq):
+    """Put a move back to its intent row, as a crash right after the move leaves it."""
+    conn = get_db_connection(history.db_path)
+    with conn:
+        conn.execute(
+            "UPDATE moves SET state = 'intent' WHERE session_id = ? AND seq = ?",
+            (session_id, seq),
+        )
+
+
+def test_undo_restores_a_move_a_crash_cut_off_before_its_update(env):
+    base_dir, db, history = env
+    (base_dir / "a.txt").write_bytes(b"alpha")
+    (base_dir / "b.txt").write_bytes(b"beta")
+    execute_moves(str(base_dir), _plan("Docs", "a.txt", "b.txt"), db, history)
+    session_id = _only_session(history)
+    _cut_off_after_intent(history, session_id, 2)
+
+    history.rollback(session_id)
+
+    assert (base_dir / "a.txt").read_bytes() == b"alpha"
+    assert (base_dir / "b.txt").read_bytes() == b"beta"
+    assert not (base_dir / "Docs").exists()
+
+
+def test_undo_finds_a_cut_off_move_that_landed_under_another_name(env):
+    base_dir, db, history = env
+    (base_dir / "a.txt").write_bytes(b"alpha")
+    execute_moves(str(base_dir), _plan("Docs", "a.txt"), db, history)
+    session_id = _only_session(history)
+    _cut_off_after_intent(history, session_id, 1)
+    # The move found its target taken and picked a suffixed name.
+    os.rename(base_dir / "Docs" / "a.txt", base_dir / "Docs" / "a_1.txt")
+    (base_dir / "Docs" / "a.txt").write_bytes(b"someone else's file")
+
+    history.rollback(session_id)
+
+    assert (base_dir / "a.txt").read_bytes() == b"alpha"
+    assert (base_dir / "Docs" / "a.txt").read_bytes() == b"someone else's file"
+    assert not (base_dir / "Docs" / "a_1.txt").exists()
+
+
+def test_undo_leaves_a_file_whose_intent_never_moved_it(env):
+    base_dir, db, history = env
+    (base_dir / "a.txt").write_bytes(b"alpha")
+    execute_moves(str(base_dir), _plan("Docs", "a.txt"), db, history)
+    session_id = _only_session(history)
+    # A crash before the second move ran: its source is untouched.
+    (base_dir / "c.txt").write_bytes(b"gamma")
+    (base_dir / "Docs" / "c.txt").write_bytes(b"gamma")
+    history.moves.record_intent(
+        session_id,
+        str(base_dir / "c.txt"),
+        str(base_dir / "Docs" / "c.txt"),
+        src_sha256=_sha256(b"gamma"),
+        size=5,
+    )
+
+    history.rollback(session_id)
+
+    assert (base_dir / "a.txt").read_bytes() == b"alpha"
+    assert (base_dir / "c.txt").read_bytes() == b"gamma"
+    assert (base_dir / "Docs" / "c.txt").read_bytes() == b"gamma"
+
+
+def test_overwrite_journals_the_displaced_path_before_moving_it(env, monkeypatch):
+    base_dir, db, history = env
+    (base_dir / "a.txt").write_bytes(b"new")
+    (base_dir / "Docs").mkdir()
+    (base_dir / "Docs" / "a.txt").write_bytes(b"old")
+    real_move = resilient_file_ops.resilient_move
+    seen_on_disk = []
+
+    def watching_move(src, dst, *args, **kwargs):
+        if str(src) == str(base_dir / "Docs" / "a.txt"):
+            conn = get_db_connection(history.db_path)
+            seen_on_disk.extend(
+                conn.execute("SELECT state, displaced FROM moves").fetchall()
+            )
+        return real_move(src, dst, *args, **kwargs)
+
+    monkeypatch.setattr(resilient_file_ops, "resilient_move", watching_move)
+
+    execute_moves(
+        str(base_dir),
+        _plan("Docs", "a.txt"),
+        db,
+        history,
+        runtime_settings=SimpleNamespace(CONFLICT_POLICY="overwrite"),
+    )
+
+    ((state, displaced),) = seen_on_disk
+    assert state == "intent"
+    (move,) = history.moves.list_moves(_only_session(history))
+    assert displaced == move.displaced
+
+    history.rollback(_only_session(history))
+
+    assert (base_dir / "a.txt").read_bytes() == b"new"
+    assert (base_dir / "Docs" / "a.txt").read_bytes() == b"old"
+
+
+def test_a_file_never_moves_without_its_intent_row(env, monkeypatch):
+    base_dir, db, history = env
+    (base_dir / "a.txt").write_bytes(b"alpha")
+
+    def no_ledger(*args, **kwargs):
+        raise sqlite3.OperationalError("disk full")
+
+    monkeypatch.setattr(history.moves, "record_intent", no_ledger)
+
+    summary = None
+    try:
+        summary = execute_moves(str(base_dir), _plan("Docs", "a.txt"), db, history)
+    except Exception:
+        pass
+
+    assert (base_dir / "a.txt").read_bytes() == b"alpha", summary
+    assert not (base_dir / "Docs" / "a.txt").exists()

@@ -198,8 +198,8 @@ def test_reverse_step_rollback_with_safety_snapshot(transaction_env):
     assert len(updated_sessions) >= 2
 
 
-def test_hash_mismatch_halts_rollback_and_restores_safety_state(transaction_env):
-    """Test that mismatched file content hash during rollback halts step replay and restores safety state."""
+def test_hash_mismatch_leaves_the_changed_file_in_place(transaction_env):
+    """A file that changed since the sort is reported as a conflict and left where it is (ADR 0006)."""
     base_dir, db, history_manager, db_worker = transaction_env
 
     f1 = os.path.join(base_dir, "original.txt")
@@ -231,9 +231,9 @@ def test_hash_mismatch_halts_rollback_and_restores_safety_state(transaction_env)
     with open(moved_file, "w") as f:
         f.write("TAMPERED DATA")
 
-    # Rollback should detect hash mismatch, halt, restore state from safety snapshot, and raise ValueError
-    with pytest.raises(ValueError, match="Rollback halted"):
+    with pytest.raises(ValueError, match="hash mismatch"):
         history_manager.rollback(session_id)
 
-    # State restored from safety snapshot: the file at "Sorted/original.txt" should remain/be restored as tampered or safety state
-    assert os.path.exists(moved_file)
+    with open(moved_file) as f:
+        assert f.read() == "TAMPERED DATA"
+    assert not os.path.exists(f1)

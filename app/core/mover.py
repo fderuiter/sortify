@@ -450,15 +450,25 @@ def overwrite_backup_dir(base_dir: str, session_id: str) -> str:
     return os.path.join(base_dir, OVERWRITE_BACKUP_DIR, session_id)
 
 
-def _displace_for_overwrite(dest_path: str, base_dir: str, session_id) -> str:
-    """Move the file at dest_path into the session's backup folder instead of deleting it."""
+def _displace_for_overwrite(
+    dest_path: str, base_dir: str, session_id, journal=None
+) -> str:
+    """Move the file at dest_path into the session's backup folder instead of deleting it.
+
+    ``journal(path)`` is called with the backup path before the file moves, and
+    again if the move had to pick another name, so undo can always find it.
+    """
     from app.core.resilient_file_ops import resilient_move
 
-    backup_path = os.path.join(
+    planned = os.path.join(
         overwrite_backup_dir(base_dir, session_id or f"nosession_{uuid.uuid4().hex}"),
         safe_relpath(dest_path, base_dir),
     )
-    backup_path = resilient_move(dest_path, backup_path)
+    if journal:
+        journal(planned)
+    backup_path = resilient_move(dest_path, planned)
+    if journal and not _is_same_path(backup_path, planned):
+        journal(backup_path)
     logging.info(f"Overwrite: moved existing {dest_path} aside to {backup_path}")
     return backup_path
 
@@ -499,7 +509,10 @@ def _log_displacement(history_manager, session_id, dest_path, backup_path) -> No
 
 
 def _record_move_intent(moves, session_id, source_path, dest_path, src_sha256):
-    """Commit the move's intent row (ADR 0006) and return its seq, or None if it failed."""
+    """Commit the move's intent row (ADR 0006) and return its seq.
+
+    A failure raises, so the move never happens without its row.
+    """
     if not (moves and session_id):
         return None
     size = None
@@ -508,22 +521,23 @@ def _record_move_intent(moves, session_id, source_path, dest_path, src_sha256):
             size = os.lstat(source_path).st_size
     except OSError:
         pass
-    try:
-        return moves.record_intent(
-            session_id, source_path, dest_path, src_sha256=src_sha256, size=size
-        )
-    except Exception as err:
-        logging.warning(f"Failed to record move intent for {source_path}: {err}")
-        return None
+    return moves.record_intent(
+        session_id, source_path, dest_path, src_sha256=src_sha256, size=size
+    )
 
 
-def _record_move_state(moves, session_id, seq, state: str, **fields) -> None:
-    """Move the intent row ``seq`` to ``state``; a ledger error never fails the move."""
+def _record_move_state(
+    moves, session_id, seq, state: str, required: bool = True, **fields
+) -> None:
+    """Move the intent row ``seq`` to ``state``; a failure raises unless not ``required``."""
     if not (moves and session_id) or seq is None:
         return
+    method = "record_displacement" if state == "displacement" else f"mark_{state}"
     try:
-        getattr(moves, f"mark_{state}")(session_id, seq, **fields)
+        getattr(moves, method)(session_id, seq, **fields)
     except Exception as err:
+        if required:
+            raise
         logging.warning(f"Failed to mark move {session_id}#{seq} {state}: {err}")
 
 
@@ -1183,7 +1197,12 @@ def _process_move_item(
             ):
                 overwritten_path = dest_path
                 displaced_path = _displace_for_overwrite(
-                    dest_path, base_dir, session_id
+                    dest_path,
+                    base_dir,
+                    session_id,
+                    journal=lambda path: _record_move_state(
+                        moves, session_id, move_seq, "displacement", displaced=path
+                    ),
                 )
 
             try:
@@ -1209,7 +1228,9 @@ def _process_move_item(
                     _restore_displaced(displaced_path, overwritten_path)
                 raise
         except Exception as err:
-            _record_move_state(moves, session_id, move_seq, "failed", error=str(err))
+            _record_move_state(
+                moves, session_id, move_seq, "failed", required=False, error=str(err)
+            )
             raise
 
     _record_move_state(
@@ -1259,7 +1280,7 @@ def _process_move_item(
         except Exception:
             pass
     if step_hash and step_hash == pre_hash:
-        _record_move_state(moves, session_id, move_seq, "verified")
+        _record_move_state(moves, session_id, move_seq, "verified", required=False)
     elif move_seq is not None and pre_hash:
         logging.warning(
             f"Moved {source_path} to {dest_path}, but its hash no longer matches the source."

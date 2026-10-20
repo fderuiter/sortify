@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "e234f455bb0d7eabad152de4780cda7189386d6de8f08dc6ad6940be7485f678"
+    "checksum": "b85c617fa2077a0847e012fbbd9a8680656ebc6502bdd2784ee4a5ed8d97fc5f"
   },
   "classes": [
     {
@@ -135,6 +135,34 @@
               "annotation": "int",
               "default": null,
               "name": "seq"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "record_displacement",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "seq"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "displaced"
             }
           ],
           "returns": "None"
