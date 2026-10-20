@@ -1,5 +1,5 @@
 flowchart TD
-    subgraph pool_singleton ["Shared Singleton (app.core.shared_registry)"]
+    subgraph pool_singleton ["Shared Singleton (app.core.worker_pool)"]
         shared_worker_pool(["SharedWorkerPool Singleton"])
     end
     subgraph pool_tasks ["Concurrent Execution Callers"]

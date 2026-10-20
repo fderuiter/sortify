@@ -615,6 +615,8 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                 title="Concurrency & Shared Registry (app.core)",
                 nodes=[
                     "core_shared_registry",
+                    "core_model_registry",
+                    "core_worker_pool",
                     "core_concurrency",
                     "core_network_guard",
                     "core_db_worker",
@@ -717,7 +719,12 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             # Concurrency & Shared
             DiagramNode(
                 id="core_shared_registry",
-                label="app.core.shared_registry (SharedWorkerPool)",
+                label="app.core.shared_registry (re-exports)",
+            ),
+            DiagramNode(id="core_model_registry", label="app.core.model_registry"),
+            DiagramNode(
+                id="core_worker_pool",
+                label="app.core.worker_pool (SharedWorkerPool)",
             ),
             DiagramNode(id="core_concurrency", label="app.core.concurrency"),
             DiagramNode(id="core_network_guard", label="app.core.network_guard"),
@@ -808,11 +815,14 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramEdge(source="core_semantic_embeddings", target="core_cache"),
             DiagramEdge(source="core_jev_classifier", target="core_cache"),
             DiagramEdge(source="core_hashes_registry", target="core_crypto"),
-            DiagramEdge(source="core_shared_registry", target="core_mover"),
-            DiagramEdge(source="core_shared_registry", target="core_extractor"),
-            DiagramEdge(source="core_db_worker", target="core_shared_registry"),
-            DiagramEdge(source="core_shared_registry", target="core_concurrency"),
-            DiagramEdge(source="core_shared_registry", target="core_network_guard"),
+            DiagramEdge(source="core_worker_pool", target="core_mover"),
+            DiagramEdge(source="core_worker_pool", target="core_extractor"),
+            DiagramEdge(source="core_db_worker", target="core_worker_pool"),
+            DiagramEdge(source="core_shared_registry", target="core_model_registry"),
+            DiagramEdge(source="core_shared_registry", target="core_worker_pool"),
+            DiagramEdge(source="core_worker_pool", target="core_concurrency"),
+            DiagramEdge(source="core_worker_pool", target="core_network_guard"),
+            DiagramEdge(source="core_model_registry", target="core_network_guard"),
             DiagramEdge(source="core_network_guard", target="core_concurrency"),
             DiagramEdge(source="core_db", target="core_cache"),
             DiagramEdge(source="core_db", target="core_migrations"),
@@ -1049,7 +1059,7 @@ WORKER_POOL_CONCURRENCY_SPEC = ComponentDiagramSpec(
     subgraphs=[
         DiagramSubgraph(
             id="pool_singleton",
-            title="Shared Singleton (app.core.shared_registry)",
+            title="Shared Singleton (app.core.worker_pool)",
             nodes=["shared_worker_pool"],
         ),
         DiagramSubgraph(
@@ -2167,7 +2177,7 @@ def _create_worker_pool_concurrency_spec() -> ComponentDiagramSpec:
         subgraphs=[
             DiagramSubgraph(
                 id="pool_singleton",
-                title="Shared Singleton (app.core.shared_registry)",
+                title="Shared Singleton (app.core.worker_pool)",
                 nodes=["shared_worker_pool"],
             ),
             DiagramSubgraph(
@@ -3536,7 +3546,7 @@ def _create_core_mover_spec() -> ComponentDiagramSpec:
                 id="pool",
                 label="SharedWorkerPool Dispatcher",
                 shape="subroutine",
-                url="docs/api_reference.md#appcoreshared_registry",
+                url="docs/api_reference.md#appcoreworker_pool",
                 tooltip="Worker Dispatcher",
             ),
             DiagramNode(

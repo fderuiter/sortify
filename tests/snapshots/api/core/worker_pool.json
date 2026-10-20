@@ -1,0 +1,324 @@
+{
+  "_metadata": {
+    "checksum": "55ecbe865aeec5b28f7046fdaf86243f41c821aa399d92832ed7d3719fce61b3"
+  },
+  "classes": [
+    {
+      "class_name": "AudioConcurrencyGuard",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "int",
+              "default": "2",
+              "name": "limit"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "acquire_slot",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable[[], bool] | None",
+              "default": "None",
+              "name": "cancel_check"
+            },
+            {
+              "annotation": "float",
+              "default": "0.05",
+              "name": "poll_interval"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "active_count",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "get_instance",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "int | None",
+              "default": "None",
+              "name": "limit"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@contextmanager"
+          ],
+          "name": "guard",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable[[], bool] | None",
+              "default": "None",
+              "name": "cancel_check"
+            },
+            {
+              "annotation": "float",
+              "default": "0.05",
+              "name": "poll_interval"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "limit",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "release_slot",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "reset_instance",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "set_limit",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "new_limit"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    },
+    {
+      "class_name": "SharedWorkerPool",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "max_workers"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "get_instance",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "max_workers"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "map",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "fn"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*iterables"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "timeout"
+            },
+            {
+              "annotation": null,
+              "default": "1",
+              "name": "chunksize"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "shutdown",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": "False",
+              "name": "wait"
+            },
+            {
+              "annotation": null,
+              "default": "True",
+              "name": "cancel_futures"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "shutdown_instance",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": null,
+              "default": "False",
+              "name": "wait"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "submit",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "fn"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        }
+      ]
+    }
+  ],
+  "functions": []
+}
