@@ -1,6 +1,6 @@
 # Keyboard Shortcuts
 
-This page is generated from the terminal UI's key bindings (`app/ui/tui.py`). Do not edit it manually.
+This page is generated from the terminal UI's key bindings (`app/ui/`). Do not edit it manually.
 
 Press `?` or `F1` in the app to see these shortcuts.
 
