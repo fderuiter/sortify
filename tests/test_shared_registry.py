@@ -335,6 +335,7 @@ def test_onnx_thread_limits_application(monkeypatch):
     sess_opts = mock_ort.SessionOptions()
 
     # Case 1: default settings (MODEL_THREADS = 2)
+    registry._cached_settings = None  # read the patched settings afresh
     with patch("app.config.AppSettings") as mock_settings_cls:
         mock_settings = MagicMock()
         mock_settings.MODEL_THREADS = 2
@@ -345,6 +346,7 @@ def test_onnx_thread_limits_application(monkeypatch):
         assert sess_opts.inter_op_num_threads == 2
 
     # Case 2: custom settings (MODEL_THREADS = 4)
+    registry._cached_settings = None  # read the patched settings afresh
     with patch("app.config.AppSettings") as mock_settings_cls:
         mock_settings = MagicMock()
         mock_settings.MODEL_THREADS = 4
@@ -355,6 +357,7 @@ def test_onnx_thread_limits_application(monkeypatch):
         assert sess_opts.inter_op_num_threads == 4
 
     # Case 3: out-of-bounds fallback (MODEL_THREADS = 100 -> fallback to 2)
+    registry._cached_settings = None  # read the patched settings afresh
     with patch("app.config.AppSettings") as mock_settings_cls:
         mock_settings = MagicMock()
         mock_settings.MODEL_THREADS = 100
@@ -379,6 +382,7 @@ def test_pytorch_thread_limits_selection(monkeypatch):
     registry = SharedModelRegistry.get_instance()
 
     # Case 1: default settings (MODEL_THREADS = 2)
+    registry._cached_settings = None  # read the patched settings afresh
     with patch("app.config.AppSettings") as mock_settings_cls:
         mock_settings = MagicMock()
         mock_settings.MODEL_THREADS = 2
@@ -388,6 +392,7 @@ def test_pytorch_thread_limits_selection(monkeypatch):
         mock_torch.set_num_threads.assert_any_call(2)
 
     # Case 2: custom settings (MODEL_THREADS = 4)
+    registry._cached_settings = None  # read the patched settings afresh
     with patch("app.config.AppSettings") as mock_settings_cls:
         mock_settings = MagicMock()
         mock_settings.MODEL_THREADS = 4

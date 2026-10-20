@@ -89,6 +89,17 @@ def inline_clustering(request, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def embedding_test_defaults(monkeypatch):
+    """Keep test threads at normal priority and skip model checks on stand-in models."""
+    from app.core import semantic_embeddings
+
+    monkeypatch.setattr(semantic_embeddings, "LOWER_THREAD_PRIORITY", False)
+    monkeypatch.setattr(
+        semantic_embeddings.SemanticEmbeddingManager, "validate_on_init", False
+    )
+
+
+@pytest.fixture(autouse=True)
 def cleanup_db_connections():
     """Ensure database connections are closed after each test to prevent Windows file locking issues."""
     yield
