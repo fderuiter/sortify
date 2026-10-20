@@ -128,13 +128,12 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     if mei_dir:
         easyocr_dir = os.path.join(mei_dir, "offline_bundle", "easyocr")
     else:
+        # The working directory is deliberately not searched: it is often a
+        # folder of untrusted files that this app is sorting (#722).
         local_easyocr_path = os.path.join(base_path, "offline_bundle", "easyocr")
-        cwd_easyocr_path = os.path.join(os.getcwd(), "offline_bundle", "easyocr")
         easyocr_path = os.environ.get("EASYOCR_MODULE_PATH")
         if os.path.exists(local_easyocr_path):
             easyocr_dir = local_easyocr_path
-        elif os.path.exists(cwd_easyocr_path):
-            easyocr_dir = cwd_easyocr_path
         elif easyocr_path:
             easyocr_dir = os.path.join(easyocr_path, "model")
         else:
