@@ -24,6 +24,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.layout
 
+## `app.ui.modals.help`
+
+::: app.ui.modals.help
+
 ## `app.ui.notifications`
 
 ::: app.ui.notifications
