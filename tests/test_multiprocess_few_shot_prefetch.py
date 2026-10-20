@@ -39,6 +39,7 @@ def db(temp_dir, db_worker):
     clear_connection_cache()
 
 
+@pytest.mark.subprocess_clustering
 def test_multiprocess_few_shot_prefetch_flow(db, temp_dir, monkeypatch):
     """
     Verify:
@@ -118,7 +119,6 @@ def test_multiprocess_few_shot_prefetch_flow(db, temp_dir, monkeypatch):
     prompt_dump_path = get_debug_log_dir().resolve() / "prefetch_prompt_dump.txt"
     monkeypatch.setenv("DEBUG", "1")
     monkeypatch.setenv("PROMPT_DUMP_FILE", "prefetch_prompt_dump.txt")
-    monkeypatch.setenv("FORCE_MULTIPROCESSING_CLUSTERING", "1")
 
     # Instantiate Analyzer which runs clustering and generative folder naming
     analyzer = IncrementalAnalyzer(

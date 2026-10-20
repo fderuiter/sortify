@@ -176,7 +176,15 @@ def test_check_windows_sandbox_support_success():
         mock_windll.advapi32.DuplicateTokenEx = mock.MagicMock()
         mock_windll.advapi32.CreateProcessAsUserW = mock.MagicMock()
 
-        assert check_windows_sandbox_support() is True
+        with (
+            mock.patch("subprocess.STARTUPINFO", create=True),
+            mock.patch("subprocess.STARTF_USESHOWWINDOW", 1, create=True),
+            mock.patch("app.core.env_helper.RestrictedPopen") as mock_popen,
+        ):
+            assert check_windows_sandbox_support() is True
+        # The live probe ran a hidden restricted cmd.exe and waited for it.
+        assert mock_popen.call_args.args[0] == ["cmd.exe", "/c", "exit 0"]
+        mock_popen.return_value.wait.assert_called_once()
 
 
 def test_check_windows_sandbox_support_failure():
@@ -451,11 +459,14 @@ def test_check_windows_sandbox_support_live_probe_pipe_failure():
     with (
         mock.patch("sys.platform", "win32"),
         mock.patch("ctypes.windll", mock_ctypes.windll, create=True),
+        mock.patch("subprocess.STARTUPINFO", create=True),
+        mock.patch("subprocess.STARTF_USESHOWWINDOW", 1, create=True),
         mock.patch(
             "app.core.env_helper.RestrictedPopen",
             side_effect=Exception("Pipe creation or duplication failure"),
-        ),
+        ) as mock_popen,
     ):
         from app.core.env_helper import check_windows_sandbox_support
 
         assert check_windows_sandbox_support() is False
+    mock_popen.assert_called_once()

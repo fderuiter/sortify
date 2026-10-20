@@ -27,13 +27,15 @@ def _no_progress(info=None):
 
 @dataclass
 class SortResult:
-    """What one sort did, in the shape every front end reports it.
+    """What one sort or undo did, in the shape every front end reports it.
 
     ``moved``, ``skipped`` and ``quarantined`` list relative source paths;
-    ``failed`` pairs each relative source path with its reason. ``summary`` is the
-    mover's raw summary, kept for JSON output and the audit report.
+    ``failed`` pairs each relative source path with its reason. ``session_id``
+    names the session to undo. ``summary`` is the mover's raw summary, kept for
+    JSON output and the audit report.
     """
 
+    session_id: Optional[str] = None
     moved: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
     quarantined: list[str] = field(default_factory=list)
@@ -45,7 +47,11 @@ class SortResult:
     def from_summary(cls, summary: Optional[dict], quarantine_dir: str):
         """Build a result from ``execute_moves``'s summary and its audit report."""
         summary = summary or {}
-        result = cls(cancelled=bool(summary.get("cancelled")), summary=summary)
+        result = cls(
+            session_id=summary.get("session_id"),
+            cancelled=bool(summary.get("cancelled")),
+            summary=summary,
+        )
         report = summary.get("audit_report") or {}
         for rec in report.get("records") or []:
             src = rec.get("relative_source") or rec.get("source_path") or ""
@@ -139,6 +145,53 @@ class SortPipeline:
             self.settings, "QUARANTINE_DIR_NAME", "_Compliance_Quarantine"
         )
         return SortResult.from_summary(summary, quarantine_dir)
+
+    def undo(self, session_id: str, *, ignore_missing: bool = False) -> SortResult:
+        """Move a past sort's files back and return what happened (ADR 0006).
+
+        ``moved`` lists each file put back where it came from, and ``failed``
+        each one left in place, such as a file changed since the sort. Raises
+        ``ValueError`` for an unknown session.
+        """
+        from app.core.moves import FAILED, INTENT
+        from app.core.path_utils import safe_relpath
+
+        history = self.session.history_manager
+        base_dir = next(
+            (
+                s["base_dir"]
+                for s in history.get_sessions()
+                if s["session_id"] == session_id
+            ),
+            None,
+        )
+        if base_dir is None:
+            raise ValueError(f"Session not found: {session_id}")
+        moves = [
+            m
+            for m in history.moves.list_moves(session_id)
+            if m.state not in (INTENT, FAILED)
+        ]
+
+        result = SortResult(session_id=session_id)
+        reason = "Not moved back"
+        try:
+            result.summary["restored"] = history.rollback(
+                session_id, ignore_missing=ignore_missing
+            )
+        except (OSError, ValueError) as err:
+            # Undo still moves back every file it can before it reports the rest.
+            reason = str(err)
+            result.summary["error"] = reason
+        for move in moves:
+            src = safe_relpath(move.src, base_dir).replace("\\", "/")
+            if os.path.lexists(move.src):
+                result.moved.append(src)
+            else:
+                result.failed.append((src, reason))
+        if "error" in result.summary and not result.failed:
+            result.failed.append((session_id, reason))
+        return result
 
     def run(self, items: Optional[list] = None, *, dry_run: bool = False, **kwargs):
         """Plan, then execute unless ``dry_run``. Returns ``(plan, result)``.

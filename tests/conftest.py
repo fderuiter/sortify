@@ -75,6 +75,43 @@ def sync_db_worker(request):
         yield
 
 
+@pytest.fixture
+def session_db(tmp_path):
+    """A real Database for a stand-in AppSession, so quarantine staging hits real tables."""
+    from app.core.db import Database
+    from app.core.db_worker import DBWorker
+
+    worker = DBWorker()
+    try:
+        yield Database(tmp_path / "session.db", worker)
+    finally:
+        worker.stop(stop_embeddings=False)
+
+
+@pytest.fixture(autouse=True)
+def inline_clustering(request, monkeypatch):
+    """Cluster in-process so tests can patch and inspect strategy state.
+
+    Mark a test ``subprocess_clustering`` to run the spawned child-process path.
+    """
+    if request.node.get_closest_marker("subprocess_clustering"):
+        return
+    from app.core.analyzer_strategies import RecursiveKMeansStrategy
+
+    monkeypatch.setattr(RecursiveKMeansStrategy, "run_in_subprocess", False)
+
+
+@pytest.fixture(autouse=True)
+def embedding_test_defaults(monkeypatch):
+    """Keep test threads at normal priority and skip model checks on stand-in models."""
+    from app.core import semantic_embeddings
+
+    monkeypatch.setattr(semantic_embeddings, "LOWER_THREAD_PRIORITY", False)
+    monkeypatch.setattr(
+        semantic_embeddings.SemanticEmbeddingManager, "validate_on_init", False
+    )
+
+
 @pytest.fixture(autouse=True)
 def cleanup_db_connections():
     """Ensure database connections are closed after each test to prevent Windows file locking issues."""

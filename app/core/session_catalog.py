@@ -150,3 +150,50 @@ def mark_session_abandoned(session_id: str, store=None) -> None:
             "UPDATE sessions SET status = 'abandoned' WHERE session_id = ?",
             (session_id,),
         )
+
+
+def roll_back_abandoned_session(settings, session_info: dict) -> bool:
+    """Undo an unfinished session's moves and delete its session folder.
+
+    The folder is deleted only when every move was undone, so a failed
+    rollback leaves the session files and safety storage in place. Returns
+    whether the rollback succeeded.
+    """
+    import shutil
+
+    from app.core.pipeline import SortPipeline
+    from app.core.session import AppSession
+
+    base_dir = session_info.get("base_dir")
+    session_id = session_info.get("session_id")
+    if not (base_dir and session_id):
+        return False
+    try:
+        temp_session = AppSession(settings, base_dir, session_id=session_id)
+        try:
+            result = SortPipeline(temp_session).undo(session_id, ignore_missing=True)
+        finally:
+            temp_session.close()
+    except Exception as e:  # noqa: BLE001 - a failed rollback must keep the session files, whatever the cause
+        logger.error(f"Error during session rollback: {e}")
+        return False
+    if not result.ok:
+        logger.error(f"Session rollback left files in place: {result.failed}")
+        return False
+
+    session_dir = session_info.get("session_dir")
+    if session_dir and os.path.exists(session_dir):
+        shutil.rmtree(session_dir, ignore_errors=True)
+    return True
+
+
+def forget_abandoned_session(session_info: dict, store=None) -> None:
+    """Leave an unfinished session as it is and stop offering to recover it."""
+    journal_path = session_info.get("journal_path")
+    if journal_path:
+        try:
+            os.remove(journal_path)
+        except OSError:
+            logger.warning("Could not remove rollback journal %s", journal_path)
+    elif session_info.get("session_id"):
+        mark_session_abandoned(session_info["session_id"], store=store)

@@ -251,6 +251,30 @@
       "title": "Max Debounce Delay",
       "type": "number"
     },
+    "MAX_QUEUE_CAPACITY": {
+      "default": 1000,
+      "exclusiveMinimum": 0,
+      "title": "Max Queue Capacity",
+      "type": "integer"
+    },
+    "DEDUP_WINDOW": {
+      "default": 0.5,
+      "minimum": 0.0,
+      "title": "Dedup Window",
+      "type": "number"
+    },
+    "RECONCILIATION_INTERVAL": {
+      "default": 30.0,
+      "exclusiveMinimum": 0.0,
+      "title": "Reconciliation Interval",
+      "type": "number"
+    },
+    "WORKER_TIMEOUT": {
+      "default": 300.0,
+      "minimum": 0.0,
+      "title": "Worker Timeout",
+      "type": "number"
+    },
     "TABULAR_MAX_SHEETS": {
       "default": 10,
       "exclusiveMinimum": 0,

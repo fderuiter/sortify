@@ -14,15 +14,7 @@ import pytest
 from app.core.analyzer_strategies import RecursiveKMeansStrategy
 from app.core.shared_registry import SharedModelRegistry
 
-pytestmark = [pytest.mark.slow, pytest.mark.ml]
-
-
-@pytest.fixture(autouse=True)
-def force_multiprocessing():
-    """Ensure that the multiprocessing code path is executed even during pytest."""
-    os.environ["FORCE_MULTIPROCESSING_CLUSTERING"] = "1"
-    yield
-    os.environ.pop("FORCE_MULTIPROCESSING_CLUSTERING", None)
+pytestmark = [pytest.mark.slow, pytest.mark.ml, pytest.mark.subprocess_clustering]
 
 
 def test_multiprocess_clustering_execution():
@@ -73,14 +65,11 @@ def test_multiprocess_clustering_execution():
 
     # Verify OS niceness/priority on Unix-like platforms
     if sys.platform != "win32":
-        assert strategy._last_worker_niceness is not None
-        if "CI" not in os.environ and "PYTEST_CURRENT_TEST" not in os.environ:
-            if sys.platform == "darwin":
-                assert strategy._last_worker_niceness in (9, 19)
-            else:
-                assert strategy._last_worker_niceness == 19
+        # The spawned child lowers its own priority, outside the test process.
+        if sys.platform == "darwin":
+            assert strategy._last_worker_niceness in (9, 19)
         else:
-            assert strategy._last_worker_niceness >= 0
+            assert strategy._last_worker_niceness == 19
 
 
 def test_multiprocess_clustering_cancellation():

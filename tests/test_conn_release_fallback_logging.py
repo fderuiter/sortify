@@ -33,12 +33,12 @@ def test_run_smoke_test_closes_and_clears_cache_on_success():
             "app.core.db_conn.get_db_connection", return_value=mock_conn
         ) as mock_get_conn,
         patch("app.core.db_conn.clear_connection_cache") as mock_clear_cache,
-        patch("shutil.rmtree") as mock_rmtree,
+        patch("app.core.resilient_file_ops.resilient_rmtree") as mock_rmtree,
     ):
         mock_clear_cache.side_effect = lambda *args, **kwargs: call_order.append(
             "clear_cache"
         )
-        mock_rmtree.side_effect = lambda path: call_order.append(f"rmtree_{path}")
+        mock_rmtree.side_effect = lambda path, **kw: call_order.append(f"rmtree_{path}")
 
         # Since run_smoke_test calls sys.exit(0) on success, we catch SystemExit
         with pytest.raises(SystemExit) as excinfo:
@@ -71,13 +71,13 @@ def test_run_smoke_test_closes_and_clears_cache_on_failure():
             "app.core.db_conn.get_db_connection", side_effect=RuntimeError("DB Failed")
         ),
         patch("app.core.db_conn.clear_connection_cache") as mock_clear_cache,
-        patch("shutil.rmtree") as mock_rmtree,
+        patch("app.core.resilient_file_ops.resilient_rmtree") as mock_rmtree,
         patch("app.main.write_smoke_test_error") as mock_write_error,
     ):
         mock_clear_cache.side_effect = lambda *args, **kwargs: call_order.append(
             "clear_cache"
         )
-        mock_rmtree.side_effect = lambda path: call_order.append(f"rmtree_{path}")
+        mock_rmtree.side_effect = lambda path, **kw: call_order.append(f"rmtree_{path}")
 
         # Since run_smoke_test calls sys.exit(1) on failure, we catch SystemExit
         with pytest.raises(SystemExit) as excinfo:

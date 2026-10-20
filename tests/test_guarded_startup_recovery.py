@@ -194,7 +194,12 @@ def test_tui_do_recovery_rollback_failure_preserves_session_dir(mock_session_bas
 
     with patch("app.core.session.AppSession") as mock_app_session_cls:
         mock_instance = MagicMock()
-        mock_instance.rollback.side_effect = PermissionError("Permission error")
+        history = mock_instance.history_manager
+        history.get_sessions.return_value = [
+            {"session_id": session_id, "base_dir": str(mock_session_base)}
+        ]
+        history.moves.list_moves.return_value = []
+        history.rollback.side_effect = PermissionError("Permission error")
         mock_app_session_cls.return_value = mock_instance
 
         app._do_recovery_rollback(session_info)

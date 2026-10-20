@@ -168,3 +168,44 @@ def test_check_ai_status_packaged_lite_build_marker(tmp_path, monkeypatch):
         is_healthy, warn_msg = check_ai_status(settings)
         assert is_healthy is False
         assert "not installed" in warn_msg
+
+
+def test_check_ai_status_ignores_easyocr_weights_in_working_folder(
+    tmp_path, monkeypatch
+):
+    """OCR health never counts weights found in the working folder (#722).
+
+    The working folder is often a folder of untrusted files being sorted, so
+    a planted offline_bundle/easyocr there must not make OCR look available.
+    """
+    from unittest.mock import patch
+
+    from app.config import AppSettings
+    from app.core.shared_registry import SharedModelRegistry
+    from app.core.verifier import check_ai_status
+
+    cwd = tmp_path / "Downloads"
+    planted = cwd / "offline_bundle" / "easyocr"
+    planted.mkdir(parents=True)
+    (planted / "craft_mlt_25k.pth").write_bytes(b"planted")
+    (planted / "english_g2.pth").write_bytes(b"planted")
+    monkeypatch.chdir(cwd)
+
+    install_dir = tmp_path / "install"
+    install_dir.mkdir()
+    monkeypatch.setattr(
+        "app.core.path_utils.get_base_path", lambda *_a, **_k: str(install_dir)
+    )
+    monkeypatch.setenv("HOME", str(tmp_path / "home"))
+    monkeypatch.delenv("EASYOCR_MODULE_PATH", raising=False)
+    monkeypatch.setattr(SharedModelRegistry, "_instance", None)
+
+    settings = AppSettings()
+    settings.AI_ASSISTED_NAMING = False
+    settings.AI_CONSENT_GRANTED = True
+
+    with patch("app.core.verifier.is_ml_available", return_value=True):
+        is_healthy, warn_msg = check_ai_status(settings)
+
+    assert is_healthy is False
+    assert "OCR vision model files are corrupt or missing" in warn_msg

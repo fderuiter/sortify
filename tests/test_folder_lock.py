@@ -26,8 +26,12 @@ def test_lock_is_free_again_after_release(tmp_path):
 
     with FolderLock(str(folder), lock_dir=locks):
         pass
+    # Taking the lock again raises FolderBusyError if release leaked it, and
+    # the new holder really holds it.
     with FolderLock(str(folder), lock_dir=locks):
-        pass
+        with pytest.raises(FolderBusyError):
+            with FolderLock(str(folder), lock_dir=locks):
+                pass
 
 
 def test_different_folders_do_not_block_each_other(tmp_path):
@@ -37,7 +41,11 @@ def test_different_folders_do_not_block_each_other(tmp_path):
 
     with FolderLock(str(tmp_path / "a"), lock_dir=locks):
         with FolderLock(str(tmp_path / "b"), lock_dir=locks):
-            pass
+            # Both are held at once, each still refusing its own second holder.
+            for name in ("a", "b"):
+                with pytest.raises(FolderBusyError):
+                    with FolderLock(str(tmp_path / name), lock_dir=locks):
+                        pass
 
 
 def test_same_folder_spelled_differently_is_one_lock(tmp_path):

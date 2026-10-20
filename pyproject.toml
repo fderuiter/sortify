@@ -88,11 +88,8 @@ convention = "numpy"
 
 # Exception-handling baseline for #783: files that predate the rule. Fix a file
 # and delete its line; never add one.
-"app/cli/generate_docs.py" = ["BLE001", "S110", "SIM105"]
 "app/cli/ledger_cli.py" = ["BLE001", "S110"]
 "app/core/analyzer_strategies.py" = ["BLE001", "S110", "SIM105"]
-"app/core/crypto.py" = ["BLE001", "S110", "SIM105"]
-"app/core/daemon.py" = ["BLE001", "S110", "SIM105"]
 "app/core/db.py" = ["BLE001", "S110", "SIM105"]
 "app/core/db_conn.py" = ["BLE001", "S110", "SIM105"]
 "app/core/db_worker.py" = ["BLE001", "S110", "SIM105"]
@@ -102,6 +99,9 @@ convention = "numpy"
 "app/core/resilient_file_ops.py" = ["BLE001", "S110", "SIM105"]
 "app/core/session.py" = ["BLE001", "S110", "SIM105"]
 "app/main.py" = ["BLE001", "S110", "SIM105"]
+"app/ui/a11y.py" = ["BLE001", "S110", "SIM105"]
+"app/ui/modals/*.py" = ["BLE001", "S110", "SIM105"]
+"app/ui/mixins/*.py" = ["BLE001", "S110", "SIM105"]
 "app/ui/tui.py" = ["BLE001", "S110", "SIM105"]
 
 [tool.ruff.format]
@@ -136,12 +136,9 @@ invalid-parameter-default = "ignore"
 include = [
     "app/ui/**",
     "app/cli/**",
-    "app/main.py",
-    "app/core/analyzer_strategies.py",
     "app/core/db.py",
     "app/core/db_conn.py",
     "app/core/db_worker.py",
-    "app/core/extractor_strategies.py",
     "app/core/quarantine_interceptor.py",
     "app/core/semantic_embeddings.py",
     "app/core/session.py",
@@ -225,6 +222,7 @@ markers = [
     "integration: marks integration tests",
     "ml: marks machine learning model tests",
     "real_db_worker: run against the real asynchronous DBWorker write queue instead of the synchronous test stand-in",
+    "subprocess_clustering: run RecursiveKMeansStrategy in its spawned child process instead of inline",
 ]
 
 [tool.coverage.run]

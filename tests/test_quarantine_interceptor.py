@@ -523,6 +523,52 @@ def test_quarantine_worker_db_failure_rollback():
         db.update_quarantine_status = orig_update
 
 
+def test_release_over_unchanged_original_leaves_one_file():
+    """Releasing a staged copy back over its unchanged original keeps one file, no `_1` copy (#907)."""
+    service = QuarantineInterceptorService(db=db)
+
+    sample_dir = os.path.join(_test_dir, "release_in_place")
+    os.makedirs(sample_dir, exist_ok=True)
+    sample_file = os.path.join(sample_dir, "notes.txt")
+    with open(sample_file, "w", encoding="utf-8") as f:
+        f.write("Normal document content")
+
+    staged = service.stage_incoming_file(source_path=sample_file, base_dir=sample_dir)
+    result = service.process_quarantine_job(staged["job_id"])
+
+    assert result["status"] == "RELEASED"
+    assert not os.path.exists(staged["staged_filepath"])
+    assert sorted(
+        name for name in os.listdir(sample_dir) if name != "_Quarantine_Staging"
+    ) == ["notes.txt"]
+    with open(sample_file, encoding="utf-8") as f:
+        assert f.read() == "Normal document content"
+
+
+def test_release_never_overwrites_a_changed_original():
+    """If the original changed after staging, release keeps both versions."""
+    service = QuarantineInterceptorService(db=db)
+
+    sample_dir = os.path.join(_test_dir, "release_changed_original")
+    os.makedirs(sample_dir, exist_ok=True)
+    sample_file = os.path.join(sample_dir, "notes.txt")
+    with open(sample_file, "w", encoding="utf-8") as f:
+        f.write("Version one")
+
+    staged = service.stage_incoming_file(source_path=sample_file, base_dir=sample_dir)
+    with open(sample_file, "w", encoding="utf-8") as f:
+        f.write("Version two")
+    service.process_quarantine_job(staged["job_id"])
+
+    contents = set()
+    for name in os.listdir(sample_dir):
+        path = os.path.join(sample_dir, name)
+        if os.path.isfile(path):
+            with open(path, encoding="utf-8") as f:
+                contents.add(f.read())
+    assert contents == {"Version one", "Version two"}
+
+
 def test_quarantine_cli_release_db_failure_rollback():
     """Test CLI release command restores file to staged_path when database update fails."""
     import argparse

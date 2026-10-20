@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "12cd239ea5dc80212312dceff36b0bafdeadcd4089cf519e135b687381869e25"
+    "checksum": "7aac87de36d2844d3399b0d82e8df5930e64790a9873b2deb5a88d4cf700f6d1"
   },
   "classes": [
     {
@@ -45,7 +45,7 @@
               "name": "doc_text"
             },
             {
-              "annotation": "str",
+              "annotation": "str | None",
               "default": null,
               "name": "status_match"
             },
@@ -90,7 +90,7 @@
               "name": "doc_text"
             },
             {
-              "annotation": "str",
+              "annotation": "str | None",
               "default": null,
               "name": "status_match"
             }

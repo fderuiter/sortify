@@ -4,7 +4,7 @@ import contextlib
 import csv
 import io
 import logging
-from typing import Protocol
+from typing import Protocol, cast
 
 import pypdf
 
@@ -164,11 +164,7 @@ class CsvExtractor:
         max_chars = getattr(
             settings,
             "TABULAR_MAX_CHARACTERS",
-            getattr(
-                settings,
-                "MAX_SPREADSHEET_CHARACTERS",
-                getattr(settings, "MAX_TABULAR_CHARACTERS", 50000),
-            ),
+            getattr(settings, "MAX_SPREADSHEET_CHARACTERS", 50000),
         )
 
         extracted_rows = []
@@ -224,11 +220,7 @@ class XlsxExtractor:
         max_chars = getattr(
             settings,
             "TABULAR_MAX_CHARACTERS",
-            getattr(
-                settings,
-                "MAX_SPREADSHEET_CHARACTERS",
-                getattr(settings, "MAX_TABULAR_CHARACTERS", 50000),
-            ),
+            getattr(settings, "MAX_SPREADSHEET_CHARACTERS", 50000),
         )
 
         extracted_lines = []
@@ -883,6 +875,10 @@ class AudioExtractor:
                     )
                     return f"[STATUS:ERROR: {str(e)}]"
 
+            # Every pass of the loop either breaks with a process or returns, and the
+            # last device tried is always "cpu", so a process exists here.
+            process = cast("subprocess.Popen[str]", process)
+
             transcription_lines = []
 
             # Timestamps regex matching HH:MM:SS.mmm --> HH:MM:SS.mmm or MM:SS.mmm --> MM:SS.mmm
@@ -1073,7 +1069,7 @@ class ExtractorRegistry:
         """Register a document extractor for a specific file extension."""
         self._extractors[extension.lower()] = extractor
 
-    def get_extractor(self, extension: str) -> DocumentExtractor:
+    def get_extractor(self, extension: str) -> DocumentExtractor | None:
         """Retrieve the document extractor for the given file extension."""
         return self._extractors.get(extension.lower())
 
