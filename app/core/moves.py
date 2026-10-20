@@ -120,7 +120,9 @@ def import_transaction_ledger(conn) -> int:
     these rows, with paths relative to the session's folder. Returns the number
     of rows copied. Runs inside the caller's transaction.
     """
-    columns = {row[1] for row in conn.execute('PRAGMA table_info("transaction_ledger")')}
+    columns = {
+        row[1] for row in conn.execute('PRAGMA table_info("transaction_ledger")')
+    }
     if not {"session_id", "step_number", "base_dir", "source_path"} <= columns:
         return 0
     rows = conn.execute(
