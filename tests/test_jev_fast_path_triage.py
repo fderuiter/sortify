@@ -206,11 +206,49 @@ async def test_daemon_triage_unclassified_fallback(tmp_path):
     daemon._is_running = True
 
     try:
-        # Execution should not throw error and fall through to slow path gracefully
         await daemon._triage_file_path(str(unclassified_file))
     finally:
         daemon.stop()
         clear_connection_cache(only_current_and_inactive=False)
+
+    # The unclassified file falls through to the slow path and still gets sorted:
+    # it leaves the top level and its bytes survive in a sorted folder.
+    assert not unclassified_file.exists()
+    sorted_copies = [
+        p
+        for p in base_dir.rglob("random_file.dat")
+        if "_Quarantine_Staging" not in p.parts
+    ]
+    assert len(sorted_copies) == 1
+    assert sorted_copies[0].read_bytes() == b"1234567890"
+
+
+@pytest.mark.anyio
+@pytest.mark.xfail(
+    strict=True,
+    reason="#907: quarantine release leaves a random_file_1.dat duplicate behind",
+)
+async def test_daemon_triage_leaves_no_duplicate(tmp_path):
+    from app.core.db_conn import clear_connection_cache
+
+    base_dir = tmp_path / "monitored"
+    base_dir.mkdir()
+    (base_dir / "random_file.dat").write_bytes(b"1234567890")
+
+    daemon = ContinuousWatchdogDaemon(AppSettings(), str(base_dir))
+    daemon._is_running = True
+    try:
+        await daemon._triage_file_path(str(base_dir / "random_file.dat"))
+    finally:
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
+
+    files = [
+        p
+        for p in base_dir.rglob("*")
+        if p.is_file() and "_Quarantine_Staging" not in p.parts
+    ]
+    assert len(files) == 1
 
 
 def test_file_analyzer_internal_jev_fallback_when_jev_results_none(tmp_path):
