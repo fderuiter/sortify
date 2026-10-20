@@ -70,9 +70,9 @@ jobs:
             offline_bundle/
             ~/.EasyOCR/model/
             ~/.cache/huggingface
+          # No restore-keys: weights saved for another manifest must not be
+          # restored and shipped as if they were the pinned ones.
           key: model-weights-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'offline_bundle/**', 'app/core/prompt_manifest.py') }}
-          restore-keys: |
-            model-weights-${{ runner.os }}-
 
       - name: Build executable
         run: |
