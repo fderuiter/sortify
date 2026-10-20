@@ -24,6 +24,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.layout
 
+## `app.ui.mixins.selection`
+
+::: app.ui.mixins.selection
+
 ## `app.ui.mixins.tree_view`
 
 ::: app.ui.mixins.tree_view
