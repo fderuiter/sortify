@@ -137,7 +137,6 @@ include = [
     "app/ui/**",
     "app/cli/**",
     "app/main.py",
-    "app/core/analyzer.py",
     "app/core/analyzer_strategies.py",
     "app/core/db.py",
     "app/core/db_conn.py",
