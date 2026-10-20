@@ -49,11 +49,11 @@ def test_automatic_rollback_on_failed_move(test_env):
         }
     }
 
-    # Mock shutil.move to fail
+    # Make the mover's file move fail
     def mock_move(src, dst):
         raise OSError("Intentional permission error on file write")
 
-    with patch("shutil.move", side_effect=mock_move):
+    with patch("app.core.resilient_file_ops.resilient_move", side_effect=mock_move):
         with pytest.raises(OSError, match="Intentional permission error on file write"):
             execute_moves(base_dir, plan, db, history_manager)
 

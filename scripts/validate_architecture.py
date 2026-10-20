@@ -520,6 +520,44 @@ def validate_import_time_globals(errors: list, filepath: str, tree: ast.AST) -> 
         pending.extend(ast.iter_child_nodes(node))
 
 
+_TEST_DETECTION_NAMES = frozenset(
+    {"MagicMock", "NonCallableMock", "mock_add_spec", "PYTEST_CURRENT_TEST"}
+)
+
+
+def validate_no_test_detection(errors: list, filepath: str, tree: ast.AST) -> None:
+    """Flag production code that detects it is under test (#720).
+
+    Branches on ``unittest.mock`` types or ``PYTEST_CURRENT_TEST`` mean tests
+    exercise a path production never runs; inject the dependency instead.
+    """
+    for node in ast.walk(tree):
+        found = None
+        if isinstance(node, ast.Import):
+            found = next(
+                (a.name for a in node.names if a.name.startswith("unittest.mock")),
+                None,
+            )
+        elif isinstance(node, ast.ImportFrom):
+            if node.module and node.module.startswith("unittest.mock"):
+                found = node.module
+            elif node.module == "unittest" and any(
+                a.name == "mock" for a in node.names
+            ):
+                found = "unittest.mock"
+        elif isinstance(node, ast.Name) and node.id in _TEST_DETECTION_NAMES:
+            found = node.id
+        elif isinstance(node, ast.Attribute) and node.attr in _TEST_DETECTION_NAMES:
+            found = node.attr
+        elif isinstance(node, ast.Constant) and node.value in _TEST_DETECTION_NAMES:
+            found = node.value
+        if found:
+            errors.append(
+                f"{filepath}:{node.lineno}: Test detection in production code: "
+                f"'{found}'; inject the dependency so tests run the production path"
+            )
+
+
 def main():
     """Execute all architectural validation checks."""
     parser = argparse.ArgumentParser(
@@ -576,6 +614,7 @@ def main():
             validate_settings_keys(errors, filepath, tree, declared_settings)
 
             validate_import_time_globals(errors, filepath, tree)
+            validate_no_test_detection(errors, filepath, tree)
 
             is_ui_file = "app/ui" in filepath
 

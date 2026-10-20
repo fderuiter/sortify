@@ -1186,8 +1186,6 @@ def _process_move_item(
 
     displaced_path = overwritten_path = None
     if not moved_as_link:
-        import unittest.mock
-
         try:
             if (
                 collision
@@ -1206,20 +1204,10 @@ def _process_move_item(
                 )
 
             try:
-                if (
-                    isinstance(
-                        shutil.move, (unittest.mock.Mock, unittest.mock.NonCallableMock)
-                    )
-                    or hasattr(shutil.move, "mock_add_spec")
-                    or getattr(shutil.move, "__name__", "") == "mock_move"
-                    or getattr(shutil.move, "__module__", "") != "shutil"
-                ):
-                    shutil.move(source_path, dest_path)
-                else:
-                    from app.core.resilient_file_ops import resilient_move
+                from app.core.resilient_file_ops import resilient_move
 
-                    dest_path = resilient_move(source_path, dest_path)
-                    rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
+                dest_path = resilient_move(source_path, dest_path)
+                rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
             except Exception as err:
                 logging.error(
                     f"Failed to move file {source_path} to {dest_path}: {err}"
@@ -1939,22 +1927,9 @@ def retry_failed_moves(
                 if dst_dir:
                     os.makedirs(dst_dir, exist_ok=True)
 
-                import unittest.mock
+                from app.core.resilient_file_ops import resilient_move
 
-                if (
-                    isinstance(
-                        shutil.move,
-                        (unittest.mock.Mock, unittest.mock.NonCallableMock),
-                    )
-                    or hasattr(shutil.move, "mock_add_spec")
-                    or getattr(shutil.move, "__name__", "") == "mock_move"
-                    or getattr(shutil.move, "__module__", "") != "shutil"
-                ):
-                    shutil.move(src, dst)
-                else:
-                    from app.core.resilient_file_ops import resilient_move
-
-                    dst = resilient_move(src, dst)
+                dst = resilient_move(src, dst)
             except Exception as err:
                 move_error = str(err)
                 logging.error(f"Retry move failed for {src} -> {dst}: {err}")

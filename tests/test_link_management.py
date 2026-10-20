@@ -149,7 +149,10 @@ def test_windows_shortcut_update_mocked(tmp_path):
         patch("app.core.mover.os.path.lexists") as mock_lexists,
         patch.object(history_manager, "create_snapshot"),
         patch("app.core.mover.os.remove") as mock_remove,
-        patch("app.core.mover.shutil.move") as mock_shutil_move,
+        patch(
+            "app.core.resilient_file_ops.resilient_move",
+            side_effect=lambda src, dst: dst,
+        ) as mock_move,
     ):
         # Make os.path.exists return True for our mocked shortcut and fallback to real os.path.exists for others
         def side_effect_exists(path):
@@ -198,7 +201,7 @@ def test_windows_shortcut_update_mocked(tmp_path):
         execute_moves(base_dir, plan, db, history_manager)
 
         print("MOCK CALLED WITH:", mock_pylnk3.for_file.call_args)
-        print("SHUTIL MOVE CALLED WITH:", mock_shutil_move.call_args)
+        print("MOVE CALLED WITH:", mock_move.call_args)
 
         # 4. Assertions
 
@@ -261,7 +264,10 @@ def test_windows_shortcut_update_in_place_mocked(tmp_path):
         patch("app.core.mover.os.path.lexists") as mock_lexists,
         patch("app.core.mover.os.path.samefile") as mock_samefile,
         patch.object(history_manager, "create_snapshot"),
-        patch("app.core.mover.shutil.move"),
+        patch(
+            "app.core.resilient_file_ops.resilient_move",
+            side_effect=lambda src, dst: dst,
+        ),
         patch("app.core.mover.os.remove") as mock_remove,
     ):
 
@@ -360,7 +366,10 @@ def test_windows_shortcut_update_exception(tmp_path, caplog):
         patch("app.core.mover.os.path.lexists") as mock_lexists,
         patch("app.core.mover.os.path.samefile") as mock_samefile,
         patch.object(history_manager, "create_snapshot"),
-        patch("app.core.mover.shutil.move"),
+        patch(
+            "app.core.resilient_file_ops.resilient_move",
+            side_effect=lambda src, dst: dst,
+        ),
         patch("app.core.mover.os.remove") as mock_remove,
     ):
 
