@@ -161,6 +161,11 @@ def import_transaction_ledger(conn) -> int:
     return len(values)
 
 
+def migrate_import_transaction_ledger(conn) -> None:
+    """Migration: build ``moves`` rows from the transaction ledger of older sorts."""
+    import_transaction_ledger(conn)
+
+
 def migrate_add_moves(conn) -> None:
     """Migration: add the ``moves`` table and import the old step ledger into it."""
     create_moves_table(conn)
