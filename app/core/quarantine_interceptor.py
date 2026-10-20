@@ -222,19 +222,17 @@ class QuarantineInterceptorService:
         self, job_id: str, timeout_override: Optional[float] = None
     ) -> QuarantineRecordModel:
         """Execute deep forensic scanning, PII redaction, policy evaluation, and archival lifecycle actions."""
-        record = self.db.get_quarantine_record(job_id)
+        record: dict[str, Any] | None = self.db.get_quarantine_record(job_id)
         if not isinstance(record, dict):
             # Fallback for mocked DB instances in unit tests
             record = None
-            if hasattr(self.db, "stage_quarantine_record") and getattr(
-                self.db.stage_quarantine_record, "call_args", None
-            ):
-                call_kwargs = (
-                    getattr(self.db.stage_quarantine_record.call_args, "kwargs", {})
-                    or {}
-                )
+            stage_call = getattr(
+                getattr(self.db, "stage_quarantine_record", None), "call_args", None
+            )
+            if stage_call:
+                call_kwargs = getattr(stage_call, "kwargs", {}) or {}
                 if call_kwargs.get("job_id") == job_id or not call_kwargs.get("job_id"):
-                    record = {
+                    stub_record: dict[str, Any] = {
                         "job_id": job_id,
                         "base_dir": call_kwargs.get("base_dir"),
                         "original_filepath": call_kwargs.get("original_filepath"),
@@ -244,6 +242,7 @@ class QuarantineInterceptorService:
                         "status": "STAGED",
                         "audit_log": [],
                     }
+                    record = stub_record
         if not record:
             raise ValueError(f"Quarantine record not found for job_id: {job_id}")
 
@@ -321,7 +320,7 @@ class QuarantineInterceptorService:
                         }
                         return validate_quarantine_record(fallback)
                 else:
-                    extracted_text = extract_file_text(staged_path) or ""
+                    extracted_text = str(extract_file_text(staged_path) or "")
 
             # Re-check timeout guardrail
             if (
@@ -446,10 +445,10 @@ class QuarantineInterceptorService:
                         )
                         rec = self.db.get_quarantine_record(job_id)
                         if rec:
-                            return rec
+                            return validate_quarantine_record(rec)
                         record["status"] = "QUARANTINED"
                         record["policy_action"] = "sensitivity_hold"
-                        return record
+                        return validate_quarantine_record(record)
                 except Exception as jev_err:
                     logger.warning(
                         f"Jev pre-classification warning for {orig_rel_path}: {jev_err}",

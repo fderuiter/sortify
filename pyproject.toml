@@ -136,7 +136,6 @@ include = [
     "app/core/db.py",
     "app/core/db_conn.py",
     "app/core/db_worker.py",
-    "app/core/quarantine_interceptor.py",
     "app/core/semantic_embeddings.py",
     "app/core/session.py",
 ]
