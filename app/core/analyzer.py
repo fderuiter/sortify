@@ -6,7 +6,7 @@ This module provides topic modeling functionality.
 import hashlib
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Dict, Optional, cast
 
 from pydantic import BaseModel
 
@@ -542,7 +542,7 @@ class IncrementalAnalyzer:
 
                 strategy = clustering_registry.get_strategy(self.strategy_name)
                 if strategy and hasattr(strategy, "_fallback_to_pytorch"):
-                    strategy._fallback_to_pytorch()
+                    cast(Any, strategy)._fallback_to_pytorch()
             except Exception:
                 logging.debug("Clustering strategy reset failed", exc_info=True)
 
@@ -697,7 +697,7 @@ class IncrementalAnalyzer:
         self,
         base_dir: str,
         runtime_settings=None,
-        locked_files: dict = None,
+        locked_files: Optional[dict] = None,
         cancel_check=None,
         fast_path_only: bool = False,
         target_paths: Optional[list[str]] = None,
@@ -789,7 +789,7 @@ class IncrementalAnalyzer:
                 if runtime_settings
                 else {}
             )
-            from app.core.policy_engine import PolicyEngine
+            from app.core.policy_engine import PolicyEngine, PolicyEvaluationResult
 
             policies = (
                 getattr(runtime_settings, "POLICIES", []) if runtime_settings else []
@@ -809,13 +809,13 @@ class IncrementalAnalyzer:
             hash_to_target = {}
             for d in docs:
                 if cancel_check and cancel_check():
-                    return {}
+                    return SortingPlan()
                 if len(d) > 3 and d[3] is not None:
                     hash_to_target[d[2]] = d[3]
 
             for d in docs:
                 if cancel_check and cancel_check():
-                    return {}
+                    return SortingPlan()
                 f, doc = d[0], d[1]
                 file_hash = d[2] if len(d) > 2 else None
                 assigned_folder = d[3] if len(d) > 3 else None
@@ -842,13 +842,17 @@ class IncrementalAnalyzer:
                     target = locked_files[f]
 
                 # Check against unified policies first!
-                matched_policy, halt_evaluation = PolicyEngine.evaluate_policies(
-                    f,
-                    doc,
-                    status_match,
-                    sorted_policies,
-                    return_halting=True,
-                    is_sorted=True,
+                # return_halting=True always yields a (result, halt) tuple.
+                matched_policy, halt_evaluation = cast(
+                    "tuple[PolicyEvaluationResult | None, bool]",
+                    PolicyEngine.evaluate_policies(
+                        f,
+                        doc,
+                        cast(str, status_match),
+                        sorted_policies,
+                        return_halting=True,
+                        is_sorted=True,
+                    ),
                 )
 
                 if matched_policy:
@@ -1397,10 +1401,10 @@ class IncrementalAnalyzer:
                 strategy = clustering_registry.get_strategy(active_strategy_name)
                 if strategy:
                     if hasattr(strategy, "set_db_context"):
-                        strategy.set_db_context(self.db, base_dir)
+                        cast(Any, strategy).set_db_context(self.db, base_dir)
                     else:
-                        strategy.db = self.db
-                        strategy.base_dir = base_dir
+                        cast(Any, strategy).db = self.db
+                        cast(Any, strategy).base_dir = base_dir
 
                     use_semantic = not self.embedding_manager.is_mock
                     pre_fetched_vectors = None
@@ -1460,9 +1464,12 @@ class IncrementalAnalyzer:
                         self.stop_words,
                         max_depth,
                         max_features,
-                        pre_fetched_vectors=pre_fetched_vectors,
+                        # The ClusteringStrategy protocol annotates these as
+                        # List[list] / list | dict, but strategies accept None
+                        # vector slots and a validated CorpusPreFetchBatchModel.
+                        pre_fetched_vectors=cast(Any, pre_fetched_vectors),
                         cancel_check=cancel_check,
-                        pre_fetched_corpus=pre_fetched_corpus,
+                        pre_fetched_corpus=cast(Any, pre_fetched_corpus),
                     )
                     if hasattr(plan, "plan") and isinstance(plan.plan, dict):
                         plan = plan.plan
@@ -1492,7 +1499,7 @@ class IncrementalAnalyzer:
                 ext_status,
             ) in policy_plan_files:
                 if cancel_check and cancel_check():
-                    return {}
+                    return SortingPlan()
                 parts = target_folder.replace("\\", "/").split("/")
                 current = plan
                 for i, part in enumerate(parts):
@@ -1513,7 +1520,7 @@ class IncrementalAnalyzer:
             # Inject keyword routed files back into the plan
             for f, target_folder, keyword, routed_by, ext_status in keyword_plan_files:
                 if cancel_check and cancel_check():
-                    return {}
+                    return SortingPlan()
                 parts = target_folder.replace("\\", "/").split("/")
                 current = plan
                 for i, part in enumerate(parts):
@@ -1534,7 +1541,7 @@ class IncrementalAnalyzer:
             # Inject Jev routed files back into the plan
             for f, target_folder, jev_res, ext_status in jev_plan_files:
                 if cancel_check and cancel_check():
-                    return {}
+                    return SortingPlan()
                 parts = target_folder.replace("\\", "/").split("/")
                 current = plan
                 for i, part in enumerate(parts):
@@ -1617,7 +1624,7 @@ class IncrementalAnalyzer:
 
             for f, target_folder, expression, rule_type, status in policy_plan_files:
                 if cancel_check and cancel_check():
-                    return {}
+                    return SortingPlan()
                 if target_folder not in plan:
                     plan[target_folder] = {}
                 plan[target_folder][f] = {
@@ -1629,7 +1636,7 @@ class IncrementalAnalyzer:
 
             for f, target_folder, keyword, rule_type, status in keyword_plan_files:
                 if cancel_check and cancel_check():
-                    return {}
+                    return SortingPlan()
                 if target_folder not in plan:
                     plan[target_folder] = {}
                 plan[target_folder][f] = {
@@ -1642,7 +1649,7 @@ class IncrementalAnalyzer:
             # Inject Historical Assignments and handle conflicts
             for f, (target_folder, status) in historical_overrides.items():
                 if cancel_check and cancel_check():
-                    return {}
+                    return SortingPlan()
                 is_conflicted = False
                 is_overridden_lock = False
                 compliance_path = None
@@ -1738,7 +1745,7 @@ class IncrementalAnalyzer:
 
             for target_folder, files in plan.items():
                 if cancel_check and cancel_check():
-                    return {}
+                    return SortingPlan()
                 if not isinstance(files, dict) or not files:
                     continue
 
@@ -1869,7 +1876,7 @@ class IncrementalAnalyzer:
                         )
                     )
                     if strategy and hasattr(strategy, "clear_isolated_state"):
-                        strategy.clear_isolated_state()
+                        cast(Any, strategy).clear_isolated_state()
             except Exception:
                 logging.debug("Clearing isolated strategy state failed", exc_info=True)
 
