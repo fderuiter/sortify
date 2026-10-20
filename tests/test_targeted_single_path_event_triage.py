@@ -166,6 +166,7 @@ def test_db_get_all_documents_targeted_query(tmp_path):
 @pytest.mark.anyio
 async def test_triage_file_path_passes_target_paths_and_no_get_files_recursively(
     tmp_path,
+    session_db,
 ):
     """Verify ContinuousWatchdogDaemon._triage_file_path passes target_paths to generate_sorting_plan without calling get_files_recursively."""
     from app.core.db_conn import clear_connection_cache
@@ -179,6 +180,7 @@ async def test_triage_file_path_passes_target_paths_and_no_get_files_recursively
     test_file.write_text("invoice text")
 
     mock_app_session = mock.MagicMock()
+    mock_app_session.db = session_db
     mock_app_session.generate_sorting_plan.return_value = {
         "Invoices": {"single_drop_invoice.pdf": {"__type__": "file"}}
     }
@@ -258,7 +260,7 @@ async def test_reconciliation_audit_enqueues_untracked_files(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_triage_moves_files_off_the_event_loop(tmp_path):
+async def test_triage_moves_files_off_the_event_loop(tmp_path, session_db):
     """Blocking sort work runs on the sort thread, so the loop stays responsive (#717)."""
     import threading
 
@@ -281,6 +283,7 @@ async def test_triage_moves_files_off_the_event_loop(tmp_path):
         return {"moved": 1}
 
     mock_app_session = mock.MagicMock()
+    mock_app_session.db = session_db
     mock_app_session.generate_sorting_plan.return_value = {
         "Invoices": {"slow_invoice.pdf": {"__type__": "file"}}
     }

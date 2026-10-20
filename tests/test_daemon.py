@@ -421,3 +421,30 @@ async def test_daemon_triage_uncategorized_file_remains_intact(tmp_path):
     finally:
         daemon.stop()
         clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_daemon_reads_pipeline_limits_from_settings_file(tmp_path, monkeypatch):
+    import json
+
+    from app.config import AppSettings
+
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text(
+        json.dumps(
+            {
+                "MAX_QUEUE_CAPACITY": 7,
+                "DEDUP_WINDOW": 1.5,
+                "RECONCILIATION_INTERVAL": 12.0,
+                "WORKER_TIMEOUT": 42.0,
+            }
+        ),
+        encoding="utf-8",
+    )
+    settings = AppSettings(filepath=str(settings_path))
+
+    daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
+
+    assert daemon.max_queue_capacity == 7
+    assert daemon.dedup_window == 1.5
+    assert daemon.reconciliation_interval == 12.0
+    assert settings.WORKER_TIMEOUT == 42.0

@@ -102,7 +102,7 @@ packaging==26.3
     #   scikit-image
 pandas==3.0.6
     # via smart-autosorter (pyproject.toml)
-pillow==12.3.0
+pillow==13.0.0
     # via
     #   easyocr
     #   imageio

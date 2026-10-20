@@ -509,19 +509,9 @@ def test_main_cli_tui_invocation():
     from app.main import main
 
     with (
-        patch("argparse.ArgumentParser.parse_args") as mock_args,
+        patch("sys.argv", ["smart-autosorter", "--tui"]),
         patch("app.ui.tui.run_tui") as mock_run_tui,
     ):
-        args = MagicMock()
-        args.tui = True
-        args.gui = False
-        args.daemon = False
-        args.demo = False
-        args.smoke_test = False
-        args.directory = "/path/to/sort"
-        args.debug_layout = False
-        mock_args.return_value = args
-
         main()
         mock_run_tui.assert_called_once()
 

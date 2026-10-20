@@ -440,9 +440,7 @@ class HistoryManager:
                 from app.config import AppSettings
 
                 app_settings = AppSettings()
-                policies = getattr(app_settings, "UNIFIED_POLICIES", None) or getattr(
-                    app_settings, "POLICIES", None
-                )
+                policies = getattr(app_settings, "POLICIES", None)
             except Exception:
                 pass
             self._prune_snapshots(conn, policies=policies)

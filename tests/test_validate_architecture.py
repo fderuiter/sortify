@@ -115,3 +115,116 @@ def test_import_layers_allow_downward_and_similar_names():
 def test_import_layers_have_no_docs_generator_exemption():
     # The docs generator moved to scripts/, so app.cli gets no exemption.
     assert _layer_errors("app/cli/generate_docs.py", "import sandbox_cli\n")
+
+
+def _settings_key_errors(
+    source, declared=frozenset({"MAX_WORKERS", "MAX_SPREADSHEET_ROWS"})
+):
+    import ast
+
+    from scripts.validate_architecture import validate_settings_keys
+
+    errors = []
+    validate_settings_keys(errors, "app/core/x.py", ast.parse(source), set(declared))
+    return errors
+
+
+def test_settings_keys_flag_undeclared_getattr_reads():
+    assert _settings_key_errors('getattr(settings, "WORKER_CONCURRENCY", 4)\n')
+    assert _settings_key_errors('getattr(self.settings, "PROTECTED_DIRECTORIES")\n')
+    assert _settings_key_errors('getattr(runtime_settings, "MOVE_CHUNK_SIZE", None)\n')
+
+
+def test_settings_keys_allow_declared_keys_and_unrelated_getattrs():
+    assert not _settings_key_errors('getattr(settings, "MAX_WORKERS", 4)\n')
+    assert not _settings_key_errors('getattr(settings, "MAX_SPREADSHEET_ROWS", 10)\n')
+    assert not _settings_key_errors('getattr(settings, "cancel_check", None)\n')
+    assert not _settings_key_errors('getattr(obj, "UNDECLARED", None)\n')
+
+
+def test_declared_settings_keys_include_fields_and_property_aliases():
+    from scripts.validate_architecture import declared_settings_keys
+
+    keys = declared_settings_keys()
+    assert {"MAX_QUEUE_CAPACITY", "DEDUP_WINDOW", "WORKER_TIMEOUT"} <= keys
+    assert "MAX_SPREADSHEET_ROWS" in keys
+    assert "WORKER_CONCURRENCY" not in keys
+
+
+def _global_errors(source):
+    import ast
+
+    from scripts.validate_architecture import validate_import_time_globals
+
+    errors = []
+    validate_import_time_globals(errors, "app/core/x.py", ast.parse(source))
+    return errors
+
+
+def test_import_time_globals_flag_module_level_patches():
+    assert _global_errors('import sys\nsys.modules["sqlite3"] = object()\n')
+    assert _global_errors("import socket\nsocket.socket.connect = None\n")
+    assert _global_errors(
+        'import sys\ntry:\n    import x\nexcept ImportError:\n    sys.modules["x"] = None\n'
+    )
+    assert _global_errors("import socket\nclass C:\n    socket.getfqdn = None\n")
+
+
+def test_import_time_globals_allow_install_functions_and_reads():
+    assert not _global_errors(
+        "import socket\ndef install():\n    socket.getfqdn = None\n"
+    )
+    assert not _global_errors('import sys\ntorch = sys.modules["torch"]\n')
+    assert not _global_errors('import sys\nsys.modules["torch"].set_num_threads(1)\n')
+
+
+def test_app_has_no_import_time_global_patches():
+    import ast
+    from pathlib import Path
+
+    from scripts.validate_architecture import validate_import_time_globals
+
+    errors = []
+    for path in Path("app").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        validate_import_time_globals(errors, str(path), tree)
+    assert errors == []
+
+
+def _detection_errors(source):
+    import ast
+
+    from scripts.validate_architecture import validate_no_test_detection
+
+    errors = []
+    validate_no_test_detection(errors, "app/core/x.py", ast.parse(source))
+    return errors
+
+
+def test_test_detection_flags_mock_checks_and_pytest_env():
+    assert _detection_errors("import unittest.mock\n")
+    assert _detection_errors("from unittest import mock\n")
+    assert _detection_errors("from unittest.mock import MagicMock\n")
+    assert _detection_errors("def f(x):\n    return isinstance(x, MagicMock)\n")
+    assert _detection_errors("import unittest\nunittest.mock.NonCallableMock\n")
+    assert _detection_errors('import os\nos.environ.get("PYTEST_CURRENT_TEST")\n')
+    assert _detection_errors('hasattr(obj, "mock_add_spec")\n')
+
+
+def test_test_detection_allows_ordinary_code():
+    assert not _detection_errors("import unittest\nimport shutil\n")
+    assert not _detection_errors('import os\nos.environ.get("SORTIFY_DEBUG")\n')
+    assert not _detection_errors("mock_mode = False\n")
+
+
+def test_app_has_no_test_detection():
+    import ast
+    from pathlib import Path
+
+    from scripts.validate_architecture import validate_no_test_detection
+
+    errors = []
+    for path in Path("app").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        validate_no_test_detection(errors, str(path), tree)
+    assert errors == []

@@ -690,6 +690,10 @@ class ClusteringStrategy(Protocol):
 class RecursiveKMeansStrategy(IsolatedStrategyMixin):
     """Strategy that uses recursive KMeans to cluster documents."""
 
+    # Clustering runs in a spawned child process so a cancel can kill it and
+    # its memory is reclaimed. Set False to cluster in this process instead.
+    run_in_subprocess: bool = True
+
     def _generate_plan_inline(
         self,
         filenames: List[str],
@@ -761,12 +765,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
         else:
             self._vector_map = {}
 
-        # Bypass multiprocessing during normal pytest run to allow mocking/assertions on instance state
-        import os
-
-        if "PYTEST_CURRENT_TEST" in os.environ and not os.environ.get(
-            "FORCE_MULTIPROCESSING_CLUSTERING"
-        ):
+        if not self.run_in_subprocess:
             return self._generate_plan_inline(
                 filenames,
                 documents,
@@ -2050,13 +2049,6 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             torch = sys.modules.get("torch")
             if torch is None:
                 import torch
-            elif (
-                hasattr(torch, "__spec__")
-                and type(torch.__spec__).__name__ == "MagicMock"
-            ):
-                from importlib.machinery import ModuleSpec
-
-                torch.__spec__ = ModuleSpec("torch", None)
 
             from app.core.shared_registry import SharedModelRegistry
 

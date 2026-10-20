@@ -22,19 +22,6 @@ from typing import Optional
 from app.core.exceptions import PartialMoveError
 from app.core.path_utils import is_junction_path
 
-# Load the original shutil.move to detect if it has been mocked or monkeypatched in tests.
-_ORIGINAL_SHUTIL_MOVE = None
-try:
-    import importlib.util
-
-    _spec = importlib.util.find_spec("shutil")
-    if _spec is not None and _spec.loader is not None:
-        _m = importlib.util.module_from_spec(_spec)
-        _spec.loader.exec_module(_m)
-        _ORIGINAL_SHUTIL_MOVE = _m.move
-except Exception:
-    pass
-
 # Centralized Retry Engine configuration
 IS_WINDOWS = sys.platform == "win32"
 
@@ -306,16 +293,6 @@ def resilient_move(src: str, dst: str) -> str:
 
     Returns the actual target path where the file was moved.
     """
-    import unittest.mock
-
-    # If shutil.move is mocked/patched by pytest/unittest, call it directly to preserve test assertions/side_effects
-    is_mocked = False
-    if isinstance(shutil.move, unittest.mock.Mock) or hasattr(
-        shutil.move, "mock_add_spec"
-    ):
-        is_mocked = True
-    elif not hasattr(shutil.move, "__code__"):
-        is_mocked = True
     if _is_same_path(src, dst):
         return dst
 
@@ -329,10 +306,6 @@ def resilient_move(src: str, dst: str) -> str:
 
     for attempt in range(max_attempts):
         try:
-            if is_mocked:
-                shutil.move(src, current_dst)
-                return current_dst
-
             if not os.path.lexists(src):
                 raise FileNotFoundError(f"Source file does not exist: {src}")
 
@@ -455,15 +428,7 @@ def resilient_remove(path):
 
 def resilient_rmtree(path, ignore_errors=False):
     """Resiliently delete a directory tree, adjusting permissions on write-permission locks."""
-    import unittest.mock
-
-    is_mocked = False
-    if isinstance(shutil.rmtree, unittest.mock.Mock) or hasattr(
-        shutil.rmtree, "mock_add_spec"
-    ):
-        is_mocked = True
-
-    if not is_mocked and not os.path.lexists(path):
+    if not os.path.lexists(path):
         return
 
     if is_junction_path(path) or os.path.islink(path):
@@ -493,16 +458,6 @@ def resilient_rmtree(path, ignore_errors=False):
     max_attempts = 1 if ignore_errors else MAX_ATTEMPTS
     for attempt in range(max_attempts):
         try:
-            if is_mocked:
-                if ignore_errors:
-                    try:
-                        shutil.rmtree(path, ignore_errors=True)
-                    except TypeError:
-                        shutil.rmtree(path)
-                else:
-                    shutil.rmtree(path)
-                return
-
             shutil.rmtree(path, onexc=_handle_error)
             if not os.path.lexists(path):
                 return

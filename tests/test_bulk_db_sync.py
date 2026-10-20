@@ -64,9 +64,9 @@ def test_successful_folder_relocation(tmp_path, db, history_manager, monkeypatch
         }
     }
 
-    # Mock shutil.move so we don't actually move files and mess up tests but can track calls
-    move_mock = MagicMock()
-    monkeypatch.setattr("app.core.mover.shutil.move", move_mock)
+    # Stub the mover's file move so nothing moves on disk, and track calls
+    move_mock = MagicMock(side_effect=lambda src, dst: dst)
+    monkeypatch.setattr("app.core.resilient_file_ops.resilient_move", move_mock)
 
     execute_moves(base_dir, plan, db, history_manager)
 
@@ -117,8 +117,9 @@ def test_interrupted_folder_relocation(tmp_path, db, history_manager, monkeypatc
         move_calls.append((src, dst))
         if "file2.txt" in src:
             raise OSError("Disk full")
+        return dst
 
-    monkeypatch.setattr("app.core.mover.shutil.move", mock_move)
+    monkeypatch.setattr("app.core.resilient_file_ops.resilient_move", mock_move)
 
     with pytest.raises(OSError, match="Disk full"):
         execute_moves(base_dir, plan, db, history_manager)
@@ -216,8 +217,8 @@ def test_chunked_batching_120_files(tmp_path, db, history_manager, monkeypatch):
 
     db.execute_batch_updates = mock_execute
 
-    move_mock = MagicMock()
-    monkeypatch.setattr("app.core.mover.shutil.move", move_mock)
+    move_mock = MagicMock(side_effect=lambda src, dst: dst)
+    monkeypatch.setattr("app.core.resilient_file_ops.resilient_move", move_mock)
 
     execute_moves(base_dir, plan, db, history_manager)
 
@@ -261,8 +262,9 @@ def test_interrupted_large_move_preserves_committed_chunks(
     def mock_move(src, dst):
         if "file_055.txt" in src:
             raise OSError("Disk failure mid-operation")
+        return dst
 
-    monkeypatch.setattr("app.core.mover.shutil.move", mock_move)
+    monkeypatch.setattr("app.core.resilient_file_ops.resilient_move", mock_move)
 
     with pytest.raises(OSError, match="Disk failure mid-operation"):
         execute_moves(base_dir, plan, db, history_manager)
@@ -320,8 +322,8 @@ def test_cache_invalidation_on_chunk_flush(tmp_path, history_manager, monkeypatc
 
     monkeypatch.setattr(db, "invalidate_cache", mock_invalidate)
 
-    move_mock = MagicMock()
-    monkeypatch.setattr("app.core.mover.shutil.move", move_mock)
+    move_mock = MagicMock(side_effect=lambda src, dst: dst)
+    monkeypatch.setattr("app.core.resilient_file_ops.resilient_move", move_mock)
 
     execute_moves(str(tmp_path), plan, db, history_manager)
 

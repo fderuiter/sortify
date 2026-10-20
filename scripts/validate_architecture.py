@@ -410,6 +410,154 @@ def validate_import_layers(errors: list, filepath: str, tree: ast.AST) -> None:
                     )
 
 
+SETTINGS_SOURCE = "app/config.py"
+
+
+def declared_settings_keys(
+    config_path: str = os.path.join(os.path.dirname(__file__), "..", SETTINGS_SOURCE),
+) -> set[str]:
+    """Return the field and property names declared on the `Settings` model.
+
+    Read from the source rather than imported, so the check needs no app imports.
+    """
+    with open(config_path, "r", encoding="utf-8") as f:
+        tree = ast.parse(f.read(), filename=config_path)
+    for node in tree.body:
+        if isinstance(node, ast.ClassDef) and node.name == "Settings":
+            keys = set()
+            for stmt in node.body:
+                if isinstance(stmt, ast.AnnAssign) and isinstance(
+                    stmt.target, ast.Name
+                ):
+                    keys.add(stmt.target.id)
+                elif isinstance(stmt, ast.FunctionDef):
+                    keys.add(stmt.name)
+            return keys
+    raise ValueError(f"No Settings class found in {config_path}")
+
+
+def _is_settings_receiver(node: ast.AST) -> bool:
+    if isinstance(node, ast.Name):
+        return node.id.endswith("settings")
+    if isinstance(node, ast.Attribute):
+        return node.attr.endswith("settings")
+    return False
+
+
+def validate_settings_keys(
+    errors: list, filepath: str, tree: ast.AST, declared: set[str]
+) -> None:
+    """Flag `getattr(settings, "KEY", ...)` reads of keys `Settings` doesn't declare.
+
+    `AppSettings` raises for unknown keys, so such a read always falls back to
+    its default and the setting can never be configured.
+    """
+    for node in ast.walk(tree):
+        if not (
+            isinstance(node, ast.Call)
+            and isinstance(node.func, ast.Name)
+            and node.func.id == "getattr"
+            and len(node.args) >= 2
+            and _is_settings_receiver(node.args[0])
+            and isinstance(node.args[1], ast.Constant)
+            and isinstance(node.args[1].value, str)
+        ):
+            continue
+        key = node.args[1].value
+        if key.isupper() and key not in declared:
+            errors.append(
+                f"{filepath}:{node.lineno}: Undeclared setting '{key}' is read from settings; declare it on Settings in {SETTINGS_SOURCE} or drop the read"
+            )
+
+
+def _is_global_target(target: ast.AST) -> bool:
+    """True for ``sys.modules[...]`` or an attribute chain rooted at ``socket``."""
+    if isinstance(target, ast.Subscript):
+        value = target.value
+        return (
+            isinstance(value, ast.Attribute)
+            and value.attr == "modules"
+            and isinstance(value.value, ast.Name)
+            and value.value.id == "sys"
+        )
+    if isinstance(target, ast.Attribute):
+        root = target.value
+        while isinstance(root, ast.Attribute):
+            root = root.value
+        return isinstance(root, ast.Name) and root.id == "socket"
+    return False
+
+
+def validate_import_time_globals(errors: list, filepath: str, tree: ast.AST) -> None:
+    """Flag module-level writes to ``sys.modules[...]`` or ``socket.*`` (#711).
+
+    Such patches belong in an explicit install() that an entrypoint calls, so
+    statements inside functions are allowed; class bodies run at import and
+    are checked.
+    """
+    pending = list(ast.iter_child_nodes(tree))
+    while pending:
+        node = pending.pop()
+        if isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef, ast.Lambda)):
+            continue
+        if isinstance(node, ast.Assign):
+            targets = node.targets
+        elif isinstance(node, (ast.AugAssign, ast.AnnAssign)):
+            targets = [node.target]
+        elif isinstance(node, ast.Delete):
+            targets = node.targets
+        else:
+            targets = []
+        for target in targets:
+            for part in ast.walk(target):
+                if _is_global_target(part):
+                    errors.append(
+                        f"{filepath}:{node.lineno}: Import-time global patch: "
+                        f"'{ast.unparse(part)}' is assigned at module level; "
+                        "move it into an explicit install() called from an entrypoint"
+                    )
+                    break
+        pending.extend(ast.iter_child_nodes(node))
+
+
+_TEST_DETECTION_NAMES = frozenset(
+    {"MagicMock", "NonCallableMock", "mock_add_spec", "PYTEST_CURRENT_TEST"}
+)
+
+
+def validate_no_test_detection(errors: list, filepath: str, tree: ast.AST) -> None:
+    """Flag production code that detects it is under test (#720).
+
+    Branches on ``unittest.mock`` types or ``PYTEST_CURRENT_TEST`` mean tests
+    exercise a path production never runs; inject the dependency instead.
+    """
+    for node in ast.walk(tree):
+        found = None
+        if isinstance(node, ast.Import):
+            found = next(
+                (a.name for a in node.names if a.name.startswith("unittest.mock")),
+                None,
+            )
+        elif isinstance(node, ast.ImportFrom):
+            if node.module and node.module.startswith("unittest.mock"):
+                found = node.module
+            elif node.module == "unittest" and any(
+                a.name == "mock" for a in node.names
+            ):
+                found = "unittest.mock"
+        elif isinstance(node, ast.Name) and node.id in _TEST_DETECTION_NAMES:
+            found = node.id
+        elif isinstance(node, ast.Attribute) and node.attr in _TEST_DETECTION_NAMES:
+            found = node.attr
+        elif isinstance(node, ast.Constant) and node.value in _TEST_DETECTION_NAMES:
+            found = node.value
+        if found:
+            errors.append(
+                f"{filepath}:{node.lineno}: Test detection in production code: "
+                f"'{found}'; inject the dependency so tests run the production path"
+            )
+
+
 def main():
     """Execute all architectural validation checks."""
     parser = argparse.ArgumentParser(
@@ -443,6 +591,7 @@ def main():
         target_files = None
 
     errors = []
+    declared_settings = declared_settings_keys()
 
     # Rule 1 & Rule 2: Async DB writes and UI blocking operations
     for root, _, files in os.walk("app"):
@@ -462,6 +611,10 @@ def main():
                 continue
 
             validate_import_layers(errors, filepath, tree)
+            validate_settings_keys(errors, filepath, tree, declared_settings)
+
+            validate_import_time_globals(errors, filepath, tree)
+            validate_no_test_detection(errors, filepath, tree)
 
             is_ui_file = "app/ui" in filepath
 

@@ -5,6 +5,7 @@ import os
 import sys
 import threading
 from pathlib import Path
+from typing import Any
 
 from app.core.cache import BoundedMemoryCache
 
@@ -18,48 +19,31 @@ def escape_pragma_key(key_str: str) -> str:
     return str(key_str).replace("'", "''")
 
 
+# The frozen build leaves out the unencrypted stdlib driver on purpose
+# (smart-autosorter.spec), so it may be missing.
+try:
+    import sqlite3 as _stdlib_sqlite3
+except ImportError:
+    _stdlib_sqlite3 = None
+
 # sqlcipher3-wheels ships SQLCipher and OpenSSL statically linked into one
-# extension module, so the import needs no DLL or library-path setup.
+# extension module, so the import needs no DLL or library-path setup. Callers
+# use this module's ``sqlite3`` handle; ``sys.modules["sqlite3"]`` is left
+# alone, so third-party ``import sqlite3`` is unaffected. Without SQLCipher,
+# opening a store raises (#711), before the handle is used.
+sqlite3: Any
 try:
     from sqlcipher3 import dbapi2 as sqlite3
 
     HAS_SQLCIPHER = True
-    import sys
-
-    sys.modules["sqlite3"] = sqlite3
-except Exception:
+except ImportError:
+    sqlite3 = _stdlib_sqlite3
     HAS_SQLCIPHER = False
-    try:
-        import sqlite3
-    except Exception:
-        import types
 
-        sqlite3_mock = types.ModuleType("sqlite3")
-        sqlite3_mock.Error = Exception
-        sqlite3_mock.DatabaseError = Exception
-        sqlite3_mock.OperationalError = Exception
-        sqlite3_mock.IntegrityError = Exception
-        sqlite3_mock.InternalError = Exception
-        sqlite3_mock.ProgrammingError = Exception
-        sqlite3_mock.NotSupportedError = Exception
-
-        class DummyConnection:
-            """A dummy connection class to simulate sqlite3 when SQLCipher is missing."""
-
-            def __init__(self, *args, **kwargs):
-                raise RuntimeError("SQLCipher library is missing.")
-
-            def close(self):
-                """Close the dummy connection (no-op)."""
-                pass
-
-        sqlite3_mock.connect = DummyConnection
-        sqlite3_mock.Connection = DummyConnection
-
-        import sys
-
-        sys.modules["sqlite3"] = sqlite3_mock
-        sqlite3 = sqlite3_mock
+# Database errors from either driver; sqlcipher3's classes don't subclass sqlite3's.
+DB_ERRORS: tuple[type[Exception], ...] = tuple(
+    dict.fromkeys(m.Error for m in (sqlite3, _stdlib_sqlite3) if m is not None)
+)
 
 
 # Global connection cache and lock
@@ -176,7 +160,8 @@ def _open_connection(db_path: str, abs_path: str, cache_key):
     if not HAS_SQLCIPHER:
         if _disable_pytest_win_fallback:
             raise RuntimeError(
-                "SQLCipher library is missing. Standard SQLite fallback connections are blocked."
+                "SQLCipher library is missing, so the encrypted store can't be opened. "
+                "Reinstall Sortify, or run `pip install sqlcipher3-wheels`."
             )
         logger.warning(
             "SECURITY WARNING: SQLCipher encryption driver is missing or unverified. "
@@ -259,8 +244,6 @@ def _open_connection(db_path: str, abs_path: str, cache_key):
             except Exception:
                 pass
 
-        import sqlite3 as std_sqlite3
-
         # Safe extraction of module and class names to prevent AttributeError when __module__ is None
         module_name = getattr(type(e), "__module__", "") or ""
         module_name = str(module_name).lower()
@@ -269,7 +252,7 @@ def _open_connection(db_path: str, abs_path: str, cache_key):
 
         # Broad detection of SQLite/SQLCipher database and connection errors
         is_sqlite_or_db_err = (
-            isinstance(e, (sqlite3.Error, std_sqlite3.Error))
+            isinstance(e, DB_ERRORS)
             or "sqlite" in module_name
             or "sqlcipher" in module_name
             or class_name == "Error"

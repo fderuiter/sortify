@@ -69,7 +69,7 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
             "AI processing is disabled because AI consent has been revoked.",
         )
 
-    is_sandboxed = is_packaged() or getattr(settings, "SANDBOXED", False)
+    is_sandboxed = is_packaged()
 
     if not is_ml_available():
         mei = get_meipass_dir() or ""
@@ -89,11 +89,7 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
         ]
         marker_lite = any(c and os.path.exists(c) for c in lite_candidates)
 
-        is_lite = (
-            os.environ.get("LITE_BUILD") == "1"
-            or getattr(settings, "LITE_BUILD", False)
-            or marker_lite
-        )
+        is_lite = os.environ.get("LITE_BUILD") == "1" or marker_lite
         if is_sandboxed and not is_lite:
             raise ValueError(
                 "Machine learning dependencies (PyTorch/EasyOCR) are missing in sandboxed execution. To enable ML features, install the 'ml' extra group: uv sync --extra ml or pip install '.[ml]'"
@@ -132,13 +128,12 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     if mei_dir:
         easyocr_dir = os.path.join(mei_dir, "offline_bundle", "easyocr")
     else:
+        # The working directory is deliberately not searched: it is often a
+        # folder of untrusted files that this app is sorting (#722).
         local_easyocr_path = os.path.join(base_path, "offline_bundle", "easyocr")
-        cwd_easyocr_path = os.path.join(os.getcwd(), "offline_bundle", "easyocr")
         easyocr_path = os.environ.get("EASYOCR_MODULE_PATH")
         if os.path.exists(local_easyocr_path):
             easyocr_dir = local_easyocr_path
-        elif os.path.exists(cwd_easyocr_path):
-            easyocr_dir = cwd_easyocr_path
         elif easyocr_path:
             easyocr_dir = os.path.join(easyocr_path, "model")
         else:

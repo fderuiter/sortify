@@ -164,11 +164,7 @@ class CsvExtractor:
         max_chars = getattr(
             settings,
             "TABULAR_MAX_CHARACTERS",
-            getattr(
-                settings,
-                "MAX_SPREADSHEET_CHARACTERS",
-                getattr(settings, "MAX_TABULAR_CHARACTERS", 50000),
-            ),
+            getattr(settings, "MAX_SPREADSHEET_CHARACTERS", 50000),
         )
 
         extracted_rows = []
@@ -224,11 +220,7 @@ class XlsxExtractor:
         max_chars = getattr(
             settings,
             "TABULAR_MAX_CHARACTERS",
-            getattr(
-                settings,
-                "MAX_SPREADSHEET_CHARACTERS",
-                getattr(settings, "MAX_TABULAR_CHARACTERS", 50000),
-            ),
+            getattr(settings, "MAX_SPREADSHEET_CHARACTERS", 50000),
         )
 
         extracted_lines = []

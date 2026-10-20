@@ -12,9 +12,9 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Log
 
+from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
 from app.ui.notifications import TROUBLESHOOTING_URL
-from app.ui.tui import A11yMixin
 
 logger = logging.getLogger(__name__)
 

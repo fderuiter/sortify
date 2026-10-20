@@ -28,9 +28,14 @@ class ModelValidationError(SemanticEmbeddingError, ValueError):
     pass
 
 
+# Embedding work drops its thread to the lowest priority so sorting never
+# starves the desktop. Tests turn this off; the change can't be undone in-thread.
+LOWER_THREAD_PRIORITY = True
+
+
 def set_low_priority():
     """Set the current thread to low priority in a platform-independent way."""
-    if "CI" in os.environ or "PYTEST_CURRENT_TEST" in os.environ:
+    if not LOWER_THREAD_PRIORITY:
         return
     try:
         if sys.platform != "win32":
@@ -66,9 +71,6 @@ def _parse_onnx_type(node_type_str) -> "np.dtype":
         except Exception:
             logging.debug("Could not stringify ONNX node type", exc_info=True)
             return np.int64
-
-    if "MagicMock" in node_type_str:
-        return np.int64
 
     lower_type = node_type_str.lower()
     if "int64" in lower_type:
@@ -194,6 +196,9 @@ class SemanticEmbeddingManager:
 
     _active_instances = weakref.WeakSet()
     _instances_lock = threading.Lock()
+    # Check the model files on disk when a manager is built. Tests that use
+    # stand-in models turn this off and pass force_validation=True to opt back in.
+    validate_on_init: bool = True
 
     @classmethod
     def stop_all(cls):
@@ -240,8 +245,7 @@ class SemanticEmbeddingManager:
         self.suggested_recovery_action = None
 
         if self.model_path is not None and not bypass_validation:
-            is_pytest = "PYTEST_CURRENT_TEST" in os.environ
-            if force_validation or not is_pytest:
+            if force_validation or self.validate_on_init:
                 try:
                     self.validate_model_assets()
                 except Exception as e:

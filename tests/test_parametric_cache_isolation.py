@@ -123,14 +123,15 @@ def test_db_worker_termination_preserves_main_connections(tmp_path):
         conn = get_db_connection(db_path)
         conn.execute("CREATE TABLE t (id INT)")
         conn.execute("INSERT INTO t VALUES (1)")
+        conn.commit()
 
     worker.execute_write(worker_task)
 
     # 3. Stop/terminate the background DBWorker
     worker.stop()
 
-    # 4. Verify that the main thread's connection is STILL fully open and operational!
-    main_conn.execute("SELECT * FROM t")
+    # 4. The main thread's connection is still open and sees the worker's write.
+    assert main_conn.execute("SELECT id FROM t").fetchall() == [(1,)]
 
     # 5. Clean up
     clear_connection_cache(only_current_and_inactive=False)
