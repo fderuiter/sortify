@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "7ba55a0604bace110db3ce95fc484b779584e6e12cd36f5e078a97188d0312ec"
+    "checksum": "1d43b58070a341342b1f261acdfd0ebf45e0cd29882617a4b183abad3648af4d"
   },
   "classes": [
     {
@@ -108,7 +108,7 @@
               "name": "max_features"
             },
             {
-              "annotation": "List[list] | None",
+              "annotation": "List[list[float] | None] | None",
               "default": "None",
               "name": "pre_fetched_vectors"
             },
@@ -118,7 +118,7 @@
               "name": "cancel_check"
             },
             {
-              "annotation": "list | dict | None",
+              "annotation": "CorpusPreFetchBatchModel | None",
               "default": "None",
               "name": "pre_fetched_corpus"
             }
@@ -192,7 +192,7 @@
               "name": "max_features"
             },
             {
-              "annotation": "List[list] | None",
+              "annotation": "List[list[float] | None] | None",
               "default": "None",
               "name": "pre_fetched_vectors"
             },
@@ -202,7 +202,7 @@
               "name": "cancel_check"
             },
             {
-              "annotation": "list | dict | None",
+              "annotation": "CorpusPreFetchBatchModel | None",
               "default": "None",
               "name": "pre_fetched_corpus"
             }
@@ -460,7 +460,7 @@
               "name": "max_features"
             },
             {
-              "annotation": "List[list] | None",
+              "annotation": "List[list[float] | None] | None",
               "default": "None",
               "name": "pre_fetched_vectors"
             },
@@ -470,7 +470,7 @@
               "name": "cancel_check"
             },
             {
-              "annotation": "list | dict | None",
+              "annotation": "CorpusPreFetchBatchModel | None",
               "default": "None",
               "name": "pre_fetched_corpus"
             }
@@ -584,7 +584,7 @@
       "name": "is_gguf_model_dir",
       "parameters": [
         {
-          "annotation": "str",
+          "annotation": "str | None",
           "default": null,
           "name": "model_path"
         }
@@ -654,7 +654,7 @@
           "name": "thread_limit"
         },
         {
-          "annotation": "list | dict | None",
+          "annotation": "CorpusPreFetchBatchModel | None",
           "default": "None",
           "name": "pre_fetched_corpus"
         },
@@ -724,7 +724,7 @@
       "name": "validate_prompt_dump_path",
       "parameters": [
         {
-          "annotation": "str",
+          "annotation": "str | None",
           "default": null,
           "name": "dump_file"
         }

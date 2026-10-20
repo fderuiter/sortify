@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "3ca548d564123eb0c5fa62c66d47c204f8b1906f09c78b7bbaca2f594fcd98fc"
+    "checksum": "6dc783062859c942749de51dfb7e935ce2d04cf9d841e96b1f5e7e40434c4205"
   },
   "classes": [
     {
@@ -157,7 +157,7 @@
               "name": "extension"
             }
           ],
-          "returns": "DocumentExtractor"
+          "returns": "DocumentExtractor | None"
         },
         {
           "async": false,
