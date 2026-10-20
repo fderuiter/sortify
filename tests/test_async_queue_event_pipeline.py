@@ -146,7 +146,7 @@ async def test_per_path_locks_prevent_concurrent_collisions(tmp_path):
 
 
 @pytest.mark.anyio
-async def test_targeted_triage_without_whole_directory_scans(tmp_path):
+async def test_targeted_triage_without_whole_directory_scans(tmp_path, session_db):
     """Verify async worker tasks consume queued events and execute targeted triage without full-directory scans."""
     file_a = tmp_path / "target_a.pdf"
     file_a.write_text("target pdf content")
@@ -156,6 +156,7 @@ async def test_targeted_triage_without_whole_directory_scans(tmp_path):
     daemon._is_running = True
 
     mock_session = mock.MagicMock()
+    mock_session.db = session_db
     mock_session.generate_sorting_plan.side_effect = [
         {"target_a.pdf": "sorted/target_a.pdf"},
         {},
