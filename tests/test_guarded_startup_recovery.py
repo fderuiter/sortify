@@ -1,4 +1,3 @@
-import asyncio
 import os
 import shutil
 from unittest.mock import MagicMock, patch
@@ -6,7 +5,8 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.config import AppSettings as Settings
-from app.core.session import AppSession, scan_abandoned_sessions_async
+from app.core.session import AppSession
+from app.core.session_catalog import find_abandoned_sessions
 from app.ui.tui import AutoSorterTUI
 
 pytestmark = pytest.mark.xdist_group(name="tui")
@@ -14,7 +14,12 @@ pytestmark = pytest.mark.xdist_group(name="tui")
 
 @pytest.fixture
 def mock_session_base(tmp_path, monkeypatch):
-    """Isolate session base directory to tmp_path."""
+    """Isolate the app store and session base directory to tmp_path.
+
+    These tests leave unfinished sessions behind, and a TUI started by a later
+    test would offer to recover them from a shared store.
+    """
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app"))
     session_base = tmp_path / "autosorter_sessions"
     session_base.mkdir(parents=True, exist_ok=True)
 
@@ -72,7 +77,6 @@ def test_unrecoverable_error_preserves_safety_storage_and_session(
     settings = Settings()
     app_session = AppSession(settings, base_dir)
     session_id = app_session.history_manager.create_snapshot(base_dir)
-    session_dir = app_session.session_dir
 
     # Move original file to safety storage branch folder
     branch_dir = os.path.join(base_dir, ".branches", session_id)
@@ -94,7 +98,8 @@ def test_unrecoverable_error_preserves_safety_storage_and_session(
     # Verify safety storage branch folder and trapped file are preserved
     assert os.path.exists(branch_dir)
     assert os.path.exists(trapped_file)
-    assert os.path.exists(session_dir)
+    # The unfinished session stays in the store, so the next start offers recovery.
+    assert any(s["session_id"] == session_id for s in find_abandoned_sessions())
 
 
 def test_trapped_files_redetected_on_subsequent_scan(tmp_path, mock_session_base):
@@ -116,7 +121,7 @@ def test_trapped_files_redetected_on_subsequent_scan(tmp_path, mock_session_base
     with open(trapped_file, "w") as f:
         f.write("docx data in safety storage")
 
-    abandoned = asyncio.run(scan_abandoned_sessions_async())
+    abandoned = find_abandoned_sessions()
     assert len(abandoned) >= 1
     session_match = next((s for s in abandoned if s["session_id"] == session_id), None)
     assert session_match is not None

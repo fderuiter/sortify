@@ -6,11 +6,10 @@ import pytest
 from textual.widgets import Button, Checkbox, Label, Select
 
 from app.config import AppSettings
-from app.core.cache import CacheManager
-from app.core.db import Database
 from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
 from app.core.history import HistoryManager
+from app.core.store import open_store
 from app.ui.tui import (
     AutoSorterTUI,
     HistoryModal,
@@ -20,7 +19,7 @@ from app.ui.tui import (
 
 
 @pytest.fixture
-def tui_rollback_env(tmp_path):
+def tui_rollback_env(tmp_path, monkeypatch):
     """Fixture to set up a test environment with a historical sorting session and step ledger."""
     base_dir = tmp_path / "workspace"
     base_dir.mkdir()
@@ -31,12 +30,13 @@ def tui_rollback_env(tmp_path):
     file1.write_text("Content of doc1")
     file2.write_text("Content of doc2")
 
+    # The TUI opens the default app store, so point it at this test's store.
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app"))
+    store = open_store(tmp_path / "app", legacy_session_root=tmp_path / "none")
     db_worker = DBWorker()
-    autosorter_db = Database(str(tmp_path / "autosorter.db"), db_worker)
-    cache_mgr = CacheManager(str(tmp_path / "cache.db"), db_worker)
-    history_db_path = tmp_path / "history.db"
-
-    history_mgr = HistoryManager(autosorter_db, cache_mgr, str(history_db_path))
+    autosorter_db = store.database(db_worker)
+    history_mgr = store.history(autosorter_db, store.cache(db_worker))
+    history_db_path = store.path
 
     # Take snapshot
     session_id = history_mgr.create_snapshot(str(base_dir))
@@ -331,23 +331,19 @@ async def test_rollback_execution_error_modal_on_failure(tui_rollback_env, monke
 
 
 @pytest.mark.anyio
-async def test_rollback_uses_databases_next_to_session_history(
-    tui_rollback_env, monkeypatch
-):
-    """Verify a namespaced session rolls back against its own autosorter.db and cache.db (#742)."""
+async def test_rollback_uses_the_app_store(tui_rollback_env, monkeypatch):
+    """Verify a rollback updates documents and caches in the app store (ADR 0008)."""
     sessions = tui_rollback_env["sessions"]
     session_id = tui_rollback_env["session_id"]
     settings = tui_rollback_env["settings"]
-    session_dir = os.path.dirname(tui_rollback_env["history_db_path"])
+    store_path = os.path.abspath(tui_rollback_env["history_db_path"])
 
     used_paths = {}
     real_rollback = HistoryManager.rollback
 
     def spy_rollback(self, sid, ignore_missing=False):
-        used_paths["db"] = os.path.dirname(os.path.abspath(self.db.db_path))
-        used_paths["cache"] = os.path.dirname(
-            os.path.abspath(self.cache_manager.db_path)
-        )
+        used_paths["db"] = os.path.abspath(self.db.db_path)
+        used_paths["cache"] = os.path.abspath(self.cache_manager.db_path)
         return real_rollback(self, sid, ignore_missing=ignore_missing)
 
     monkeypatch.setattr("app.core.history.HistoryManager.rollback", spy_rollback)
@@ -368,7 +364,7 @@ async def test_rollback_uses_databases_next_to_session_history(
         await app.workers.wait_for_complete()
         await pilot.pause()
 
-    assert used_paths == {"db": session_dir, "cache": session_dir}
+    assert used_paths == {"db": store_path, "cache": store_path}
 
 
 def test_open_session_history_stops_its_db_worker(tmp_path):
@@ -386,7 +382,8 @@ def test_open_session_history_stops_its_db_worker(tmp_path):
 
     before = len(worker_threads())
     for _ in range(3):
-        with open_session_history(tmp_path / "history.db") as history_mgr:
+        store = open_store(tmp_path / "app", legacy_session_root=tmp_path / "none")
+        with open_session_history(store) as history_mgr:
             assert history_mgr.db.worker.thread.is_alive()
     assert len(worker_threads()) == before
 
@@ -411,7 +408,7 @@ async def test_escape_does_not_close_history_modal_mid_rollback(
         return 2
 
     monkeypatch.setattr("app.core.history.HistoryManager.rollback", blocking_rollback)
-    monkeypatch.setattr("app.core.session_catalog.find_all_history_sessions", lambda: sessions)
+    monkeypatch.setattr("app.core.session_catalog.list_sessions", lambda: sessions)
 
     app = AutoSorterTUI(settings=settings)
     async with app.run_test() as pilot:

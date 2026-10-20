@@ -1543,14 +1543,10 @@ def _get_vector_count(db=None) -> int:
     try:
         if db is not None and hasattr(db, "get_document_vectors_count"):
             return db.get_document_vectors_count()
-        from app.config import get_app_dir
-        from app.core.db import Database
         from app.core.db_worker import DBWorker
+        from app.core.store import open_store
 
-        db_path = get_app_dir() / "autosorter.db"
-        if db_path.exists():
-            temp_db = Database(db_path, DBWorker())
-            return temp_db.get_document_vectors_count()
+        return open_store().database(DBWorker()).get_document_vectors_count()
     except Exception:
         pass
     return 0
@@ -5840,9 +5836,9 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     ):
         super().__init__()
         if sessions is None:
-            from app.core.session_catalog import find_all_history_sessions
+            from app.core.session_catalog import list_sessions
 
-            sessions = find_all_history_sessions()
+            sessions = list_sessions()
         self.sessions = sessions or []
         self.base_dir = base_dir
         self._rollback_in_progress = False
@@ -6062,7 +6058,6 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
             sid = result["session_id"]
             ignore_missing = result.get("ignore_missing", False)
-            db_path = target_sess.get("history_db_path")
 
             self.query_one("#btn-rollback-session", Button).disabled = True
             self.query_one("#btn-export", Button).disabled = True
@@ -6073,7 +6068,7 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             lbl_status.update(f"⏳ Rolling back session {sid[:8]}... Please wait.")
             self.announce(f"Executing rollback for session {sid[:8]}...")
 
-            self.run_rollback_worker(sid, ignore_missing, db_path)
+            self.run_rollback_worker(sid, ignore_missing)
 
         self.app.push_screen(
             RollbackConfirmModal(session_info=target_sess),
@@ -6081,14 +6076,12 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         )
 
     @work(thread=True)
-    def run_rollback_worker(
-        self, session_id: str, ignore_missing: bool, history_db_path: Optional[str]
-    ) -> None:
+    def run_rollback_worker(self, session_id: str, ignore_missing: bool) -> None:
         """Execute session rollback asynchronously in background worker thread."""
         try:
             from app.core.history import open_session_history
 
-            with open_session_history(history_db_path) as history_mgr:
+            with open_session_history() as history_mgr:
                 restored_count = history_mgr.rollback(
                     session_id, ignore_missing=ignore_missing
                 )
@@ -6110,9 +6103,9 @@ class HistoryModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     def _on_rollback_success(self, session_id: str, restored_count: int) -> None:
         """Handle successful session rollback completion on main thread."""
         self._rollback_in_progress = False
-        from app.core.session_catalog import find_all_history_sessions
+        from app.core.session_catalog import list_sessions
 
-        self.sessions = find_all_history_sessions()
+        self.sessions = list_sessions()
         self._refresh_session_options(selected_sid=session_id)
 
         lbl_status = self.query_one("#lbl-rollback-status", Label)
@@ -6436,11 +6429,10 @@ class QuarantineVaultModal(A11yMixin, ModalScreen[None]):
     def _get_db(self) -> Any:
         if self.db is not None:
             return self.db
-        from app.config import get_app_dir
-        from app.core.db import Database
         from app.core.db_worker import DBWorker
+        from app.core.store import open_store
 
-        return Database(get_app_dir() / "autosorter.db", DBWorker())
+        return open_store().database(DBWorker())
 
     def _call_ui(self, func, *args, **kwargs) -> None:
         try:
@@ -7288,9 +7280,11 @@ class AutoSorterTUI(A11yMixin, App):
     async def check_abandoned_sessions(self) -> None:
         """Scan for abandoned sessions on startup and prompt for recovery if detected."""
         try:
-            from app.core.session import scan_abandoned_sessions_async
+            import asyncio
 
-            abandoned = await scan_abandoned_sessions_async()
+            from app.core.session_catalog import find_abandoned_sessions
+
+            abandoned = await asyncio.to_thread(find_abandoned_sessions)
             if not abandoned:
                 return
 
@@ -7379,12 +7373,17 @@ class AutoSorterTUI(A11yMixin, App):
             self.action_scan_directory()
 
     def _do_recovery_clean(self, session_info: Dict[str, Any]) -> None:
-        """Clean abandoned session files."""
-        import shutil
+        """Leave an abandoned session as it is and stop offering to recover it."""
+        from app.core.session_catalog import mark_session_abandoned
 
-        session_dir = session_info.get("session_dir")
-        if session_dir and os.path.exists(session_dir):
-            shutil.rmtree(session_dir, ignore_errors=True)
+        journal_path = session_info.get("journal_path")
+        if journal_path:
+            try:
+                os.remove(journal_path)
+            except OSError:
+                logger.warning("Could not remove rollback journal %s", journal_path)
+        elif session_info.get("session_id"):
+            mark_session_abandoned(session_info["session_id"])
         self.announce(f"Cleaned session files for '{session_info.get('session_id')}'.")
 
     def _get_ai_status_badge(self) -> str:
@@ -7891,9 +7890,9 @@ class AutoSorterTUI(A11yMixin, App):
         """Trigger session history view and audit log export modal screen."""
         if self._is_text_control_focused(allow_tree_search=True):
             return
-        from app.core.session_catalog import find_all_history_sessions
+        from app.core.session_catalog import list_sessions
 
-        sessions = find_all_history_sessions()
+        sessions = list_sessions()
 
         def handle_history_modal_result(result: Optional[Dict[str, Any]]) -> None:
             if not result:
@@ -7903,26 +7902,13 @@ class AutoSorterTUI(A11yMixin, App):
             fmt = result["format"]
 
             try:
-                target_db_path = None
-                for s in sessions:
-                    if s.get("session_id") == session_id:
-                        target_db_path = s.get("history_db_path")
-                        break
-                if not target_db_path:
-                    from app.config import get_app_dir
-
-                    target_db_path = str(get_app_dir() / "history.db")
-
-                from app.config import get_app_dir
-                from app.core.cache import CacheManager
-                from app.core.db import Database
                 from app.core.db_worker import DBWorker
-                from app.core.history import HistoryManager
+                from app.core.store import open_store
 
+                store = open_store()
                 worker = DBWorker()
-                db = Database(get_app_dir() / "autosorter.db", worker)
-                cache_mgr = CacheManager(str(get_app_dir() / "cache.db"), worker)
-                history_mgr = HistoryManager(db, cache_mgr, target_db_path)
+                db = store.database(worker)
+                history_mgr = store.history(db, store.cache(worker))
 
                 export_res = history_mgr.export_audit_log(
                     output_path=output_path,

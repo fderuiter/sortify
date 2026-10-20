@@ -85,7 +85,7 @@ settings = Settings(AI_CONSENT_GRANTED=False, MAX_FOLDERS=5)
 # Initialize AppSession
 session = AppSession(settings=settings, base_dir=base_dir)
 print(f"[+] AppSession initialized! ID: {session.session_id}")
-print(f"[*] Session directory containing logs & databases: {session.session_dir}")
+print(f"[*] App store holding documents and history: {session.store.path}")
 
 
 def progress_callback():
@@ -110,11 +110,11 @@ print(f"\n[+] Ingestion complete! Processed {len(extracted_chunks)} chunks.")
 ```
 
 ## 4. Database Inspection via SQL
-We connect directly to the session's SQLite database file (`autosorter.db`) to inspect the tables. This allows developers to audit the exact extracted text strings and calculated unique file hashes stored persistently.
+We connect directly to the app store (`sortify.db`), the one SQLite database every session writes to, to inspect the tables. This allows developers to audit the exact extracted text strings and calculated unique file hashes stored persistently.
 
 ```python
-db_file = session.session_dir / "autosorter.db"
-print(f"[*] Connecting to session database: {db_file}")
+db_file = session.store.path
+print(f"[*] Connecting to the app store: {db_file}")
 
 conn = get_db_connection(str(db_file))
 cursor = conn.cursor()

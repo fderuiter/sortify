@@ -479,6 +479,7 @@ class ContinuousWatchdogDaemon:
         # Ignore database files, cache/temp folders, and application metadata files
         ignored_patterns = [
             ".autosorter",
+            "sortify.db",
             "autosorter.db",
             "history.db",
             "cache.db",

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "4178c9686f7ed23ef6f8fbb4728e50c12443632a37f3a499384279e80750c4e2"
+    "checksum": "0cc278e8ca41f7156c7ff14a513609adcbb24040d603efdc865173c252b39349"
   },
   "classes": [
     {
@@ -36,6 +36,11 @@
               "annotation": null,
               "default": "None",
               "name": "source_dirs"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "store"
             }
           ],
           "returns": null
@@ -225,13 +230,6 @@
     }
   ],
   "functions": [
-    {
-      "async": true,
-      "decorators": [],
-      "name": "scan_abandoned_sessions_async",
-      "parameters": [],
-      "returns": null
-    },
     {
       "async": false,
       "decorators": [],

@@ -14,7 +14,7 @@ from app.config import AppSettings
 from app.core.domain_contracts import _make_json_serializable
 from app.core.path_utils import is_packaged
 from app.core.plan_format import format_plan_tree
-from app.core.session_catalog import find_all_history_sessions
+from app.core.session_catalog import list_sessions
 from app.frozen_runtime import prepare_frozen_windows_runtime
 from app.log_filter import LogScrubbingFilter
 
@@ -800,7 +800,6 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
     """Execute undo subcommand for session rollback or listing history records."""
     import json
     import time
-    from pathlib import Path
 
     apply_config_overrides(settings, args)
 
@@ -814,7 +813,7 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
     if not list_flag and not latest_flag and not session_id_arg:
         latest_flag = True
 
-    all_sessions = find_all_history_sessions()
+    all_sessions = list_sessions()
 
     if list_flag:
         if json_output:
@@ -876,23 +875,12 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
             sys.exit(1)
 
     target_session_id = target_session["session_id"]
-    db_path = target_session.get("history_db_path")
-    base_dir = target_session.get("base_dir")
 
-    session_obj = None
     try:
         from app.core.history import open_session_history
 
-        if db_path and Path(db_path).exists():
-            with open_session_history(db_path) as history_mgr:
-                history_mgr.rollback(target_session_id, ignore_missing=force_flag)
-        else:
-            from app.core.session import AppSession
-
-            session_obj = AppSession(settings, base_dir=base_dir)
-            session_obj.history_manager.rollback(
-                target_session_id, ignore_missing=force_flag
-            )
+        with open_session_history() as history_mgr:
+            history_mgr.rollback(target_session_id, ignore_missing=force_flag)
 
         result = {
             "status": "success",
@@ -930,9 +918,6 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
         else:
             print(err_msg, file=sys.stderr)
         sys.exit(1)
-    finally:
-        if session_obj is not None:
-            session_obj.close()
 
 
 def handle_drop_command(args: argparse.Namespace, settings: AppSettings):

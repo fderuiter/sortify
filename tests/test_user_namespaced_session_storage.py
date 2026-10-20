@@ -11,7 +11,8 @@ from app.core.path_utils import (
     get_session_base_dir,
     setup_session_directory,
 )
-from app.core.session import scan_abandoned_sessions_async
+from app.core.session_catalog import find_abandoned_sessions
+from app.core.store import open_store
 
 
 def test_get_sanitized_username_standard():
@@ -116,7 +117,7 @@ def test_multi_user_isolation_startup_no_crash(monkeypatch, tmp_path):
 
 @pytest.mark.anyio
 async def test_session_recovery_scans_only_active_user_root(monkeypatch, tmp_path):
-    """Verify scan_abandoned_sessions_async restricts scanning strictly to the active user's session root."""
+    """Verify find_abandoned_sessions restricts scanning strictly to the active user's session root."""
     monkeypatch.delenv("AUTOSORTER_APP_DIR", raising=False)
     monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
 
@@ -162,7 +163,7 @@ async def test_session_recovery_scans_only_active_user_root(monkeypatch, tmp_pat
         with mock.patch(
             "app.core.path_utils.get_sanitized_username", return_value="userb"
         ):
-            abandoned = await scan_abandoned_sessions_async()
+            abandoned = find_abandoned_sessions(open_store(tmp_path / "app"))
 
             # Should find ONLY User B's abandoned session, ignoring User A's
             assert len(abandoned) == 1

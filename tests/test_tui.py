@@ -6,7 +6,7 @@ import re
 import sys
 import tempfile
 from pathlib import Path
-from unittest.mock import AsyncMock, MagicMock, patch
+from unittest.mock import MagicMock, patch
 
 import pytest
 from textual.widgets import Button, Input, Select, Static, Switch, Tree
@@ -32,7 +32,7 @@ pytestmark = pytest.mark.xdist_group(name="tui")
 def isolated_app_dir(monkeypatch, tmp_path):
     """Ensure AppSettings is isolated from persistent disk configuration changes."""
     import app.config
-    import app.core.session
+    import app.core.session_catalog
 
     monkeypatch.setenv("FORCE_COLOR", "1")
     monkeypatch.setenv("COLORTERM", "truecolor")
@@ -43,11 +43,7 @@ def isolated_app_dir(monkeypatch, tmp_path):
     monkeypatch.setattr(
         app.config.AppSettings, "_trigger_save", lambda self: self._save()
     )
-    monkeypatch.setattr(
-        app.core.session,
-        "scan_abandoned_sessions_async",
-        AsyncMock(return_value=[]),
-    )
+    monkeypatch.setattr(app.core.session_catalog, "find_abandoned_sessions", lambda: [])
     monkeypatch.delenv("AUTOSORTER_PROTECTED_PATHS", raising=False)
     monkeypatch.delenv("AUTOSORTER_IGNORED_EXTENSIONS", raising=False)
 
