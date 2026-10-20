@@ -88,7 +88,7 @@ def generate_ui_docs():
             "![UI Component Hierarchy](assets/diagrams/ui_component_hierarchy.svg)\n\n"
         )
 
-        py_files = glob.glob(os.path.join(app_dir, "*.py"))
+        py_files = glob.glob(os.path.join(app_dir, "**", "*.py"), recursive=True)
         py_files = [p for p in py_files if not p.endswith("__init__.py")]
         py_files.sort(key=lambda p: Path(p).parts)
 
@@ -161,7 +161,10 @@ def _collect_bindings(source_path: str) -> dict:
 
 def generate_keyboard_docs():
     """Generate the keyboard shortcut reference from the TUI ``BINDINGS``."""
-    bindings = _collect_bindings(os.path.join("app", "ui", "tui.py"))
+    bindings = {}
+    ui_files = glob.glob(os.path.join("app", "ui", "**", "*.py"), recursive=True)
+    for source_path in sorted(ui_files):
+        bindings.update(_collect_bindings(source_path))
     output_file = os.path.join("docs", "keyboard_shortcuts.md")
 
     def table(rows):
@@ -174,7 +177,7 @@ def generate_keyboard_docs():
         f.write("# Keyboard Shortcuts\n\n")
         f.write(
             "This page is generated from the terminal UI's key bindings "
-            "(`app/ui/tui.py`). Do not edit it manually.\n\n"
+            "(`app/ui/`). Do not edit it manually.\n\n"
         )
         f.write("Press `?` or `F1` in the app to see these shortcuts.\n\n")
 

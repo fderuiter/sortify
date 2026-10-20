@@ -12,6 +12,10 @@ This document is automatically generated. Do not edit manually.
 
 ![UI Component Hierarchy](assets/diagrams/ui_component_hierarchy.svg)
 
+## `app.ui.a11y`
+
+::: app.ui.a11y
+
 ## `app.ui.heading`
 
 ::: app.ui.heading
