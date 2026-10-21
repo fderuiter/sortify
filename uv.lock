@@ -4223,12 +4223,12 @@ provides-extras = ["ml"]
 [package.metadata.requires-dev]
 build = [
     { name = "pefile", specifier = ">=2023.2.7" },
-    { name = "pyinstaller" },
+    { name = "pyinstaller", specifier = ">=6.12.0" },
     { name = "sqlcipher3-wheels", specifier = "==0.5.7" },
 ]
 dev = [
     { name = "anyio", specifier = ">=4.15.1" },
-    { name = "deptry" },
+    { name = "deptry", specifier = ">=0.25.0" },
     { name = "hypothesis", specifier = ">=6.170.2" },
     { name = "pefile", specifier = ">=2023.2.7" },
     { name = "pre-commit", specifier = ">=4.6.2" },
@@ -4239,7 +4239,7 @@ dev = [
     { name = "pytest-xdist", specifier = ">=3.8.0" },
     { name = "pyyaml", specifier = ">=6.0" },
     { name = "reportlab", specifier = ">=5.0.0" },
-    { name = "requests" },
+    { name = "requests", specifier = ">=2.32.0" },
     { name = "ruff", specifier = ">=0.16.9" },
     { name = "ty", specifier = ">=0.0.89" },
 ]
