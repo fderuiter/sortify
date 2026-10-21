@@ -153,21 +153,23 @@ def test_background_downloader_sandboxing_maintained_on_advisory_failure():
                 sandboxed_state.append(getattr(_thread_local, "sandboxed", False))
                 failed_event.set()
 
-            # Set sandboxed = True on caller thread context
+            was_sandboxed = getattr(_thread_local, "sandboxed", False)
             _thread_local.sandboxed = True
+            try:
+                t = run_background_download(
+                    url=test_url,
+                    model_dir=model_dir,
+                    on_failure=on_failure_cb,
+                )
+                t.join(timeout=5.0)
 
-            t = run_background_download(
-                url=test_url,
-                model_dir=model_dir,
-                on_failure=on_failure_cb,
-            )
-            t.join(timeout=5.0)
-
-            assert failed_event.is_set()
-            assert len(captured_error) == 1
-            assert isinstance(captured_error[0], ModelVerificationError)
-            # Verify sandboxing was active (True) when failure callback executed
-            assert sandboxed_state[0] is True
+                assert failed_event.is_set()
+                assert len(captured_error) == 1
+                assert isinstance(captured_error[0], ModelVerificationError)
+                # Verify sandboxing was active (True) when failure callback executed
+                assert sandboxed_state[0] is True
+            finally:
+                _thread_local.sandboxed = was_sandboxed
 
 
 def test_offline_loader_aborts_on_network_failure_under_strict_policy():
