@@ -113,9 +113,7 @@ class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                     id="btn-import-rules",
                     variant="primary",
                 )
-                btn_import.tooltip = (
-                    "Import Hazel (.hazelrules) or DropIt XML/JSON rule files"
-                )
+                btn_import.tooltip = "Import Hazel (.hazelrules), DropIt XML/JSON, or TagSpaces taggroup.json rule files"
                 yield btn_import
                 btn_apply = Button(
                     "Apply Selected Templates",
@@ -211,7 +209,7 @@ class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
 
 class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any]]):
-    """Modal screen for selecting, inspecting, and merging external rules (Hazel & DropIt)."""
+    """Modal screen for selecting, inspecting, and merging external rules (Hazel, DropIt & TagSpaces)."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
@@ -293,12 +291,12 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
                 id="modal-title",
             )
             yield Label(
-                "Select a Hazel .hazelrules file or DropIt XML/JSON profile export file to import:"
+                "Select a Hazel .hazelrules, DropIt XML/JSON profile, or TagSpaces taggroup.json file to import:"
             )
 
             with Horizontal(classes="input-row"):
                 yield Input(
-                    placeholder="/path/to/rules.hazelrules or profile.xml/json",
+                    placeholder="/path/to/rules.hazelrules, profile.xml/json, or taggroup.json",
                     id="input-rule-file-path",
                 )
                 btn_parse = Button(

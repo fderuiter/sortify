@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "bc92f66ddd06c9dd15510b331b5b6e45580b2e7bbe30e4174843b3714cb05928"
+    "checksum": "ca1902e6c11e881a07d0288118de3c8985fc488ae00d4ad3587b9ae128c4399f"
   },
   "classes": [
     {
@@ -118,6 +118,11 @@
               "annotation": "Any",
               "default": "None",
               "name": "format"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "base_dir"
             }
           ],
           "returns": "Dict[str, Any]"

@@ -5,6 +5,7 @@ import json
 import sys
 
 from app.config import AppSettings
+from app.core.exceptions import AuditExportError
 from app.core.ledger import TransactionLedger, get_default_ledger_path
 
 
@@ -272,7 +273,7 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
                             file=sys.stderr,
                         )
                 sys.exit(0)
-            except ValueError as ve:
+            except (ValueError, AuditExportError) as ve:
                 err_res = {"status": "error", "message": str(ve)}
                 if is_json:
                     sys.stdout.write(json.dumps(err_res, indent=2) + "\n")

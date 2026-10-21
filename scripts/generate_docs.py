@@ -869,27 +869,31 @@ def main():
     if not args.no_build:
         try:
             import mkdocs  # noqa: F401
+
+            has_mkdocs = True
         except ModuleNotFoundError:
+            has_mkdocs = False
+
+        if not has_mkdocs:
             sys.stderr.write(
-                "\nError: 'mkdocs' is not installed in the current environment.\n"
+                "\nWarning: 'mkdocs' is not installed in the current environment.\n"
+                "Skipping MkDocs HTML site generation.\n"
                 "To build documentation with MkDocs, run with the docs dependency group:\n"
                 "  uv run --group docs python scripts/generate_docs.py\n"
-                "  or: uv run --group docs mkdocs build\n"
-                "or pass '--no-build' / '--skip-build' when running without optional documentation dependencies.\n\n"
+                "  or: uv run --group docs mkdocs build\n\n"
             )
-            sys.exit(1)
+        else:
+            build_cmd = [sys.executable, "-m", "mkdocs", "build"]
+            if args.strict:
+                build_cmd.append("--strict")
 
-        build_cmd = [sys.executable, "-m", "mkdocs", "build"]
-        if args.strict:
-            build_cmd.append("--strict")
-
-        print(f"Running MkDocs build: {' '.join(build_cmd)}")
-        result = subprocess.run(build_cmd, capture_output=False)
-        if result.returncode != 0:
-            sys.stderr.write(
-                f"Error: MkDocs build failed with exit code {result.returncode}\n"
-            )
-            sys.exit(result.returncode)
+            print(f"Running MkDocs build: {' '.join(build_cmd)}")
+            result = subprocess.run(build_cmd, capture_output=False)
+            if result.returncode != 0:
+                sys.stderr.write(
+                    f"Error: MkDocs build failed with exit code {result.returncode}\n"
+                )
+                sys.exit(result.returncode)
     else:
         print("Skipping MkDocs build (--no-build).")
 

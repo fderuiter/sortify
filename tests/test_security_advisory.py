@@ -91,6 +91,17 @@ def test_active_security_advisory_blocks_and_raises_verification_error():
     assert "CRITICAL" in str(exc_info.value)
 
 
+def test_app_settings_default_policy_is_strict():
+    """Verify that AppSettings.SECURITY_ADVISORY_FALLBACK_POLICY defaults to 'strict'."""
+    from app.config import AppSettings
+
+    settings = AppSettings()
+    assert settings.SECURITY_ADVISORY_FALLBACK_POLICY == "strict"
+
+    client = SecurityAdvisoryClient.get_instance()
+    assert client.fallback_policy == "strict"
+
+
 def test_fallback_policy_strict_vs_permissive():
     """Test fallback policy behavior during network query errors or timeouts."""
     client_strict = SecurityAdvisoryClient(fallback_policy="strict")
@@ -106,12 +117,85 @@ def test_fallback_policy_strict_vs_permissive():
             client_strict.check_advisory(repo_id="owner/model-a", timeout=1.0)
         assert "under strict security policy" in str(exc_info.value)
 
-        # Permissive policy must log warning and return clean result
+        # Permissive policy must log warning and return clean result without caching it in _cache
         res = client_permissive.check_advisory(
             repo_id="owner/model-b", timeout=1.0, raise_on_advisory=True
         )
         assert res.has_advisory is False
         assert "permissive fallback policy" in res.details
+
+        # Ensure unverified fallback result is NOT stored in long-term cache
+        assert client_permissive.get_cached_advisory("owner/model-b", None) is None
+        assert len(client_permissive._cache) == 0
+
+
+def test_background_downloader_sandboxing_maintained_on_advisory_failure():
+    """Verify that downloader thread sandboxing remains active and un-sandboxing is skipped on advisory check failure."""
+    from app.core.shared_registry import _thread_local
+
+    test_url = "https://huggingface.co/unreachable-org/model-x/resolve/main/model.onnx"
+
+    # Mock opener open to fail with network error
+    with patch("urllib.request.build_opener") as mock_opener_builder:
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = urllib.error.URLError("Network unreachable")
+        mock_opener_builder.return_value = mock_opener
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_dir = os.path.join(temp_dir, "test_model_target")
+
+            failed_event = pytest.importorskip("threading").Event()
+            captured_error = []
+            sandboxed_state = []
+
+            def on_failure_cb(err):
+                captured_error.append(err)
+                sandboxed_state.append(getattr(_thread_local, "sandboxed", False))
+                failed_event.set()
+
+            # Set sandboxed = True on caller thread context
+            _thread_local.sandboxed = True
+
+            t = run_background_download(
+                url=test_url,
+                model_dir=model_dir,
+                on_failure=on_failure_cb,
+            )
+            t.join(timeout=5.0)
+
+            assert failed_event.is_set()
+            assert len(captured_error) == 1
+            assert isinstance(captured_error[0], ModelVerificationError)
+            # Verify sandboxing was active (True) when failure callback executed
+            assert sandboxed_state[0] is True
+
+
+def test_offline_loader_aborts_on_network_failure_under_strict_policy():
+    """Verify offline model loader aborts cleanly with ModelVerificationError on network failure under default strict policy."""
+    client = SecurityAdvisoryClient.get_instance()
+    model_id = "strict_offline_model"
+
+    mock_loader = MagicMock()
+
+    with patch("urllib.request.build_opener") as mock_opener_builder:
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = urllib.error.URLError("Network unreachable")
+        mock_opener_builder.return_value = mock_opener
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_folder = os.path.join(temp_dir, "offline_bundle", model_id)
+            os.makedirs(model_folder, exist_ok=True)
+            with open(os.path.join(model_folder, "model.onnx"), "w") as f:
+                f.write("dummy model content")
+
+            with patch.object(
+                OfflineModelLoader, "resolve_model_path", return_value=model_folder
+            ):
+                with pytest.raises(ModelVerificationError) as exc_info:
+                    OfflineModelLoader.load_model(model_id, mock_loader)
+
+                assert "under strict security policy" in str(exc_info.value)
+                mock_loader.assert_not_called()
 
 
 def test_background_downloader_pre_download_advisory_check_blocks_download():

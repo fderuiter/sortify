@@ -1,10 +1,12 @@
 """Unit tests for RuleImportModal interactive preview and rule merging dialog."""
 
+import json
 import plistlib
 import tempfile
 from pathlib import Path
 
 from app.config import AppSettings
+from app.core.rule_importers import get_rule_importer
 from app.ui.tui import RuleImportModal
 
 
@@ -132,3 +134,47 @@ def test_rule_import_modal_conflict_preview_and_resolution():
         # *.pdf policy was set to overwrite -> updated to Imported/PDFs
         pdf_policy = next(p for p in settings.POLICIES if p["expression"] == "*.pdf")
         assert pdf_policy["target_path"] == "Imported/PDFs"
+
+
+def test_rule_import_modal_tagspaces_parsing_and_merging():
+    """Verify RuleImportModal handles TagSpaces taggroup.json files and merges rules into settings."""
+    ts_data = {
+        "tagGroups": [
+            {
+                "title": "Medical",
+                "tags": [
+                    "prescription",
+                    {"title": "lab report"},
+                ],
+            }
+        ]
+    }
+
+    with tempfile.NamedTemporaryFile(
+        suffix="taggroup.json", mode="w", encoding="utf-8", delete=False
+    ) as f:
+        json.dump(ts_data, f)
+        temp_path = f.name
+
+    with tempfile.NamedTemporaryFile(suffix=".json") as sf:
+        settings = AppSettings(filepath=sf.name)
+        modal = RuleImportModal(settings)
+
+        try:
+            importer = get_rule_importer(temp_path)
+            res = importer.parse_file(temp_path)
+            modal.current_result = res
+
+            assert "prescription" in modal.current_result.keyword_rules
+            assert modal.current_result.keyword_rules["prescription"] == "Medical"
+
+            modal.action_merge_rules()
+
+            assert settings.KEYWORD_RULES.get("prescription") == "Medical"
+            lab_policies = [
+                p for p in settings.POLICIES if p.get("expression") == "lab report"
+            ]
+            assert len(lab_policies) == 1
+            assert lab_policies[0].get("target_path") == "Medical"
+        finally:
+            Path(temp_path).unlink(missing_ok=True)

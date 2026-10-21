@@ -13,6 +13,7 @@ from app.core.rule_importers import (
     HazelRuleImporter,
     ImportResult,
     RuleConflictAnalyzer,
+    TagSpacesRuleImporter,
     get_rule_importer,
 )
 
@@ -279,6 +280,7 @@ def test_get_rule_importer_factory():
         tempfile.NamedTemporaryFile(suffix=".hazelrules") as f1,
         tempfile.NamedTemporaryFile(suffix=".xml") as f2,
         tempfile.NamedTemporaryFile(suffix=".json") as f3,
+        tempfile.NamedTemporaryFile(suffix="taggroup.json") as f4,
     ):
         imp1 = get_rule_importer(f1.name)
         assert isinstance(imp1, HazelRuleImporter)
@@ -288,6 +290,9 @@ def test_get_rule_importer_factory():
 
         imp3 = get_rule_importer(f3.name)
         assert isinstance(imp3, DropItRuleImporter)
+
+        imp4 = get_rule_importer(f4.name)
+        assert isinstance(imp4, TagSpacesRuleImporter)
 
     with pytest.raises(ValueError):
         get_rule_importer("/tmp/invalid_file.xyz_unknown")
@@ -370,7 +375,120 @@ def test_resilience_malformed_files():
 
         res3 = DropItRuleImporter().parse_file(temp_path3)
         assert len(res3.warnings) >= 1
+
+        res4 = TagSpacesRuleImporter().parse_file(temp_path3)
+        assert len(res4.warnings) >= 1
     finally:
         Path(temp_path1).unlink(missing_ok=True)
         Path(temp_path2).unlink(missing_ok=True)
         Path(temp_path3).unlink(missing_ok=True)
+
+
+def test_tagspaces_rule_importer_taggroup():
+    """Verify TagSpacesRuleImporter parses taggroup.json taxonomy hierarchy."""
+    ts_data = {
+        "tagGroups": [
+            {
+                "title": "Financial",
+                "tags": ["finance"],
+                "children": [
+                    {
+                        "title": "Invoices",
+                        "tags": [
+                            {"title": "invoice"},
+                            "paid_invoice",
+                            {"title": "tax receipt"},
+                            {"title": "*.pdf"},
+                        ],
+                    }
+                ],
+            }
+        ]
+    }
+
+    with tempfile.NamedTemporaryFile(
+        suffix="taggroup.json", mode="w", encoding="utf-8", delete=False
+    ) as f:
+        json.dump(ts_data, f)
+        temp_path = f.name
+
+    try:
+        importer = TagSpacesRuleImporter()
+        assert importer.can_import(temp_path) is True
+
+        res = importer.parse_file(temp_path)
+        assert isinstance(res, ImportResult)
+        assert res.source_format == "TagSpaces (taggroup.json)"
+
+        # Check single-word keywords
+        assert res.keyword_rules.get("finance") == "Financial"
+        assert res.keyword_rules.get("invoice") == "Financial/Invoices"
+        assert res.keyword_rules.get("paid_invoice") == "Financial/Invoices"
+
+        # Check multi-word phrase policy
+        multi_word_policies = [
+            p for p in res.policies if p["expression"] == "tax receipt"
+        ]
+        assert len(multi_word_policies) == 1
+        assert multi_word_policies[0]["target_path"] == "Financial/Invoices"
+        assert multi_word_policies[0]["type"] == "keyword"
+
+        # Check pattern policy for wildcard
+        pattern_policies = [p for p in res.policies if p["expression"] == "*.pdf"]
+        assert len(pattern_policies) == 1
+        assert pattern_policies[0]["target_path"] == "Financial/Invoices"
+        assert pattern_policies[0]["type"] == "pattern"
+    finally:
+        Path(temp_path).unlink(missing_ok=True)
+
+
+def test_tagspaces_rule_importer_smart_rules():
+    """Verify TagSpacesRuleImporter parses smart rules and filters out script actions."""
+    ts_smart_data = {
+        "smartRules": [
+            {
+                "title": "PDF Document Router",
+                "conditions": [
+                    {"field": "extension", "value": "pdf"},
+                    {"field": "filename", "value": "monthly statement"},
+                ],
+                "destination": "Documents/PDFs",
+                "actions": [
+                    {"type": "move", "target": "Documents/PDFs"},
+                    {"type": "script", "command": "python trigger.py"},
+                ],
+            }
+        ]
+    }
+
+    with tempfile.NamedTemporaryFile(
+        suffix=".json", mode="w", encoding="utf-8", delete=False
+    ) as f:
+        json.dump(ts_smart_data, f)
+        temp_path = f.name
+
+    try:
+        importer = TagSpacesRuleImporter()
+        assert importer.can_import(temp_path) is True
+
+        res = importer.parse_file(temp_path)
+        assert isinstance(res, ImportResult)
+
+        # Check policy rule created for extension matcher (*.pdf)
+        pdf_policies = [p for p in res.policies if p["expression"] == "*.pdf"]
+        assert len(pdf_policies) == 1
+        assert pdf_policies[0]["target_path"] == "Documents/PDFs"
+        assert pdf_policies[0]["priority"] == 85
+
+        # Check policy rule created for multi-word phrase condition ("monthly statement")
+        phrase_policies = [
+            p for p in res.policies if p["expression"] == "monthly statement"
+        ]
+        assert len(phrase_policies) == 1
+        assert phrase_policies[0]["target_path"] == "Documents/PDFs"
+
+        # Verify script action was flagged as unsupported and warning added
+        assert len(res.unsupported) >= 1
+        assert any("script" in w.lower() for w in res.warnings)
+    finally:
+        Path(temp_path).unlink(missing_ok=True)
