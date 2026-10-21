@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "6057c70cc1e2d55cfc3bfa94b9dc4ca0bd4f258aacfcb7a12869ef91e40302f3"
+    "checksum": "a28a2152581112e501c744320a7fd1c04836b3c0fa565d4903c5f733401c3571"
   },
   "classes": [],
   "functions": [
@@ -23,6 +23,11 @@
           "annotation": "str",
           "default": "'json'",
           "name": "format_type"
+        },
+        {
+          "annotation": "Optional[str]",
+          "default": "None",
+          "name": "base_dir"
         }
       ],
       "returns": "str"
@@ -41,6 +46,11 @@
           "annotation": "str",
           "default": null,
           "name": "output_path"
+        },
+        {
+          "annotation": "Optional[str]",
+          "default": "None",
+          "name": "base_dir"
         }
       ],
       "returns": "str"
@@ -59,6 +69,11 @@
           "annotation": "str",
           "default": null,
           "name": "output_path"
+        },
+        {
+          "annotation": "Optional[str]",
+          "default": "None",
+          "name": "base_dir"
         }
       ],
       "returns": "str"
