@@ -106,6 +106,7 @@ def test_main_strict_flag():
             patch("scripts.generate_docs.update_security_md") as mock_sec,
             patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
             patch("subprocess.run") as mock_run,
+            patch.dict("sys.modules", {"mkdocs": MagicMock()}),
         ):
             mock_run.return_value = MagicMock(returncode=0)
 
@@ -138,6 +139,7 @@ def test_main_default_strict():
             patch("scripts.generate_docs.update_security_md") as mock_sec,
             patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
             patch("subprocess.run") as mock_run,
+            patch.dict("sys.modules", {"mkdocs": MagicMock()}),
         ):
             mock_run.return_value = MagicMock(returncode=0)
 
@@ -199,10 +201,35 @@ def test_main_skip_build_flag():
             mock_run.assert_not_called()
 
 
+def test_main_missing_mkdocs_logs_warning_and_skips_build(capsys):
+    """Verify that when mkdocs is missing, main() logs a warning and skips build cleanly."""
+    with patch("sys.argv", ["generate_docs.py"]):
+        with (
+            patch("scripts.generate_docs.compile_diagram_assets"),
+            patch("scripts.generate_docs.generate_tutorial_docs"),
+            patch("scripts.generate_docs.generate_api_docs"),
+            patch("scripts.generate_docs.generate_ui_docs"),
+            patch("scripts.generate_docs.generate_admin_guide"),
+            patch("scripts.generate_docs.update_security_md"),
+            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch("subprocess.run") as mock_run,
+            patch.dict("sys.modules", {"mkdocs": None}),
+        ):
+            main()
+
+            mock_run.assert_not_called()
+            captured = capsys.readouterr()
+            assert (
+                "Warning: 'mkdocs' is not installed in the current environment."
+                in captured.err
+            )
+            assert "Skipping MkDocs HTML site generation." in captured.err
+
+
 def test_main_detects_unsynced_files_on_check():
     """Verify that --check detects modified files and exits with code 1."""
     original_open = open
-    with patch("sys.argv", ["generate_docs.py", "--check"]):
+    with patch("sys.argv", ["generate_docs.py", "--check", "--no-build"]):
         with (
             patch("scripts.generate_docs.compile_diagram_assets"),
             patch("scripts.generate_docs.generate_tutorial_docs"),
@@ -266,7 +293,7 @@ def test_main_detects_unsynced_files_on_check():
 def test_main_clean_on_check():
     """Verify that --check exits cleanly with 0 if no files were changed."""
     original_open = open
-    with patch("sys.argv", ["generate_docs.py", "--check"]):
+    with patch("sys.argv", ["generate_docs.py", "--check", "--no-build"]):
         with (
             patch("scripts.generate_docs.compile_diagram_assets"),
             patch("scripts.generate_docs.generate_tutorial_docs"),
