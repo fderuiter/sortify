@@ -96,6 +96,34 @@ def test_validate_url_timeout_warning(mock_urlopen):
     success, msg, is_critical = validate_url("http://example.com", set())
     assert success is False
     assert "timed out" in msg
+    assert is_critical is True
+
+
+@patch("urllib.request.urlopen")
+def test_validate_url_timeout_allow_offline(mock_urlopen):
+    mock_urlopen.side_effect = socket.timeout("timed out")
+
+    success, msg, is_critical = validate_url(
+        "http://example.com", set(), allow_offline=True
+    )
+    assert success is False
+    assert "timed out" in msg
+    assert is_critical is False
+
+
+@patch("urllib.request.urlopen")
+def test_validate_url_url_error_dns_failure(mock_urlopen):
+    mock_urlopen.side_effect = urllib.error.URLError("Name or service not known")
+
+    success, msg, is_critical = validate_url("http://nonexistent.domain", set())
+    assert success is False
+    assert "Name or service not known" in msg
+    assert is_critical is True
+
+    success, msg, is_critical = validate_url(
+        "http://nonexistent.domain", set(), allow_offline=True
+    )
+    assert success is False
     assert is_critical is False
 
 
@@ -179,3 +207,45 @@ def test_validate_links_global_config_fallback(monkeypatch, tmp_path):
         main()
     except SystemExit as exc:
         assert exc.code == 0
+
+
+@patch("urllib.request.urlopen")
+def test_main_allow_offline(mock_urlopen, monkeypatch, tmp_path):
+    test_file = tmp_path / "test.md"
+    test_file.write_text(
+        "Check https://nonexistent-domain-xyz123.org/doc for info.", encoding="utf-8"
+    )
+
+    mock_urlopen.side_effect = socket.timeout("timed out")
+
+    monkeypatch.setattr(
+        "scripts.validate_links.get_all_target_files",
+        lambda extensions=(".py", ".md"): [str(test_file)],
+    )
+    monkeypatch.setattr(sys, "argv", ["validate_links.py", "--allow-offline"])
+
+    try:
+        main()
+    except SystemExit as exc:
+        assert exc.code == 0
+
+
+@patch("urllib.request.urlopen")
+def test_main_network_failure_fails(mock_urlopen, monkeypatch, tmp_path):
+    test_file = tmp_path / "test.md"
+    test_file.write_text(
+        "Check https://nonexistent-domain-xyz123.org/doc for info.", encoding="utf-8"
+    )
+
+    mock_urlopen.side_effect = urllib.error.URLError("DNS resolution failed")
+
+    monkeypatch.setattr(
+        "scripts.validate_links.get_all_target_files",
+        lambda extensions=(".py", ".md"): [str(test_file)],
+    )
+    monkeypatch.setattr(sys, "argv", ["validate_links.py"])
+
+    try:
+        main()
+    except SystemExit as exc:
+        assert exc.code == 1

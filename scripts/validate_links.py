@@ -46,7 +46,12 @@ DEFAULT_BYPASS_DOMAINS = {
 }
 
 
-def validate_url(url: str, bypass_domains: set = None, local_only: bool = False):
+def validate_url(
+    url: str,
+    bypass_domains: set = None,
+    local_only: bool = False,
+    allow_offline: bool = False,
+):
     """Validate a single URL using HEAD with a fallback to GET."""
     parsed = urlparse(url)
     bypass_set = bypass_domains or set()
@@ -92,20 +97,28 @@ def validate_url(url: str, bypass_domains: set = None, local_only: bool = False)
                 except urllib.error.HTTPError as e_get:
                     return False, f"HTTP Error {e_get.code}: {e_get.reason}", True
                 except urllib.error.URLError as e_get:
-                    return False, f"Connection/Timeout Error: {e_get.reason}", False
+                    return (
+                        False,
+                        f"Connection/Timeout Error: {e_get.reason}",
+                        not allow_offline,
+                    )
                 except socket.timeout:
-                    return False, "Connection/Timeout Error: timed out", False
+                    return (
+                        False,
+                        "Connection/Timeout Error: timed out",
+                        not allow_offline,
+                    )
                 except Exception as e_get:
-                    return False, f"Unexpected Error: {str(e_get)}", False
+                    return False, f"Unexpected Error: {str(e_get)}", not allow_offline
             else:
                 return False, f"HTTP Error {e.code}: {e.reason}", True
 
     except urllib.error.URLError as e:
-        return False, f"Connection/Timeout Error: {e.reason}", False
+        return False, f"Connection/Timeout Error: {e.reason}", not allow_offline
     except socket.timeout:
-        return False, "Connection/Timeout Error: timed out", False
+        return False, "Connection/Timeout Error: timed out", not allow_offline
     except Exception as e:
-        return False, f"Unexpected Error: {str(e)}", False
+        return False, f"Unexpected Error: {str(e)}", not allow_offline
 
 
 def get_all_target_files(extensions=(".py", ".md")):
@@ -149,6 +162,11 @@ def main():
         "--local-only",
         action="store_true",
         help="Validate URL syntax locally without network requests",
+    )
+    parser.add_argument(
+        "--allow-offline",
+        action="store_true",
+        help="Treat network connection timeouts and DNS errors as non-critical warnings",
     )
     parser.add_argument(
         "files",
@@ -196,7 +214,9 @@ def main():
     # We use ThreadPoolExecutor to run validations concurrently for speed
     with concurrent.futures.ThreadPoolExecutor(max_workers=10) as executor:
         future_to_url = {
-            executor.submit(validate_url, url, bypass_domains, args.local_only): url
+            executor.submit(
+                validate_url, url, bypass_domains, args.local_only, args.allow_offline
+            ): url
             for url in urls
         }
         for future in concurrent.futures.as_completed(future_to_url):
@@ -216,7 +236,7 @@ def main():
 
     if has_critical_error:
         print(
-            "\n\033[91mValidation failed due to critical HTTP errors (e.g. 404, 500).\033[0m"
+            "\n\033[91mValidation failed due to critical link or network errors.\033[0m"
         )
         sys.exit(1)
     else:
