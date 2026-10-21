@@ -22,6 +22,60 @@ def compute_payload_checksum(payload: dict) -> str:
     return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
 
 
+def is_conflicted_json_payload(snapshot_data: dict) -> bool:
+    """Check if snapshot JSON data dictionary represents a structured conflict payload."""
+    if not isinstance(snapshot_data, dict):
+        return False
+    if snapshot_data.get("_metadata", {}).get("conflict") is True:
+        return True
+    if snapshot_data.get("conflict") is True:
+        return True
+    if "local" in snapshot_data and "incoming" in snapshot_data:
+        return True
+    if "ours" in snapshot_data and "theirs" in snapshot_data:
+        return True
+    return False
+
+
+def is_conflicted_svg_payload(svg_str: str) -> bool:
+    """Check if SVG string represents a structured conflict payload or contains conflict markers."""
+    if not svg_str or not isinstance(svg_str, str):
+        return False
+    if 'data-conflict="true"' in svg_str or "data-conflict='true'" in svg_str:
+        return True
+    if "<!-- CONFLICT:" in svg_str or "<!-- LOCAL (OURS)" in svg_str:
+        return True
+    if "<<<<<<<" in svg_str and "=======" in svg_str and ">>>>>>>" in svg_str:
+        return True
+    return False
+
+
+def sanitize_xml_comment_text(text: str) -> str:
+    """Sanitize text inside XML comments so '--' sequences do not break XML grammar."""
+    return text.replace("--", "- -")
+
+
+def build_svg_conflict_payload(
+    ours_str: str, theirs_str: str, pathname: str = ""
+) -> str:
+    """Construct a valid SVG XML document wrapping conflicting local and incoming definitions in XML comment blocks."""
+    safe_ours = sanitize_xml_comment_text(ours_str)
+    safe_theirs = sanitize_xml_comment_text(theirs_str)
+    path_comment = f" FOR '{pathname}'" if pathname else ""
+
+    return (
+        '<?xml version="1.0" encoding="utf-8"?>\n'
+        '<svg xmlns="http://www.w3.org/2000/svg" data-conflict="true">\n'
+        f"  <!-- CONFLICT: UNRESOLVED SVG SNAPSHOT COLLISION{path_comment} -->\n"
+        "  <!-- <<<<<<< LOCAL (OURS) -->\n"
+        f"  <!--\n{safe_ours}\n  -->\n"
+        "  <!-- ======= -->\n"
+        "  <!-- >>>>>>> INCOMING (THEIRS) -->\n"
+        f"  <!--\n{safe_theirs}\n  -->\n"
+        "</svg>\n"
+    )
+
+
 def extract_metadata_and_payload(snapshot_data: dict) -> tuple[dict, dict]:
     """Separate metadata header from definition payload dictionary."""
     metadata = {}
@@ -406,12 +460,24 @@ def run_json_merge_driver(
     success, merged_payload = three_way_json_merge(base_data, ours_data, theirs_data)
     if not success:
         print(
-            f"Conflict: Unresolvable JSON snapshot collision in '{pathname or current_path}'. Writing conflict markers.",
+            f"Conflict: Unresolvable JSON snapshot collision in '{pathname or current_path}'. Writing structured JSON conflict payload.",
             file=sys.stderr,
         )
-        ours_str = json.dumps(ours_data, indent=2, sort_keys=True)
-        theirs_str = json.dumps(theirs_data, indent=2, sort_keys=True)
-        write_conflict_file(current_path, ours_str, theirs_str)
+        conflict_payload = {
+            "_metadata": {
+                "conflict": True,
+                "conflict_status": "unresolved",
+                "pathname": pathname or current_path,
+            },
+            "conflict": True,
+            "local": ours_data,
+            "incoming": theirs_data,
+            "ours": ours_data,
+            "theirs": theirs_data,
+        }
+        with open(current_path, "w", encoding="utf-8") as f:
+            json.dump(conflict_payload, f, indent=2, sort_keys=True)
+            f.write("\n")
         return 1
 
     # Recompute payload SHA-256 checksum
@@ -504,10 +570,14 @@ def run_svg_merge_driver(
         return 0
 
     print(
-        f"Conflict: Unresolvable SVG snapshot collision in '{pathname or current_path}'. Writing conflict markers.",
+        f"Conflict: Unresolvable SVG snapshot collision in '{pathname or current_path}'. Writing structured SVG conflict payload.",
         file=sys.stderr,
     )
-    write_conflict_file(current_path, ours_str, theirs_str)
+    svg_conflict = build_svg_conflict_payload(
+        ours_str, theirs_str, pathname or current_path
+    )
+    with open(current_path, "w", encoding="utf-8") as f:
+        f.write(svg_conflict)
     return 1
 
 
@@ -581,7 +651,17 @@ def run_cli_resolver(file_path: str = None, diff_only: bool = False):
         try:
             with open(tf, "r", encoding="utf-8") as f:
                 content = f.read()
-                if (
+                if tf.endswith(".json"):
+                    try:
+                        jdata = json.loads(content)
+                        if is_conflicted_json_payload(jdata):
+                            has_conflict = True
+                    except Exception:
+                        pass
+                elif tf.endswith(".svg"):
+                    if is_conflicted_svg_payload(content):
+                        has_conflict = True
+                if not has_conflict and (
                     "<<<<<<<" in content
                     and "=======" in content
                     and ">>>>>>>" in content
@@ -606,7 +686,11 @@ def run_cli_resolver(file_path: str = None, diff_only: bool = False):
                     content = f.read()
                     if tf.endswith(".json"):
                         data = json.loads(content)
-                        if isinstance(data, dict):
+                        if is_conflicted_json_payload(data):
+                            print(
+                                "  Status: [CONFLICT] Structured JSON conflict payload detected."
+                            )
+                        elif isinstance(data, dict):
                             meta, payload = extract_metadata_and_payload(data)
                             classes = [
                                 c.get("class_name")
@@ -635,6 +719,10 @@ def run_cli_resolver(file_path: str = None, diff_only: bool = False):
                         if diff:
                             print(f"  Diff lines generated: {len(diff)}")
                     elif tf.endswith(".svg"):
+                        if is_conflicted_svg_payload(content):
+                            print(
+                                "  Status: [CONFLICT] Structured SVG conflict payload detected."
+                            )
                         print(f"  SVG lines: {len(content.splitlines())}")
             except Exception as e:
                 print(f"  Error reading file: {e}")
