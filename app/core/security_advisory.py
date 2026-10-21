@@ -231,7 +231,9 @@ class SecurityAdvisoryClient:
                 self._settings = AppSettings()
                 proxy_str = getattr(self._settings, "PROXY", "") or ""
             except Exception as err:  # noqa: BLE001 - optional settings initialization fallback
-                logger.debug("Failed to load AppSettings for proxy configuration: %s", err)
+                logger.debug(
+                    "Failed to load AppSettings for proxy configuration: %s", err
+                )
 
         p_str = (proxy_str or "").strip()
         handlers = []
@@ -333,7 +335,9 @@ class SecurityAdvisoryClient:
                 with opener.open(req, timeout=eff_timeout) as resp:
                     raw_data = resp.read()
                     if not raw_data:
-                        raise ValueError("Empty response payload from security advisory endpoint.")
+                        raise ValueError(
+                            "Empty response payload from security advisory endpoint."
+                        )
                     try:
                         text_data = raw_data.decode("utf-8")
                     except UnicodeDecodeError as err:

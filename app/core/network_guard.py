@@ -237,4 +237,3 @@ def unblock_external_network(reason="external request"):
     finally:
         _thread_local.sandboxed = was_sandboxed
         _thread_local.reason = old_reason
-

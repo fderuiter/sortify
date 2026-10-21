@@ -505,7 +505,9 @@ def run_background_download(
                                             f"Insufficient disk space. Required: {total_size} bytes, Free: {free} bytes."
                                         )
                                 except OSError as e:
-                                    logger.warning(f"Could not retrieve disk usage: {e}")
+                                    logger.warning(
+                                        f"Could not retrieve disk usage: {e}"
+                                    )
 
                             with open(temp_path, mode) as f:
                                 while True:

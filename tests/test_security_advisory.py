@@ -361,7 +361,9 @@ def test_sandbox_state_restoration_during_advisory_check():
         mock_opener.open.return_value.__enter__.return_value = mock_resp
 
         with patch.object(client_permissive, "_build_opener", return_value=mock_opener):
-            res = client_permissive.check_advisory(repo_id="test-org/sandbox-restoration-test")
+            res = client_permissive.check_advisory(
+                repo_id="test-org/sandbox-restoration-test"
+            )
             assert res.has_advisory is False
 
         # Assert flags were restored
@@ -374,7 +376,9 @@ def test_sandbox_state_restoration_during_advisory_check():
 
         with patch.object(client_strict, "_build_opener", return_value=mock_err_opener):
             with pytest.raises(ModelVerificationError):
-                client_strict.check_advisory(repo_id="test-org/sandbox-restoration-error-test")
+                client_strict.check_advisory(
+                    repo_id="test-org/sandbox-restoration-error-test"
+                )
 
         # Assert flags were restored even after exception
         assert getattr(_thread_local, "sandboxed", False) is True
@@ -414,4 +418,3 @@ def test_background_downloader_strict_advisory_failure_triggers_on_failure():
     assert len(captured_error) == 1
     assert isinstance(captured_error[0], ModelVerificationError)
     assert "strict security policy" in str(captured_error[0])
-
