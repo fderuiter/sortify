@@ -43,6 +43,8 @@ DEFAULT_BYPASS_DOMAINS = {
     "dummy",
     "w3.org",
     "www.w3.org",
+    "keepachangelog.com",
+    "www.keepachangelog.com",
 }
 
 
@@ -141,6 +143,7 @@ def get_all_target_files(extensions=(".py", ".md")):
                 "build",
                 "dist",
                 "htmlcov",
+                "tests",
             )
         ]
         for file in files:

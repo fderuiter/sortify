@@ -21,6 +21,7 @@ def test_get_all_target_files():
     assert len(files) > 0
     assert any(f.endswith(".py") for f in files)
     assert any(f.endswith(".md") for f in files)
+    assert not any("tests/" in f or f.startswith("tests" + os.sep) for f in files)
 
 
 def test_get_all_python_files():
