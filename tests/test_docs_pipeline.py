@@ -185,7 +185,7 @@ def test_main_detects_unsynced_files_on_check():
 def test_main_clean_on_check():
     """Verify that --check exits cleanly with 0 if no files were changed."""
     original_open = open
-    with patch("sys.argv", ["generate_docs.py", "--check"]):
+    with patch("sys.argv", ["generate_docs.py", "--check", "--no-build"]):
         with (
             patch("scripts.generate_docs.compile_diagram_assets"),
             patch("scripts.generate_docs.generate_tutorial_docs"),

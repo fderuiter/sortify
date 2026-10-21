@@ -163,7 +163,7 @@ unresolved-attribute = "warn"
 [dependency-groups]
 dev = [
     "anyio>=4.15.1",
-    "deptry",
+    "deptry>=0.25.0",
     "hypothesis>=6.170.2",
     "pefile>=2023.2.7",
     "pre-commit>=4.6.2",
@@ -174,13 +174,13 @@ dev = [
     "pytest-xdist>=3.8.0",
     "pyyaml>=6.0",
     "reportlab>=5.0.0",
-    "requests",
+    "requests>=2.32.0",
     "ruff>=0.16.9",
     "ty>=0.0.89",
 ]
 
 build = [
-    "pyinstaller",
+    "pyinstaller>=6.12.0",
     "pefile>=2023.2.7",
     "sqlcipher3-wheels==0.5.7",
 ]
@@ -195,6 +195,7 @@ pyinstaller = "PyInstaller"
 
 [tool.deptry.per_rule_ignores]
 # Dev-only tools imported by scripts/ and by the repo-only docs generator.
+DEP001 = ["PyInstaller", "requests"]
 DEP004 = ["pefile", "PyInstaller", "requests", "yaml"]
 
 [tool.pytest.ini_options]
