@@ -20,9 +20,21 @@ pytestmark = [pytest.mark.slow, pytest.mark.ml]
 
 @pytest.fixture
 def trust_model_folders(monkeypatch):
-    """Skip hash verification for tests that mock the filesystem to test other behavior."""
+    """Skip hash verification and security advisory checks for tests that mock the filesystem to test other behavior."""
     monkeypatch.setattr(
         OfflineModelLoader, "_verify_candidate", classmethod(lambda cls, m, p: True)
+    )
+    from app.core.security_advisory import (
+        SecurityAdvisoryClient,
+        SecurityAdvisoryResult,
+    )
+
+    monkeypatch.setattr(
+        SecurityAdvisoryClient,
+        "check_advisory",
+        lambda self, repo_id=None, file_hash=None, timeout=5.0, fallback_policy=None, raise_on_advisory=True: (
+            SecurityAdvisoryResult(has_advisory=False)
+        ),
     )
 
 
@@ -293,7 +305,7 @@ def test_florence2_parse_empty_label_fallback():
     assert parsed["coordinates"][0]["label"] == "detected_object"
 
 
-def test_florence2_visual_processor_mock_load_and_run(mocker):
+def test_florence2_visual_processor_mock_load_and_run(mocker, trust_model_folders):
     """Verify the local Florence-2 loading pipeline and process_image method with fully mocked model layers."""
     pytest.importorskip("transformers")
     mock_model = MagicMock()
@@ -392,6 +404,8 @@ def test_florence2_pre_execution_integrity_valid_bundle(tmp_path, mocker):
     """Verify that loading an unmodified Florence-2 bundle passes integrity checks and loads the model."""
     pytest.importorskip("transformers")
     import hashlib
+
+    mocker.patch("app.core.security_advisory.SecurityAdvisoryClient.check_advisory")
 
     f1_content = b'{"model_type": "florence2"}'
     f4_content = b"model_weights"
