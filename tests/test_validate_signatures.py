@@ -946,3 +946,47 @@ def test_validate_signatures_non_monitored_file(monkeypatch):
     with pytest.raises(SystemExit) as exc_info:
         validate_signatures.main()
     assert exc_info.value.code == 0
+
+
+def test_validate_signatures_detects_structured_conflict_payload(
+    tmp_path, monkeypatch, capsys
+):
+    api_dir = tmp_path / "snapshots" / "api"
+    api_dir.mkdir(parents=True)
+
+    conflicted_snap = api_dir / "core" / "analyzer_strategies.json"
+    conflicted_snap.parent.mkdir(parents=True, exist_ok=True)
+    conflict_payload = {
+        "_metadata": {
+            "conflict": True,
+            "conflict_status": "unresolved",
+            "pathname": "app/core/analyzer_strategies.py",
+        },
+        "conflict": True,
+        "local": {"classes": [], "functions": []},
+        "incoming": {"classes": [{"class_name": "NewStrategy"}], "functions": []},
+    }
+    conflicted_snap.write_text(json.dumps(conflict_payload, indent=2))
+
+    current_defs = {
+        "cli": {},
+        "core": {"app/core/analyzer_strategies.py": {"classes": [], "functions": []}},
+    }
+
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(api_dir))
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_PATH", str(api_dir))
+    monkeypatch.setattr(
+        validate_signatures, "collect_current_definitions", lambda: current_defs
+    )
+    monkeypatch.setattr(
+        validate_signatures, "collect_tui_svg_snapshots", lambda tests_dir=None: set()
+    )
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Unresolved merge collision detected" in captured.err
+    assert "structured conflict metadata" in captured.err
