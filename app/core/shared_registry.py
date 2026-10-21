@@ -24,6 +24,7 @@ from app.core.network_guard import (  # noqa: F401
     safe_gethostbyname,
     safe_gethostbyname_ex,
     safe_getnameinfo,
+    unblock_external_network,
 )
 from app.core.network_guard import install as apply_global_socket_sandbox  # noqa: F401
 from app.core.worker_pool import AudioConcurrencyGuard, SharedWorkerPool  # noqa: F401

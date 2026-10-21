@@ -223,3 +223,18 @@ def block_external_network(reason="worker execution"):
     finally:
         _thread_local.sandboxed = was_sandboxed
         _thread_local.reason = old_reason
+
+
+@contextmanager
+def unblock_external_network(reason="external request"):
+    """Temporarily permit outgoing external network traffic for the current context."""
+    was_sandboxed = getattr(_thread_local, "sandboxed", False)
+    old_reason = getattr(_thread_local, "reason", "worker execution")
+    _thread_local.sandboxed = False
+    _thread_local.reason = reason
+    try:
+        yield
+    finally:
+        _thread_local.sandboxed = was_sandboxed
+        _thread_local.reason = old_reason
+
