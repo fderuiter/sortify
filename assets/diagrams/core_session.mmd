@@ -1,0 +1,13 @@
+flowchart TD
+    start("Initialize Application Session")
+    scanner["Directory Scanner Instance"]
+    analyzer["Document Analyzer Instance"]
+    state[("Active Session Model")]
+    start --> scanner
+    start --> analyzer
+    scanner --> state
+    analyzer --> state
+    click start "docs/api_reference.md#appcoresession" "Session Start"
+    click scanner "docs/api_reference.md#appcorescanner" "Scanner Instance"
+    click analyzer "docs/api_reference.md#appcoreanalyzer" "Analyzer Instance"
+    click state tooltip "Session Model State"

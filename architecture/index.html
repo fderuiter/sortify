@@ -1,0 +1,1703 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+      
+        <link rel="prev" href="../api_reference/">
+      
+      
+        <link rel="next" href="../adr/0001-local-first-no-cloud-processing/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.7.7">
+    
+    
+      
+        <title>Architecture & Internals - Smart AutoSorter AI Pro API</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.ec1eaa64.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#architecture-internals" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Smart AutoSorter AI Pro API" class="md-header__button md-logo" aria-label="Smart AutoSorter AI Pro API" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Smart AutoSorter AI Pro API
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Architecture & Internals
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Smart AutoSorter AI Pro API" class="md-nav__button md-logo" aria-label="Smart AutoSorter AI Pro API" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Smart AutoSorter AI Pro API
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user_guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../keyboard_shortcuts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keyboard Shortcuts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../admin_guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administrator Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_4" >
+        
+          
+          <label class="md-nav__link" for="__nav_4" id="__nav_4_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interactive Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_4_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_4">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Interactive Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/01_ml_analyzer_clustering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stateful ML Analyzer Clustering
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/02_multi_format_text_extraction/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi-Format Text Extraction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/03_virtual_sorting_verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Virtual Sorting Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_6" id="__nav_6_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_6_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_6">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api_reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture & Internals
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture & Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#data-flow-directory-selection-to-sorting-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Flow: Directory Selection to Sorting Plan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Data Flow: Directory Selection to Sorting Plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-data-extraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Data Extraction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-ml-clustering-recursive-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. ML Clustering &amp; Recursive Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-folder-naming-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Folder Naming Logic
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#background-work-ui-responsiveness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background Work &amp; UI Responsiveness
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Background Work &amp; UI Responsiveness">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#background-processing-debouncing-sequence-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background Processing &amp; Debouncing Sequence Flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#directory-watchdog-monitoring-state-machine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Directory Watchdog Monitoring State Machine
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#centralized-system-utilities-architectural-guardrails" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Centralized System Utilities &amp; Architectural Guardrails
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Centralized System Utilities &amp; Architectural Guardrails">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#centralized-core-helpers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Centralized Core Helpers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#automated-commit-stage-linting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Automated Commit-Stage Linting
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#command-line-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Command-Line Interface
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dual-barrier-sensitivity-compliance-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dual-Barrier Sensitivity Compliance System
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Dual-Barrier Sensitivity Compliance System">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-upstream-staging-barrier-phase-0" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Upstream Staging Barrier (Phase 0)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-downstream-execution-barrier-physical-moves" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Downstream Execution Barrier (Physical Moves)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_3" id="__nav_6_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture Decisions
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture Decisions
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0001-local-first-no-cloud-processing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    File contents never leave the machine
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (recorded retroactively on 2026-10-19; the rationale is inferred from the code, so correct it if it is wrong)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0002-encrypt-extracted-text-at-rest/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extracted text and vectors are encrypted at rest with one per-database key
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (recorded retroactively on 2026-10-19; the rationale is inferred from the code, so correct it if it is wrong)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0003-single-writer-database-thread/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    All database writes go through one writer thread
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (recorded retroactively on 2026-10-19; the rationale is inferred from the code, so correct it if it is wrong)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0004-clustering-in-a-spawned-subprocess/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clustering runs in a spawned subprocess on an encrypted payload
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (recorded retroactively on 2026-10-19; the rationale is inferred from the code, so correct it if it is wrong)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0005-moves-never-destroy-unverified-bytes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    A move never destroys bytes it has not verified exist elsewhere
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0006-one-move-ledger-replayed-for-undo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    One move ledger, and undo replays it
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0007-one-sort-pipeline-behind-a-composition-root/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    One sort pipeline, built in one place, with layers enforced in CI
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0008-one-app-store-with-numbered-migrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    One app store, versioned by numbered migrations
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0009-auto-merge-gate-by-path-tier/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-merge decides by path tier, and data-safety code always needs a human
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../auto_merge_policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Merge Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../branch_protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Branch Protection Rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributor Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_6_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_6_7" id="__nav_6_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_6_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_6_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#data-flow-directory-selection-to-sorting-plan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Data Flow: Directory Selection to Sorting Plan
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Data Flow: Directory Selection to Sorting Plan">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-data-extraction" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Data Extraction
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-ml-clustering-recursive-analysis" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. ML Clustering &amp; Recursive Analysis
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#3-folder-naming-logic" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        3. Folder Naming Logic
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#background-work-ui-responsiveness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background Work &amp; UI Responsiveness
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Background Work &amp; UI Responsiveness">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#background-processing-debouncing-sequence-flow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background Processing &amp; Debouncing Sequence Flow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#directory-watchdog-monitoring-state-machine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Directory Watchdog Monitoring State Machine
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#centralized-system-utilities-architectural-guardrails" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Centralized System Utilities &amp; Architectural Guardrails
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Centralized System Utilities &amp; Architectural Guardrails">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#centralized-core-helpers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Centralized Core Helpers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#automated-commit-stage-linting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Automated Commit-Stage Linting
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#command-line-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Command-Line Interface
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dual-barrier-sensitivity-compliance-system" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dual-Barrier Sensitivity Compliance System
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Dual-Barrier Sensitivity Compliance System">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#1-upstream-staging-barrier-phase-0" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        1. Upstream Staging Barrier (Phase 0)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#2-downstream-execution-barrier-physical-moves" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        2. Downstream Execution Barrier (Physical Moves)
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="architecture-internals">Architecture &amp; Internals</h1>
+<h2 id="data-flow-directory-selection-to-sorting-plan">Data Flow: Directory Selection to Sorting Plan</h2>
+<p>The system relies on an automated, pipelined data flow from the moment the user selects a directory to the generation of the final sorting plan.</p>
+<p><img alt="Architecture Data Flow" src="../assets/diagrams/architecture_dataflow.svg" /></p>
+<h3 id="1-data-extraction">1. Data Extraction</h3>
+<p>When a directory is selected, <code>get_files_recursively</code> (<code>app/core/scanner.py</code>) lists its files and <code>build_corpus_generator</code> (<code>app/core/extractor.py</code>) extracts their text on the shared worker pool, yielding results in chunks of 50. Supported formats are TXT, DOCX, CSV, XLSX/XLS and PDF, plus images (OCR) and audio (Whisper) when the <code>ml</code> extra is installed.</p>
+<h3 id="2-ml-clustering-recursive-analysis">2. ML Clustering &amp; Recursive Analysis</h3>
+<p>See <a class="autorefs autorefs-internal" href="../api_reference/#app.core.analyzer.IncrementalAnalyzer">IncrementalAnalyzer</a> for details on the core incremental ingestion logic.</p>
+<p>See <a class="autorefs autorefs-internal" href="../api_reference/#app.core.analyzer_strategies.RecursiveKMeansStrategy">RecursiveKMeansStrategy</a> for details on the hierarchical clustering approach used for deep folder structures.</p>
+<h3 id="3-folder-naming-logic">3. Folder Naming Logic</h3>
+<p>Documents left over after rule-based routing are vectorized with TF-IDF, or with ONNX sentence embeddings when the optional model is installed, and grouped with <code>MiniBatchKMeans</code> (<code>k = min(MAX_FOLDERS, documents // 2)</code>, at least 2). Clustering recurses into each group until it reaches <code>MAX_DEPTH</code> (default 5, so at most four levels of nested folders), and <code>MAX_FOLDERS</code> caps folders per level rather than in total. Recursion stops when fewer than three documents remain; at the top level those documents go to <code>Miscellaneous</code>, deeper down they stay in their parent folder.</p>
+<p>With the default strategy, a folder is named from the top two TF-IDF terms of its documents, capitalized and joined with a hyphen (e.g., <code>Finance-Money</code>). When AI-assisted naming is enabled, the <code>generative</code> strategy asks a local LLM for a 1–4 word name instead.</p>
+<h2 id="background-work-ui-responsiveness">Background Work &amp; UI Responsiveness</h2>
+<p>The terminal UI keeps the interface responsive by running every slow step in a Textual worker thread, not on the UI event loop.</p>
+<ul>
+<li><strong>Worker threads:</strong> Scanning and plan building run in <code>@work(thread=True)</code> workers such as <code>run_scan_worker</code> in <code>app/ui/tui.py</code>. The worker calls <code>get_files_recursively</code>, <code>MetadataPass.run</code>, the analyzer's <code>partial_fit</code> and <code>AppSession.generate_sorting_plan</code> directly, and <code>exclusive=True</code> cancels a running scan when a new one starts.</li>
+<li><strong>UI updates from workers:</strong> Workers never touch widgets directly. Progress and results go back to the UI thread through <code>App.call_from_thread</code>, for example <code>self.call_from_thread(self.rebuild_tree)</code> once a plan is ready.</li>
+<li><strong>Plan edits:</strong> Locking, renaming or moving a node in the plan tree updates the plan and calls <code>rebuild_tree()</code> straight away; there is no debounce in the TUI.</li>
+<li><strong>Async core APIs:</strong> The core library also offers <code>asyncio</code> entry points for the daemon and IPC server, such as <code>build_corpus_generator_async</code> (<code>app/core/extractor.py</code>), which offload blocking work with <code>asyncio.to_thread</code>. The daemon (<code>app/core/daemon.py</code>) debounces file-system events with a <code>threading.Timer</code> (<code>DEBOUNCE_DELAY</code>, default 0.6 s, capped at <code>MAX_DEBOUNCE_DELAY</code>, default 5 s) and hands results to its event loop with <code>loop.call_soon_threadsafe</code>.</li>
+</ul>
+<h3 id="background-processing-debouncing-sequence-flow">Background Processing &amp; Debouncing Sequence Flow</h3>
+<p><img alt="Asynchronous Scanning and Recalculation Sequence" src="../assets/diagrams/architecture_async_processing.svg" /></p>
+<h3 id="directory-watchdog-monitoring-state-machine">Directory Watchdog Monitoring State Machine</h3>
+<p><img alt="Watchdog File Event State Machine" src="../assets/diagrams/architecture_watchdog_state.svg" /></p>
+<h2 id="centralized-system-utilities-architectural-guardrails">Centralized System Utilities &amp; Architectural Guardrails</h2>
+<p>To prevent redundant patterns, platform-specific path bugs, and visual/functional defects across application scopes, we consolidate all system packaging checks, path character validations, and database directory setups / encryption key lookups.</p>
+<h3 id="centralized-core-helpers">Centralized Core Helpers</h3>
+<p>Shared path and packaging helpers live in <code>app.core.path_utils</code>, cryptography in <code>app.core.crypto</code> and secret scrubbing in <code>app.core.text_utils</code>. Direct usage of custom platform or frozen bundle hacks is strictly prohibited.
+* <strong>Packaging and Bundle Detections:</strong> The unified helper <code>is_packaged()</code> in <code>app.core.path_utils</code> checks <code>sys.frozen</code> to detect if the app is running in a PyInstaller frozen bundle.
+* <strong>Path Sanitization &amp; Name Validation:</strong> Standard validations such as <code>validate_target_path()</code>, <code>sanitize_name()</code>, and <code>is_valid_name()</code> standardize path checking across the application, adhering to OS limits and avoiding platform-specific path errors.
+* <strong>Quarantine Target Path &amp; Boundary Validation:</strong> <code>QuarantineInterceptorService.resolve_safe_target_dir()</code> verifies target output subfolders using <code>validate_target_path()</code> and enforces containment within the base directory via <code>is_subpath_or_equal()</code> (<code>app/core/mover.py</code>), safely falling back to default subfolders if path traversal or illegal characters are detected.
+* <strong>Session and Data Directory Resolution:</strong> Session setup is centralized in <code>setup_session_directory()</code> and encryption key lookup is handled via <code>resolve_db_crypto()</code>.
+* <strong>Centralized Cryptographic &amp; Key Management Facade:</strong> Cryptographic key derivation (SHA-256 with legacy MD5 migration), envelope encryption for proxy settings, and ephemeral bootstrap keys are managed by <code>CryptoManager</code> (<code>app.core.crypto</code>).
+* <strong>Unified Secret Scrubbing Delegate:</strong> All secret scrubbing and diagnostic credential masking delegates to <code>sanitize_secret_patterns()</code> in <code>app.core.text_utils</code>, eliminating duplicate regex definitions across logging and text filtering.</p>
+<h3 id="automated-commit-stage-linting">Automated Commit-Stage Linting</h3>
+<p>The <code>validate-architecture</code> pre-commit hook (<code>scripts/validate_architecture.py</code>, also run in CI) parses changed Python files and rejects re-introduced copies of centralized helpers, such as hardcoded illegal path characters (e.g., <code>&lt;&gt;:"|?*</code>), direct <code>sys.frozen</code> checks, or raw <code>secret.key</code> references outside of <code>path_utils.py</code>. The older <code>scripts/validate_duplicates.py</code> is deprecated.</p>
+<h2 id="command-line-interface">Command-Line Interface</h2>
+<p><code>build_parser</code> in <code>app/main.py</code> defines the top-level options (such as <code>--tui</code>) and these subcommands:</p>
+<table>
+<thead>
+<tr>
+<th>Subcommand</th>
+<th>Purpose</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>sort</code></td>
+<td>Scan, plan and move files in a folder (<code>--dry-run</code> previews the plan)</td>
+</tr>
+<tr>
+<td><code>scan</code></td>
+<td>Scan and analyse a folder without moving anything</td>
+</tr>
+<tr>
+<td><code>config</code></td>
+<td>Show or change saved settings</td>
+</tr>
+<tr>
+<td><code>daemon</code></td>
+<td>Watch folders and sort new files continuously</td>
+</tr>
+<tr>
+<td><code>undo</code></td>
+<td>List sessions or roll one back</td>
+</tr>
+<tr>
+<td><code>drop</code></td>
+<td>Triage specific files or folders, like the TUI DropZone</td>
+</tr>
+</tbody>
+</table>
+<p>Further domain subcommands are registered from <code>app/cli/</code> by <code>register_cli_subcommands</code> and dispatched by <code>handle_cli_command</code> (<code>app/cli/__init__.py</code>):</p>
+<ul>
+<li><strong><code>ledger</code> (<code>app/cli/ledger_cli.py</code>)</strong>: transaction ledger <code>status</code>, <code>reconcile</code> (recover interrupted operations), <code>purge</code> and <code>export</code> (CSV or JSON audit export).</li>
+<li><strong><code>quarantine</code> (<code>app/cli/quarantine_cli.py</code>)</strong>: <code>list</code> and <code>inspect</code> staged items, <code>process</code> (forensic scan) and <code>release</code>.</li>
+</ul>
+<p>The <code>ledger</code> and <code>quarantine</code> sub-actions each accept <code>--json</code>, <code>--quiet</code>/<code>-q</code> and <code>--no-color</code>, write structured output to <code>stdout</code> and logs and progress to <code>stderr</code>, and close their database connections in <code>finally</code> blocks so file locks are released on every platform.</p>
+<h2 id="dual-barrier-sensitivity-compliance-system">Dual-Barrier Sensitivity Compliance System</h2>
+<p>Sortify enforces defense-in-depth protection for sensitive documents (e.g. medical, financial, legal, PII) across both staging and physical execution phases.</p>
+<h3 id="1-upstream-staging-barrier-phase-0">1. Upstream Staging Barrier (Phase 0)</h3>
+<p>The <code>QuarantineInterceptorService</code> integrates with <code>JevClassifierEngine</code> during Phase 0 triage. Any document assigned a sensitive rating (matching <code>AUTO_QUARANTINE_RATINGS</code>, such as <code>CRITICAL</code> or <code>HIGH</code>) is immediately transitioned to <code>QUARANTINED</code> status with policy action <code>sensitivity_hold</code> and logged in <code>quarantine_records</code>. The <code>ContinuousWatchdogDaemon</code> recognizes <code>sensitivity_hold</code> as terminal, halting fast-path plan generation or Phase 2 slow-path classification.</p>
+<h3 id="2-downstream-execution-barrier-physical-moves">2. Downstream Execution Barrier (Physical Moves)</h3>
+<p>During plan move execution in <code>AsyncMoveEngine</code>, plan node sensitivity metadata (<code>sensitivity_rating</code>, <code>sensitivity_score</code>) recorded by <code>FileAnalyzer</code> is evaluated prior to physical move execution. If a plan node contains a sensitive rating matching <code>AUTO_QUARANTINE_RATINGS</code>, standard folder movement is blocked and the file is safely redirected to the compliance quarantine directory (<code>_Compliance_Quarantine</code> or configured <code>QUARANTINE_DIR_NAME</code>) with audit logging recorded in <code>quarantine_records</code>.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": [], "search": "../assets/javascripts/workers/search.2c215733.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.d7400e89.min.js"></script>
+      
+    
+  </body>
+</html>

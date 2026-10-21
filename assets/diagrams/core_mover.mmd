@@ -1,0 +1,12 @@
+flowchart TD
+    queue["Batch Move Task Queue"]
+    pool[["SharedWorkerPool Dispatcher"]]
+    ops["Resilient Transfer Execution"]
+    history[("Transaction History Logger")]
+    queue -->|Enqueue Tasks| pool
+    pool -->|Parallel Exec| ops
+    ops -->|Record Event| history
+    click queue "docs/api_reference.md#appcoremover" "Move Task Queue"
+    click pool "docs/api_reference.md#appcoreworker_pool" "Worker Dispatcher"
+    click ops "docs/api_reference.md#appcoreresilient_file_ops" "Resilient Ops"
+    click history "docs/api_reference.md#appcorehistory" "History Logger"
