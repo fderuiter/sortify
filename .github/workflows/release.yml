@@ -47,7 +47,7 @@ jobs:
           persist-credentials: false
 
       - name: Install uv
-        uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
+        uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
         with:
           version: "0.13.1"
           enable-cache: true
@@ -72,7 +72,7 @@ jobs:
             ~/.cache/huggingface
           # No restore-keys: weights saved for another manifest must not be
           # restored and shipped as if they were the pinned ones.
-          key: model-weights-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'offline_bundle/**', 'app/core/prompt_manifest.py') }}
+          key: model-weights-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'offline_bundle/**', 'scripts/prompt_manifest.py', '.github/AGENTS/manifest.json') }}
 
       - name: Build executable
         run: |
@@ -153,12 +153,12 @@ jobs:
           path: dist
 
       - name: Attest Build Provenance
-        uses: actions/attest-build-provenance@e8998f949152b193b063cb0ec769d69d929409be # v2.4.0
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
         with:
           subject-path: dist/${{ matrix.artifact_name }}
 
       - name: Attest SBOM
-        uses: actions/attest-sbom@bd218ad0dbcb3e146bd073d1d9c6d78e08aa8a0b # v2.4.0
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
           subject-path: dist/${{ matrix.artifact_name }}
           sbom-path: dist/${{ matrix.artifact_name }}.sbom.json

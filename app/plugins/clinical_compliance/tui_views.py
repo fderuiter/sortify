@@ -2,6 +2,7 @@
 
 import logging
 import os
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -10,7 +11,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Input, Log
+from textual.widgets import Button, Input, Log, ProgressBar
 
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
@@ -47,6 +48,11 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
         color: $success;
         margin-bottom: 1;
     }
+    ProgressBar {
+        margin-top: 1;
+        margin-bottom: 1;
+        width: 100%;
+    }
     .log-area {
         height: 10;
         border: solid $accent;
@@ -71,6 +77,7 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
         self.settings = settings
         self.base_dir = base_dir
         self.help_url = f"{TROUBLESHOOTING_URL}#cro-forensic-ingestion"
+        self._cancel_event = threading.Event()
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
@@ -106,6 +113,10 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
             )
             yield inp_tgt
 
+            pb = ProgressBar(total=100, show_percentage=True, id="progress-bar")
+            pb.tooltip = "Live execution progress for CRO forensic ingestion worker"
+            yield pb
+
             log_w = Log(classes="log-area", id="log-widget")
             log_w.tooltip = (
                 "Live execution log output for CRO forensic ingestion worker"
@@ -129,6 +140,37 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
                 )
                 yield btn_run
 
+    def _call_ui(self, func: Any, *args: Any, **kwargs: Any) -> None:
+        """Safely dispatch UI callback to the main event loop thread."""
+        app_obj = getattr(self, "app", None)
+
+        if app_obj and hasattr(app_obj, "call_from_thread"):
+            try:
+                app_obj.call_from_thread(func, *args, **kwargs)
+                return
+            except Exception as e:  # noqa: BLE001
+                logger.debug(f"call_from_thread failed: {e}")
+        try:
+            func(*args, **kwargs)
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Direct UI function call failed: {e}")
+
+    def _set_run_button_disabled(self, disabled: bool) -> None:
+        """Set disabled status of the run button."""
+        try:
+            btn = self.query_one("#btn-run", Button)
+            btn.disabled = disabled
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Failed to update run button state: {e}")
+
+    def cancel_worker(self) -> None:
+        """Set cancellation token to halt background ingestion thread."""
+        self._cancel_event.set()
+
+    def on_unmount(self) -> None:
+        """Ensure cancellation signal is emitted if modal unmounts during active execution."""
+        self.cancel_worker()
+
     def _update_layout(self, width: int) -> None:
         """Update modal layout based on viewport width breakpoint."""
         self.set_class(width < 80, "narrow")
@@ -147,36 +189,52 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
     @on(Button.Pressed, "#btn-run")
     def action_run(self) -> None:
         """Trigger forensic worker execution."""
+        try:
+            if self.query_one("#btn-run", Button).disabled:
+                return
+        except Exception as e:  # noqa: BLE001
+            logger.debug(f"Failed to check run button state: {e}")
+
+        self._cancel_event.clear()
+        self._set_run_button_disabled(True)
         self.announce("Started CRO forensic multi-study ingestion worker execution.")
         self.run_forensic_worker()
 
     @work(exclusive=True, thread=True)
     def run_forensic_worker(self) -> None:
         """Run CRO multi-study forensic pipeline in worker thread."""
+        self._call_ui(self._set_run_button_disabled, True)
         log_w = self.query_one("#log-widget", Log)
         src = self.query_one("#input-source", Input).value.strip()
         tgt = self.query_one("#input-target", Input).value.strip()
         help_url = f"{TROUBLESHOOTING_URL}#cro-forensic-ingestion"
 
-        if not src or not os.path.exists(src):
-            log_w.write_line(
-                f"Error: Source directory does not exist. [Help: {help_url}]"
-            )
-            err_msg = "Forensic scan error: Source directory does not exist."
-            self._show_help_button(help_url)
-            from app.ui.notifications import notify
-
-            notify(err_msg, type="error", help_url=help_url)
-            if self.app:
-                self.app.call_from_thread(
-                    self.announce, f"{err_msg} [Help: {help_url}]"
-                )
-            else:
-                self.announce(f"{err_msg} [Help: {help_url}]")
-            return
-
-        log_w.write_line(f"Starting CRO Forensic Ingestion on: {src}")
         try:
+            if not src or not os.path.exists(src):
+                def notify_src_err() -> None:
+                    log_w.write_line(
+                        f"Error: Source directory does not exist. [Help: {help_url}]"
+                    )
+                    err_msg = "Forensic scan error: Source directory does not exist."
+                    self._show_help_button(help_url)
+                    from app.ui.notifications import notify
+
+                    notify(err_msg, type="error", help_url=help_url)
+                    self.announce(f"{err_msg} [Help: {help_url}]")
+
+                self._call_ui(notify_src_err)
+                return
+
+            def init_ui() -> None:
+                try:
+                    pb = self.query_one("#progress-bar", ProgressBar)
+                    pb.progress = 0.0
+                except Exception as ex:  # noqa: BLE001
+                    logger.debug(f"Failed to reset progress bar: {ex}")
+                log_w.write_line(f"Starting CRO Forensic Ingestion on: {src}")
+
+            self._call_ui(init_ui)
+
             from app.plugins.clinical_compliance.cro_multi_study_pipeline import (
                 CROMultiStudyPipeline,
             )
@@ -186,34 +244,75 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
                 smart_renaming=getattr(self.settings, "CLINICAL_SMART_RENAMING", True),
             )
 
-            def progress_cb(pct: int, msg: str) -> None:
-                log_w.write_line(f"[{pct}%] {msg}")
+            def progress_cb(prog_or_update: Any, stage_msg: str = "") -> None:
+                from app.core.progress import ProgressUpdate
+
+                if isinstance(prog_or_update, ProgressUpdate):
+                    pct_val = prog_or_update.progress * 100.0
+                    msg_val = prog_or_update.stage or stage_msg or ""
+                elif isinstance(prog_or_update, (int, float)):
+                    if 0.0 <= prog_or_update <= 1.0:
+                        pct_val = prog_or_update * 100.0
+                    else:
+                        pct_val = float(prog_or_update)
+                    msg_val = stage_msg or ""
+                else:
+                    pct_val = 0.0
+                    msg_val = str(prog_or_update) if stage_msg == "" else stage_msg
+
+                pct_int = int(pct_val)
+
+                def update_ui() -> None:
+                    try:
+                        pb = self.query_one("#progress-bar", ProgressBar)
+                        pb.progress = min(100.0, max(0.0, pct_val))
+                        lw = self.query_one("#log-widget", Log)
+                        lw.write_line(f"[{pct_int}%] {msg_val}")
+                    except Exception as ex:  # noqa: BLE001
+                        logger.debug(f"Failed to update progress UI: {ex}")
+
+                self._call_ui(update_ui)
 
             result = pipeline.run_pipeline(
                 source_root=src,
                 target_root=tgt,
                 progress_callback=progress_cb,
+                cancel_check=self._cancel_event.is_set,
             )
-            summary_msg = f"Completed successfully! Total scanned: {result.total_scanned_files}, Discovered studies: {result.discovered_studies_count}"
-            log_w.write_line(summary_msg)
-            if self.app:
-                self.app.call_from_thread(self.announce, summary_msg)
-            else:
-                self.announce(summary_msg)
+
+            def finish_ui() -> None:
+                if self._cancel_event.is_set():
+                    log_w.write_line("CRO Forensic Ingestion cancelled by user.")
+                    self.announce("CRO forensic ingestion cancelled.")
+                else:
+                    try:
+                        pb = self.query_one("#progress-bar", ProgressBar)
+                        pb.progress = 100.0
+                    except Exception as ex:  # noqa: BLE001
+                        logger.debug(f"Failed to set progress bar to 100%: {ex}")
+                    summary_msg = f"Completed successfully! Total scanned: {result.total_scanned_files}, Discovered studies: {result.discovered_studies_count}"
+                    log_w.write_line(summary_msg)
+                    self.announce(summary_msg)
+
+            self._call_ui(finish_ui)
+
         except Exception as e:
             logger.warning("CRO forensic scan failed", exc_info=True)
-            log_w.write_line(f"Execution error: {e} [Help: {help_url}]")
-            err_msg = f"Forensic scan error: {e}"
-            self._show_help_button(help_url)
-            from app.ui.notifications import notify
+            err_str = str(e)
 
-            notify(err_msg, type="error", help_url=help_url)
-            if self.app:
-                self.app.call_from_thread(
-                    self.announce, f"{err_msg} [Help: {help_url}]"
-                )
-            else:
+            def err_ui() -> None:
+                log_w.write_line(f"Execution error: {err_str} [Help: {help_url}]")
+                err_msg = f"Forensic scan error: {err_str}"
+                self._show_help_button(help_url)
+                from app.ui.notifications import notify
+
+                notify(err_msg, type="error", help_url=help_url)
                 self.announce(f"{err_msg} [Help: {help_url}]")
+
+            self._call_ui(err_ui)
+
+        finally:
+            self._call_ui(self._set_run_button_disabled, False)
 
     @on(Button.Pressed, "#btn-help")
     def action_help(self) -> None:
@@ -230,6 +329,7 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
 
     @on(Button.Pressed, "#btn-close")
     def action_close(self) -> None:
-        """Dismiss forensic modal."""
+        """Dismiss forensic modal and signal cancellation to worker thread."""
+        self.cancel_worker()
         self.announce("Closed CRO forensic ingestion dialog.")
         self.dismiss(None)
