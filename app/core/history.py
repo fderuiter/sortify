@@ -1357,13 +1357,13 @@ class HistoryManager:
         if db:
             db.invalidate_cache()
         if moves := self.moves.list_moves(session_id):
-            active_moves = [m for m in moves if m.state not in (INTENT, FAILED)]
             if selected_step_ids is not None:
                 sel_set = {str(x) for x in selected_step_ids}
-                moves_to_unwind = [m for m in active_moves if str(m.seq) in sel_set]
+                moves_to_unwind = [m for m in moves if str(m.seq) in sel_set]
+                active_moves = [m for m in moves if m.state not in (INTENT, FAILED)]
                 is_partial = len(moves_to_unwind) < len(active_moves)
             else:
-                moves_to_unwind = active_moves
+                moves_to_unwind = moves
                 is_partial = False
 
             if not moves_to_unwind:
@@ -1405,6 +1405,10 @@ class HistoryManager:
 
         failed_unwinds = []
         if not steps_to_unwind and not snapshot_files:
+            if selected_step_ids is None and not steps:
+                return self._rollback_from_snapshot_internal(
+                    session_id, base_dir=base_dir, ignore_missing=True
+                )
             return 0
 
         if steps_to_unwind:
@@ -1635,7 +1639,6 @@ class HistoryManager:
                 conn.execute(
                     "DELETE FROM step_ledger WHERE session_id = ?", (session_id,)
                 )
-                conn.execute("DELETE FROM moves WHERE session_id = ?", (session_id,))
 
         if db:
             db.invalidate_cache()
