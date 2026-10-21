@@ -19,10 +19,18 @@ from app.core.security_advisory import (
 
 @pytest.fixture(autouse=True)
 def reset_advisory_client():
-    """Ensure clean SecurityAdvisoryClient state for every test."""
+    """Ensure clean SecurityAdvisoryClient and sandbox thread-local state for every test."""
+    from app.core.shared_registry import _thread_local
+
+    was_sandboxed = getattr(_thread_local, "sandboxed", False)
+    was_reason = getattr(_thread_local, "reason", "worker execution")
     SecurityAdvisoryClient.reset_instance()
-    yield
-    SecurityAdvisoryClient.reset_instance()
+    try:
+        yield
+    finally:
+        SecurityAdvisoryClient.reset_instance()
+        _thread_local.sandboxed = was_sandboxed
+        _thread_local.reason = was_reason
 
 
 def test_advisory_client_singleton_and_cache():
@@ -153,21 +161,25 @@ def test_background_downloader_sandboxing_maintained_on_advisory_failure():
                 sandboxed_state.append(getattr(_thread_local, "sandboxed", False))
                 failed_event.set()
 
-            # Set sandboxed = True on caller thread context
-            _thread_local.sandboxed = True
+            was_sandboxed = getattr(_thread_local, "sandboxed", False)
+            try:
+                # Set sandboxed = True on caller thread context
+                _thread_local.sandboxed = True
 
-            t = run_background_download(
-                url=test_url,
-                model_dir=model_dir,
-                on_failure=on_failure_cb,
-            )
-            t.join(timeout=5.0)
+                t = run_background_download(
+                    url=test_url,
+                    model_dir=model_dir,
+                    on_failure=on_failure_cb,
+                )
+                t.join(timeout=5.0)
 
-            assert failed_event.is_set()
-            assert len(captured_error) == 1
-            assert isinstance(captured_error[0], ModelVerificationError)
-            # Verify sandboxing was active (True) when failure callback executed
-            assert sandboxed_state[0] is True
+                assert failed_event.is_set()
+                assert len(captured_error) == 1
+                assert isinstance(captured_error[0], ModelVerificationError)
+                # Verify sandboxing was active (True) when failure callback executed
+                assert sandboxed_state[0] is True
+            finally:
+                _thread_local.sandboxed = was_sandboxed
 
 
 def test_offline_loader_aborts_on_network_failure_under_strict_policy():
