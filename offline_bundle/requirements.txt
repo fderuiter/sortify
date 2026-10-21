@@ -24,7 +24,7 @@ easyocr==1.7.2
     # via smart-autosorter (pyproject.toml)
 et-xmlfile==2.0.0
     # via openpyxl
-filelock==4.2.0
+filelock==4.2.2
     # via torch
 frozenlist==1.8.0
     # via
