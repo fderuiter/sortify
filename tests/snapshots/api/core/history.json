@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "c9d971e69b2554f81532af37bf8af7e950cfe223a01a6496cf2db7d1bdb4b0e5"
+    "checksum": "d25afea8e3c3b2a013ec8c3b3838476a8423e39b5605b2502763b97c390abf42"
   },
   "classes": [
     {
@@ -245,7 +245,7 @@
               "name": "ignore_missing"
             },
             {
-              "annotation": "Optional[Container[Union[int, str]]]",
+              "annotation": "Optional[Collection[Union[int, str]]]",
               "default": "None",
               "name": "selected_step_ids"
             }
@@ -273,7 +273,7 @@
               "name": "db"
             },
             {
-              "annotation": "Optional[Container[Union[int, str]]]",
+              "annotation": "Optional[Collection[Union[int, str]]]",
               "default": "None",
               "name": "selected_step_ids"
             }

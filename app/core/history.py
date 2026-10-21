@@ -6,7 +6,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Container, Dict, Iterator, List, Optional, Union
+from typing import Any, Collection, Dict, Iterator, List, Optional, Union
 
 from app.core.db_conn import get_db_connection
 from app.core.migrations import Migration, add_missing_columns, migrate
@@ -1341,7 +1341,7 @@ class HistoryManager:
         self,
         session_id: str,
         db=None,
-        selected_step_ids: Optional[Container[Union[int, str]]] = None,
+        selected_step_ids: Optional[Collection[Union[int, str]]] = None,
     ) -> int:
         """Unwind completed relocation steps in exact reverse chronological order using step ledger."""
         return self._unwind_session_internal(
@@ -1352,7 +1352,7 @@ class HistoryManager:
         self,
         session_id: str,
         db=None,
-        selected_step_ids: Optional[Container[Union[int, str]]] = None,
+        selected_step_ids: Optional[Collection[Union[int, str]]] = None,
     ) -> int:
         if db:
             db.invalidate_cache()
@@ -1647,8 +1647,8 @@ class HistoryManager:
     def _rollback_from_snapshot_internal(
         self,
         session_id: str,
-        base_dir: str = None,
-        safety_session_id: str = None,
+        base_dir: Optional[str] = None,
+        safety_session_id: Optional[str] = None,
         ignore_missing: bool = False,
     ):
         conn = get_db_connection(self.db_path)
@@ -2372,7 +2372,7 @@ class HistoryManager:
         self,
         session_id: str,
         ignore_missing: bool = False,
-        selected_step_ids: Optional[Container[Union[int, str]]] = None,
+        selected_step_ids: Optional[Collection[Union[int, str]]] = None,
     ):
         """Revert directory and metadata state using recorded transaction ledger steps or snapshot."""
         self.db.invalidate_cache()
