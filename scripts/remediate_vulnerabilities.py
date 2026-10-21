@@ -459,9 +459,10 @@ def remediate_vulnerabilities(
             )
 
             if gh_client:
-                # Push branch
+                # Push branch using token-authenticated remote URL
+                push_target = f"https://x-access-token:{token}@github.com/{repo_full}.git"
                 subprocess.run(
-                    ["git", "push", "-u", "origin", branch_name],
+                    ["git", "push", "-u", push_target, branch_name],
                     cwd=repo_root,
                     check=True,
                 )
