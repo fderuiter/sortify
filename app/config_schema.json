@@ -161,7 +161,7 @@
       "type": "integer"
     },
     "SECURITY_ADVISORY_FALLBACK_POLICY": {
-      "default": "permissive",
+      "default": "strict",
       "enum": [
         "strict",
         "permissive"
