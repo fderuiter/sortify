@@ -612,6 +612,464 @@ class DropItRuleImporter(BaseRuleImporter):
                     )
 
 
+class TagSpacesRuleImporter(BaseRuleImporter):
+    """Importer strategy for TagSpaces taggroup.json taxonomy files and smart rules."""
+
+    def can_import(self, file_path: Union[str, Path]) -> bool:
+        """Return True if file is a valid TagSpaces taggroup.json export or tag taxonomy JSON file."""
+        p = Path(file_path)
+        name_lower = p.name.lower()
+
+        if (
+            name_lower in ("taggroup.json", "taggroups.json")
+            or "taggroup" in name_lower
+            or "tagspaces" in name_lower
+        ):
+            return True
+
+        if p.suffix.lower() != ".json":
+            return False
+
+        if not p.exists():
+            return False
+
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except (OSError, json.JSONDecodeError, TypeError, ValueError):
+            return False
+
+        return self._is_tagspaces_data(data)
+
+    def _is_tagspaces_data(self, data: Any) -> bool:
+        """Check if parsed JSON data matches TagSpaces structure."""
+        if isinstance(data, dict):
+            for key in (
+                "tagGroups",
+                "taggroups",
+                "tagGroup",
+                "taggroup",
+                "taggroupVersion",
+                "tagspaces",
+                "smartRules",
+                "smart_rules",
+            ):
+                if key in data:
+                    return True
+
+            if any(
+                k in data for k in ("Pattern", "Destination", "Association", "Profile")
+            ):
+                return False
+
+            if ("title" in data or "name" in data) and (
+                "children" in data or "tags" in data or "subgroups" in data
+            ):
+                return True
+
+        elif isinstance(data, list):
+            if not data:
+                return False
+            first = data[0]
+            if isinstance(first, dict):
+                if any(
+                    k in first
+                    for k in ("Pattern", "Destination", "Association", "Profile")
+                ):
+                    return False
+                if ("title" in first or "name" in first) and (
+                    "children" in first
+                    or "tags" in first
+                    or "color" in first
+                    or "textcolor" in first
+                    or "icon" in first
+                    or "isSmart" in first
+                ):
+                    return True
+                if ("name" in first or "title" in first) and (
+                    "conditions" in first or "matchers" in first
+                ):
+                    return True
+
+        return False
+
+    def parse_file(self, file_path: Union[str, Path]) -> ImportResult:
+        """Parse TagSpaces taggroup.json or smart rule JSON file into Sortify rules."""
+        result = ImportResult(source_format="TagSpaces (taggroup.json)")
+        p = Path(file_path)
+
+        if not p.exists():
+            result.warnings.append(f"File not found: '{file_path}'")
+            return result
+
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as exc:
+            logger.warning(
+                f"Failed to parse TagSpaces JSON file '{file_path}': {exc}",
+                exc_info=True,
+            )
+            result.warnings.append(
+                f"Failed to parse TagSpaces JSON file '{p.name}': {exc}"
+            )
+            return result
+
+        if not data:
+            result.warnings.append(f"TagSpaces rule package '{p.name}' is empty.")
+            return result
+
+        # 1. Process Tag Groups / Taxonomy Hierarchy
+        tag_groups: List[Any] = []
+        if isinstance(data, dict):
+            tag_groups = (
+                data.get("tagGroups")
+                or data.get("taggroups")
+                or data.get("tagGroup")
+                or data.get("taggroup")
+                or data.get("groups")
+                or []
+            )
+            if not tag_groups and (
+                "children" in data
+                or "tags" in data
+                or "title" in data
+                or "name" in data
+            ):
+                tag_groups = [data]
+        elif isinstance(data, list):
+            tag_groups = [
+                item
+                for item in data
+                if isinstance(item, dict)
+                and (
+                    "children" in item
+                    or "tags" in item
+                    or "color" in item
+                    or "textcolor" in item
+                )
+            ]
+            if (
+                not tag_groups
+                and data
+                and all(
+                    isinstance(item, dict) and ("title" in item or "name" in item)
+                    for item in data
+                )
+            ):
+                tag_groups = data
+
+        for group in tag_groups:
+            if isinstance(group, dict):
+                self._traverse_tag_group(group, [], result)
+
+        # 2. Process Smart Rules
+        smart_rules: List[Any] = []
+        if isinstance(data, dict):
+            smart_rules = (
+                data.get("smartRules")
+                or data.get("smart_rules")
+                or data.get("rules")
+                or []
+            )
+        elif isinstance(data, list):
+            smart_rules = [
+                item
+                for item in data
+                if isinstance(item, dict)
+                and (
+                    "conditions" in item
+                    or "matchers" in item
+                    or "actions" in item
+                    or "destination" in item
+                    or "target" in item
+                )
+            ]
+
+        for idx, rule in enumerate(smart_rules):
+            if isinstance(rule, dict):
+                self._process_smart_rule(rule, idx, result)
+
+        if not result.keyword_rules and not result.policies and not result.warnings:
+            result.warnings.append(
+                f"No convertible TagSpaces tag groups or smart rules found in '{p.name}'."
+            )
+
+        return result
+
+    def _traverse_tag_group(
+        self,
+        node: Dict[str, Any],
+        parent_path: List[str],
+        result: ImportResult,
+    ) -> None:
+        """Recursively traverse nested tag group node and map tags to path hierarchies."""
+        node_title = str(
+            node.get("title")
+            or node.get("name")
+            or node.get("text")
+            or node.get("label")
+            or ""
+        ).strip()
+
+        current_path = list(parent_path)
+        if node_title and node_title.lower() not in (
+            "taggroups",
+            "tag_groups",
+            "root",
+        ):
+            current_path.append(node_title)
+
+        target_dir = self._sanitize_path("/".join(current_path))
+
+        raw_tags = node.get("tags") or []
+        if isinstance(raw_tags, (str, dict)):
+            raw_tags = [raw_tags]
+
+        raw_children = (
+            node.get("children")
+            or node.get("subgroups")
+            or node.get("groups")
+            or node.get("items")
+            or []
+        )
+        if isinstance(raw_children, (str, dict)):
+            raw_children = [raw_children]
+
+        for tag_item in raw_tags:
+            if isinstance(tag_item, str):
+                self._add_tag_rule(tag_item, target_dir, result)
+            elif isinstance(tag_item, dict):
+                if any(
+                    k in tag_item for k in ("children", "subgroups", "groups", "tags")
+                ):
+                    self._traverse_tag_group(tag_item, current_path, result)
+                else:
+                    tag_name = (
+                        tag_item.get("title")
+                        or tag_item.get("name")
+                        or tag_item.get("text")
+                        or tag_item.get("tag")
+                        or tag_item.get("label")
+                        or ""
+                    )
+                    if tag_name:
+                        self._add_tag_rule(str(tag_name), target_dir, result)
+
+        for child in raw_children:
+            if isinstance(child, str):
+                self._add_tag_rule(child, target_dir, result)
+            elif isinstance(child, dict):
+                if (
+                    any(k in child for k in ("children", "subgroups", "groups", "tags"))
+                    or "color" in child
+                    or "textcolor" in child
+                ):
+                    self._traverse_tag_group(child, current_path, result)
+                else:
+                    tag_name = (
+                        child.get("title")
+                        or child.get("name")
+                        or child.get("text")
+                        or child.get("tag")
+                        or child.get("label")
+                        or ""
+                    )
+                    if tag_name:
+                        self._add_tag_rule(str(tag_name), target_dir, result)
+
+    def _add_tag_rule(
+        self, tag_str: str, target_dir: str, result: ImportResult
+    ) -> None:
+        """Map a tag string to a keyword rule or policy based on single-word vs multi-word/pattern."""
+        tag_clean = tag_str.strip()
+        if not tag_clean:
+            return
+
+        if not target_dir:
+            result.warnings.append(
+                f"Tag '{tag_clean}' in group has no target directory; omitted auto-routing."
+            )
+            result.unsupported.append(
+                {"tag": tag_clean, "reason": "Missing target destination path"}
+            )
+            return
+
+        if "*" in tag_clean or "?" in tag_clean or tag_clean.startswith("."):
+            result.policies.append(
+                {
+                    "type": "pattern",
+                    "expression": tag_clean,
+                    "target_path": target_dir,
+                    "priority": 75,
+                    "halting": False,
+                }
+            )
+        else:
+            if len(tag_clean.split()) == 1 and all(
+                c.isalnum() or c in "_-" for c in tag_clean
+            ):
+                result.keyword_rules[tag_clean.lower()] = target_dir
+            else:
+                result.policies.append(
+                    {
+                        "type": "keyword",
+                        "expression": tag_clean,
+                        "target_path": target_dir,
+                        "priority": 75,
+                        "halting": False,
+                    }
+                )
+
+    def _process_smart_rule(
+        self, rule: Dict[str, Any], idx: int, result: ImportResult
+    ) -> None:
+        """Process a TagSpaces smart rule entry, detecting condition matchers and filtering script actions."""
+        rule_name = (
+            rule.get("name")
+            or rule.get("title")
+            or rule.get("ruleName")
+            or f"TagSpaces Smart Rule #{idx + 1}"
+        )
+
+        actions = rule.get("actions") or rule.get("action") or []
+        if isinstance(actions, (str, dict)):
+            actions = [actions]
+
+        has_script = False
+        for act in actions:
+            if self._is_script_action(act):
+                has_script = True
+                break
+        if not has_script:
+            has_script = self._is_script_action(rule)
+
+        if has_script:
+            result.unsupported.append(
+                {
+                    "rule": rule_name,
+                    "reason": "External script/command action omitted.",
+                }
+            )
+            result.warnings.append(
+                f"TagSpaces rule '{rule_name}' contains command/script execution action which was omitted for security."
+            )
+
+        dest = (
+            rule.get("destination")
+            or rule.get("target")
+            or rule.get("folder")
+            or rule.get("directory")
+            or rule.get("targetPath")
+            or ""
+        )
+        if not dest and actions:
+            for act in actions:
+                if isinstance(act, dict):
+                    dest = (
+                        act.get("target")
+                        or act.get("destination")
+                        or act.get("folder")
+                        or act.get("path")
+                        or ""
+                    )
+                    if dest:
+                        break
+
+        target_dir = self._sanitize_path(str(dest))
+        if not target_dir:
+            result.warnings.append(
+                f"TagSpaces rule '{rule_name}' has no target directory; omitted auto-routing."
+            )
+            result.unsupported.append(
+                {"rule": rule_name, "reason": "Missing target destination path"}
+            )
+            return
+
+        conditions = (
+            rule.get("conditions")
+            or rule.get("condition")
+            or rule.get("matchers")
+            or rule.get("pattern")
+            or []
+        )
+        if isinstance(conditions, (str, dict)):
+            conditions = [conditions]
+
+        for cond in conditions:
+            if isinstance(cond, str):
+                self._add_smart_rule_condition(cond, target_dir, result)
+            elif isinstance(cond, dict):
+                cond_type = str(
+                    cond.get("field")
+                    or cond.get("type")
+                    or cond.get("attribute")
+                    or cond.get("target")
+                    or ""
+                ).lower()
+                val = str(
+                    cond.get("value")
+                    or cond.get("pattern")
+                    or cond.get("expression")
+                    or cond.get("val")
+                    or ""
+                ).strip()
+
+                if not val:
+                    continue
+
+                if "ext" in cond_type or "extension" in cond_type:
+                    expr = val if val.startswith("*.") else f"*.{val.lstrip('.')}"
+                    result.policies.append(
+                        {
+                            "type": "pattern",
+                            "expression": expr,
+                            "target_path": target_dir,
+                            "priority": 85,
+                            "halting": False,
+                        }
+                    )
+                else:
+                    self._add_smart_rule_condition(val, target_dir, result, priority=85)
+
+    def _add_smart_rule_condition(
+        self,
+        val_str: str,
+        target_dir: str,
+        result: ImportResult,
+        priority: int = 85,
+    ) -> None:
+        """Add smart rule condition matcher to keyword rules or policy list."""
+        val_clean = val_str.strip()
+        if not val_clean:
+            return
+
+        if "*" in val_clean or "?" in val_clean or val_clean.startswith("."):
+            result.policies.append(
+                {
+                    "type": "pattern",
+                    "expression": val_clean,
+                    "target_path": target_dir,
+                    "priority": priority,
+                    "halting": False,
+                }
+            )
+        elif len(val_clean.split()) == 1 and all(
+            c.isalnum() or c in "_-" for c in val_clean
+        ):
+            result.keyword_rules[val_clean.lower()] = target_dir
+        else:
+            result.policies.append(
+                {
+                    "type": "keyword",
+                    "expression": val_clean,
+                    "target_path": target_dir,
+                    "priority": priority,
+                    "halting": False,
+                }
+            )
+
+
 def get_rule_importer(file_path: Union[str, Path]) -> BaseRuleImporter:
     """Return auto-detected rule importer strategy for the given file path.
 
@@ -627,8 +1085,12 @@ def get_rule_importer(file_path: Union[str, Path]) -> BaseRuleImporter:
         ValueError: If file format is not supported.
     """
     p = Path(file_path)
+    tagspaces_importer = TagSpacesRuleImporter()
     hazel_importer = HazelRuleImporter()
     dropit_importer = DropItRuleImporter()
+
+    if tagspaces_importer.can_import(p):
+        return tagspaces_importer
 
     if hazel_importer.can_import(p):
         return hazel_importer
@@ -638,7 +1100,12 @@ def get_rule_importer(file_path: Union[str, Path]) -> BaseRuleImporter:
 
     # Fallback extension detection
     ext = p.suffix.lower()
-    if ext in (".hazelrules", ".plist"):
+    if (
+        p.name.lower() in ("taggroup.json", "taggroups.json")
+        or "taggroup" in p.name.lower()
+    ):
+        return tagspaces_importer
+    elif ext in (".hazelrules", ".plist"):
         return hazel_importer
     elif ext in (".xml", ".json", ".dropit"):
         return dropit_importer

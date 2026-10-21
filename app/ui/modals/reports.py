@@ -782,7 +782,7 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
             from app.core.audit_reporter import export_audit_report
 
             final_path = export_audit_report(
-                self.report_data, out_path, format_type=fmt
+                self.report_data, out_path, format_type=fmt, base_dir=base_dir
             )
             msg = f"Audit report successfully exported to {final_path}"
             self.announce(msg)

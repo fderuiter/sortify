@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "6f6cf3b1fb62aa24bad10498038f5497c6011edd0c3fef7434f1e6d3c5424c12"
+    "checksum": "c2ede4a9e7613bbc54a3891ab0b0c39be169d770e1cd32cc10b959af4f1c5f58"
   },
   "classes": [
     {
@@ -156,6 +156,48 @@
             }
           ],
           "returns": "Tuple[Dict[str, str], List[Dict[str, Any]]]"
+        }
+      ]
+    },
+    {
+      "class_name": "TagSpacesRuleImporter",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "can_import",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Union[str, Path]",
+              "default": null,
+              "name": "file_path"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "parse_file",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Union[str, Path]",
+              "default": null,
+              "name": "file_path"
+            }
+          ],
+          "returns": "ImportResult"
         }
       ]
     }
