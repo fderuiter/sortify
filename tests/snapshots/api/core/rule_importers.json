@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "f9244cd8b80bda70dfb53c957b28d2a68d257ead31c02d1c4d96fe3798ed5eaf"
+    "checksum": "6f6cf3b1fb62aa24bad10498038f5497c6011edd0c3fef7434f1e6d3c5424c12"
   },
   "classes": [
     {
@@ -173,24 +173,6 @@
         }
       ],
       "returns": "BaseRuleImporter"
-    },
-    {
-      "async": false,
-      "decorators": [],
-      "name": "import_and_merge_rules",
-      "parameters": [
-        {
-          "annotation": "Union[str, Path]",
-          "default": null,
-          "name": "file_path"
-        },
-        {
-          "annotation": "Any",
-          "default": null,
-          "name": "settings"
-        }
-      ],
-      "returns": "ImportResult"
     }
   ]
 }
