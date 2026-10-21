@@ -78,6 +78,7 @@ Good interfaces make testing natural:
    # Testable
    def execute_moves(plan: SortPlan, ledger: MoveLedger) -> MoveReport: ...
 
+
    # Hard to test
    def execute_moves(plan: SortPlan) -> MoveReport:
        ledger = MoveLedger(get_default_db_path())
@@ -88,6 +89,7 @@ Good interfaces make testing natural:
    ```python
    # Testable
    def plan_moves(documents: list[Document]) -> SortPlan: ...
+
 
    # Hard to test
    def plan_and_move(documents: list[Document]) -> None:

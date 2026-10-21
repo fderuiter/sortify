@@ -6,7 +6,7 @@ import time
 import uuid
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Dict, Iterator, List
+from typing import Any, Container, Dict, Iterator, List, Optional, Union
 
 from app.core.db_conn import get_db_connection
 from app.core.migrations import Migration, add_missing_columns, migrate
@@ -1051,6 +1051,78 @@ class HistoryManager:
                 for r in rows
             ]
 
+    def get_session_moves(self, session_id: str) -> List[Dict[str, Any]]:
+        """Retrieve itemized recorded file moves for a session."""
+        moves = self.moves.list_moves(session_id)
+        if moves:
+            active_moves = [m for m in moves if m.state not in (INTENT, FAILED)]
+            items = []
+            for m in active_moves:
+                sz = m.size
+                if sz is None and m.dst and os.path.exists(m.dst):
+                    try:
+                        sz = os.path.getsize(m.dst)
+                    except OSError:
+                        sz = None
+                items.append(
+                    {
+                        "step_id": m.seq,
+                        "source_path": m.src,
+                        "target_path": m.dst,
+                        "size": sz,
+                        "status": m.state,
+                    }
+                )
+            return items
+
+        steps = self.get_step_ledger(session_id)
+        if steps:
+            items = []
+            for s in steps:
+                sz = None
+                t_path = s.get("target_path") or ""
+                if t_path and os.path.exists(t_path):
+                    try:
+                        sz = os.path.getsize(t_path)
+                    except OSError:
+                        sz = None
+                items.append(
+                    {
+                        "step_id": s["step_id"],
+                        "source_path": s.get("source_path")
+                        or s.get("original_path")
+                        or "",
+                        "target_path": t_path,
+                        "size": sz,
+                        "status": s.get("status") or "completed",
+                    }
+                )
+            return items
+
+        tx_steps = self.db.get_transaction_steps(session_id)
+        if tx_steps:
+            items = []
+            for idx, s in enumerate(tx_steps, 1):
+                t_path = s.get("target") or s.get("target_path") or ""
+                sz = None
+                if t_path and os.path.exists(t_path):
+                    try:
+                        sz = os.path.getsize(t_path)
+                    except OSError:
+                        sz = None
+                items.append(
+                    {
+                        "step_id": s.get("step_id", idx),
+                        "source_path": s.get("source") or s.get("source_path") or "",
+                        "target_path": t_path,
+                        "size": sz,
+                        "status": "completed",
+                    }
+                )
+            return items
+
+        return []
+
     def clear_step_ledger(self, session_id: str):
         """Clean up temporary ledger records upon successful completion of a batch move operation."""
         conn = get_db_connection(self.db_path)
@@ -1265,16 +1337,50 @@ class HistoryManager:
             "count": len(steps),
         }
 
-    def unwind_session(self, session_id: str, db=None) -> int:
+    def unwind_session(
+        self,
+        session_id: str,
+        db=None,
+        selected_step_ids: Optional[Container[Union[int, str]]] = None,
+    ) -> int:
         """Unwind completed relocation steps in exact reverse chronological order using step ledger."""
-        return self._unwind_session_internal(session_id, db=db)
+        return self._unwind_session_internal(
+            session_id, db=db, selected_step_ids=selected_step_ids
+        )
 
-    def _unwind_session_internal(self, session_id: str, db=None) -> int:
+    def _unwind_session_internal(
+        self,
+        session_id: str,
+        db=None,
+        selected_step_ids: Optional[Container[Union[int, str]]] = None,
+    ) -> int:
         if db:
             db.invalidate_cache()
         if moves := self.moves.list_moves(session_id):
-            return self._replay_moves_backwards(session_id, moves, db=db)
+            active_moves = [m for m in moves if m.state not in (INTENT, FAILED)]
+            if selected_step_ids is not None:
+                sel_set = {str(x) for x in selected_step_ids}
+                moves_to_unwind = [m for m in active_moves if str(m.seq) in sel_set]
+                is_partial = len(moves_to_unwind) < len(active_moves)
+            else:
+                moves_to_unwind = active_moves
+                is_partial = False
+
+            if not moves_to_unwind:
+                return 0
+
+            return self._replay_moves_backwards(
+                session_id, moves_to_unwind, db=db, is_partial=is_partial
+            )
+
         steps = self.get_step_ledger(session_id)
+        if selected_step_ids is not None and steps:
+            sel_set = {str(x) for x in selected_step_ids}
+            steps_to_unwind = [s for s in steps if str(s["step_id"]) in sel_set]
+            is_partial = len(steps_to_unwind) < len(steps)
+        else:
+            steps_to_unwind = steps
+            is_partial = False
 
         conn = get_db_connection(self.db_path)
         snapshot_files = set()
@@ -1298,14 +1404,14 @@ class HistoryManager:
         target_dirs_to_clean = set()
 
         failed_unwinds = []
-        if not steps:
-            return self._rollback_from_snapshot_internal(
-                session_id, base_dir=base_dir, ignore_missing=True
-            )
+        if not steps_to_unwind and not snapshot_files:
+            return 0
 
-        if steps:
+        if steps_to_unwind:
             # Exact reverse chronological order
-            steps_reverse = sorted(steps, key=lambda s: s["step_id"], reverse=True)
+            steps_reverse = sorted(
+                steps_to_unwind, key=lambda s: s["step_id"], reverse=True
+            )
 
             for step in steps_reverse:
                 target_path = step["target_path"]
@@ -1373,20 +1479,38 @@ class HistoryManager:
 
             _prune_emptied_dirs(target_dirs_to_clean, base_dir)
 
+        status_to_set = "partially_rolled_back" if is_partial else "rolled_back"
+
         conn = get_db_connection(self.db_path)
         with conn:
             conn.execute(
-                "UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?",
-                (session_id,),
+                "UPDATE sessions SET status = ? WHERE session_id = ?",
+                (status_to_set, session_id),
             )
-            conn.execute("DELETE FROM step_ledger WHERE session_id = ?", (session_id,))
+            unwound_ids = [s["step_id"] for s in steps_to_unwind]
+            if is_partial and unwound_ids:
+                placeholders = ",".join("?" for _ in unwound_ids)
+                conn.execute(
+                    f"DELETE FROM step_ledger WHERE session_id = ? AND step_id IN ({placeholders})",
+                    [session_id] + unwound_ids,
+                )
+            elif not is_partial:
+                conn.execute(
+                    "DELETE FROM step_ledger WHERE session_id = ?", (session_id,)
+                )
 
         if db:
             db.invalidate_cache()
 
         return unwound_count
 
-    def _replay_moves_backwards(self, session_id: str, moves: list[Move], db=None):
+    def _replay_moves_backwards(
+        self,
+        session_id: str,
+        moves: list[Move],
+        db=None,
+        is_partial: bool = False,
+    ):
         """Undo a session by walking its ``moves`` rows from last to first (ADR 0006).
 
         Each moved file goes back to ``src``, and any file its move displaced
@@ -1489,12 +1613,29 @@ class HistoryManager:
                 f"that changed since the sort, left in place (e.g. {conflicts[0]})."
             )
 
+        status_to_set = "partially_rolled_back" if is_partial else "rolled_back"
+        unwound_seqs = [m.seq for m in moves]
+
         with conn:
             conn.execute(
-                "UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?",
-                (session_id,),
+                "UPDATE sessions SET status = ? WHERE session_id = ?",
+                (status_to_set, session_id),
             )
-            conn.execute("DELETE FROM step_ledger WHERE session_id = ?", (session_id,))
+            if is_partial and unwound_seqs:
+                placeholders = ",".join("?" for _ in unwound_seqs)
+                conn.execute(
+                    f"DELETE FROM moves WHERE session_id = ? AND seq IN ({placeholders})",
+                    [session_id] + unwound_seqs,
+                )
+                conn.execute(
+                    f"DELETE FROM step_ledger WHERE session_id = ? AND step_id IN ({placeholders})",
+                    [session_id] + unwound_seqs,
+                )
+            elif not is_partial:
+                conn.execute(
+                    "DELETE FROM step_ledger WHERE session_id = ?", (session_id,)
+                )
+                conn.execute("DELETE FROM moves WHERE session_id = ?", (session_id,))
 
         if db:
             db.invalidate_cache()
@@ -2224,7 +2365,12 @@ class HistoryManager:
 
         return len(moves)
 
-    def rollback(self, session_id: str, ignore_missing: bool = False):
+    def rollback(
+        self,
+        session_id: str,
+        ignore_missing: bool = False,
+        selected_step_ids: Optional[Container[Union[int, str]]] = None,
+    ):
         """Revert directory and metadata state using recorded transaction ledger steps or snapshot."""
         self.db.invalidate_cache()
 
@@ -2257,7 +2403,9 @@ class HistoryManager:
                 self._mark_undo_snapshot(safety_session_id)
 
             if step_count > 0 or self.moves.list_moves(session_id):
-                result = self._unwind_session_internal(session_id, db=self.db)
+                result = self._unwind_session_internal(
+                    session_id, db=self.db, selected_step_ids=selected_step_ids
+                )
             elif steps := self.db.get_transaction_steps(session_id):
                 result = self._rollback_from_steps(
                     session_id,

@@ -27,6 +27,7 @@ Pass external dependencies in rather than creating them internally:
 def download_model(name: str, client: HubClient) -> Path:
     return client.fetch(name)
 
+
 # Hard to mock
 def download_model(name: str) -> Path:
     client = HubClient(token=os.environ["HF_TOKEN"])
@@ -42,6 +43,7 @@ Create specific functions for each external operation instead of one generic fun
 class AdvisoryClient:
     def get_advisories(self, model_id: str) -> list[Advisory]: ...
     def get_model_hash(self, model_id: str) -> str: ...
+
 
 # BAD: Mocking requires conditional logic inside the mock
 class AdvisoryClient:
