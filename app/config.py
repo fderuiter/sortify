@@ -119,7 +119,7 @@ class Settings(BaseSettings):
     )
     SECURITY_ADVISORY_CACHE_TTL: int = Field(default=3600, ge=1)
     SECURITY_ADVISORY_FALLBACK_POLICY: Literal["strict", "permissive"] = Field(
-        default="permissive"
+        default="strict"
     )
     OCR_GPU_ENABLED: bool = Field(default=False)
     AUDIO_GPU_ENABLED: bool = Field(default=False)

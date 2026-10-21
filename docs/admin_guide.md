@@ -124,7 +124,7 @@ The following parameters are extracted directly from the application's configura
 
 ### `SECURITY_ADVISORY_FALLBACK_POLICY`
 - **Type**: `str`
-- **Default**: `'permissive'`
+- **Default**: `'strict'`
 - **Allowed**: `strict`, `permissive`
 
 ### `OCR_GPU_ENABLED`

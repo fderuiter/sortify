@@ -189,3 +189,72 @@ def test_export_audit_report_permission_error():
 
     with pytest.raises(AuditExportError):
         export_audit_report_json(report, invalid_path)
+
+
+def test_export_audit_report_path_traversal_prevention(tmp_path):
+    """Test that export attempts escaping the allowed base directory raise AuditExportError."""
+    base_dir = tmp_path / "allowed_base"
+    base_dir.mkdir()
+    outside_dir = tmp_path / "outside"
+    outside_dir.mkdir()
+
+    records = [
+        {
+            "source_path": str(base_dir / "file.txt"),
+            "destination_path": str(base_dir / "out" / "file.txt"),
+            "pre_hash": "123",
+            "post_hash": "123",
+        }
+    ]
+    report = generate_audit_report(str(base_dir), records)
+
+    # Relative path traversal escape
+    with pytest.raises(AuditExportError) as exc_info:
+        export_audit_report_json(report, "../outside_report.json")
+    assert "escapes allowed base directory boundary" in str(exc_info.value)
+
+    # Absolute path escape outside base_dir
+    outside_file = str(outside_dir / "report.csv")
+    with pytest.raises(AuditExportError) as exc_info:
+        export_audit_report_csv(report, outside_file)
+    assert "escapes allowed base directory boundary" in str(exc_info.value)
+
+
+def test_export_audit_report_posix_permissions_0o600(tmp_path):
+    """Test exported report files have mode 0o600 permissions on POSIX systems."""
+    import stat
+
+    base_dir = tmp_path / "secure_base"
+    base_dir.mkdir()
+    report = generate_audit_report(str(base_dir), [])
+
+    json_path = export_audit_report_json(report, str(base_dir / "report.json"))
+    csv_path = export_audit_report_csv(report, str(base_dir / "report.csv"))
+
+    assert os.path.exists(json_path)
+    assert os.path.exists(csv_path)
+
+    if os.name != "nt":
+        json_mode = stat.S_IMODE(os.stat(json_path).st_mode)
+        csv_mode = stat.S_IMODE(os.stat(csv_path).st_mode)
+        assert json_mode == 0o600
+        assert csv_mode == 0o600
+
+
+def test_export_audit_report_explicit_base_dir_override(tmp_path):
+    """Test that explicit base_dir argument overrides report_data base_dir."""
+    base_1 = tmp_path / "base1"
+    base_1.mkdir()
+    base_2 = tmp_path / "base2"
+    base_2.mkdir()
+
+    report = generate_audit_report(str(base_1), [])
+
+    # Exporting to base_2 using explicit base_dir=base_2 should succeed
+    out_2 = str(base_2 / "report.json")
+    res = export_audit_report(report, out_2, format_type="json", base_dir=str(base_2))
+    assert os.path.exists(res)
+
+    # Exporting to base_2 without overriding base_dir should fail because report base_dir is base_1
+    with pytest.raises(AuditExportError):
+        export_audit_report(report, out_2, format_type="json")

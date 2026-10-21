@@ -132,11 +132,9 @@ class SecurityAdvisoryClient:
                     "Could not load AppSettings; using advisory defaults", exc_info=True
                 )
         if self._settings:
-            pol = getattr(
-                self._settings, "SECURITY_ADVISORY_FALLBACK_POLICY", "permissive"
-            )
+            pol = getattr(self._settings, "SECURITY_ADVISORY_FALLBACK_POLICY", "strict")
             return str(pol).strip().lower()
-        return "permissive"
+        return "strict"
 
     @classmethod
     def extract_repo_id(cls, url_or_id: str) -> str:
@@ -425,5 +423,4 @@ class SecurityAdvisoryClient:
                         details=f"Query failed ({e}), proceeding under permissive fallback policy.",
                         timestamp=time.time(),
                     )
-                    self.cache_advisory(norm_repo, norm_hash, fallback_result)
                     return fallback_result

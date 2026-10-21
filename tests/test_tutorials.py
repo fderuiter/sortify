@@ -33,7 +33,7 @@ def test_all_tutorials_execution():
 
 def test_docs_drift_detection_fails_on_drift(tmp_path):
     """Test that docs pipeline --check detects drift in generated doc files."""
-    with patch("sys.argv", ["generate_docs.py", "--check"]):
+    with patch("sys.argv", ["generate_docs.py", "--check", "--no-build"]):
         with (
             patch("scripts.generate_docs.generate_tutorial_docs"),
             patch("scripts.generate_docs.generate_ui_docs"),

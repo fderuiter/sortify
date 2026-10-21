@@ -513,7 +513,6 @@ class OfflineModelLoader:
             advisory_client.check_advisory(
                 repo_id=model_id,
                 file_hash=file_hash,
-                fallback_policy="permissive",  # For offline loader when network is unavailable, check cached status or permissive fallback
             )
         except ModelVerificationError as adv_err:
             logger.critical(

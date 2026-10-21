@@ -886,6 +886,7 @@ class DropZoneModal(
         pending = list(getattr(self, "_pending_drop", []))
         self._pending_drop = []
         processed_items = []
+        failed_items = []
         outcomes = []
         try:
             from app.core.pipeline import SortPipeline
@@ -899,22 +900,67 @@ class DropZoneModal(
                             "path": item["path"],
                             "summary": outcome.summary,
                             "file_count": item.get("file_count", 1),
+                            "status": "success",
+                        }
+                    )
+                except Exception as e:
+                    logger.exception(
+                        f"Error during dropzone relocation for {item.get('path')}: {e}"
+                    )
+                    failed_items.append(
+                        {
+                            "path": item.get("path"),
+                            "error": str(e),
+                            "file_count": item.get("file_count", 1),
+                            "status": "failed",
                         }
                     )
                 finally:
-                    item["session"].close()
+                    try:
+                        item["session"].close()
+                    except Exception:
+                        pass
 
-            file_count = sum(i["file_count"] for i in processed_items)
-            final_msg = (
-                f"Completed triage of {file_count} dropped item(s): "
-                + " ".join(o.describe() for o in outcomes)
-            )
+            succeeded_files = sum(i["file_count"] for i in processed_items)
+            failed_files = sum(i["file_count"] for i in failed_items)
+            total_items = len(pending)
+
+            if not failed_items:
+                status = "success"
+                final_msg = (
+                    f"Completed triage of {succeeded_files} dropped item(s): "
+                    + " ".join(o.describe() for o in outcomes)
+                )
+            elif processed_items:
+                status = "partial"
+                err_summary = "; ".join(
+                    f"{item['path']}: {item['error']}" for item in failed_items
+                )
+                descriptions = " ".join(o.describe() for o in outcomes)
+                final_msg = (
+                    f"Completed triage of {succeeded_files} item(s) "
+                    f"({len(processed_items)} succeeded, {len(failed_items)} failed): "
+                    f"{descriptions} Errors: {err_summary}"
+                )
+            else:
+                status = "failed"
+                err_summary = "; ".join(
+                    f"{item['path']}: {item['error']}" for item in failed_items
+                )
+                final_msg = f"Dropzone triage failed for all {len(failed_items)} item(s): {err_summary}"
+
             if app_ref:
                 app_ref.call_from_thread(self.update_status_msg, final_msg)
+
             result_dict = {
-                "status": "success",
-                "processed_count": file_count,
+                "status": status,
+                "processed_count": succeeded_files,
+                "failed_files": failed_files,
                 "items": processed_items,
+                "failed_items": failed_items,
+                "succeeded_count": len(processed_items),
+                "failed_count": len(failed_items),
+                "total_count": total_items,
             }
             self.processed_result = result_dict
             try:
