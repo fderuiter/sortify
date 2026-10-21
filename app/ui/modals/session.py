@@ -194,7 +194,14 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             or 0
         )
         ts = self.session_info.get("timestamp")
-        ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "N/A"
+        try:
+            ts_str = (
+                time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(ts)))
+                if ts
+                else "N/A"
+            )
+        except Exception:
+            ts_str = str(ts) if ts else "N/A"
 
         with Vertical(classes="confirm-box"):
             yield Heading(
@@ -539,7 +546,14 @@ class HistoryModal(
         b_dir = target.get("base_dir") or "N/A"
         step_cnt = target.get("step_count") or target.get("file_count") or 0
         ts = target.get("timestamp")
-        ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "N/A"
+        try:
+            ts_str = (
+                time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(float(ts)))
+                if ts
+                else "N/A"
+            )
+        except Exception:
+            ts_str = str(ts) if ts else "N/A"
 
         details_str = (
             f"Session ID: {sid}\n"

@@ -162,7 +162,7 @@ async def test_rollback_confirm_modal_flow(tui_rollback_env):
 
         btn_rollback = modal.query_one("#btn-rollback-session", Button)
         btn_rollback.press()
-        await pilot.pause()
+        await pilot.pause(0.05)
 
         # RollbackConfirmModal should now be the top screen
         confirm_screen = app.screen
@@ -222,7 +222,7 @@ async def test_rollback_execution_success(tui_rollback_env):
 
         btn_rollback = modal.query_one("#btn-rollback-session", Button)
         btn_rollback.press()
-        await pilot.pause()
+        await pilot.pause(0.05)
 
         # Confirm rollback
         confirm_screen = app.screen
@@ -272,7 +272,7 @@ async def test_rollback_execution_missing_files_flow(tui_rollback_env):
 
         btn_rollback = modal.query_one("#btn-rollback-session", Button)
         btn_rollback.press()
-        await pilot.pause()
+        await pilot.pause(0.05)
 
         # Step-ledger sessions skip missing files without a force option
         confirm_screen = app.screen
@@ -315,7 +315,7 @@ async def test_rollback_execution_error_modal_on_failure(tui_rollback_env, monke
 
         btn_rollback = modal.query_one("#btn-rollback-session", Button)
         btn_rollback.press()
-        await pilot.pause()
+        await pilot.pause(0.05)
 
         confirm_screen = app.screen
         assert isinstance(confirm_screen, RollbackConfirmModal)
@@ -362,7 +362,7 @@ async def test_rollback_uses_the_app_store(tui_rollback_env, monkeypatch):
         modal.query_one("#select-history-session", Select).value = session_id
         await pilot.pause()
         modal.query_one("#btn-rollback-session", Button).press()
-        await pilot.pause()
+        await pilot.pause(0.05)
         app.screen.query_one("#btn-confirm-rollback", Button).press()
 
         await pilot.pause()
@@ -424,7 +424,7 @@ async def test_escape_does_not_close_history_modal_mid_rollback(
         modal.query_one("#select-history-session", Select).value = session_id
         await pilot.pause()
         modal.query_one("#btn-rollback-session", Button).press()
-        await pilot.pause()
+        await pilot.pause(0.05)
         app.screen.query_one("#btn-confirm-rollback", Button).press()
         await pilot.pause()
 
