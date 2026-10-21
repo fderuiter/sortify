@@ -1138,6 +1138,7 @@ class HistoryManager:
         output_path: str,
         session_id: Any = None,
         format: Any = None,
+        base_dir: Optional[str] = None,
     ) -> Dict[str, Any]:
         """Export session history records into standard CSV or JSON audit log formats."""
         import csv
@@ -1296,9 +1297,23 @@ class HistoryManager:
                 f"Unsupported export format '{fmt}'. Supported formats are 'csv' and 'json'."
             )
 
-        out_dir = os.path.dirname(os.path.abspath(output_path))
-        if out_dir:
-            os.makedirs(out_dir, exist_ok=True)
+        effective_base = base_dir
+        if not effective_base and session_id and session_id in sessions_map:
+            effective_base = sessions_map[session_id].get("base_dir")
+        if not effective_base:
+            for s_info in sessions_map.values():
+                if s_info.get("base_dir"):
+                    effective_base = s_info["base_dir"]
+                    break
+
+        from app.core.audit_reporter import (
+            _open_secure_export_file,
+            _validate_and_resolve_export_path,
+        )
+
+        abs_output_path = _validate_and_resolve_export_path(
+            output_path, base_dir=effective_base
+        )
 
         if fmt == "csv":
             fieldnames = [
@@ -1313,7 +1328,7 @@ class HistoryManager:
                 "file_hash",
                 "status",
             ]
-            with open(output_path, "w", newline="", encoding="utf-8") as f:
+            with _open_secure_export_file(abs_output_path, "w", newline="") as f:
                 writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
                 writer.writeheader()
                 for step in steps:
@@ -1326,13 +1341,13 @@ class HistoryManager:
                 "total_steps": len(steps),
                 "steps": steps,
             }
-            with open(output_path, "w", encoding="utf-8") as f:
+            with _open_secure_export_file(abs_output_path, "w") as f:
                 json.dump(export_payload, f, indent=2)
 
         return {
             "status": "success",
             "session_id": session_id,
-            "output_path": output_path,
+            "output_path": abs_output_path,
             "format": fmt,
             "count": len(steps),
         }

@@ -468,3 +468,122 @@ async def test_dropzone_folder_drop_stages_and_moves_its_files(tmp_path):
         assert dropzone.processed_result["processed_count"] == 6
         loose = [p for p in test_dir.iterdir() if p.is_file()]
         assert loose == []
+
+
+def test_dropzone_worker_batch_error_isolation(mocker, tmp_path):
+    """Verify mid-batch move failures let remaining items execute and close all sessions."""
+    settings = DummySettings(tmp_path)
+    dropzone = DropZoneModal(settings=settings, base_dir=str(tmp_path))
+
+    session1 = mocker.MagicMock()
+    session2 = mocker.MagicMock()
+    session3 = mocker.MagicMock()
+
+    item1 = {
+        "path": "/path/item1.txt",
+        "session": session1,
+        "plan": {"moves": []},
+        "file_count": 1,
+    }
+    item2 = {
+        "path": "/path/item2.txt",
+        "session": session2,
+        "plan": {"moves": []},
+        "file_count": 2,
+    }
+    item3 = {
+        "path": "/path/item3.txt",
+        "session": session3,
+        "plan": {"moves": []},
+        "file_count": 1,
+    }
+
+    dropzone._pending_drop = [item1, item2, item3]
+
+    outcome1 = mocker.MagicMock()
+    outcome1.summary = {"moved": 1}
+    outcome1.describe.return_value = "1 moved."
+
+    outcome3 = mocker.MagicMock()
+    outcome3.summary = {"moved": 1}
+    outcome3.describe.return_value = "1 moved."
+
+    def mock_pipeline_init(session):
+        pipeline = mocker.MagicMock()
+        if session is session2:
+            pipeline.execute.side_effect = RuntimeError("Permission denied during move")
+        elif session is session1:
+            pipeline.execute.return_value = outcome1
+        elif session is session3:
+            pipeline.execute.return_value = outcome3
+        return pipeline
+
+    mocker.patch("app.core.pipeline.SortPipeline", side_effect=mock_pipeline_init)
+    mocker.patch.object(dropzone, "dismiss")
+    mocker.patch.object(dropzone, "update_status_msg")
+
+    dropzone.run_drop_execute_worker.__wrapped__(dropzone)
+
+    session1.close.assert_called_once()
+    session2.close.assert_called_once()
+    session3.close.assert_called_once()
+
+    res = dropzone.processed_result
+    assert res is not None
+    assert res["status"] == "partial"
+    assert res["processed_count"] == 2
+    assert res["succeeded_count"] == 2
+    assert res["failed_count"] == 1
+    assert res["total_count"] == 3
+    assert len(res["items"]) == 2
+    assert len(res["failed_items"]) == 1
+    assert res["failed_items"][0]["path"] == "/path/item2.txt"
+    assert "Permission denied during move" in res["failed_items"][0]["error"]
+
+
+def test_dropzone_worker_total_failure_and_cleanup(mocker, tmp_path):
+    """Verify total batch move failure closes all sessions and reports failure status."""
+    settings = DummySettings(tmp_path)
+    dropzone = DropZoneModal(settings=settings, base_dir=str(tmp_path))
+
+    session1 = mocker.MagicMock()
+    session2 = mocker.MagicMock()
+
+    item1 = {
+        "path": "/path/item1.txt",
+        "session": session1,
+        "plan": {"moves": []},
+        "file_count": 1,
+    }
+    item2 = {
+        "path": "/path/item2.txt",
+        "session": session2,
+        "plan": {"moves": []},
+        "file_count": 1,
+    }
+
+    dropzone._pending_drop = [item1, item2]
+
+    def mock_pipeline_init(session):
+        pipeline = mocker.MagicMock()
+        pipeline.execute.side_effect = OSError("Disk full")
+        return pipeline
+
+    mocker.patch("app.core.pipeline.SortPipeline", side_effect=mock_pipeline_init)
+    mocker.patch.object(dropzone, "dismiss")
+    mocker.patch.object(dropzone, "update_status_msg")
+
+    dropzone.run_drop_execute_worker.__wrapped__(dropzone)
+
+    session1.close.assert_called_once()
+    session2.close.assert_called_once()
+
+    res = dropzone.processed_result
+    assert res is not None
+    assert res["status"] == "failed"
+    assert res["processed_count"] == 0
+    assert res["succeeded_count"] == 0
+    assert res["failed_count"] == 2
+    assert res["total_count"] == 2
+    assert len(res["items"]) == 0
+    assert len(res["failed_items"]) == 2

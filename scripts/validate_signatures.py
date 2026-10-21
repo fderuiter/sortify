@@ -433,6 +433,21 @@ def extract_metadata_and_payload(snapshot_data: dict) -> tuple[dict | None, dict
     return metadata, payload
 
 
+def is_conflicted_json_payload(snapshot_data: dict) -> bool:
+    """Check if snapshot JSON data dictionary represents a structured conflict payload."""
+    if not isinstance(snapshot_data, dict):
+        return False
+    if snapshot_data.get("_metadata", {}).get("conflict") is True:
+        return True
+    if snapshot_data.get("conflict") is True:
+        return True
+    if "local" in snapshot_data and "incoming" in snapshot_data:
+        return True
+    if "ours" in snapshot_data and "theirs" in snapshot_data:
+        return True
+    return False
+
+
 def verify_snapshot_integrity(
     snapshot_data: dict, snapshot_path: str = None
 ) -> tuple[bool, str, dict]:
@@ -442,6 +457,16 @@ def verify_snapshot_integrity(
         return (
             False,
             f"Error: Invalid snapshot format (expected JSON object){path_str}.",
+            {},
+        )
+
+    if is_conflicted_json_payload(snapshot_data):
+        path_str = f" in '{snapshot_path}'" if snapshot_path else ""
+        return (
+            False,
+            f"Error: Unresolved merge collision detected in snapshot file{path_str}.\n"
+            f"  Snapshot contains structured conflict metadata for local and incoming definitions.\n"
+            f"  Please resolve the merge conflict before validating signatures.",
             {},
         )
 

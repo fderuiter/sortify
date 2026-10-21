@@ -952,9 +952,13 @@ class AutoSorterTUI(
                     if session_id not in ("none", "all")
                     else None,
                     format=fmt,
+                    base_dir=self.base_dir,
                 )
                 cnt = export_res.get("count", 0)
-                msg = f"Audit log exported ({fmt.upper()}) to '{output_path}' ({cnt} records)."
+                out_p = export_res.get("output_path", output_path)
+                msg = (
+                    f"Audit log exported ({fmt.upper()}) to '{out_p}' ({cnt} records)."
+                )
                 self.announce(msg)
                 from app.ui.notifications import notify
 
@@ -962,6 +966,9 @@ class AutoSorterTUI(
             except Exception as e:
                 logger.error(f"Error exporting audit log from TUI: {e}")
                 self.announce(f"Export error: {e}")
+                from app.ui.notifications import notify
+
+                notify(f"Export error: {e}", type="error")
 
         self.push_screen(
             HistoryModal(sessions=sessions, base_dir=self.base_dir),
