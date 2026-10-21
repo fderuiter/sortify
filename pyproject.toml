@@ -117,11 +117,10 @@ error-on-warning = false
 include = ["app"]
 
 [tool.ty.analysis]
-# Optional `ml` extra and `docs` group packages, imported lazily behind guards.
+# Optional `ml` extra packages, imported lazily behind guards.
 allowed-unresolved-imports = [
     "easyocr",
     "llama_cpp",
-    "mkdocs",
     "onnxruntime",
     "torch",
     "transformers",
@@ -180,19 +179,6 @@ dev = [
     "ty>=0.0.89",
 ]
 
-docs = [
-    # MkDocs 2.0 drops the plugin system mkdocstrings and Material rely on.
-    "mkdocs>=1.6.1,<2",
-    "mkdocs-material>=9.7.7,<10",
-    "mkdocstrings[python]>=1.0.6",
-]
-
-notebooks = [
-    "jupyter>=1.1.1",
-    "ipykernel>=7.3.0",
-    "notebook>=7.6.3",
-]
-
 build = [
     "pyinstaller",
     "pefile>=2023.2.7",
@@ -200,16 +186,16 @@ build = [
 ]
 
 [tool.deptry]
-# The `docs` group and the scripts in scripts/ are contributor tooling, so their
-# imports may come from dev-only groups.
+# The scripts in scripts/ are contributor tooling, so their imports may come from dev-only groups.
 known_first_party = ["app", "scripts"]
 
 [tool.deptry.package_module_name_map]
 llama-cpp-python = "llama_cpp"
+pyinstaller = "PyInstaller"
 
 [tool.deptry.per_rule_ignores]
 # Dev-only tools imported by scripts/ and by the repo-only docs generator.
-DEP004 = ["mkdocs", "pefile", "PyInstaller", "requests", "yaml"]
+DEP004 = ["pefile", "PyInstaller", "requests", "yaml"]
 
 [tool.pytest.ini_options]
 pythonpath = [

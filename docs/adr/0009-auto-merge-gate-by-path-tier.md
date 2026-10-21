@@ -6,7 +6,7 @@ status: accepted (2026-10-19)
 
 Bots write most of Sortify's changes, and `scripts/auto_merge_controller.py` merges the ones `scripts/classify_pr.py` calls low-risk. Every changed path falls into one of three tiers, and the PR takes the strictest tier any of its files hits:
 
-1. **Docs** (`docs/`, `README.md`, `mkdocs.yml`): auto-merge once `Required CI` passes on the current head.
+1. **Docs** (`docs/`, `README.md`): auto-merge once `Required CI` passes on the current head.
 2. **Code and tests**: auto-merge only with the `automerge` label applied by a maintainer (a person with write access, not a bot), within the size limits, with `Required CI` green. Tests stay here rather than with docs, because a bot that deletes or weakens a failing test would otherwise merge unreviewed.
 3. **Protected paths**: never auto-merged; the owner must approve. These are the security paths already listed (`.github/`, `SECURITY.md`, `PRIVACY.md`, `app/config.py`, `app/core/crypto.py`, `scripts/`, the PyInstaller spec, `network_rules.json`, `.gitleaks.toml`, dependency manifests outside Dependabot) plus every module that can lose a user's file: `app/core/mover.py`, `resilient_file_ops.py`, `ledger.py`, `history.py`, `session.py`, `db.py`, `db_conn.py`, `db_worker.py` and `quarantine_interceptor.py`, and snapshot baselines.
 

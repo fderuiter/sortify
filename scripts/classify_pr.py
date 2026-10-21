@@ -64,7 +64,6 @@ BASELINE_PATHS = [
 DOCS_PATHS = [
     r"^docs/.*",
     r"^README\.md$",
-    r"^mkdocs\.yml$",
 ]
 
 _DEPENDABOT_VERSION_RE = re.compile(

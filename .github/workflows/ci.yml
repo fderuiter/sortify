@@ -308,23 +308,19 @@ jobs:
         filters: |
           docs:
             - 'docs/**'
-            - 'mkdocs.yml'
 
-  # The only job that keeps checkout credentials: mkdocs gh-deploy pushes.
   doc-deploy:
-    name: Doc Deploy
+    name: Doc Check
     needs: [static-checks, changes]
     if: needs.changes.outputs.docs == 'true'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
-      contents: write
+      contents: read
     steps:
     - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
       with:
-        # mkdocs gh-deploy pushes with the persisted token, and only on main.
-        # PR runs never deploy, so they keep the token out of .git/config.
-        persist-credentials: ${{ github.ref == 'refs/heads/main' }}
+        persist-credentials: false
 
     - name: Install uv
       uses: astral-sh/setup-uv@37802adc94f370d6bfd71619e3f0bf239e1f3b78 # v7.6.0
@@ -339,12 +335,11 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --frozen --group docs
+        uv sync --frozen
 
-    - name: Deploy Documentation
-      if: github.ref == 'refs/heads/main'
+    - name: Check Documentation
       run: |
-        uv run mkdocs gh-deploy --force
+        uv run python scripts/generate_docs.py --check
 
   heavy-tests:
     name: Heavy Tests

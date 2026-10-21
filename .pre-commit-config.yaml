@@ -7,7 +7,7 @@ repos:
       - id: check-json
       - id: check-toml
       - id: check-yaml
-        args: ['--unsafe']  # mkdocs.yml uses a !!python/name tag
+        args: ['--unsafe']
       - id: check-merge-conflict
       - id: debug-statements
       - id: no-commit-to-branch
@@ -38,10 +38,10 @@ repos:
         files: '(\.pytest_cache/|\.venv/|\.coverage$|htmlcov/|__pycache__/|.*\.py[co]$)'
       - id: validate-docs
         name: Validate Documentation
-        entry: uv run python scripts/generate_docs.py --check --no-build
+        entry: uv run python scripts/generate_docs.py --check
         language: system
         pass_filenames: false
-        files: '^(docs/|scripts/.*\.py|app/.*\.py|mkdocs\.yml|README\.md|PRIVACY\.md|SECURITY\.md)'
+        files: '^(docs/|scripts/.*\.py|app/.*\.py|README\.md|PRIVACY\.md|SECURITY\.md)'
       - id: validate-diagram-artifacts
         name: Validate Diagram Artifacts and Mermaid Compilation
         entry: uv run python scripts/diagram_toolchain.py --verify

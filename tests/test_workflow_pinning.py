@@ -68,20 +68,13 @@ def test_every_job_declares_a_timeout(path):
 
 @pytest.mark.parametrize("path", WORKFLOWS, ids=lambda p: p.name)
 def test_checkouts_do_not_persist_credentials(path):
-    """A persisted token sits in .git/config for every later step to read.
-
-    Doc Deploy is the one exception: mkdocs gh-deploy pushes with it, so it
-    persists the token on main only.
-    """
+    """A persisted token sits in .git/config for every later step to read."""
     workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
     for job_name, job in (workflow.get("jobs") or {}).items():
         for step in job.get("steps") or []:
             if "actions/checkout@" not in step.get("uses", ""):
                 continue
             persist = (step.get("with") or {}).get("persist-credentials")
-            if job_name == "doc-deploy":
-                assert persist == "${{ github.ref == 'refs/heads/main' }}"
-            else:
-                assert persist is False, (
-                    f"{path.name}: {job_name} checks out with persisted credentials"
-                )
+            assert persist is False, (
+                f"{path.name}: {job_name} checks out with persisted credentials"
+            )

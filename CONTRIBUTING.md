@@ -9,7 +9,7 @@ You need [uv](https://docs.astral.sh/uv/). It reads `.python-version` and instal
 ```bash
 git clone https://github.com/fderuiter/sortify.git
 cd sortify
-uv sync --all-groups      # app + dev, docs, notebooks and build groups
+uv sync --all-groups      # app + dev and build groups
 uv run pre-commit install # run the hooks on every commit
 ```
 
@@ -20,9 +20,7 @@ Dependency groups (PEP 735, in `pyproject.toml`):
 | Group | Used for |
 |---|---|
 | `dev` | pytest, ruff, ty, pre-commit and the repo validators |
-| `docs` | MkDocs site build |
 | `build` | PyInstaller executables (`scripts/build.py`) |
-| `notebooks` | Jupyter |
 
 ## Everyday commands
 
@@ -33,8 +31,7 @@ uv run pytest -m slow -n 0              # ML, snapshot and integration tests
 uv run ruff check . && uv run ruff format .
 uv run ty check                         # type check app/ (config in pyproject.toml)
 uv run pre-commit run --all-files       # every hook, same as CI's static checks
-uv run python scripts/generate_docs.py --check  # regenerate docs, audit links, build the site
-uv run mkdocs serve                     # preview the docs site at http://127.0.0.1:8000
+uv run python scripts/generate_docs.py --check  # regenerate docs and audit links
 ```
 
 Set `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` when running tests on a machine without a usable keyring (CI does this).
@@ -45,7 +42,7 @@ Set `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` when running tests on
 
 | Hook | Script | Fails when |
 |---|---|---|
-| `validate-docs` | `uv run python scripts/generate_docs.py --check --no-build` | generated docs (`docs/api_reference.md`, `docs/ui.md`, `docs/admin_guide.md`, `SECURITY.md`) are stale, or a handwritten doc links to a missing path |
+| `validate-docs` | `uv run python scripts/generate_docs.py --check` | generated docs (`docs/api_reference.md`, `docs/ui.md`, `docs/admin_guide.md`, `SECURITY.md`) are stale, or a handwritten doc links to a missing path |
 | `validate-diagram-artifacts` | `scripts/diagram_toolchain.py` | a Mermaid diagram spec doesn't compile |
 | `validate-signatures` | `scripts/validate_signatures.py` | a public API or CLI signature changed without updating its baseline in `tests/snapshots/api/` |
 | `validate-architecture` | `scripts/validate_architecture.py` | a centralized helper (path validation, packaging checks, key lookup) is duplicated instead of reused |

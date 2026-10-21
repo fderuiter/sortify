@@ -750,7 +750,6 @@ def main():
     """Execute the unified documentation generation and validation pipeline."""
     os.chdir(REPO_ROOT)
     import argparse
-    import subprocess
     import traceback
 
     parser = argparse.ArgumentParser(
@@ -766,19 +765,19 @@ def main():
         "--strict",
         action="store_true",
         default=True,
-        help="Enforce strict validation mode on MkDocs build (default).",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--no-strict",
         dest="strict",
         action="store_false",
-        help="Disable strict validation mode on MkDocs build.",
+        help=argparse.SUPPRESS,
     )
     parser.add_argument(
         "--no-build",
         "--skip-build",
         action="store_true",
-        help="Skip MkDocs HTML site generation build step.",
+        help=argparse.SUPPRESS,
     )
 
     args = parser.parse_args()
@@ -865,35 +864,7 @@ def main():
                 sys.stderr.write(f"  - {err}\n")
             sys.exit(1)
 
-    # 4. Run MkDocs build (and preserve strict build flags)
-    if not args.no_build:
-        try:
-            import mkdocs  # noqa: F401
-        except ModuleNotFoundError:
-            sys.stderr.write(
-                "\nError: 'mkdocs' is not installed in the current environment.\n"
-                "To build documentation with MkDocs, run with the docs dependency group:\n"
-                "  uv run --group docs python scripts/generate_docs.py\n"
-                "  or: uv run --group docs mkdocs build\n"
-                "or pass '--no-build' / '--skip-build' when running without optional documentation dependencies.\n\n"
-            )
-            sys.exit(1)
-
-        build_cmd = [sys.executable, "-m", "mkdocs", "build"]
-        if args.strict:
-            build_cmd.append("--strict")
-
-        print(f"Running MkDocs build: {' '.join(build_cmd)}")
-        result = subprocess.run(build_cmd, capture_output=False)
-        if result.returncode != 0:
-            sys.stderr.write(
-                f"Error: MkDocs build failed with exit code {result.returncode}\n"
-            )
-            sys.exit(result.returncode)
-    else:
-        print("Skipping MkDocs build (--no-build).")
-
-    # 5. Report if files were out of sync
+    # 4. Report if files were out of sync
     if args.check and changed_files:
         sys.stderr.write(
             "\nError: The following auto-generated documentation files are out of sync or have modified contents:\n"

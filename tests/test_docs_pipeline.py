@@ -94,40 +94,8 @@ def test_audit_handwritten_docs_detects_broken_link(tmp_path):
         assert bad_url in errors[0]
 
 
-def test_main_strict_flag():
-    """Verify that --strict (default) and --no-strict set mkdocs arguments correctly."""
-    with patch("sys.argv", ["generate_docs.py", "--no-strict"]):
-        with (
-            patch("scripts.generate_docs.compile_diagram_assets") as mock_diag,
-            patch("scripts.generate_docs.generate_tutorial_docs") as mock_tut,
-            patch("scripts.generate_docs.generate_api_docs") as mock_api,
-            patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
-            patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
-            patch("scripts.generate_docs.update_security_md") as mock_sec,
-            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
-            patch("subprocess.run") as mock_run,
-        ):
-            mock_run.return_value = MagicMock(returncode=0)
-
-            main()
-
-            # Verify generators are called
-            mock_diag.assert_called_once()
-            mock_tut.assert_called_once()
-            mock_api.assert_called_once()
-            mock_ui.assert_called_once()
-            mock_admin.assert_called_once()
-            mock_sec.assert_called_once()
-
-            # Verify build command does NOT have --strict
-            mock_run.assert_called_once()
-            args, kwargs = mock_run.call_args
-            cmd = args[0]
-            assert "--strict" not in cmd
-
-
-def test_main_default_strict():
-    """Verify that by default mkdocs is run with --strict."""
+def test_main_decoupled_from_mkdocs():
+    """Verify generate_docs main executes doc tasks without requiring mkdocs or calling web build."""
     with patch("sys.argv", ["generate_docs.py"]):
         with (
             patch("scripts.generate_docs.compile_diagram_assets") as mock_diag,
@@ -135,34 +103,9 @@ def test_main_default_strict():
             patch("scripts.generate_docs.generate_api_docs") as mock_api,
             patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
             patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
+            patch("scripts.generate_docs.generate_keyboard_docs") as mock_kbd,
             patch("scripts.generate_docs.update_security_md") as mock_sec,
             patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
-            patch("subprocess.run") as mock_run,
-        ):
-            mock_run.return_value = MagicMock(returncode=0)
-
-            main()
-
-            mock_diag.assert_called_once()
-            mock_tut.assert_called_once()
-            mock_run.assert_called_once()
-            args, kwargs = mock_run.call_args
-            cmd = args[0]
-            assert "--strict" in cmd
-
-
-def test_main_no_build_flag():
-    """Verify that --no-build skips running subprocess.run for mkdocs build."""
-    with patch("sys.argv", ["generate_docs.py", "--no-build"]):
-        with (
-            patch("scripts.generate_docs.compile_diagram_assets") as mock_diag,
-            patch("scripts.generate_docs.generate_tutorial_docs") as mock_tut,
-            patch("scripts.generate_docs.generate_api_docs") as mock_api,
-            patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
-            patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
-            patch("scripts.generate_docs.update_security_md") as mock_sec,
-            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
-            patch("subprocess.run") as mock_run,
         ):
             main()
 
@@ -171,32 +114,8 @@ def test_main_no_build_flag():
             mock_api.assert_called_once()
             mock_ui.assert_called_once()
             mock_admin.assert_called_once()
+            mock_kbd.assert_called_once()
             mock_sec.assert_called_once()
-            mock_run.assert_not_called()
-
-
-def test_main_skip_build_flag():
-    """Verify that --skip-build skips running subprocess.run for mkdocs build."""
-    with patch("sys.argv", ["generate_docs.py", "--skip-build"]):
-        with (
-            patch("scripts.generate_docs.compile_diagram_assets") as mock_diag,
-            patch("scripts.generate_docs.generate_tutorial_docs") as mock_tut,
-            patch("scripts.generate_docs.generate_api_docs") as mock_api,
-            patch("scripts.generate_docs.generate_ui_docs") as mock_ui,
-            patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
-            patch("scripts.generate_docs.update_security_md") as mock_sec,
-            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
-            patch("subprocess.run") as mock_run,
-        ):
-            main()
-
-            mock_diag.assert_called_once()
-            mock_tut.assert_called_once()
-            mock_api.assert_called_once()
-            mock_ui.assert_called_once()
-            mock_admin.assert_called_once()
-            mock_sec.assert_called_once()
-            mock_run.assert_not_called()
 
 
 def test_main_detects_unsynced_files_on_check():

@@ -13,7 +13,7 @@ Because `fderuiter/sortify` is owned by a personal GitHub account (where native 
 Every Pull Request undergoes automated risk classification via `.github/workflows/classify-pr.yml` and `scripts/classify_pr.py`.
 
 ### A. Automatically Eligible by Default
-- **Documentation-only changes** (`docs/**`, `README.md`, `mkdocs.yml`) that do not touch sensitive/security files.
+- **Documentation-only changes** (`docs/**`, `README.md`) that do not touch sensitive/security files.
 - **Dependabot minor or patch updates** to `pyproject.toml`/`uv.lock` after full CI verification. Only PRs authored by `dependabot[bot]` qualify; a `dependencies` label alone does not. GitHub Actions bumps touch `.github/**` and always need a human merge.
 
 ### B. Explicit Opt-In (`automerge` label) vs Classifier Approval (`automerge:eligible`)
