@@ -72,7 +72,7 @@ jobs:
             ~/.cache/huggingface
           # No restore-keys: weights saved for another manifest must not be
           # restored and shipped as if they were the pinned ones.
-          key: model-weights-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'offline_bundle/**', 'app/core/prompt_manifest.py') }}
+          key: model-weights-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'offline_bundle/**', 'scripts/prompt_manifest.py', '.github/AGENTS/manifest.json') }}
 
       - name: Build executable
         run: |
