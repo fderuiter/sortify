@@ -115,7 +115,9 @@ def test_process_item_worker_isdir(tmp_path):
 
 def test_process_item_worker_exception(tmp_path):
     cb = mock.MagicMock()
-    with mock.patch("app.core.extractor.os.path.join", side_effect=Exception("Boom")):
+    with mock.patch(
+        "app.core.scanner.parse_item_identifier", side_effect=Exception("Boom")
+    ):
         item, text, h = process_item_worker(str(tmp_path), "test.txt", cb, db)
         assert item == "test.txt"
         assert text == ""
