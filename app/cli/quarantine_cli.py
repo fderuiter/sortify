@@ -3,15 +3,14 @@
 import argparse
 import json
 import logging
-import os
 import sys
 from pathlib import Path
+from typing import List
 
 from app.config import AppSettings
 from app.core.db import Database
 from app.core.db_worker import DBWorker
 from app.core.quarantine_interceptor import QuarantineInterceptorService
-from app.core.resilient_file_ops import atomic_quarantine_relocation
 
 logger = logging.getLogger(__name__)
 
@@ -94,21 +93,27 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
     # process
     p_process = quarantine_subparsers.add_parser(
         "process",
-        help="Trigger forensic scanning and policy evaluation for a quarantine job",
+        help="Trigger forensic scanning and policy evaluation for quarantine jobs",
     )
     add_quarantine_common(p_process)
     p_process.add_argument(
-        "job_id_pos",
-        nargs="?",
-        default=None,
+        "job_ids_pos",
+        nargs="*",
+        default=[],
         metavar="JOB_ID",
-        help="Quarantine job ID",
+        help="Quarantine job ID(s)",
     )
     p_process.add_argument(
         "--job-id",
         type=str,
         default=None,
         help="Quarantine job ID",
+    )
+    p_process.add_argument(
+        "--job-ids",
+        type=str,
+        default=None,
+        help="Comma-separated list of quarantine job IDs",
     )
     p_process.add_argument(
         "--timeout",
@@ -119,15 +124,15 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
 
     # release
     p_release = quarantine_subparsers.add_parser(
-        "release", help="Release a quarantined item to its destination directory"
+        "release", help="Release quarantined items to destination directory"
     )
     add_quarantine_common(p_release)
     p_release.add_argument(
-        "job_id_pos",
-        nargs="?",
-        default=None,
+        "job_ids_pos",
+        nargs="*",
+        default=[],
         metavar="JOB_ID",
-        help="Quarantine job ID",
+        help="Quarantine job ID(s)",
     )
     p_release.add_argument(
         "--job-id",
@@ -136,10 +141,41 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
         help="Quarantine job ID",
     )
     p_release.add_argument(
+        "--job-ids",
+        type=str,
+        default=None,
+        help="Comma-separated list of quarantine job IDs",
+    )
+    p_release.add_argument(
         "--dest-dir",
         type=str,
         default=None,
         help="Target destination directory for released file",
+    )
+
+    # dismiss
+    p_dismiss = quarantine_subparsers.add_parser(
+        "dismiss", help="Dismiss quarantine items without restoring files"
+    )
+    add_quarantine_common(p_dismiss)
+    p_dismiss.add_argument(
+        "job_ids_pos",
+        nargs="*",
+        default=[],
+        metavar="JOB_ID",
+        help="Quarantine job ID(s)",
+    )
+    p_dismiss.add_argument(
+        "--job-id",
+        type=str,
+        default=None,
+        help="Quarantine job ID",
+    )
+    p_dismiss.add_argument(
+        "--job-ids",
+        type=str,
+        default=None,
+        help="Comma-separated list of quarantine job IDs",
     )
 
 
@@ -151,7 +187,7 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
     quarantine_cmd = getattr(args, "quarantine_command", None)
     if not quarantine_cmd:
         print(
-            "Error: Missing quarantine subcommand. Use 'list', 'inspect', 'process', or 'release'.",
+            "Error: Missing quarantine subcommand. Use 'list', 'inspect', 'process', 'release', or 'dismiss'.",
             file=sys.stderr,
         )
         sys.exit(2)
@@ -169,17 +205,39 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
     quiet = getattr(args, "quiet", False)
     is_json = getattr(args, "json", False)
 
-    def resolve_job_id(args_obj: argparse.Namespace) -> str:
-        job_id = getattr(args_obj, "job_id", None) or getattr(
+    def resolve_job_ids(args_obj: argparse.Namespace) -> List[str]:
+        job_ids: List[str] = []
+
+        pos_val = getattr(args_obj, "job_ids_pos", None) or getattr(
             args_obj, "job_id_pos", None
         )
-        if not job_id:
+        if isinstance(pos_val, list):
+            for item in pos_val:
+                if item:
+                    job_ids.extend([x.strip() for x in str(item).split(",") if x.strip()])
+        elif isinstance(pos_val, str) and pos_val:
+            job_ids.extend([x.strip() for x in pos_val.split(",") if x.strip()])
+
+        kw_val = getattr(args_obj, "job_ids", None)
+        if isinstance(kw_val, list):
+            for item in kw_val:
+                if item:
+                    job_ids.extend([x.strip() for x in str(item).split(",") if x.strip()])
+        elif isinstance(kw_val, str) and kw_val:
+            job_ids.extend([x.strip() for x in kw_val.split(",") if x.strip()])
+
+        single_kw = getattr(args_obj, "job_id", None)
+        if isinstance(single_kw, str) and single_kw:
+            job_ids.extend([x.strip() for x in single_kw.split(",") if x.strip()])
+
+        unique_ids = list(dict.fromkeys(job_ids))
+        if not unique_ids:
             print(
-                "Error: Job ID is required. Specify <job_id> or --job-id <job_id>.",
+                "Error: Job ID is required. Specify <job_id ...> or --job-ids <job_ids>.",
                 file=sys.stderr,
             )
             sys.exit(2)
-        return job_id
+        return unique_ids
 
     try:
         if quarantine_cmd == "list":
@@ -217,7 +275,8 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
             sys.exit(0)
 
         elif quarantine_cmd == "inspect":
-            job_id = resolve_job_id(args)
+            job_ids = resolve_job_ids(args)
+            job_id = job_ids[0]
             record = db.get_quarantine_record(job_id)
 
             if not record:
@@ -254,15 +313,27 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
             sys.exit(0)
 
         elif quarantine_cmd == "process":
-            job_id = resolve_job_id(args)
+            job_ids = resolve_job_ids(args)
             timeout = getattr(args, "timeout", 300.0)
 
             service = QuarantineInterceptorService(db=db, worker_timeout=timeout)
             try:
-                result = service.process_quarantine_job(job_id)
+                results = service.process_quarantine_batch(
+                    job_ids, timeout_override=timeout
+                )
+                success_count = sum(
+                    1
+                    for r in results
+                    if (r.get("status") or "").upper() not in ("FAILED", "ERROR")
+                )
                 res = {
-                    "status": "success",
-                    "result": result,
+                    "status": (
+                        "success"
+                        if success_count == len(job_ids)
+                        else ("partial_success" if success_count > 0 else "failed")
+                    ),
+                    "count": len(results),
+                    "results": results,
                 }
 
                 if is_json:
@@ -273,73 +344,124 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
                 else:
                     if not quiet:
                         print(
-                            f"Quarantine job '{job_id}' processed. "
-                            f"New Status: {result.get('status')}",
+                            f"Quarantine batch process complete: {success_count}/{len(job_ids)} processed successfully.",
                             file=sys.stderr,
                         )
+                    for r in results:
+                        st = r.get("status", "UNKNOWN")
+                        jid = r.get("job_id", "")
+                        if st in ("FAILED", "ERROR"):
+                            print(
+                                f"  [{st}] {jid}: {r.get('error')}", file=sys.stderr
+                            )
+                        else:
+                            print(f"  [{st}] {jid}", file=sys.stderr)
 
-                sys.exit(0)
+                sys.exit(0 if success_count > 0 else 1)
             except Exception as e:
-                logger.debug("Quarantine job %s failed", job_id, exc_info=True)
+                logger.debug("Quarantine batch process failed", exc_info=True)
                 print(
-                    f"Error processing quarantine job '{job_id}': {e}", file=sys.stderr
+                    f"Error processing quarantine batch: {e}", file=sys.stderr
                 )
                 sys.exit(1)
 
         elif quarantine_cmd == "release":
-            job_id = resolve_job_id(args)
-            record = db.get_quarantine_record(job_id)
-
-            if not record:
-                print(
-                    f"Error: Quarantine record not found for job ID '{job_id}'.",
-                    file=sys.stderr,
-                )
-                sys.exit(1)
-
-            staged_path = record.get("staged_filepath")
-            base_dir = record.get("base_dir") or ""
-            orig_rel = record.get("original_filepath") or "released_file"
+            job_ids = resolve_job_ids(args)
             dest_dir_override = getattr(args, "dest_dir", None)
 
-            if dest_dir_override:
-                target_dir = Path(dest_dir_override).resolve()
-            else:
-                target_dir = Path(base_dir).resolve() if base_dir else Path.cwd()
-
-            target_dir.mkdir(parents=True, exist_ok=True)
-            dest_file_path = target_dir / os.path.basename(orig_rel)
-
-            with atomic_quarantine_relocation(staged_path, str(dest_file_path)):
-                db.update_quarantine_status(
-                    job_id=job_id,
-                    status="RELEASED",
-                    policy_action="release",
-                    audit_entry={
-                        "timestamp": __import__("time").time(),
-                        "status": "RELEASED",
-                        "details": f"Manually released from quarantine to {dest_file_path}",
-                    },
+            service = QuarantineInterceptorService(db=db)
+            try:
+                results = service.release_quarantine_batch(
+                    job_ids, dest_dir=dest_dir_override
                 )
+                success_count = sum(
+                    1 for r in results if r.get("status") == "RELEASED"
+                )
+                res = {
+                    "status": (
+                        "success"
+                        if success_count == len(job_ids)
+                        else ("partial_success" if success_count > 0 else "failed")
+                    ),
+                    "count": len(results),
+                    "results": results,
+                }
 
-            res = {
-                "status": "success",
-                "job_id": job_id,
-                "status_code": "RELEASED",
-                "destination": str(dest_file_path),
-            }
-
-            if is_json:
-                sys.stdout.write(json.dumps(res, indent=2, default=json_default) + "\n")
-                sys.stdout.flush()
-            else:
-                if not quiet:
-                    print(
-                        f"Quarantine item '{job_id}' released successfully to '{dest_file_path}'.",
-                        file=sys.stderr,
+                if is_json:
+                    sys.stdout.write(
+                        json.dumps(res, indent=2, default=json_default) + "\n"
                     )
+                    sys.stdout.flush()
+                else:
+                    if not quiet:
+                        print(
+                            f"Quarantine batch release complete: {success_count}/{len(job_ids)} released successfully.",
+                            file=sys.stderr,
+                        )
+                    for r in results:
+                        st = r.get("status", "UNKNOWN")
+                        jid = r.get("job_id", "")
+                        dest = r.get("destination", "")
+                        if st == "RELEASED":
+                            print(f"  [{st}] {jid} -> {dest}", file=sys.stderr)
+                        else:
+                            print(
+                                f"  [{st}] {jid}: {r.get('error') or r.get('details')}",
+                                file=sys.stderr,
+                            )
 
-            sys.exit(0)
+                sys.exit(0 if success_count > 0 else 1)
+            except Exception as e:
+                logger.debug("Quarantine batch release failed", exc_info=True)
+                print(f"Error releasing quarantine batch: {e}", file=sys.stderr)
+                sys.exit(1)
+
+        elif quarantine_cmd == "dismiss":
+            job_ids = resolve_job_ids(args)
+
+            service = QuarantineInterceptorService(db=db)
+            try:
+                results = service.dismiss_quarantine_batch(job_ids)
+                success_count = sum(
+                    1 for r in results if r.get("status") == "DISMISSED"
+                )
+                res = {
+                    "status": (
+                        "success"
+                        if success_count == len(job_ids)
+                        else ("partial_success" if success_count > 0 else "failed")
+                    ),
+                    "count": len(results),
+                    "results": results,
+                }
+
+                if is_json:
+                    sys.stdout.write(
+                        json.dumps(res, indent=2, default=json_default) + "\n"
+                    )
+                    sys.stdout.flush()
+                else:
+                    if not quiet:
+                        print(
+                            f"Quarantine batch dismiss complete: {success_count}/{len(job_ids)} dismissed successfully.",
+                            file=sys.stderr,
+                        )
+                    for r in results:
+                        st = r.get("status", "UNKNOWN")
+                        jid = r.get("job_id", "")
+                        if st == "DISMISSED":
+                            print(f"  [{st}] {jid}", file=sys.stderr)
+                        else:
+                            print(
+                                f"  [{st}] {jid}: {r.get('error') or r.get('details')}",
+                                file=sys.stderr,
+                            )
+
+                sys.exit(0 if success_count > 0 else 1)
+            except Exception as e:
+                logger.debug("Quarantine batch dismiss failed", exc_info=True)
+                print(f"Error dismissing quarantine batch: {e}", file=sys.stderr)
+                sys.exit(1)
 
     finally:
         if db and hasattr(db, "worker") and db.worker:

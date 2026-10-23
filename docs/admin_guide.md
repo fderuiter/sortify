@@ -694,18 +694,19 @@ options:
 
 ##### `quarantine`
 ```text
-usage: smart-autosorter quarantine [-h] {list,inspect,process,release} ...
+usage: smart-autosorter quarantine [-h]
+                                   {list,inspect,process,release,dismiss} ...
 
 positional arguments:
-  {list,inspect,process,release}
+  {list,inspect,process,release,dismiss}
                         Quarantine subcommands
     list                List staged and quarantined compliance items
     inspect             Inspect a specific quarantine job record and audit
                         trail
-    process             Trigger forensic scanning and policy evaluation for a
-                        quarantine job
-    release             Release a quarantined item to its destination
-                        directory
+    process             Trigger forensic scanning and policy evaluation for
+                        quarantine jobs
+    release             Release quarantined items to destination directory
+    dismiss             Dismiss quarantine items without restoring files
 
 options:
   -h, --help            show this help message and exit
