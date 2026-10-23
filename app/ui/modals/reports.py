@@ -111,13 +111,16 @@ class ExtractionPreviewModal(A11yMixin, ModalScreen[Optional[int]]):
                     id="preview-input-threshold",
                     classes="narrow-input",
                 )
-                yield DensitySlider(
+                slider = DensitySlider(
                     value=self.current_threshold,
                     min_value=0,
                     max_value=500,
                     step=5,
+                    announce_formatter=self._format_slider_announcement,
                     id="preview-slider-threshold",
                 )
+                slider.tooltip = "Adjust PDF text density threshold slider"
+                yield slider
 
             yield DataTable(id="preview-table", classes="preview-table")
             yield Label("", id="preview-summary-label")
@@ -177,6 +180,19 @@ class ExtractionPreviewModal(A11yMixin, ModalScreen[Optional[int]]):
         summary_label = self.query_one("#preview-summary-label", Label)
         summary_label.update(
             f"Total Pages: {len(self.page_data)} | Standard: {std_count} | Rasterized (OCR): {rast_count}"
+        )
+
+    def _format_slider_announcement(self, val: int) -> str:
+        """Format contextual screen reader announcement with page status totals."""
+        std_count = sum(
+            1
+            for p in self.page_data
+            if p.get("char_count", 0) >= val and not p.get("has_vector", False)
+        )
+        rast_count = len(self.page_data) - std_count
+        return (
+            f"Density threshold set to {val}: {len(self.page_data)} total pages "
+            f"({std_count} standard, {rast_count} rasterized)"
         )
 
     @on(DensitySlider.Changed, "#preview-slider-threshold")
