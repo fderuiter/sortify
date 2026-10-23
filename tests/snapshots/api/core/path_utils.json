@@ -1,16 +1,9 @@
 {
   "_metadata": {
-    "checksum": "559cd5115cf871e93d3de41fbbe6f9d3059e8494f62060c19fff05cfacaa7d08"
+    "checksum": "8e83e67fcf2d6c27c9f8d8abbadb00cdd24d84d0c931dc696afc10c26a64c471"
   },
   "classes": [],
   "functions": [
-    {
-      "async": false,
-      "decorators": [],
-      "name": "check_local_models_exist",
-      "parameters": [],
-      "returns": "bool"
-    },
     {
       "async": false,
       "decorators": [],

@@ -550,6 +550,12 @@ class TreeViewMixin:
 
     def _update_inspector(self, node_or_data: Any = None, announce: bool = True) -> str:
         """Update and return formatted metadata text for the inspector panel and path comparison pane."""
+        if hasattr(self, "_update_onboarding_cta_visibility"):
+            try:
+                self._update_onboarding_cta_visibility()
+            except Exception:
+                pass
+
         if node_or_data is None:
             node_or_data = self.active_tree_node
 

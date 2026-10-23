@@ -66,6 +66,8 @@ jobs:
             const deletions = files.reduce((acc, f) => acc + f.deletions, 0);
             const labels = pr.labels.map(l => l.name);
             const isDependabot = pr.user.login === 'dependabot[bot]';
+            const headRef = pr.head ? pr.head.ref : '';
+            const isSecurityPatch = (labels.includes('security') && labels.includes('dependencies')) || headRef.startsWith('security/');
 
             const meta = {
               pr_number: pr.number,
@@ -77,6 +79,7 @@ jobs:
               additions: additions,
               deletions: deletions,
               is_dependabot: isDependabot,
+              is_security_patch: isSecurityPatch,
               all_commits_verified: allCommitsVerified,
               unverified_commit_shas: unverifiedCommitShas,
             };
