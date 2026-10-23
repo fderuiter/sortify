@@ -324,6 +324,32 @@ def test_preview_rollback_subset_step_filtering(selective_env):
     assert res["steps"][0]["step_id"] == step1
 
 
+def test_preview_rollback_snapshot_fallback(selective_env, tmp_path):
+    """Test preview_rollback snapshot fallback when step ledger has no recorded moves."""
+    history_mgr = selective_env["history_mgr"]
+    snap_dir = tmp_path / "snap_workspace"
+    snap_dir.mkdir()
+    
+    # Create files for a snapshot session
+    snap_file1 = snap_dir / "snap1.txt"
+    snap_file2 = snap_dir / "snap2.txt"
+    snap_file1.write_text("snap 1 content")
+    snap_file2.write_text("snap 2 content")
+
+    session_id = history_mgr._create_snapshot_internal(str(snap_dir))
+
+    # Remove snap_file2 to test MISSING_TARGET in snapshot fallback
+    snap_file2.unlink()
+
+    res = history_mgr.preview_rollback(session_id)
+
+    assert res["session_id"] == session_id
+    assert res["total_operations"] == 2
+    assert res["summary"]["clean"] == 1
+    assert res["summary"]["missing_target"] == 1
+    assert res["has_missing"] is True
+
+
 @pytest.mark.anyio
 async def test_two_stage_rollback_confirm_modal_workflow(selective_env):
     """Test two-stage RollbackConfirmModal navigation, dry-run diff review, and back action."""
