@@ -10,16 +10,15 @@ from app.core.rule_importers import get_rule_importer
 from app.ui.tui import RuleImportModal
 
 
-def test_rule_import_modal_instantiation():
+def test_rule_import_modal_instantiation(tmp_path):
     """Verify RuleImportModal instantiates and mounts correctly."""
-    with tempfile.NamedTemporaryFile(suffix=".json") as f:
-        settings = AppSettings(filepath=f.name)
-        modal = RuleImportModal(settings)
-        assert modal.settings is settings
-        assert modal.current_result is None
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    modal = RuleImportModal(settings)
+    assert modal.settings is settings
+    assert modal.current_result is None
 
 
-def test_rule_import_modal_parsing_and_merging():
+def test_rule_import_modal_parsing_and_merging(tmp_path):
     """Verify RuleImportModal parses a file and merges rules into settings."""
     hazel_data = {
         "Rules": [
@@ -47,29 +46,28 @@ def test_rule_import_modal_parsing_and_merging():
         plistlib.dump(hazel_data, f)
         temp_path = f.name
 
-    with tempfile.NamedTemporaryFile(suffix=".json") as sf:
-        settings = AppSettings(filepath=sf.name)
-        modal = RuleImportModal(settings)
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    modal = RuleImportModal(settings)
 
-        try:
-            # Simulate user setting input path and triggering parse
-            from app.core.rule_importers import HazelRuleImporter
+    try:
+        # Simulate user setting input path and triggering parse
+        from app.core.rule_importers import HazelRuleImporter
 
-            importer = HazelRuleImporter()
-            res = importer.parse_file(temp_path)
-            modal.current_result = res
+        importer = HazelRuleImporter()
+        res = importer.parse_file(temp_path)
+        modal.current_result = res
 
-            assert "invoice" in modal.current_result.keyword_rules
+        assert "invoice" in modal.current_result.keyword_rules
 
-            # Perform merge action
-            modal.action_merge_rules()
+        # Perform merge action
+        modal.action_merge_rules()
 
-            assert settings.KEYWORD_RULES.get("invoice") == "Financial/Invoices"
-        finally:
-            Path(temp_path).unlink(missing_ok=True)
+        assert settings.KEYWORD_RULES.get("invoice") == "Financial/Invoices"
+    finally:
+        Path(temp_path).unlink(missing_ok=True)
 
 
-def test_rule_import_modal_tagspaces_parsing_and_merging():
+def test_rule_import_modal_tagspaces_parsing_and_merging(tmp_path):
     """Verify RuleImportModal handles TagSpaces taggroup.json files and merges rules into settings."""
     ts_data = {
         "tagGroups": [
@@ -89,28 +87,27 @@ def test_rule_import_modal_tagspaces_parsing_and_merging():
         json.dump(ts_data, f)
         temp_path = f.name
 
-    with tempfile.NamedTemporaryFile(suffix=".json") as sf:
-        settings = AppSettings(filepath=sf.name)
-        modal = RuleImportModal(settings)
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    modal = RuleImportModal(settings)
 
-        try:
-            importer = get_rule_importer(temp_path)
-            res = importer.parse_file(temp_path)
-            modal.current_result = res
+    try:
+        importer = get_rule_importer(temp_path)
+        res = importer.parse_file(temp_path)
+        modal.current_result = res
 
-            assert "prescription" in modal.current_result.keyword_rules
-            assert modal.current_result.keyword_rules["prescription"] == "Medical"
+        assert "prescription" in modal.current_result.keyword_rules
+        assert modal.current_result.keyword_rules["prescription"] == "Medical"
 
-            modal.action_merge_rules()
+        modal.action_merge_rules()
 
-            assert settings.KEYWORD_RULES.get("prescription") == "Medical"
-            lab_policies = [
-                p for p in settings.POLICIES if p.get("expression") == "lab report"
-            ]
-            assert len(lab_policies) == 1
-            assert lab_policies[0].get("target_path") == "Medical"
-        finally:
-            Path(temp_path).unlink(missing_ok=True)
+        assert settings.KEYWORD_RULES.get("prescription") == "Medical"
+        lab_policies = [
+            p for p in settings.POLICIES if p.get("expression") == "lab report"
+        ]
+        assert len(lab_policies) == 1
+        assert lab_policies[0].get("target_path") == "Medical"
+    finally:
+        Path(temp_path).unlink(missing_ok=True)
 
 
 def test_rule_import_modal_save_failure_handling(mocker):
@@ -147,4 +144,3 @@ def test_rule_import_modal_save_failure_handling(mocker):
     notify_mock.assert_called_once()
     _, kwargs = notify_mock.call_args
     assert kwargs.get("type") == "error"
-

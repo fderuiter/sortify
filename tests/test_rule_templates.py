@@ -1,7 +1,5 @@
 """Unit tests for onboarding starter rule template gallery and policy integration."""
 
-import tempfile
-
 from app.config import AppSettings
 from app.core.policy_engine import PolicyEngine
 from app.core.rule_templates import (
@@ -43,76 +41,71 @@ def test_get_starter_template_by_id():
     assert none_pack is None
 
 
-def test_apply_starter_templates_fresh():
+def test_apply_starter_templates_fresh(tmp_path):
     """Verify applying starter template packs populates settings."""
-    with tempfile.NamedTemporaryFile(suffix=".json") as f:
-        settings = AppSettings(filepath=f.name)
-        assert getattr(settings, "KEYWORD_RULES", {}) == {}
-        assert getattr(settings, "POLICIES", []) == []
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    assert getattr(settings, "KEYWORD_RULES", {}) == {}
+    assert getattr(settings, "POLICIES", []) == []
 
-        kw, pol = apply_starter_templates(
-            settings, ["financial_tax", "legal_contracts"]
-        )
+    kw, pol = apply_starter_templates(settings, ["financial_tax", "legal_contracts"])
 
-        assert "invoice" in kw
-        assert "tax" in kw
-        assert "contract" in kw
-        assert "nda" in kw
+    assert "invoice" in kw
+    assert "tax" in kw
+    assert "contract" in kw
+    assert "nda" in kw
 
-        assert len(pol) > 0
-        policy_exprs = [p["expression"] for p in pol]
-        assert "confidential tax" in policy_exprs
-        assert "confidential agreement" in policy_exprs
+    assert len(pol) > 0
+    policy_exprs = [p["expression"] for p in pol]
+    assert "confidential tax" in policy_exprs
+    assert "confidential agreement" in policy_exprs
 
 
-def test_apply_starter_templates_preserves_custom_rules():
+def test_apply_starter_templates_preserves_custom_rules(tmp_path):
     """Verify custom rules are never overwritten by template application."""
-    with tempfile.NamedTemporaryFile(suffix=".json") as f:
-        settings = AppSettings(filepath=f.name)
-        # Set custom rule
-        settings.KEYWORD_RULES = {"invoice": "MyCustom/Invoices"}
-        settings.POLICIES = [
-            {
-                "type": "keyword",
-                "expression": "confidential tax",
-                "target_path": "MyCustom/ConfidentialTax",
-                "priority": 100,
-                "halting": False,
-            }
-        ]
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    # Set custom rule
+    settings.KEYWORD_RULES = {"invoice": "MyCustom/Invoices"}
+    settings.POLICIES = [
+        {
+            "type": "keyword",
+            "expression": "confidential tax",
+            "target_path": "MyCustom/ConfidentialTax",
+            "priority": 100,
+            "halting": False,
+        }
+    ]
 
-        kw, pol = apply_starter_templates(settings, ["financial_tax"])
+    kw, pol = apply_starter_templates(settings, ["financial_tax"])
 
-        # Custom invoice rule must remain unchanged
-        assert kw["invoice"] == "MyCustom/Invoices"
-        # New keywords from financial_tax should be added
-        assert kw["receipt"] == "Financial/Receipts"
-        assert kw["tax"] == "Taxes/Returns"
+    # Custom invoice rule must remain unchanged
+    assert kw["invoice"] == "MyCustom/Invoices"
+    # New keywords from financial_tax should be added
+    assert kw["receipt"] == "Financial/Receipts"
+    assert kw["tax"] == "Taxes/Returns"
 
-        # Policy with same (type, expression) should NOT be duplicated
-        matching_policies = [p for p in pol if p["expression"] == "confidential tax"]
-        assert len(matching_policies) == 1
-        assert matching_policies[0]["target_path"] == "MyCustom/ConfidentialTax"
+    # Policy with same (type, expression) should NOT be duplicated
+    matching_policies = [p for p in pol if p["expression"] == "confidential tax"]
+    assert len(matching_policies) == 1
+    assert matching_policies[0]["target_path"] == "MyCustom/ConfidentialTax"
 
 
-def test_policy_engine_routing_with_starter_templates():
+def test_policy_engine_routing_with_starter_templates(tmp_path):
     """Verify applied starter template policies filter and route sample files correctly."""
-    with tempfile.NamedTemporaryFile(suffix=".json") as f:
-        settings = AppSettings(filepath=f.name)
-        apply_starter_templates(settings, ["financial_tax", "legal_contracts"])
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    apply_starter_templates(settings, ["financial_tax", "legal_contracts"])
 
-        policies = getattr(settings, "POLICIES", [])
+    policies = getattr(settings, "POLICIES", [])
 
-        # Match confidential tax document against policy engine
-        file_path = "/workspace/confidential_tax_return_2025.pdf"
-        doc_text = "Internal IRS return record confidential tax details"
-        matched = PolicyEngine.evaluate_policies(file_path, doc_text, None, policies)
-        assert matched is not None
-        assert matched.target_path == "Taxes/Confidential"
+    # Match confidential tax document against policy engine
+    file_path = "/workspace/confidential_tax_return_2025.pdf"
+    doc_text = "Internal IRS return record confidential tax details"
+    matched = PolicyEngine.evaluate_policies(file_path, doc_text, None, policies)
+    assert matched is not None
+    assert matched.target_path == "Taxes/Confidential"
 
-        # Match NDA agreement document against policy engine
-        file_path2 = "/workspace/vendor_confidential_agreement.pdf"
-        doc_text2 = "Non disclosure confidential agreement between parties"
-        matched2 = PolicyEngine.evaluate_policies(file_path2, doc_text2, None, policies)
-        assert matched2 is not None
-        assert matched2.target_path == "Legal/Confidential"
+    # Match NDA agreement document against policy engine
+    file_path2 = "/workspace/vendor_confidential_agreement.pdf"
+    doc_text2 = "Non disclosure confidential agreement between parties"
+    matched2 = PolicyEngine.evaluate_policies(file_path2, doc_text2, None, policies)
+    assert matched2 is not None
+    assert matched2.target_path == "Legal/Confidential"
