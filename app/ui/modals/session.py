@@ -8,7 +8,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, Input, Label, Select
+from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select
 
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
@@ -145,6 +145,7 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel rollback dialog", show=True),
+        Binding("space", "toggle_current_row", "Toggle selection", show=False),
     ]
 
     CSS = """
@@ -156,13 +157,37 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         padding: 1 2;
         background: $panel;
         border: thick $warning;
-        width: 85%;
-        max-width: 75;
-        height: auto;
+        width: 90%;
+        max-width: 95;
+        height: 85%;
+        max-height: 85%;
     }
     .modal-title {
         text-style: bold;
         color: $warning;
+        margin-bottom: 0;
+    }
+    .controls-row {
+        height: 3;
+        margin-top: 1;
+        margin-bottom: 1;
+        layout: horizontal;
+    }
+    #rollback-search-input {
+        width: 40%;
+        margin-right: 1;
+    }
+    .bulk-btn {
+        margin-right: 1;
+    }
+    #lbl-selection-count {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    #rollback-items-table {
+        height: 1fr;
+        border: solid $primary;
         margin-bottom: 1;
     }
     .warning-box {
@@ -172,27 +197,30 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         background: $boost;
         border: dashed $warning;
         color: $text;
+        height: auto;
     }
     .button-row {
         margin-top: 1;
         height: 3;
         align: right middle;
     }
+    Button:focus, Input:focus, DataTable:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
     """
 
     def __init__(self, session_info: Dict[str, Any]):
         super().__init__()
         self.session_info = session_info
+        self.all_items: List[Dict[str, Any]] = list(session_info.get("items") or [])
+        self.selected_step_ids: set = set()
+        self.filtered_items: List[Dict[str, Any]] = []
 
     def compose(self) -> ComposeResult:
         """Compose confirmation modal widgets."""
         sid = self.session_info.get("session_id", "unknown")
         b_dir = self.session_info.get("base_dir") or "N/A"
-        step_cnt = (
-            self.session_info.get("step_count")
-            or self.session_info.get("file_count")
-            or 0
-        )
         ts = self.session_info.get("timestamp")
         ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "N/A"
 
@@ -203,21 +231,45 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 classes="modal-title",
                 id="confirm-title",
             )
-            yield Label(f"Session ID: {sid}", id="lbl-confirm-sid")
-            yield Label(f"Base Directory: {b_dir}", id="lbl-confirm-dir")
             yield Label(
-                f"Operations / Files to restore: {step_cnt}", id="lbl-confirm-ops"
+                f"Session ID: {sid} | Base Dir: {b_dir} | Date: {ts_str}",
+                id="lbl-confirm-sid",
             )
-            yield Label(f"Session Timestamp: {ts_str}", id="lbl-confirm-ts")
+
+            with Horizontal(classes="controls-row"):
+                yield Input(
+                    placeholder="Search paths or status to filter...",
+                    id="rollback-search-input",
+                )
+                yield Button(
+                    "Select All",
+                    id="btn-select-all",
+                    classes="bulk-btn",
+                    variant="primary",
+                )
+                yield Button(
+                    "Deselect All",
+                    id="btn-deselect-all",
+                    classes="bulk-btn",
+                    variant="default",
+                )
+                yield Button(
+                    "Invert Selection",
+                    id="btn-invert-selection",
+                    classes="bulk-btn",
+                    variant="default",
+                )
+
+            yield Label("Selected for Rollback: 0 items", id="lbl-selection-count")
+
+            yield DataTable(id="rollback-items-table")
 
             with Vertical(classes="warning-box"):
                 yield Label(
-                    "⚠️ Warning: Rolling back will restore files to their original locations prior to this session. Any subsequent manual edits or file relocations in target folders may be unwound or overwritten."
+                    "⚠️ Warning: Rolling back will restore checked files to their original locations. Unchecked files will remain in target folders."
                 )
 
             if self.session_info.get("step_count"):
-                # Step-ledger sessions always skip files that are no longer
-                # at their sorted location, so a force option would do nothing.
                 yield Label(
                     "Files that are no longer at their sorted location are skipped.",
                     id="lbl-confirm-missing",
@@ -240,20 +292,166 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 yield btn_confirm
 
     def on_mount(self) -> None:
-        """Focus confirm button and announce modal screen."""
+        """Initialize items, populate table and focus controls on mount."""
+        sid = self.session_info.get("session_id")
+        if not self.all_items and sid:
+            try:
+                from app.core.history import open_session_history
+
+                with open_session_history() as history_mgr:
+                    self.all_items = history_mgr.get_session_moves(sid)
+            except Exception:
+                self.all_items = []
+
+        self.selected_step_ids = {item["step_id"] for item in self.all_items}
+
+        dt = self.query_one("#rollback-items-table", DataTable)
+        dt.cursor_type = "row"
+        dt.add_columns(
+            "Sel", "ID", "Original Source Path", "Target Sorted Path", "Size", "Status"
+        )
+
+        self._refresh_table()
+
         self.query_one("#btn-confirm-rollback", Button).focus()
         self.announce("Opened rollback confirmation modal dialog.")
+
+    def _refresh_table(self) -> None:
+        dt = self.query_one("#rollback-items-table", DataTable)
+        dt.clear()
+
+        query = ""
+        try:
+            inp = self.query_one("#rollback-search-input", Input)
+            query = inp.value.strip().lower()
+        except Exception:
+            pass
+
+        self.filtered_items = []
+        for item in self.all_items:
+            src = str(item.get("source_path", ""))
+            dst = str(item.get("target_path", ""))
+            stat = str(item.get("status", ""))
+            if not query or (
+                query in src.lower() or query in dst.lower() or query in stat.lower()
+            ):
+                self.filtered_items.append(item)
+
+        for item in self.filtered_items:
+            sid = item["step_id"]
+            chk = "[X]" if sid in self.selected_step_ids else "[ ]"
+            sz = item.get("size")
+            if sz is not None and isinstance(sz, (int, float)):
+                if sz < 1024:
+                    sz_str = f"{int(sz)} B"
+                elif sz < 1024 * 1024:
+                    sz_str = f"{sz / 1024:.1f} KB"
+                else:
+                    sz_str = f"{sz / (1024 * 1024):.1f} MB"
+            else:
+                sz_str = "N/A"
+
+            dt.add_row(
+                chk,
+                str(sid),
+                item.get("source_path", ""),
+                item.get("target_path", ""),
+                sz_str,
+                item.get("status", "completed"),
+                key=str(sid),
+            )
+
+        self._update_count_badge()
+
+    def _update_count_badge(self) -> None:
+        total = len(self.all_items)
+        selected = len(self.selected_step_ids)
+        try:
+            lbl = self.query_one("#lbl-selection-count", Label)
+            lbl.update(f"Selected for Rollback: {selected} / {total} items")
+        except Exception:
+            pass
+
+    @on(Input.Changed, "#rollback-search-input")
+    def _on_search_changed(self, event: Input.Changed) -> None:
+        self._refresh_table()
+
+    @on(Button.Pressed, "#btn-select-all")
+    def action_select_all(self) -> None:
+        """Select all items in filtered table view."""
+        for item in getattr(self, "filtered_items", self.all_items):
+            self.selected_step_ids.add(item["step_id"])
+        self._refresh_table()
+        self.announce("Selected all items for rollback.")
+
+    @on(Button.Pressed, "#btn-deselect-all")
+    def action_deselect_all(self) -> None:
+        """Deselect all items in filtered table view."""
+        for item in getattr(self, "filtered_items", self.all_items):
+            self.selected_step_ids.discard(item["step_id"])
+        self._refresh_table()
+        self.announce("Deselected all items for rollback.")
+
+    @on(Button.Pressed, "#btn-invert-selection")
+    def action_invert_selection(self) -> None:
+        """Invert selection state of all items in filtered table view."""
+        for item in getattr(self, "filtered_items", self.all_items):
+            sid = item["step_id"]
+            if sid in self.selected_step_ids:
+                self.selected_step_ids.remove(sid)
+            else:
+                self.selected_step_ids.add(sid)
+        self._refresh_table()
+        self.announce("Inverted item selection.")
+
+    @on(DataTable.RowSelected, "#rollback-items-table")
+    def _on_row_selected(self, event: DataTable.RowSelected) -> None:
+        row_key = event.row_key.value
+        if not row_key:
+            return
+        self._toggle_item_by_key(str(row_key))
+
+    def action_toggle_current_row(self) -> None:
+        """Toggle selection state for the currently focused table row."""
+        dt = self.query_one("#rollback-items-table", DataTable)
+        if dt.has_focus and dt.cursor_row is not None:
+            try:
+                row_key, _ = dt.coordinate_to_cell_key((dt.cursor_row, 0))
+                if row_key and row_key.value:
+                    self._toggle_item_by_key(str(row_key.value))
+            except Exception:
+                pass
+
+    def _toggle_item_by_key(self, key_str: str) -> None:
+        target_id = None
+        for item in self.all_items:
+            if str(item["step_id"]) == key_str:
+                target_id = item["step_id"]
+                break
+
+        if target_id is not None:
+            if target_id in self.selected_step_ids:
+                self.selected_step_ids.remove(target_id)
+            else:
+                self.selected_step_ids.add(target_id)
+            self._refresh_table()
 
     @on(Button.Pressed, "#btn-confirm-rollback")
     def action_confirm(self) -> None:
         """Confirm rollback action and dismiss modal with parameters."""
         checkboxes = self.query("#chk-ignore-missing").results(Checkbox)
         chk = next(iter(checkboxes), None)
+
+        selected_ids = None
+        if self.all_items and len(self.selected_step_ids) < len(self.all_items):
+            selected_ids = list(self.selected_step_ids)
+
         self.dismiss(
             {
                 "confirmed": True,
                 "session_id": self.session_info.get("session_id"),
                 "ignore_missing": chk.value if chk else False,
+                "selected_step_ids": selected_ids,
             }
         )
 
@@ -603,6 +801,7 @@ class HistoryModal(
 
             sid = result["session_id"]
             ignore_missing = result.get("ignore_missing", False)
+            selected_step_ids = result.get("selected_step_ids")
 
             self.query_one("#btn-rollback-session", Button).disabled = True
             self.query_one("#btn-export", Button).disabled = True
@@ -613,7 +812,7 @@ class HistoryModal(
             lbl_status.update(f"⏳ Rolling back session {sid[:8]}... Please wait.")
             self.announce(f"Executing rollback for session {sid[:8]}...")
 
-            self.run_rollback_worker(sid, ignore_missing)
+            self.run_rollback_worker(sid, ignore_missing, selected_step_ids)
 
         self.app.push_screen(
             RollbackConfirmModal(session_info=target_sess),
@@ -621,15 +820,22 @@ class HistoryModal(
         )
 
     @work(thread=True)
-    def run_rollback_worker(self, session_id: str, ignore_missing: bool) -> None:
+    def run_rollback_worker(
+        self,
+        session_id: str,
+        ignore_missing: bool,
+        selected_step_ids: Optional[List[Any]] = None,
+    ) -> None:
         """Execute session rollback asynchronously in background worker thread."""
         try:
             from app.core.history import open_session_history
 
+            kwargs: Dict[str, Any] = {"ignore_missing": ignore_missing}
+            if selected_step_ids is not None:
+                kwargs["selected_step_ids"] = selected_step_ids
+
             with open_session_history() as history_mgr:
-                restored_count = history_mgr.rollback(
-                    session_id, ignore_missing=ignore_missing
-                )
+                restored_count = history_mgr.rollback(session_id, **kwargs)
 
             app_obj = getattr(self, "app", None)
             if app_obj and hasattr(app_obj, "call_from_thread"):
