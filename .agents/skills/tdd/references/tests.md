@@ -51,6 +51,7 @@ def test_undo_deletes_ledger_row(db):
     undo(session.id)
     assert db.execute("SELECT * FROM transaction_ledger").fetchall() == []
 
+
 # GOOD: Verifies through interface
 def test_undo_restores_original_paths(tmp_path):
     original = tmp_path / "report.docx"
@@ -67,6 +68,7 @@ def test_undo_restores_original_paths(tmp_path):
 def test_folder_name_joins_top_terms():
     terms = ["invoice", "tax"]
     assert name_cluster(terms) == "-".join(terms[:2])
+
 
 # GOOD: Expected value is an independent, known literal
 def test_folder_name_joins_top_terms():
