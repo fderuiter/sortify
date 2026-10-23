@@ -11,6 +11,7 @@ import pytest
 from app.cli.quarantine_cli import handle_quarantine_command
 from app.config import AppSettings
 from app.core.db import Database
+from app.core.db_conn import clear_connection_cache
 from app.core.db_worker import DBWorker
 from app.core.quarantine_interceptor import QuarantineInterceptorService
 from app.ui.modals.quarantine import QuarantineVaultModal
@@ -23,7 +24,14 @@ def test_db_and_dir():
     with tempfile.TemporaryDirectory() as tmp_dir:
         db_path = os.path.join(tmp_dir, "test_quarantine.db")
         db = Database(db_path, DBWorker())
-        yield db, tmp_dir
+        try:
+            yield db, tmp_dir
+        finally:
+            if hasattr(db, "close"):
+                db.close()
+            if hasattr(db, "worker") and hasattr(db.worker, "stop"):
+                db.worker.stop()
+            clear_connection_cache(only_current_and_inactive=False)
 
 
 def stage_dummy_file(
