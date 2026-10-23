@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "641184d49da4b63c895b3df6a9088aa192aa198a40143b0d75bbd1383065b3a0"
+    "checksum": "d841dac2ac51a127ad55b53a6e4eba7ca8a83424526f05bdd0970301bac73641"
   },
   "classes": [
     {
@@ -158,6 +158,11 @@
               "annotation": "bool",
               "default": "False",
               "name": "ignore_missing"
+            },
+            {
+              "annotation": "Optional[Any]",
+              "default": "None",
+              "name": "selected_step_ids"
             }
           ],
           "returns": "SortResult"

@@ -212,12 +212,24 @@ class A11yMixin:
         try:
             for widget in self.query("*"):
                 w_type = type(widget).__name__
-                if w_type in ("Input", "Button", "Select", "Switch", "Tree", "Log"):
+                if w_type in (
+                    "Input",
+                    "Button",
+                    "Select",
+                    "Switch",
+                    "Tree",
+                    "Log",
+                    "DensitySlider",
+                ):
                     has_tooltip = bool(getattr(widget, "tooltip", None))
                     has_label = bool(
                         getattr(widget, "label", None)
                         or getattr(widget, "_text", None)
-                        or getattr(widget, "value", None)
+                        or (
+                            getattr(widget, "value", None)
+                            if w_type != "DensitySlider"
+                            else None
+                        )
                         or getattr(widget, "placeholder", None)
                     )
                     if not (has_tooltip or has_label):

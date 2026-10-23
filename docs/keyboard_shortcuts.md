@@ -59,3 +59,9 @@ Press `?` or `F1` in the app to see these shortcuts.
 | `i` | Re-inspect item |
 | `Ctrl+R` | Refresh vault |
 
+### Rollback Confirm
+
+| Keys | Action |
+|---|---|
+| `Space` | Toggle selection |
+

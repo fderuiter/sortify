@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "3dbfc83ce6fc58fbac662a6e47b1ecfbef3264315e46eacf4ffebc1346e359ae"
+    "checksum": "7b8011395bcdfa78116de025aec42e42298c1ea68349caab5f6a9daee362d55d"
   },
   "cli": [
     {
@@ -88,20 +88,20 @@
       ],
       "caller": "quarantine_subparsers",
       "keywords": {
-        "help": "Trigger forensic scanning and policy evaluation for a quarantine job"
+        "help": "Trigger forensic scanning and policy evaluation for quarantine jobs"
       },
       "method": "add_parser"
     },
     {
       "args": [
-        "job_id_pos"
+        "job_ids_pos"
       ],
       "caller": "p_process",
       "keywords": {
-        "default": null,
-        "help": "Quarantine job ID",
+        "default": [],
+        "help": "Quarantine job ID(s)",
         "metavar": "JOB_ID",
-        "nargs": "?"
+        "nargs": "*"
       },
       "method": "add_argument"
     },
@@ -113,6 +113,18 @@
       "keywords": {
         "default": null,
         "help": "Quarantine job ID",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--job-ids"
+      ],
+      "caller": "p_process",
+      "keywords": {
+        "default": null,
+        "help": "Comma-separated list of quarantine job IDs",
         "type": "str"
       },
       "method": "add_argument"
@@ -135,20 +147,20 @@
       ],
       "caller": "quarantine_subparsers",
       "keywords": {
-        "help": "Release a quarantined item to its destination directory"
+        "help": "Release quarantined items to destination directory"
       },
       "method": "add_parser"
     },
     {
       "args": [
-        "job_id_pos"
+        "job_ids_pos"
       ],
       "caller": "p_release",
       "keywords": {
-        "default": null,
-        "help": "Quarantine job ID",
+        "default": [],
+        "help": "Quarantine job ID(s)",
         "metavar": "JOB_ID",
-        "nargs": "?"
+        "nargs": "*"
       },
       "method": "add_argument"
     },
@@ -166,12 +178,71 @@
     },
     {
       "args": [
+        "--job-ids"
+      ],
+      "caller": "p_release",
+      "keywords": {
+        "default": null,
+        "help": "Comma-separated list of quarantine job IDs",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
         "--dest-dir"
       ],
       "caller": "p_release",
       "keywords": {
         "default": null,
         "help": "Target destination directory for released file",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "dismiss"
+      ],
+      "caller": "quarantine_subparsers",
+      "keywords": {
+        "help": "Dismiss quarantine items without restoring files"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "job_ids_pos"
+      ],
+      "caller": "p_dismiss",
+      "keywords": {
+        "default": [],
+        "help": "Quarantine job ID(s)",
+        "metavar": "JOB_ID",
+        "nargs": "*"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--job-id"
+      ],
+      "caller": "p_dismiss",
+      "keywords": {
+        "default": null,
+        "help": "Quarantine job ID",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--job-ids"
+      ],
+      "caller": "p_dismiss",
+      "keywords": {
+        "default": null,
+        "help": "Comma-separated list of quarantine job IDs",
         "type": "str"
       },
       "method": "add_argument"

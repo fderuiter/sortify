@@ -171,4 +171,73 @@ def test_text_without_its_key_is_left_for_re_extraction(tmp_path, worker, base_d
     assert conn.execute(
         "SELECT 1 FROM sessions WHERE session_id = ?", (session_id,)
     ).fetchone()
-    assert _count(store, "snapshot_documents") == 0
+    # Row metadata is preserved in snapshot_documents with extracted_text = None
+    assert _count(store, "snapshot_documents") == 1
+    (snapshot_text,) = conn.execute(
+        "SELECT extracted_text FROM snapshot_documents WHERE session_id = ?",
+        (session_id,),
+    ).fetchone()
+    assert snapshot_text is None
+    # Audit record created in quarantine_records with status DECRYPTION_FAILED
+    assert _count(store, "quarantine_records") == 1
+    q_row = conn.execute(
+        "SELECT status, policy_action, original_filepath FROM quarantine_records"
+    ).fetchone()
+    assert q_row[0] == "DECRYPTION_FAILED"
+    assert q_row[1] == "legacy_migration_reencryption"
+    assert q_row[2] == "invoice.txt"
+
+
+def test_reencryption_failure_preserves_metadata_and_quarantines(
+    tmp_path, worker, base_dir
+):
+    """Corrupted ciphertexts preserve metadata in documents/snapshot_documents and create quarantine records."""
+    sessions = tmp_path / "sessions"
+    session_id = _legacy_session(sessions / "s1", worker, base_dir, "good text")
+
+    # Corrupt extracted_text in autosorter.db and history.db to cause CryptoError on decrypt
+    clear_connection_cache(only_current_and_inactive=False)
+    conn_main = get_db_connection(str(sessions / "s1" / "autosorter.db"))
+    conn_main.execute("UPDATE documents SET extracted_text = X'1234567890ABCDEF'")
+    conn_main.commit()
+
+    conn_hist = get_db_connection(str(sessions / "s1" / "history.db"))
+    conn_hist.execute(
+        "UPDATE snapshot_documents SET extracted_text = X'1234567890ABCDEF'"
+    )
+    conn_hist.commit()
+    clear_connection_cache(only_current_and_inactive=False)
+
+    store = open_store(tmp_path / "app", legacy_session_root=sessions)
+    conn = get_db_connection(str(store.path))
+
+    # Verify documents metadata preserved
+    doc_row = conn.execute(
+        "SELECT filepath, file_hash, extracted_text, user_verified_target_path FROM documents WHERE filepath = 'invoice.txt'"
+    ).fetchone()
+    assert doc_row is not None
+    assert doc_row[0] == "invoice.txt"
+    assert doc_row[1] == "hash-1"
+    assert doc_row[2] is None  # extracted_text set to None
+    assert doc_row[3] == "Finance"  # user_verified_target_path intact
+
+    # Verify snapshot_documents metadata preserved
+    snap_row = conn.execute(
+        "SELECT filepath, file_hash, extracted_text FROM snapshot_documents WHERE session_id = ?",
+        (session_id,),
+    ).fetchone()
+    assert snap_row is not None
+    assert snap_row[0] == "invoice.txt"
+    assert snap_row[1] == "hash-1"
+    assert snap_row[2] is None
+
+    # Verify quarantine_records created for both decryption failures
+    q_rows = conn.execute(
+        "SELECT status, original_filepath, policy_action, error_message FROM quarantine_records WHERE status = 'DECRYPTION_FAILED'"
+    ).fetchall()
+    assert len(q_rows) == 2
+    for r in q_rows:
+        assert r[0] == "DECRYPTION_FAILED"
+        assert r[1] == "invoice.txt"
+        assert r[2] == "legacy_migration_reencryption"
+        assert "Failed to decrypt extracted_text" in r[3]
