@@ -615,13 +615,17 @@ class QuarantineInterceptorService:
                     )
                     dlq_item = self.db.get_quarantine_record(job_id)
                     if dlq_item:
-                        dlq_item["status"] = "DEAD_LETTER_QUEUE"
+                        if isinstance(dlq_item, dict):
+                            dlq_item["status"] = "DEAD_LETTER_QUEUE"
+                        else:
+                            setattr(dlq_item, "status", "DEAD_LETTER_QUEUE")
                         self.dlq_records.append(dlq_item)
                         return validate_quarantine_record(dlq_item)
                     fallback = {
                         "job_id": job_id,
                         "status": "DEAD_LETTER_QUEUE",
                         "error": err_msg,
+                        "error_message": err_msg,
                     }
                     return validate_quarantine_record(fallback)
 

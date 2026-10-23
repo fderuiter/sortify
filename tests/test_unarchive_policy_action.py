@@ -290,7 +290,7 @@ async def test_daemon_unarchive_event_queue_triage(tmp_path):
         # Event queue registered child file
         assert daemon._event_queue.qsize() == 1
         _, _, enqueued_event = await daemon._event_queue.get()
-        assert enqueued_event.file_path == extracted_pdf
+        assert os.path.realpath(enqueued_event.file_path) == os.path.realpath(extracted_pdf)
     finally:
         worker.stop()
         clear_connection_cache()

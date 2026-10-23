@@ -26,6 +26,7 @@ class QuarantineRecordModel(BaseModel):
     updated_at: Optional[float] = None
     error_message: Optional[str] = None
     error: Optional[str] = None
+    unpacked_files: Optional[List[str]] = None
 
     model_config = ConfigDict(extra="allow")
 
