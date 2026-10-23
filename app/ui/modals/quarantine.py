@@ -10,7 +10,7 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, DataTable, Input, Label, Select, Static
+from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static
 
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
@@ -66,11 +66,22 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         layout: horizontal;
     }
     #quarantine-search-input {
-        width: 60%;
+        width: 45%;
         margin-right: 1;
     }
     #quarantine-status-filter {
-        width: 38%;
+        width: 30%;
+        margin-right: 1;
+    }
+    #chk-select-all {
+        width: 22%;
+        height: 3;
+    }
+    #lbl-selection-count {
+        width: 1fr;
+        padding-top: 1;
+        text-style: bold;
+        color: $accent;
     }
     .quarantine-content-split {
         height: 1fr;
@@ -125,7 +136,7 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     .quarantine-button-row Button {
         margin-left: 1;
     }
-    Button:focus, Input:focus, Select:focus, DataTable:focus {
+    Button:focus, Input:focus, Select:focus, DataTable:focus, Checkbox:focus {
         border: heavy $accent;
         text-style: bold;
     }
@@ -143,7 +154,9 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         self.policies = policies or []
         self.records: List[Dict[str, Any]] = []
         self.filtered_records: List[Dict[str, Any]] = []
+        self.selected_job_ids: set[str] = set()
         self.selected_job_id: Optional[str] = None
+        self._updating_select_all: bool = False
 
     def compose(self) -> ComposeResult:
         """Compose quarantine vault modal widgets."""
@@ -186,6 +199,10 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 sel.tooltip = "Filter quarantine records by status"
                 yield sel
 
+                chk_all = Checkbox("Select All", id="chk-select-all", value=False)
+                chk_all.tooltip = "Select or deselect all visible quarantine records"
+                yield chk_all
+
             with Horizontal(classes="quarantine-content-split"):
                 dt = DataTable(id="quarantine-table")
                 dt.tooltip = "Table of staged quarantine compliance records"
@@ -209,11 +226,15 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                     yield st
 
             with Horizontal(classes="quarantine-button-row"):
+                lbl_cnt = Label("Selected: 0/0", id="lbl-selection-count")
+                lbl_cnt.tooltip = "Count of currently selected quarantine records"
+                yield lbl_cnt
+
                 btn_rel = Button(
                     "Release (r)", id="btn-quarantine-release", variant="success"
                 )
                 btn_rel.tooltip = (
-                    "Release selected quarantined item to destination directory"
+                    "Release selected quarantined item(s) to destination directory"
                 )
                 yield btn_rel
 
@@ -221,16 +242,14 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                     "Dismiss (d)", id="btn-quarantine-dismiss", variant="warning"
                 )
                 btn_dis.tooltip = (
-                    "Dismiss selected quarantine item without relocating file"
+                    "Dismiss selected quarantine item(s) without relocating file"
                 )
                 yield btn_dis
 
                 btn_insp = Button(
                     "Re-inspect (i)", id="btn-quarantine-reinspect", variant="primary"
                 )
-                btn_insp.tooltip = (
-                    "Trigger background forensic scan and policy evaluation"
-                )
+                btn_insp.tooltip = "Trigger background forensic scan and policy evaluation for selected item(s)"
                 yield btn_insp
 
                 btn_ref = Button("Refresh", id="btn-quarantine-refresh")
@@ -245,7 +264,9 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         """Initialize data table columns and trigger initial record fetch on mount."""
         self._update_layout(self.size.width)
         dt = self.query_one("#quarantine-table", DataTable)
-        dt.add_columns("Job ID", "Filename", "Status", "Policy Action", "Created")
+        dt.add_columns(
+            "Sel", "Job ID", "Filename", "Status", "Policy Action", "Created"
+        )
         self.announce("Opened Quarantine Vault modal.")
         self.action_refresh_records()
 
@@ -314,6 +335,51 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     def _on_filter_changed(self) -> None:
         self._apply_filters()
 
+    @on(Checkbox.Changed, "#chk-select-all")
+    def _on_select_all_changed(self, event: Checkbox.Changed) -> None:
+        if self._updating_select_all:
+            return
+        if event.value:
+            for r in self.filtered_records:
+                if r.get("job_id"):
+                    self.selected_job_ids.add(r["job_id"])
+        else:
+            self.selected_job_ids.clear()
+        self._update_table_selections()
+        self._update_selection_count_label()
+
+    def _update_selection_count_label(self) -> None:
+        try:
+            lbl = self.query_one("#lbl-selection-count", Label)
+            count = len(self.selected_job_ids)
+            total = len(self.filtered_records)
+            lbl.update(f"Selected: {count}/{total}")
+        except Exception:
+            pass
+
+    def _update_table_selections(self) -> None:
+        try:
+            dt = self.query_one("#quarantine-table", DataTable)
+            for r in self.filtered_records:
+                job_id = r.get("job_id")
+                if job_id and dt.has_row(job_id):
+                    sel_str = "[x]" if job_id in self.selected_job_ids else "[ ]"
+                    dt.update_cell(job_id, "Sel", sel_str)
+        except Exception:
+            pass
+
+        try:
+            chk = self.query_one("#chk-select-all", Checkbox)
+            all_selected = len(self.filtered_records) > 0 and all(
+                r.get("job_id") in self.selected_job_ids for r in self.filtered_records
+            )
+            if chk.value != all_selected:
+                self._updating_select_all = True
+                chk.value = all_selected
+                self._updating_select_all = False
+        except Exception:
+            pass
+
     def _apply_filters(self) -> None:
         search_term = ""
         status_term = "ALL"
@@ -364,7 +430,8 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 if created_ts
                 else "-"
             )
-            dt.add_row(job_id, fname, st, act, created_str, key=job_id)
+            sel_str = "[x]" if job_id in self.selected_job_ids else "[ ]"
+            dt.add_row(sel_str, job_id, fname, st, act, created_str, key=job_id)
 
         if filtered:
             if not self.selected_job_id or not any(
@@ -376,11 +443,20 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             self.selected_job_id = None
             self._render_detail_pane(None)
 
+        self._update_selection_count_label()
+
     @on(DataTable.RowSelected)
     def _on_row_selected(self, event: DataTable.RowSelected) -> None:
         if event.row_key and event.row_key.value:
-            self.selected_job_id = event.row_key.value
-            self._render_detail_pane(self.selected_job_id)
+            job_id = event.row_key.value
+            self.selected_job_id = job_id
+            if job_id in self.selected_job_ids:
+                self.selected_job_ids.remove(job_id)
+            else:
+                self.selected_job_ids.add(job_id)
+            self._update_table_selections()
+            self._update_selection_count_label()
+            self._render_detail_pane(job_id)
 
     @on(DataTable.CellHighlighted)
     def _on_cell_highlighted(self, event: DataTable.CellHighlighted) -> None:
@@ -400,6 +476,13 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             if r.get("job_id") == job_id:
                 return r
         return None
+
+    def _get_target_job_ids(self) -> List[str]:
+        if self.selected_job_ids:
+            return list(self.selected_job_ids)
+        if self.selected_job_id:
+            return [self.selected_job_id]
+        return []
 
     def _render_detail_pane(self, job_id: Optional[str]) -> None:
         try:
@@ -453,27 +536,13 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     @on(Button.Pressed, "#btn-quarantine-release")
     def action_release_selected(self) -> None:
-        """Prompt destination directory and release selected quarantine item."""
-        record = self._get_selected_record(self.selected_job_id)
-        if not record:
+        """Prompt target directory and trigger batch release for selected quarantine items."""
+        job_ids = self._get_target_job_ids()
+        if not job_ids:
             self.announce("No quarantine item selected for release.")
             return
 
-        if record.get("status") == "RELEASED":
-            self.announce(
-                f"Quarantine item '{record.get('job_id')}' is already released."
-            )
-            return
-
-        staged_path = record.get("staged_filepath")
-        if not staged_path or not os.path.exists(staged_path):
-            self.announce(
-                f"Cannot release item '{record.get('job_id')}': Staged file missing at {staged_path}."
-            )
-            return
-
-        orig_rel = record.get("original_filepath", "released_file")
-        base_dir = record.get("base_dir") or self.base_dir or "."
+        base_dir = self.base_dir or "."
 
         def _dir_selected_callback(target_dir: Optional[str]) -> None:
             if not target_dir:
@@ -486,113 +555,160 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 self.announce(err_msg, priority="assertive")
                 notify(err_msg, type="error")
                 return
-            dest_file_path = os.path.join(target_dir, os.path.basename(orig_rel))
-            self.execute_release_async(record, dest_file_path)
+            self.announce(f"Releasing {len(job_ids)} quarantine item(s)...")
+            self.execute_batch_release_async(job_ids, target_dir)
 
         self.app.push_screen(DirectorySelectModal(base_dir), _dir_selected_callback)
 
     @work(thread=True)
-    def execute_release_async(self, record: dict, dest_file_path: str) -> None:
-        """Asynchronously perform atomic quarantine relocation to destination path."""
-        job_id = record["job_id"]
-        staged_path = record["staged_filepath"]
+    def execute_batch_release_async(self, job_ids: Any, target_dir: str) -> None:
+        """Asynchronously release batch of quarantine items on background worker thread."""
         try:
-            os.makedirs(os.path.dirname(dest_file_path), exist_ok=True)
-            from app.core.resilient_file_ops import atomic_quarantine_relocation
+            if isinstance(job_ids, (str, dict)):
+                raw_list = [job_ids]
+            else:
+                raw_list = list(job_ids)
+            clean_job_ids = [
+                j.get("job_id") if isinstance(j, dict) else str(j)
+                for j in raw_list
+                if j
+            ]
+            db_inst = self._get_db()
+            from app.core.quarantine_interceptor import QuarantineInterceptorService
 
-            with atomic_quarantine_relocation(staged_path, dest_file_path):
-                db_inst = self._get_db()
-                db_inst.update_quarantine_status(
-                    job_id=job_id,
-                    status="RELEASED",
-                    audit_entry={
-                        "timestamp": time.time(),
-                        "status": "RELEASED",
-                        "details": f"Released from quarantine modal to {dest_file_path}",
-                    },
-                )
-            self._call_ui(self._on_release_success, job_id, dest_file_path)
+            service = QuarantineInterceptorService(db=db_inst)
+            results = service.release_quarantine_batch(
+                clean_job_ids, dest_dir=target_dir
+            )
+            self._call_ui(self._on_batch_release_complete, results)
         except Exception as e:
-            logger.error(f"Failed to release quarantine job {job_id}: {e}")
-            self._call_ui(self.announce, f"Release failed for {job_id}: {e}")
+            logger.error(f"Failed batch quarantine release: {e}", exc_info=True)
+            self._call_ui(self.announce, f"Batch release failed: {e}")
 
-    def _on_release_success(self, job_id: str, dest_file_path: str) -> None:
-        self.announce(
-            f"Quarantine item '{job_id}' released successfully to {dest_file_path}."
-        )
+    def execute_release_async(self, job_id: Any, dest_dir: str) -> None:
+        """Compatibility helper for single item release."""
+        self.execute_batch_release_async([job_id], dest_dir)
+
+    def _on_batch_release_complete(self, results: List[Dict[str, Any]]) -> None:
+        success_count = sum(1 for r in results if r.get("status") == "RELEASED")
+        fail_count = len(results) - success_count
+        msg = f"Batch Release Complete: {success_count} succeeded, {fail_count} failed."
+        self.announce(msg)
+        try:
+            from app.ui.notifications import notify
+
+            notify(msg, type="success" if fail_count == 0 else "warning")
+        except Exception:
+            pass
+        self.selected_job_ids.clear()
         self.fetch_records_async()
 
     @on(Button.Pressed, "#btn-quarantine-dismiss")
     def action_dismiss_selected(self) -> None:
-        """Dismiss the selected quarantine item without restoring file."""
-        record = self._get_selected_record(self.selected_job_id)
-        if not record:
+        """Dismiss selected quarantine items without restoring files."""
+        job_ids = self._get_target_job_ids()
+        if not job_ids:
             self.announce("No quarantine item selected for dismissal.")
             return
 
-        if record.get("status") == "DISMISSED":
-            self.announce(
-                f"Quarantine item '{record.get('job_id')}' is already dismissed."
-            )
-            return
-
-        self.execute_dismiss_async(record["job_id"])
+        self.announce(f"Dismissing {len(job_ids)} quarantine item(s)...")
+        self.execute_batch_dismiss_async(job_ids)
 
     @work(thread=True)
-    def execute_dismiss_async(self, job_id: str) -> None:
-        """Asynchronously mark quarantine item as dismissed in database."""
+    def execute_batch_dismiss_async(self, job_ids: Any) -> None:
+        """Asynchronously mark quarantine items as dismissed on background worker thread."""
         try:
+            if isinstance(job_ids, (str, dict)):
+                raw_list = [job_ids]
+            else:
+                raw_list = list(job_ids)
+            clean_job_ids = [
+                j.get("job_id") if isinstance(j, dict) else str(j)
+                for j in raw_list
+                if j
+            ]
             db_inst = self._get_db()
-            db_inst.update_quarantine_status(
-                job_id=job_id,
-                status="DISMISSED",
-                audit_entry={
-                    "timestamp": time.time(),
-                    "status": "DISMISSED",
-                    "details": "Dismissed manually via quarantine vault modal review",
-                },
-            )
-            self._call_ui(self._on_dismiss_success, job_id)
-        except Exception as e:
-            logger.error(f"Failed to dismiss quarantine job {job_id}: {e}")
-            self._call_ui(self.announce, f"Dismiss failed for {job_id}: {e}")
+            from app.core.quarantine_interceptor import QuarantineInterceptorService
 
-    def _on_dismiss_success(self, job_id: str) -> None:
-        self.announce(f"Quarantine item '{job_id}' marked as DISMISSED.")
+            service = QuarantineInterceptorService(db=db_inst)
+            results = service.dismiss_quarantine_batch(clean_job_ids)
+            self._call_ui(self._on_batch_dismiss_complete, results)
+        except Exception as e:
+            logger.error(f"Failed batch quarantine dismiss: {e}", exc_info=True)
+            self._call_ui(self.announce, f"Batch dismiss failed: {e}")
+
+    def execute_dismiss_async(self, job_id: Any) -> None:
+        """Compatibility helper for single item dismissal."""
+        self.execute_batch_dismiss_async([job_id])
+
+    def _on_batch_dismiss_complete(self, results: List[Dict[str, Any]]) -> None:
+        success_count = sum(1 for r in results if r.get("status") == "DISMISSED")
+        fail_count = len(results) - success_count
+        msg = f"Batch Dismiss Complete: {success_count} succeeded, {fail_count} failed."
+        self.announce(msg)
+        try:
+            from app.ui.notifications import notify
+
+            notify(msg, type="info" if fail_count == 0 else "warning")
+        except Exception:
+            pass
+        self.selected_job_ids.clear()
         self.fetch_records_async()
 
     @on(Button.Pressed, "#btn-quarantine-reinspect")
     def action_reinspect_selected(self) -> None:
-        """Trigger background forensic re-inspection scan for selected item."""
-        record = self._get_selected_record(self.selected_job_id)
-        if not record:
+        """Trigger background forensic re-inspection scan for selected items."""
+        job_ids = self._get_target_job_ids()
+        if not job_ids:
             self.announce("No quarantine item selected for re-inspection.")
             return
 
-        job_id = record["job_id"]
         self.announce(
-            f"Initiating background forensic re-inspection for item '{job_id}'..."
+            f"Initiating background forensic re-inspection for {len(job_ids)} item(s)..."
         )
-        self.execute_reinspect_async(job_id)
+        self.execute_batch_reinspect_async(job_ids)
 
     @work(thread=True)
-    def execute_reinspect_async(self, job_id: str) -> None:
-        """Asynchronously execute policy re-inspection on worker thread."""
+    def execute_batch_reinspect_async(self, job_ids: Any) -> None:
+        """Asynchronously re-inspect batch of quarantine items on worker thread."""
         try:
+            if isinstance(job_ids, (str, dict)):
+                raw_list = [job_ids]
+            else:
+                raw_list = list(job_ids)
+            clean_job_ids = [
+                j.get("job_id") if isinstance(j, dict) else str(j)
+                for j in raw_list
+                if j
+            ]
             db_inst = self._get_db()
-
             from app.core.quarantine_interceptor import QuarantineInterceptorService
 
             service = QuarantineInterceptorService(db=db_inst, policies=self.policies)
-            res = service.process_quarantine_job(job_id)
-            self._call_ui(self._on_reinspect_success, job_id, res)
+            results = service.process_quarantine_batch(clean_job_ids)
+            self._call_ui(self._on_batch_reinspect_complete, results)
         except Exception as e:
-            logger.error(f"Failed to re-inspect quarantine job {job_id}: {e}")
-            self._call_ui(self.announce, f"Re-inspection failed for {job_id}: {e}")
+            logger.error(f"Failed batch re-inspection: {e}", exc_info=True)
+            self._call_ui(self.announce, f"Batch re-inspection failed: {e}")
 
-    def _on_reinspect_success(self, job_id: str, res: dict) -> None:
-        new_st = res.get("status", "UPDATED")
-        self.announce(
-            f"Re-inspection completed for '{job_id}'. Resulting status: {new_st}."
+    def execute_reinspect_async(self, job_id: Any) -> None:
+        """Compatibility helper for single item re-inspection."""
+        self.execute_batch_reinspect_async([job_id])
+
+    def _on_batch_reinspect_complete(self, results: List[Any]) -> None:
+        success_count = sum(
+            1
+            for r in results
+            if (r.get("status") or "").upper() not in ("FAILED", "ERROR")
         )
+        fail_count = len(results) - success_count
+        msg = f"Batch Re-inspection Complete: {success_count} succeeded, {fail_count} failed."
+        self.announce(msg)
+        try:
+            from app.ui.notifications import notify
+
+            notify(msg, type="info" if fail_count == 0 else "warning")
+        except Exception:
+            pass
+        self.selected_job_ids.clear()
         self.fetch_records_async()
