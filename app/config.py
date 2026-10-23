@@ -353,9 +353,16 @@ class Settings(BaseSettings):
             if not isinstance(rule, dict):
                 raise ValueError("Each policy must be a dictionary.")
             rule_type = rule.get("type")
-            if rule_type not in ("keyword", "pattern", "override"):
+            if rule_type not in (
+                "keyword",
+                "pattern",
+                "override",
+                "action",
+                "compliance",
+                "unarchive",
+            ):
                 raise ValueError(
-                    f"Invalid policy type: {rule_type}. Must be keyword, pattern, or override."
+                    f"Invalid policy type: {rule_type}. Must be keyword, pattern, override, action, compliance, or unarchive."
                 )
 
             expression = rule.get("expression")
@@ -372,6 +379,35 @@ class Settings(BaseSettings):
 
             if "halting" in rule and not isinstance(rule["halting"], bool):
                 raise ValueError("Policy halting property must be a boolean.")
+
+            action = rule.get("action")
+            if action is not None:
+                from app.core.policy_engine import PolicyEngine
+
+                if not isinstance(
+                    action, str
+                ) or not PolicyEngine.validate_policy_action(action):
+                    raise ValueError(
+                        f"Invalid policy action: {action}. Must be one of {sorted(list(PolicyEngine.SUPPORTED_ACTIONS))}."
+                    )
+
+            post_act = (
+                rule.get("post_unarchive_action")
+                or rule.get("post_action")
+                or rule.get("archive_action")
+            )
+            if post_act is not None:
+                if not isinstance(post_act, str) or post_act.lower() not in (
+                    "delete",
+                    "remove",
+                    "cleanup",
+                    "move",
+                    "archive",
+                    "relocate",
+                    "retain",
+                    "keep",
+                ):
+                    raise ValueError(f"Invalid post_unarchive_action: {post_act}.")
 
         # Overlap check
         sorted_policies = sorted(v, key=lambda x: x.get("priority", 0), reverse=True)
