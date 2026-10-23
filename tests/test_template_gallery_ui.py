@@ -1,7 +1,6 @@
 """TUI integration tests for onboarding starter template gallery and settings integration."""
 
 import asyncio
-import tempfile
 from unittest.mock import patch
 
 import pytest
@@ -212,37 +211,35 @@ def test_modal_unrecognized_controls_handled_gracefully(tmp_path):
 
 def test_apply_starter_templates_propagates_save_error(tmp_path):
     """Verify apply_starter_templates propagates save errors when settings._save raises an exception."""
-    with tempfile.NamedTemporaryFile(suffix=".json") as f:
-        settings = AppSettings(filepath=f.name)
-        with patch.object(AppSettings, "_trigger_save"):
-            with patch.object(
-                AppSettings, "_save", side_effect=OSError("Disk write error")
-            ):
-                with pytest.raises(OSError, match="Disk write error"):
-                    apply_starter_templates(settings, ["legal_contracts"])
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    with patch.object(AppSettings, "_trigger_save"):
+        with patch.object(
+            AppSettings, "_save", side_effect=OSError("Disk write error")
+        ):
+            with pytest.raises(OSError, match="Disk write error"):
+                apply_starter_templates(settings, ["legal_contracts"])
 
 
 def test_template_gallery_modal_rescan_on_success(tmp_path):
     """Verify template gallery triggers action_scan_directory on successful template application."""
 
     async def _test():
-        with tempfile.NamedTemporaryFile(suffix=".json") as f:
-            settings = AppSettings(filepath=f.name)
-            settings.AI_CONSENT_GRANTED = True
-            app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+        settings.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
 
-            async with app.run_test() as pilot:
+        async with app.run_test() as pilot:
+            await pilot.pause(0.1)
+            gallery_modal = TemplateGalleryModal(settings)
+            app.push_screen(gallery_modal)
+            await pilot.pause(0.1)
+
+            with patch.object(app, "action_scan_directory") as mock_scan:
+                gallery_modal.query_one("#chk-gallery-legal_contracts").value = True
+                gallery_modal.action_apply_templates()
                 await pilot.pause(0.1)
-                gallery_modal = TemplateGalleryModal(settings)
-                app.push_screen(gallery_modal)
-                await pilot.pause(0.1)
 
-                with patch.object(app, "action_scan_directory") as mock_scan:
-                    gallery_modal.query_one("#chk-gallery-legal_contracts").value = True
-                    gallery_modal.action_apply_templates()
-                    await pilot.pause(0.1)
-
-                    mock_scan.assert_called_once()
+                mock_scan.assert_called_once()
 
     asyncio.run(_test())
 
@@ -251,39 +248,37 @@ def test_template_gallery_modal_error_notification_on_save_failure(tmp_path):
     """Verify template gallery notifies with severity='error' when template application save fails."""
 
     async def _test():
-        with tempfile.NamedTemporaryFile(suffix=".json") as f:
-            settings = AppSettings(filepath=f.name)
-            settings.AI_CONSENT_GRANTED = True
-            app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+        settings.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
 
-            async with app.run_test() as pilot:
-                await pilot.pause(0.1)
-                gallery_modal = TemplateGalleryModal(settings)
-                app.push_screen(gallery_modal)
-                await pilot.pause(0.1)
+        async with app.run_test() as pilot:
+            await pilot.pause(0.1)
+            gallery_modal = TemplateGalleryModal(settings)
+            app.push_screen(gallery_modal)
+            await pilot.pause(0.1)
 
-                gallery_modal.query_one("#chk-gallery-legal_contracts").value = True
+            gallery_modal.query_one("#chk-gallery-legal_contracts").value = True
 
-                with patch.object(AppSettings, "_trigger_save"):
-                    with patch.object(
-                        AppSettings, "_save", side_effect=OSError("Permission denied")
-                    ):
-                        with patch.object(app, "notify") as mock_notify:
-                            gallery_modal.action_apply_templates()
-                            await pilot.pause(0.1)
+            with patch.object(AppSettings, "_trigger_save"):
+                with patch.object(
+                    AppSettings, "_save", side_effect=OSError("Permission denied")
+                ):
+                    with patch.object(app, "notify") as mock_notify:
+                        gallery_modal.action_apply_templates()
+                        await pilot.pause(0.1)
 
-                            mock_notify.assert_called_once()
-                            assert mock_notify.call_args[1].get("severity") == "error"
-                            assert (
-                                "Failed to apply starter rule template pack(s)"
-                                in mock_notify.call_args[0][0]
-                            )
+                        mock_notify.assert_called_once()
+                        assert mock_notify.call_args[1].get("severity") == "error"
+                        assert (
+                            "Failed to apply starter rule template pack(s)"
+                            in mock_notify.call_args[0][0]
+                        )
 
-                messages = [a["message"] for a in gallery_modal.announcements]
-                assert any(
-                    "Failed to apply starter rule template pack(s)" in m
-                    for m in messages
-                )
+            messages = [a["message"] for a in gallery_modal.announcements]
+            assert any(
+                "Failed to apply starter rule template pack(s)" in m for m in messages
+            )
 
     asyncio.run(_test())
 
@@ -292,35 +287,32 @@ def test_wizard_modal_save_error_handled(tmp_path):
     """Verify WizardModal handles save errors when applying template packs without crashing."""
 
     async def _test():
-        with tempfile.NamedTemporaryFile(suffix=".json") as f:
-            settings = AppSettings(filepath=f.name)
-            settings.AI_CONSENT_GRANTED = False
-            app = AutoSorterTUI(
-                settings=settings, base_dir=str(tmp_path), skip_wizard=True
-            )
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+        settings.AI_CONSENT_GRANTED = False
+        app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path), skip_wizard=True)
 
-            async with app.run_test() as pilot:
-                await pilot.pause(0.1)
-                modal = WizardModal(settings)
-                app.push_screen(modal)
-                await pilot.pause(0.1)
+        async with app.run_test() as pilot:
+            await pilot.pause(0.1)
+            modal = WizardModal(settings)
+            app.push_screen(modal)
+            await pilot.pause(0.1)
 
-                modal.query_one("#chk-template-legal_contracts").value = True
+            modal.query_one("#chk-template-legal_contracts").value = True
 
-                with patch.object(AppSettings, "_trigger_save"):
-                    with patch.object(
-                        AppSettings, "_save", side_effect=OSError("Disk full")
-                    ):
-                        with patch.object(app, "notify") as mock_notify:
-                            modal.action_finish()
-                            await pilot.pause(0.1)
+            with patch.object(AppSettings, "_trigger_save"):
+                with patch.object(
+                    AppSettings, "_save", side_effect=OSError("Disk full")
+                ):
+                    with patch.object(app, "notify") as mock_notify:
+                        modal.action_finish()
+                        await pilot.pause(0.1)
 
-                            mock_notify.assert_called()
-                            error_notifications = [
-                                call
-                                for call in mock_notify.call_args_list
-                                if call[1].get("severity") == "error"
-                            ]
-                            assert len(error_notifications) > 0
+                        mock_notify.assert_called()
+                        error_notifications = [
+                            call
+                            for call in mock_notify.call_args_list
+                            if call[1].get("severity") == "error"
+                        ]
+                        assert len(error_notifications) > 0
 
     asyncio.run(_test())

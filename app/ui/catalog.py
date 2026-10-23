@@ -315,7 +315,9 @@ def run_catalog_audit(
     if component_id:
         norm_id = component_id.strip().lower()
         filtered = [
-            c for c in registry if c["id"].lower() == norm_id or c["name"].lower() == norm_id
+            c
+            for c in registry
+            if c["id"].lower() == norm_id or c["name"].lower() == norm_id
         ]
         if not filtered:
             raise ValueError(f"Unknown component identifier: '{component_id}'")
@@ -362,9 +364,7 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.audit_only:
         print("Starting headless Textual TUI accessibility audit...")
         try:
-            total_scans, violations = run_catalog_audit(
-                component_id=args.component
-            )
+            total_scans, violations = run_catalog_audit(component_id=args.component)
         except ValueError as err:
             print(f"Error: {err}", file=sys.stderr)
             return 1
@@ -394,10 +394,15 @@ def main(argv: Optional[List[str]] = None) -> int:
     if args.component:
         norm_id = args.component.strip().lower()
         matched = [
-            c for c in CATALOG_REGISTRY if c["id"].lower() == norm_id or c["name"].lower() == norm_id
+            c
+            for c in CATALOG_REGISTRY
+            if c["id"].lower() == norm_id or c["name"].lower() == norm_id
         ]
         if not matched:
-            print(f"Error: Unknown component identifier: '{args.component}'", file=sys.stderr)
+            print(
+                f"Error: Unknown component identifier: '{args.component}'",
+                file=sys.stderr,
+            )
             return 1
         comp_def = matched[0]
         comp_instance = comp_def["factory"](settings=settings)

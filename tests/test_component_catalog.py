@@ -1,6 +1,5 @@
 """Automated unit tests for Component Catalog CLI and accessibility gate."""
 
-
 from app.ui.a11y import A11yViolation
 from app.ui.catalog import get_catalog_registry, main
 
@@ -52,7 +51,10 @@ def test_catalog_cli_audit_only_unknown_component(capsys):
     code = main(["--audit-only", "--component", "invalid_modal_xyz"])
     assert code == 1
     captured = capsys.readouterr()
-    assert "Unknown component identifier" in captured.err or "Unknown component identifier" in captured.out
+    assert (
+        "Unknown component identifier" in captured.err
+        or "Unknown component identifier" in captured.out
+    )
 
 
 def test_catalog_audit_detects_accessibility_violations(monkeypatch):
