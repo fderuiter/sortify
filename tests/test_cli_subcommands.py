@@ -626,3 +626,64 @@ def test_drop_preset_is_hidden_and_warns(tmp_path):
     assert code == 0, stderr
     assert "--preset has no effect with drop" in stderr
     assert json.loads(stdout)["processed_count"] == 1
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_cli_ledger_status_and_purge_failure_flags(tmp_path):
+    """Test ledger status and purge CLI commands with --failed, --aborted, and --json flags."""
+    from app.core.ledger import TransactionLedger
+
+    db_path = str(tmp_path / "ledger.db")
+    ledger = TransactionLedger(db_path)
+
+    # Log an aborted transaction intent
+    src_file = tmp_path / "abort_src.txt"
+    src_file.write_text("aborted file content")
+    dst_file = tmp_path / "abort_dst.txt"
+
+    ledger.log_intent(
+        session_id="sess-cli",
+        base_dir=str(tmp_path),
+        source_path=str(src_file),
+        dest_path=str(dst_file),
+        source_rel_path="abort_src.txt",
+        dest_rel_path="abort_dst.txt",
+    )
+
+    # Run reconciliation to transition the entry to ABORTED
+    ledger.reconcile_incomplete_transactions()
+
+    # Test 'ledger status --failed --json'
+    code, stdout, stderr = run_cli(
+        ["ledger", "status", "--ledger-db", db_path, "--failed", "--json"]
+    )
+    assert code == 0, f"Error: {stderr}"
+    res = json.loads(stdout)
+    assert res["status"] == "success"
+    assert res["count"] == 1
+    assert res["pending_entries"][0]["status"] == "ABORTED"
+    assert "Move aborted" in res["pending_entries"][0]["failure_reason"]
+
+    # Test 'ledger status --aborted'
+    code, stdout, stderr = run_cli(
+        ["ledger", "status", "--ledger-db", db_path, "--aborted", "--json"]
+    )
+    assert code == 0, f"Error: {stderr}"
+    res = json.loads(stdout)
+    assert res["count"] == 1
+
+    # Test 'ledger purge --failed'
+    code, stdout, stderr = run_cli(
+        ["ledger", "purge", "--ledger-db", db_path, "--failed", "--json"]
+    )
+    assert code == 0, f"Error: {stderr}"
+    res = json.loads(stdout)
+    assert res["status"] == "success"
+
+    # Verify ledger is now empty
+    code, stdout, stderr = run_cli(
+        ["ledger", "status", "--ledger-db", db_path, "--failed", "--json"]
+    )
+    assert code == 0, f"Error: {stderr}"
+    res = json.loads(stdout)
+    assert res["count"] == 0
