@@ -864,6 +864,52 @@ class ContinuousWatchdogDaemon:
             )
             return
 
+        if policy_action == "unarchive" or status == "UNARCHIVED":
+            unpacked_files = (
+                quarantine_record.get("unpacked_files")
+                or (
+                    raw_record.get("unpacked_files")
+                    if isinstance(raw_record, dict)
+                    else None
+                )
+                or (
+                    raw_record.get("extracted_files")
+                    if isinstance(raw_record, dict)
+                    else None
+                )
+                or []
+            )
+            if not unpacked_files and getattr(quarantine_record, "audit_log", None):
+                for entry in reversed(quarantine_record.audit_log):
+                    if isinstance(entry, dict) and "unpacked_files" in entry:
+                        unpacked_files = entry["unpacked_files"]
+                        break
+
+            registered_count = 0
+            for child_path in unpacked_files:
+                if os.path.isfile(child_path) and not self.should_ignore_path(
+                    child_path
+                ):
+                    child_event = FileChangeEvent(
+                        event_type="created",
+                        file_path=child_path,
+                        timestamp=time.time(),
+                    )
+                    if self.enqueue_event(child_event):
+                        registered_count += 1
+
+            if (
+                staged_filepath
+                and os.path.exists(staged_filepath)
+                and os.path.abspath(abs_path) != os.path.abspath(staged_filepath)
+            ):
+                resilient_remove(staged_filepath)
+
+            logger.info(
+                f"Quarantine interceptor unarchived {rel_path}: enqueued {registered_count} child files into triage loop"
+            )
+            return
+
         # If a compliance action (redact, archive, quarantine, retain, sensitivity_hold) was executed, triage is complete
         if policy_action in (
             "redact",

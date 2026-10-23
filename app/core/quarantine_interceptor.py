@@ -385,7 +385,7 @@ class QuarantineInterceptorService:
 
             # 4b. Upstream Barrier: Jev Pre-Classification & Sensitivity Hold for unguided / default documents
             if (
-                action not in ("redact", "archive", "quarantine", "retain")
+                action not in ("redact", "archive", "quarantine", "retain", "unarchive")
                 and self.jev_classifier is not None
             ):
                 try:
@@ -587,6 +587,130 @@ class QuarantineInterceptorService:
                         },
                     )
 
+            elif action == "unarchive":
+                dest_dir = self.resolve_safe_target_dir(
+                    base_dir, target_subfolder, default_subfolder=""
+                )
+                os.makedirs(dest_dir, exist_ok=True)
+
+                unpacked_child_files = []
+                try:
+                    unpacked_child_files = self.forensic_scanner.unpack_archive(
+                        staged_path, dest_dir
+                    )
+                except ArchiveSafetyError as ase:
+                    logger.warning(
+                        f"Archive safety limit error during unarchive action in job {job_id}: {ase}"
+                    )
+                    err_msg = f"Archive safety violation during unarchive: {ase}"
+                    self.db.update_quarantine_status(
+                        job_id=job_id,
+                        status="MANUAL_REVIEW_REQUIRED",
+                        error_message=err_msg,
+                        audit_entry={
+                            "timestamp": time.time(),
+                            "status": "MANUAL_REVIEW_REQUIRED",
+                            "details": f"Unarchive policy action aborted: {ase}",
+                        },
+                    )
+                    dlq_item = self.db.get_quarantine_record(job_id)
+                    if dlq_item:
+                        dlq_item["status"] = "DEAD_LETTER_QUEUE"
+                        self.dlq_records.append(dlq_item)
+                        return validate_quarantine_record(dlq_item)
+                    fallback = {
+                        "job_id": job_id,
+                        "status": "DEAD_LETTER_QUEUE",
+                        "error": err_msg,
+                    }
+                    return validate_quarantine_record(fallback)
+
+                post_action = (
+                    (
+                        getattr(matched_rule, "post_unarchive_action", None)
+                        or (
+                            matched_rule.get("post_unarchive_action")
+                            if isinstance(matched_rule, dict)
+                            else None
+                        )
+                        or getattr(matched_rule, "post_action", None)
+                        or (
+                            matched_rule.get("post_action")
+                            if isinstance(matched_rule, dict)
+                            else None
+                        )
+                        or getattr(matched_rule, "archive_action", None)
+                        or (
+                            matched_rule.get("archive_action")
+                            if isinstance(matched_rule, dict)
+                            else None
+                        )
+                    )
+                    or "delete"
+                ).lower()
+
+                orig_full_path = os.path.join(base_dir, orig_rel_path)
+
+                if post_action in ("move", "archive", "relocate"):
+                    archive_target = (
+                        getattr(matched_rule, "post_unarchive_target", None)
+                        or (
+                            matched_rule.get("post_unarchive_target")
+                            if isinstance(matched_rule, dict)
+                            else None
+                        )
+                        or getattr(matched_rule, "archive_target", None)
+                        or (
+                            matched_rule.get("archive_target")
+                            if isinstance(matched_rule, dict)
+                            else None
+                        )
+                    )
+                    archive_dir = self.resolve_safe_target_dir(
+                        base_dir, archive_target, default_subfolder="Archive"
+                    )
+                    os.makedirs(archive_dir, exist_ok=True)
+                    archive_file_path = os.path.join(
+                        archive_dir, os.path.basename(orig_rel_path)
+                    )
+                    if os.path.exists(staged_path):
+                        with atomic_quarantine_relocation(
+                            staged_path, archive_file_path
+                        ):
+                            pass
+                    if os.path.exists(orig_full_path) and os.path.abspath(
+                        orig_full_path
+                    ) != os.path.abspath(archive_file_path):
+                        resilient_remove(orig_full_path)
+                elif post_action in ("retain", "keep"):
+                    if os.path.exists(staged_path):
+                        if not os.path.exists(orig_full_path):
+                            shutil.copy2(staged_path, orig_full_path)
+                        resilient_remove(staged_path)
+                else:
+                    if os.path.exists(staged_path):
+                        resilient_remove(staged_path)
+                    if os.path.exists(orig_full_path):
+                        resilient_remove(orig_full_path)
+
+                dest_subfolder = safe_relpath(dest_dir, base_dir).replace("\\", "/")
+                if dest_subfolder == ".":
+                    dest_subfolder = ""
+
+                self.db.update_quarantine_status(
+                    job_id=job_id,
+                    status="UNARCHIVED",
+                    policy_action="unarchive",
+                    audit_entry={
+                        "timestamp": time.time(),
+                        "status": "UNARCHIVED",
+                        "policy_action": "unarchive",
+                        "details": f"Archive extracted ({len(unpacked_child_files)} files) to '{dest_subfolder or '.'}'; source archive action: {post_action}",
+                        "unpacked_files": unpacked_child_files,
+                        "post_action": post_action,
+                    },
+                )
+
             else:
                 # Default release to target destination or original base_dir
                 dest_dir = self.resolve_safe_target_dir(
@@ -634,9 +758,13 @@ class QuarantineInterceptorService:
 
             res = self.db.get_quarantine_record(job_id)
             if isinstance(res, dict):
+                if action == "unarchive" and "unpacked_child_files" in locals():
+                    res["unpacked_files"] = unpacked_child_files
                 return validate_quarantine_record(res)
-            record["status"] = "RELEASED"
+            record["status"] = "UNARCHIVED" if action == "unarchive" else "RELEASED"
             record["policy_action"] = action or "release"
+            if action == "unarchive" and "unpacked_child_files" in locals():
+                record["unpacked_files"] = unpacked_child_files
             return validate_quarantine_record(record)
 
         except TimeoutError as te:

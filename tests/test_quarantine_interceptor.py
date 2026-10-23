@@ -171,6 +171,7 @@ def test_extended_policy_engine_actions():
     assert PolicyEngine.validate_policy_action("archive") is True
     assert PolicyEngine.validate_policy_action("quarantine") is True
     assert PolicyEngine.validate_policy_action("retain") is True
+    assert PolicyEngine.validate_policy_action("unarchive") is True
     assert PolicyEngine.validate_policy_action("invalid_action") is False
 
     policies = [
