@@ -1,12 +1,17 @@
 """Keyboard slider for choosing the layout density."""
 
+import time
+from typing import Callable, Optional
+
 from textual import events
 from textual.message import Message
 from textual.reactive import reactive
 from textual.widget import Widget
 
+from app.ui.a11y import A11yMixin
 
-class DensitySlider(Widget):
+
+class DensitySlider(A11yMixin, Widget):
     """Interactive slider widget for text density threshold adjustment."""
 
     can_focus = True
@@ -44,6 +49,7 @@ class DensitySlider(Widget):
         min_value: int = 0,
         max_value: int = 500,
         step: int = 5,
+        announce_formatter: Optional[Callable[[int], str]] = None,
         *,
         name: str | None = None,
         id: str | None = None,
@@ -54,12 +60,34 @@ class DensitySlider(Widget):
         self.min_value = min_value
         self.max_value = max_value
         self.step = step
+        self.announce_formatter = announce_formatter
+        self._last_announce_time: float = 0.0
+        self.tooltip = "Adjust PDF text density threshold slider"
         # set_reactive avoids a pre-mount watcher firing with the class default.
         self.set_reactive(DensitySlider.value, max(min_value, min(max_value, value)))
+
+    def _announce_value(self, value: int, force: bool = False) -> Optional[str]:
+        """Rate-limited screen reader announcement helper."""
+        if self.announce_formatter is not None:
+            try:
+                msg = self.announce_formatter(value)
+            except Exception:  # noqa: BLE001
+                msg = f"Density threshold set to {value}"
+        else:
+            msg = f"Density threshold set to {value}"
+
+        now = time.time()
+        if force or (now - self._last_announce_time >= 0.25):
+            self._last_announce_time = now
+            return self.announce(msg)
+        else:
+            self.update_status(msg)
+            return None
 
     def watch_value(self, new_value: int) -> None:
         """Emit Changed event on value change."""
         self.post_message(self.Changed(self, new_value))
+        self._announce_value(new_value)
 
     def on_key(self, event: events.Key) -> None:
         """Handle keyboard key events to update slider position."""

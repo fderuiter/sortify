@@ -181,11 +181,19 @@ class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 pass
 
         if selected_pack_ids:
-            apply_starter_templates(self.settings, selected_pack_ids)
-            msg = f"Applied {len(selected_pack_ids)} starter rule template pack(s) to settings."
-            self.announce(msg)
-            if hasattr(self.app, "notify"):
-                self.app.notify(msg)
+            try:
+                apply_starter_templates(self.settings, selected_pack_ids)
+                msg = f"Applied {len(selected_pack_ids)} starter rule template pack(s) to settings."
+                self.announce(msg)
+                if hasattr(self.app, "notify"):
+                    self.app.notify(msg)
+                if hasattr(self.app, "action_scan_directory"):
+                    self.app.action_scan_directory()
+            except Exception as exc:
+                err_msg = f"Failed to apply starter rule template pack(s): {exc}"
+                self.announce(err_msg)
+                if hasattr(self.app, "notify"):
+                    self.app.notify(err_msg, severity="error")
         else:
             self.announce("No starter template packs were selected.")
 

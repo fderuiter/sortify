@@ -49,7 +49,7 @@ class PolicyEvaluationResult(BaseModel):
 class PolicyEngine:
     """Standalone evaluation engine for enforcing compliance overrides on folder locks and lifecycle policy actions."""
 
-    SUPPORTED_ACTIONS = {"archive", "retain", "quarantine", "redact"}
+    SUPPORTED_ACTIONS = {"archive", "retain", "quarantine", "redact", "unarchive"}
 
     @staticmethod
     def validate_policy_action(action: str) -> bool:
@@ -93,7 +93,7 @@ class PolicyEngine:
                 file_path
             ) or PolicyEngine.contains_secrets(doc_text_str)
 
-        if rule_type in ("keyword", "action", "compliance", ""):
+        if rule_type in ("keyword", "action", "compliance", "unarchive", ""):
             if expression:
                 text_to_search = fn_only if status_match else (fn_only + " " + dl_lower)
                 return expression in text_to_search

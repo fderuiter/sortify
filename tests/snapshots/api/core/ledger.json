@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "9f1bef8bb4f316801d1c45b747122b312d3aa61f9c29189a2b652b4c3b5607b6"
+    "checksum": "d0fe290e1c10a1509cc9ad6e06a5f085536cffbfde99c5a8bc9523ecf70dedec"
   },
   "classes": [
     {
@@ -87,6 +87,21 @@
               "annotation": "Optional[str]",
               "default": "None",
               "name": "session_id"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "failed_only"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "aborted_only"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "include_failed"
             }
           ],
           "returns": "List[Dict]"
@@ -206,6 +221,34 @@
               "annotation": null,
               "default": null,
               "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "session_id"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "purge_failed",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "session_id"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "status_filter"
             }
           ],
           "returns": null

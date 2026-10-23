@@ -279,3 +279,152 @@ def test_ledger_performance_overhead(tmp_path):
 
     # 500 operations (1500 SQLite writes in WAL mode) should complete well under 3 seconds
     assert elapsed < 3.0
+
+
+def test_reconciliation_classifies_aborted_state_and_logs_audit(tmp_path):
+    """Unfinished moves where source exists and destination is absent transition to ABORTED."""
+    db_path = str(tmp_path / "ledger.db")
+    ledger = TransactionLedger(db_path)
+    src_file = tmp_path / "source.txt"
+    src_file.write_text("content")
+    dst_file = tmp_path / "dest.txt"
+
+    entry_id = ledger.log_intent(
+        session_id="sess-aborted",
+        base_dir=str(tmp_path),
+        source_path=str(src_file),
+        dest_path=str(dst_file),
+        source_rel_path="source.txt",
+        dest_rel_path="dest.txt",
+    )
+
+    reconciled_count = ledger.reconcile_incomplete_transactions()
+    assert reconciled_count == 1
+
+    # Pending entries (unreconciled) is empty
+    assert len(ledger.get_pending_entries()) == 0
+
+    # Failed/aborted entries has the ABORTED record preserved
+    failed_entries = ledger.get_pending_entries(failed_only=True)
+    assert len(failed_entries) == 1
+    assert failed_entries[0]["status"] == "ABORTED"
+    assert "Move aborted" in failed_entries[0]["failure_reason"]
+
+    # Verify key_audit_ledger audit event
+    audit_events = ledger.get_key_audit_events(session_id="sess-aborted")
+    assert len(audit_events) == 1
+    assert audit_events[0]["event_type"] == "RECONCILIATION_FAILURE"
+    assert audit_events[0]["status"] == "ABORTED"
+    assert audit_events[0]["metadata"]["entry_id"] == entry_id
+
+
+def test_reconciliation_classifies_failed_conflict_state_and_logs_audit(tmp_path):
+    """Conflicting moves where source and destination differ transition to FAILED_CONFLICT."""
+    db_path = str(tmp_path / "ledger.db")
+    ledger = TransactionLedger(db_path)
+    src_file = tmp_path / "source.txt"
+    src_file.write_text("source content")
+    dst_file = tmp_path / "dest.txt"
+    dst_file.write_text("conflicting dest content")
+
+    entry_id = ledger.log_intent(
+        session_id="sess-conflict",
+        base_dir=str(tmp_path),
+        source_path=str(src_file),
+        dest_path=str(dst_file),
+        source_rel_path="source.txt",
+        dest_rel_path="dest.txt",
+    )
+
+    reconciled_count = ledger.reconcile_incomplete_transactions()
+    assert reconciled_count == 1
+
+    failed_entries = ledger.get_pending_entries(failed_only=True)
+    assert len(failed_entries) == 1
+    assert failed_entries[0]["status"] == "FAILED_CONFLICT"
+    assert "differs" in failed_entries[0]["failure_reason"]
+
+    audit_events = ledger.get_key_audit_events(session_id="sess-conflict")
+    assert len(audit_events) == 1
+    assert audit_events[0]["status"] == "FAILED_CONFLICT"
+
+
+def test_reconciliation_classifies_failed_missing_state_and_logs_audit(tmp_path):
+    """Missing file entries where neither source nor destination exists transition to FAILED_MISSING."""
+    db_path = str(tmp_path / "ledger.db")
+    ledger = TransactionLedger(db_path)
+    src_file = tmp_path / "nonexistent_src.txt"
+    dst_file = tmp_path / "nonexistent_dst.txt"
+
+    entry_id = ledger.log_intent(
+        session_id="sess-missing",
+        base_dir=str(tmp_path),
+        source_path=str(src_file),
+        dest_path=str(dst_file),
+        source_rel_path="nonexistent_src.txt",
+        dest_rel_path="nonexistent_dst.txt",
+    )
+
+    reconciled_count = ledger.reconcile_incomplete_transactions()
+    assert reconciled_count == 1
+
+    failed_entries = ledger.get_pending_entries(failed_only=True)
+    assert len(failed_entries) == 1
+    assert failed_entries[0]["status"] == "FAILED_MISSING"
+
+    audit_events = ledger.get_key_audit_events(session_id="sess-missing")
+    assert len(audit_events) == 1
+    assert audit_events[0]["status"] == "FAILED_MISSING"
+
+
+def test_purge_completed_preserves_failed_and_aborted_records(tmp_path):
+    """purge_completed only deletes RECONCILED_SUCCESS and COMPLETED records."""
+    db_path = str(tmp_path / "ledger.db")
+    ledger = TransactionLedger(db_path)
+
+    # Log intent 1: success scenario (dest exists, source gone)
+    src_file = tmp_path / "src_succ.txt"
+    dst_file = tmp_path / "dst_succ.txt"
+    dst_file.write_text("content")
+
+    ledger.log_intent(
+        session_id="sess-purge",
+        base_dir=str(tmp_path),
+        source_path=str(src_file),
+        dest_path=str(dst_file),
+        source_rel_path="src_succ.txt",
+        dest_rel_path="dst_succ.txt",
+        entry_id="e1",
+    )
+
+    # Log intent 2: aborted scenario (source exists, dest absent)
+    src_file2 = tmp_path / "src_abort.txt"
+    src_file2.write_text("content")
+    dst_file2 = tmp_path / "dst_abort.txt"
+
+    ledger.log_intent(
+        session_id="sess-purge",
+        base_dir=str(tmp_path),
+        source_path=str(src_file2),
+        dest_path=str(dst_file2),
+        source_rel_path="src_abort.txt",
+        dest_rel_path="dst_abort.txt",
+        entry_id="e2",
+    )
+
+    reconciled = ledger.reconcile_incomplete_transactions()
+    assert reconciled == 2
+
+    # Verify e1 was purged by purge_completed() inside reconciliation, while e2 (ABORTED) remains
+    failed_entries = ledger.get_pending_entries(failed_only=True)
+    assert len(failed_entries) == 1
+    assert failed_entries[0]["entry_id"] == "e2"
+    assert failed_entries[0]["status"] == "ABORTED"
+
+    # Purging completed explicitly does not delete e2
+    ledger.purge_completed()
+    assert len(ledger.get_pending_entries(failed_only=True)) == 1
+
+    # Explicit purge_failed deletes e2
+    ledger.purge_failed()
+    assert len(ledger.get_pending_entries(include_failed=True)) == 0
