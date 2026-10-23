@@ -144,6 +144,7 @@ def test_background_downloader_sandboxing_maintained_on_advisory_failure():
     test_url = "https://huggingface.co/unreachable-org/model-x/resolve/main/model.onnx"
 
     was_sandboxed = getattr(_thread_local, "sandboxed", False)
+    old_reason = getattr(_thread_local, "reason", "")
     _thread_local.sandboxed = True
 
     try:
@@ -179,6 +180,7 @@ def test_background_downloader_sandboxing_maintained_on_advisory_failure():
                 assert sandboxed_state[0] is True
     finally:
         _thread_local.sandboxed = was_sandboxed
+        _thread_local.reason = old_reason
 
 
 def test_offline_loader_aborts_on_network_failure_under_strict_policy():
