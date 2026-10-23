@@ -385,7 +385,7 @@ class QuarantineInterceptorService:
 
             # 4b. Upstream Barrier: Jev Pre-Classification & Sensitivity Hold for unguided / default documents
             if (
-                action not in ("redact", "archive", "quarantine", "retain")
+                action not in ("redact", "archive", "quarantine", "retain", "unarchive")
                 and self.jev_classifier is not None
             ):
                 try:
@@ -587,6 +587,130 @@ class QuarantineInterceptorService:
                         },
                     )
 
+            elif action == "unarchive":
+                dest_dir = self.resolve_safe_target_dir(
+                    base_dir, target_subfolder, default_subfolder=""
+                )
+                os.makedirs(dest_dir, exist_ok=True)
+
+                unpacked_child_files = []
+                try:
+                    unpacked_child_files = self.forensic_scanner.unpack_archive(
+                        staged_path, dest_dir
+                    )
+                except ArchiveSafetyError as ase:
+                    logger.warning(
+                        f"Archive safety limit error during unarchive action in job {job_id}: {ase}"
+                    )
+                    err_msg = f"Archive safety violation during unarchive: {ase}"
+                    self.db.update_quarantine_status(
+                        job_id=job_id,
+                        status="MANUAL_REVIEW_REQUIRED",
+                        error_message=err_msg,
+                        audit_entry={
+                            "timestamp": time.time(),
+                            "status": "MANUAL_REVIEW_REQUIRED",
+                            "details": f"Unarchive policy action aborted: {ase}",
+                        },
+                    )
+                    dlq_item = self.db.get_quarantine_record(job_id)
+                    if dlq_item:
+                        dlq_item["status"] = "DEAD_LETTER_QUEUE"
+                        self.dlq_records.append(dlq_item)
+                        return validate_quarantine_record(dlq_item)
+                    fallback = {
+                        "job_id": job_id,
+                        "status": "DEAD_LETTER_QUEUE",
+                        "error": err_msg,
+                    }
+                    return validate_quarantine_record(fallback)
+
+                post_action = (
+                    (
+                        getattr(matched_rule, "post_unarchive_action", None)
+                        or (
+                            matched_rule.get("post_unarchive_action")
+                            if isinstance(matched_rule, dict)
+                            else None
+                        )
+                        or getattr(matched_rule, "post_action", None)
+                        or (
+                            matched_rule.get("post_action")
+                            if isinstance(matched_rule, dict)
+                            else None
+                        )
+                        or getattr(matched_rule, "archive_action", None)
+                        or (
+                            matched_rule.get("archive_action")
+                            if isinstance(matched_rule, dict)
+                            else None
+                        )
+                    )
+                    or "delete"
+                ).lower()
+
+                orig_full_path = os.path.join(base_dir, orig_rel_path)
+
+                if post_action in ("move", "archive", "relocate"):
+                    archive_target = (
+                        getattr(matched_rule, "post_unarchive_target", None)
+                        or (
+                            matched_rule.get("post_unarchive_target")
+                            if isinstance(matched_rule, dict)
+                            else None
+                        )
+                        or getattr(matched_rule, "archive_target", None)
+                        or (
+                            matched_rule.get("archive_target")
+                            if isinstance(matched_rule, dict)
+                            else None
+                        )
+                    )
+                    archive_dir = self.resolve_safe_target_dir(
+                        base_dir, archive_target, default_subfolder="Archive"
+                    )
+                    os.makedirs(archive_dir, exist_ok=True)
+                    archive_file_path = os.path.join(
+                        archive_dir, os.path.basename(orig_rel_path)
+                    )
+                    if os.path.exists(staged_path):
+                        with atomic_quarantine_relocation(
+                            staged_path, archive_file_path
+                        ):
+                            pass
+                    if os.path.exists(orig_full_path) and os.path.abspath(
+                        orig_full_path
+                    ) != os.path.abspath(archive_file_path):
+                        resilient_remove(orig_full_path)
+                elif post_action in ("retain", "keep"):
+                    if os.path.exists(staged_path):
+                        if not os.path.exists(orig_full_path):
+                            shutil.copy2(staged_path, orig_full_path)
+                        resilient_remove(staged_path)
+                else:
+                    if os.path.exists(staged_path):
+                        resilient_remove(staged_path)
+                    if os.path.exists(orig_full_path):
+                        resilient_remove(orig_full_path)
+
+                dest_subfolder = safe_relpath(dest_dir, base_dir).replace("\\", "/")
+                if dest_subfolder == ".":
+                    dest_subfolder = ""
+
+                self.db.update_quarantine_status(
+                    job_id=job_id,
+                    status="UNARCHIVED",
+                    policy_action="unarchive",
+                    audit_entry={
+                        "timestamp": time.time(),
+                        "status": "UNARCHIVED",
+                        "policy_action": "unarchive",
+                        "details": f"Archive extracted ({len(unpacked_child_files)} files) to '{dest_subfolder or '.'}'; source archive action: {post_action}",
+                        "unpacked_files": unpacked_child_files,
+                        "post_action": post_action,
+                    },
+                )
+
             else:
                 # Default release to target destination or original base_dir
                 dest_dir = self.resolve_safe_target_dir(
@@ -634,9 +758,13 @@ class QuarantineInterceptorService:
 
             res = self.db.get_quarantine_record(job_id)
             if isinstance(res, dict):
+                if action == "unarchive" and "unpacked_child_files" in locals():
+                    res["unpacked_files"] = unpacked_child_files
                 return validate_quarantine_record(res)
-            record["status"] = "RELEASED"
+            record["status"] = "UNARCHIVED" if action == "unarchive" else "RELEASED"
             record["policy_action"] = action or "release"
+            if action == "unarchive" and "unpacked_child_files" in locals():
+                record["unpacked_files"] = unpacked_child_files
             return validate_quarantine_record(record)
 
         except TimeoutError as te:
@@ -691,3 +819,186 @@ class QuarantineInterceptorService:
                 "error": err_msg,
             }
             return validate_quarantine_record(fallback)
+
+    def process_quarantine_batch(
+        self, job_ids: List[str], timeout_override: Optional[float] = None
+    ) -> List[Any]:
+        """Execute forensic scanning and policy evaluation for a batch of quarantine job IDs.
+
+        Guarantees isolated record execution so individual job failures do not halt
+        remaining batch operations.
+        """
+        results = []
+        unique_ids = list(dict.fromkeys(job_ids))
+        for job_id in unique_ids:
+            try:
+                res = self.process_quarantine_job(
+                    job_id, timeout_override=timeout_override
+                )
+                results.append(res)
+            except Exception as e:
+                logger.error(
+                    f"Batch process failure for job ID '{job_id}': {e}", exc_info=True
+                )
+                results.append(
+                    {
+                        "job_id": job_id,
+                        "status": "FAILED",
+                        "error": str(e),
+                    }
+                )
+        return results
+
+    def release_quarantine_batch(
+        self, job_ids: List[str], dest_dir: Optional[str] = None
+    ) -> List[Dict[str, Any]]:
+        """Release a batch of quarantined items to target destination directories.
+
+        Guarantees isolated atomic file relocations and individual audit logging.
+        """
+        results = []
+        unique_ids = list(dict.fromkeys(job_ids))
+        for job_id in unique_ids:
+            try:
+                record = self.db.get_quarantine_record(job_id)
+                if not record:
+                    results.append(
+                        {
+                            "job_id": job_id,
+                            "status": "FAILED",
+                            "error": f"Quarantine record not found for job ID '{job_id}'",
+                        }
+                    )
+                    continue
+
+                if record.get("status") == "RELEASED":
+                    results.append(
+                        {
+                            "job_id": job_id,
+                            "status": "RELEASED",
+                            "details": f"Quarantine job '{job_id}' is already released",
+                        }
+                    )
+                    continue
+
+                staged_path = record.get("staged_filepath")
+                if not staged_path or not os.path.exists(staged_path):
+                    err_msg = f"Staged file missing at '{staged_path}'"
+                    self.db.update_quarantine_status(
+                        job_id=job_id,
+                        status="MANUAL_REVIEW_REQUIRED",
+                        error_message=err_msg,
+                        audit_entry={
+                            "timestamp": time.time(),
+                            "status": "MANUAL_REVIEW_REQUIRED",
+                            "details": f"Batch release failed: {err_msg}",
+                        },
+                    )
+                    results.append(
+                        {
+                            "job_id": job_id,
+                            "status": "FAILED",
+                            "error": err_msg,
+                        }
+                    )
+                    continue
+
+                base_dir = record.get("base_dir") or ""
+                orig_rel = record.get("original_filepath") or "released_file"
+
+                if dest_dir:
+                    target_parent = os.path.abspath(dest_dir)
+                else:
+                    target_parent = (
+                        os.path.abspath(base_dir) if base_dir else os.getcwd()
+                    )
+
+                os.makedirs(target_parent, exist_ok=True)
+                dest_file_path = os.path.join(target_parent, os.path.basename(orig_rel))
+
+                with atomic_quarantine_relocation(staged_path, dest_file_path):
+                    self.db.update_quarantine_status(
+                        job_id=job_id,
+                        status="RELEASED",
+                        policy_action="release",
+                        audit_entry={
+                            "timestamp": time.time(),
+                            "status": "RELEASED",
+                            "details": f"Released from quarantine modal review to {dest_file_path}",
+                        },
+                    )
+
+                results.append(
+                    {
+                        "job_id": job_id,
+                        "status": "RELEASED",
+                        "destination": dest_file_path,
+                    }
+                )
+            except Exception as e:
+                logger.error(
+                    f"Batch release failure for job ID '{job_id}': {e}", exc_info=True
+                )
+                results.append(
+                    {
+                        "job_id": job_id,
+                        "status": "FAILED",
+                        "error": str(e),
+                    }
+                )
+        return results
+
+    def dismiss_quarantine_batch(self, job_ids: List[str]) -> List[Dict[str, Any]]:
+        """Mark a batch of quarantine records as DISMISSED in database with audit logs."""
+        results = []
+        unique_ids = list(dict.fromkeys(job_ids))
+        for job_id in unique_ids:
+            try:
+                record = self.db.get_quarantine_record(job_id)
+                if not record:
+                    results.append(
+                        {
+                            "job_id": job_id,
+                            "status": "FAILED",
+                            "error": f"Quarantine record not found for job ID '{job_id}'",
+                        }
+                    )
+                    continue
+
+                if record.get("status") == "DISMISSED":
+                    results.append(
+                        {
+                            "job_id": job_id,
+                            "status": "DISMISSED",
+                            "details": f"Quarantine job '{job_id}' is already dismissed",
+                        }
+                    )
+                    continue
+
+                self.db.update_quarantine_status(
+                    job_id=job_id,
+                    status="DISMISSED",
+                    audit_entry={
+                        "timestamp": time.time(),
+                        "status": "DISMISSED",
+                        "details": "Dismissed manually via quarantine vault modal review",
+                    },
+                )
+                results.append(
+                    {
+                        "job_id": job_id,
+                        "status": "DISMISSED",
+                    }
+                )
+            except Exception as e:
+                logger.error(
+                    f"Batch dismiss failure for job ID '{job_id}': {e}", exc_info=True
+                )
+                results.append(
+                    {
+                        "job_id": job_id,
+                        "status": "FAILED",
+                        "error": str(e),
+                    }
+                )
+        return results

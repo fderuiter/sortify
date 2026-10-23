@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "633a72bfae19ebed4b83a20dee8233ec33658cca0b764af026f8c2c0045938b6"
+    "checksum": "3e69188b65e60bc560197c662fa30e6b6039d3c9880c6859a8a0363ae30564e3"
   },
   "classes": [
     {
@@ -53,6 +53,47 @@
         {
           "async": false,
           "decorators": [],
+          "name": "dismiss_quarantine_batch",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "job_ids"
+            }
+          ],
+          "returns": "List[Dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "process_quarantine_batch",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "job_ids"
+            },
+            {
+              "annotation": "Optional[float]",
+              "default": "None",
+              "name": "timeout_override"
+            }
+          ],
+          "returns": "List[Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "process_quarantine_job",
           "parameters": [
             {
@@ -72,6 +113,29 @@
             }
           ],
           "returns": "QuarantineRecordModel"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "release_quarantine_batch",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "job_ids"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "dest_dir"
+            }
+          ],
+          "returns": "List[Dict[str, Any]]"
         },
         {
           "async": false,
