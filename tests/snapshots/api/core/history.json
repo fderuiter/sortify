@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "ca1902e6c11e881a07d0288118de3c8985fc488ae00d4ad3587b9ae128c4399f"
+    "checksum": "26f16662869604128f12c82feea8452d46c7ef0edba960a4f84ad7567a72f697"
   },
   "classes": [
     {
@@ -130,6 +130,24 @@
         {
           "async": false,
           "decorators": [],
+          "name": "get_session_moves",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            }
+          ],
+          "returns": "List[Dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "get_sessions",
           "parameters": [
             {
@@ -230,6 +248,11 @@
               "annotation": "bool",
               "default": "False",
               "name": "ignore_missing"
+            },
+            {
+              "annotation": "Optional[Collection[Union[int, str]]]",
+              "default": "None",
+              "name": "selected_step_ids"
             }
           ],
           "returns": null
@@ -253,6 +276,11 @@
               "annotation": null,
               "default": "None",
               "name": "db"
+            },
+            {
+              "annotation": "Optional[Collection[Union[int, str]]]",
+              "default": "None",
+              "name": "selected_step_ids"
             }
           ],
           "returns": "int"

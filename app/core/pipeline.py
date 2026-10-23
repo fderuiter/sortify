@@ -146,7 +146,13 @@ class SortPipeline:
         )
         return SortResult.from_summary(summary, quarantine_dir)
 
-    def undo(self, session_id: str, *, ignore_missing: bool = False) -> SortResult:
+    def undo(
+        self,
+        session_id: str,
+        *,
+        ignore_missing: bool = False,
+        selected_step_ids: Optional[Any] = None,
+    ) -> SortResult:
         """Move a past sort's files back and return what happened (ADR 0006).
 
         ``moved`` lists each file put back where it came from, and ``failed``
@@ -172,13 +178,17 @@ class SortPipeline:
             for m in history.moves.list_moves(session_id)
             if m.state not in (INTENT, FAILED)
         ]
+        if selected_step_ids is not None:
+            sel_set = {str(x) for x in selected_step_ids}
+            moves = [m for m in moves if str(m.seq) in sel_set]
 
         result = SortResult(session_id=session_id)
         reason = "Not moved back"
         try:
-            result.summary["restored"] = history.rollback(
-                session_id, ignore_missing=ignore_missing
-            )
+            kwargs = {"ignore_missing": ignore_missing}
+            if selected_step_ids is not None:
+                kwargs["selected_step_ids"] = selected_step_ids
+            result.summary["restored"] = history.rollback(session_id, **kwargs)
         except (OSError, ValueError) as err:
             # Undo still moves back every file it can before it reports the rest.
             reason = str(err)
