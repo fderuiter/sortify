@@ -143,29 +143,29 @@ def test_background_downloader_sandboxing_maintained_on_advisory_failure():
 
     test_url = "https://huggingface.co/unreachable-org/model-x/resolve/main/model.onnx"
 
-    # Mock opener open to fail with network error
-    with patch("urllib.request.build_opener") as mock_opener_builder:
-        mock_opener = MagicMock()
-        mock_opener.open.side_effect = urllib.error.URLError("Network unreachable")
-        mock_opener_builder.return_value = mock_opener
+    was_sandboxed = getattr(_thread_local, "sandboxed", False)
+    was_reason = getattr(_thread_local, "reason", None)
+    _thread_local.sandboxed = True
+    _thread_local.reason = "test_advisory_failure"
 
-        with tempfile.TemporaryDirectory() as temp_dir:
-            model_dir = os.path.join(temp_dir, "test_model_target")
+    try:
+        # Mock opener open to fail with network error
+        with patch("urllib.request.build_opener") as mock_opener_builder:
+            mock_opener = MagicMock()
+            mock_opener.open.side_effect = urllib.error.URLError("Network unreachable")
+            mock_opener_builder.return_value = mock_opener
 
-            failed_event = pytest.importorskip("threading").Event()
-            captured_error = []
-            sandboxed_state = []
+            with tempfile.TemporaryDirectory() as temp_dir:
+                model_dir = os.path.join(temp_dir, "test_model_target")
 
-            def on_failure_cb(err):
-                captured_error.append(err)
-                sandboxed_state.append(getattr(_thread_local, "sandboxed", False))
-                failed_event.set()
+                failed_event = pytest.importorskip("threading").Event()
+                captured_error = []
+                sandboxed_state = []
 
-            was_sandboxed = getattr(_thread_local, "sandboxed", False)
-            was_reason = getattr(_thread_local, "reason", None)
-            try:
-                _thread_local.sandboxed = True
-                _thread_local.reason = "test_advisory_failure"
+                def on_failure_cb(err):
+                    captured_error.append(err)
+                    sandboxed_state.append(getattr(_thread_local, "sandboxed", False))
+                    failed_event.set()
 
                 t = run_background_download(
                     url=test_url,
@@ -179,12 +179,12 @@ def test_background_downloader_sandboxing_maintained_on_advisory_failure():
                 assert isinstance(captured_error[0], ModelVerificationError)
                 # Verify sandboxing was active (True) when failure callback executed
                 assert sandboxed_state[0] is True
-            finally:
-                _thread_local.sandboxed = was_sandboxed
-                if was_reason is not None:
-                    _thread_local.reason = was_reason
-                elif hasattr(_thread_local, "reason"):
-                    delattr(_thread_local, "reason")
+    finally:
+        _thread_local.sandboxed = was_sandboxed
+        if was_reason is not None:
+            _thread_local.reason = was_reason
+        elif hasattr(_thread_local, "reason"):
+            delattr(_thread_local, "reason")
 
 
 def test_offline_loader_aborts_on_network_failure_under_strict_policy():

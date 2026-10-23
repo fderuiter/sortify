@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "c2ede4a9e7613bbc54a3891ab0b0c39be169d770e1cd32cc10b959af4f1c5f58"
+    "checksum": "c9e46c1bb110c479867232a7bed2669406aa0529b6c4a1409d31ab3417db5d43"
   },
   "classes": [
     {
@@ -153,9 +153,52 @@
               "annotation": "Any",
               "default": null,
               "name": "settings"
+            },
+            {
+              "annotation": "Optional[Dict[str, str]]",
+              "default": "None",
+              "name": "resolutions"
+            },
+            {
+              "annotation": "str",
+              "default": "'keep_existing'",
+              "name": "default_strategy"
             }
           ],
           "returns": "Tuple[Dict[str, str], List[Dict[str, Any]]]"
+        }
+      ]
+    },
+    {
+      "class_name": "RuleConflict",
+      "decorators": [
+        "@dataclass"
+      ],
+      "methods": []
+    },
+    {
+      "class_name": "RuleConflictAnalyzer",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "analyze",
+          "parameters": [
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "import_result"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "settings"
+            }
+          ],
+          "returns": "List[RuleConflict]"
         }
       ]
     },
@@ -215,6 +258,19 @@
         }
       ],
       "returns": "BaseRuleImporter"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "normalize_rule_path",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "path_str"
+        }
+      ],
+      "returns": "str"
     }
   ]
 }
