@@ -35,6 +35,18 @@ EXEMPT_KEY_NAMES = {
     "key_type",
 }
 
+STATUS_COMPLETED = "COMPLETED"
+STATUS_RECONCILED_SUCCESS = "RECONCILED_SUCCESS"
+STATUS_ABORTED = "ABORTED"
+STATUS_FAILED_CONFLICT = "FAILED_CONFLICT"
+STATUS_FAILED_MISSING = "FAILED_MISSING"
+
+FAILURE_REASONS = {
+    STATUS_ABORTED: "Move aborted prior to physical file move; source file preserved at origin.",
+    STATUS_FAILED_CONFLICT: "Destination file exists and content differs from source; both files preserved.",
+    STATUS_FAILED_MISSING: "Neither source nor destination file exists.",
+}
+
 
 def sanitize_audit_metadata(metadata: Any) -> Dict[str, Any]:
     """Recursively sanitize metadata dictionary to exclude sensitive raw keys and secrets."""
@@ -204,25 +216,51 @@ class TransactionLedger:
                 (status, now, entry_id),
             )
 
-    def get_pending_entries(self, session_id: Optional[str] = None) -> List[Dict]:
-        """Retrieve incomplete transaction entries."""
+    def get_pending_entries(
+        self,
+        session_id: Optional[str] = None,
+        failed_only: bool = False,
+        aborted_only: bool = False,
+        include_failed: bool = False,
+    ) -> List[Dict]:
+        """Retrieve transaction entries filtered by status and session."""
         conn = get_db_connection(self.db_path)
+        conditions = []
+        params = []
+
+        if session_id:
+            conditions.append("session_id = ?")
+            params.append(session_id)
+
+        if aborted_only:
+            conditions.append("status = 'ABORTED'")
+        elif failed_only:
+            conditions.append(
+                "status IN ('ABORTED', 'FAILED_CONFLICT', 'FAILED_MISSING')"
+            )
+        elif include_failed:
+            conditions.append("status NOT IN ('COMPLETED', 'RECONCILED_SUCCESS')")
+        else:
+            conditions.append(
+                "status NOT IN ('COMPLETED', 'RECONCILED_SUCCESS', 'ABORTED', 'FAILED_CONFLICT', 'FAILED_MISSING')"
+            )
+
+        where_clause = " WHERE " + " AND ".join(conditions) if conditions else ""
+        sql = (
+            "SELECT entry_id, session_id, base_dir, source_path, dest_path, "
+            "source_rel_path, dest_rel_path, current_dest, file_hash, status, created_at, updated_at "
+            f"FROM transaction_ledger{where_clause}"
+        )
+
         with conn:
-            if session_id:
-                cur = conn.execute(
-                    "SELECT entry_id, session_id, base_dir, source_path, dest_path, "
-                    "source_rel_path, dest_rel_path, current_dest, file_hash, status, created_at, updated_at "
-                    "FROM transaction_ledger WHERE session_id = ? AND status != 'COMPLETED'",
-                    (session_id,),
-                )
-            else:
-                cur = conn.execute(
-                    "SELECT entry_id, session_id, base_dir, source_path, dest_path, "
-                    "source_rel_path, dest_rel_path, current_dest, file_hash, status, created_at, updated_at "
-                    "FROM transaction_ledger WHERE status != 'COMPLETED'"
-                )
+            cur = conn.execute(sql, params)
             columns = [col[0] for col in cur.description]
-            return [dict(zip(columns, row)) for row in cur.fetchall()]
+            entries = [dict(zip(columns, row)) for row in cur.fetchall()]
+            for entry in entries:
+                st = entry.get("status")
+                if st in FAILURE_REASONS:
+                    entry["failure_reason"] = FAILURE_REASONS[st]
+            return entries
 
     def purge_session(self, session_id: str):
         """Purge all entries for a finalized session once batch operations succeed."""
@@ -233,11 +271,78 @@ class TransactionLedger:
                 (session_id,),
             )
 
-    def purge_completed(self):
-        """Purge all COMPLETED entries from the ledger."""
+    def purge_completed(self, session_id: Optional[str] = None):
+        """Purge all COMPLETED and RECONCILED_SUCCESS entries from the ledger."""
         conn = get_db_connection(self.db_path)
         with conn:
-            conn.execute("DELETE FROM transaction_ledger WHERE status = 'COMPLETED'")
+            if session_id:
+                conn.execute(
+                    "DELETE FROM transaction_ledger WHERE session_id = ? AND status IN ('COMPLETED', 'RECONCILED_SUCCESS')",
+                    (session_id,),
+                )
+            else:
+                conn.execute(
+                    "DELETE FROM transaction_ledger WHERE status IN ('COMPLETED', 'RECONCILED_SUCCESS')"
+                )
+
+    def purge_failed(
+        self,
+        session_id: Optional[str] = None,
+        status_filter: Optional[str] = None,
+    ):
+        """Purge failed and aborted entries from the transaction ledger."""
+        conn = get_db_connection(self.db_path)
+        if status_filter:
+            statuses = (status_filter,)
+        else:
+            statuses = ("ABORTED", "FAILED_CONFLICT", "FAILED_MISSING")
+
+        placeholders = ", ".join("?" for _ in statuses)
+        params = list(statuses)
+
+        with conn:
+            if session_id:
+                sql = f"DELETE FROM transaction_ledger WHERE session_id = ? AND status IN ({placeholders})"
+                conn.execute(sql, [session_id] + params)
+            else:
+                sql = f"DELETE FROM transaction_ledger WHERE status IN ({placeholders})"
+                conn.execute(sql, params)
+
+    def _log_reconciliation_failure_audit(
+        self,
+        entry: Dict[str, Any],
+        status: str,
+        reason: str,
+        db: Any = None,
+    ):
+        """Log a structured failure audit event into key_audit_ledger."""
+        from app.core.crypto import CryptoManager
+
+        base_dir = entry.get("base_dir", "")
+        db_path = getattr(db, "db_path", None) or base_dir or self.db_path
+        try:
+            db_path_hash = CryptoManager.derive_db_hash(db_path)
+        except Exception:
+            db_path_hash = "system"
+
+        meta = {
+            "entry_id": entry.get("entry_id"),
+            "source_path": entry.get("source_path"),
+            "dest_path": entry.get("dest_path"),
+            "source_rel_path": entry.get("source_rel_path"),
+            "dest_rel_path": entry.get("dest_rel_path"),
+            "base_dir": base_dir,
+            "status": status,
+            "failure_reason": reason,
+        }
+
+        self.log_key_audit(
+            event_type="RECONCILIATION_FAILURE",
+            db_path_hash=db_path_hash,
+            session_id=entry.get("session_id", "system"),
+            status=status,
+            metadata=meta,
+        )
 
     def reconcile_incomplete_transactions(self, db=None) -> int:
         """Execute automated headless reconciliation scan for incomplete moves."""
@@ -280,7 +385,7 @@ class TransactionLedger:
                         logger.warning(
                             f"Reconciliation DB roll-forward failed for {entry_id}: {e}"
                         )
-                self.update_status(entry_id, "COMPLETED")
+                self.update_status(entry_id, STATUS_RECONCILED_SUCCESS)
                 reconciled_count += 1
 
             elif status == "PENDING" and source_exists and not dest_exists:
@@ -291,14 +396,17 @@ class TransactionLedger:
                             db.update_document_path(base_dir, source_rel, source_rel)
                     except Exception:
                         pass
-                self.update_status(entry_id, "COMPLETED")
+                terminal_status = STATUS_ABORTED
+                reason = FAILURE_REASONS[terminal_status]
+                self.update_status(entry_id, terminal_status)
+                self._log_reconciliation_failure_audit(
+                    entry, terminal_status, reason, db=db
+                )
                 reconciled_count += 1
 
             elif dest_exists and source_exists:
                 # The move never finished. Remove the destination only when it is
-                # the source itself (a hard link left by the link-then-unlink
-                # fallback) or a byte-identical copy; anything else may be a file
-                # that was already there, so keep both and report it.
+                # byte-identical or hard link; otherwise report conflict.
                 from app.core.resilient_file_ops import (
                     resilient_remove,
                     same_file_content,
@@ -307,27 +415,67 @@ class TransactionLedger:
                 if same_file_content(source_path, dest_path):
                     try:
                         resilient_remove(dest_path)
+                        terminal_status = STATUS_ABORTED
+                        reason = "Incomplete move left duplicate destination; duplicate removed and source preserved."
+                        if db:
+                            try:
+                                if hasattr(db, "update_document_path"):
+                                    db.update_document_path(
+                                        base_dir, source_rel, source_rel
+                                    )
+                            except Exception:
+                                pass
+                        self.update_status(entry_id, terminal_status)
+                        self._log_reconciliation_failure_audit(
+                            entry, terminal_status, reason, db=db
+                        )
                     except Exception as e:
                         logger.warning(
                             f"Could not remove duplicate destination during reconciliation: {e}"
+                        )
+                        terminal_status = STATUS_FAILED_CONFLICT
+                        reason = f"Reconciliation conflict for {entry_id}: duplicate destination could not be removed: {e}"
+                        if db:
+                            try:
+                                if hasattr(db, "update_document_path"):
+                                    db.update_document_path(
+                                        base_dir, source_rel, source_rel
+                                    )
+                            except Exception:
+                                pass
+                        self.update_status(entry_id, terminal_status)
+                        self._log_reconciliation_failure_audit(
+                            entry, terminal_status, reason, db=db
                         )
                 else:
                     logger.warning(
                         f"Reconciliation conflict for {entry_id}: {dest_path} differs "
                         f"from {source_path}; keeping both files."
                     )
-                if db:
-                    try:
-                        if hasattr(db, "update_document_path"):
-                            db.update_document_path(base_dir, source_rel, source_rel)
-                    except Exception:
-                        pass
-                self.update_status(entry_id, "COMPLETED")
+                    terminal_status = STATUS_FAILED_CONFLICT
+                    reason = FAILURE_REASONS[terminal_status]
+                    if db:
+                        try:
+                            if hasattr(db, "update_document_path"):
+                                db.update_document_path(
+                                    base_dir, source_rel, source_rel
+                                )
+                        except Exception:
+                            pass
+                    self.update_status(entry_id, terminal_status)
+                    self._log_reconciliation_failure_audit(
+                        entry, terminal_status, reason, db=db
+                    )
                 reconciled_count += 1
 
             else:
                 # Neither exists
-                self.update_status(entry_id, "COMPLETED")
+                terminal_status = STATUS_FAILED_MISSING
+                reason = FAILURE_REASONS[terminal_status]
+                self.update_status(entry_id, terminal_status)
+                self._log_reconciliation_failure_audit(
+                    entry, terminal_status, reason, db=db
+                )
                 reconciled_count += 1
 
         self.purge_completed()

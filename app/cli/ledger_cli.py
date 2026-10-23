@@ -57,6 +57,16 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
         default=None,
         help="Filter pending entries by session ID",
     )
+    p_status.add_argument(
+        "--failed",
+        action="store_true",
+        help="Filter for failed and aborted transaction records",
+    )
+    p_status.add_argument(
+        "--aborted",
+        action="store_true",
+        help="Filter specifically for aborted transaction records",
+    )
 
     p_reconcile = ledger_subparsers.add_parser(
         "reconcile",
@@ -78,6 +88,16 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
         "--completed",
         action="store_true",
         help="Purge all completed transaction records",
+    )
+    p_purge.add_argument(
+        "--failed",
+        action="store_true",
+        help="Purge all failed and aborted transaction records",
+    )
+    p_purge.add_argument(
+        "--aborted",
+        action="store_true",
+        help="Purge all aborted transaction records",
     )
     p_purge.add_argument(
         "--force",
@@ -141,7 +161,16 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
     try:
         if ledger_cmd == "status":
             session_id = getattr(args, "session_id", None)
-            pending = ledger.get_pending_entries(session_id=session_id)
+            failed_only = getattr(args, "failed", False)
+            aborted_only = getattr(args, "aborted", False)
+
+            include_failed = not failed_only and not aborted_only
+            pending = ledger.get_pending_entries(
+                session_id=session_id,
+                failed_only=failed_only,
+                aborted_only=aborted_only,
+                include_failed=include_failed,
+            )
 
             res = {
                 "status": "success",
@@ -154,13 +183,22 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
                 sys.stdout.flush()
             else:
                 if not quiet:
+                    if aborted_only:
+                        label = "aborted"
+                    elif failed_only:
+                        label = "failed or aborted"
+                    else:
+                        label = "pending, incomplete, or failed"
                     print(
-                        f"Transaction Ledger Status: {len(pending)} pending or incomplete entry(ies)."
+                        f"Transaction Ledger Status: {len(pending)} {label} entry(ies)."
                     )
                 for entry in pending:
+                    reason = entry.get("failure_reason")
+                    reason_str = f" | Reason: {reason}" if reason else ""
                     print(
                         f"  [{entry.get('status')}] {entry.get('entry_id')} | "
                         f"Source: {entry.get('source_path')} -> Dest: {entry.get('dest_path')}"
+                        f"{reason_str}"
                     )
 
             sys.exit(0)
@@ -196,12 +234,18 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
         elif ledger_cmd == "purge":
             session_id = getattr(args, "session_id", None)
             completed_only = getattr(args, "completed", False)
+            failed_only = getattr(args, "failed", False)
+            aborted_only = getattr(args, "aborted", False)
             force = getattr(args, "force", False)
 
-            if not completed_only and not session_id and not force:
+            has_explicit_filter = (
+                completed_only or failed_only or aborted_only or session_id is not None
+            )
+
+            if not has_explicit_filter and not force:
                 if not sys.stdin.isatty():
                     print(
-                        "Error: Purging all ledger records requires explicit confirmation. Use --force or --completed.",
+                        "Error: Purging transaction ledger records requires explicit flags or confirmation. Use --completed, --failed, --aborted, or --force.",
                         file=sys.stderr,
                     )
                     sys.exit(1)
@@ -212,16 +256,25 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
                     print("Purge operation cancelled.", file=sys.stderr)
                     sys.exit(1)
 
-            if session_id:
+            if failed_only:
+                ledger.purge_failed(session_id=session_id)
+            elif aborted_only:
+                ledger.purge_failed(session_id=session_id, status_filter="ABORTED")
+            elif completed_only:
+                ledger.purge_completed(session_id=session_id)
+            elif session_id:
                 ledger.purge_session(session_id)
             else:
                 ledger.purge_completed()
+                ledger.purge_failed()
 
             res = {
                 "status": "success",
                 "message": "Transaction ledger records purged successfully.",
                 "session_id": session_id,
-                "completed_only": completed_only or not session_id,
+                "completed_only": completed_only,
+                "failed_only": failed_only,
+                "aborted_only": aborted_only,
             }
 
             if is_json:

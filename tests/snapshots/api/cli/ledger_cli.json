@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "55707fb61c6c5e46703599ed25734b705910cf384e11deac2edd9614ac184cf9"
+    "checksum": "153590916d8410f08791c23744fc7eac7af8e1633bed27edf52a1528ca618a29"
   },
   "cli": [
     {
@@ -32,6 +32,28 @@
         "default": null,
         "help": "Filter pending entries by session ID",
         "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--failed"
+      ],
+      "caller": "p_status",
+      "keywords": {
+        "action": "store_true",
+        "help": "Filter for failed and aborted transaction records"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--aborted"
+      ],
+      "caller": "p_status",
+      "keywords": {
+        "action": "store_true",
+        "help": "Filter specifically for aborted transaction records"
       },
       "method": "add_argument"
     },
@@ -75,6 +97,28 @@
       "keywords": {
         "action": "store_true",
         "help": "Purge all completed transaction records"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--failed"
+      ],
+      "caller": "p_purge",
+      "keywords": {
+        "action": "store_true",
+        "help": "Purge all failed and aborted transaction records"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--aborted"
+      ],
+      "caller": "p_purge",
+      "keywords": {
+        "action": "store_true",
+        "help": "Purge all aborted transaction records"
       },
       "method": "add_argument"
     },
