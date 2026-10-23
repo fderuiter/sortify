@@ -18,6 +18,7 @@ Avoid naming tests after implementation details. This couples tests to the frame
 # Bad: coupled to argparse internals
 def test_subparsers_has_undo_action(): ...
 
+
 # Good: describes behavior, survives framework swaps
 def test_undo_latest_restores_last_session(): ...
 def test_sort_json_flag_prints_machine_readable_plan(): ...
@@ -36,11 +37,16 @@ Write tests that assert the current output of every command. These tests should 
 ```python
 import json, subprocess
 
+
 def run_cli(*args, cwd):
     return subprocess.run(
         ["uv", "run", "smart-autosorter", *args],
-        cwd=cwd, capture_output=True, text=True, timeout=120,
+        cwd=cwd,
+        capture_output=True,
+        text=True,
+        timeout=120,
     )
+
 
 def test_scan_json_lists_planned_moves(tmp_path, sample_corpus):
     proc = run_cli("scan", str(sample_corpus), "--json", cwd=tmp_path)

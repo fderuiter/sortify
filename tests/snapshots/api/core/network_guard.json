@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "eca153774bdb3d8fa7034d7c88d202f491791d7822affe156dabe86d6fe66f2b"
+    "checksum": "a735a86664c8aa7056023158564c87634da8e502701665dc94a6107c6e72c4dc"
   },
   "classes": [],
   "functions": [
@@ -173,6 +173,21 @@
           "annotation": null,
           "default": null,
           "name": "**kwargs"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [
+        "@contextmanager"
+      ],
+      "name": "unblock_external_network",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": "'external request'",
+          "name": "reason"
         }
       ],
       "returns": null

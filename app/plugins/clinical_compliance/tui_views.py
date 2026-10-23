@@ -211,6 +211,7 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
 
         try:
             if not src or not os.path.exists(src):
+
                 def notify_src_err() -> None:
                     log_w.write_line(
                         f"Error: Source directory does not exist. [Help: {help_url}]"

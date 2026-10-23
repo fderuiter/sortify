@@ -587,4 +587,3 @@ def test_dropzone_worker_total_failure_and_cleanup(mocker, tmp_path):
     assert res["total_count"] == 2
     assert len(res["items"]) == 0
     assert len(res["failed_items"]) == 2
-
