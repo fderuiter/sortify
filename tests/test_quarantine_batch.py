@@ -31,7 +31,7 @@ def test_db_and_dir():
                 db.close()
             if hasattr(db, "worker") and hasattr(db.worker, "stop"):
                 db.worker.stop()
-            clear_connection_cache(only_current_and_inactive=False)
+            clear_connection_cache()
 
 
 def stage_dummy_file(
