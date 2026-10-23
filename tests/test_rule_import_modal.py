@@ -67,71 +67,70 @@ def test_rule_import_modal_parsing_and_merging(tmp_path):
         Path(temp_path).unlink(missing_ok=True)
 
 
-def test_rule_import_modal_conflict_preview_and_resolution():
+def test_rule_import_modal_conflict_preview_and_resolution(tmp_path):
     """Verify RuleImportModal displays conflicts and supports interactive resolution selection."""
 
     from app.core.rule_importers import ImportResult, RuleConflictAnalyzer
 
-    with tempfile.NamedTemporaryFile(suffix=".json") as sf:
-        settings = AppSettings(filepath=sf.name)
-        settings.KEYWORD_RULES = {"invoice": "Existing/Invoices"}
-        settings.POLICIES = [
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    settings.KEYWORD_RULES = {"invoice": "Existing/Invoices"}
+    settings.POLICIES = [
+        {
+            "type": "pattern",
+            "expression": "*.pdf",
+            "target_path": "Existing/PDFs",
+            "priority": 90,
+        }
+    ]
+
+    modal = RuleImportModal(settings)
+
+    res = ImportResult(
+        keyword_rules={"invoice": "Imported/Invoices"},
+        policies=[
             {
                 "type": "pattern",
                 "expression": "*.pdf",
-                "target_path": "Existing/PDFs",
-                "priority": 90,
+                "target_path": "Imported/PDFs",
+                "priority": 75,
             }
-        ]
+        ],
+        source_format="Hazel",
+    )
 
-        modal = RuleImportModal(settings)
+    modal.current_result = res
+    modal.conflicts = RuleConflictAnalyzer.analyze(res, settings)
+    modal.conflict_resolutions = {
+        c.identifier: c.resolution for c in modal.conflicts
+    }
 
-        res = ImportResult(
-            keyword_rules={"invoice": "Imported/Invoices"},
-            policies=[
-                {
-                    "type": "pattern",
-                    "expression": "*.pdf",
-                    "target_path": "Imported/PDFs",
-                    "priority": 75,
-                }
-            ],
-            source_format="Hazel",
-        )
+    assert len(modal.conflicts) == 2
 
-        modal.current_result = res
-        modal.conflicts = RuleConflictAnalyzer.analyze(res, settings)
-        modal.conflict_resolutions = {
-            c.identifier: c.resolution for c in modal.conflicts
-        }
+    # 1. Test bulk resolution strategy change
+    class DummySelectEvent:
+        value = "overwrite"
 
-        assert len(modal.conflicts) == 2
+    modal._on_bulk_strategy_changed(DummySelectEvent())
+    assert modal.conflict_resolutions["invoice"] == "overwrite"
+    assert modal.conflict_resolutions["*.pdf (pattern)"] == "overwrite"
 
-        # 1. Test bulk resolution strategy change
-        class DummySelectEvent:
-            value = "overwrite"
+    # 2. Test individual conflict selection row toggle
+    class DummyRowEvent:
+        row_key = type("RowKey", (), {"value": "invoice"})()
 
-        modal._on_bulk_strategy_changed(DummySelectEvent())
-        assert modal.conflict_resolutions["invoice"] == "overwrite"
-        assert modal.conflict_resolutions["*.pdf (pattern)"] == "overwrite"
+    # Toggling 'invoice' row should cycle overwrite -> skip_conflicting
+    modal._on_conflict_selected(DummyRowEvent())
+    assert modal.conflict_resolutions["invoice"] == "skip_conflicting"
+    assert modal.conflict_resolutions["*.pdf (pattern)"] == "overwrite"
 
-        # 2. Test individual conflict selection row toggle
-        class DummyRowEvent:
-            row_key = type("RowKey", (), {"value": "invoice"})()
+    # 3. Perform merge with chosen resolutions
+    modal.action_merge_rules()
 
-        # Toggling 'invoice' row should cycle overwrite -> skip_conflicting
-        modal._on_conflict_selected(DummyRowEvent())
-        assert modal.conflict_resolutions["invoice"] == "skip_conflicting"
-        assert modal.conflict_resolutions["*.pdf (pattern)"] == "overwrite"
-
-        # 3. Perform merge with chosen resolutions
-        modal.action_merge_rules()
-
-        # invoice was set to skip_conflicting -> keeps Existing/Invoices
-        assert settings.KEYWORD_RULES["invoice"] == "Existing/Invoices"
-        # *.pdf policy was set to overwrite -> updated to Imported/PDFs
-        pdf_policy = next(p for p in settings.POLICIES if p["expression"] == "*.pdf")
-        assert pdf_policy["target_path"] == "Imported/PDFs"
+    # invoice was set to skip_conflicting -> keeps Existing/Invoices
+    assert settings.KEYWORD_RULES["invoice"] == "Existing/Invoices"
+    # *.pdf policy was set to overwrite -> updated to Imported/PDFs
+    pdf_policy = next(p for p in settings.POLICIES if p["expression"] == "*.pdf")
+    assert pdf_policy["target_path"] == "Imported/PDFs"
 
 
 def test_rule_import_modal_tagspaces_parsing_and_merging(tmp_path):
