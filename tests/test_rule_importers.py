@@ -18,108 +18,106 @@ from app.core.rule_importers import (
 )
 
 
-def test_rule_conflict_analyzer():
+def test_rule_conflict_analyzer(tmp_path):
     """Verify RuleConflictAnalyzer detects keyword and policy target path collisions."""
-    with tempfile.NamedTemporaryFile(suffix=".json") as f:
-        settings = AppSettings(filepath=f.name)
-        settings.KEYWORD_RULES = {
-            "invoice": "Local/Invoices",
-            "receipt": "Local/Receipts",
+    settings = AppSettings(filepath=str(tmp_path / "settings_analyzer.json"))
+    settings.KEYWORD_RULES = {
+        "invoice": "Local/Invoices",
+        "receipt": "Local/Receipts",
+    }
+    settings.POLICIES = [
+        {
+            "type": "pattern",
+            "expression": "*.pdf",
+            "target_path": "Local/PDFs",
+            "priority": 90,
         }
-        settings.POLICIES = [
+    ]
+
+    # 1. Incoming result with conflicts and non-conflicts
+    import_res = ImportResult(
+        keyword_rules={
+            "invoice": "Hazel/Invoices",  # Differing target -> CONFLICT
+            "receipt": "Local/Receipts",  # Same target -> NO CONFLICT
+            "tax": "Hazel/Taxes",  # New keyword -> NO CONFLICT
+        },
+        policies=[
             {
                 "type": "pattern",
                 "expression": "*.pdf",
-                "target_path": "Local/PDFs",
-                "priority": 90,
-            }
-        ]
-
-        # 1. Incoming result with conflicts and non-conflicts
-        import_res = ImportResult(
-            keyword_rules={
-                "invoice": "Hazel/Invoices",  # Differing target -> CONFLICT
-                "receipt": "Local/Receipts",  # Same target -> NO CONFLICT
-                "tax": "Hazel/Taxes",  # New keyword -> NO CONFLICT
+                "target_path": "Hazel/PDFs",  # Differing target -> CONFLICT
+                "priority": 75,
             },
-            policies=[
-                {
-                    "type": "pattern",
-                    "expression": "*.pdf",
-                    "target_path": "Hazel/PDFs",  # Differing target -> CONFLICT
-                    "priority": 75,
-                },
-                {
-                    "type": "pattern",
-                    "expression": "*.docx",  # New policy -> NO CONFLICT
-                    "target_path": "Hazel/Docs",
-                    "priority": 75,
-                },
-            ],
-        )
+            {
+                "type": "pattern",
+                "expression": "*.docx",  # New policy -> NO CONFLICT
+                "target_path": "Hazel/Docs",
+                "priority": 75,
+            },
+        ],
+    )
 
-        conflicts = RuleConflictAnalyzer.analyze(import_res, settings)
-        assert len(conflicts) == 2
+    conflicts = RuleConflictAnalyzer.analyze(import_res, settings)
+    assert len(conflicts) == 2
 
-        kw_conflict = next(c for c in conflicts if c.rule_type == "keyword")
-        assert kw_conflict.identifier == "invoice"
-        assert kw_conflict.existing_target == "Local/Invoices"
-        assert kw_conflict.imported_target == "Hazel/Invoices"
+    kw_conflict = next(c for c in conflicts if c.rule_type == "keyword")
+    assert kw_conflict.identifier == "invoice"
+    assert kw_conflict.existing_target == "Local/Invoices"
+    assert kw_conflict.imported_target == "Hazel/Invoices"
 
-        pol_conflict = next(c for c in conflicts if c.rule_type == "policy")
-        assert pol_conflict.identifier == "*.pdf (pattern)"
-        assert pol_conflict.existing_target == "Local/PDFs"
-        assert pol_conflict.imported_target == "Hazel/PDFs"
+    pol_conflict = next(c for c in conflicts if c.rule_type == "policy")
+    assert pol_conflict.identifier == "*.pdf (pattern)"
+    assert pol_conflict.existing_target == "Local/PDFs"
+    assert pol_conflict.imported_target == "Hazel/PDFs"
 
 
-def test_rule_conflict_resolutions_overwrite_and_skip():
+def test_rule_conflict_resolutions_overwrite_and_skip(tmp_path):
     """Verify merge_into_settings respects overwrite and granular resolution choices."""
-    with tempfile.NamedTemporaryFile(suffix=".json") as f:
-        settings = AppSettings(filepath=f.name)
-        settings.KEYWORD_RULES = {
-            "invoice": "Local/Invoices",
-            "statement": "Local/Statements",
+    settings = AppSettings(filepath=str(tmp_path / "settings_resolutions.json"))
+    settings.KEYWORD_RULES = {
+        "invoice": "Local/Invoices",
+        "statement": "Local/Statements",
+    }
+    settings.POLICIES = [
+        {
+            "type": "pattern",
+            "expression": "*.pdf",
+            "target_path": "Local/PDFs",
+            "priority": 90,
         }
-        settings.POLICIES = [
+    ]
+
+    import_res = ImportResult(
+        keyword_rules={
+            "invoice": "Hazel/Invoices",
+            "statement": "Hazel/Statements",
+        },
+        policies=[
             {
                 "type": "pattern",
                 "expression": "*.pdf",
-                "target_path": "Local/PDFs",
-                "priority": 90,
+                "target_path": "Hazel/PDFs",
+                "priority": 75,
             }
-        ]
+        ],
+    )
 
-        import_res = ImportResult(
-            keyword_rules={
-                "invoice": "Hazel/Invoices",
-                "statement": "Hazel/Statements",
-            },
-            policies=[
-                {
-                    "type": "pattern",
-                    "expression": "*.pdf",
-                    "target_path": "Hazel/PDFs",
-                    "priority": 75,
-                }
-            ],
-        )
+    # Apply custom resolutions: invoice -> overwrite, statement -> keep_existing, *.pdf (pattern) -> overwrite
+    resolutions = {
+        "invoice": "overwrite",
+        "statement": "keep_existing",
+        "*.pdf (pattern)": "overwrite",
+    }
 
-        # Apply custom resolutions: invoice -> overwrite, statement -> keep_existing, *.pdf (pattern) -> overwrite
-        resolutions = {
-            "invoice": "overwrite",
-            "statement": "keep_existing",
-            "*.pdf (pattern)": "overwrite",
-        }
+    kw, pol = import_res.merge_into_settings(settings, resolutions=resolutions)
 
-        kw, pol = import_res.merge_into_settings(settings, resolutions=resolutions)
-
-        # invoice overwritten
-        assert kw["invoice"] == "Hazel/Invoices"
-        # statement kept as local
-        assert kw["statement"] == "Local/Statements"
-        # *.pdf policy overwritten to Hazel/PDFs
-        pdf_policy = next(p for p in pol if p["expression"] == "*.pdf")
-        assert pdf_policy["target_path"] == "Hazel/PDFs"
+    # invoice overwritten
+    assert kw["invoice"] == "Hazel/Invoices"
+    # statement kept as local
+    assert kw["statement"] == "Local/Statements"
+    # *.pdf policy overwritten to Hazel/PDFs
+    pdf_policy = next(p for p in pol if p["expression"] == "*.pdf")
+    assert pdf_policy["target_path"] == "Hazel/PDFs"
 
 
 def test_hazel_rule_importer_plist():
