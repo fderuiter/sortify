@@ -208,7 +208,14 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 pass
 
         if selected_packs:
-            apply_starter_templates(self.settings, selected_packs)
+            try:
+                apply_starter_templates(self.settings, selected_packs)
+            except Exception as exc:
+                logger.error(f"Failed to apply starter templates: {exc}")
+                err_msg = f"Failed to apply starter rule template pack(s): {exc}"
+                self.announce(err_msg)
+                if hasattr(self.app, "notify"):
+                    self.app.notify(err_msg, severity="error")
 
         if hasattr(self.settings, "_save"):
             try:

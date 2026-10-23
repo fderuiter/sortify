@@ -222,10 +222,6 @@ def apply_starter_templates(
     setattr(settings, "POLICIES", new_policies)
 
     if hasattr(settings, "_save"):
-        try:
-            settings._save()
-        except Exception:
-            # The rules still apply for this session; only persisting them failed.
-            logger.warning("Could not save the applied rule template.", exc_info=True)
+        settings._save()
 
     return new_keywords, new_policies
