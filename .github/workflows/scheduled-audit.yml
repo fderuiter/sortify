@@ -6,7 +6,8 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: read
+  contents: write
+  pull-requests: write
   issues: write
 
 jobs:
@@ -19,6 +20,11 @@ jobs:
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
+
+      - name: Configure Git Author
+        run: |
+          git config --global user.name "github-actions[bot]"
+          git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Install uv
         uses: astral-sh/setup-uv@1c37ad07a6a961277cf70c0d37d6f313000f5884 # v10.3.0
@@ -35,11 +41,14 @@ jobs:
         run: |
           uv sync --frozen --all-groups
 
-      - name: Run Dependency Audit
+      - name: Run Dependency Audit & CVE Patch Generator
         id: audit
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
         run: |
           set +e
-          uv audit --color never --ignore-until-fixed GHSA-w8v5-vhqr-4h9v 2>&1 | tee audit_report.txt
+          uv run python scripts/remediate_vulnerabilities.py 2>&1 | tee audit_report.txt
           EXIT_CODE=${PIPESTATUS[0]}
           if [ "$EXIT_CODE" -ne 0 ]; then
             echo "Vulnerabilities detected by uv audit."
