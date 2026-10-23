@@ -607,11 +607,28 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
         except Exception:
             pass
 
-        new_kw, new_pol = self.current_result.merge_into_settings(
-            self.settings,
-            resolutions=self.conflict_resolutions,
-            default_strategy=bulk_strategy,
-        )
+        try:
+            new_kw, new_pol = self.current_result.merge_into_settings(
+                self.settings,
+                resolutions=self.conflict_resolutions,
+                default_strategy=bulk_strategy,
+            )
+        except Exception as exc:
+            err_msg = f"Failed to save imported rules: {exc}"
+            self.announce(err_msg)
+            try:
+                from app.ui.notifications import notify
+
+                notify(err_msg, type="error")
+            except Exception:
+                pass
+            try:
+                if hasattr(self.app, "notify"):
+                    self.app.notify(err_msg, severity="error")
+            except Exception:
+                pass
+            return
+
         msg = f"Merged imported rules: {len(new_kw)} keyword rules and {len(new_pol)} policies."
         self.announce(msg)
         try:

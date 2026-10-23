@@ -298,58 +298,58 @@ def test_get_rule_importer_factory():
         get_rule_importer("/tmp/invalid_file.xyz_unknown")
 
 
-def test_non_destructive_rule_merging():
+def test_non_destructive_rule_merging(tmp_path):
     """Verify merge logic preserves pre-existing custom user rules."""
-    with tempfile.NamedTemporaryFile(suffix=".json") as f:
-        settings = AppSettings(filepath=f.name)
-        settings.KEYWORD_RULES = {"invoice": "MyCustom/Invoices"}
-        settings.POLICIES = [
+    settings_file = str(tmp_path / "settings.json")
+    settings = AppSettings(filepath=settings_file)
+    settings.KEYWORD_RULES = {"invoice": "MyCustom/Invoices"}
+    settings.POLICIES = [
+        {
+            "type": "pattern",
+            "expression": "*.pdf",
+            "target_path": "MyCustom/PDFs",
+            "priority": 90,
+            "halting": False,
+        }
+    ]
+
+    import_res = ImportResult(
+        keyword_rules={
+            "invoice": "Hazel/Invoices",  # Duplicate key -> should NOT overwrite
+            "statement": "Financial/Statements",  # New key -> should be added
+        },
+        policies=[
             {
                 "type": "pattern",
-                "expression": "*.pdf",
-                "target_path": "MyCustom/PDFs",
-                "priority": 90,
+                "expression": "*.pdf",  # Duplicate expression -> should NOT be duplicated
+                "target_path": "Hazel/PDFs",
+                "priority": 75,
                 "halting": False,
-            }
-        ]
-
-        import_res = ImportResult(
-            keyword_rules={
-                "invoice": "Hazel/Invoices",  # Duplicate key -> should NOT overwrite
-                "statement": "Financial/Statements",  # New key -> should be added
             },
-            policies=[
-                {
-                    "type": "pattern",
-                    "expression": "*.pdf",  # Duplicate expression -> should NOT be duplicated
-                    "target_path": "Hazel/PDFs",
-                    "priority": 75,
-                    "halting": False,
-                },
-                {
-                    "type": "pattern",
-                    "expression": "*.docx",  # New policy -> should be added
-                    "target_path": "Hazel/Docs",
-                    "priority": 75,
-                    "halting": False,
-                },
-            ],
-        )
+            {
+                "type": "pattern",
+                "expression": "*.docx",  # New policy -> should be added
+                "target_path": "Hazel/Docs",
+                "priority": 75,
+                "halting": False,
+            },
+        ],
+    )
 
-        kw, pol = import_res.merge_into_settings(settings)
+    kw, pol = import_res.merge_into_settings(settings)
 
-        # Pre-existing custom rule MUST be preserved
-        assert kw["invoice"] == "MyCustom/Invoices"
-        assert kw["statement"] == "Financial/Statements"
+    # Pre-existing custom rule MUST be preserved
+    assert kw["invoice"] == "MyCustom/Invoices"
+    assert kw["statement"] == "Financial/Statements"
 
-        # Duplicate policy expression MUST NOT be duplicated
-        pdf_policies = [p for p in pol if p["expression"] == "*.pdf"]
-        assert len(pdf_policies) == 1
-        assert pdf_policies[0]["target_path"] == "MyCustom/PDFs"
+    # Duplicate policy expression MUST NOT be duplicated
+    pdf_policies = [p for p in pol if p["expression"] == "*.pdf"]
+    assert len(pdf_policies) == 1
+    assert pdf_policies[0]["target_path"] == "MyCustom/PDFs"
 
-        # New policy MUST be added
-        docx_policies = [p for p in pol if p["expression"] == "*.docx"]
-        assert len(docx_policies) == 1
+    # New policy MUST be added
+    docx_policies = [p for p in pol if p["expression"] == "*.docx"]
+    assert len(docx_policies) == 1
 
 
 def test_resilience_malformed_files():
@@ -492,3 +492,23 @@ def test_tagspaces_rule_importer_smart_rules():
         assert any("script" in w.lower() for w in res.warnings)
     finally:
         Path(temp_path).unlink(missing_ok=True)
+
+
+def test_merge_into_settings_propagates_save_exception():
+    """Verify ImportResult.merge_into_settings propagates save exceptions from settings._save()."""
+    import pytest
+
+    from app.core.rule_importers import ImportResult
+
+    class FailingSettings:
+        KEYWORD_RULES = {}
+        POLICIES = []
+
+        def _save(self):
+            raise OSError("Write permission denied")
+
+    res = ImportResult(keyword_rules={"test": "Folder"})
+    settings = FailingSettings()
+
+    with pytest.raises(OSError, match="Write permission denied"):
+        res.merge_into_settings(settings)

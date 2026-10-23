@@ -720,6 +720,7 @@ class AppSettings:
                 json.dump(data, f, indent=4)
         except Exception as e:
             logging.error(f"Failed to save settings: {e}", exc_info=True)
+            raise
 
     def revalidate(self) -> bool:
         """Re-check all current settings values against JSON schema and Pydantic validation.

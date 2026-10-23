@@ -529,7 +529,8 @@ def test_app_settings_save_failure(tmp_path, caplog):
 
     with patch("builtins.open", mock_open_write_fail):
         with caplog.at_level(logging.ERROR):
-            app_settings._save()
+            with pytest.raises(PermissionError, match="Write permission denied"):
+                app_settings._save()
     assert "Failed to save settings: Write permission denied" in caplog.text
 
 

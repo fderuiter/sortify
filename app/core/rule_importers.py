@@ -233,12 +233,7 @@ class ImportResult:
         setattr(settings, "POLICIES", new_policies)
 
         if hasattr(settings, "_save"):
-            try:
-                settings._save()
-            except Exception as e:
-                logger.warning(
-                    f"Save trigger post rule import failed: {e}", exc_info=True
-                )
+            settings._save()
 
         return new_keywords, new_policies
 
