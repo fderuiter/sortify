@@ -358,3 +358,60 @@ def test_main_derives_dependabot_update_type_from_title(
     main()
     result = json.loads(capsys.readouterr().out)
     assert risk_label in result["labels_to_add"]
+
+
+def test_automated_security_patch_minor_is_eligible():
+    meta = PRMetadata(
+        pr_number=201,
+        title="[Security] Patch certifi from 2026.7.22 to 2026.10.19",
+        author="github-actions[bot]",
+        is_security_patch=True,
+        labels=["security", "dependencies", "automerge"],
+        changed_files=["uv.lock"],
+        additions=10,
+        deletions=10,
+        dependency_update_type="minor",
+    )
+    res = classify_pr(meta)
+    assert res.eligible is True
+    assert res.risk_level == "low"
+    assert "automerge:eligible" in res.labels_to_add
+    assert "risk:low" in res.labels_to_add
+
+
+def test_automated_security_patch_major_is_blocked():
+    meta = PRMetadata(
+        pr_number=202,
+        title="[Security] Patch requests from 2.8.0 to 3.0.0",
+        author="github-actions[bot]",
+        is_security_patch=True,
+        labels=["security", "dependencies", "automerge"],
+        changed_files=["uv.lock"],
+        additions=15,
+        deletions=15,
+        dependency_update_type="major",
+    )
+    res = classify_pr(meta)
+    assert res.eligible is False
+    assert res.risk_level == "high"
+    assert "automerge:blocked" in res.labels_to_add
+    assert any("Major dependency upgrades" in r for r in res.blocking_reasons)
+
+
+def test_automated_security_patch_sensitive_path_is_blocked():
+    meta = PRMetadata(
+        pr_number=203,
+        title="[Security] Patch certifi from 2026.7.22 to 2026.10.19",
+        author="github-actions[bot]",
+        is_security_patch=True,
+        labels=["security", "dependencies", "automerge"],
+        changed_files=["uv.lock", "app/core/crypto.py"],
+        additions=20,
+        deletions=10,
+        dependency_update_type="minor",
+    )
+    res = classify_pr(meta)
+    assert res.eligible is False
+    assert res.risk_level == "sensitive"
+    assert "risk:sensitive" in res.labels_to_add
+    assert "automerge:blocked" in res.labels_to_add

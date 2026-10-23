@@ -4,6 +4,7 @@ import os
 from unittest import mock
 
 import pytest
+from textual.widgets import Button, Select
 
 from app.config import AppSettings
 from app.core.verifier import VerificationEngine
@@ -249,3 +250,114 @@ async def test_tui_action_execute_sort_intercepts_duplicates(tmp_path):
             assert plan["doc1.pdf"]["target_filename"] == "report.pdf"
             assert plan["doc2.pdf"]["target_filename"] == "report_1.pdf"
             mock_worker.assert_called_once()
+
+
+@pytest.mark.anyio
+async def test_duplicate_review_modal_batch_apply_all_skip():
+    """Test batch action bar applies chosen resolution action to all duplicate groups."""
+    groups = [
+        {
+            "group_id": "group_1",
+            "target_filename": "report1.pdf",
+            "target_dir": "/tmp/output",
+            "items": [{"source_path": "/tmp/a.pdf"}, {"source_path": "/tmp/b.pdf"}],
+            "default_action": "rename",
+        },
+        {
+            "group_id": "group_2",
+            "target_filename": "report2.pdf",
+            "target_dir": "/tmp/output",
+            "items": [{"source_path": "/tmp/c.pdf"}, {"source_path": "/tmp/d.pdf"}],
+            "default_action": "rename",
+        },
+        {
+            "group_id": "group_3",
+            "target_filename": "report3.pdf",
+            "target_dir": "/tmp/output",
+            "items": [{"source_path": "/tmp/e.pdf"}, {"source_path": "/tmp/f.pdf"}],
+            "default_action": "rename",
+        },
+    ]
+
+    modal = DuplicateReviewModal(duplicate_groups=groups)
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    app = AutoSorterTUI(settings=settings)
+
+    async with app.run_test() as pilot:
+        await app.push_screen(modal)
+        await pilot.pause()
+
+        # Initial default selections
+        assert modal.user_selections == {
+            "group_1": "rename",
+            "group_2": "rename",
+            "group_3": "rename",
+        }
+
+        # Select 'skip' in batch action dropdown and press 'Apply to All'
+        batch_select = modal.query_one("#batch-action-select", Select)
+        batch_select.value = "skip"
+        await pilot.pause()
+
+        apply_btn = modal.query_one("#btn-apply-all", Button)
+        await pilot.click("#btn-apply-all")
+        await pilot.pause()
+
+        # Verify all group dropdowns and user_selections state updated to 'skip'
+        assert modal.user_selections == {
+            "group_1": "skip",
+            "group_2": "skip",
+            "group_3": "skip",
+        }
+        for gid in ["group_1", "group_2", "group_3"]:
+            assert modal.query_one(f"#select-action-{gid}", Select).value == "skip"
+
+
+@pytest.mark.anyio
+async def test_duplicate_review_modal_batch_apply_with_individual_override():
+    """Test batch action application followed by individual group dropdown override."""
+    groups = [
+        {
+            "group_id": "group_1",
+            "target_filename": "report1.pdf",
+            "target_dir": "/tmp/output",
+            "items": [{"source_path": "/tmp/a.pdf"}, {"source_path": "/tmp/b.pdf"}],
+            "default_action": "rename",
+        },
+        {
+            "group_id": "group_2",
+            "target_filename": "report2.pdf",
+            "target_dir": "/tmp/output",
+            "items": [{"source_path": "/tmp/c.pdf"}, {"source_path": "/tmp/d.pdf"}],
+            "default_action": "rename",
+        },
+    ]
+
+    modal = DuplicateReviewModal(duplicate_groups=groups)
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    app = AutoSorterTUI(settings=settings)
+
+    async with app.run_test() as pilot:
+        await app.push_screen(modal)
+        await pilot.pause()
+
+        # Apply 'keep' to all
+        modal.query_one("#batch-action-select", Select).value = "keep"
+        await pilot.click("#btn-apply-all")
+        await pilot.pause()
+
+        assert modal.user_selections == {"group_1": "keep", "group_2": "keep"}
+
+        # Override group_2 to 'skip'
+        modal.query_one("#select-action-group_2", Select).value = "skip"
+        await pilot.pause()
+
+        # Verify group_1 remains 'keep' while group_2 is 'skip'
+        assert modal.user_selections == {"group_1": "keep", "group_2": "skip"}
+
+        # Confirm modal
+        modal.action_confirm()
+        await pilot.pause()
+        assert modal.user_selections == {"group_1": "keep", "group_2": "skip"}
