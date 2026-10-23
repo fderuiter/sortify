@@ -162,6 +162,7 @@ def test_background_downloader_sandboxing_maintained_on_advisory_failure():
                 failed_event.set()
 
             was_sandboxed = getattr(_thread_local, "sandboxed", False)
+            old_reason = getattr(_thread_local, "reason", "")
             try:
                 # Set sandboxed = True on caller thread context
                 _thread_local.sandboxed = True
@@ -180,6 +181,7 @@ def test_background_downloader_sandboxing_maintained_on_advisory_failure():
                 assert sandboxed_state[0] is True
             finally:
                 _thread_local.sandboxed = was_sandboxed
+                _thread_local.reason = old_reason
 
 
 def test_offline_loader_aborts_on_network_failure_under_strict_policy():
