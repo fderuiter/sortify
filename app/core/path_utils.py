@@ -825,5 +825,3 @@ def is_junction_entry(entry) -> bool:
         return os.path.isjunction(path)
     except (AttributeError, OSError):
         return False
-
-

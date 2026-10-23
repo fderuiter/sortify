@@ -1,14 +1,14 @@
 """Rule template gallery and rule import dialogs."""
 
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, DataTable, Input, Label
+from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select
 
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
@@ -286,6 +286,8 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
         super().__init__()
         self.settings = settings
         self.current_result: Optional[Any] = None
+        self.conflicts: List[Any] = []
+        self.conflict_resolutions: Dict[str, str] = {}
 
     def compose(self) -> ComposeResult:
         """Compose rule import modal children."""
@@ -318,8 +320,42 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
             )
 
             with Vertical(id="container-rule-preview", classes="preview-card"):
+                yield Label(
+                    "Imported Keywords:",
+                    classes="status-text",
+                    id="lbl-imported-keywords",
+                )
                 yield DataTable(id="dt-imported-keywords")
+                yield Label(
+                    "Imported Policies:",
+                    classes="status-text",
+                    id="lbl-imported-policies",
+                )
                 yield DataTable(id="dt-imported-policies")
+
+                with Vertical(id="container-conflicts-section"):
+                    yield Label(
+                        "⚠️ Detected Rule Conflicts:",
+                        classes="warning-text",
+                        id="lbl-conflict-header",
+                    )
+                    with Horizontal(classes="input-row", id="row-bulk-strategy"):
+                        yield Label("Bulk Resolution Strategy: ")
+                        yield Select(
+                            [
+                                ("Keep Existing (Skip Conflicts)", "keep_existing"),
+                                ("Overwrite Existing Rules", "overwrite"),
+                                ("Skip Conflicting Rules", "skip_conflicting"),
+                            ],
+                            value="keep_existing",
+                            id="select-bulk-conflict-strategy",
+                            allow_blank=False,
+                        )
+                    yield Label(
+                        "Conflict Resolution Table (Click or press Space/Enter on a row to cycle individual resolution):"
+                    )
+                    yield DataTable(id="dt-rule-conflicts")
+
                 yield Vertical(id="container-import-warnings")
 
             with Horizontal(classes="button-row"):
@@ -333,7 +369,7 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
                     variant="primary",
                     disabled=True,
                 )
-                btn_merge.tooltip = "Safely merge extracted rules into settings without overwriting custom rules"
+                btn_merge.tooltip = "Safely merge extracted rules into settings according to resolution choices"
                 yield btn_merge
 
     def on_mount(self) -> None:
@@ -348,9 +384,26 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
             dt_pol.add_columns(
                 "Type", "Expression / Pattern", "Target Path", "Priority"
             )
+
+            dt_conf = self.query_one("#dt-rule-conflicts", DataTable)
+            dt_conf.add_columns(
+                "Rule Type",
+                "Identifier",
+                "Existing Path",
+                "Imported Path",
+                "Resolution",
+            )
         except Exception:
             pass
         self.announce("Opened external rule importer modal.")
+
+    def _format_resolution_label(self, strategy: str) -> str:
+        """Format resolution strategy code for table display."""
+        if strategy == "overwrite":
+            return "Overwrite"
+        elif strategy == "skip_conflicting":
+            return "Skip Conflicting"
+        return "Keep Existing"
 
     @on(Button.Pressed, "#btn-parse-rule-file")
     @on(Input.Submitted, "#input-rule-file-path")
@@ -371,10 +424,16 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
             return
 
         try:
-            from app.core.rule_importers import get_rule_importer
+            from app.core.rule_importers import RuleConflictAnalyzer, get_rule_importer
 
             importer = get_rule_importer(p)
             self.current_result = importer.parse_file(p)
+            self.conflicts = RuleConflictAnalyzer.analyze(
+                self.current_result, self.settings
+            )
+            self.conflict_resolutions = {
+                c.identifier: c.resolution for c in self.conflicts
+            }
         except Exception as exc:
             lbl_status.update(f"Error parsing rule package: {exc}")
             self.announce(f"Error parsing rule package: {exc}")
@@ -383,10 +442,12 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
         res = self.current_result
         dt_kw = self.query_one("#dt-imported-keywords", DataTable)
         dt_pol = self.query_one("#dt-imported-policies", DataTable)
+        dt_conf = self.query_one("#dt-rule-conflicts", DataTable)
         btn_merge = self.query_one("#btn-merge-imported-rules", Button)
 
         dt_kw.clear()
         dt_pol.clear()
+        dt_conf.clear()
 
         for kw, target_dir in res.keyword_rules.items():
             dt_kw.add_row(kw, target_dir)
@@ -399,6 +460,26 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
                 str(pol.get("priority", 75)),
             )
 
+        bulk_strategy = "keep_existing"
+        try:
+            val = self.query_one("#select-bulk-conflict-strategy", Select).value
+            if val and val != Select.BLANK:
+                bulk_strategy = str(val)
+        except Exception:
+            pass
+
+        for conflict in self.conflicts:
+            conflict.resolution = bulk_strategy
+            self.conflict_resolutions[conflict.identifier] = bulk_strategy
+            dt_conf.add_row(
+                conflict.rule_type.capitalize(),
+                conflict.identifier,
+                conflict.existing_target,
+                conflict.imported_target,
+                self._format_resolution_label(bulk_strategy),
+                key=conflict.identifier,
+            )
+
         warn_container = self.query_one("#container-import-warnings", Vertical)
         warn_container.remove_children()
         for warn in res.warnings:
@@ -407,7 +488,8 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
         total_rules = len(res.keyword_rules) + len(res.policies)
         lbl_status.update(
             f"Parsed {res.source_format}: {len(res.keyword_rules)} keyword rules, "
-            f"{len(res.policies)} policies, {len(res.warnings)} warning(s)."
+            f"{len(res.policies)} policies, {len(self.conflicts)} conflict(s), "
+            f"{len(res.warnings)} warning(s)."
         )
 
         if total_rules > 0:
@@ -416,7 +498,96 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
         else:
             btn_merge.disabled = True
 
-        self.announce(f"Parsed {res.source_format}: {total_rules} rules extracted.")
+        self.announce(
+            f"Parsed {res.source_format}: {total_rules} rules extracted ({len(self.conflicts)} conflicts)."
+        )
+
+    @on(Select.Changed, "#select-bulk-conflict-strategy")
+    def _on_bulk_strategy_changed(self, event: Select.Changed) -> None:
+        """Apply bulk conflict resolution strategy across all detected conflicts."""
+        if not event.value or event.value == Select.BLANK:
+            return
+        new_strategy = str(event.value)
+        for conflict in self.conflicts:
+            conflict.resolution = new_strategy
+            self.conflict_resolutions[conflict.identifier] = new_strategy
+
+        try:
+            dt_conf = self.query_one("#dt-rule-conflicts", DataTable)
+            dt_conf.clear()
+            for conflict in self.conflicts:
+                dt_conf.add_row(
+                    conflict.rule_type.capitalize(),
+                    conflict.identifier,
+                    conflict.existing_target,
+                    conflict.imported_target,
+                    self._format_resolution_label(new_strategy),
+                    key=conflict.identifier,
+                )
+        except Exception:
+            pass
+        self.announce(
+            f"Updated bulk resolution strategy to: {self._format_resolution_label(new_strategy)}"
+        )
+
+    @on(DataTable.RowSelected, "#dt-rule-conflicts")
+    @on(DataTable.CellSelected, "#dt-rule-conflicts")
+    def _on_conflict_selected(
+        self, event: Union[DataTable.RowSelected, DataTable.CellSelected]
+    ) -> None:
+        """Cycle resolution strategy for the selected conflict row."""
+        row_key = None
+        if hasattr(event, "row_key") and event.row_key and event.row_key.value:
+            row_key = str(event.row_key.value)
+        elif hasattr(event, "coordinate") and event.coordinate:
+            try:
+                dt_conf = self.query_one("#dt-rule-conflicts", DataTable)
+                rk = dt_conf.coordinate_to_cell_key(event.coordinate).row_key
+                if rk and rk.value:
+                    row_key = str(rk.value)
+            except Exception:
+                pass
+
+        if not row_key:
+            return
+
+        conflict = next((c for c in self.conflicts if c.identifier == row_key), None)
+        if not conflict:
+            return
+
+        cycle_map = {
+            "keep_existing": "overwrite",
+            "overwrite": "skip_conflicting",
+            "skip_conflicting": "keep_existing",
+        }
+        current_res = self.conflict_resolutions.get(
+            conflict.identifier, conflict.resolution
+        )
+        new_res = cycle_map.get(current_res, "keep_existing")
+
+        conflict.resolution = new_res
+        self.conflict_resolutions[conflict.identifier] = new_res
+
+        try:
+            dt_conf = self.query_one("#dt-rule-conflicts", DataTable)
+            dt_conf.clear()
+            for c in self.conflicts:
+                dt_conf.add_row(
+                    c.rule_type.capitalize(),
+                    c.identifier,
+                    c.existing_target,
+                    c.imported_target,
+                    self._format_resolution_label(
+                        self.conflict_resolutions.get(c.identifier, c.resolution)
+                    ),
+                    key=c.identifier,
+                )
+        except Exception:
+            pass
+
+        self.announce(
+            f"Set resolution for '{conflict.identifier}' to {self._format_resolution_label(new_res)}."
+        )
 
     @on(Button.Pressed, "#btn-merge-imported-rules")
     def action_merge_rules(self) -> None:
@@ -428,8 +599,20 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
                 pass
             return
 
-        new_kw, new_pol = self.current_result.merge_into_settings(self.settings)
-        msg = f"Merged imported rules: {len(self.current_result.keyword_rules)} keyword rules and {len(self.current_result.policies)} policies."
+        bulk_strategy = "keep_existing"
+        try:
+            val = self.query_one("#select-bulk-conflict-strategy", Select).value
+            if val and val != Select.BLANK:
+                bulk_strategy = str(val)
+        except Exception:
+            pass
+
+        new_kw, new_pol = self.current_result.merge_into_settings(
+            self.settings,
+            resolutions=self.conflict_resolutions,
+            default_strategy=bulk_strategy,
+        )
+        msg = f"Merged imported rules: {len(new_kw)} keyword rules and {len(new_pol)} policies."
         self.announce(msg)
         try:
             if hasattr(self.app, "notify"):

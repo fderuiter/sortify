@@ -117,7 +117,9 @@ def test_audit_a11y_compliance_inspects_density_slider():
 
     audit_invalid = container_invalid.audit_a11y_compliance()
     violations = audit_invalid["violations"]
-    missing_label_rules = [v for v in violations if v["rule"] == "A11Y001_MISSING_LABEL"]
+    missing_label_rules = [
+        v for v in violations if v["rule"] == "A11Y001_MISSING_LABEL"
+    ]
     assert len(missing_label_rules) == 1
     assert missing_label_rules[0]["widget_id"] == "DensitySlider"
 
@@ -131,8 +133,16 @@ def test_extraction_preview_modal_slider_announcement():
 
     modal = ExtractionPreviewModal(file_path="sample.pdf", settings=MockSettings())
     modal.page_data = [
-        {"page_index": 1, "char_count": 100, "has_vector": False},  # Standard at threshold <= 100
-        {"page_index": 2, "char_count": 30, "has_vector": False},   # Rasterized at threshold 50
+        {
+            "page_index": 1,
+            "char_count": 100,
+            "has_vector": False,
+        },  # Standard at threshold <= 100
+        {
+            "page_index": 2,
+            "char_count": 30,
+            "has_vector": False,
+        },  # Rasterized at threshold 50
     ]
 
     announcement = modal._format_slider_announcement(50)
