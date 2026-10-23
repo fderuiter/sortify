@@ -279,47 +279,40 @@ class DownloadManager:
         """Asynchronously delete model files securely in a separate thread."""
 
         def delete_target():
-            try:
-                from app.core.shared_registry import _thread_local
+            from app.core.network_guard import unblock_external_network
 
-                _thread_local.sandboxed = False
-                _thread_local.reason = "model deletion execution"
-            except ImportError:
-                logger.debug(
-                    "Failed to clear sandboxed flag on deletion thread", exc_info=True
-                )
-
-            try:
-                self.cancel_download()
-
+            with unblock_external_network(reason="model deletion execution"):
                 try:
-                    from app.core.shared_registry import SharedModelRegistry
+                    self.cancel_download()
 
-                    SharedModelRegistry.get_instance().unload_all_models()
+                    try:
+                        from app.core.shared_registry import SharedModelRegistry
+
+                        SharedModelRegistry.get_instance().unload_all_models()
+                    except Exception as e:
+                        logger.warning(
+                            f"Failed to unload in-memory model instances during deletion: {e}",
+                            exc_info=True,
+                        )
+
+                    from app.core.resilient_file_ops import resilient_rmtree
+
+                    if os.path.exists(model_dir):
+                        resilient_rmtree(model_dir, ignore_errors=True)
+
+                    with self._manager_lock:
+                        self.state["progress"] = 0.0
+                        self.state["status_text"] = "Model deleted."
+                        self.state["success"] = False
+                        self.state["error"] = None
+                        self.state["is_downloading"] = False
+
+                    if on_done:
+                        on_done(True, None)
                 except Exception as e:
-                    logger.warning(
-                        f"Failed to unload in-memory model instances during deletion: {e}",
-                        exc_info=True,
-                    )
-
-                from app.core.resilient_file_ops import resilient_rmtree
-
-                if os.path.exists(model_dir):
-                    resilient_rmtree(model_dir, ignore_errors=True)
-
-                with self._manager_lock:
-                    self.state["progress"] = 0.0
-                    self.state["status_text"] = "Model deleted."
-                    self.state["success"] = False
-                    self.state["error"] = None
-                    self.state["is_downloading"] = False
-
-                if on_done:
-                    on_done(True, None)
-            except Exception as e:
-                logger.debug("Model deletion failed", exc_info=True)
-                if on_done:
-                    on_done(False, e)
+                    logger.debug("Model deletion failed", exc_info=True)
+                    if on_done:
+                        on_done(False, e)
 
         from app.core.shared_registry import ContextPropagatingThread
 
@@ -434,7 +427,7 @@ def run_background_download(
                 f"Pre-download security advisory check failed: {adv_err}",
                 exc_info=True,
             )
-            if isinstance(adv_err, DownloadError):
+            if isinstance(adv_err, (DownloadError, DownloaderError)):
                 err = adv_err
             else:
                 err = ModelVerificationError(str(adv_err))
@@ -443,189 +436,186 @@ def run_background_download(
                 on_failure(err)
             return
 
+        from app.core.network_guard import unblock_external_network
+
         # Bypass application sandboxing on this dedicated thread after advisory check passes
         try:
-            from app.core.shared_registry import _thread_local
+            with unblock_external_network(reason="model download execution"):
+                # Create model directory
+                os.makedirs(model_dir, exist_ok=True)
+                target_path = os.path.join(model_dir, "model.onnx")
+                temp_path = target_path + ".tmp"
 
-            _thread_local.sandboxed = False
-            _thread_local.reason = "model download execution"
-        except ImportError as e:
-            logger.debug(f"Failed to clear sandboxed flag on downloader thread: {e}")
+                dm = download_manager
+                if dm is None:
+                    try:
+                        dm = DownloadManager.get_instance()
+                    except Exception:
+                        logger.debug(
+                            "DownloadManager unavailable; using direct opener",
+                            exc_info=True,
+                        )
+                        dm = None
 
-        try:
-            # Create model directory
-            os.makedirs(model_dir, exist_ok=True)
-            target_path = os.path.join(model_dir, "model.onnx")
-            temp_path = target_path + ".tmp"
+                def get_current_opener():
+                    if dm is not None:
+                        return dm.get_opener(proxy)
+                    p_str = (proxy or "").strip()
+                    if p_str and "<DECRYPTION_FAILED>" in p_str:
+                        raise NetworkError(
+                            "Invalid proxy configuration: decryption failed."
+                        )
+                    handlers = []
+                    if p_str:
+                        handlers.append(
+                            urllib.request.ProxyHandler({"http": p_str, "https": p_str})
+                        )
+                    else:
+                        handlers.append(urllib.request.ProxyHandler({}))
+                    return urllib.request.build_opener(*handlers)
 
-            dm = download_manager
-            if dm is None:
-                try:
-                    dm = DownloadManager.get_instance()
-                except Exception:
-                    logger.debug(
-                        "DownloadManager unavailable; using direct opener",
-                        exc_info=True,
-                    )
-                    dm = None
+                bytes_downloaded = 0
+                total_size = 0
+                chunk_size = 1024 * 64
+                retries = 0
 
-            def get_current_opener():
-                if dm is not None:
-                    return dm.get_opener(proxy)
-                p_str = (proxy or "").strip()
-                if p_str and "<DECRYPTION_FAILED>" in p_str:
-                    raise NetworkError(
-                        "Invalid proxy configuration: decryption failed."
-                    )
-                handlers = []
-                if p_str:
-                    handlers.append(
-                        urllib.request.ProxyHandler({"http": p_str, "https": p_str})
-                    )
-                else:
-                    handlers.append(urllib.request.ProxyHandler({}))
-                return urllib.request.build_opener(*handlers)
+                while True:
+                    try:
+                        if cancel_event.is_set():
+                            raise DownloadCancelledError(
+                                "Download was cancelled by the user."
+                            )
 
-            bytes_downloaded = 0
-            total_size = 0
-            chunk_size = 1024 * 64
-            retries = 0
-
-            while True:
-                try:
-                    if cancel_event.is_set():
-                        raise DownloadCancelledError(
-                            "Download was cancelled by the user."
+                        opener = get_current_opener()
+                        req = urllib.request.Request(
+                            url, headers={"User-Agent": "Smart-AutoSorter/1.0"}
                         )
 
-                    opener = get_current_opener()
-                    req = urllib.request.Request(
-                        url, headers={"User-Agent": "Smart-AutoSorter/1.0"}
-                    )
+                        mode = "wb"
+                        bytes_downloaded = 0
+                        with opener.open(req, timeout=15) as response:
+                            total_size = int(response.info().get("Content-Length", 0))
 
-                    mode = "wb"
-                    bytes_downloaded = 0
-                    with opener.open(req, timeout=15) as response:
-                        total_size = int(response.info().get("Content-Length", 0))
-
-                        # Proactive disk space check
-                        if total_size > 0:
-                            try:
-                                _, _, free = shutil.disk_usage(model_dir)
-                                if free < total_size:
-                                    raise DiskSpaceError(
-                                        f"Insufficient disk space. Required: {total_size} bytes, Free: {free} bytes."
-                                    )
-                            except OSError as e:
-                                logger.warning(f"Could not retrieve disk usage: {e}")
-
-                        with open(temp_path, mode) as f:
-                            while True:
-                                if cancel_event.is_set():
-                                    raise DownloadCancelledError(
-                                        "Download was cancelled by the user."
-                                    )
-
+                            # Proactive disk space check
+                            if total_size > 0:
                                 try:
-                                    chunk = response.read(chunk_size)
-                                except Exception as e:
-                                    raise NetworkError(
-                                        f"Network error during read: {e}"
-                                    ) from e
-
-                                if not chunk:
-                                    break
-
-                                try:
-                                    f.write(chunk)
-                                except OSError as e:
-                                    if e.errno == 28 or "No space" in str(e):
+                                    _, _, free = shutil.disk_usage(model_dir)
+                                    if free < total_size:
                                         raise DiskSpaceError(
-                                            "Insufficient disk space on the target drive."
+                                            f"Insufficient disk space. Required: {total_size} bytes, Free: {free} bytes."
+                                        )
+                                except OSError as e:
+                                    logger.warning(
+                                        f"Could not retrieve disk usage: {e}"
+                                    )
+
+                            with open(temp_path, mode) as f:
+                                while True:
+                                    if cancel_event.is_set():
+                                        raise DownloadCancelledError(
+                                            "Download was cancelled by the user."
+                                        )
+
+                                    try:
+                                        chunk = response.read(chunk_size)
+                                    except Exception as e:
+                                        raise NetworkError(
+                                            f"Network error during read: {e}"
                                         ) from e
-                                    raise DiskSpaceError(
-                                        f"Local file write error: {e}"
-                                    ) from e
 
-                                bytes_downloaded += len(chunk)
-                                ratio = (
-                                    (bytes_downloaded / total_size)
-                                    if total_size > 0
-                                    else 0.0
-                                )
-                                msg = (
-                                    f"Downloaded {bytes_downloaded / (1024 * 1024):.2f}MB of {total_size / (1024 * 1024):.2f}MB ({ratio * 100:.1f}%)"
-                                    if total_size > 0
-                                    else f"Downloaded {bytes_downloaded / (1024 * 1024):.2f}MB..."
-                                )
-                                emit_progress(
-                                    progress_callback,
-                                    progress_or_update=ratio,
-                                    stage=msg,
-                                    unit_count=bytes_downloaded,
-                                    unit_type="bytes",
-                                )
-                    # Download succeeded
-                    break
+                                    if not chunk:
+                                        break
 
-                except (DownloadCancelledError, DiskSpaceError):
-                    raise
-                except Exception as net_err:
-                    if cancel_event.is_set():
-                        raise DownloadCancelledError(
-                            "Download was cancelled by the user."
-                        )
-                    if isinstance(net_err, DownloadError) and not isinstance(
-                        net_err, NetworkError
-                    ):
+                                    try:
+                                        f.write(chunk)
+                                    except OSError as e:
+                                        if e.errno == 28 or "No space" in str(e):
+                                            raise DiskSpaceError(
+                                                "Insufficient disk space on the target drive."
+                                            ) from e
+                                        raise DiskSpaceError(
+                                            f"Local file write error: {e}"
+                                        ) from e
+
+                                    bytes_downloaded += len(chunk)
+                                    ratio = (
+                                        (bytes_downloaded / total_size)
+                                        if total_size > 0
+                                        else 0.0
+                                    )
+                                    msg = (
+                                        f"Downloaded {bytes_downloaded / (1024 * 1024):.2f}MB of {total_size / (1024 * 1024):.2f}MB ({ratio * 100:.1f}%)"
+                                        if total_size > 0
+                                        else f"Downloaded {bytes_downloaded / (1024 * 1024):.2f}MB..."
+                                    )
+                                    emit_progress(
+                                        progress_callback,
+                                        progress_or_update=ratio,
+                                        stage=msg,
+                                        unit_count=bytes_downloaded,
+                                        unit_type="bytes",
+                                    )
+                        # Download succeeded
+                        break
+
+                    except (DownloadCancelledError, DiskSpaceError):
                         raise
-                    if isinstance(
-                        net_err, NetworkError
-                    ) and "Invalid proxy configuration" in str(net_err):
-                        raise net_err
-
-                    retries += 1
-                    if retries > max_retries:
-                        if isinstance(net_err, DownloadError):
+                    except Exception as net_err:
+                        if cancel_event.is_set():
+                            raise DownloadCancelledError(
+                                "Download was cancelled by the user."
+                            )
+                        if isinstance(net_err, DownloadError) and not isinstance(
+                            net_err, NetworkError
+                        ):
+                            raise
+                        if isinstance(
+                            net_err, NetworkError
+                        ) and "Invalid proxy configuration" in str(net_err):
                             raise net_err
-                        raise NetworkError(str(net_err)) from net_err
 
-                    delay = initial_delay * (backoff_factor ** (retries - 1))
-                    logger.info(
-                        f"Retrying download operation ({retries}/{max_retries}) after {delay:.2f}s delay: {net_err}"
+                        retries += 1
+                        if retries > max_retries:
+                            if isinstance(net_err, DownloadError):
+                                raise net_err
+                            raise NetworkError(str(net_err)) from net_err
+
+                        delay = initial_delay * (backoff_factor ** (retries - 1))
+                        logger.info(
+                            f"Retrying download operation ({retries}/{max_retries}) after {delay:.2f}s delay: {net_err}"
+                        )
+
+                        # Wait for backoff delay or until cancelled
+                        if cancel_event.wait(delay) or cancel_event.is_set():
+                            raise DownloadCancelledError(
+                                "Download was cancelled by the user."
+                            )
+
+                        # Reset bytes_downloaded for standard download stream restart
+                        bytes_downloaded = 0
+
+                # Requirement 3 & Zero-Trust File Finalization: Calculate and verify cryptographic hash before moving to final destination
+                verify_temp_file_hash(temp_path, target_path)
+
+                # If verification passes, finalize and rename it and write config
+                if os.path.exists(temp_path):
+                    if os.path.exists(target_path):
+                        os.remove(target_path)
+                    os.rename(temp_path, target_path)
+
+                # Write a placeholder config.json next to it
+                config_path = os.path.join(model_dir, "config.json")
+                with open(config_path, "w", encoding="utf-8") as cf:
+                    json.dump({"model_type": "onnx", "dimensions": 384}, cf)
+
+                # Requirement 6: Run integrity verification on completed download
+                if not verify_downloaded_model(model_dir):
+                    raise DownloadError(
+                        "Integrity verification failed for the downloaded model."
                     )
 
-                    # Wait for backoff delay or until cancelled
-                    if cancel_event.wait(delay) or cancel_event.is_set():
-                        raise DownloadCancelledError(
-                            "Download was cancelled by the user."
-                        )
-
-                    # Reset bytes_downloaded for standard download stream restart
-                    bytes_downloaded = 0
-
-            # Requirement 3 & Zero-Trust File Finalization: Calculate and verify cryptographic hash before moving to final destination
-            verify_temp_file_hash(temp_path, target_path)
-
-            # If verification passes, finalize and rename it and write config
-            if os.path.exists(temp_path):
-                if os.path.exists(target_path):
-                    os.remove(target_path)
-                os.rename(temp_path, target_path)
-
-            # Write a placeholder config.json next to it
-            config_path = os.path.join(model_dir, "config.json")
-            with open(config_path, "w", encoding="utf-8") as cf:
-                json.dump({"model_type": "onnx", "dimensions": 384}, cf)
-
-            # Requirement 6: Run integrity verification on completed download
-            if not verify_downloaded_model(model_dir):
-                raise DownloadError(
-                    "Integrity verification failed for the downloaded model."
-                )
-
-            if on_success:
-                on_success()
+                if on_success:
+                    on_success()
 
         except DownloadCancelledError as e:
             # Clean up temp files
