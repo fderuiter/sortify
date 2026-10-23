@@ -97,15 +97,31 @@ def test_ledger_status_and_reconcile():
             assert data_rec["status"] == "success"
             assert data_rec["reconciled_count"] == 1
 
-            # 4. Status after reconciliation
+            # 4. Status after reconciliation (non-existent source/dest preserved as FAILED_MISSING)
             code_post, stdout_post, stderr_post = run_cli(
-                ["ledger", "status", "--ledger-db", ledger_db, "--json"]
+                ["ledger", "status", "--ledger-db", ledger_db, "--failed", "--json"]
             )
             assert code_post == 0, (
                 f"Expected 0 exit code, got {code_post}. Stderr: {stderr_post}"
             )
             data_post = json.loads(stdout_post)
-            assert data_post["count"] == 0
+            assert data_post["count"] == 1
+            assert data_post["pending_entries"][0]["status"] == "FAILED_MISSING"
+
+            # 5. Purge failed entries
+            code_purge, stdout_purge, stderr_purge = run_cli(
+                ["ledger", "purge", "--ledger-db", ledger_db, "--failed", "--json"]
+            )
+            assert code_purge == 0, (
+                f"Expected 0 exit code, got {code_purge}. Stderr: {stderr_purge}"
+            )
+
+            code_clean, stdout_clean, stderr_clean = run_cli(
+                ["ledger", "status", "--ledger-db", ledger_db, "--json"]
+            )
+            assert code_clean == 0
+            data_clean = json.loads(stdout_clean)
+            assert data_clean["count"] == 0
         finally:
             from app.core.db_conn import clear_connection_cache
 
