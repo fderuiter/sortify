@@ -23,7 +23,13 @@ def test_db_and_dir():
     with tempfile.TemporaryDirectory() as tmp_dir:
         db_path = os.path.join(tmp_dir, "test_quarantine.db")
         db = Database(db_path, DBWorker())
-        yield db, tmp_dir
+        try:
+            yield db, tmp_dir
+        finally:
+            if hasattr(db, "close"):
+                db.close()
+            if hasattr(db, "worker") and hasattr(db.worker, "stop"):
+                db.worker.stop()
 
 
 def stage_dummy_file(

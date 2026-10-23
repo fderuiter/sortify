@@ -20,108 +20,108 @@ from app.core.rule_importers import (
 )
 
 
-def test_rule_conflict_analyzer():
+def test_rule_conflict_analyzer(tmp_path):
     """Verify RuleConflictAnalyzer detects keyword and policy target path collisions."""
-    with tempfile.NamedTemporaryFile(suffix=".json") as f:
-        settings = AppSettings(filepath=f.name)
-        settings.KEYWORD_RULES = {
-            "invoice": "Local/Invoices",
-            "receipt": "Local/Receipts",
+    settings_file = str(tmp_path / "settings_conflict.json")
+    settings = AppSettings(filepath=settings_file)
+    settings.KEYWORD_RULES = {
+        "invoice": "Local/Invoices",
+        "receipt": "Local/Receipts",
+    }
+    settings.POLICIES = [
+        {
+            "type": "pattern",
+            "expression": "*.pdf",
+            "target_path": "Local/PDFs",
+            "priority": 90,
         }
-        settings.POLICIES = [
+    ]
+
+    # 1. Incoming result with conflicts and non-conflicts
+    import_res = ImportResult(
+        keyword_rules={
+            "invoice": "Hazel/Invoices",  # Differing target -> CONFLICT
+            "receipt": "Local/Receipts",  # Same target -> NO CONFLICT
+            "tax": "Hazel/Taxes",  # New keyword -> NO CONFLICT
+        },
+        policies=[
             {
                 "type": "pattern",
                 "expression": "*.pdf",
-                "target_path": "Local/PDFs",
-                "priority": 90,
-            }
-        ]
-
-        # 1. Incoming result with conflicts and non-conflicts
-        import_res = ImportResult(
-            keyword_rules={
-                "invoice": "Hazel/Invoices",  # Differing target -> CONFLICT
-                "receipt": "Local/Receipts",  # Same target -> NO CONFLICT
-                "tax": "Hazel/Taxes",  # New keyword -> NO CONFLICT
+                "target_path": "Hazel/PDFs",  # Differing target -> CONFLICT
+                "priority": 75,
             },
-            policies=[
-                {
-                    "type": "pattern",
-                    "expression": "*.pdf",
-                    "target_path": "Hazel/PDFs",  # Differing target -> CONFLICT
-                    "priority": 75,
-                },
-                {
-                    "type": "pattern",
-                    "expression": "*.docx",  # New policy -> NO CONFLICT
-                    "target_path": "Hazel/Docs",
-                    "priority": 75,
-                },
-            ],
-        )
+            {
+                "type": "pattern",
+                "expression": "*.docx",  # New policy -> NO CONFLICT
+                "target_path": "Hazel/Docs",
+                "priority": 75,
+            },
+        ],
+    )
 
-        conflicts = RuleConflictAnalyzer.analyze(import_res, settings)
-        assert len(conflicts) == 2
+    conflicts = RuleConflictAnalyzer.analyze(import_res, settings)
+    assert len(conflicts) == 2
 
-        kw_conflict = next(c for c in conflicts if c.rule_type == "keyword")
-        assert kw_conflict.identifier == "invoice"
-        assert kw_conflict.existing_target == "Local/Invoices"
-        assert kw_conflict.imported_target == "Hazel/Invoices"
+    kw_conflict = next(c for c in conflicts if c.rule_type == "keyword")
+    assert kw_conflict.identifier == "invoice"
+    assert kw_conflict.existing_target == "Local/Invoices"
+    assert kw_conflict.imported_target == "Hazel/Invoices"
 
-        pol_conflict = next(c for c in conflicts if c.rule_type == "policy")
-        assert pol_conflict.identifier == "*.pdf (pattern)"
-        assert pol_conflict.existing_target == "Local/PDFs"
-        assert pol_conflict.imported_target == "Hazel/PDFs"
+    pol_conflict = next(c for c in conflicts if c.rule_type == "policy")
+    assert pol_conflict.identifier == "*.pdf (pattern)"
+    assert pol_conflict.existing_target == "Local/PDFs"
+    assert pol_conflict.imported_target == "Hazel/PDFs"
 
 
-def test_rule_conflict_resolutions_overwrite_and_skip():
+def test_rule_conflict_resolutions_overwrite_and_skip(tmp_path):
     """Verify merge_into_settings respects overwrite and granular resolution choices."""
-    with tempfile.NamedTemporaryFile(suffix=".json") as f:
-        settings = AppSettings(filepath=f.name)
-        settings.KEYWORD_RULES = {
-            "invoice": "Local/Invoices",
-            "statement": "Local/Statements",
+    settings_file = str(tmp_path / "settings_res.json")
+    settings = AppSettings(filepath=settings_file)
+    settings.KEYWORD_RULES = {
+        "invoice": "Local/Invoices",
+        "statement": "Local/Statements",
+    }
+    settings.POLICIES = [
+        {
+            "type": "pattern",
+            "expression": "*.pdf",
+            "target_path": "Local/PDFs",
+            "priority": 90,
         }
-        settings.POLICIES = [
+    ]
+
+    import_res = ImportResult(
+        keyword_rules={
+            "invoice": "Hazel/Invoices",
+            "statement": "Hazel/Statements",
+        },
+        policies=[
             {
                 "type": "pattern",
                 "expression": "*.pdf",
-                "target_path": "Local/PDFs",
-                "priority": 90,
+                "target_path": "Hazel/PDFs",
+                "priority": 75,
             }
-        ]
+        ],
+    )
 
-        import_res = ImportResult(
-            keyword_rules={
-                "invoice": "Hazel/Invoices",
-                "statement": "Hazel/Statements",
-            },
-            policies=[
-                {
-                    "type": "pattern",
-                    "expression": "*.pdf",
-                    "target_path": "Hazel/PDFs",
-                    "priority": 75,
-                }
-            ],
-        )
+    # Apply custom resolutions: invoice -> overwrite, statement -> keep_existing, *.pdf (pattern) -> overwrite
+    resolutions = {
+        "invoice": "overwrite",
+        "statement": "keep_existing",
+        "*.pdf (pattern)": "overwrite",
+    }
 
-        # Apply custom resolutions: invoice -> overwrite, statement -> keep_existing, *.pdf (pattern) -> overwrite
-        resolutions = {
-            "invoice": "overwrite",
-            "statement": "keep_existing",
-            "*.pdf (pattern)": "overwrite",
-        }
+    kw, pol = import_res.merge_into_settings(settings, resolutions=resolutions)
 
-        kw, pol = import_res.merge_into_settings(settings, resolutions=resolutions)
-
-        # invoice overwritten
-        assert kw["invoice"] == "Hazel/Invoices"
-        # statement kept as local
-        assert kw["statement"] == "Local/Statements"
-        # *.pdf policy overwritten to Hazel/PDFs
-        pdf_policy = next(p for p in pol if p["expression"] == "*.pdf")
-        assert pdf_policy["target_path"] == "Hazel/PDFs"
+    # invoice overwritten
+    assert kw["invoice"] == "Hazel/Invoices"
+    # statement kept as local
+    assert kw["statement"] == "Local/Statements"
+    # *.pdf policy overwritten to Hazel/PDFs
+    pdf_policy = next(p for p in pol if p["expression"] == "*.pdf")
+    assert pdf_policy["target_path"] == "Hazel/PDFs"
 
 
 def test_hazel_rule_importer_plist():
@@ -276,25 +276,28 @@ def test_dropit_rule_importer_json():
         Path(temp_path).unlink(missing_ok=True)
 
 
-def test_get_rule_importer_factory():
+def test_get_rule_importer_factory(tmp_path):
     """Verify factory function auto-detects importer strategies."""
-    with (
-        tempfile.NamedTemporaryFile(suffix=".hazelrules") as f1,
-        tempfile.NamedTemporaryFile(suffix=".xml") as f2,
-        tempfile.NamedTemporaryFile(suffix=".json") as f3,
-        tempfile.NamedTemporaryFile(suffix="taggroup.json") as f4,
-    ):
-        imp1 = get_rule_importer(f1.name)
-        assert isinstance(imp1, HazelRuleImporter)
+    f1 = tmp_path / "test.hazelrules"
+    f1.touch()
+    f2 = tmp_path / "test.xml"
+    f2.touch()
+    f3 = tmp_path / "test.json"
+    f3.touch()
+    f4 = tmp_path / "taggroup.json"
+    f4.touch()
 
-        imp2 = get_rule_importer(f2.name)
-        assert isinstance(imp2, DropItRuleImporter)
+    imp1 = get_rule_importer(str(f1))
+    assert isinstance(imp1, HazelRuleImporter)
 
-        imp3 = get_rule_importer(f3.name)
-        assert isinstance(imp3, DropItRuleImporter)
+    imp2 = get_rule_importer(str(f2))
+    assert isinstance(imp2, DropItRuleImporter)
 
-        imp4 = get_rule_importer(f4.name)
-        assert isinstance(imp4, TagSpacesRuleImporter)
+    imp3 = get_rule_importer(str(f3))
+    assert isinstance(imp3, DropItRuleImporter)
+
+    imp4 = get_rule_importer(str(f4))
+    assert isinstance(imp4, TagSpacesRuleImporter)
 
     with pytest.raises(ValueError):
         get_rule_importer("/tmp/invalid_file.xyz_unknown")
