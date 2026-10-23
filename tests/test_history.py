@@ -278,3 +278,47 @@ def test_snapshot_pruning_respects_policy_engine_actions(test_history_env):
     assert "session-status-retain" in session_ids
     assert "session-policy-matched" in session_ids
     assert "session-ordinary-expired" not in session_ids
+
+
+def test_remove_staging_leftovers_oserror(caplog):
+    from app.core.history import _remove_staging_leftovers
+
+    with patch("os.walk") as mock_walk, patch(
+        "app.core.resilient_file_ops.resilient_remove", side_effect=OSError("Access denied")
+    ):
+        mock_walk.return_value = [("/tmp_base", [], [".tmp_stage_123"])]
+        _remove_staging_leftovers("/tmp_base")
+    assert "Could not remove staging file .tmp_stage_123" in caplog.text
+
+
+def test_purge_overwrite_backups_oserror(caplog):
+    from app.core.history import _purge_overwrite_backups
+
+    with patch("os.path.isdir", return_value=True), patch(
+        "os.path.islink", return_value=False
+    ), patch(
+        "app.core.resilient_file_ops.resilient_rmtree", side_effect=OSError("RMDIR error")
+    ):
+        _purge_overwrite_backups("/tmp_base", "sess-1")
+    assert "Could not purge overwrite backups" in caplog.text
+
+
+def test_get_session_moves_getsize_error(test_history_env):
+    base_dir, db, cache, history_manager, db_worker = test_history_env
+    session_id = history_manager.create_snapshot(base_dir)
+
+    with patch.object(history_manager.moves, "list_moves", return_value=[]), patch.object(
+        history_manager, "get_step_ledger", return_value=[]
+    ), patch.object(
+        history_manager.db,
+        "get_transaction_steps",
+        return_value=[{"target_path": "/nonexistent/path/file.txt", "source_path": "a.txt"}],
+    ), patch(
+        "os.path.exists", return_value=True
+    ), patch(
+        "os.path.getsize", side_effect=OSError("Get size failed")
+    ):
+        moves = history_manager.get_session_moves(session_id)
+        assert len(moves) == 1
+        assert moves[0]["size"] is None
+
