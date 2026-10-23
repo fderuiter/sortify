@@ -214,7 +214,9 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
         if isinstance(pos_val, list):
             for item in pos_val:
                 if item:
-                    job_ids.extend([x.strip() for x in str(item).split(",") if x.strip()])
+                    job_ids.extend(
+                        [x.strip() for x in str(item).split(",") if x.strip()]
+                    )
         elif isinstance(pos_val, str) and pos_val:
             job_ids.extend([x.strip() for x in pos_val.split(",") if x.strip()])
 
@@ -222,7 +224,9 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
         if isinstance(kw_val, list):
             for item in kw_val:
                 if item:
-                    job_ids.extend([x.strip() for x in str(item).split(",") if x.strip()])
+                    job_ids.extend(
+                        [x.strip() for x in str(item).split(",") if x.strip()]
+                    )
         elif isinstance(kw_val, str) and kw_val:
             job_ids.extend([x.strip() for x in kw_val.split(",") if x.strip()])
 
@@ -335,6 +339,11 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
                     "count": len(results),
                     "results": results,
                 }
+                if len(results) == 1:
+                    res["result"] = results[0]
+                    res["job_id"] = results[0].get("job_id")
+                    if "status" in results[0]:
+                        res["status_code"] = results[0].get("status")
 
                 if is_json:
                     sys.stdout.write(
@@ -351,18 +360,14 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
                         st = r.get("status", "UNKNOWN")
                         jid = r.get("job_id", "")
                         if st in ("FAILED", "ERROR"):
-                            print(
-                                f"  [{st}] {jid}: {r.get('error')}", file=sys.stderr
-                            )
+                            print(f"  [{st}] {jid}: {r.get('error')}", file=sys.stderr)
                         else:
                             print(f"  [{st}] {jid}", file=sys.stderr)
 
                 sys.exit(0 if success_count > 0 else 1)
             except Exception as e:
                 logger.debug("Quarantine batch process failed", exc_info=True)
-                print(
-                    f"Error processing quarantine batch: {e}", file=sys.stderr
-                )
+                print(f"Error processing quarantine batch: {e}", file=sys.stderr)
                 sys.exit(1)
 
         elif quarantine_cmd == "release":
@@ -374,9 +379,7 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
                 results = service.release_quarantine_batch(
                     job_ids, dest_dir=dest_dir_override
                 )
-                success_count = sum(
-                    1 for r in results if r.get("status") == "RELEASED"
-                )
+                success_count = sum(1 for r in results if r.get("status") == "RELEASED")
                 res = {
                     "status": (
                         "success"
@@ -386,6 +389,11 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
                     "count": len(results),
                     "results": results,
                 }
+                if len(results) == 1:
+                    res["job_id"] = results[0].get("job_id")
+                    res["status_code"] = results[0].get("status")
+                    if "destination" in results[0]:
+                        res["destination"] = results[0].get("destination")
 
                 if is_json:
                     sys.stdout.write(
@@ -434,6 +442,9 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
                     "count": len(results),
                     "results": results,
                 }
+                if len(results) == 1:
+                    res["job_id"] = results[0].get("job_id")
+                    res["status_code"] = results[0].get("status")
 
                 if is_json:
                     sys.stdout.write(

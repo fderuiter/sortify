@@ -781,7 +781,9 @@ class QuarantineInterceptorService:
                 if dest_dir:
                     target_parent = os.path.abspath(dest_dir)
                 else:
-                    target_parent = os.path.abspath(base_dir) if base_dir else os.getcwd()
+                    target_parent = (
+                        os.path.abspath(base_dir) if base_dir else os.getcwd()
+                    )
 
                 os.makedirs(target_parent, exist_ok=True)
                 dest_file_path = os.path.join(target_parent, os.path.basename(orig_rel))
@@ -818,9 +820,7 @@ class QuarantineInterceptorService:
                 )
         return results
 
-    def dismiss_quarantine_batch(
-        self, job_ids: List[str]
-    ) -> List[Dict[str, Any]]:
+    def dismiss_quarantine_batch(self, job_ids: List[str]) -> List[Dict[str, Any]]:
         """Mark a batch of quarantine records as DISMISSED in database with audit logs."""
         results = []
         unique_ids = list(dict.fromkeys(job_ids))

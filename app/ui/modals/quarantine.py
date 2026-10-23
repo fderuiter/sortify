@@ -249,9 +249,7 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 btn_insp = Button(
                     "Re-inspect (i)", id="btn-quarantine-reinspect", variant="primary"
                 )
-                btn_insp.tooltip = (
-                    "Trigger background forensic scan and policy evaluation for selected item(s)"
-                )
+                btn_insp.tooltip = "Trigger background forensic scan and policy evaluation for selected item(s)"
                 yield btn_insp
 
                 btn_ref = Button("Refresh", id="btn-quarantine-refresh")
@@ -266,7 +264,9 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         """Initialize data table columns and trigger initial record fetch on mount."""
         self._update_layout(self.size.width)
         dt = self.query_one("#quarantine-table", DataTable)
-        dt.add_columns("Sel", "Job ID", "Filename", "Status", "Policy Action", "Created")
+        dt.add_columns(
+            "Sel", "Job ID", "Filename", "Status", "Policy Action", "Created"
+        )
         self.announce("Opened Quarantine Vault modal.")
         self.action_refresh_records()
 
@@ -370,12 +370,8 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
         try:
             chk = self.query_one("#chk-select-all", Checkbox)
-            all_selected = (
-                len(self.filtered_records) > 0
-                and all(
-                    r.get("job_id") in self.selected_job_ids
-                    for r in self.filtered_records
-                )
+            all_selected = len(self.filtered_records) > 0 and all(
+                r.get("job_id") in self.selected_job_ids for r in self.filtered_records
             )
             if chk.value != all_selected:
                 self._updating_select_all = True
@@ -565,9 +561,7 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         self.app.push_screen(DirectorySelectModal(base_dir), _dir_selected_callback)
 
     @work(thread=True)
-    def execute_batch_release_async(
-        self, job_ids: Any, target_dir: str
-    ) -> None:
+    def execute_batch_release_async(self, job_ids: Any, target_dir: str) -> None:
         """Asynchronously release batch of quarantine items on background worker thread."""
         try:
             if isinstance(job_ids, (str, dict)):
@@ -583,7 +577,9 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             from app.core.quarantine_interceptor import QuarantineInterceptorService
 
             service = QuarantineInterceptorService(db=db_inst)
-            results = service.release_quarantine_batch(clean_job_ids, dest_dir=target_dir)
+            results = service.release_quarantine_batch(
+                clean_job_ids, dest_dir=target_dir
+            )
             self._call_ui(self._on_batch_release_complete, results)
         except Exception as e:
             logger.error(f"Failed batch quarantine release: {e}", exc_info=True)

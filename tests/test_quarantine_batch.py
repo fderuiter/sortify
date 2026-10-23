@@ -26,7 +26,9 @@ def test_db_and_dir():
         yield db, tmp_dir
 
 
-def stage_dummy_file(service: QuarantineInterceptorService, base_dir: str, filename: str) -> str:
+def stage_dummy_file(
+    service: QuarantineInterceptorService, base_dir: str, filename: str
+) -> str:
     """Helper to create and stage a dummy file for quarantine testing."""
     src_path = os.path.join(base_dir, filename)
     with open(src_path, "w", encoding="utf-8") as f:
@@ -52,8 +54,18 @@ def test_process_quarantine_batch(test_db_and_dir):
     assert len(results) == 3
 
     statuses = {r["job_id"]: r.get("status") for r in results}
-    assert statuses[job1] in ("QUARANTINED", "CLEARED", "RELEASED", "MANUAL_REVIEW_REQUIRED")
-    assert statuses[job2] in ("QUARANTINED", "CLEARED", "RELEASED", "MANUAL_REVIEW_REQUIRED")
+    assert statuses[job1] in (
+        "QUARANTINED",
+        "CLEARED",
+        "RELEASED",
+        "MANUAL_REVIEW_REQUIRED",
+    )
+    assert statuses[job2] in (
+        "QUARANTINED",
+        "CLEARED",
+        "RELEASED",
+        "MANUAL_REVIEW_REQUIRED",
+    )
     assert statuses[invalid_job] in ("FAILED", "DEAD_LETTER_QUEUE")
 
 
