@@ -1113,20 +1113,3 @@ def get_rule_importer(file_path: Union[str, Path]) -> BaseRuleImporter:
     raise ValueError(
         f"Unsupported rule file format for '{p.name}'. Expected .hazelrules, .plist, .xml, or .json."
     )
-
-
-def import_and_merge_rules(file_path: Union[str, Path], settings: Any) -> ImportResult:
-    """Parse external rule package and merge into settings.
-
-    Args:
-        file_path: Path to external rule package.
-        settings: Application settings object.
-
-    Returns
-    -------
-        ImportResult object containing parsed rules and merge outcome.
-    """
-    importer = get_rule_importer(file_path)
-    result = importer.parse_file(file_path)
-    result.merge_into_settings(settings)
-    return result

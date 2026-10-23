@@ -130,11 +130,8 @@ def reset_shared_registry():
     """Reset singletons (SharedModelRegistry, SharedWorkerPool, DownloadManager) and AppSettings observers before and after each test to prevent test pollution."""
     from app.config import AppSettings
     from app.core.downloader import DownloadManager
-    from app.core.shared_registry import (
-        SharedModelRegistry,
-        SharedWorkerPool,
-        _thread_local,
-    )
+    from app.core.network_guard import _thread_local
+    from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
 
     def _cleanup_thread_local():
         if hasattr(_thread_local, "sandboxed"):
@@ -152,6 +149,8 @@ def reset_shared_registry():
     AppSettings.clear_observers()
     DownloadManager.reset_instance()
     SharedModelRegistry._instance = None
+    _thread_local.sandboxed = False
+    _thread_local.reason = ""
     if SharedWorkerPool._instance is not None:
         try:
             SharedWorkerPool._instance.shutdown(wait=False)
@@ -163,6 +162,8 @@ def reset_shared_registry():
     AppSettings.clear_observers()
     DownloadManager.reset_instance()
     SharedModelRegistry._instance = None
+    _thread_local.sandboxed = False
+    _thread_local.reason = ""
     if SharedWorkerPool._instance is not None:
         try:
             SharedWorkerPool._instance.shutdown(wait=False)

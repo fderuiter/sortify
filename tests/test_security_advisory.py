@@ -163,10 +163,10 @@ def test_background_downloader_sandboxing_maintained_on_advisory_failure():
 
             was_sandboxed = getattr(_thread_local, "sandboxed", False)
             was_reason = getattr(_thread_local, "reason", None)
-            _thread_local.sandboxed = True
-            _thread_local.reason = "test_advisory_failure"
-
             try:
+                _thread_local.sandboxed = True
+                _thread_local.reason = "test_advisory_failure"
+
                 t = run_background_download(
                     url=test_url,
                     model_dir=model_dir,

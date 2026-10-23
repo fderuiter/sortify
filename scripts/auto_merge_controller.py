@@ -23,6 +23,7 @@ from typing import Any, Dict, List, Optional
 import requests
 
 from scripts.classify_pr import (
+    BOT_AUTHORS,
     ClassificationResult,
     PRMetadata,
     classify_pr,
@@ -263,11 +264,19 @@ def build_pr_metadata(client: GitHubClient, full_pr: Dict[str, Any]) -> PRMetada
     title = full_pr.get("title", "")
     author = (full_pr.get("user") or {}).get("login", "")
     is_dependabot = author == DEPENDABOT_LOGIN
+    is_security_patch = (
+        ("security" in labels and "dependencies" in labels)
+        or full_pr.get("head", {}).get("ref", "").startswith("security/")
+    ) and (author in BOT_AUTHORS or author.endswith("[bot]"))
     dependency_update_type = (
-        dependency_update_type_from_title(title) if is_dependabot else "minor"
+        dependency_update_type_from_title(title)
+        if (is_dependabot or is_security_patch)
+        else "minor"
     )
-    if AUTOMERGE_OPT_IN_LABEL in labels and not automerge_label_applied_by_maintainer(
-        client, pr_number
+    if (
+        AUTOMERGE_OPT_IN_LABEL in labels
+        and not (is_dependabot or is_security_patch)
+        and not automerge_label_applied_by_maintainer(client, pr_number)
     ):
         labels = [name for name in labels if name != AUTOMERGE_OPT_IN_LABEL]
 
@@ -281,6 +290,7 @@ def build_pr_metadata(client: GitHubClient, full_pr: Dict[str, Any]) -> PRMetada
         additions=sum(f.get("additions", 0) for f in files),
         deletions=sum(f.get("deletions", 0) for f in files),
         is_dependabot=is_dependabot,
+        is_security_patch=is_security_patch,
         dependency_update_type=dependency_update_type,
         all_commits_verified=bool(commits) and not unverified,
         unverified_commit_shas=unverified,
