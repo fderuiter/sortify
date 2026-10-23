@@ -800,7 +800,7 @@ class ManualPathFallbackModal(A11yMixin, ModalScreen[Optional[str]]):
     def compose(self) -> ComposeResult:
         """Compose modal fallback UI children."""
         with Vertical(classes="modal-box"):
-            yield Label("Manual Directory Entry", classes="modal-title")
+            yield Heading("Manual Directory Entry", level=1, classes="modal-title")
             if self.reason:
                 yield Label(f"Native tool notice: {self.reason}", id="lbl-reason")
             yield Label("Please enter target directory path manually:")
