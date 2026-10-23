@@ -5,8 +5,10 @@ list of numbered migrations. The per-session databases that older versions left
 in the session folder are copied in once, the first time the store opens.
 """
 
+import json
 import logging
 import time
+import uuid
 from dataclasses import dataclass
 from pathlib import Path
 from typing import Callable
@@ -206,23 +208,79 @@ def _copy_table(
     return len(values)
 
 
-def _reencrypt(column: str, old_crypto, new_crypto) -> Callable[[dict], dict | None]:
+def _insert_decryption_quarantine_record(dst, record: dict, column: str) -> None:
+    job_id = f"qjob_decryption_{uuid.uuid4().hex[:12]}"
+    now = time.time()
+    base_dir = record.get("base_dir") or record.get("session_id") or ""
+    orig_path = record.get("filepath") or ""
+    file_hash = record.get("file_hash")
+    err_msg = f"Failed to decrypt {column} during legacy store migration"
+    audit_log = json.dumps(
+        [
+            {
+                "timestamp": now,
+                "event": "DECRYPTION_FAILED",
+                "status": "DECRYPTION_FAILED",
+                "details": err_msg,
+            }
+        ]
+    )
+    dst.execute(
+        """
+        INSERT INTO quarantine_records (
+            job_id, base_dir, original_filepath, staged_filepath,
+            file_hash, status, policy_action, audit_log,
+            created_at, updated_at, error_message
+        ) VALUES (?, ?, ?, ?, ?, 'DECRYPTION_FAILED', 'legacy_migration_reencryption', ?, ?, ?, ?)
+        """,
+        (
+            job_id,
+            base_dir,
+            orig_path,
+            orig_path,
+            file_hash,
+            audit_log,
+            now,
+            now,
+            err_msg,
+        ),
+    )
+
+
+def _reencrypt(
+    column: str, old_crypto, new_crypto, dst=None
+) -> Callable[[dict], dict | None]:
     """Re-encrypt ``column`` from the session key to the store key.
 
-    A row whose text the session key can no longer read is left out rather than
-    copied as unreadable bytes, so the next scan extracts that file again.
+    If re-encryption fails due to a missing key or CryptoError, the row metadata is
+    preserved with ``column`` set to None and an audit entry is created in
+    ``quarantine_records`` with status DECRYPTION_FAILED.
     """
 
     def transform(record: dict) -> dict | None:
         cipher = record.get(column)
         if cipher is None:
             return record
+
+        failed = False
         if old_crypto is None:
-            return None
-        try:
-            record[column] = new_crypto.encrypt_text(old_crypto.decrypt_text(cipher))
-        except CryptoError:
-            return None
+            failed = True
+        else:
+            try:
+                record[column] = new_crypto.encrypt_text(
+                    old_crypto.decrypt_text(cipher)
+                )
+            except CryptoError as e:
+                logging.warning(
+                    f"Decryption failed for {record.get('filepath')} in column '{column}': {e}"
+                )
+                failed = True
+
+        if failed:
+            record[column] = None
+            if dst is not None:
+                _insert_decryption_quarantine_record(dst, record, column)
+
         return record
 
     return transform
@@ -236,7 +294,7 @@ def _copy_history(src, dst, old_crypto, new_crypto) -> int:
         src,
         dst,
         "snapshot_documents",
-        transform=_reencrypt("extracted_text", old_crypto, new_crypto),
+        transform=_reencrypt("extracted_text", old_crypto, new_crypto, dst=dst),
     )
     # step_id is a store-wide sequence; the copied steps get new ids in their old order.
     count += _copy_table(src, dst, "step_ledger", skip=("step_id",))
@@ -252,7 +310,7 @@ def _copy_main(src, dst, old_crypto, new_crypto) -> int:
         src,
         dst,
         "documents",
-        transform=_reencrypt("extracted_text", old_crypto, new_crypto),
+        transform=_reencrypt("extracted_text", old_crypto, new_crypto, dst=dst),
     )
     count += _copy_table(src, dst, "transaction_ledger", skip=("id",))
     count += _copy_table(src, dst, "quarantine_records")
