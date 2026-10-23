@@ -1113,5 +1113,3 @@ def get_rule_importer(file_path: Union[str, Path]) -> BaseRuleImporter:
     raise ValueError(
         f"Unsupported rule file format for '{p.name}'. Expected .hazelrules, .plist, .xml, or .json."
     )
-
-
