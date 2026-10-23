@@ -313,7 +313,9 @@ def test_export_audit_log_path_traversal(test_history_env):
             format="csv",
             base_dir=base_dir,
         )
-    assert "escapes allowed base directory boundary" in str(exc_info.value) or "contains invalid directory traversal" in str(exc_info.value)
+    assert "escapes allowed base directory boundary" in str(
+        exc_info.value
+    ) or "contains invalid directory traversal" in str(exc_info.value)
 
 
 def test_export_audit_log_0o600_permissions(test_history_env):

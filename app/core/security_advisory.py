@@ -219,6 +219,32 @@ class SecurityAdvisoryClient:
 
         return None
 
+    def _build_opener(self) -> urllib.request.OpenerDirector:
+        """Build an independent urllib opener configured with active proxy settings."""
+        proxy_str = ""
+        if self._settings:
+            proxy_str = getattr(self._settings, "PROXY", "") or ""
+        else:
+            try:
+                from app.config import AppSettings
+
+                self._settings = AppSettings()
+                proxy_str = getattr(self._settings, "PROXY", "") or ""
+            except Exception as err:  # noqa: BLE001 - optional settings initialization fallback
+                logger.debug(
+                    "Failed to load AppSettings for proxy configuration: %s", err
+                )
+
+        p_str = (proxy_str or "").strip()
+        handlers = []
+        if p_str and "<DECRYPTION_FAILED>" not in p_str:
+            handlers.append(
+                urllib.request.ProxyHandler({"http": p_str, "https": p_str})
+            )
+        else:
+            handlers.append(urllib.request.ProxyHandler({}))
+        return urllib.request.build_opener(*handlers)
+
     def check_advisory(
         self,
         repo_id: Optional[str] = None,
@@ -281,111 +307,124 @@ class SecurityAdvisoryClient:
 
         # 2. Remote Security Advisory API Query
         # Bypassing thread-local socket sandboxing safely during advisory lookup
-        from app.core.shared_registry import _thread_local
+        from app.core.network_guard import unblock_external_network
 
-        was_sandboxed = getattr(_thread_local, "sandboxed", False)
-        old_reason = getattr(_thread_local, "reason", "worker execution")
-        _thread_local.sandboxed = False
-        _thread_local.reason = "security advisory query execution"
-
-        try:
-            params = {}
-            if norm_repo:
-                params["repo_id"] = norm_repo
-            if norm_hash:
-                params["file_hash"] = norm_hash
-
-            query_str = urllib.parse.urlencode(params)
-            endpoint_url = (
-                f"{self.endpoint}?{query_str}" if query_str else self.endpoint
-            )
-
-            req = urllib.request.Request(
-                endpoint_url,
-                headers={
-                    "User-Agent": "Smart-AutoSorter-SecurityClient/1.0",
-                    "Accept": "application/json",
-                },
-            )
-
+        with unblock_external_network(reason="security advisory query execution"):
             try:
-                from app.core.downloader import DownloadManager
+                params = {}
+                if norm_repo:
+                    params["repo_id"] = norm_repo
+                if norm_hash:
+                    params["file_hash"] = norm_hash
 
-                opener = DownloadManager.get_instance().get_opener()
-            except Exception:
-                logger.warning(
-                    "DownloadManager opener unavailable; using default urllib opener",
-                    exc_info=True,
+                query_str = urllib.parse.urlencode(params)
+                endpoint_url = (
+                    f"{self.endpoint}?{query_str}" if query_str else self.endpoint
                 )
-                opener = urllib.request.build_opener()
 
-            with opener.open(req, timeout=eff_timeout) as resp:
-                resp_data = json.loads(resp.read().decode("utf-8"))
-
-            has_adv = False
-            adv_id = None
-            sev = None
-            det = None
-
-            if isinstance(resp_data, dict):
-                has_adv = bool(
-                    resp_data.get("has_advisory")
-                    or resp_data.get("vulnerable")
-                    or resp_data.get("advisories")
+                req = urllib.request.Request(
+                    endpoint_url,
+                    headers={
+                        "User-Agent": "Smart-AutoSorter-SecurityClient/1.0",
+                        "Accept": "application/json",
+                    },
                 )
-                adv_id = resp_data.get("advisory_id") or resp_data.get("id")
-                sev = resp_data.get("severity") or resp_data.get("rating")
-                det = resp_data.get("details") or resp_data.get("message")
 
-                if (
-                    not adv_id
-                    and isinstance(resp_data.get("advisories"), list)
-                    and resp_data["advisories"]
-                ):
-                    first_adv = resp_data["advisories"][0]
+                opener = self._build_opener()
+
+                with opener.open(req, timeout=eff_timeout) as resp:
+                    raw_data = resp.read()
+                    if not raw_data:
+                        raise ValueError(
+                            "Empty response payload from security advisory endpoint."
+                        )
+                    try:
+                        text_data = raw_data.decode("utf-8")
+                    except UnicodeDecodeError as err:
+                        raise ValueError(
+                            f"Failed to decode security advisory response payload as UTF-8: {err}"
+                        ) from err
+                    try:
+                        resp_data = json.loads(text_data)
+                    except (json.JSONDecodeError, ValueError) as json_err:
+                        raise ValueError(
+                            f"Non-JSON or malformed payload received from security advisory endpoint: {json_err}"
+                        ) from json_err
+
+                has_adv = False
+                adv_id = None
+                sev = None
+                det = None
+
+                if isinstance(resp_data, dict):
+                    has_adv = bool(
+                        resp_data.get("has_advisory")
+                        or resp_data.get("vulnerable")
+                        or resp_data.get("advisories")
+                    )
+                    adv_id = resp_data.get("advisory_id") or resp_data.get("id")
+                    sev = resp_data.get("severity") or resp_data.get("rating")
+                    det = resp_data.get("details") or resp_data.get("message")
+
+                    if (
+                        not adv_id
+                        and isinstance(resp_data.get("advisories"), list)
+                        and resp_data["advisories"]
+                    ):
+                        first_adv = resp_data["advisories"][0]
+                        if isinstance(first_adv, dict):
+                            adv_id = first_adv.get("id")
+                            sev = first_adv.get("severity")
+                            det = first_adv.get("details") or first_adv.get("summary")
+                elif isinstance(resp_data, list) and resp_data:
+                    has_adv = True
+                    first_adv = resp_data[0]
                     if isinstance(first_adv, dict):
-                        adv_id = first_adv.get("id")
-                        sev = first_adv.get("severity")
-                        det = first_adv.get("details") or first_adv.get("summary")
+                        adv_id = first_adv.get("id") or first_adv.get("advisory_id")
+                        sev = first_adv.get("severity") or first_adv.get("rating")
+                        det = (
+                            first_adv.get("details")
+                            or first_adv.get("summary")
+                            or first_adv.get("message")
+                        )
+                    elif isinstance(first_adv, str):
+                        adv_id = first_adv
+                        det = "Security advisory listed."
 
-            result = SecurityAdvisoryResult(
-                has_advisory=has_adv,
-                advisory_id=adv_id,
-                severity=sev,
-                details=det,
-                timestamp=time.time(),
-            )
-            self.cache_advisory(norm_repo, norm_hash, result)
-
-            if has_adv and raise_on_advisory:
-                details_msg = (
-                    f"Active security advisory '{adv_id or 'FLAGGED'}' "
-                    f"detected for asset '{norm_repo or norm_hash}' (severity: {sev or 'CRITICAL'}): "
-                    f"{det or 'Security alert issued.'}"
-                )
-                raise ModelVerificationError(details_msg)
-
-            return result
-
-        except ModelVerificationError:
-            raise
-        except Exception as e:
-            logger.warning(
-                f"Security advisory query failed for '{norm_repo or norm_hash}': {e}"
-            )
-            if eff_fallback == "strict":
-                raise ModelVerificationError(
-                    f"Pre-download security advisory lookup failed for '{norm_repo or norm_hash}' "
-                    f"under strict security policy: {e}"
-                ) from e
-            else:
-                fallback_result = SecurityAdvisoryResult(
-                    has_advisory=False,
-                    details=f"Query failed ({e}), proceeding under permissive fallback policy.",
+                result = SecurityAdvisoryResult(
+                    has_advisory=has_adv,
+                    advisory_id=adv_id,
+                    severity=sev,
+                    details=det,
                     timestamp=time.time(),
                 )
-                return fallback_result
+                self.cache_advisory(norm_repo, norm_hash, result)
 
-        finally:
-            _thread_local.sandboxed = was_sandboxed
-            _thread_local.reason = old_reason
+                if has_adv and raise_on_advisory:
+                    details_msg = (
+                        f"Active security advisory '{adv_id or 'FLAGGED'}' "
+                        f"detected for asset '{norm_repo or norm_hash}' (severity: {sev or 'CRITICAL'}): "
+                        f"{det or 'Security alert issued.'}"
+                    )
+                    raise ModelVerificationError(details_msg)
+
+                return result
+
+            except ModelVerificationError:
+                raise
+            except Exception as e:
+                logger.warning(
+                    f"Security advisory query failed for '{norm_repo or norm_hash}': {e}"
+                )
+                if eff_fallback == "strict":
+                    raise ModelVerificationError(
+                        f"Pre-download security advisory lookup failed for '{norm_repo or norm_hash}' "
+                        f"under strict security policy: {e}"
+                    ) from e
+                else:
+                    fallback_result = SecurityAdvisoryResult(
+                        has_advisory=False,
+                        details=f"Query failed ({e}), proceeding under permissive fallback policy.",
+                        timestamp=time.time(),
+                    )
+                    return fallback_result

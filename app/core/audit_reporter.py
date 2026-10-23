@@ -208,7 +208,9 @@ def _validate_and_resolve_export_path(
         try:
             resolved_target.relative_to(resolved_parent)
         except ValueError as err:
-            msg = f"Export target path '{output_path}' escapes parent directory boundary"
+            msg = (
+                f"Export target path '{output_path}' escapes parent directory boundary"
+            )
             logger.error(msg)
             raise AuditExportError(msg) from err
         return str(resolved_target)
