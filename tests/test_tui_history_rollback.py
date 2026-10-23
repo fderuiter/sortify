@@ -18,6 +18,34 @@ from app.ui.tui import (
 )
 
 
+async def _wait_for_screen(app, screen_cls, pilot, timeout_steps=50):
+    """Wait asynchronously for app.screen to match the expected screen class."""
+    for _ in range(timeout_steps):
+        if isinstance(app.screen, screen_cls):
+            return app.screen
+        await pilot.pause(0.05)
+    return app.screen
+
+
+async def _wait_for_widget(
+    container, selector, widget_type=None, pilot=None, timeout_steps=50
+):
+    """Wait asynchronously for a child widget matching selector to be mounted in container."""
+    for _ in range(timeout_steps):
+        try:
+            if widget_type:
+                return container.query_one(selector, widget_type)
+            return container.query_one(selector)
+        except Exception:
+            if pilot:
+                await pilot.pause(0.05)
+            else:
+                break
+    if widget_type:
+        return container.query_one(selector, widget_type)
+    return container.query_one(selector)
+
+
 @pytest.fixture
 def tui_rollback_env(tmp_path, monkeypatch):
     """Fixture to set up a test environment with a historical sorting session and step ledger."""
@@ -162,18 +190,18 @@ async def test_rollback_confirm_modal_flow(tui_rollback_env):
 
         btn_rollback = modal.query_one("#btn-rollback-session", Button)
         btn_rollback.press()
-        await pilot.pause()
+        confirm_screen = await _wait_for_screen(app, RollbackConfirmModal, pilot=pilot)
 
-        # RollbackConfirmModal should now be the top screen
-        confirm_screen = app.screen
-        assert isinstance(confirm_screen, RollbackConfirmModal)
-
-        lbl_sid = confirm_screen.query_one("#lbl-confirm-sid", Label)
+        lbl_sid = await _wait_for_widget(
+            confirm_screen, "#lbl-confirm-sid", Label, pilot=pilot
+        )
         assert session_id in str(lbl_sid.render())
 
         # Step-ledger sessions always skip missing files, so no force option (#742)
         assert not confirm_screen.query("#chk-ignore-missing")
-        lbl_missing = confirm_screen.query_one("#lbl-confirm-missing", Label)
+        lbl_missing = await _wait_for_widget(
+            confirm_screen, "#lbl-confirm-missing", Label, pilot=pilot
+        )
         assert "skipped" in str(lbl_missing.render())
 
 
@@ -222,12 +250,10 @@ async def test_rollback_execution_success(tui_rollback_env):
 
         btn_rollback = modal.query_one("#btn-rollback-session", Button)
         btn_rollback.press()
-        await pilot.pause()
-
-        # Confirm rollback
-        confirm_screen = app.screen
-        assert isinstance(confirm_screen, RollbackConfirmModal)
-        btn_confirm = confirm_screen.query_one("#btn-confirm-rollback", Button)
+        confirm_screen = await _wait_for_screen(app, RollbackConfirmModal, pilot=pilot)
+        btn_confirm = await _wait_for_widget(
+            confirm_screen, "#btn-confirm-rollback", Button, pilot=pilot
+        )
         btn_confirm.press()
 
         # Await worker execution
@@ -272,13 +298,10 @@ async def test_rollback_execution_missing_files_flow(tui_rollback_env):
 
         btn_rollback = modal.query_one("#btn-rollback-session", Button)
         btn_rollback.press()
-        await pilot.pause()
-
-        # Step-ledger sessions skip missing files without a force option
-        confirm_screen = app.screen
-        assert isinstance(confirm_screen, RollbackConfirmModal)
-
-        btn_confirm = confirm_screen.query_one("#btn-confirm-rollback", Button)
+        confirm_screen = await _wait_for_screen(app, RollbackConfirmModal, pilot=pilot)
+        btn_confirm = await _wait_for_widget(
+            confirm_screen, "#btn-confirm-rollback", Button, pilot=pilot
+        )
         btn_confirm.press()
 
         # Await worker execution
@@ -315,12 +338,10 @@ async def test_rollback_execution_error_modal_on_failure(tui_rollback_env, monke
 
         btn_rollback = modal.query_one("#btn-rollback-session", Button)
         btn_rollback.press()
-        await pilot.pause()
-
-        confirm_screen = app.screen
-        assert isinstance(confirm_screen, RollbackConfirmModal)
-
-        btn_confirm = confirm_screen.query_one("#btn-confirm-rollback", Button)
+        confirm_screen = await _wait_for_screen(app, RollbackConfirmModal, pilot=pilot)
+        btn_confirm = await _wait_for_widget(
+            confirm_screen, "#btn-confirm-rollback", Button, pilot=pilot
+        )
         btn_confirm.press()
 
         # Await worker execution
@@ -362,8 +383,11 @@ async def test_rollback_uses_the_app_store(tui_rollback_env, monkeypatch):
         modal.query_one("#select-history-session", Select).value = session_id
         await pilot.pause()
         modal.query_one("#btn-rollback-session", Button).press()
-        await pilot.pause()
-        app.screen.query_one("#btn-confirm-rollback", Button).press()
+        confirm_screen = await _wait_for_screen(app, RollbackConfirmModal, pilot=pilot)
+        btn_confirm = await _wait_for_widget(
+            confirm_screen, "#btn-confirm-rollback", Button, pilot=pilot
+        )
+        btn_confirm.press()
 
         await pilot.pause()
         await app.workers.wait_for_complete()
@@ -424,8 +448,11 @@ async def test_escape_does_not_close_history_modal_mid_rollback(
         modal.query_one("#select-history-session", Select).value = session_id
         await pilot.pause()
         modal.query_one("#btn-rollback-session", Button).press()
-        await pilot.pause()
-        app.screen.query_one("#btn-confirm-rollback", Button).press()
+        confirm_screen = await _wait_for_screen(app, RollbackConfirmModal, pilot=pilot)
+        btn_confirm = await _wait_for_widget(
+            confirm_screen, "#btn-confirm-rollback", Button, pilot=pilot
+        )
+        btn_confirm.press()
         await pilot.pause()
 
         try:

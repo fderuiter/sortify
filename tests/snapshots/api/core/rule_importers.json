@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "2141210b16550c9affac4ecfa8466f6dc82061b470d07be61737f6a8f3efb46f"
+    "checksum": "c9e46c1bb110c479867232a7bed2669406aa0529b6c4a1409d31ab3417db5d43"
   },
   "classes": [
     {
@@ -153,9 +153,52 @@
               "annotation": "Any",
               "default": null,
               "name": "settings"
+            },
+            {
+              "annotation": "Optional[Dict[str, str]]",
+              "default": "None",
+              "name": "resolutions"
+            },
+            {
+              "annotation": "str",
+              "default": "'keep_existing'",
+              "name": "default_strategy"
             }
           ],
           "returns": "Tuple[Dict[str, str], List[Dict[str, Any]]]"
+        }
+      ]
+    },
+    {
+      "class_name": "RuleConflict",
+      "decorators": [
+        "@dataclass"
+      ],
+      "methods": []
+    },
+    {
+      "class_name": "RuleConflictAnalyzer",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "analyze",
+          "parameters": [
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "import_result"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "settings"
+            }
+          ],
+          "returns": "List[RuleConflict]"
         }
       ]
     },
@@ -219,20 +262,15 @@
     {
       "async": false,
       "decorators": [],
-      "name": "import_and_merge_rules",
+      "name": "normalize_rule_path",
       "parameters": [
         {
-          "annotation": "Union[str, Path]",
+          "annotation": "str",
           "default": null,
-          "name": "file_path"
-        },
-        {
-          "annotation": "Any",
-          "default": null,
-          "name": "settings"
+          "name": "path_str"
         }
       ],
-      "returns": "ImportResult"
+      "returns": "str"
     }
   ]
 }

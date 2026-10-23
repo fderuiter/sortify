@@ -12,9 +12,114 @@ from app.core.rule_importers import (
     DropItRuleImporter,
     HazelRuleImporter,
     ImportResult,
+    RuleConflictAnalyzer,
     TagSpacesRuleImporter,
     get_rule_importer,
 )
+
+
+def test_rule_conflict_analyzer():
+    """Verify RuleConflictAnalyzer detects keyword and policy target path collisions."""
+    with tempfile.NamedTemporaryFile(suffix=".json") as f:
+        settings = AppSettings(filepath=f.name)
+        settings.KEYWORD_RULES = {
+            "invoice": "Local/Invoices",
+            "receipt": "Local/Receipts",
+        }
+        settings.POLICIES = [
+            {
+                "type": "pattern",
+                "expression": "*.pdf",
+                "target_path": "Local/PDFs",
+                "priority": 90,
+            }
+        ]
+
+        # 1. Incoming result with conflicts and non-conflicts
+        import_res = ImportResult(
+            keyword_rules={
+                "invoice": "Hazel/Invoices",  # Differing target -> CONFLICT
+                "receipt": "Local/Receipts",  # Same target -> NO CONFLICT
+                "tax": "Hazel/Taxes",  # New keyword -> NO CONFLICT
+            },
+            policies=[
+                {
+                    "type": "pattern",
+                    "expression": "*.pdf",
+                    "target_path": "Hazel/PDFs",  # Differing target -> CONFLICT
+                    "priority": 75,
+                },
+                {
+                    "type": "pattern",
+                    "expression": "*.docx",  # New policy -> NO CONFLICT
+                    "target_path": "Hazel/Docs",
+                    "priority": 75,
+                },
+            ],
+        )
+
+        conflicts = RuleConflictAnalyzer.analyze(import_res, settings)
+        assert len(conflicts) == 2
+
+        kw_conflict = next(c for c in conflicts if c.rule_type == "keyword")
+        assert kw_conflict.identifier == "invoice"
+        assert kw_conflict.existing_target == "Local/Invoices"
+        assert kw_conflict.imported_target == "Hazel/Invoices"
+
+        pol_conflict = next(c for c in conflicts if c.rule_type == "policy")
+        assert pol_conflict.identifier == "*.pdf (pattern)"
+        assert pol_conflict.existing_target == "Local/PDFs"
+        assert pol_conflict.imported_target == "Hazel/PDFs"
+
+
+def test_rule_conflict_resolutions_overwrite_and_skip():
+    """Verify merge_into_settings respects overwrite and granular resolution choices."""
+    with tempfile.NamedTemporaryFile(suffix=".json") as f:
+        settings = AppSettings(filepath=f.name)
+        settings.KEYWORD_RULES = {
+            "invoice": "Local/Invoices",
+            "statement": "Local/Statements",
+        }
+        settings.POLICIES = [
+            {
+                "type": "pattern",
+                "expression": "*.pdf",
+                "target_path": "Local/PDFs",
+                "priority": 90,
+            }
+        ]
+
+        import_res = ImportResult(
+            keyword_rules={
+                "invoice": "Hazel/Invoices",
+                "statement": "Hazel/Statements",
+            },
+            policies=[
+                {
+                    "type": "pattern",
+                    "expression": "*.pdf",
+                    "target_path": "Hazel/PDFs",
+                    "priority": 75,
+                }
+            ],
+        )
+
+        # Apply custom resolutions: invoice -> overwrite, statement -> keep_existing, *.pdf (pattern) -> overwrite
+        resolutions = {
+            "invoice": "overwrite",
+            "statement": "keep_existing",
+            "*.pdf (pattern)": "overwrite",
+        }
+
+        kw, pol = import_res.merge_into_settings(settings, resolutions=resolutions)
+
+        # invoice overwritten
+        assert kw["invoice"] == "Hazel/Invoices"
+        # statement kept as local
+        assert kw["statement"] == "Local/Statements"
+        # *.pdf policy overwritten to Hazel/PDFs
+        pdf_policy = next(p for p in pol if p["expression"] == "*.pdf")
+        assert pdf_policy["target_path"] == "Hazel/PDFs"
 
 
 def test_hazel_rule_importer_plist():
@@ -407,32 +512,3 @@ def test_merge_into_settings_propagates_save_exception():
 
     with pytest.raises(OSError, match="Write permission denied"):
         res.merge_into_settings(settings)
-
-
-def test_import_and_merge_rules_propagates_save_exception():
-    """Verify import_and_merge_rules propagates persistence exceptions to callers."""
-    import pytest
-
-    from app.core.rule_importers import import_and_merge_rules
-
-    ts_data = {"tagGroups": [{"title": "Work", "tags": ["invoice"]}]}
-
-    with tempfile.NamedTemporaryFile(
-        suffix="taggroup.json", mode="w", encoding="utf-8", delete=False
-    ) as f:
-        json.dump(ts_data, f)
-        temp_path = f.name
-
-    class FailingSettings:
-        KEYWORD_RULES = {}
-        POLICIES = []
-
-        def _save(self):
-            raise IOError("Disk full")
-
-    try:
-        settings = FailingSettings()
-        with pytest.raises(IOError, match="Disk full"):
-            import_and_merge_rules(temp_path, settings)
-    finally:
-        Path(temp_path).unlink(missing_ok=True)

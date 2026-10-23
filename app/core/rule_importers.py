@@ -12,9 +12,122 @@ import re
 import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Tuple, Union
+from typing import Any, Dict, List, Optional, Tuple, Union
 
 logger = logging.getLogger(__name__)
+
+
+@dataclass
+class RuleConflict:
+    """Data structure representing a collision between an imported rule and an existing rule."""
+
+    rule_type: str  # "keyword" or "policy"
+    identifier: str  # keyword name or policy expression/type
+    existing_target: str
+    imported_target: str
+    existing_priority: Optional[int] = None
+    imported_priority: Optional[int] = None
+    resolution: str = (
+        "keep_existing"  # "keep_existing", "overwrite", or "skip_conflicting"
+    )
+
+
+def normalize_rule_path(path_str: str) -> str:
+    """Normalize target folder path strings for rule conflict comparison."""
+    if not path_str:
+        return ""
+    clean = str(path_str).strip().replace("\\", "/").rstrip("/")
+    clean = clean.strip("\"'")
+    return clean
+
+
+class RuleConflictAnalyzer:
+    """Evaluates incoming keyword rules and policy patterns against existing settings to detect collisions and overlaps."""
+
+    @staticmethod
+    def analyze(import_result: Any, settings: Any) -> List[RuleConflict]:
+        """Analyze imported rules against active settings to discover destination path collisions and policy overlaps.
+
+        Args:
+            import_result: The ImportResult containing incoming keyword rules and policies.
+            settings: The AppSettings configuration object.
+
+        Returns
+        -------
+            List of detected RuleConflict instances.
+        """
+        conflicts: List[RuleConflict] = []
+        if not import_result or not settings:
+            return conflicts
+
+        # 1. Evaluate keyword rule collisions
+        existing_keywords = dict(getattr(settings, "KEYWORD_RULES", {}) or {})
+        existing_kw_map = {
+            str(k).strip().lower(): (k, v) for k, v in existing_keywords.items()
+        }
+
+        keyword_rules = getattr(import_result, "keyword_rules", {}) or {}
+        for kw, target_path in keyword_rules.items():
+            kw_clean = str(kw).strip()
+            if not kw_clean:
+                continue
+            kw_lower = kw_clean.lower()
+            if kw_lower in existing_kw_map:
+                ex_orig_kw, ex_target = existing_kw_map[kw_lower]
+                san_ex = normalize_rule_path(ex_target)
+                san_imp = normalize_rule_path(target_path)
+                if san_ex != san_imp:
+                    conflicts.append(
+                        RuleConflict(
+                            rule_type="keyword",
+                            identifier=ex_orig_kw,
+                            existing_target=str(ex_target),
+                            imported_target=str(target_path),
+                            resolution="keep_existing",
+                        )
+                    )
+
+        # 2. Evaluate policy pattern collisions
+        existing_policies = list(getattr(settings, "POLICIES", []) or [])
+        imported_policies = list(getattr(import_result, "policies", []) or [])
+
+        for policy in imported_policies:
+            p_type = str(policy.get("type", "")).strip().lower()
+            p_expr = str(policy.get("expression", "")).strip().lower()
+            p_target = policy.get("target_path", "")
+            p_prio = policy.get("priority", 75)
+
+            if not p_expr:
+                continue
+
+            for ex_p in existing_policies:
+                ex_type = str(ex_p.get("type", "")).strip().lower()
+                ex_expr = str(ex_p.get("expression", "")).strip().lower()
+                if ex_type == p_type and ex_expr == p_expr:
+                    ex_target = ex_p.get("target_path", "")
+                    ex_prio = ex_p.get("priority", 75)
+                    san_ex = normalize_rule_path(ex_target)
+                    san_imp = normalize_rule_path(p_target)
+                    if san_ex != san_imp or ex_prio != p_prio:
+                        ident = f"{ex_expr} ({ex_type})" if ex_type else ex_expr
+                        conflicts.append(
+                            RuleConflict(
+                                rule_type="policy",
+                                identifier=ident,
+                                existing_target=str(ex_target),
+                                imported_target=str(p_target),
+                                existing_priority=int(ex_prio)
+                                if ex_prio is not None
+                                else None,
+                                imported_priority=int(p_prio)
+                                if p_prio is not None
+                                else None,
+                                resolution="keep_existing",
+                            )
+                        )
+                    break
+
+        return conflicts
 
 
 @dataclass
@@ -28,24 +141,38 @@ class ImportResult:
     source_format: str = "Unknown"
 
     def merge_into_settings(
-        self, settings: Any
+        self,
+        settings: Any,
+        resolutions: Optional[Dict[str, str]] = None,
+        default_strategy: str = "keep_existing",
     ) -> Tuple[Dict[str, str], List[Dict[str, Any]]]:
-        """Safely merge extracted rules into settings without overwriting custom rules.
+        """Safely merge extracted rules into settings according to resolution choices.
 
         Args:
             settings: The AppSettings configuration object.
+            resolutions: Map of rule identifier -> conflict resolution choice
+                         ('keep_existing', 'overwrite', 'skip_conflicting').
+            default_strategy: Default bulk resolution strategy if identifier is not specified.
 
         Returns
         -------
             Tuple of updated (KEYWORD_RULES dict, POLICIES list).
         """
+        resolutions = resolutions or {}
+        conflicts = RuleConflictAnalyzer.analyze(self, settings)
+        kw_conflicts = {
+            c.identifier.lower(): c for c in conflicts if c.rule_type == "keyword"
+        }
+        policy_conflicts = {
+            c.identifier.lower(): c for c in conflicts if c.rule_type == "policy"
+        }
+
         existing_keywords = dict(getattr(settings, "KEYWORD_RULES", {}) or {})
         existing_policies = list(getattr(settings, "POLICIES", []) or [])
 
         new_keywords = dict(existing_keywords)
         new_policies = [dict(p) for p in existing_policies]
 
-        # Map existing lower-case keywords to preserve existing custom rules
         existing_kw_lower = {k.lower(): k for k in existing_keywords.keys()}
 
         for kw, target_path in self.keyword_rules.items():
@@ -53,7 +180,20 @@ class ImportResult:
             if not kw_clean:
                 continue
             kw_lower = kw_clean.lower()
-            if kw_lower not in existing_kw_lower and kw_clean not in new_keywords:
+            if kw_lower in existing_kw_lower:
+                ex_kw = existing_kw_lower[kw_lower]
+                if kw_lower in kw_conflicts:
+                    conflict_obj = kw_conflicts[kw_lower]
+                    res = resolutions.get(
+                        conflict_obj.identifier,
+                        resolutions.get(
+                            kw_clean, resolutions.get(ex_kw, default_strategy)
+                        ),
+                    )
+                    if res == "overwrite":
+                        new_keywords[ex_kw] = target_path
+                    # keep_existing and skip_conflicting preserve existing new_keywords[ex_kw]
+            else:
                 new_keywords[kw_clean] = target_path
 
         for policy in self.policies:
@@ -63,15 +203,30 @@ class ImportResult:
             if not p_expr:
                 continue
 
-            is_duplicate = False
-            for existing_p in new_policies:
+            ident = f"{p_expr} ({p_type})" if p_type else p_expr
+            ident_lower = ident.lower()
+
+            matching_idx = None
+            for idx, existing_p in enumerate(new_policies):
                 ex_type = str(existing_p.get("type", "")).strip().lower()
                 ex_expr = str(existing_p.get("expression", "")).strip().lower()
                 if ex_type == p_type and ex_expr == p_expr:
-                    is_duplicate = True
+                    matching_idx = idx
                     break
 
-            if not is_duplicate:
+            if matching_idx is not None:
+                if ident_lower in policy_conflicts:
+                    conflict_obj = policy_conflicts[ident_lower]
+                    res = resolutions.get(
+                        conflict_obj.identifier,
+                        resolutions.get(
+                            ident, resolutions.get(p_expr, default_strategy)
+                        ),
+                    )
+                    if res == "overwrite":
+                        new_policies[matching_idx] = dict(policy)
+                    # keep_existing and skip_conflicting preserve existing new_policies[matching_idx]
+            else:
                 new_policies.append(dict(policy))
 
         setattr(settings, "KEYWORD_RULES", new_keywords)
@@ -1108,20 +1263,3 @@ def get_rule_importer(file_path: Union[str, Path]) -> BaseRuleImporter:
     raise ValueError(
         f"Unsupported rule file format for '{p.name}'. Expected .hazelrules, .plist, .xml, or .json."
     )
-
-
-def import_and_merge_rules(file_path: Union[str, Path], settings: Any) -> ImportResult:
-    """Parse external rule package and merge into settings.
-
-    Args:
-        file_path: Path to external rule package.
-        settings: Application settings object.
-
-    Returns
-    -------
-        ImportResult object containing parsed rules and merge outcome.
-    """
-    importer = get_rule_importer(file_path)
-    result = importer.parse_file(file_path)
-    result.merge_into_settings(settings)
-    return result
