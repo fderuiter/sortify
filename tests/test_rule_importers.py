@@ -387,3 +387,50 @@ def test_tagspaces_rule_importer_smart_rules():
         assert any("script" in w.lower() for w in res.warnings)
     finally:
         Path(temp_path).unlink(missing_ok=True)
+
+
+def test_merge_into_settings_propagates_save_exception():
+    """Verify ImportResult.merge_into_settings propagates save exceptions from settings._save()."""
+    import pytest
+    from app.core.rule_importers import ImportResult
+
+    class FailingSettings:
+        KEYWORD_RULES = {}
+        POLICIES = []
+
+        def _save(self):
+            raise OSError("Write permission denied")
+
+    res = ImportResult(keyword_rules={"test": "Folder"})
+    settings = FailingSettings()
+
+    with pytest.raises(OSError, match="Write permission denied"):
+        res.merge_into_settings(settings)
+
+
+def test_import_and_merge_rules_propagates_save_exception():
+    """Verify import_and_merge_rules propagates persistence exceptions to callers."""
+    import pytest
+    from app.core.rule_importers import import_and_merge_rules
+
+    ts_data = {"tagGroups": [{"title": "Work", "tags": ["invoice"]}]}
+
+    with tempfile.NamedTemporaryFile(
+        suffix="taggroup.json", mode="w", encoding="utf-8", delete=False
+    ) as f:
+        json.dump(ts_data, f)
+        temp_path = f.name
+
+    class FailingSettings:
+        KEYWORD_RULES = {}
+        POLICIES = []
+
+        def _save(self):
+            raise IOError("Disk full")
+
+    try:
+        settings = FailingSettings()
+        with pytest.raises(IOError, match="Disk full"):
+            import_and_merge_rules(temp_path, settings)
+    finally:
+        Path(temp_path).unlink(missing_ok=True)

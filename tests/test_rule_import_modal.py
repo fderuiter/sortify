@@ -111,3 +111,40 @@ def test_rule_import_modal_tagspaces_parsing_and_merging():
             assert lab_policies[0].get("target_path") == "Medical"
         finally:
             Path(temp_path).unlink(missing_ok=True)
+
+
+def test_rule_import_modal_save_failure_handling(mocker):
+    """Verify RuleImportModal catches save exceptions, notifies error, announces error, and keeps modal open."""
+    from app.core.rule_importers import ImportResult
+
+    class MockFailingSettings:
+        KEYWORD_RULES = {}
+        POLICIES = []
+
+        def _save(self):
+            raise OSError("ReadOnlyFileSystem: cannot write settings.json")
+
+    settings = MockFailingSettings()
+    modal = RuleImportModal(settings)
+    modal.current_result = ImportResult(keyword_rules={"invoice": "Invoices"})
+
+    dismiss_mock = mocker.patch.object(modal, "dismiss")
+    announce_mock = mocker.patch.object(modal, "announce")
+    notify_mock = mocker.patch("app.ui.notifications.notify")
+
+    modal.action_merge_rules()
+
+    # Modal should NOT have been dismissed on save error
+    dismiss_mock.assert_not_called()
+
+    # Error should have been announced
+    announce_mock.assert_called_once()
+    announced_text = announce_mock.call_args[0][0]
+    assert "Failed to save imported rules" in announced_text
+    assert "ReadOnlyFileSystem" in announced_text
+
+    # Error notification should have been issued
+    notify_mock.assert_called_once()
+    _, kwargs = notify_mock.call_args
+    assert kwargs.get("type") == "error"
+
