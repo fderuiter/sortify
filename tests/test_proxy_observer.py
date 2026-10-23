@@ -348,7 +348,10 @@ def test_active_download_adopts_updated_proxy_on_retry(temp_settings_path):
             return openers.pop(0)
         return mock_opener_2
 
-    with patch.object(dm, "get_opener", side_effect=mock_get_opener):
+    with (
+        patch("app.core.security_advisory.SecurityAdvisoryClient.check_advisory"),
+        patch.object(dm, "get_opener", side_effect=mock_get_opener),
+    ):
         success_event = threading.Event()
         failure_event = threading.Event()
 

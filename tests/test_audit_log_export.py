@@ -294,3 +294,48 @@ def test_cli_ledger_export_without_session_id(tmp_path, monkeypatch):
     assert len(rows) == 2
 
     db_worker.stop()
+
+
+def test_export_audit_log_path_traversal(test_history_env):
+    """Test that export_audit_log rejects path traversal attempts escaping base_dir."""
+    from app.core.exceptions import AuditExportError
+
+    env = test_history_env
+    history_mgr = env["history_mgr"]
+    session_id = env["session_id"]
+    base_dir = env["base_dir"]
+
+    # Traversal relative path escaping base_dir
+    with pytest.raises(AuditExportError) as exc_info:
+        history_mgr.export_audit_log(
+            output_path="../escaped.csv",
+            session_id=session_id,
+            format="csv",
+            base_dir=base_dir,
+        )
+    assert "escapes allowed base directory boundary" in str(
+        exc_info.value
+    ) or "contains invalid directory traversal" in str(exc_info.value)
+
+
+def test_export_audit_log_0o600_permissions(test_history_env):
+    """Test that export_audit_log creates output files with 0o600 permissions."""
+    import stat
+
+    env = test_history_env
+    history_mgr = env["history_mgr"]
+    session_id = env["session_id"]
+    base_dir = env["base_dir"]
+    out_file = os.path.join(base_dir, "secure_export.csv")
+
+    res = history_mgr.export_audit_log(
+        output_path=out_file,
+        session_id=session_id,
+        format="csv",
+        base_dir=base_dir,
+    )
+
+    assert os.path.exists(res["output_path"])
+    if os.name != "nt":
+        mode = stat.S_IMODE(os.stat(res["output_path"]).st_mode)
+        assert mode == 0o600

@@ -76,6 +76,7 @@ PRIVATE_KEY_PATTERN = re.compile(
 )
 SSN_PATTERN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 CREDIT_CARD_PATTERN = re.compile(r"\b(?:\d[ -]*?){13,16}\b")
+SUB_TOKEN_PATTERN = re.compile(r"([_\-/])")
 
 
 def calculate_shannon_entropy(text: str) -> float:
@@ -157,7 +158,7 @@ def contains_secrets(text: str) -> bool:
 
     words = text.split()
     for word in words:
-        if _is_high_entropy_token(word):
+        if len(word) >= 20 and _is_high_entropy_token(word):
             return True
 
     return False
@@ -176,56 +177,83 @@ def sanitize_secret_patterns(text: str, replacement: str = "") -> str:
     result = text
 
     # Strip encrypted credential tokens and prefixes starting with 'enc:'
-    result = ENC_CREDENTIAL_PATTERN.sub(replacement, result)
+    if "enc:" in result:
+        result = ENC_CREDENTIAL_PATTERN.sub(replacement, result)
 
     # Mask key-value secrets (e.g. password=super_secret -> password=[REDACTED])
-    if replacement:
-        result = KEY_VALUE_SECRET_PATTERN.sub(rf"\1={replacement}", result)
-    else:
-        result = KEY_VALUE_SECRET_PATTERN.sub(r"\1=[REDACTED]", result)
+    if "=" in result:
+        if replacement:
+            result = KEY_VALUE_SECRET_PATTERN.sub(rf"\1={replacement}", result)
+        else:
+            result = KEY_VALUE_SECRET_PATTERN.sub(r"\1=[REDACTED]", result)
 
-    result = PRIVATE_KEY_PATTERN.sub(replacement, result)
-    result = BEARER_TOKEN_PATTERN.sub(replacement, result)
-    result = JWT_PATTERN.sub(replacement, result)
+    if "PRIVATE KEY" in result.upper():
+        result = PRIVATE_KEY_PATTERN.sub(replacement, result)
 
-    for pat in SECRET_KEY_PATTERNS:
-        result = pat.sub(replacement, result)
+    if "bearer" in result.lower():
+        result = BEARER_TOKEN_PATTERN.sub(replacement, result)
 
-    result = SSN_PATTERN.sub(replacement, result)
+    if "eyJ" in result:
+        result = JWT_PATTERN.sub(replacement, result)
 
-    def _card_replacer(match: re.Match) -> str:
-        s = match.group(0)
-        digits = "".join(c for c in s if c.isdigit())
-        if 13 <= len(digits) <= 16:
-            return replacement
-        return s
+    if "sk_" in result:
+        result = SECRET_KEY_PATTERNS[0].sub(replacement, result)
+    if any(p in result for p in ("ghp_", "gho_", "ghu_", "ghs_", "ghr_")):
+        result = SECRET_KEY_PATTERNS[1].sub(replacement, result)
+    if "AKIA" in result or "ASIA" in result:
+        result = SECRET_KEY_PATTERNS[2].sub(replacement, result)
+    if ":" in result or "=" in result:
+        result = SECRET_KEY_PATTERNS[3].sub(replacement, result)
+    if "key-" in result.lower():
+        result = SECRET_KEY_PATTERNS[4].sub(replacement, result)
+    if "sk_" in result:
+        result = SECRET_KEY_PATTERNS[5].sub(replacement, result)
 
-    result = CREDIT_CARD_PATTERN.sub(_card_replacer, result)
+    if "-" in result:
+        result = SSN_PATTERN.sub(replacement, result)
+
+    if any(c.isdigit() for c in result):
+
+        def _card_replacer(match: re.Match) -> str:
+            s = match.group(0)
+            digits = "".join(c for c in s if c.isdigit())
+            if 13 <= len(digits) <= 16:
+                return replacement
+            return s
+
+        result = CREDIT_CARD_PATTERN.sub(_card_replacer, result)
 
     words = result.split()
     new_words = []
     modified = False
     for word in words:
+        if len(word) < 20:
+            new_words.append(word)
+            continue
+
         if _is_high_entropy_token(word):
             if replacement:
                 new_words.append(replacement)
             modified = True
         else:
-            sub_tokens = re.split(r"([_\-/])", word)
-            new_sub_tokens = []
-            sub_modified = False
-            for st in sub_tokens:
-                if st in ("_", "-", "/") or not st:
-                    new_sub_tokens.append(st)
-                elif _is_high_entropy_token(st):
-                    if replacement:
-                        new_sub_tokens.append(replacement)
-                    sub_modified = True
+            if "_" in word or "-" in word or "/" in word:
+                sub_tokens = SUB_TOKEN_PATTERN.split(word)
+                new_sub_tokens = []
+                sub_modified = False
+                for st in sub_tokens:
+                    if st in ("_", "-", "/") or not st:
+                        new_sub_tokens.append(st)
+                    elif len(st) >= 20 and _is_high_entropy_token(st):
+                        if replacement:
+                            new_sub_tokens.append(replacement)
+                        sub_modified = True
+                    else:
+                        new_sub_tokens.append(st)
+                if sub_modified:
+                    new_words.append("".join(new_sub_tokens))
+                    modified = True
                 else:
-                    new_sub_tokens.append(st)
-            if sub_modified:
-                new_words.append("".join(new_sub_tokens))
-                modified = True
+                    new_words.append(word)
             else:
                 new_words.append(word)
 

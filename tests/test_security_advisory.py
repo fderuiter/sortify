@@ -19,10 +19,18 @@ from app.core.security_advisory import (
 
 @pytest.fixture(autouse=True)
 def reset_advisory_client():
-    """Ensure clean SecurityAdvisoryClient state for every test."""
+    """Ensure clean SecurityAdvisoryClient and sandbox thread-local state for every test."""
+    from app.core.shared_registry import _thread_local
+
+    was_sandboxed = getattr(_thread_local, "sandboxed", False)
+    was_reason = getattr(_thread_local, "reason", "worker execution")
     SecurityAdvisoryClient.reset_instance()
-    yield
-    SecurityAdvisoryClient.reset_instance()
+    try:
+        yield
+    finally:
+        SecurityAdvisoryClient.reset_instance()
+        _thread_local.sandboxed = was_sandboxed
+        _thread_local.reason = was_reason
 
 
 def test_advisory_client_singleton_and_cache():
@@ -91,6 +99,17 @@ def test_active_security_advisory_blocks_and_raises_verification_error():
     assert "CRITICAL" in str(exc_info.value)
 
 
+def test_app_settings_default_policy_is_strict():
+    """Verify that AppSettings.SECURITY_ADVISORY_FALLBACK_POLICY defaults to 'strict'."""
+    from app.config import AppSettings
+
+    settings = AppSettings()
+    assert settings.SECURITY_ADVISORY_FALLBACK_POLICY == "strict"
+
+    client = SecurityAdvisoryClient.get_instance()
+    assert client.fallback_policy == "strict"
+
+
 def test_fallback_policy_strict_vs_permissive():
     """Test fallback policy behavior during network query errors or timeouts."""
     client_strict = SecurityAdvisoryClient(fallback_policy="strict")
@@ -106,12 +125,89 @@ def test_fallback_policy_strict_vs_permissive():
             client_strict.check_advisory(repo_id="owner/model-a", timeout=1.0)
         assert "under strict security policy" in str(exc_info.value)
 
-        # Permissive policy must log warning and return clean result
+        # Permissive policy must log warning and return clean result without caching it in _cache
         res = client_permissive.check_advisory(
             repo_id="owner/model-b", timeout=1.0, raise_on_advisory=True
         )
         assert res.has_advisory is False
         assert "permissive fallback policy" in res.details
+
+        # Ensure unverified fallback result is NOT stored in long-term cache
+        assert client_permissive.get_cached_advisory("owner/model-b", None) is None
+        assert len(client_permissive._cache) == 0
+
+
+def test_background_downloader_sandboxing_maintained_on_advisory_failure():
+    """Verify that downloader thread sandboxing remains active and un-sandboxing is skipped on advisory check failure."""
+    from app.core.shared_registry import _thread_local
+
+    test_url = "https://huggingface.co/unreachable-org/model-x/resolve/main/model.onnx"
+
+    # Mock opener open to fail with network error
+    with patch("urllib.request.build_opener") as mock_opener_builder:
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = urllib.error.URLError("Network unreachable")
+        mock_opener_builder.return_value = mock_opener
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_dir = os.path.join(temp_dir, "test_model_target")
+
+            failed_event = pytest.importorskip("threading").Event()
+            captured_error = []
+            sandboxed_state = []
+
+            def on_failure_cb(err):
+                captured_error.append(err)
+                sandboxed_state.append(getattr(_thread_local, "sandboxed", False))
+                failed_event.set()
+
+            was_sandboxed = getattr(_thread_local, "sandboxed", False)
+            try:
+                # Set sandboxed = True on caller thread context
+                _thread_local.sandboxed = True
+
+                t = run_background_download(
+                    url=test_url,
+                    model_dir=model_dir,
+                    on_failure=on_failure_cb,
+                )
+                t.join(timeout=5.0)
+
+                assert failed_event.is_set()
+                assert len(captured_error) == 1
+                assert isinstance(captured_error[0], ModelVerificationError)
+                # Verify sandboxing was active (True) when failure callback executed
+                assert sandboxed_state[0] is True
+            finally:
+                _thread_local.sandboxed = was_sandboxed
+
+
+def test_offline_loader_aborts_on_network_failure_under_strict_policy():
+    """Verify offline model loader aborts cleanly with ModelVerificationError on network failure under default strict policy."""
+    client = SecurityAdvisoryClient.get_instance()
+    model_id = "strict_offline_model"
+
+    mock_loader = MagicMock()
+
+    with patch("urllib.request.build_opener") as mock_opener_builder:
+        mock_opener = MagicMock()
+        mock_opener.open.side_effect = urllib.error.URLError("Network unreachable")
+        mock_opener_builder.return_value = mock_opener
+
+        with tempfile.TemporaryDirectory() as temp_dir:
+            model_folder = os.path.join(temp_dir, "offline_bundle", model_id)
+            os.makedirs(model_folder, exist_ok=True)
+            with open(os.path.join(model_folder, "model.onnx"), "w") as f:
+                f.write("dummy model content")
+
+            with patch.object(
+                OfflineModelLoader, "resolve_model_path", return_value=model_folder
+            ):
+                with pytest.raises(ModelVerificationError) as exc_info:
+                    OfflineModelLoader.load_model(model_id, mock_loader)
+
+                assert "under strict security policy" in str(exc_info.value)
+                mock_loader.assert_not_called()
 
 
 def test_background_downloader_pre_download_advisory_check_blocks_download():
@@ -223,3 +319,102 @@ def test_concurrent_advisory_cache_thread_safety():
         t.join()
 
     assert len(errors) == 0, f"Thread safety errors encountered: {errors}"
+
+
+def test_non_json_response_handling_permissive_and_strict():
+    """Verify non-JSON responses from advisory endpoint return fallback result in permissive mode and raise in strict mode."""
+    client_permissive = SecurityAdvisoryClient(fallback_policy="permissive")
+    client_strict = SecurityAdvisoryClient(fallback_policy="strict")
+
+    mock_resp = MagicMock()
+    mock_resp.read.return_value = b"<html>502 Bad Gateway</html>"
+    mock_opener = MagicMock()
+    mock_opener.open.return_value.__enter__.return_value = mock_resp
+
+    with patch.object(client_permissive, "_build_opener", return_value=mock_opener):
+        res = client_permissive.check_advisory(repo_id="test-org/non-json-model")
+        assert res.has_advisory is False
+        assert "Query failed" in res.details
+        assert "permissive fallback policy" in res.details
+
+    with patch.object(client_strict, "_build_opener", return_value=mock_opener):
+        with pytest.raises(ModelVerificationError) as exc_info:
+            client_strict.check_advisory(repo_id="test-org/non-json-model-strict")
+        assert "Pre-download security advisory lookup failed" in str(exc_info.value)
+
+
+def test_sandbox_state_restoration_during_advisory_check():
+    """Verify thread-local sandbox state is cleanly restored after check_advisory under success and failure."""
+    from app.core.shared_registry import _thread_local
+
+    was_sandboxed = getattr(_thread_local, "sandboxed", False)
+    was_reason = getattr(_thread_local, "reason", "")
+
+    try:
+        _thread_local.sandboxed = True
+        _thread_local.reason = "pre-existing restricted sandbox"
+
+        client_permissive = SecurityAdvisoryClient(fallback_policy="permissive")
+        mock_resp = MagicMock()
+        mock_resp.read.return_value = b'{"has_advisory": false}'
+        mock_opener = MagicMock()
+        mock_opener.open.return_value.__enter__.return_value = mock_resp
+
+        with patch.object(client_permissive, "_build_opener", return_value=mock_opener):
+            res = client_permissive.check_advisory(
+                repo_id="test-org/sandbox-restoration-test"
+            )
+            assert res.has_advisory is False
+
+        # Assert flags were restored
+        assert getattr(_thread_local, "sandboxed", False) is True
+        assert getattr(_thread_local, "reason", "") == "pre-existing restricted sandbox"
+
+        client_strict = SecurityAdvisoryClient(fallback_policy="strict")
+        mock_err_opener = MagicMock()
+        mock_err_opener.open.side_effect = urllib.error.URLError("Connection refused")
+
+        with patch.object(client_strict, "_build_opener", return_value=mock_err_opener):
+            with pytest.raises(ModelVerificationError):
+                client_strict.check_advisory(
+                    repo_id="test-org/sandbox-restoration-error-test"
+                )
+
+        # Assert flags were restored even after exception
+        assert getattr(_thread_local, "sandboxed", False) is True
+        assert getattr(_thread_local, "reason", "") == "pre-existing restricted sandbox"
+
+    finally:
+        _thread_local.sandboxed = was_sandboxed
+        _thread_local.reason = was_reason
+
+
+def test_background_downloader_strict_advisory_failure_triggers_on_failure():
+    """Verify background downloader receives ModelVerificationError when advisory check fails under strict policy."""
+    client_strict = SecurityAdvisoryClient.get_instance()
+    client_strict._fallback_policy = "strict"
+
+    mock_err_opener = MagicMock()
+    mock_err_opener.open.side_effect = urllib.error.URLError("Advisory service down")
+
+    failed_event = pytest.importorskip("threading").Event()
+    captured_error = []
+
+    def on_failure_cb(err):
+        captured_error.append(err)
+        failed_event.set()
+
+    with tempfile.TemporaryDirectory() as temp_dir:
+        model_dir = os.path.join(temp_dir, "strict_test_model")
+        with patch.object(client_strict, "_build_opener", return_value=mock_err_opener):
+            t = run_background_download(
+                url="https://huggingface.co/org/strict-model/resolve/main/model.onnx",
+                model_dir=model_dir,
+                on_failure=on_failure_cb,
+            )
+            t.join(timeout=5.0)
+
+    assert failed_event.is_set()
+    assert len(captured_error) == 1
+    assert isinstance(captured_error[0], ModelVerificationError)
+    assert "strict security policy" in str(captured_error[0])
