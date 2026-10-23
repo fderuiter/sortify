@@ -956,7 +956,9 @@ class AutoSorterTUI(
                 )
                 cnt = export_res.get("count", 0)
                 out_p = export_res.get("output_path", output_path)
-                msg = f"Audit log exported ({fmt.upper()}) to '{out_p}' ({cnt} records)."
+                msg = (
+                    f"Audit log exported ({fmt.upper()}) to '{out_p}' ({cnt} records)."
+                )
                 self.announce(msg)
                 from app.ui.notifications import notify
 
