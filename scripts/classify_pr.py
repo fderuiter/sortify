@@ -115,6 +115,7 @@ class PRMetadata:
     additions: int = 0
     deletions: int = 0
     is_dependabot: bool = False
+    is_security_patch: bool = False
     dependency_update_type: str = "minor"  # 'major', 'minor', 'patch'
     all_commits_verified: bool = True
     unverified_commit_shas: List[str] = field(default_factory=list)
@@ -147,6 +148,12 @@ def classify_pr(meta: PRMetadata) -> ClassificationResult:
     risk_level = "low"
     labels_to_add: List[str] = []
 
+    is_automated_security_patch = meta.is_security_patch or (
+        (meta.author in BOT_AUTHORS or meta.author.endswith("[bot]"))
+        and "security" in meta.labels
+        and "dependencies" in meta.labels
+    )
+
     # 0. Commit signature check
     if not meta.all_commits_verified:
         if risk_level not in ("sensitive", "high"):
@@ -178,6 +185,7 @@ def classify_pr(meta: PRMetadata) -> ClassificationResult:
     for path in meta.changed_files:
         is_sens = any(re.match(pat, path) for pat in SENSITIVE_PATHS) or (
             not meta.is_dependabot
+            and not is_automated_security_patch
             and any(re.match(pat, path) for pat in DEPENDENCY_MANIFEST_PATHS)
         )
         if is_sens:
@@ -210,7 +218,7 @@ def classify_pr(meta: PRMetadata) -> ClassificationResult:
         )
 
     # 5. Dependency check
-    if meta.is_dependabot:
+    if meta.is_dependabot or is_automated_security_patch:
         if meta.dependency_update_type == "major":
             if risk_level not in ("sensitive", "high"):
                 risk_level = "high"
@@ -221,17 +229,24 @@ def classify_pr(meta: PRMetadata) -> ClassificationResult:
     if len(meta.changed_files) > 10 or total_diff > 500:
         if risk_level not in ("sensitive", "high", "baseline-change"):
             risk_level = "medium"
-        if non_docs_files and "automerge" not in meta.labels and not meta.is_dependabot:
+        if (
+            non_docs_files
+            and "automerge" not in meta.labels
+            and not meta.is_dependabot
+            and not is_automated_security_patch
+        ):
             blocking_reasons.append(
                 f"PR size exceeds low-risk thresholds ({len(meta.changed_files)} files, {total_diff} lines) without 'automerge' label."
             )
 
     # 7. Production code opt-in requirement
     is_docs_only = len(meta.changed_files) > 0 and len(non_docs_files) == 0
-    # Only the exact Dependabot login counts: anyone can add a "dependencies" label.
     is_safe_dependabot = meta.is_dependabot and meta.dependency_update_type != "major"
+    is_safe_security_patch = (
+        is_automated_security_patch and meta.dependency_update_type != "major"
+    )
 
-    if not is_docs_only and not is_safe_dependabot:
+    if not is_docs_only and not is_safe_dependabot and not is_safe_security_patch:
         if "automerge" not in meta.labels:
             blocking_reasons.append(
                 "Production code changes require an explicit 'automerge' label to opt into automated evaluation."
@@ -300,21 +315,30 @@ def main() -> None:
 
     data = json.loads(raw_data)
     title = data.get("title", "")
+    labels = data.get("labels", [])
+    author = data.get("author", "")
     is_dependabot = data.get("is_dependabot", False)
+    is_security_patch = data.get("is_security_patch", False) or (
+        ("security" in labels and "dependencies" in labels)
+        and (author in BOT_AUTHORS or author.endswith("[bot]"))
+    )
     # Derived from the title, as auto_merge_controller does, so the labels
     # this posts agree with what the controller will merge.
     meta = PRMetadata(
         pr_number=data.get("pr_number", 0),
         title=title,
-        author=data.get("author", ""),
+        author=author,
         is_draft=data.get("is_draft", False),
-        labels=data.get("labels", []),
+        labels=labels,
         changed_files=data.get("changed_files", []),
         additions=data.get("additions", 0),
         deletions=data.get("deletions", 0),
         is_dependabot=is_dependabot,
+        is_security_patch=is_security_patch,
         dependency_update_type=(
-            dependency_update_type_from_title(title) if is_dependabot else "minor"
+            dependency_update_type_from_title(title)
+            if (is_dependabot or is_security_patch)
+            else "minor"
         ),
         all_commits_verified=data.get("all_commits_verified", True),
         unverified_commit_shas=data.get("unverified_commit_shas", []),
