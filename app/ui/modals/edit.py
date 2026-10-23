@@ -883,6 +883,22 @@ class DuplicateReviewModal(
         color: $text-muted;
         margin-bottom: 1;
     }
+    .batch-bar {
+        margin-top: 1;
+        margin-bottom: 1;
+        height: 3;
+        align: left middle;
+    }
+    .batch-select {
+        width: 1fr;
+        margin-right: 1;
+    }
+    #btn-apply-all {
+        min-width: 16;
+    }
+    .narrow .batch-bar {
+        height: auto;
+    }
     .duplicate-card {
         background: $surface;
         border: solid $accent;
@@ -939,6 +955,36 @@ class DuplicateReviewModal(
                 "Review duplicate destination target collisions before physical move execution:",
                 classes="modal-subtitle",
             )
+
+            batch_options = [
+                ("Rename (auto-number duplicates)", "rename"),
+                ("Keep Primary File Only", "keep"),
+                ("Skip Moving Duplicates", "skip"),
+            ]
+            with Horizontal(classes="batch-bar", id="batch-action-bar"):
+                batch_sel = Select(
+                    batch_options,
+                    value="rename",
+                    id="batch-action-select",
+                    classes="batch-select",
+                    allow_blank=False,
+                )
+                batch_sel.tooltip = (
+                    "Select batch deduplication action to apply to all groups"
+                )
+                batch_sel.aria_label = (
+                    "Batch resolution action for all duplicate clusters"
+                )
+                yield batch_sel
+
+                btn_apply = Button("Apply to All", id="btn-apply-all")
+                btn_apply.tooltip = (
+                    "Apply selected resolution action to all duplicate clusters"
+                )
+                btn_apply.aria_label = (
+                    "Apply selected resolution action to all duplicate clusters"
+                )
+                yield btn_apply
 
             with Vertical(id="duplicate-groups-list"):
                 for group in self.duplicate_groups:
@@ -1001,21 +1047,46 @@ class DuplicateReviewModal(
     def on_mount(self) -> None:
         """Focus initial widget on mount and announce to screen reader."""
         self._update_layout(self.size.width)
-        if self.duplicate_groups:
-            first_gid = self.duplicate_groups[0]["group_id"]
-            try:
-                self.query_one(f"#select-action-{first_gid}", Select).focus()
-            except Exception:
+        try:
+            self.query_one("#batch-action-select", Select).focus()
+        except Exception:
+            if self.duplicate_groups:
+                first_gid = self.duplicate_groups[0]["group_id"]
+                try:
+                    self.query_one(f"#select-action-{first_gid}", Select).focus()
+                except Exception:
+                    try:
+                        self.query_one("#btn-confirm-duplicates", Button).focus()
+                    except Exception:
+                        pass
+            else:
                 try:
                     self.query_one("#btn-confirm-duplicates", Button).focus()
                 except Exception:
                     pass
-        else:
+        self.announce("Opened interactive duplicate review modal.")
+
+    @on(Button.Pressed, "#btn-apply-all")
+    def action_apply_to_all(self) -> None:
+        """Apply the selected batch action to all duplicate cluster groups."""
+        try:
+            batch_sel = self.query_one("#batch-action-select", Select)
+            batch_value = (
+                str(batch_sel.value) if batch_sel.value is not None else "rename"
+            )
+        except Exception:
+            batch_value = "rename"
+
+        for group in self.duplicate_groups:
+            gid = group["group_id"]
+            self.user_selections[gid] = batch_value
             try:
-                self.query_one("#btn-confirm-duplicates", Button).focus()
+                sel_widget = self.query_one(f"#select-action-{gid}", Select)
+                sel_widget.value = batch_value
             except Exception:
                 pass
-        self.announce("Opened interactive duplicate review modal.")
+
+        self.announce(f"Applied '{batch_value}' action to all duplicate groups.")
 
     @on(Select.Changed)
     def on_select_changed(self, event: Select.Changed) -> None:
