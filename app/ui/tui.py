@@ -235,6 +235,32 @@ class AutoSorterTUI(
         margin-top: 1;
         width: 100%;
     }
+    #onboarding-cta-card {
+        border: solid $accent;
+        padding: 1 2;
+        margin-bottom: 1;
+        background: $surface;
+        height: auto;
+    }
+    #onboarding-guide-text {
+        margin-bottom: 1;
+    }
+    #onboarding-workspace-state {
+        margin-bottom: 1;
+        color: $accent;
+        text-style: bold;
+    }
+    #onboarding-cta-buttons {
+        layout: vertical;
+        height: auto;
+    }
+    #onboarding-cta-buttons Button {
+        width: 100%;
+        margin-bottom: 1;
+    }
+    #inspector-container {
+        height: auto;
+    }
     """
 
     def __init__(
@@ -299,21 +325,69 @@ class AutoSorterTUI(
                 )
                 yield tree
             with Vertical(id="right-meta-pane"):
-                yield Heading(
-                    "Side-by-Side Path Comparison", level=2, classes="meta-header"
-                )
-                path_comp = Static(
-                    "Select a file or folder in the tree to compare source and target paths.",
-                    id="path-comparison",
-                )
-                path_comp.tooltip = "Side-by-side split column view comparing source and destination target paths"
-                yield path_comp
-                yield Heading("Node Metadata Inspector", level=2, classes="meta-header")
-                meta_widget = Static(
-                    "Select a node in the tree to inspect details.", id="meta-details"
-                )
-                meta_widget.tooltip = "Metadata inspector panel displaying attributes of selected file or folder"
-                yield meta_widget
+                with Vertical(id="onboarding-cta-card"):
+                    yield Heading(
+                        "Workspace Setup & Quick Actions",
+                        level=2,
+                        classes="meta-header",
+                    )
+                    yield Static(
+                        "Welcome to Sortify AI Pro. Select a workspace directory, run a scan, or load a sample dataset to get started.",
+                        id="onboarding-guide-text",
+                    )
+                    initial_workspace_state = (
+                        f"Active Workspace: {self.base_dir}"
+                        if self.base_dir
+                        else "Active Workspace: No directory selected"
+                    )
+                    yield Static(
+                        initial_workspace_state, id="onboarding-workspace-state"
+                    )
+                    with Vertical(id="onboarding-cta-buttons"):
+                        btn_select_dir = Button(
+                            "Choose Directory [Ctrl+B]",
+                            id="btn-cta-select-dir",
+                            variant="primary",
+                        )
+                        btn_select_dir.tooltip = "Open directory selection dialog to choose workspace folder [Ctrl+B]"
+                        yield btn_select_dir
+
+                        btn_scan_dir = Button(
+                            "Scan Directory [Ctrl+S]",
+                            id="btn-cta-scan-dir",
+                            variant="success",
+                        )
+                        btn_scan_dir.tooltip = "Initiate workspace scan to generate organization plan [Ctrl+S]"
+                        yield btn_scan_dir
+
+                        btn_sample_data = Button(
+                            "Load Sample Dataset [G]",
+                            id="btn-cta-sample-data",
+                            variant="default",
+                        )
+                        btn_sample_data.tooltip = (
+                            "Generate interactive sample dataset in workspace [G]"
+                        )
+                        yield btn_sample_data
+                with Vertical(id="inspector-container"):
+                    yield Heading(
+                        "Side-by-Side Path Comparison", level=2, classes="meta-header"
+                    )
+                    path_comp = Static(
+                        "Select a file or folder in the tree to compare source and target paths.",
+                        id="path-comparison",
+                    )
+                    path_comp.tooltip = "Side-by-side split column view comparing source and destination target paths"
+                    yield path_comp
+                    yield Heading(
+                        "Node Metadata Inspector", level=2, classes="meta-header"
+                    )
+                    meta_widget = Static(
+                        "Select a node in the tree to inspect details.",
+                        id="meta-details",
+                    )
+                    meta_widget.tooltip = "Metadata inspector panel displaying attributes of selected file or folder"
+                    yield meta_widget
                 yield Heading("Live Execution Log", level=2, classes="meta-header")
                 tui_log = Log(id="tui-log", classes="tui-log-area")
                 tui_log.tooltip = "Live operation execution log output feed"
@@ -464,6 +538,7 @@ class AutoSorterTUI(
         except Exception:
             pass
         self.announce(f"Ready. {self._start_hint()}")
+        self._update_onboarding_cta_visibility()
         self.check_abandoned_sessions()
 
         env_non_interactive = os.environ.get("NON_INTERACTIVE")
@@ -650,6 +725,31 @@ class AutoSorterTUI(
             sb.update(full_text)
         except Exception:
             pass
+
+    def _update_onboarding_cta_visibility(self) -> None:
+        """Update visibility of onboarding CTA card vs metadata inspectors based on workspace state."""
+        try:
+            cta_card = self.query_one("#onboarding-cta-card")
+            inspector = self.query_one("#inspector-container")
+            ws_state = self.query_one("#onboarding-workspace-state", Static)
+
+            base_dir = getattr(self, "base_dir", "")
+            base_dir_text = base_dir if base_dir else "No directory selected"
+            ws_state.update(f"Active Workspace: {base_dir_text}")
+
+            has_plan_files = self._has_file_nodes(getattr(self, "plan", {}))
+            active_node = getattr(self, "active_tree_node", None)
+            has_selected_real_node = False
+            if active_node and getattr(active_node, "data", None):
+                data = active_node.data
+                if isinstance(data, dict) and not data.get("is_empty_state"):
+                    has_selected_real_node = True
+
+            show_cta = not has_plan_files and not has_selected_real_node
+            cta_card.display = show_cta
+            inspector.display = not show_cta
+        except Exception as e:
+            logger.debug(f"Error updating onboarding CTA visibility: {e}")
 
     def _get_active_node(self) -> Optional[TreeNode]:
         try:
@@ -1015,6 +1115,21 @@ class AutoSorterTUI(
             QuarantineVaultModal(db=db, base_dir=base_dir, policies=policies)
         )
 
+    @on(Button.Pressed, "#btn-cta-select-dir")
+    def on_btn_cta_select_dir_pressed(self) -> None:
+        """Handle Choose Directory CTA button press."""
+        self.action_select_dir()
+
+    @on(Button.Pressed, "#btn-cta-scan-dir")
+    def on_btn_cta_scan_dir_pressed(self) -> None:
+        """Handle Scan Directory CTA button press."""
+        self.action_scan_directory()
+
+    @on(Button.Pressed, "#btn-cta-sample-data")
+    def on_btn_cta_sample_data_pressed(self) -> None:
+        """Handle Load Sample Dataset CTA button press."""
+        self.action_generate_sample_corpus()
+
     # --- Tree Management & Event Handlers ---
 
     @on(Tree.NodeHighlighted, "#plan-tree")
@@ -1025,6 +1140,7 @@ class AutoSorterTUI(
         """Handle tree node selection or highlight to update metadata pane and screen reader announcement."""
         self.active_tree_node = event.node
         self._update_inspector(event.node)
+        self._update_onboarding_cta_visibility()
         if isinstance(event, Tree.NodeSelected) and event.node and event.node.data:
             if event.node.data.get("is_empty_state"):
                 action = event.node.data.get("action")
