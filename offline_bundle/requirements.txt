@@ -128,7 +128,7 @@ pypdf==6.21.1
     # via smart-autosorter (pyproject.toml)
 python-bidi==0.6.11
     # via easyocr
-python-dateutil==2.9.0.post0
+python-dateutil==3.0.0
     # via pandas
 python-docx==1.2.0
     # via smart-autosorter (pyproject.toml)
