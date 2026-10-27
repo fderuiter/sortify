@@ -16,6 +16,8 @@ from scripts.remediate_vulnerabilities import (
     normalize_severity,
     parse_audit_output,
     remediate_vulnerabilities,
+    run_local_tests,
+    sanitize_sensitive_info,
 )
 
 
@@ -131,7 +133,7 @@ certifi 2026.7.22 has 1 known vulnerability:
 
     with patch("scripts.remediate_vulnerabilities.GitHubRemediationClient", return_value=mock_gh_client), \
          patch("subprocess.run") as mock_sub:
-        mock_sub.return_value = MagicMock(returncode=0)
+        mock_sub.return_value = MagicMock(returncode=0, stdout="6 passed", stderr="")
         remediate_vulnerabilities(repo_root=tmp_path, token="fake_tok", repo_full="owner/repo")
 
     mock_gh_client.create_pull_request.assert_called_once()
@@ -166,6 +168,24 @@ unfixable-pkg 1.0.0 has 1 known vulnerability:
     assert "priority:urgent" in kwargs["labels"]
     assert "@fderuiter/security-team" in kwargs["body"]
 
+
+def test_sanitize_sensitive_info():
+    token = "secret_github_token_xyz123"
+    raw_text = f"Failed pushing to https://x-access-token:{token}@github.com/owner/repo.git with token {token}"
+    sanitized = sanitize_sensitive_info(raw_text, token=token)
+    assert token not in sanitized
+    assert "[REDACTED]" in sanitized
+    assert "https://[REDACTED]:[REDACTED]@github.com/owner/repo.git" in sanitized
+
+
+@patch("scripts.remediate_vulnerabilities.subprocess.run")
+def test_run_local_tests(mock_run, tmp_path: Path):
+    mock_run.return_value = MagicMock(returncode=0, stdout="6 passed", stderr="")
+    code, output = run_local_tests(tmp_path)
+    assert code == 0
+    assert "6 passed" in output
+    mock_run.assert_called_once()
+    assert mock_run.call_args[0][0] == ["uv", "run", "pytest", "-m", "not slow"]
 
 
 def test_extract_exemptions_from_security_md(tmp_path: Path):
@@ -290,3 +310,105 @@ certifi 2026.7.22 has 1 known vulnerability:
 
     res = remediate_vulnerabilities(repo_root=tmp_path, dry_run=True)
     assert res is True
+
+
+@patch("scripts.remediate_vulnerabilities.subprocess.run")
+@patch("scripts.remediate_vulnerabilities.run_local_tests")
+@patch("scripts.remediate_vulnerabilities.get_locked_package_version")
+@patch("scripts.remediate_vulnerabilities.run_lock_upgrade")
+@patch("scripts.remediate_vulnerabilities.run_uv_audit")
+def test_remediate_vulnerabilities_test_failure(
+    mock_audit,
+    mock_lock_upgrade,
+    mock_get_version,
+    mock_run_tests,
+    mock_sub_run,
+    tmp_path: Path,
+):
+    sample_audit = """
+certifi 2026.7.22 has 1 known vulnerability:
+
+- GHSA-6q48-6c7w-9gw2: certifi vulnerability
+
+  Fixed in: 2026.10.19
+    """
+    mock_audit.side_effect = [(1, sample_audit), (0, "Audit passed")]
+    mock_lock_upgrade.return_value = True
+    mock_get_version.side_effect = ["2026.7.22", "2026.10.19"]
+
+    # Local tests fail
+    fake_token = "secret_gh_token_1234"
+    test_failure_log = f"FAILED tests/test_core.py - AssertionError: Token={fake_token}"
+    mock_run_tests.return_value = (1, test_failure_log)
+
+    (tmp_path / "SECURITY.md").write_text("## Vulnerability Exemptions\n", encoding="utf-8")
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "certifi"\nversion = "2026.7.22"\n', encoding="utf-8"
+    )
+
+    mock_client = MagicMock()
+    mock_client.has_open_pr_for_package.return_value = False
+
+    res = remediate_vulnerabilities(
+        repo_root=tmp_path, dry_run=False, token=fake_token, repo_full="owner/repo"
+    )
+
+    assert res is False
+    mock_run_tests.assert_called_once_with(tmp_path)
+
+    # Verify git checkout uv.lock was called to revert changes
+    git_checkout_calls = [
+        call
+        for call in mock_sub_run.call_args_list
+        if call[0][0] == ["git", "checkout", "uv.lock"]
+    ]
+    assert len(git_checkout_calls) >= 1
+
+    # Verify PR creation was skipped
+    assert mock_client.create_pull_request.call_count == 0
+
+
+@patch("scripts.remediate_vulnerabilities.GitHubRemediationClient")
+@patch("scripts.remediate_vulnerabilities.subprocess.run")
+@patch("scripts.remediate_vulnerabilities.run_local_tests")
+@patch("scripts.remediate_vulnerabilities.get_locked_package_version")
+@patch("scripts.remediate_vulnerabilities.run_lock_upgrade")
+@patch("scripts.remediate_vulnerabilities.run_uv_audit")
+def test_remediate_vulnerabilities_test_success(
+    mock_audit,
+    mock_lock_upgrade,
+    mock_get_version,
+    mock_run_tests,
+    mock_sub_run,
+    mock_gh_client_cls,
+    tmp_path: Path,
+):
+    sample_audit = """
+certifi 2026.7.22 has 1 known vulnerability:
+
+- GHSA-6q48-6c7w-9gw2: certifi vulnerability
+
+  Fixed in: 2026.10.19
+    """
+    mock_audit.side_effect = [(1, sample_audit), (0, "Audit passed")]
+    mock_lock_upgrade.return_value = True
+    mock_get_version.side_effect = ["2026.7.22", "2026.10.19"]
+    mock_run_tests.return_value = (0, "All 50 tests passed")
+
+    mock_client = MagicMock()
+    mock_client.has_open_pr_for_package.return_value = False
+    mock_gh_client_cls.return_value = mock_client
+
+    (tmp_path / "SECURITY.md").write_text("## Vulnerability Exemptions\n", encoding="utf-8")
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "certifi"\nversion = "2026.7.22"\n', encoding="utf-8"
+    )
+
+    res = remediate_vulnerabilities(
+        repo_root=tmp_path, dry_run=False, token="dummy_token", repo_full="owner/repo"
+    )
+
+    assert res is True
+    mock_run_tests.assert_called_once_with(tmp_path)
+    assert mock_client.create_pull_request.call_count == 1
+

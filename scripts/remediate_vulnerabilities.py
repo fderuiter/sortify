@@ -13,6 +13,7 @@ import logging
 import os
 import re
 import subprocess
+import sys
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple
@@ -20,6 +21,43 @@ from typing import Any, Dict, List, Optional, Tuple
 import requests
 
 logger = logging.getLogger(__name__)
+
+
+def sanitize_sensitive_info(text: Any, token: Optional[str] = None) -> str:
+    """Sanitize sensitive tokens, credentials, or URLs from text output."""
+    if not text:
+        return ""
+    if not isinstance(text, str):
+        text = str(text)
+    if token:
+        text = text.replace(token, "[REDACTED]")
+    # Redact x-access-token or http(s) authorization headers/credentials in URLs
+    text = re.sub(
+        r"https?://x-access-token:[^@]+@", "https://x-access-token:[REDACTED]@", text
+    )
+    text = re.sub(r"https?://[^:]+:[^@]+@", "https://[REDACTED]:[REDACTED]@", text)
+    return text
+
+
+def run_local_tests(repo_root: Path) -> Tuple[int, str]:
+    """Execute local fast test suite via `uv run pytest -m "not slow"`."""
+    cmd = ["uv", "run", "pytest", "-m", "not slow"]
+    logger.info(f"Executing local test suite: {' '.join(cmd)}")
+    try:
+        env = {**os.environ, "PYTHON_KEYRING_BACKEND": "keyring.backends.fail.Keyring"}
+        res = subprocess.run(
+            cmd,
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+        combined_output = (res.stdout + "\n" + res.stderr).strip()
+        return res.returncode, combined_output
+    except Exception as e:
+        logger.error(f"Failed to execute local pytest runner: {e}")
+        return 1, str(e)
 
 
 @dataclass
@@ -631,6 +669,23 @@ def remediate_vulnerabilities(
             )
             # Revert uv.lock change
             subprocess.run(["git", "checkout", "uv.lock"], cwd=repo_root, check=False)
+            subprocess.run(["git", "checkout", "pyproject.toml"], cwd=repo_root, check=False)
+            continue
+
+        # Execute local test suite to verify patch doesn't break existing behavior
+        test_exit, test_output = run_local_tests(repo_root)
+        sanitized_test_output = sanitize_sensitive_info(test_output, token=token)
+        if test_exit != 0:
+            logger.error(
+                f"Local test suite failed after upgrading {package_name} to {new_version}."
+            )
+            unfixable_reports.append(
+                f"- **{package_name}** ({old_version} -> {new_version}): Local test suite (`uv run pytest`) failed post-upgrade.\n"
+                f"```text\n{sanitized_test_output}\n```"
+            )
+            # Revert uv.lock change
+            subprocess.run(["git", "checkout", "uv.lock"], cwd=repo_root, check=False)
+            subprocess.run(["git", "checkout", "pyproject.toml"], cwd=repo_root, check=False)
             continue
 
         patched_any = True
@@ -712,45 +767,53 @@ def remediate_vulnerabilities(
             # Return to main branch
             subprocess.run(["git", "checkout", "main"], cwd=repo_root, check=False)
         except Exception as e:
-            logger.error(f"Error creating git branch or PR for {package_name}: {e}")
+            logger.error(
+                f"Error creating git branch or PR for {package_name}: {sanitize_sensitive_info(str(e), token=token)}"
+            )
             subprocess.run(["git", "checkout", "main"], cwd=repo_root, check=False)
 
-    if unfixable_reports and gh_client:
-        order = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
-        max_rank = 0
-        highest_unfixable_sev = "MEDIUM"
-        for u_pkg in unfixable_pkgs:
-            rank = order.get(u_pkg.severity.upper(), 2)
-            if rank > max_rank:
-                max_rank = rank
-                highest_unfixable_sev = u_pkg.severity.upper()
-
-        if highest_unfixable_sev in ("CRITICAL", "HIGH"):
-            issue_labels = [
-                "security",
-                f"severity:{highest_unfixable_sev.lower()}",
-                "priority:urgent",
-            ]
-            maintainer_mention = (
-                "\n\n**Attention Maintainers:** @fderuiter/security-team @fderuiter/maintainers\n"
-            )
-        else:
-            issue_labels = ["security", f"severity:{highest_unfixable_sev.lower()}"]
-            maintainer_mention = "\n"
-
-        issue_title = (
-            f"[Security] Automated Dependency Audit Alert: Unfixable {highest_unfixable_sev} Vulnerabilities"
-        )
-        issue_body = (
-            f"## ⚠️ Unfixable Security Vulnerabilities Detected ({highest_unfixable_sev})\n\n"
-            "The daily automated vulnerability audit identified security vulnerabilities that could not be automatically remediated:\n\n"
+    if unfixable_reports:
+        logger.error(
+            "Remediation incomplete due to unfixable vulnerabilities or test failures:\n"
             + "\n".join(unfixable_reports)
-            + maintainer_mention
-            + f"\n### Raw Audit Report Output\n```text\n{audit_output}\n```\n"
         )
-        gh_client.report_security_issue(
-            title=issue_title, body=issue_body, labels=issue_labels
-        )
+        if gh_client:
+            order = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
+            max_rank = 0
+            highest_unfixable_sev = "MEDIUM"
+            for u_pkg in unfixable_pkgs:
+                rank = order.get(u_pkg.severity.upper(), 2)
+                if rank > max_rank:
+                    max_rank = rank
+                    highest_unfixable_sev = u_pkg.severity.upper()
+
+            if highest_unfixable_sev in ("CRITICAL", "HIGH"):
+                issue_labels = [
+                    "security",
+                    f"severity:{highest_unfixable_sev.lower()}",
+                    "priority:urgent",
+                ]
+                maintainer_mention = (
+                    "\n\n**Attention Maintainers:** @fderuiter/security-team @fderuiter/maintainers\n"
+                )
+            else:
+                issue_labels = ["security", f"severity:{highest_unfixable_sev.lower()}"]
+                maintainer_mention = "\n"
+
+            issue_title = (
+                f"[Security] Automated Dependency Audit Alert: Unfixable {highest_unfixable_sev} Vulnerabilities"
+            )
+            issue_body = (
+                f"## ⚠️ Unfixable Security Vulnerabilities Detected ({highest_unfixable_sev})\n\n"
+                "The daily automated vulnerability audit identified security vulnerabilities that could not be automatically remediated:\n\n"
+                + "\n\n".join(unfixable_reports)
+                + maintainer_mention
+                + f"\n### Raw Audit Report Output\n```text\n{sanitize_sensitive_info(audit_output, token=token)}\n```\n"
+            )
+            gh_client.report_security_issue(
+                title=issue_title, body=issue_body, labels=issue_labels
+            )
+        return False
 
     return patched_any
 
@@ -774,9 +837,11 @@ def main() -> None:
     token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
     repo_full = os.environ.get("GITHUB_REPOSITORY", "fderuiter/sortify")
 
-    remediate_vulnerabilities(
+    success = remediate_vulnerabilities(
         repo_root=repo_root, dry_run=args.dry_run, token=token, repo_full=repo_full
     )
+    if not success:
+        sys.exit(1)
 
 
 if __name__ == "__main__":

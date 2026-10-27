@@ -2451,6 +2451,161 @@ class HistoryManager:
 
         return self.db.worker.execute_write(_write)
 
+    def preview_rollback(
+        self,
+        session_id: str,
+        selected_step_ids: Optional[Collection[Union[int, str]]] = None,
+        ignore_missing: bool = False,
+    ) -> Dict[str, Any]:
+        """Simulate pre-flight session rollback without making any disk modifications.
+
+        Analyzes selected steps and categorizes status into:
+        - CLEAN: Target file exists and original source path is clear for restoration.
+        - IDENTICAL_EXISTS: Target file and source path both exist with identical content;
+          target copy will be removed upon rollback.
+        - COLLISION: Destination source path is occupied by a different file.
+          Predicts suffixed restoration target path.
+        - MISSING_TARGET: Source sorted file is missing on disk at target path.
+        """
+        all_moves = self.get_session_moves(session_id)
+        if selected_step_ids is not None:
+            sel_set = {str(x) for x in selected_step_ids}
+            steps_to_analyze = [
+                m for m in all_moves if str(m.get("step_id")) in sel_set
+            ]
+        else:
+            steps_to_analyze = list(all_moves)
+
+        from app.core.mover import get_safe_path
+        from app.core.resilient_file_ops import same_file_content
+
+        analyzed_steps = []
+        clean_count = 0
+        identical_count = 0
+        collision_count = 0
+        missing_count = 0
+
+        if not steps_to_analyze and not all_moves:
+            conn = get_db_connection(self.db_path)
+            base_dir = None
+            snapshot_files = []
+            with conn:
+                cur = conn.execute(
+                    "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
+                )
+                row = cur.fetchone()
+                base_dir = row[0] if row else None
+
+                cur = conn.execute(
+                    "SELECT original_rel_path FROM snapshot_files WHERE session_id = ?",
+                    (session_id,),
+                )
+                snapshot_files = [r[0] for r in cur.fetchall()]
+
+            for idx, rel_path in enumerate(snapshot_files, 1):
+                abs_path = (
+                    os.path.join(base_dir, rel_path)
+                    if base_dir
+                    else rel_path
+                )
+                target_exists = os.path.lexists(abs_path)
+                if target_exists:
+                    st = "CLEAN"
+                    clean_count += 1
+                    det = "Ready for clean restoration from snapshot"
+                else:
+                    st = "MISSING_TARGET"
+                    missing_count += 1
+                    det = "Snapshot target file missing on disk"
+
+                analyzed_steps.append(
+                    {
+                        "step_id": idx,
+                        "source_path": abs_path,
+                        "target_path": abs_path,
+                        "restoration_path": abs_path,
+                        "status": st,
+                        "collision": False,
+                        "size": os.path.getsize(abs_path) if target_exists else None,
+                        "detail": det,
+                    }
+                )
+        else:
+            for step in steps_to_analyze:
+                step_id = step.get("step_id")
+                source_path = step.get("source_path") or step.get("original_path") or ""
+                target_path = step.get("target_path") or ""
+                size = step.get("size")
+
+                target_exists = bool(target_path and os.path.lexists(target_path))
+                source_exists = bool(source_path and os.path.lexists(source_path))
+
+                if not target_exists:
+                    st = "MISSING_TARGET"
+                    is_coll = False
+                    restoration_path = source_path
+                    det = "Sorted target file is missing on disk"
+                    missing_count += 1
+                elif source_exists:
+                    if same_file_content(source_path, target_path):
+                        st = "IDENTICAL_EXISTS"
+                        is_coll = False
+                        restoration_path = source_path
+                        det = "Identical copy exists at original path; sorted file will be removed"
+                        identical_count += 1
+                    else:
+                        st = "COLLISION"
+                        is_coll = True
+                        dest_dir = os.path.dirname(source_path) or "."
+                        orig_filename = os.path.basename(source_path)
+                        restoration_path = os.path.normpath(
+                            get_safe_path(dest_dir, orig_filename, target_path)
+                        )
+                        det = f"Original path is occupied by a different file; will restore as {os.path.basename(restoration_path)}"
+                        collision_count += 1
+                else:
+                    st = "CLEAN"
+                    is_coll = False
+                    restoration_path = source_path
+                    det = "Ready for clean restoration"
+                    clean_count += 1
+
+                if size is None and target_exists:
+                    try:
+                        size = os.path.getsize(target_path)
+                    except OSError:
+                        size = None
+
+                analyzed_steps.append(
+                    {
+                        "step_id": step_id,
+                        "source_path": source_path,
+                        "target_path": target_path,
+                        "restoration_path": restoration_path,
+                        "status": st,
+                        "collision": is_coll,
+                        "size": size,
+                        "detail": det,
+                    }
+                )
+
+        total = len(analyzed_steps)
+        return {
+            "session_id": session_id,
+            "total_operations": total,
+            "summary": {
+                "total": total,
+                "clean": clean_count,
+                "identical_exists": identical_count,
+                "collision": collision_count,
+                "missing_target": missing_count,
+            },
+            "has_collisions": collision_count > 0,
+            "has_missing": missing_count > 0,
+            "ignore_missing": ignore_missing,
+            "steps": analyzed_steps,
+        }
+
 
 @contextmanager
 def open_session_history(store=None) -> Iterator[HistoryManager]:
