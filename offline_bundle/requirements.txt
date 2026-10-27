@@ -124,7 +124,7 @@ pydantic-settings==2.16.1
     # via smart-autosorter (pyproject.toml)
 pylnk3==0.4.3
     # via smart-autosorter (pyproject.toml)
-pypdf==6.21.2
+pypdf==6.21.3
     # via smart-autosorter (pyproject.toml)
 python-bidi==0.6.12
     # via easyocr
