@@ -32,6 +32,7 @@ from app.ui.layout import ResponsiveLayoutMixin
 from app.ui.mixins.pipeline import EXECUTE_NEEDS_SCAN_TOOLTIP, SortPipelineMixin
 from app.ui.mixins.selection import SelectionActionsMixin
 from app.ui.mixins.tree_view import TreeViewMixin
+from app.ui.modals.command_palette import CommandPaletteModal, PaletteCommand
 from app.ui.modals.drop_zone import DropPlanConfirmModal as DropPlanConfirmModal
 from app.ui.modals.drop_zone import DropZoneModal
 from app.ui.modals.edit import (
@@ -117,7 +118,7 @@ class AutoSorterTUI(
         Binding("plus", "rate_positive", "Rating (+)", show=False),
         Binding("minus", "rate_negative", "Rating (-)", show=False),
         Binding("ctrl+o", "open_settings", "Settings", show=False),
-        Binding("ctrl+k", "open_model_manager", "Model Manager", show=False),
+        Binding("ctrl+k", "open_command_palette", "Command Palette", show=False),
         Binding("ctrl+w", "open_wizard", "Wizard", show=False),
         Binding("ctrl+c", "open_cro_forensic", "CRO Ingest", show=False),
         Binding("ctrl+d", "open_dropzone", "DropZone", show=False),
@@ -928,6 +929,25 @@ class AutoSorterTUI(
         self.push_screen(
             ExtractionPreviewModal(pdf_path, self.settings), on_preview_closed
         )
+
+    def action_open_command_palette(self) -> None:
+        """Open command palette overlay modal [Ctrl+K]."""
+        if self._is_text_control_focused(allow_tree_search=True):
+            return
+
+        def on_command_selected(cmd: Optional[PaletteCommand]) -> None:
+            if not cmd or not cmd.action_name:
+                return
+            handler = getattr(self, cmd.action_name, None)
+            if callable(handler):
+                handler()
+            else:
+                self.announce(
+                    f"Action '{cmd.action_name}' is not supported.",
+                    priority="assertive",
+                )
+
+        self.push_screen(CommandPaletteModal(), on_command_selected)
 
     def action_open_model_manager(self) -> None:
         """Open model manager modal screen."""
