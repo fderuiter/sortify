@@ -24,11 +24,13 @@ def test_db_and_dir():
         db_path = os.path.join(tmp_dir, "test_quarantine.db")
         worker = DBWorker()
         db = Database(db_path, worker)
-        yield db, tmp_dir
-        worker.stop(stop_embeddings=False)
-        from app.core.db_conn import clear_connection_cache
+        try:
+            yield db, tmp_dir
+        finally:
+            worker.stop(stop_embeddings=False)
+            from app.core.db_conn import clear_connection_cache
 
-        clear_connection_cache()
+            clear_connection_cache()
 
 
 def stage_dummy_file(
