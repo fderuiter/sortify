@@ -241,3 +241,176 @@ async def test_rollback_confirm_modal_ui(selective_env):
         modal.query_one("#btn-invert-selection", Button).press()
         await pilot.pause()
         assert "0 / 3" in str(count_lbl.render())
+
+
+def test_preview_rollback_simulation(selective_env):
+    """Test HistoryManager.preview_rollback classifies step statuses without disk side-effects."""
+    history_mgr = selective_env["history_mgr"]
+    session_id = selective_env["session_id"]
+    file1 = selective_env["file1"]
+    file2 = selective_env["file2"]
+    file3 = selective_env["file3"]
+    target1 = selective_env["target1"]
+    target2 = selective_env["target2"]
+
+    file2.write_text("file 2 content")
+    file3.write_text("different file 3 content")
+
+    target1_mtime = target1.stat().st_mtime
+    target2_mtime = target2.stat().st_mtime
+
+    res = history_mgr.preview_rollback(session_id)
+
+    assert target1.stat().st_mtime == target1_mtime
+    assert target2.stat().st_mtime == target2_mtime
+    assert file2.read_text() == "file 2 content"
+    assert file3.read_text() == "different file 3 content"
+
+    assert res["session_id"] == session_id
+    assert res["total_operations"] == 3
+    assert res["summary"]["clean"] == 1
+    assert res["summary"]["identical_exists"] == 1
+    assert res["summary"]["collision"] == 1
+    assert res["summary"]["missing_target"] == 0
+    assert res["has_collisions"] is True
+
+    steps_by_id = {s["step_id"]: s for s in res["steps"]}
+    s1 = steps_by_id[selective_env["step1"]]
+    s2 = steps_by_id[selective_env["step2"]]
+    s3 = steps_by_id[selective_env["step3"]]
+
+    assert s1["status"] == "CLEAN"
+    assert s1["collision"] is False
+    assert s1["restoration_path"] == str(file1)
+
+    assert s2["status"] == "IDENTICAL_EXISTS"
+    assert s2["collision"] is False
+    assert s2["restoration_path"] == str(file2)
+
+    assert s3["status"] == "COLLISION"
+    assert s3["collision"] is True
+    assert s3["restoration_path"] != str(file3)
+    assert "file3" in s3["restoration_path"]
+
+
+def test_preview_rollback_missing_target(selective_env):
+    """Test preview_rollback categorizes missing target files as MISSING_TARGET."""
+    history_mgr = selective_env["history_mgr"]
+    session_id = selective_env["session_id"]
+    target1 = selective_env["target1"]
+
+    target1.unlink()
+
+    res = history_mgr.preview_rollback(session_id)
+
+    assert res["summary"]["missing_target"] == 1
+    assert res["has_missing"] is True
+
+    steps_by_id = {s["step_id"]: s for s in res["steps"]}
+    s1 = steps_by_id[selective_env["step1"]]
+    assert s1["status"] == "MISSING_TARGET"
+
+
+def test_preview_rollback_subset_step_filtering(selective_env):
+    """Test preview_rollback filters analyzed steps when selected_step_ids is provided."""
+    history_mgr = selective_env["history_mgr"]
+    session_id = selective_env["session_id"]
+    step1 = selective_env["step1"]
+
+    res = history_mgr.preview_rollback(session_id, selected_step_ids=[step1])
+
+    assert res["total_operations"] == 1
+    assert len(res["steps"]) == 1
+    assert res["steps"][0]["step_id"] == step1
+
+
+def test_preview_rollback_snapshot_fallback(selective_env, tmp_path):
+    """Test preview_rollback snapshot fallback when step ledger has no recorded moves."""
+    history_mgr = selective_env["history_mgr"]
+    snap_dir = tmp_path / "snap_workspace"
+    snap_dir.mkdir()
+    
+    # Create files for a snapshot session
+    snap_file1 = snap_dir / "snap1.txt"
+    snap_file2 = snap_dir / "snap2.txt"
+    snap_file1.write_text("snap 1 content")
+    snap_file2.write_text("snap 2 content")
+
+    session_id = history_mgr._create_snapshot_internal(str(snap_dir))
+
+    # Remove snap_file2 to test MISSING_TARGET in snapshot fallback
+    snap_file2.unlink()
+
+    res = history_mgr.preview_rollback(session_id)
+
+    assert res["session_id"] == session_id
+    assert res["total_operations"] == 2
+    assert res["summary"]["clean"] == 1
+    assert res["summary"]["missing_target"] == 1
+    assert res["has_missing"] is True
+
+
+@pytest.mark.anyio
+async def test_two_stage_rollback_confirm_modal_workflow(selective_env):
+    """Test two-stage RollbackConfirmModal navigation, dry-run diff review, and back action."""
+    session_id = selective_env["session_id"]
+    history_mgr = selective_env["history_mgr"]
+    file3 = selective_env["file3"]
+    file3.write_text("different file 3 content")
+
+    session_info = {
+        "session_id": session_id,
+        "base_dir": str(selective_env["base_dir"]),
+        "timestamp": 1234567890,
+        "items": history_mgr.get_session_moves(session_id),
+    }
+
+    app = AutoSorterTUI(settings=AppSettings())
+    async with app.run_test() as pilot:
+        dismiss_result = None
+
+        def handle_dismiss(result):
+            nonlocal dismiss_result
+            dismiss_result = result
+
+        modal = RollbackConfirmModal(session_info=session_info)
+        app.push_screen(modal, handle_dismiss)
+        await pilot.pause()
+
+        assert modal.current_stage == 1
+        assert modal.query_one("#stage-1-container").styles.display != "none"
+        assert modal.query_one("#stage-2-container").styles.display == "none"
+
+        btn_preview = modal.query_one("#btn-preview-dryrun", Button)
+        btn_preview.press()
+        await pilot.pause()
+
+        assert modal.current_stage == 2
+        assert modal.query_one("#stage-1-container").styles.display == "none"
+        assert modal.query_one("#stage-2-container").styles.display != "none"
+
+        lbl_collisions = modal.query_one("#lbl-summary-collisions", Label)
+        assert "Collisions: 1" in str(lbl_collisions.render())
+
+        diff_table = modal.query_one("#dryrun-diff-table", DataTable)
+        assert diff_table.row_count == 3
+
+        btn_back = modal.query_one("#btn-back-to-selection", Button)
+        btn_back.press()
+        await pilot.pause()
+
+        assert modal.current_stage == 1
+        assert modal.query_one("#stage-1-container").styles.display != "none"
+        assert modal.query_one("#stage-2-container").styles.display == "none"
+
+        btn_preview.press()
+        await pilot.pause()
+        assert modal.current_stage == 2
+
+        btn_execute = modal.query_one("#btn-execute-rollback", Button)
+        btn_execute.press()
+        await pilot.pause()
+
+        assert dismiss_result is not None
+        assert dismiss_result["confirmed"] is True
+        assert dismiss_result["session_id"] == session_id

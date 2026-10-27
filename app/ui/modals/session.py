@@ -1,5 +1,6 @@
 """Session history, rollback confirmation and interrupted-session recovery dialogs."""
 
+import os
 import time
 from typing import Any, Dict, List, Optional
 
@@ -141,7 +142,7 @@ class SessionRecoveryModal(
 
 
 class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
-    """Confirmation modal dialog before executing session rollback."""
+    """Two-stage interactive confirmation modal dialog before executing session rollback."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel rollback dialog", show=True),
@@ -161,6 +162,13 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         max-width: 95;
         height: 85%;
         max-height: 85%;
+    }
+    #stage-1-container, #stage-2-container {
+        width: 100%;
+        height: 100%;
+    }
+    #stage-2-container {
+        display: none;
     }
     .modal-title {
         text-style: bold;
@@ -185,10 +193,33 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         color: $accent;
         margin-bottom: 1;
     }
-    #rollback-items-table {
+    #rollback-items-table, #dryrun-diff-table {
         height: 1fr;
         border: solid $primary;
         margin-bottom: 1;
+    }
+    .summary-bar {
+        height: 3;
+        margin-top: 1;
+        margin-bottom: 1;
+        background: $surface;
+        border: solid $accent;
+        padding: 0 1;
+        align: center middle;
+        layout: horizontal;
+    }
+    .summary-stat {
+        margin-right: 2;
+        text-style: bold;
+    }
+    .summary-stat.clean {
+        color: $success;
+    }
+    .summary-stat.collision {
+        color: $error;
+    }
+    .summary-stat.missing {
+        color: $warning;
     }
     .warning-box {
         margin-top: 1;
@@ -216,83 +247,138 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         self.all_items: List[Dict[str, Any]] = list(session_info.get("items") or [])
         self.selected_step_ids: set = set()
         self.filtered_items: List[Dict[str, Any]] = []
+        self.current_stage: int = 1
+        self.preview_data: Optional[Dict[str, Any]] = None
 
     def compose(self) -> ComposeResult:
-        """Compose confirmation modal widgets."""
+        """Compose confirmation modal widgets across Stage 1 and Stage 2."""
         sid = self.session_info.get("session_id", "unknown")
         b_dir = self.session_info.get("base_dir") or "N/A"
         ts = self.session_info.get("timestamp")
         ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "N/A"
 
         with Vertical(classes="confirm-box"):
-            yield Heading(
-                "Confirm Session Rollback",
-                level=1,
-                classes="modal-title",
-                id="confirm-title",
-            )
-            yield Label(
-                f"Session ID: {sid} | Base Dir: {b_dir} | Date: {ts_str}",
-                id="lbl-confirm-sid",
-            )
-
-            with Horizontal(classes="controls-row"):
-                yield Input(
-                    placeholder="Search paths or status to filter...",
-                    id="rollback-search-input",
+            # Stage 1 Container: Step Selection
+            with Vertical(id="stage-1-container"):
+                yield Heading(
+                    "Confirm Session Rollback",
+                    level=1,
+                    classes="modal-title",
+                    id="confirm-title",
                 )
-                yield Button(
-                    "Select All",
-                    id="btn-select-all",
-                    classes="bulk-btn",
-                    variant="primary",
-                )
-                yield Button(
-                    "Deselect All",
-                    id="btn-deselect-all",
-                    classes="bulk-btn",
-                    variant="default",
-                )
-                yield Button(
-                    "Invert Selection",
-                    id="btn-invert-selection",
-                    classes="bulk-btn",
-                    variant="default",
-                )
-
-            yield Label("Selected for Rollback: 0 items", id="lbl-selection-count")
-
-            yield DataTable(id="rollback-items-table")
-
-            with Vertical(classes="warning-box"):
                 yield Label(
-                    "⚠️ Warning: Rolling back will restore checked files to their original locations. Unchecked files will remain in target folders."
+                    f"Session ID: {sid} | Base Dir: {b_dir} | Date: {ts_str}",
+                    id="lbl-confirm-sid",
                 )
 
-            if self.session_info.get("step_count"):
+                with Horizontal(classes="controls-row"):
+                    yield Input(
+                        placeholder="Search paths or status to filter...",
+                        id="rollback-search-input",
+                    )
+                    yield Button(
+                        "Select All",
+                        id="btn-select-all",
+                        classes="bulk-btn",
+                        variant="primary",
+                    )
+                    yield Button(
+                        "Deselect All",
+                        id="btn-deselect-all",
+                        classes="bulk-btn",
+                        variant="default",
+                    )
+                    yield Button(
+                        "Invert Selection",
+                        id="btn-invert-selection",
+                        classes="bulk-btn",
+                        variant="default",
+                    )
+
+                yield Label("Selected for Rollback: 0 items", id="lbl-selection-count")
+
+                yield DataTable(id="rollback-items-table")
+
+                with Vertical(classes="warning-box"):
+                    yield Label(
+                        "⚠️ Warning: Rolling back will restore checked files to their original locations. Unchecked files will remain in target folders."
+                    )
+
+                if self.session_info.get("step_count"):
+                    yield Label(
+                        "Files that are no longer at their sorted location are skipped.",
+                        id="lbl-confirm-missing",
+                    )
+                else:
+                    yield Checkbox(
+                        "Roll back even if some sorted files are missing (they are skipped)",
+                        value=False,
+                        id="chk-ignore-missing",
+                    )
+
+                with Horizontal(classes="button-row"):
+                    yield Button("Cancel", id="btn-cancel-rollback", variant="default")
+                    yield Button(
+                        "Preview Dry-Run",
+                        id="btn-preview-dryrun",
+                        variant="primary",
+                    )
+                    yield Button(
+                        "Confirm Rollback",
+                        id="btn-confirm-rollback",
+                        variant="error",
+                    )
+
+            # Stage 2 Container: Dry-Run Diff Review
+            with Vertical(id="stage-2-container"):
+                yield Heading(
+                    "Dry-Run Diff Review",
+                    level=1,
+                    classes="modal-title",
+                    id="dryrun-title",
+                )
                 yield Label(
-                    "Files that are no longer at their sorted location are skipped.",
-                    id="lbl-confirm-missing",
-                )
-            else:
-                yield Checkbox(
-                    "Roll back even if some sorted files are missing (they are skipped)",
-                    value=False,
-                    id="chk-ignore-missing",
+                    f"Session ID: {sid} | Base Dir: {b_dir}",
+                    id="lbl-dryrun-sid",
                 )
 
-            with Horizontal(classes="button-row"):
-                btn_cancel = Button(
-                    "Cancel", id="btn-cancel-rollback", variant="default"
-                )
-                yield btn_cancel
-                btn_confirm = Button(
-                    "Confirm Rollback", id="btn-confirm-rollback", variant="error"
-                )
-                yield btn_confirm
+                with Horizontal(classes="summary-bar", id="dryrun-summary-bar"):
+                    yield Label(
+                        "Total Operations: 0", id="lbl-summary-total", classes="summary-stat"
+                    )
+                    yield Label(
+                        "Clean: 0", id="lbl-summary-clean", classes="summary-stat clean"
+                    )
+                    yield Label(
+                        "Collisions: 0", id="lbl-summary-collisions", classes="summary-stat collision"
+                    )
+                    yield Label(
+                        "Missing Targets: 0", id="lbl-summary-missing", classes="summary-stat missing"
+                    )
+
+                yield DataTable(id="dryrun-diff-table")
+
+                with Vertical(classes="warning-box", id="dryrun-warning-box"):
+                    yield Label(
+                        "Review target restoration paths above before executing rollback.",
+                        id="lbl-dryrun-warning",
+                    )
+
+                with Horizontal(classes="button-row"):
+                    yield Button(
+                        "Back to Selection",
+                        id="btn-back-to-selection",
+                        variant="default",
+                    )
+                    yield Button("Cancel", id="btn-cancel-rollback-2", variant="default")
+                    yield Button(
+                        "Execute Rollback",
+                        id="btn-execute-rollback",
+                        variant="error",
+                    )
 
     def on_mount(self) -> None:
-        """Initialize items, populate table and focus controls on mount."""
+        """Initialize items, populate tables and focus controls on mount."""
         sid = self.session_info.get("session_id")
         if not self.all_items and sid:
             try:
@@ -305,10 +391,16 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
         self.selected_step_ids = {item["step_id"] for item in self.all_items}
 
-        dt = self.query_one("#rollback-items-table", DataTable)
-        dt.cursor_type = "row"
-        dt.add_columns(
+        dt1 = self.query_one("#rollback-items-table", DataTable)
+        dt1.cursor_type = "row"
+        dt1.add_columns(
             "Sel", "ID", "Original Source Path", "Target Sorted Path", "Size", "Status"
+        )
+
+        dt2 = self.query_one("#dryrun-diff-table", DataTable)
+        dt2.cursor_type = "row"
+        dt2.add_columns(
+            "ID", "Original Source Path", "Target Sorted Path", "Restoration Target Path", "Status"
         )
 
         self._refresh_table()
@@ -371,6 +463,191 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
             lbl.update(f"Selected for Rollback: {selected} / {total} items")
         except Exception:
             pass
+
+    def _compute_dryrun_preview(self) -> Dict[str, Any]:
+        """Compute dry-run simulation preview using HistoryManager or local simulation."""
+        sid = self.session_info.get("session_id")
+        chk = self.query("#chk-ignore-missing").results(Checkbox)
+        chk_box = next(iter(chk), None)
+        ignore_missing = chk_box.value if chk_box else False
+
+        selected_ids = list(self.selected_step_ids) if self.selected_step_ids else []
+
+        if sid:
+            try:
+                from app.core.history import open_session_history
+
+                with open_session_history() as history_mgr:
+                    return history_mgr.preview_rollback(
+                        session_id=sid,
+                        selected_step_ids=selected_ids,
+                        ignore_missing=ignore_missing,
+                    )
+            except Exception:
+                pass
+
+        # Fallback local computation if history DB context is not active
+        from app.core.mover import get_safe_path
+        from app.core.resilient_file_ops import same_file_content
+
+        steps_to_analyze = [
+            item for item in self.all_items if item["step_id"] in self.selected_step_ids
+        ]
+        analyzed = []
+        clean = identical = collision = missing = 0
+        for item in steps_to_analyze:
+            step_id = item["step_id"]
+            src = str(item.get("source_path") or "")
+            dst = str(item.get("target_path") or "")
+            sz = item.get("size")
+
+            t_exists = bool(dst and os.path.lexists(dst))
+            s_exists = bool(src and os.path.lexists(src))
+
+            if not t_exists:
+                st = "MISSING_TARGET"
+                is_coll = False
+                rest_path = src
+                det = "Target sorted file is missing on disk"
+                missing += 1
+            elif s_exists:
+                if same_file_content(src, dst):
+                    st = "IDENTICAL_EXISTS"
+                    is_coll = False
+                    rest_path = src
+                    det = "Identical copy exists at original path; sorted copy will be removed"
+                    identical += 1
+                else:
+                    st = "COLLISION"
+                    is_coll = True
+                    dest_dir = os.path.dirname(src) or "."
+                    orig_filename = os.path.basename(src)
+                    rest_path = os.path.normpath(
+                        get_safe_path(dest_dir, orig_filename, dst)
+                    )
+                    det = f"Original path is occupied; will restore as {os.path.basename(rest_path)}"
+                    collision += 1
+            else:
+                st = "CLEAN"
+                is_coll = False
+                rest_path = src
+                det = "Ready for clean restoration"
+                clean += 1
+
+            analyzed.append(
+                {
+                    "step_id": step_id,
+                    "source_path": src,
+                    "target_path": dst,
+                    "restoration_path": rest_path,
+                    "status": st,
+                    "collision": is_coll,
+                    "size": sz,
+                    "detail": det,
+                }
+            )
+
+        tot = len(analyzed)
+        return {
+            "session_id": sid,
+            "total_operations": tot,
+            "summary": {
+                "total": tot,
+                "clean": clean,
+                "identical_exists": identical,
+                "collision": collision,
+                "missing_target": missing,
+            },
+            "has_collisions": collision > 0,
+            "has_missing": missing > 0,
+            "ignore_missing": ignore_missing,
+            "steps": analyzed,
+        }
+
+    def _show_stage_2(self) -> None:
+        """Compute dry-run preview and switch UI view to Stage 2."""
+        preview = self._compute_dryrun_preview()
+        self.preview_data = preview
+
+        summ = preview["summary"]
+        self.query_one("#lbl-summary-total", Label).update(
+            f"Total Operations: {summ['total']}"
+        )
+        self.query_one("#lbl-summary-clean", Label).update(
+            f"Clean: {summ['clean']}"
+        )
+        self.query_one("#lbl-summary-collisions", Label).update(
+            f"Collisions: {summ['collision']}"
+        )
+        self.query_one("#lbl-summary-missing", Label).update(
+            f"Missing Targets: {summ['missing_target']}"
+        )
+
+        dt2 = self.query_one("#dryrun-diff-table", DataTable)
+        dt2.clear()
+
+        for step in preview["steps"]:
+            sid_str = str(step["step_id"])
+            src = str(step["source_path"])
+            dst = str(step["target_path"])
+            rest = str(step["restoration_path"])
+            st = str(step["status"])
+
+            if st == "COLLISION":
+                st_badge = f"[bold red]{st}[/bold red]"
+            elif st == "MISSING_TARGET":
+                st_badge = f"[bold yellow]{st}[/bold yellow]"
+            elif st == "IDENTICAL_EXISTS":
+                st_badge = f"[bold blue]{st}[/bold blue]"
+            else:
+                st_badge = f"[bold green]{st}[/bold green]"
+
+            dt2.add_row(
+                sid_str,
+                src,
+                dst,
+                rest,
+                st_badge,
+                key=sid_str,
+            )
+
+        warn_lbl = self.query_one("#lbl-dryrun-warning", Label)
+        if summ["collision"] > 0:
+            warn_lbl.update(
+                f"⚠️ Collision Warning: {summ['collision']} file(s) occupy original locations and will be restored with suffixed names."
+            )
+        elif summ["missing_target"] > 0:
+            warn_lbl.update(
+                f"⚠️ Missing Targets: {summ['missing_target']} file(s) are missing from disk and will be skipped."
+            )
+        else:
+            warn_lbl.update(
+                "✅ Pre-flight dry-run simulation clean. All selected steps ready for restoration."
+            )
+
+        self.query_one("#stage-1-container").styles.display = "none"
+        self.query_one("#stage-2-container").styles.display = "block"
+        self.current_stage = 2
+        self.query_one("#btn-execute-rollback", Button).focus()
+        self.announce("Opened Stage 2 Dry-Run Diff Review.")
+
+    def _show_stage_1(self) -> None:
+        """Switch UI view back to Stage 1 Step Selection."""
+        self.query_one("#stage-2-container").styles.display = "none"
+        self.query_one("#stage-1-container").styles.display = "block"
+        self.current_stage = 1
+        self.query_one("#btn-preview-dryrun", Button).focus()
+        self.announce("Returned to Stage 1 Step Selection.")
+
+    @on(Button.Pressed, "#btn-preview-dryrun")
+    def action_preview_dryrun(self) -> None:
+        """Trigger dry-run simulation and transition to Stage 2."""
+        self._show_stage_2()
+
+    @on(Button.Pressed, "#btn-back-to-selection")
+    def action_back_to_selection(self) -> None:
+        """Return from Stage 2 to Stage 1."""
+        self._show_stage_1()
 
     @on(Input.Changed, "#rollback-search-input")
     def _on_search_changed(self, event: Input.Changed) -> None:
@@ -436,6 +713,7 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                 self.selected_step_ids.add(target_id)
             self._refresh_table()
 
+    @on(Button.Pressed, "#btn-execute-rollback")
     @on(Button.Pressed, "#btn-confirm-rollback")
     def action_confirm(self) -> None:
         """Confirm rollback action and dismiss modal with parameters."""
@@ -456,6 +734,7 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         )
 
     @on(Button.Pressed, "#btn-cancel-rollback")
+    @on(Button.Pressed, "#btn-cancel-rollback-2")
     def action_cancel(self) -> None:
         """Cancel rollback confirmation dialog."""
         self.dismiss(None)

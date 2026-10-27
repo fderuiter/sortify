@@ -277,7 +277,8 @@ def test_template_gallery_modal_error_notification_on_save_failure(tmp_path):
 
             messages = [a["message"] for a in gallery_modal.announcements]
             assert any(
-                "Failed to apply starter rule template pack(s)" in m for m in messages
+                "Failed to apply starter rule template pack(s)" in m
+                for m in messages
             )
 
     asyncio.run(_test())
@@ -289,7 +290,9 @@ def test_wizard_modal_save_error_handled(tmp_path):
     async def _test():
         settings = AppSettings(filepath=str(tmp_path / "settings.json"))
         settings.AI_CONSENT_GRANTED = False
-        app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path), skip_wizard=True)
+        app = AutoSorterTUI(
+            settings=settings, base_dir=str(tmp_path), skip_wizard=True
+        )
 
         async with app.run_test() as pilot:
             await pilot.pause(0.1)
