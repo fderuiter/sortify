@@ -505,11 +505,38 @@ class VerificationEngine:
                                 break
 
                         if item_index >= 0:
-                            if action == "skip":
+                            item_obj = items[item_index]
+                            item_action = (
+                                selections.get(item_obj.get("source_path"))
+                                or selections.get(item_obj.get("node_key"))
+                                or selections.get(f"{gid}_{item_index}")
+                                or action
+                            )
+                            if item_action == "skip":
                                 _set_val(content, "is_excluded", True)
                                 _set_val(content, "is_checked", False)
                                 _set_val(content, "status", "Skipped")
-                            elif action == "rename":
+                            elif item_action == "overwrite":
+                                _set_val(content, "overwrite", True)
+                                _set_val(content, "allow_overwrite", True)
+                                _set_val(content, "confirmed", True)
+                                _set_val(content, "is_confirmed", True)
+                                _set_val(content, "status", "Confirmed")
+                                _set_val(content, "is_excluded", False)
+                            elif item_action == "keep_both":
+                                from datetime import datetime
+
+                                ts = datetime.now().strftime("%Y%m%d_%H%M%S")
+                                prefix = f"{ts}_"
+                                if item_index > 0:
+                                    prefix = f"{ts}_{item_index}_"
+                                new_name = f"{prefix}{filename}"
+                                _set_val(content, "target_filename", new_name)
+                                _set_val(content, "confirmed", True)
+                                _set_val(content, "is_confirmed", True)
+                                _set_val(content, "status", "Confirmed")
+                                _set_val(content, "is_excluded", False)
+                            elif item_action == "rename":
                                 if (
                                     item_index > 0
                                     or group_info["existing_file_on_disk"]
@@ -527,7 +554,8 @@ class VerificationEngine:
                                 _set_val(content, "confirmed", True)
                                 _set_val(content, "is_confirmed", True)
                                 _set_val(content, "status", "Confirmed")
-                            elif action == "keep":
+                                _set_val(content, "is_excluded", False)
+                            elif item_action == "keep":
                                 if item_index == 0:
                                     _set_val(content, "confirmed", True)
                                     _set_val(content, "is_confirmed", True)
@@ -1012,8 +1040,14 @@ class VirtualFilesystemTracker:
             and len(unconfirmed_renames) == 0
         )
 
+        structural_collisions = [
+            c
+            for c in collisions
+            if c.get("type") not in ("duplicate_target", "target_collision")
+        ]
+
         has_critical_errors = (
-            len(collisions) > 0
+            len(structural_collisions) > 0
             or len(circular_renames) > 0
             or len(invalid_renames) > 0
             or len(long_paths) > 0

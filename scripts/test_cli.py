@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Dedicated CLI smoke test script to verify argument compatibility."""
 
+import argparse
 import os
 import subprocess
 import sys
@@ -51,6 +52,11 @@ def run_command(command, expected_args):
 
 def main():
     """Run all CLI smoke tests."""
+    parser = argparse.ArgumentParser(
+        description="Dedicated CLI smoke test script to verify argument compatibility."
+    )
+    parser.parse_args()
+
     os.environ.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
     success = True
 
