@@ -120,11 +120,11 @@ def test_wizard_modal_switch_and_checkbox_announcements(tmp_path):
             sw_consent.value = False
             await pilot.pause(0.05)
 
-            # Toggle Sample Corpus switch
-            sw_sample = modal.query_one("#switch-sample-corpus", Switch)
-            sw_sample.value = True
+            # Toggle Sample Corpus checkbox
+            chk_sample = modal.query_one("#chk-sample-corpus", Checkbox)
+            chk_sample.value = True
             await pilot.pause(0.05)
-            sw_sample.value = False
+            chk_sample.value = False
             await pilot.pause(0.05)
 
             # Toggle Template Checkbox

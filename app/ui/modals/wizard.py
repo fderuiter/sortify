@@ -98,12 +98,25 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 tooltip="Toggle AI consent for semantic document classification",
             )
 
-            yield LabeledSwitch(
-                label="Generate Sample Documents",
-                value=False,
-                switch_id="switch-sample-corpus",
-                tooltip="Toggle generation of sample document corpus in active workspace",
+            btn_pg = Button(
+                "Try Interactive Sample Playground",
+                id="btn-open-playground",
+                variant="primary",
             )
+            btn_pg.tooltip = (
+                "Preview sample documents and live rule classification matrix"
+            )
+            yield btn_pg
+
+            chk_sample = Checkbox(
+                "Generate Sample Documents",
+                value=False,
+                id="chk-sample-corpus",
+            )
+            chk_sample.tooltip = (
+                "Generate sample document corpus in active workspace directory"
+            )
+            yield chk_sample
 
             yield Heading(
                 "Starter Rule Template Packs:", level=2, classes="field-label"
@@ -167,6 +180,11 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         if not chk_id:
             return
 
+        if chk_id == "chk-sample-corpus":
+            state = "enabled" if event.value else "disabled"
+            self.announce(f"Sample document corpus generation {state}.")
+            return
+
         prefix = ""
         if chk_id.startswith("chk-template-"):
             prefix = "chk-template-"
@@ -183,6 +201,16 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 state = "selected" if event.value else "deselected"
                 self.announce(f"{pack.title} template pack {state}.")
                 break
+
+    @on(Button.Pressed, "#btn-open-playground")
+    def action_open_playground(self) -> None:
+        """Open interactive sample playground modal screen."""
+        from app.ui.modals.sample_playground import SamplePlaygroundModal
+
+        target_dir = getattr(self.app, "base_dir", "") or os.getcwd()
+        self.app.push_screen(
+            SamplePlaygroundModal(self.settings, target_dir=target_dir)
+        )
 
     @on(Button.Pressed, "#btn-finish")
     def action_finish(self) -> None:
@@ -224,9 +252,12 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 logger.error(f"Error saving consent setting: {e}")
         gen_sample = False
         try:
-            gen_sample = self.query_one("#switch-sample-corpus", Switch).value
+            gen_sample = self.query_one("#chk-sample-corpus", Checkbox).value
         except Exception:
-            pass
+            try:
+                gen_sample = self.query_one("#switch-sample-corpus", Switch).value
+            except Exception:
+                pass
 
         if gen_sample:
             from app.core.sample_corpus import generate_sample_corpus
