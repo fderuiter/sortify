@@ -4,7 +4,7 @@ import asyncio
 import os
 
 import pytest
-from textual.widgets import Button, Checkbox, Switch, Tree
+from textual.widgets import Button, Checkbox, Tree
 
 from app.config import AppSettings
 from app.core.sample_corpus import generate_sample_corpus

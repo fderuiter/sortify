@@ -141,6 +141,11 @@ class DBWorker:
                 if result_q is not None:
                     result_q.put(("success", result))
             except Exception as e:
+                func_name = getattr(func, "__name__", str(func))
+                logger.error(
+                    f"Task exception encountered in write operation '{func_name}': {e}",
+                    exc_info=True,
+                )
                 if self._active_session is not None:
                     try:
                         sess_id = self._active_session.get("session_id")
@@ -155,6 +160,16 @@ class DBWorker:
                         )
                 if result_q is not None:
                     result_q.put(("error", e))
+                else:
+                    payload = {
+                        "func_name": func_name,
+                        "func": func,
+                        "exception": e,
+                        "error": str(e),
+                        "args": args,
+                        "kwargs": kwargs,
+                    }
+                    self.notify_listeners("write_error", payload)
             finally:
                 try:
                     from app.core.shared_registry import _thread_local
@@ -252,7 +267,23 @@ class DBWorker:
     def execute_write_async(self, func, *args, **kwargs):
         """Submit a database write operation to the queue asynchronously and return immediately."""
         if threading.current_thread() is getattr(self, "thread", None):
-            func(*args, **kwargs)
+            try:
+                func(*args, **kwargs)
+            except Exception as e:
+                func_name = getattr(func, "__name__", str(func))
+                logger.error(
+                    f"Task exception encountered in write operation '{func_name}': {e}",
+                    exc_info=True,
+                )
+                payload = {
+                    "func_name": func_name,
+                    "func": func,
+                    "exception": e,
+                    "error": str(e),
+                    "args": args,
+                    "kwargs": kwargs,
+                }
+                self.notify_listeners("write_error", payload)
             return
         with self._lock:
             if self._stopped:

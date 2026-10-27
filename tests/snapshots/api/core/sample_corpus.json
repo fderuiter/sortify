@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "a49cefc8ac676feb1685885886ba99f885fbb21ec883a4b9eb48c7f388ec15f1"
+    "checksum": "239db5e121900760d2130d27ef714bb3967279e5fedf3e0b4cf41fefb7c95a72"
   },
   "classes": [],
   "functions": [
@@ -21,6 +21,31 @@
         }
       ],
       "returns": "List[str]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_sample_corpus_items",
+      "parameters": [],
+      "returns": "Dict[str, str]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "simulate_corpus_classification",
+      "parameters": [
+        {
+          "annotation": "Optional[List[str]]",
+          "default": "None",
+          "name": "selected_packs"
+        },
+        {
+          "annotation": "Optional[Any]",
+          "default": "None",
+          "name": "settings"
+        }
+      ],
+      "returns": "Dict[str, Dict[str, Any]]"
     }
   ]
 }
