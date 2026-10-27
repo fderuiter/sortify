@@ -473,3 +473,112 @@ async def test_escape_does_not_close_history_modal_mid_rollback(
         await pilot.press("escape")
         await pilot.pause()
         assert app.screen is not modal
+
+
+@pytest.mark.anyio
+async def test_rollback_confirm_modal_history_load_failure(monkeypatch, caplog):
+    """Verify RollbackConfirmModal displays error banner, disables confirm button, and logs error on history retrieval failure."""
+    import logging
+    import os
+
+    from textual.widgets import Button, Static
+
+    from app.ui.modals.session import RollbackConfirmModal
+
+    home = os.environ.get("HOME", "/app")
+
+    def mock_open_session_history():
+        raise RuntimeError(f"database is locked: {home}/.secret/history.db")
+
+    monkeypatch.setattr(
+        "app.core.history.open_session_history", mock_open_session_history
+    )
+
+    session_info = {
+        "session_id": "sess_locked_db",
+        "base_dir": "/tmp/workspace",
+        "timestamp": 1700000000,
+        "items": [],
+    }
+
+    settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = False
+    monkeypatch.setattr(
+        "app.core.session_catalog.find_abandoned_sessions", lambda *a, **k: []
+    )
+    app = AutoSorterTUI(settings=settings)
+    async with app.run_test() as pilot:
+        modal = RollbackConfirmModal(session_info=session_info)
+        with caplog.at_level(logging.ERROR):
+            app.push_screen(modal)
+            await pilot.pause()
+
+        # 1. Verify history_error captured and sanitized (home path scrubbed to <USER_HOME>)
+        assert modal.history_error is not None
+        assert "database is locked" in modal.history_error
+        assert home not in modal.history_error
+        assert "<USER_HOME>" in modal.history_error
+
+        # 2. Verify error banner widget is displayed
+        banner = modal.query_one("#rollback-error-banner", Static)
+        assert banner.display is True
+        assert "database is locked" in str(banner.render())
+
+        # 3. Verify confirm rollback button is disabled with explanatory tooltip
+        btn_confirm = modal.query_one("#btn-confirm-rollback", Button)
+        assert btn_confirm.disabled is True
+        assert "Cannot confirm rollback" in str(btn_confirm.tooltip)
+
+        # 4. Verify announcement and logging
+        assert any(
+            "database is locked" in ann["message"] for ann in modal.announcements
+        )
+        assert any(
+            "Failed to load session history for rollback modal" in rec.message
+            for rec in caplog.records
+        )
+        assert any(rec.levelno == logging.ERROR for rec in caplog.records)
+
+        # 5. Verify action_confirm does not dismiss modal when disabled / error present
+        modal.action_confirm()
+        await pilot.pause()
+        assert app.screen is modal
+
+
+@pytest.mark.anyio
+async def test_rollback_confirm_modal_healthy_load():
+    """Verify RollbackConfirmModal loads normally without error banner when history is available."""
+    from textual.widgets import Button, Static
+
+    from app.ui.modals.session import RollbackConfirmModal
+
+    session_info = {
+        "session_id": "sess_healthy",
+        "base_dir": "/tmp/workspace",
+        "timestamp": 1700000000,
+        "items": [
+            {
+                "step_id": 1,
+                "source_path": "/tmp/workspace/doc.txt",
+                "target_path": "/tmp/workspace/Sorted/doc.txt",
+                "size": 100,
+                "status": "completed",
+            }
+        ],
+    }
+
+    settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = False
+    app = AutoSorterTUI(settings=settings)
+    async with app.run_test() as pilot:
+        modal = RollbackConfirmModal(session_info=session_info)
+        app.push_screen(modal)
+        await pilot.pause()
+
+        assert modal.history_error is None
+
+        banner = modal.query_one("#rollback-error-banner", Static)
+        assert banner.display is False
+
+        btn_confirm = modal.query_one("#btn-confirm-rollback", Button)
+        assert btn_confirm.disabled is False

@@ -1,5 +1,6 @@
 """Session history, rollback confirmation and interrupted-session recovery dialogs."""
 
+import logging
 import os
 import time
 from typing import Any, Dict, List, Optional
@@ -9,12 +10,16 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select
+from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static
 
+from app.core.path_utils import scrub_user_home_paths
+from app.core.text_utils import sanitize_secret_patterns
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
 from app.ui.layout import ResponsiveLayoutMixin
-from app.ui.notifications import TROUBLESHOOTING_URL
+from app.ui.notifications import TROUBLESHOOTING_URL, notify
+
+logger = logging.getLogger(__name__)
 
 
 class SessionRecoveryModal(
@@ -175,6 +180,16 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         color: $warning;
         margin-bottom: 0;
     }
+    .error-banner {
+        color: $error;
+        background: $boost;
+        border: solid $error;
+        padding: 0 1;
+        margin-top: 1;
+        margin-bottom: 1;
+        text-style: bold;
+        display: none;
+    }
     .controls-row {
         height: 3;
         margin-top: 1;
@@ -247,6 +262,7 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         self.all_items: List[Dict[str, Any]] = list(session_info.get("items") or [])
         self.selected_step_ids: set = set()
         self.filtered_items: List[Dict[str, Any]] = []
+        self.history_error: Optional[str] = None
         self.current_stage: int = 1
         self.preview_data: Optional[Dict[str, Any]] = None
 
@@ -270,6 +286,7 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                     f"Session ID: {sid} | Base Dir: {b_dir} | Date: {ts_str}",
                     id="lbl-confirm-sid",
                 )
+                yield Static("", id="rollback-error-banner", classes="error-banner")
 
                 with Horizontal(classes="controls-row"):
                     yield Input(
@@ -386,8 +403,34 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
                 with open_session_history() as history_mgr:
                     self.all_items = history_mgr.get_session_moves(sid)
-            except Exception:
+            except Exception as exc:
+                logger.exception(
+                    "Failed to load session history for rollback modal: %s", exc
+                )
                 self.all_items = []
+                raw_msg = str(exc) or "Failed to load session history."
+                sanitized_msg = sanitize_secret_patterns(scrub_user_home_paths(raw_msg))
+                self.history_error = f"Error loading session history: {sanitized_msg}"
+
+        if self.history_error:
+            try:
+                banner = self.query_one("#rollback-error-banner", Static)
+                banner.update(f"⚠️ {self.history_error}")
+                banner.display = True
+            except Exception:
+                pass
+
+            try:
+                btn_confirm = self.query_one("#btn-confirm-rollback", Button)
+                btn_confirm.disabled = True
+                btn_confirm.tooltip = (
+                    "Cannot confirm rollback because session history failed to load."
+                )
+            except Exception:
+                pass
+
+            notify(self.history_error, type="error")
+            self.announce(self.history_error, priority="assertive")
 
         self.selected_step_ids = {item["step_id"] for item in self.all_items}
 
@@ -405,7 +448,16 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
         self._refresh_table()
 
-        self.query_one("#btn-confirm-rollback", Button).focus()
+        if self.history_error:
+            try:
+                self.query_one("#btn-cancel-rollback", Button).focus()
+            except Exception:
+                pass
+        else:
+            try:
+                self.query_one("#btn-confirm-rollback", Button).focus()
+            except Exception:
+                pass
         self.announce("Opened rollback confirmation modal dialog.")
 
     def _refresh_table(self) -> None:
@@ -717,6 +769,14 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     @on(Button.Pressed, "#btn-confirm-rollback")
     def action_confirm(self) -> None:
         """Confirm rollback action and dismiss modal with parameters."""
+        try:
+            btn = self.query_one("#btn-confirm-rollback", Button)
+            if btn.disabled or self.history_error is not None:
+                return
+        except Exception:
+            if self.history_error is not None:
+                return
+
         checkboxes = self.query("#chk-ignore-missing").results(Checkbox)
         chk = next(iter(checkboxes), None)
 
