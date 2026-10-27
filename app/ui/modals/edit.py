@@ -845,17 +845,31 @@ class ManualPathFallbackModal(A11yMixin, ModalScreen[Optional[str]]):
         self.dismiss(None)
 
 
-class DuplicateReviewModal(
+def _format_file_size(size_bytes: int) -> str:
+    """Format size in bytes to human readable string."""
+    if size_bytes <= 0:
+        return "0 B"
+    size = float(size_bytes)
+    for unit in ["B", "KB", "MB", "GB", "TB"]:
+        if size < 1024.0 or unit == "TB":
+            if unit == "B":
+                return f"{int(size)} B"
+            return f"{size:.1f} {unit}"
+        size /= 1024.0
+    return f"{size:.1f} TB"
+
+
+class InteractiveCollisionResolverModal(
     ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Dict[str, str]]]
 ):
-    """Modal dialog for pre-move interactive duplicate cluster review and resolution."""
+    """Interactive per-file collision resolution modal before execution."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
     ]
 
     CSS = """
-    DuplicateReviewModal {
+    InteractiveCollisionResolverModal, DuplicateReviewModal {
         align: center middle;
         background: rgba(0, 0, 0, 0.65);
     }
@@ -931,6 +945,14 @@ class DuplicateReviewModal(
     }
     """
 
+    RESOLVER_OPTIONS = [
+        ("Rename (auto-number duplicates)", "rename"),
+        ("Overwrite (replace target file)", "overwrite"),
+        ("Skip (exclude colliding file)", "skip"),
+        ("Keep Both (preserve destination & prefix source)", "keep_both"),
+        ("Keep Primary File Only", "keep"),
+    ]
+
     def __init__(
         self,
         duplicate_groups: Optional[List[Dict[str, Any]]] = None,
@@ -943,34 +965,29 @@ class DuplicateReviewModal(
         }
 
     def compose(self) -> ComposeResult:
-        """Compose duplicate review dialog widgets."""
+        """Compose interactive collision resolution dialog widgets."""
         with Vertical(classes="modal-box"):
             yield Heading(
-                "Duplicate Cluster Review & Resolution",
+                "Interactive Collision Resolver",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
             )
             yield Label(
-                "Review duplicate destination target collisions before physical move execution:",
+                "Review destination target collisions and select per-file resolution actions:",
                 classes="modal-subtitle",
             )
 
-            batch_options = [
-                ("Rename (auto-number duplicates)", "rename"),
-                ("Keep Primary File Only", "keep"),
-                ("Skip Moving Duplicates", "skip"),
-            ]
             with Horizontal(classes="batch-bar", id="batch-action-bar"):
                 batch_sel = Select(
-                    batch_options,
+                    self.RESOLVER_OPTIONS,
                     value="rename",
                     id="batch-action-select",
                     classes="batch-select",
                     allow_blank=False,
                 )
                 batch_sel.tooltip = (
-                    "Select batch deduplication action to apply to all groups"
+                    "Select batch deduplication action to apply to all collision groups"
                 )
                 batch_sel.aria_label = (
                     "Batch resolution action for all duplicate clusters"
@@ -1007,22 +1024,27 @@ class DuplicateReviewModal(
                             rel_src = item.get("relative_source") or item.get(
                                 "source_path", ""
                             )
-                            yield Label(f"• {rel_src}", classes="source-item")
+                            src_p = item.get("source_path", "")
+                            size_info = ""
+                            if src_p and os.path.exists(src_p):
+                                try:
+                                    sz = os.path.getsize(src_p)
+                                    size_info = f" ({_format_file_size(sz)})"
+                                except OSError:
+                                    pass
+                            yield Label(
+                                f"• {rel_src}{size_info}", classes="source-item"
+                            )
 
-                        options = [
-                            ("Rename (auto-number duplicates)", "rename"),
-                            ("Keep Primary File Only", "keep"),
-                            ("Skip Moving Duplicates", "skip"),
-                        ]
                         sel = Select(
-                            options,
+                            self.RESOLVER_OPTIONS,
                             value=default_action,
                             id=f"select-action-{gid}",
                             classes="action-select",
                             allow_blank=False,
                         )
                         sel.tooltip = (
-                            f"Select deduplication resolution action for {tf_name}"
+                            f"Select collision resolution action for {tf_name}"
                         )
                         sel.aria_label = (
                             f"Resolution action for duplicate group {tf_name}"
@@ -1064,11 +1086,11 @@ class DuplicateReviewModal(
                     self.query_one("#btn-confirm-duplicates", Button).focus()
                 except Exception:
                     pass
-        self.announce("Opened interactive duplicate review modal.")
+        self.announce("Opened interactive collision resolver modal.")
 
     @on(Button.Pressed, "#btn-apply-all")
     def action_apply_to_all(self) -> None:
-        """Apply the selected batch action to all duplicate cluster groups."""
+        """Apply the selected batch action to all collision groups."""
         try:
             batch_sel = self.query_one("#batch-action-select", Select)
             batch_value = (
@@ -1107,3 +1129,6 @@ class DuplicateReviewModal(
         """Cancel duplicate review and abort execution."""
         self.announce("Cancelled duplicate review dialog.")
         self.dismiss(None)
+
+
+DuplicateReviewModal = InteractiveCollisionResolverModal
