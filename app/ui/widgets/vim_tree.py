@@ -77,6 +77,11 @@ class VimTree(Tree):
                 self.app.action_generate_sample_corpus()
             event.stop()
             event.prevent_default()
+        elif event.key in ("/", "slash") or getattr(event, "character", None) == "/":
+            if hasattr(self.app, "action_focus_search"):
+                self.app.action_focus_search()
+            event.stop()
+            event.prevent_default()
         elif event.key in ("enter", "return"):
             node = self.cursor_node
             if node:

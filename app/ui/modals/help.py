@@ -167,7 +167,7 @@ class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None
                 classes="shortcut-row",
             )
             yield Label(
-                "  Ctrl+K      - Open the model manager",
+                "  Ctrl+K      - Open command palette overlay",
                 classes="shortcut-row",
             )
             yield Label(

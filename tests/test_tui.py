@@ -2326,7 +2326,7 @@ def test_main_screen_bindings_avoid_keys_terminals_cannot_send():
 @pytest.mark.parametrize(
     "key, action",
     [
-        ("ctrl+k", "action_open_model_manager"),
+        ("ctrl+k", "action_open_command_palette"),
         ("ctrl+y", "action_open_history"),
         ("ctrl+x", "action_open_extraction_preview"),
     ],

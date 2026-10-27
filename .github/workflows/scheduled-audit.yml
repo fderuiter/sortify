@@ -71,13 +71,27 @@ jobs:
             }
 
             const issueTitle = '[Security] Automated Dependency Audit Failure';
-            const labelName = 'security';
+            const reportLower = report.toLowerCase();
+            let labels = ['security'];
+            let reviewerMention = '';
+
+            if (reportLower.includes('critical')) {
+              labels.push('severity:critical', 'priority:urgent');
+              reviewerMention = '\n\n**Attention Maintainers:** @fderuiter/security-team @fderuiter/maintainers';
+            } else if (reportLower.includes('high')) {
+              labels.push('severity:high', 'priority:urgent');
+              reviewerMention = '\n\n**Attention Maintainers:** @fderuiter/security-team @fderuiter/maintainers';
+            } else if (reportLower.includes('low')) {
+              labels.push('severity:low');
+            } else {
+              labels.push('severity:medium');
+            }
 
             const { data: openIssues } = await github.rest.issues.listForRepo({
               owner: context.repo.owner,
               repo: context.repo.repo,
               state: 'open',
-              labels: labelName,
+              labels: 'security',
             });
 
             const existingIssue = openIssues.find(issue =>
@@ -86,7 +100,7 @@ jobs:
               issue.title.includes('Automated Vulnerability Audit Alert')
             );
 
-            const body = `## ⚠️ Security Vulnerability Audit Failure Alert\n\nThe scheduled automated vulnerability audit detected one or more unexempted security vulnerabilities in production dependencies (\`uv.lock\`).\n\n### Audit Report Details\n\n\`\`\`text\n${report}\n\`\`\`\n\n---\n*Last audited at: ${new Date().toUTCString()}*\n*Triggered by scheduled workflow run: [Run Details](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})*\n`;
+            const body = `## ⚠️ Security Vulnerability Audit Failure Alert\n\nThe scheduled automated vulnerability audit detected one or more unexempted security vulnerabilities in production dependencies (\`uv.lock\`).${reviewerMention}\n\n### Audit Report Details\n\n\`\`\`text\n${report}\n\`\`\`\n\n---\n*Last audited at: ${new Date().toUTCString()}*\n*Triggered by scheduled workflow run: [Run Details](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})*\n`;
 
             if (existingIssue) {
               console.log(`Updating existing open security issue #${existingIssue.number}`);
@@ -95,6 +109,7 @@ jobs:
                 repo: context.repo.repo,
                 issue_number: existingIssue.number,
                 body: body,
+                labels: labels,
               });
             } else {
               console.log('Creating new security issue');
@@ -103,6 +118,6 @@ jobs:
                 repo: context.repo.repo,
                 title: issueTitle,
                 body: body,
-                labels: [labelName],
+                labels: labels,
               });
             }

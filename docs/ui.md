@@ -40,6 +40,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.mixins.tree_view
 
+## `app.ui.modals.command_palette`
+
+::: app.ui.modals.command_palette
+
 ## `app.ui.modals.drop_zone`
 
 ::: app.ui.modals.drop_zone
@@ -67,6 +71,10 @@ This document is automatically generated. Do not edit manually.
 ## `app.ui.modals.rules`
 
 ::: app.ui.modals.rules
+
+## `app.ui.modals.sample_playground`
+
+::: app.ui.modals.sample_playground
 
 ## `app.ui.modals.session`
 
