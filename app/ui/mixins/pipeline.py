@@ -7,7 +7,9 @@ from typing import Any, Dict, Optional
 from textual import work
 from textual.widgets import Button, Static
 
-from app.ui.modals.edit import DuplicateReviewModal
+from app.ui.modals.edit import (
+    InteractiveCollisionResolverModal,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -237,7 +239,7 @@ class SortPipelineMixin:
                 self.run_execute_worker()
 
             self.push_screen(
-                DuplicateReviewModal(duplicate_groups=duplicate_groups),
+                InteractiveCollisionResolverModal(duplicate_groups=duplicate_groups),
                 handle_duplicate_modal_result,
             )
         else:
@@ -277,14 +279,29 @@ class SortPipelineMixin:
         broken_links = result.get("broken_links", [])
         unconfirmed = result.get("unconfirmed_renames", [])
 
-        has_critical = bool(collisions or circular or invalid or long_paths)
-        has_warnings = bool(broken_links or unconfirmed)
+        structural_collisions = [
+            c
+            for c in collisions
+            if c.get("type") not in ("duplicate_target", "target_collision")
+        ]
+        resolvable_collisions = [
+            c
+            for c in collisions
+            if c.get("type") in ("duplicate_target", "target_collision")
+        ]
+
+        has_critical = bool(
+            result.get("has_critical_errors")
+            if "has_critical_errors" in result
+            else (structural_collisions or circular or invalid or long_paths)
+        )
+        has_warnings = bool(broken_links or unconfirmed or resolvable_collisions)
 
         self.has_critical_errors = has_critical
 
         # Build path sets for tree node highlighting
         crit_paths = set()
-        for c in collisions:
+        for c in structural_collisions:
             if c.get("path"):
                 crit_paths.add(os.path.normpath(c["path"]))
             if c.get("source"):
@@ -308,6 +325,13 @@ class SortPipelineMixin:
                 crit_paths.add(os.path.normpath(lp["source"]))
 
         warn_paths = set()
+        for c in resolvable_collisions:
+            if c.get("path"):
+                warn_paths.add(os.path.normpath(c["path"]))
+            if c.get("source"):
+                warn_paths.add(os.path.normpath(c["source"]))
+            for s in c.get("sources", []):
+                warn_paths.add(os.path.normpath(s))
         for bl in broken_links:
             if bl.get("path"):
                 warn_paths.add(os.path.normpath(bl["path"]))
@@ -338,7 +362,12 @@ class SortPipelineMixin:
                     )
             else:
                 btn_exec.disabled = False
-                btn_exec.tooltip = "Execute file sorting plan [Ctrl+E]"
+                if resolvable_collisions:
+                    btn_exec.tooltip = (
+                        "Execute plan with interactive collision resolution [Ctrl+E]"
+                    )
+                else:
+                    btn_exec.tooltip = "Execute file sorting plan [Ctrl+E]"
         except Exception:
             pass
 
@@ -351,23 +380,13 @@ class SortPipelineMixin:
                 alert_banner.add_class("alert-critical")
 
                 msgs = []
-                if collisions:
-                    msgs.append("⛔ CRITICAL FILE COLLISION(S) DETECTED:")
-                    for c in collisions:
+                if structural_collisions:
+                    msgs.append("⛔ STRUCTURAL DIRECTORY COLLISION(S) DETECTED:")
+                    for c in structural_collisions:
                         dst_p = c.get("path", "")
-                        if c.get("sources"):
-                            for s_p in c["sources"]:
-                                msgs.append(
-                                    f"  • Source: {s_p} -> Destination: {dst_p}"
-                                )
-                        elif c.get("source"):
-                            msgs.append(
-                                f"  • Source: {c['source']} -> Destination: {dst_p}"
-                            )
-                        else:
-                            msgs.append(
-                                f"  • Destination: {dst_p} ({c.get('message', 'Collision')})"
-                            )
+                        msgs.append(
+                            f"  • Destination: {dst_p} ({c.get('message', 'Collision')})"
+                        )
                 if circular:
                     msgs.append("⛔ CIRCULAR RENAMING DEPENDENCY DETECTED:")
                     for r in circular:
@@ -389,7 +408,13 @@ class SortPipelineMixin:
                 alert_banner.remove_class("alert-critical")
                 alert_banner.add_class("alert-warning")
 
-                msgs = ["⚠️ NON-FATAL WARNING(S) REPORTED (Execution unblocked):"]
+                msgs = [
+                    "⚠️ NON-FATAL WARNING(S) / RESOLVABLE COLLISION(S) REPORTED (Execution unblocked):"
+                ]
+                if resolvable_collisions:
+                    msgs.append(
+                        "  • Destination path collisions exist - click 'Execute' to review & resolve interactively."
+                    )
                 for bl in broken_links:
                     msgs.append(f"  • {bl.get('message')}")
                 for unc in unconfirmed:

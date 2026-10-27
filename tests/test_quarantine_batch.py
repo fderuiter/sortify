@@ -23,14 +23,14 @@ def test_db_and_dir():
     """Create a temporary database and base directory for quarantine batch testing."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         db_path = os.path.join(tmp_dir, "test_quarantine.db")
-        db = Database(db_path, DBWorker())
+        worker = DBWorker()
+        db = Database(db_path, worker)
         try:
             yield db, tmp_dir
         finally:
             if hasattr(db, "close"):
                 db.close()
-            if hasattr(db, "worker") and hasattr(db.worker, "stop"):
-                db.worker.stop()
+            worker.stop(stop_embeddings=False)
             clear_connection_cache(only_current_and_inactive=False)
 
 
