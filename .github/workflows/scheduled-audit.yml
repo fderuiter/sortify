@@ -46,6 +46,7 @@ jobs:
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
+          PYTHON_KEYRING_BACKEND: keyring.backends.fail.Keyring
         run: |
           set +e
           uv run python scripts/remediate_vulnerabilities.py 2>&1 | tee audit_report.txt
