@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "26f16662869604128f12c82feea8452d46c7ef0edba960a4f84ad7567a72f697"
+    "checksum": "30abdc32eff10216964912af2765282ce7db0e1417dfb77e741e3c28f72d2509"
   },
   "classes": [
     {
@@ -228,6 +228,34 @@
             }
           ],
           "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "preview_rollback",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "Optional[Collection[Union[int, str]]]",
+              "default": "None",
+              "name": "selected_step_ids"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "ignore_missing"
+            }
+          ],
+          "returns": "Dict[str, Any]"
         },
         {
           "async": false,
