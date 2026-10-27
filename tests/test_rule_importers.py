@@ -20,7 +20,7 @@ from app.core.rule_importers import (
 
 def test_rule_conflict_analyzer(tmp_path):
     """Verify RuleConflictAnalyzer detects keyword and policy target path collisions."""
-    settings = AppSettings(filepath=str(tmp_path / "settings_analyzer.json"))
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
     settings.KEYWORD_RULES = {
         "invoice": "Local/Invoices",
         "receipt": "Local/Receipts",
@@ -73,7 +73,7 @@ def test_rule_conflict_analyzer(tmp_path):
 
 def test_rule_conflict_resolutions_overwrite_and_skip(tmp_path):
     """Verify merge_into_settings respects overwrite and granular resolution choices."""
-    settings = AppSettings(filepath=str(tmp_path / "settings_resolutions.json"))
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
     settings.KEYWORD_RULES = {
         "invoice": "Local/Invoices",
         "statement": "Local/Statements",

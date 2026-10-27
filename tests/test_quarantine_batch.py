@@ -23,12 +23,13 @@ def test_db_and_dir():
     """Create a temporary database and base directory for quarantine batch testing."""
     with tempfile.TemporaryDirectory() as tmp_dir:
         db_path = os.path.join(tmp_dir, "test_quarantine.db")
-        worker = DBWorker()
-        db = Database(db_path, worker)
+        db = Database(db_path, DBWorker())
         try:
             yield db, tmp_dir
         finally:
-            worker.stop()
+            db.worker.stop()
+            from app.core.db_conn import clear_connection_cache
+
             clear_connection_cache(only_current_and_inactive=False)
 
 

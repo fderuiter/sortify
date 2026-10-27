@@ -211,7 +211,7 @@ def test_modal_unrecognized_controls_handled_gracefully(tmp_path):
 
 def test_apply_starter_templates_propagates_save_error(tmp_path):
     """Verify apply_starter_templates propagates save errors when settings._save raises an exception."""
-    settings = AppSettings(filepath=str(tmp_path / "settings_err.json"))
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
     with patch.object(AppSettings, "_trigger_save"):
         with patch.object(
             AppSettings, "_save", side_effect=OSError("Disk write error")
@@ -224,7 +224,7 @@ def test_template_gallery_modal_rescan_on_success(tmp_path):
     """Verify template gallery triggers action_scan_directory on successful template application."""
 
     async def _test():
-        settings = AppSettings(filepath=str(tmp_path / "settings_rescan.json"))
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
         settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
 
@@ -248,7 +248,7 @@ def test_template_gallery_modal_error_notification_on_save_failure(tmp_path):
     """Verify template gallery notifies with severity='error' when template application save fails."""
 
     async def _test():
-        settings = AppSettings(filepath=str(tmp_path / "settings_save_err.json"))
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
         settings.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
 
@@ -277,7 +277,8 @@ def test_template_gallery_modal_error_notification_on_save_failure(tmp_path):
 
             messages = [a["message"] for a in gallery_modal.announcements]
             assert any(
-                "Failed to apply starter rule template pack(s)" in m for m in messages
+                "Failed to apply starter rule template pack(s)" in m
+                for m in messages
             )
 
     asyncio.run(_test())
@@ -287,9 +288,11 @@ def test_wizard_modal_save_error_handled(tmp_path):
     """Verify WizardModal handles save errors when applying template packs without crashing."""
 
     async def _test():
-        settings = AppSettings(filepath=str(tmp_path / "settings_wizard.json"))
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
         settings.AI_CONSENT_GRANTED = False
-        app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path), skip_wizard=True)
+        app = AutoSorterTUI(
+            settings=settings, base_dir=str(tmp_path), skip_wizard=True
+        )
 
         async with app.run_test() as pilot:
             await pilot.pause(0.1)

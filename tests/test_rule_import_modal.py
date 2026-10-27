@@ -72,7 +72,7 @@ def test_rule_import_modal_conflict_preview_and_resolution(tmp_path):
 
     from app.core.rule_importers import ImportResult, RuleConflictAnalyzer
 
-    settings = AppSettings(filepath=str(tmp_path / "settings_import_modal.json"))
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
     settings.KEYWORD_RULES = {"invoice": "Existing/Invoices"}
     settings.POLICIES = [
         {
@@ -100,7 +100,9 @@ def test_rule_import_modal_conflict_preview_and_resolution(tmp_path):
 
     modal.current_result = res
     modal.conflicts = RuleConflictAnalyzer.analyze(res, settings)
-    modal.conflict_resolutions = {c.identifier: c.resolution for c in modal.conflicts}
+    modal.conflict_resolutions = {
+        c.identifier: c.resolution for c in modal.conflicts
+    }
 
     assert len(modal.conflicts) == 2
 
