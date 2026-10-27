@@ -36,6 +36,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.mixins.tree_view
 
+## `app.ui.modals.command_palette`
+
+::: app.ui.modals.command_palette
+
 ## `app.ui.modals.drop_zone`
 
 ::: app.ui.modals.drop_zone

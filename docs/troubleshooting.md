@@ -6,7 +6,7 @@ Welcome to the Smart AutoSorter AI Pro troubleshooting guide. This page covers m
 
 ## Model download failures
 
-The Model Manager (`[Ctrl+K]`) downloads the optional embedding model (`all-MiniLM-L6-v2` in ONNX format) from Hugging Face. When a download fails it shows **Model download failed:** followed by the reason.
+The Model Manager (accessible via Command Palette `[Ctrl+K]`) downloads the optional embedding model (`all-MiniLM-L6-v2` in ONNX format) from Hugging Face. When a download fails it shows **Model download failed:** followed by the reason.
 
 ### Network errors
 The message names a network, connection or timeout error. A firewall, antivirus, VPN or proxy is blocking `huggingface.co`, or the machine is offline.
@@ -25,7 +25,7 @@ Consent and the download are separate steps. Granting consent allows Sortify to 
 ### In the terminal UI
 1. Start the app with `smart-autosorter --tui`.
 2. Press `[Ctrl+W]` to open the Model Onboarding Wizard, switch **AI Consent Granted** on with `[Space]`, and choose **Finish & Save**.
-3. Press `[Ctrl+K]` to open the Model Manager and choose **Start Download**, or **Retry Download** after a failure.
+3. Press `[Ctrl+K]` to open the Command Palette, search for **Model Manager**, press `[Enter]`, and choose **Start Download**, or **Retry Download** after a failure.
 
 ### From the command line
 `smart-autosorter --accept-ai-consent` opens the terminal UI with consent granted for that run. It does not start the download; use the Model Manager for that.

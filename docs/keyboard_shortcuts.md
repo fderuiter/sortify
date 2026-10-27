@@ -20,7 +20,7 @@ Press `?` or `F1` in the app to see these shortcuts.
 | `+` | Rating (+) |
 | `-` | Rating (-) |
 | `Ctrl+O` | Settings |
-| `Ctrl+K` | Model Manager |
+| `Ctrl+K` | Command Palette |
 | `Ctrl+W` | Wizard |
 | `Ctrl+C` | CRO Ingest |
 | `Ctrl+D` | DropZone |
@@ -49,6 +49,13 @@ Press `?` or `F1` in the app to see these shortcuts.
 | `Ctrl+T` | Retry All Failed Items |
 | `Ctrl+J` | Export JSON Report |
 | `Ctrl+C` | Export CSV Report |
+
+### Command Palette
+
+| Keys | Action |
+|---|---|
+| `UP` | Move selection up |
+| `Down` | Move selection down |
 
 ### Quarantine Vault
 
