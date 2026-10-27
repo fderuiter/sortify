@@ -68,6 +68,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.modals.rules
 
+## `app.ui.modals.sample_playground`
+
+::: app.ui.modals.sample_playground
+
 ## `app.ui.modals.session`
 
 ::: app.ui.modals.session

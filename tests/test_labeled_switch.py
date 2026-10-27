@@ -153,21 +153,21 @@ def test_wizard_modal_labeled_switch_click_label(tmp_path):
             assert isinstance(modal, WizardModal)
 
             # Query switch and container in wizard
-            sw_sample = modal.query_one("#switch-sample-corpus", Switch)
-            ls_sample = sw_sample.parent
-            assert isinstance(ls_sample, LabeledSwitch)
-            assert sw_sample.value is False
+            sw_consent = modal.query_one("#switch-consent", Switch)
+            ls_consent = sw_consent.parent
+            assert isinstance(ls_consent, LabeledSwitch)
+            assert sw_consent.value is False
 
             # Scroll to center switch in scroll container before clicking label
             modal.query_one(".modal-box").scroll_to_widget(
-                ls_sample, center=True, animate=False
+                ls_consent, center=True, animate=False
             )
             await pilot.pause(0.05)
-            await pilot.click(ls_sample.label_widget)
+            await pilot.click(ls_consent.label_widget)
             await pilot.pause(0.05)
 
-            assert sw_sample.value is True
-            assert app.focused == sw_sample
+            assert sw_consent.value is True
+            assert app.focused == sw_consent
 
     asyncio.run(_test())
 
