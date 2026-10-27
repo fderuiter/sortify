@@ -20,6 +20,68 @@ logger = logging.getLogger(__name__)
 class TreeViewMixin:
     """Render the plan tree, filter it by search query and fill the inspector."""
 
+    _tree_expansion_memory: Dict[str, bool] = {}
+    _last_cursor_key: Optional[str] = None
+
+    def _capture_tree_state(self, tree: Tree, search_query: str = "") -> None:
+        """Record node expansion status and cursor key prior to tree rebuild."""
+        if (
+            not hasattr(self, "_tree_expansion_memory")
+            or self._tree_expansion_memory is None
+        ):
+            self._tree_expansion_memory = {}
+
+        def _walk(node: TreeNode):
+            data = getattr(node, "data", {}) or {}
+            if isinstance(data, dict):
+                key = data.get("filepath") or data.get("folder") or data.get("key")
+                if key and not data.get("is_file") and not search_query:
+                    self._tree_expansion_memory[key] = node.is_expanded
+            for child in node.children:
+                _walk(child)
+
+        _walk(tree.root)
+
+        node_for_cursor = tree.cursor_node or getattr(self, "active_tree_node", None)
+        if node_for_cursor and getattr(node_for_cursor, "data", None):
+            cdata = node_for_cursor.data
+            if isinstance(cdata, dict):
+                key = cdata.get("filepath") or cdata.get("folder") or cdata.get("key")
+                if key:
+                    self._last_cursor_key = key
+
+    def _restore_tree_state(self, tree: Tree, search_query: str = "") -> None:
+        """Apply saved expansion states and restore cursor position after render."""
+        target_cursor_node = None
+        last_key = getattr(self, "_last_cursor_key", None)
+        expansion_memory = getattr(self, "_tree_expansion_memory", {}) or {}
+
+        def _walk(node: TreeNode):
+            nonlocal target_cursor_node
+            data = getattr(node, "data", {}) or {}
+            if isinstance(data, dict):
+                key = data.get("filepath") or data.get("folder") or data.get("key")
+
+                if key and key == last_key:
+                    target_cursor_node = node
+
+                if not search_query and key in expansion_memory:
+                    if expansion_memory[key]:
+                        node.expand()
+                    else:
+                        node.collapse()
+            for child in node.children:
+                _walk(child)
+
+        _walk(tree.root)
+        if target_cursor_node:
+            curr = target_cursor_node.parent
+            while curr:
+                curr.expand()
+                curr = curr.parent
+            tree.select_node(target_cursor_node)
+            self.active_tree_node = target_cursor_node
+
     def _apply_tree_node_styles(self) -> None:
         """Apply red/yellow styling to existing tree nodes based on active error/warning paths."""
         try:
@@ -160,11 +222,14 @@ class TreeViewMixin:
         """Render Textual Tree widget from in-memory plan structure without running validation worker."""
         try:
             tree = self.query_one("#plan-tree", Tree)
-            tree.reset("Proposed Organization Plan")
             if search_query is None:
                 search_query = self._get_current_search_query()
 
             query = search_query.strip().lower() if search_query else ""
+
+            self._capture_tree_state(tree, query)
+
+            tree.reset("Proposed Organization Plan")
 
             if not self._has_file_nodes(self.plan):
                 tree.root.add_leaf(
@@ -204,6 +269,7 @@ class TreeViewMixin:
                         data={"is_empty_state": True, "action": "info"},
                     )
             tree.root.expand_all()
+            self._restore_tree_state(tree, query)
             if tree.cursor_node and tree.cursor_node.data:
                 self._update_inspector(tree.cursor_node, announce=False)
             elif getattr(self, "active_tree_node", None) and self.active_tree_node.data:

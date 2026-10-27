@@ -6,7 +6,7 @@ import sys
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
 
-from textual import on, work
+from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -1152,6 +1152,12 @@ class AutoSorterTUI(
     ) -> None:
         """Handle tree node selection or highlight to update metadata pane and screen reader announcement."""
         self.active_tree_node = event.node
+        if event.node and getattr(event.node, "data", None):
+            cdata = event.node.data
+            if isinstance(cdata, dict):
+                key = cdata.get("filepath") or cdata.get("folder") or cdata.get("key")
+                if key:
+                    self._last_cursor_key = key
         self._update_inspector(event.node)
         self._update_onboarding_cta_visibility()
         if isinstance(event, Tree.NodeSelected) and event.node and event.node.data:
@@ -1161,6 +1167,27 @@ class AutoSorterTUI(
                     self.action_generate_sample_corpus()
                 elif action == "select_dir":
                     self.action_select_dir()
+
+    @on(Tree.NodeExpanded, "#plan-tree")
+    @on(Tree.NodeCollapsed, "#plan-tree")
+    def on_tree_node_expansion_changed(
+        self, event: Union[Tree.NodeExpanded, Tree.NodeCollapsed]
+    ) -> None:
+        """Handle tree node expand/collapse to keep expansion state memory synchronized."""
+        search_query = self._get_current_search_query()
+        if not search_query and event.node and getattr(event.node, "data", None):
+            cdata = event.node.data
+            if isinstance(cdata, dict) and not cdata.get("is_file"):
+                key = cdata.get("filepath") or cdata.get("folder") or cdata.get("key")
+                if key:
+                    if (
+                        not hasattr(self, "_tree_expansion_memory")
+                        or self._tree_expansion_memory is None
+                    ):
+                        self._tree_expansion_memory = {}
+                    self._tree_expansion_memory[key] = isinstance(
+                        event, Tree.NodeExpanded
+                    )
 
     @on(Input.Changed, "#tree-search-input")
     def on_tree_search_changed(self, event: Input.Changed) -> None:
@@ -1173,11 +1200,30 @@ class AutoSorterTUI(
             0.15, lambda: self.render_tree(search_query=val)
         )
 
+    def on_key(self, event: events.Key) -> None:
+        """Handle global application key events."""
+        if event.key in ("escape", "esc"):
+            try:
+                inp = self.query_one("#tree-search-input", Input)
+                if inp.has_focus:
+                    inp.value = ""
+                    timer = getattr(self, "_tree_filter_timer", None)
+                    if timer is not None:
+                        timer.stop()
+                    self.render_tree(search_query="")
+                    tree = self.query_one("#plan-tree", Tree)
+                    tree.focus()
+                    event.stop()
+                    event.prevent_default()
+            except Exception:
+                pass
+
     def action_focus_search(self) -> None:
         """Focus the real-time tree filter search input bar."""
         try:
             inp = self.query_one("#tree-search-input", Input)
             inp.focus()
+            inp.select_all()
             self.announce("Focused tree search input bar.")
         except Exception:
             pass
