@@ -4,7 +4,7 @@ import asyncio
 import os
 
 import pytest
-from textual.widgets import Button, Switch, Tree
+from textual.widgets import Button, Checkbox, Switch, Tree
 
 from app.config import AppSettings
 from app.core.sample_corpus import generate_sample_corpus
@@ -56,8 +56,8 @@ def test_wizard_modal_sample_corpus_option(tmp_path):
             assert a11y_res["compliant"] is True
             assert a11y_res["violations_count"] == 0
 
-            sw_sample = modal.query_one("#switch-sample-corpus", Switch)
-            sw_sample.value = True
+            chk_sample = modal.query_one("#chk-sample-corpus", Checkbox)
+            chk_sample.value = True
             await pilot.pause(0.05)
 
             btn_finish = modal.query_one("#btn-finish", Button)
@@ -100,8 +100,14 @@ def test_empty_workspace_guided_state_card_and_shortcut(tmp_path):
             assert app_audit["violations_count"] == 0
             assert len(inspect_tui_component(app)) == 0
 
-            # Press 'g' shortcut to load sample dataset
+            # Press 'g' shortcut to load sample dataset playground modal
             await pilot.press("g")
+            await pilot.pause(0.1)
+
+            from app.ui.modals.sample_playground import SamplePlaygroundModal
+            assert isinstance(app.screen, SamplePlaygroundModal)
+            btn_commit = app.screen.query_one("#btn-commit-playground", Button)
+            btn_commit.press()
             await pilot.pause(0.1)
 
             # Verify sample files created in empty_workspace

@@ -7,6 +7,9 @@ Local, offline-first Python 3.12 file sorter (`smart-autosorter`). Read `CONTEXT
 - Install: `uv sync` (add `--extra ml` only when the work needs torch/easyocr/transformers).
 - Fast tests: `uv run pytest -m "not slow"`. One file while iterating: `uv run pytest tests/test_<area>.py -n0`.
 - Lint and format: `uv run ruff check` and `uv run ruff format`.
+- Type check: `uv run ty check`.
+- Dependency audit: `uv run deptry .`.
+- Architecture and import validation: `uv run python scripts/validate_architecture.py` and `uv run python scripts/validate_imports.py`.
 - Hooks: `uv run pre-commit install`; they run ruff plus the repo validators in `scripts/`.
 
 ## Conventions

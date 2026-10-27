@@ -13,7 +13,7 @@ attrs==26.1.0
     #   aiohttp
     #   jsonschema
     #   referencing
-certifi==2026.10.19
+certifi==2026.10.23
 cffi==2.1.1
     # via cryptography
 cryptography==50.0.2
@@ -24,7 +24,7 @@ easyocr==1.7.2
     # via smart-autosorter (pyproject.toml)
 et-xmlfile==2.0.0
     # via openpyxl
-filelock==4.2.0
+filelock==4.2.4
     # via torch
 frozenlist==1.8.0
     # via
@@ -100,7 +100,7 @@ packaging==26.3
     # via
     #   lazy-loader
     #   scikit-image
-pandas==3.0.6
+pandas==3.1.0
     # via smart-autosorter (pyproject.toml)
 pillow==13.0.0
     # via
@@ -114,21 +114,21 @@ propcache==0.5.4
     #   yarl
 pyclipper==1.4.0
     # via easyocr
-pycparser==3.11
+pycparser==3.12
     # via cffi
 pydantic==2.14.1
     # via pydantic-settings
 pydantic-core==2.50.1
     # via pydantic
-pydantic-settings==2.16.0
+pydantic-settings==2.16.1
     # via smart-autosorter (pyproject.toml)
 pylnk3==0.4.3
     # via smart-autosorter (pyproject.toml)
-pypdf==6.21.1
+pypdf==6.21.3
     # via smart-autosorter (pyproject.toml)
-python-bidi==0.6.11
+python-bidi==0.6.12
     # via easyocr
-python-dateutil==2.9.0.post0
+python-dateutil==3.0.0
     # via pandas
 python-docx==1.2.0
     # via smart-autosorter (pyproject.toml)
@@ -155,7 +155,7 @@ scipy==1.18.1
     #   scikit-learn
 secretstorage==3.5.0
     # via keyring
-setuptools==84.0.0
+setuptools==84.2.1
     # via torch
 shapely==2.2.0
     # via easyocr

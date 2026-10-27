@@ -381,3 +381,148 @@ def test_tui_tree_filter_input_changes_do_not_trigger_plan_validation(
             assert validation_spy.call_count == 0
 
     asyncio.run(_test())
+
+
+def test_vim_tree_slash_hotkey_focuses_search_input(temp_workspace):
+    """Verify pressing '/' while focused on VimTree focuses search input and highlights text."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            search_input = app.query_one("#tree-search-input", Input)
+            tree = app.query_one("#plan-tree", Tree)
+
+            tree.focus()
+            await pilot.pause(0.05)
+            assert tree.has_focus
+
+            # Press '/' hotkey in VimTree
+            await pilot.press("/")
+            await pilot.pause(0.05)
+
+            assert search_input.has_focus
+
+    asyncio.run(_test())
+
+
+def test_search_input_escape_clears_filter_and_focuses_tree(temp_workspace):
+    """Verify pressing Escape in search input clears query, cancels timer, and focuses plan-tree."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            app.plan = {
+                "Folder": {
+                    "doc.pdf": {
+                        "__type__": "file",
+                        "filepath": os.path.join(temp_workspace, "doc.pdf"),
+                        "target_filename": "doc.pdf",
+                    }
+                }
+            }
+            app.rebuild_tree()
+            await pilot.pause(0.05)
+
+            search_input = app.query_one("#tree-search-input", Input)
+            tree = app.query_one("#plan-tree", Tree)
+
+            search_input.focus()
+            await set_filter(app, pilot, "doc")
+            assert search_input.value == "doc"
+
+            # Press Escape while search_input is focused
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+
+            assert search_input.value == ""
+            assert tree.has_focus
+
+    asyncio.run(_test())
+
+
+def test_search_filter_preserves_cursor_and_restores_folder_expansion_state(
+    temp_workspace,
+):
+    """Verify stateful folder expansion state preservation and cursor node persistence across search filtering."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            file_a_path = os.path.join(temp_workspace, "report_a.pdf")
+            file_b_path = os.path.join(temp_workspace, "notes_b.txt")
+            app.plan = {
+                "Alpha_Dir": {
+                    "report_a.pdf": {
+                        "__type__": "file",
+                        "filepath": file_a_path,
+                        "target_filename": "report_a.pdf",
+                    }
+                },
+                "Beta_Dir": {
+                    "notes_b.txt": {
+                        "__type__": "file",
+                        "filepath": file_b_path,
+                        "target_filename": "notes_b.txt",
+                    }
+                },
+            }
+            app.rebuild_tree()
+            await pilot.pause(0.05)
+
+            tree = app.query_one("#plan-tree", Tree)
+            search_input = app.query_one("#tree-search-input", Input)
+
+            # Manually collapse Beta_Dir
+            beta_node = next(
+                node for node in tree.root.children if "Beta_Dir" in str(node.label)
+            )
+            beta_node.collapse()
+            await pilot.pause(0.05)
+
+            # Select file report_a.pdf
+            alpha_node = next(
+                node for node in tree.root.children if "Alpha_Dir" in str(node.label)
+            )
+            file_a_node = alpha_node.children[0]
+            tree.select_node(file_a_node)
+            await pilot.pause(0.05)
+
+            assert app._last_cursor_key == file_a_path
+
+            # Type search query "report"
+            search_input.focus()
+            await set_filter(app, pilot, "report")
+
+            # Active file selection key preserved
+            assert app._last_cursor_key == file_a_path
+
+            # Clear search filter by pressing Escape
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+
+            # Verify search query cleared and tree focused
+            assert search_input.value == ""
+            assert tree.has_focus
+
+            # Beta_Dir restored to collapsed state
+            beta_node_restored = next(
+                node for node in tree.root.children if "Beta_Dir" in str(node.label)
+            )
+            assert beta_node_restored.is_expanded is False
+
+            # Active cursor highlights file_a_node
+            active_node = app.active_tree_node or tree.cursor_node
+            assert active_node is not None
+            cdata = getattr(active_node, "data", {}) or {}
+            assert cdata.get("filepath") == file_a_path
+
+    asyncio.run(_test())
