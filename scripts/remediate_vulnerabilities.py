@@ -23,10 +23,12 @@ import requests
 logger = logging.getLogger(__name__)
 
 
-def sanitize_sensitive_info(text: str, token: Optional[str] = None) -> str:
+def sanitize_sensitive_info(text: Any, token: Optional[str] = None) -> str:
     """Sanitize sensitive tokens, credentials, or URLs from text output."""
     if not text:
-        return text
+        return ""
+    if not isinstance(text, str):
+        text = str(text)
     if token:
         text = text.replace(token, "[REDACTED]")
     # Redact x-access-token or http(s) authorization headers/credentials in URLs
@@ -64,6 +66,151 @@ class VulnerabilityDetail:
     summary: str
     fixed_in: Optional[str] = None
     advisory_url: Optional[str] = None
+    severity: str = "MEDIUM"
+    cvss_score: Optional[float] = None
+
+
+def cvss_to_severity(score: Optional[float]) -> str:
+    """Map a numerical CVSS score to a severity category.
+
+    Standard CVSS v3/v4 score ranges:
+      >= 9.0: CRITICAL
+      7.0 - 8.9: HIGH
+      4.0 - 6.9: MEDIUM
+      0.0 - 3.9: LOW
+    """
+    if score is None:
+        return "MEDIUM"
+    try:
+        val = float(score)
+        if val >= 9.0:
+            return "CRITICAL"
+        if val >= 7.0:
+            return "HIGH"
+        if val >= 4.0:
+            return "MEDIUM"
+        return "LOW"
+    except (ValueError, TypeError):
+        return "MEDIUM"
+
+
+def normalize_severity(sev: Optional[str]) -> str:
+    """Normalize a severity string into one of: CRITICAL, HIGH, MEDIUM, LOW.
+
+    Defaults to MEDIUM if unknown or unparseable.
+    """
+    if not sev:
+        return "MEDIUM"
+    s = str(sev).strip().upper()
+    if s in ("CRITICAL", "HIGH", "MEDIUM", "LOW"):
+        return s
+    if s in ("MODERATE", "MOD"):
+        return "MEDIUM"
+    if s in ("IMPORTANT",):
+        return "HIGH"
+    return "MEDIUM"
+
+
+_ADVISORY_CACHE: Dict[str, Tuple[str, Optional[float]]] = {}
+
+
+def fetch_advisory_severity_and_cvss(
+    vuln_id: str, timeout: float = 5.0
+) -> Tuple[str, Optional[float]]:
+    """Query remote vulnerability advisory endpoints (OSV / GitHub Advisory API) to retrieve severity and CVSS score.
+
+    Returns (severity_str, cvss_score_float).
+    Missing data or network failures default severity to 'MEDIUM' with cvss_score None.
+    """
+    if not vuln_id:
+        return "MEDIUM", None
+
+    vid_key = vuln_id.strip().upper()
+    if vid_key in _ADVISORY_CACHE:
+        return _ADVISORY_CACHE[vid_key]
+
+    sev_result = "MEDIUM"
+    cvss_result: Optional[float] = None
+
+    # Try OSV API first
+    try:
+        url = f"https://api.osv.dev/v1/vulns/{vuln_id.strip()}"
+        resp = requests.get(url, timeout=min(timeout, 5.0))
+        if resp.status_code == 200:
+            data = resp.json()
+            if isinstance(data, dict):
+                db_spec = data.get("database_specific", {})
+                if isinstance(db_spec, dict):
+                    if "severity" in db_spec and db_spec["severity"]:
+                        sev_result = normalize_severity(db_spec["severity"])
+                    if "cvss" in db_spec and isinstance(db_spec["cvss"], dict):
+                        score = db_spec["cvss"].get("score")
+                        if score is not None:
+                            try:
+                                cvss_result = float(score)
+                                sev_result = cvss_to_severity(cvss_result)
+                            except (ValueError, TypeError):
+                                pass
+
+                if cvss_result is None and isinstance(data.get("severity"), list):
+                    for sev_item in data["severity"]:
+                        if isinstance(sev_item, dict) and "score" in sev_item:
+                            score_val = sev_item["score"]
+                            if isinstance(score_val, (int, float)):
+                                cvss_result = float(score_val)
+                                sev_result = cvss_to_severity(cvss_result)
+                                break
+                            elif isinstance(score_val, str):
+                                try:
+                                    cvss_result = float(score_val)
+                                    sev_result = cvss_to_severity(cvss_result)
+                                    break
+                                except ValueError:
+                                    pass
+
+                _ADVISORY_CACHE[vid_key] = (sev_result, cvss_result)
+                return sev_result, cvss_result
+    except Exception as e:
+        logger.debug(f"OSV lookup failed for {vuln_id}: {e}")
+
+    # Fallback to GitHub Security Advisory API if GHSA ID
+    if vid_key.startswith("GHSA-"):
+        try:
+            gh_token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
+            headers = {"Accept": "application/vnd.github.v3+json"}
+            if gh_token:
+                headers["Authorization"] = f"Bearer {gh_token}"
+            url = f"https://api.github.com/advisories/{vuln_id.strip()}"
+            resp = requests.get(url, headers=headers, timeout=min(timeout, 5.0))
+            if resp.status_code == 200:
+                data = resp.json()
+                if isinstance(data, dict):
+                    gh_sev = data.get("severity")
+                    if gh_sev:
+                        sev_result = normalize_severity(gh_sev)
+                    cvss_data = data.get("cvss", {})
+                    if isinstance(cvss_data, dict) and "score" in cvss_data:
+                        try:
+                            cvss_result = float(cvss_data["score"])
+                            sev_result = cvss_to_severity(cvss_result)
+                        except (ValueError, TypeError):
+                            pass
+                    _ADVISORY_CACHE[vid_key] = (sev_result, cvss_result)
+                    return sev_result, cvss_result
+        except Exception as e:
+            logger.debug(f"GitHub Advisory lookup failed for {vuln_id}: {e}")
+
+    _ADVISORY_CACHE[vid_key] = (sev_result, cvss_result)
+    return sev_result, cvss_result
+
+
+def _finalize_vulnerability_detail(vuln: VulnerabilityDetail) -> None:
+    if vuln.cvss_score is not None:
+        vuln.severity = cvss_to_severity(vuln.cvss_score)
+    elif vuln.severity == "MEDIUM" or not vuln.severity:
+        sev, cvss = fetch_advisory_severity_and_cvss(vuln.vuln_id)
+        vuln.severity = sev
+        vuln.cvss_score = cvss
 
 
 @dataclass
@@ -86,6 +233,29 @@ class PackageVulnerability:
     @property
     def is_fixable(self) -> bool:
         return self.target_fix_version is not None
+
+    @property
+    def severity(self) -> str:
+        """Return highest severity level among all vulnerabilities in this package."""
+        if not self.vulnerabilities:
+            return "MEDIUM"
+
+        order = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
+        highest_rank = 0
+        highest_sev = "MEDIUM"
+        for v in self.vulnerabilities:
+            sev = normalize_severity(v.severity)
+            rank = order.get(sev, 2)
+            if rank > highest_rank:
+                highest_rank = rank
+                highest_sev = sev
+        return highest_sev
+
+    @property
+    def cvss_score(self) -> Optional[float]:
+        """Return highest CVSS score among all vulnerabilities in this package."""
+        scores = [v.cvss_score for v in self.vulnerabilities if v.cvss_score is not None]
+        return max(scores) if scores else None
 
 
 def extract_exemptions_from_security_md(security_md_path: Path) -> List[str]:
@@ -143,9 +313,8 @@ def parse_audit_output(output: str) -> List[PackageVulnerability]:
     certifi 2026.7.22 has 2 known vulnerabilities:
 
     - GHSA-6q48-6c7w-9gw2: certifi bundles emSign root CAs with compromised intermediate CA keys
-
+      Severity: Critical (CVSS: 9.8)
       Fixed in: 2026.10.19
-
       Advisory information: https://github.com/certifi/python-certifi/security/advisories/GHSA-6q48-6c7w-9gw2
     """
     packages: List[PackageVulnerability] = []
@@ -161,12 +330,18 @@ def parse_audit_output(output: str) -> List[PackageVulnerability]:
     vuln_header_re = re.compile(r"^\s*-\s+([a-zA-Z0-9_\-]+):\s*(.*)$")
     fixed_in_re = re.compile(r"^\s*Fixed in:\s*(.*)$", re.IGNORECASE)
     advisory_re = re.compile(r"^\s*Advisory information:\s*(.*)$", re.IGNORECASE)
+    severity_re = re.compile(
+        r"^\s*Severity:\s*([a-zA-Z]+)(?:\s*\((?:CVSS:?\s*)?([0-9\.]+)\))?",
+        re.IGNORECASE,
+    )
+    cvss_re = re.compile(r"^\s*CVSS(?:\s*Score)?:\s*([0-9\.]+)", re.IGNORECASE)
 
     for line in lines:
         pkg_match = pkg_header_re.match(line)
         if pkg_match:
             if current_pkg:
                 if current_vuln:
+                    _finalize_vulnerability_detail(current_vuln)
                     current_pkg.vulnerabilities.append(current_vuln)
                     current_vuln = None
                 packages.append(current_pkg)
@@ -180,6 +355,7 @@ def parse_audit_output(output: str) -> List[PackageVulnerability]:
             vuln_match = vuln_header_re.match(line)
             if vuln_match:
                 if current_vuln:
+                    _finalize_vulnerability_detail(current_vuln)
                     current_pkg.vulnerabilities.append(current_vuln)
                 current_vuln = VulnerabilityDetail(
                     vuln_id=vuln_match.group(1),
@@ -198,8 +374,27 @@ def parse_audit_output(output: str) -> List[PackageVulnerability]:
                     current_vuln.advisory_url = adv_match.group(1).strip()
                     continue
 
+                sev_match = severity_re.match(line)
+                if sev_match:
+                    current_vuln.severity = normalize_severity(sev_match.group(1))
+                    if sev_match.group(2):
+                        try:
+                            current_vuln.cvss_score = float(sev_match.group(2))
+                        except ValueError:
+                            pass
+                    continue
+
+                cvss_match = cvss_re.match(line)
+                if cvss_match:
+                    try:
+                        current_vuln.cvss_score = float(cvss_match.group(1))
+                    except ValueError:
+                        pass
+                    continue
+
     if current_pkg:
         if current_vuln:
+            _finalize_vulnerability_detail(current_vuln)
             current_pkg.vulnerabilities.append(current_vuln)
         packages.append(current_pkg)
 
@@ -303,12 +498,14 @@ class GitHubRemediationClient:
         return pr_data
 
     def report_security_issue(
-        self, title: str, body: str, label_name: str = "security"
+        self, title: str, body: str, labels: Optional[List[str]] = None
     ) -> None:
         """Create or update a maintainer issue when unfixable vulnerabilities occur."""
+        if labels is None:
+            labels = ["security"]
         try:
             issues_url = (
-                f"{self.base_url}/issues?state=open&labels={label_name}&per_page=100"
+                f"{self.base_url}/issues?state=open&labels=security&per_page=100"
             )
             resp = requests.get(issues_url, headers=self.headers, timeout=30)
             resp.raise_for_status()
@@ -316,10 +513,10 @@ class GitHubRemediationClient:
 
             existing = None
             for issue in open_issues:
-                if issue.get(
-                    "title"
-                ) == title or "Automated Dependency Audit Failure" in issue.get(
-                    "title", ""
+                if (
+                    issue.get("title") == title
+                    or "Automated Dependency Audit Failure" in issue.get("title", "")
+                    or "Automated Dependency Audit Alert" in issue.get("title", "")
                 ):
                     existing = issue
                     break
@@ -327,12 +524,15 @@ class GitHubRemediationClient:
             if existing:
                 update_url = f"{self.base_url}/issues/{existing['number']}"
                 requests.patch(
-                    update_url, headers=self.headers, json={"body": body}, timeout=30
+                    update_url,
+                    headers=self.headers,
+                    json={"body": body, "labels": labels},
+                    timeout=30,
                 )
                 logger.info(f"Updated existing security issue #{existing['number']}")
             else:
                 create_url = f"{self.base_url}/issues"
-                payload = {"title": title, "body": body, "labels": [label_name]}
+                payload = {"title": title, "body": body, "labels": labels}
                 requests.post(
                     create_url, headers=self.headers, json=payload, timeout=30
                 )
@@ -375,18 +575,21 @@ def remediate_vulnerabilities(
             gh_client = GitHubRemediationClient(token, parts[0], parts[1])
 
     unfixable_reports: List[str] = []
+    unfixable_pkgs: List[PackageVulnerability] = []
     patched_any = False
 
     for pkg in vuln_packages:
         package_name = pkg.package_name
+        pkg_sev = pkg.severity.upper()
         logger.info(
-            f"Processing vulnerable package: {package_name} ({pkg.current_version})"
+            f"Processing vulnerable package: {package_name} ({pkg.current_version}) [Severity: {pkg_sev}]"
         )
 
         if not pkg.is_fixable:
             logger.warning(f"No fix version available for package {package_name}.")
+            unfixable_pkgs.append(pkg)
             unfixable_reports.append(
-                f"- **{package_name}** ({pkg.current_version}): No upstream fix version available."
+                f"- **{package_name}** ({pkg.current_version}) [Severity: {pkg_sev}]: No upstream fix version available."
             )
             continue
 
@@ -400,9 +603,29 @@ def remediate_vulnerabilities(
             get_locked_package_version(uv_lock, package_name) or pkg.current_version
         )
 
+        # Dynamic label assignment based on CVSS severity rating
+        if pkg_sev == "CRITICAL":
+            pr_labels = [
+                "security",
+                "dependencies",
+                "severity:critical",
+                "priority:urgent",
+            ]
+        elif pkg_sev == "HIGH":
+            pr_labels = [
+                "security",
+                "dependencies",
+                "severity:high",
+                "priority:urgent",
+            ]
+        elif pkg_sev == "LOW":
+            pr_labels = ["security", "dependencies", "severity:low", "automerge"]
+        else:
+            pr_labels = ["security", "dependencies", "severity:medium", "automerge"]
+
         if dry_run:
             logger.info(
-                f"[DRY-RUN] Would upgrade {package_name} from {old_version} to target fix version {pkg.target_fix_version}"
+                f"[DRY-RUN] Would upgrade {package_name} ({pkg_sev}) from {old_version} to target fix version {pkg.target_fix_version} with labels: {pr_labels}"
             )
             patched_any = True
             continue
@@ -410,16 +633,18 @@ def remediate_vulnerabilities(
         # Execute uv lock upgrade
         success = run_lock_upgrade(package_name, repo_root)
         if not success:
+            unfixable_pkgs.append(pkg)
             unfixable_reports.append(
-                f"- **{package_name}** ({old_version}): Upgrade via `uv lock` failed."
+                f"- **{package_name}** ({old_version}) [Severity: {pkg_sev}]: Upgrade via `uv lock` failed."
             )
             continue
 
         new_version = get_locked_package_version(uv_lock, package_name)
         if not new_version or new_version == old_version:
             logger.warning(f"`uv lock` did not change version for {package_name}.")
+            unfixable_pkgs.append(pkg)
             unfixable_reports.append(
-                f"- **{package_name}** ({old_version}): Lockfile remained at version {old_version} after upgrade attempt."
+                f"- **{package_name}** ({old_version}) [Severity: {pkg_sev}]: Lockfile remained at version {old_version} after upgrade attempt."
             )
             continue
 
@@ -438,8 +663,9 @@ def remediate_vulnerabilities(
             logger.warning(
                 f"Package {package_name} remains vulnerable after upgrading to {new_version}."
             )
+            unfixable_pkgs.append(pkg)
             unfixable_reports.append(
-                f"- **{package_name}** ({old_version} -> {new_version}): Vulnerability still present post-upgrade."
+                f"- **{package_name}** ({old_version} -> {new_version}) [Severity: {pkg_sev}]: Vulnerability still present post-upgrade."
             )
             # Revert uv.lock change
             subprocess.run(["git", "checkout", "uv.lock"], cwd=repo_root, check=False)
@@ -473,11 +699,15 @@ def remediate_vulnerabilities(
         vuln_ids = ", ".join([v.vuln_id for v in pkg.vulnerabilities])
         adv_links = "\n".join(
             [
-                f"- [{v.vuln_id}]({v.advisory_url}): {v.summary}"
+                f"- [{v.vuln_id}]({v.advisory_url}): {v.summary} (Severity: {v.severity}"
+                + (f", CVSS: {v.cvss_score}" if v.cvss_score is not None else "")
+                + ")"
                 for v in pkg.vulnerabilities
                 if v.advisory_url
             ]
         )
+
+        cvss_str = f" (CVSS: {pkg.cvss_score})" if pkg.cvss_score is not None else ""
 
         pr_body = (
             f"## 🛡️ Automated Security Vulnerability Patch\n\n"
@@ -486,6 +716,7 @@ def remediate_vulnerabilities(
             f"- **Package:** `{package_name}`\n"
             f"- **Previous Version:** `{old_version}`\n"
             f"- **Patched Version:** `{new_version}`\n"
+            f"- **Severity Rating:** `{pkg_sev}`{cvss_str}\n"
             f"- **Advisories:** {vuln_ids}\n\n"
             f"### Advisory Summaries\n"
             f"{adv_links if adv_links else 'See security advisory database for details.'}\n\n"
@@ -521,15 +752,17 @@ def remediate_vulnerabilities(
                     cwd=repo_root,
                     check=True,
                 )
-                # Create PR with labels security, dependencies, automerge
+                # Create PR with dynamic labels
                 gh_client.create_pull_request(
                     title=pr_title,
                     head_branch=branch_name,
                     base_branch="main",
                     body=pr_body,
-                    labels=["security", "dependencies", "automerge"],
+                    labels=pr_labels,
                 )
-                logger.info(f"Created PR for {package_name} ({branch_name})")
+                logger.info(
+                    f"Created PR for {package_name} ({branch_name}) with labels {pr_labels}"
+                )
 
             # Return to main branch
             subprocess.run(["git", "checkout", "main"], cwd=repo_root, check=False)
@@ -545,16 +778,41 @@ def remediate_vulnerabilities(
             + "\n".join(unfixable_reports)
         )
         if gh_client:
+            order = {"CRITICAL": 4, "HIGH": 3, "MEDIUM": 2, "LOW": 1}
+            max_rank = 0
+            highest_unfixable_sev = "MEDIUM"
+            for u_pkg in unfixable_pkgs:
+                rank = order.get(u_pkg.severity.upper(), 2)
+                if rank > max_rank:
+                    max_rank = rank
+                    highest_unfixable_sev = u_pkg.severity.upper()
+
+            if highest_unfixable_sev in ("CRITICAL", "HIGH"):
+                issue_labels = [
+                    "security",
+                    f"severity:{highest_unfixable_sev.lower()}",
+                    "priority:urgent",
+                ]
+                maintainer_mention = (
+                    "\n\n**Attention Maintainers:** @fderuiter/security-team @fderuiter/maintainers\n"
+                )
+            else:
+                issue_labels = ["security", f"severity:{highest_unfixable_sev.lower()}"]
+                maintainer_mention = "\n"
+
             issue_title = (
-                "[Security] Automated Dependency Audit Alert: Unfixable Vulnerabilities"
+                f"[Security] Automated Dependency Audit Alert: Unfixable {highest_unfixable_sev} Vulnerabilities"
             )
             issue_body = (
-                "## ⚠️ Unfixable Security Vulnerabilities Detected\n\n"
+                f"## ⚠️ Unfixable Security Vulnerabilities Detected ({highest_unfixable_sev})\n\n"
                 "The daily automated vulnerability audit identified security vulnerabilities that could not be automatically remediated:\n\n"
                 + "\n\n".join(unfixable_reports)
-                + f"\n\n### Raw Audit Report Output\n```text\n{sanitize_sensitive_info(audit_output, token=token)}\n```\n"
+                + maintainer_mention
+                + f"\n### Raw Audit Report Output\n```text\n{sanitize_sensitive_info(audit_output, token=token)}\n```\n"
             )
-            gh_client.report_security_issue(issue_title, issue_body)
+            gh_client.report_security_issue(
+                title=issue_title, body=issue_body, labels=issue_labels
+            )
         return False
 
     return patched_any
