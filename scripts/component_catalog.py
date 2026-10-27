@@ -5,7 +5,9 @@ Launches the isolated component preview catalog environment or runs
 headless accessibility verification checks.
 """
 
+import sys
+
 from app.ui.catalog import main
 
 if __name__ == "__main__":
-    main()
+    sys.exit(main())
