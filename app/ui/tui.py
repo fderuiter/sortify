@@ -37,7 +37,12 @@ from app.ui.modals.drop_zone import DropZoneModal
 from app.ui.modals.edit import (
     DirectorySelectModal,
 )
-from app.ui.modals.edit import DuplicateReviewModal as DuplicateReviewModal
+from app.ui.modals.edit import (
+    DuplicateReviewModal as DuplicateReviewModal,
+)
+from app.ui.modals.edit import (
+    InteractiveCollisionResolverModal as InteractiveCollisionResolverModal,
+)
 from app.ui.modals.edit import (
     ManualPathFallbackModal as ManualPathFallbackModal,
 )

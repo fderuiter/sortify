@@ -361,3 +361,109 @@ async def test_duplicate_review_modal_batch_apply_with_individual_override():
         modal.action_confirm()
         await pilot.pause()
         assert modal.user_selections == {"group_1": "keep", "group_2": "skip"}
+
+
+def test_apply_deduplication_selections_overwrite_and_keep_both(tmp_path):
+    """Test 'overwrite' and 'keep_both' resolution actions in VerificationEngine."""
+    base_dir = str(tmp_path)
+    file1 = tmp_path / "doc1.pdf"
+    file2 = tmp_path / "doc2.pdf"
+    file1.write_text("content 1")
+    file2.write_text("content 2")
+
+    plan = {
+        "doc1.pdf": {
+            "node_type": "file",
+            "relative_source": "doc1.pdf",
+            "target_filename": "report.pdf",
+            "is_checked": True,
+        },
+        "doc2.pdf": {
+            "node_type": "file",
+            "relative_source": "doc2.pdf",
+            "target_filename": "report.pdf",
+            "is_checked": True,
+        },
+    }
+
+    groups = VerificationEngine.get_duplicate_groups(base_dir, plan)
+    gid = groups[0]["group_id"]
+
+    # Test overwrite
+    selections_overwrite = {gid: "overwrite"}
+    plan_overwrite = VerificationEngine.apply_deduplication_selections(
+        base_dir, plan, selections_overwrite
+    )
+    assert plan_overwrite["doc1.pdf"].get("overwrite") is True
+    assert plan_overwrite["doc1.pdf"].get("allow_overwrite") is True
+    assert plan_overwrite["doc2.pdf"].get("overwrite") is True
+
+    # Test keep_both
+    selections_keep_both = {gid: "keep_both"}
+    plan_keep_both = VerificationEngine.apply_deduplication_selections(
+        base_dir, plan, selections_keep_both
+    )
+    assert plan_keep_both["doc1.pdf"]["target_filename"] != "report.pdf"
+    assert "report.pdf" in plan_keep_both["doc1.pdf"]["target_filename"]
+    assert plan_keep_both["doc1.pdf"].get("confirmed") is True
+    assert plan_keep_both["doc2.pdf"].get("confirmed") is True
+
+
+def test_verifier_decouples_resolvable_collisions_from_critical_errors(tmp_path):
+    """Test that resolvable destination collisions do not set has_critical_errors to True."""
+    base_dir = str(tmp_path)
+    f1 = tmp_path / "a.txt"
+    f2 = tmp_path / "b.txt"
+    f1.write_text("hello")
+    f2.write_text("world")
+
+    plan = {
+        "a.txt": {
+            "node_type": "file",
+            "relative_source": "a.txt",
+            "target_filename": "out.txt",
+            "is_checked": True,
+        },
+        "b.txt": {
+            "node_type": "file",
+            "relative_source": "b.txt",
+            "target_filename": "out.txt",
+            "is_checked": True,
+        },
+    }
+
+    result = VerificationEngine.verify_plan_integrity(base_dir, plan)
+    assert len(result["collisions"]) > 0
+    assert result["has_critical_errors"] is False
+
+
+@pytest.mark.anyio
+async def test_interactive_collision_resolver_modal_imports_and_batch_apply():
+    """Test InteractiveCollisionResolverModal imports and batch apply all with overwrite."""
+    from app.ui.modals.edit import InteractiveCollisionResolverModal
+
+    groups = [
+        {
+            "group_id": "group_1",
+            "target_filename": "report1.pdf",
+            "target_dir": "/tmp/output",
+            "items": [{"source_path": "/tmp/a.pdf"}, {"source_path": "/tmp/b.pdf"}],
+            "default_action": "rename",
+        },
+    ]
+
+    modal = InteractiveCollisionResolverModal(duplicate_groups=groups)
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    app = AutoSorterTUI(settings=settings)
+
+    async with app.run_test() as pilot:
+        await app.push_screen(modal)
+        await pilot.pause()
+
+        modal.query_one("#batch-action-select", Select).value = "overwrite"
+        await pilot.click("#btn-apply-all")
+        await pilot.pause()
+
+        assert modal.user_selections == {"group_1": "overwrite"}
+        assert modal.query_one("#select-action-group_1", Select).value == "overwrite"
