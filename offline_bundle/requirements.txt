@@ -68,7 +68,7 @@ more-itertools==11.2.1
     #   jaraco-functools
 mpmath==1.4.1
     # via sympy
-multidict==7.2.0
+multidict==7.2.1
     # via
     #   aiohttp
     #   yarl
