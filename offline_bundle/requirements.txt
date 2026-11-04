@@ -7,7 +7,7 @@ aiosignal==1.4.0
     # via aiohttp
 annotated-types==0.8.0
     # via pydantic
-anyio==4.15.1
+anyio==4.16.0
 attrs==26.1.0
     # via
     #   aiohttp
@@ -24,7 +24,7 @@ easyocr==1.7.2
     # via smart-autosorter (pyproject.toml)
 et-xmlfile==2.0.0
     # via openpyxl
-filelock==4.2.4
+filelock==4.2.6
     # via torch
 frozenlist==1.8.0
     # via
@@ -68,11 +68,11 @@ more-itertools==11.2.1
     #   jaraco-functools
 mpmath==1.4.1
     # via sympy
-multidict==7.2.0
+multidict==7.2.1
     # via
     #   aiohttp
     #   yarl
-narwhals==2.27.1
+narwhals==2.28.0
     # via scikit-learn
 networkx==3.7
     # via
@@ -116,15 +116,15 @@ pyclipper==1.4.0
     # via easyocr
 pycparser==3.12
     # via cffi
-pydantic==2.14.1
+pydantic==2.14.2
     # via pydantic-settings
-pydantic-core==2.50.1
+pydantic-core==2.50.2
     # via pydantic
-pydantic-settings==2.16.1
+pydantic-settings==2.16.2
     # via smart-autosorter (pyproject.toml)
 pylnk3==0.4.3
     # via smart-autosorter (pyproject.toml)
-pypdf==6.21.3
+pypdf==6.21.4
     # via smart-autosorter (pyproject.toml)
 python-bidi==0.6.12
     # via easyocr
@@ -171,11 +171,11 @@ threadpoolctl==3.7.0
     # via scikit-learn
 tifffile==2026.10.15
     # via scikit-image
-torch==2.14.1
+torch==2.15.0
     # via
     #   easyocr
     #   torchvision
-torchvision==0.29.1
+torchvision==0.29.2
     # via easyocr
 typing-extensions==4.16.0
     # via
