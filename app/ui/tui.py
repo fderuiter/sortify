@@ -10,6 +10,7 @@ from textual import events, on, work
 from textual.app import App, ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
     Footer,
@@ -132,7 +133,9 @@ class AutoSorterTUI(
         Binding("ctrl+f", "focus_search", "Search Tree", show=True),
         Binding("g", "generate_sample_corpus(True)", "Sample Dataset", show=False),
         Binding("G", "generate_sample_corpus(True)", "Sample Dataset", show=False),
-        Binding("shift+g", "generate_sample_corpus(True)", "Sample Dataset", show=False),
+        Binding(
+            "shift+g", "generate_sample_corpus(True)", "Sample Dataset", show=False
+        ),
         Binding("question_mark", "open_cheat_sheet", "Help", show=True),
         Binding("f1", "open_cheat_sheet", "Help (F1)", show=False),
         Binding("ctrl+q", "quit", "Quit", show=True),
@@ -577,7 +580,16 @@ class AutoSorterTUI(
                     except Exception:
                         pass
             elif not getattr(self, "_wizard_dismissed_this_session", False):
-                self.call_after_refresh(self.action_open_wizard)
+
+                def _auto_open_wizard() -> None:
+                    if (
+                        isinstance(self.screen, ModalScreen)
+                        or len(self.screen_stack) > 1
+                    ):
+                        return
+                    self.action_open_wizard()
+
+                self.call_after_refresh(_auto_open_wizard)
 
     def on_unmount(self) -> None:
         """Lifecycle hook called when application is unmounted."""
@@ -820,7 +832,9 @@ class AutoSorterTUI(
         if open_modal:
             from app.ui.modals.sample_playground import SamplePlaygroundModal
 
-            self.push_screen(SamplePlaygroundModal(self.settings, target_dir=target_dir))
+            self.push_screen(
+                SamplePlaygroundModal(self.settings, target_dir=target_dir)
+            )
             return
 
         from app.core.sample_corpus import generate_sample_corpus
@@ -976,6 +990,8 @@ class AutoSorterTUI(
     def action_open_wizard(self) -> None:
         """Open model onboarding wizard modal screen."""
         if self._is_text_control_focused(allow_tree_search=True):
+            return
+        if isinstance(self.screen, WizardModal):
             return
         self.push_screen(WizardModal(self.settings))
 
