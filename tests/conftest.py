@@ -128,12 +128,21 @@ def cleanup_db_connections():
 @pytest.fixture(autouse=True)
 def reset_shared_registry():
     """Reset singletons (SharedModelRegistry, SharedWorkerPool, DownloadManager) and AppSettings observers before and after each test to prevent test pollution."""
-    from app.config import AppSettings
+    from app.config import AppSettings, get_app_dir
     from app.core.downloader import DownloadManager
     from app.core.network_guard import _thread_local
     from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
 
-    AppSettings.clear_observers()
+    def _cleanup_settings():
+        AppSettings.clear_observers()
+        try:
+            settings_file = get_app_dir() / "settings.json"
+            if settings_file.is_file():
+                settings_file.unlink()
+        except Exception:
+            pass
+
+    _cleanup_settings()
     DownloadManager.reset_instance()
     SharedModelRegistry._instance = None
     _thread_local.sandboxed = False
@@ -145,7 +154,7 @@ def reset_shared_registry():
             pass
         SharedWorkerPool._instance = None
     yield
-    AppSettings.clear_observers()
+    _cleanup_settings()
     DownloadManager.reset_instance()
     SharedModelRegistry._instance = None
     _thread_local.sandboxed = False
