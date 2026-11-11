@@ -5,6 +5,7 @@ import dataclasses
 from pathlib import Path
 from typing import Any
 
+from app.cli.error_emitter import emit_cli_error
 from app.cli.ledger_cli import handle_ledger_command
 from app.cli.ledger_cli import register_subparser as register_ledger
 from app.cli.quarantine_cli import handle_quarantine_command
@@ -43,4 +44,9 @@ def handle_cli_command(args: argparse.Namespace, settings: AppSettings) -> bool:
     return False
 
 
-__all__ = ["register_cli_subcommands", "handle_cli_command", "json_default"]
+__all__ = [
+    "register_cli_subcommands",
+    "handle_cli_command",
+    "json_default",
+    "emit_cli_error",
+]
