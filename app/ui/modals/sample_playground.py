@@ -273,6 +273,10 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
             self.announce(
                 f"Committed sample documents to workspace '{self.target_dir}'."
             )
+            if hasattr(self.app, "base_dir"):
+                self.app.base_dir = self.target_dir
+            if hasattr(self.app, "source_dirs"):
+                self.app.source_dirs = [self.target_dir]
             if hasattr(self.app, "action_scan_directory"):
                 self.app.action_scan_directory()
             if hasattr(self.app, "notify"):

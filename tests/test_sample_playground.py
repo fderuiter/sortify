@@ -4,6 +4,7 @@ import asyncio
 import os
 import time
 
+import pytest
 from textual.widgets import Button, Checkbox, DataTable, OptionList, Static
 
 from app.config import AppSettings
@@ -14,6 +15,8 @@ from app.core.sample_corpus import (
 from app.ui.modals.sample_playground import SamplePlaygroundModal
 from app.ui.modals.wizard import WizardModal
 from app.ui.tui import AutoSorterTUI
+
+pytestmark = pytest.mark.xdist_group(name="tui")
 
 
 def test_get_sample_corpus_items():
