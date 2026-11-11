@@ -41,7 +41,9 @@ def test_wizard_modal_privacy_card_structure_and_guarantees(tmp_path):
             # Switch parent is LabeledSwitch, which is a child of modal_box
             labeled_switch = sw_consent.parent
             sw_row_idx = children.index(labeled_switch)
-            assert card_idx == sw_row_idx - 1, "Privacy card must be directly above AI consent toggle"
+            assert card_idx == sw_row_idx - 1, (
+                "Privacy card must be directly above AI consent toggle"
+            )
 
             # Requirement 2 & 3: Badge and offline guarantees
             badge = card.query_one("#privacy-badge", Label)
@@ -160,11 +162,13 @@ def test_wizard_modal_screen_reader_announcements_on_toggle(tmp_path):
             assert "AI consent enabled." in messages
             assert "AI consent disabled." in messages
             assert any(
-                "ai consent enabled" in m.lower() and "100% on-device & offline" in m.lower()
+                "ai consent enabled" in m.lower()
+                and "100% on-device & offline" in m.lower()
                 for m in messages
             )
             assert any(
-                "ai consent disabled" in m.lower() and "100% on-device & offline" in m.lower()
+                "ai consent disabled" in m.lower()
+                and "100% on-device & offline" in m.lower()
                 for m in messages
             )
 
@@ -185,7 +189,9 @@ def test_wizard_modal_a11y_compliance(tmp_path):
 
             # Audit compliance
             audit_res = modal.audit_a11y_compliance()
-            assert audit_res["compliant"] is True, f"A11y violations found: {audit_res['violations']}"
+            assert audit_res["compliant"] is True, (
+                f"A11y violations found: {audit_res['violations']}"
+            )
 
             violations = inspect_tui_component(modal)
             assert len(violations) == 0, f"Violations found: {violations}"
