@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "7b8011395bcdfa78116de025aec42e42298c1ea68349caab5f6a9daee362d55d"
+    "checksum": "f4104c9f415b4308c689574c31a156e203fd9d188b511ec4cfc59f73950972b4"
   },
   "cli": [
     {
@@ -197,6 +197,35 @@
         "default": null,
         "help": "Target destination directory for released file",
         "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--conflict-policy"
+      ],
+      "caller": "p_release",
+      "keywords": {
+        "choices": [
+          "rename",
+          "skip",
+          "overwrite"
+        ],
+        "default": "rename",
+        "help": "Conflict resolution policy when destination file exists (rename, skip, overwrite; default: rename)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--allow-external-dest"
+      ],
+      "caller": "p_release",
+      "keywords": {
+        "action": "store_true",
+        "default": false,
+        "help": "Allow release destination outside base directory boundary"
       },
       "method": "add_argument"
     },

@@ -724,3 +724,220 @@ def test_scrub_pii_from_text_edge_cases():
     assert "[REDACTED_SSN]" in scrubbed
     assert "user@domain.com" not in scrubbed
     assert "987-65-4321" not in scrubbed
+
+
+def test_release_quarantine_boundary_containment():
+    """Verify release_quarantine_batch rejects external destination unless allow_external is True."""
+    service = QuarantineInterceptorService(db=db)
+    base_dir = os.path.join(_test_dir, "containment_workspace")
+    outside_dir = os.path.join(_test_dir, "external_destination")
+    os.makedirs(base_dir, exist_ok=True)
+    os.makedirs(outside_dir, exist_ok=True)
+
+    test_file = os.path.join(base_dir, "doc.txt")
+    with open(test_file, "w", encoding="utf-8") as f:
+        f.write("Safe document for release containment test")
+
+    staged_info = service.stage_incoming_file(source_path=test_file, base_dir=base_dir)
+    job_id = staged_info["job_id"]
+
+    # Attempt to release outside base_dir without allow_external -> Should fail
+    fail_results = service.release_quarantine_batch(
+        [job_id], dest_dir=outside_dir, allow_external=False
+    )
+    assert len(fail_results) == 1
+    assert fail_results[0]["status"] == "FAILED"
+    assert "escapes" in fail_results[0]["error"].lower()
+
+    rec_fail = db.get_quarantine_record(job_id)
+    assert rec_fail["status"] == "MANUAL_REVIEW_REQUIRED"
+
+    # Re-attempt with allow_external=True -> Should succeed
+    ok_results = service.release_quarantine_batch(
+        [job_id], dest_dir=outside_dir, allow_external=True
+    )
+    assert len(ok_results) == 1
+    assert ok_results[0]["status"] == "RELEASED"
+    released_path = ok_results[0]["destination"]
+    assert os.path.exists(released_path)
+    assert os.path.dirname(released_path) == os.path.abspath(outside_dir)
+
+    rec_ok = db.get_quarantine_record(job_id)
+    assert rec_ok["status"] == "RELEASED"
+
+
+def test_release_quarantine_boundary_fallback_cwd(monkeypatch):
+    """Verify missing base_dir falls back to os.getcwd() boundary validation."""
+    service = QuarantineInterceptorService(db=db)
+    workspace = os.path.join(_test_dir, "cwd_fallback_workspace")
+    os.makedirs(workspace, exist_ok=True)
+
+    test_file = os.path.join(workspace, "fallback_doc.txt")
+    with open(test_file, "w", encoding="utf-8") as f:
+        f.write("Doc with missing base_dir in record")
+
+    staged_info = service.stage_incoming_file(source_path=test_file, base_dir=workspace)
+    job_id = staged_info["job_id"]
+
+    # Simulate missing base_dir on record
+    from app.core.db_conn import get_db_connection
+
+    conn = get_db_connection(db.db_path)
+    with conn:
+        conn.execute(
+            "UPDATE quarantine_records SET base_dir = '' WHERE job_id = ?",
+            (job_id,),
+        )
+
+    # Use a destination outside os.getcwd()
+    outside_cwd = os.path.abspath(os.path.join(os.getcwd(), "..", "outside_cwd_test"))
+    fail_results = service.release_quarantine_batch(
+        [job_id], dest_dir=outside_cwd, allow_external=False
+    )
+    assert len(fail_results) == 1
+    assert fail_results[0]["status"] == "FAILED"
+    assert "escapes" in fail_results[0]["error"].lower()
+
+    # Releasing to cwd subpath succeeds
+    valid_cwd_dest = os.path.join(os.getcwd(), ".tmp_release_test_inside_cwd")
+    try:
+        ok_results = service.release_quarantine_batch(
+            [job_id], dest_dir=valid_cwd_dest, allow_external=False
+        )
+        assert len(ok_results) == 1
+        assert ok_results[0]["status"] == "RELEASED"
+    finally:
+        if os.path.exists(valid_cwd_dest):
+            shutil.rmtree(valid_cwd_dest, ignore_errors=True)
+
+
+def test_release_quarantine_conflict_policy_rename():
+    """Verify conflict_policy='rename' generates a unique suffix upon collision."""
+    service = QuarantineInterceptorService(db=db)
+    base_dir = os.path.join(_test_dir, "conflict_rename_workspace")
+    release_dir = os.path.join(base_dir, "released")
+    os.makedirs(release_dir, exist_ok=True)
+
+    # Pre-create collision file at destination
+    collision_path = os.path.join(release_dir, "data.txt")
+    with open(collision_path, "w", encoding="utf-8") as f:
+        f.write("Original collision data")
+
+    # Stage incoming file with same name
+    src_file = os.path.join(base_dir, "data.txt")
+    with open(src_file, "w", encoding="utf-8") as f:
+        f.write("New released data")
+
+    staged_info = service.stage_incoming_file(source_path=src_file, base_dir=base_dir)
+    job_id = staged_info["job_id"]
+
+    results = service.release_quarantine_batch(
+        [job_id], dest_dir=release_dir, conflict_policy="rename"
+    )
+
+    assert len(results) == 1
+    assert results[0]["status"] == "RELEASED"
+    dest_path = results[0]["destination"]
+    assert dest_path != collision_path
+    assert os.path.exists(dest_path)
+    assert dest_path.endswith("data_1.txt")
+
+    # Original collision file remained untouched
+    with open(collision_path, "r", encoding="utf-8") as f:
+        assert f.read() == "Original collision data"
+
+    # Newly released file has new content
+    with open(dest_path, "r", encoding="utf-8") as f:
+        assert f.read() == "New released data"
+
+
+def test_release_quarantine_conflict_policy_skip():
+    """Verify conflict_policy='skip' fails with FileExistsError and preserves destination."""
+    service = QuarantineInterceptorService(db=db)
+    base_dir = os.path.join(_test_dir, "conflict_skip_workspace")
+    release_dir = os.path.join(base_dir, "released")
+    os.makedirs(release_dir, exist_ok=True)
+
+    # Pre-create collision file at destination
+    collision_path = os.path.join(release_dir, "report.pdf")
+    with open(collision_path, "w", encoding="utf-8") as f:
+        f.write("Existing destination report")
+
+    # Stage incoming file
+    src_file = os.path.join(base_dir, "report.pdf")
+    with open(src_file, "w", encoding="utf-8") as f:
+        f.write("Quarantined report")
+
+    staged_info = service.stage_incoming_file(source_path=src_file, base_dir=base_dir)
+    job_id = staged_info["job_id"]
+
+    results = service.release_quarantine_batch(
+        [job_id], dest_dir=release_dir, conflict_policy="skip"
+    )
+
+    assert len(results) == 1
+    assert results[0]["status"] == "FAILED"
+    assert "already exists" in results[0]["error"].lower()
+
+    # Destination file still intact
+    with open(collision_path, "r", encoding="utf-8") as f:
+        assert f.read() == "Existing destination report"
+
+    # Staged file remains preserved in staging
+    rec = db.get_quarantine_record(job_id)
+    assert rec["status"] == "MANUAL_REVIEW_REQUIRED"
+    assert os.path.exists(rec["staged_filepath"])
+
+
+def test_release_quarantine_conflict_policy_overwrite():
+    """Verify conflict_policy='overwrite' backs up existing file before replacing it."""
+    from app.core.mover import overwrite_backup_dir
+
+    service = QuarantineInterceptorService(db=db)
+    base_dir = os.path.join(_test_dir, "conflict_overwrite_workspace")
+    release_dir = os.path.join(base_dir, "output")
+    os.makedirs(release_dir, exist_ok=True)
+
+    # Pre-create collision file
+    target_path = os.path.join(release_dir, "critical_doc.txt")
+    with open(target_path, "w", encoding="utf-8") as f:
+        f.write("Previous critical document version")
+
+    # Stage incoming replacement
+    src_file = os.path.join(base_dir, "critical_doc.txt")
+    with open(src_file, "w", encoding="utf-8") as f:
+        f.write("Updated critical document version")
+
+    staged_info = service.stage_incoming_file(source_path=src_file, base_dir=base_dir)
+    job_id = staged_info["job_id"]
+
+    results = service.release_quarantine_batch(
+        [job_id], dest_dir=release_dir, conflict_policy="overwrite"
+    )
+
+    assert len(results) == 1
+    assert results[0]["status"] == "RELEASED"
+    assert results[0]["destination"] == target_path
+
+    # Target path now contains the new version
+    with open(target_path, "r", encoding="utf-8") as f:
+        assert f.read() == "Updated critical document version"
+
+    # Backup file must exist in session's overwrite backup directory
+    backup_folder = overwrite_backup_dir(base_dir, job_id)
+    assert os.path.exists(backup_folder)
+    backup_file = os.path.join(backup_folder, "output", "critical_doc.txt")
+    if not os.path.exists(backup_file):
+        backup_file = os.path.join(backup_folder, "critical_doc.txt")
+    assert os.path.exists(backup_file)
+    with open(backup_file, "r", encoding="utf-8") as f:
+        assert f.read() == "Previous critical document version"
+
+
+def test_release_quarantine_invalid_conflict_policy():
+    """Verify invalid conflict policy raises ValueError."""
+    service = QuarantineInterceptorService(db=db)
+    with pytest.raises(ValueError, match="Invalid conflict policy"):
+        service.release_quarantine_batch(
+            ["dummy_job"], conflict_policy="invalid_policy"
+        )
