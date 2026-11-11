@@ -9,7 +9,7 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, Optional, cast
 
 from app.config import AppSettings
 from app.core.domain_contracts import _make_json_serializable
@@ -18,6 +18,32 @@ from app.core.plan_format import format_plan_tree
 from app.core.session_catalog import list_sessions
 from app.frozen_runtime import prepare_frozen_windows_runtime
 from app.log_filter import LogScrubbingFilter
+
+if not hasattr(AppSettings, "NON_INTERACTIVE"):
+    _orig_appsettings_setattr = AppSettings.__setattr__
+
+    def _patched_appsettings_setattr(self, name, value):
+        if name == "NON_INTERACTIVE":
+            setattr(self, "_non_interactive", bool(value))
+            return
+        _orig_appsettings_setattr(self, name, value)
+
+    AppSettings.__setattr__ = _patched_appsettings_setattr
+
+    setattr(
+        AppSettings,
+        "NON_INTERACTIVE",
+        property(
+            lambda self: bool(
+                getattr(self, "_non_interactive", False)
+                or (
+                    os.environ.get("NON_INTERACTIVE", "").strip().lower()
+                    in ("1", "true", "yes", "on")
+                )
+            ),
+            lambda self, val: setattr(self, "_non_interactive", bool(val)),
+        ),
+    )
 
 ANSI_ESCAPE_REGEX = re.compile(r"\x1B(?:[@-Z\\-_]|\[[0-?]*[ -/]*[@-~])")
 
@@ -313,11 +339,147 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
     ):
         setattr(settings, "_skip_wizard", True)
         setattr(settings, "_non_interactive", True)
+        setattr(settings, "NON_INTERACTIVE", True)
         if settings.AI_CONSENT_GRANTED is None:
             settings.override("AI_CONSENT_GRANTED", False)
 
 
-def resolve_preset_and_directory(args: argparse.Namespace) -> Path:
+def _prompt_workspace_selection(args: argparse.Namespace) -> Path:
+    """Prompt user for target workspace selection when CLI arguments are absent.
+
+    Parameters
+    ----------
+    args : argparse.Namespace
+        Command-line arguments namespace.
+
+    Returns
+    -------
+    Path
+        Resolved and verified target directory path.
+
+    Raises
+    ------
+    ValueError
+        If the selection is cancelled or input stream is closed.
+    """
+    quiet = bool(getattr(args, "quiet", False))
+    no_color = bool(getattr(args, "no_color", False) or os.environ.get("NO_COLOR"))
+
+    def _style(text: str, code: str) -> str:
+        if no_color:
+            return text
+        return f"\033[{code}m{text}\033[0m"
+
+    title = _style("Sortify - Workspace Onboarding", "1;36")
+    prompt_str = _style("Select an option [1-5, q]: ", "1;32")
+
+    if not quiet:
+        print(f"\n{title}")
+        print("No target directory specified. Please choose a workspace to proceed:\n")
+    print("  [1] Demo Workspace         (sandbox/demo_workspace)")
+    print(f"  [2] Downloads              ({Path.home() / 'Downloads'})")
+    print(f"  [3] Documents              ({Path.home() / 'Documents'})")
+    print("  [4] Native Folder Picker   (browse with file dialog)")
+    print("  [5] Custom Directory       (enter path manually)")
+    print("  [q] Quit\n")
+
+    while True:
+        try:
+            choice = input(prompt_str).strip()
+        except (KeyboardInterrupt, EOFError):
+            raise ValueError("Directory selection cancelled.") from None
+
+        choice_lower = choice.lower()
+        if choice_lower in ("q", "quit", "exit"):
+            raise ValueError("Directory selection cancelled.")
+
+        if choice in ("1", "demo"):
+            target = Path("sandbox/demo_workspace").resolve()
+            if not target.exists():
+                target.mkdir(parents=True, exist_ok=True)
+            return target
+
+        if choice in ("2", "downloads"):
+            target = (Path.home() / "Downloads").resolve()
+            if not target.exists() or not target.is_dir():
+                print(
+                    f"Error: Target directory '{target}' does not exist or is not a directory.",
+                    file=sys.stderr,
+                )
+                continue
+            return target
+
+        if choice in ("3", "documents"):
+            target = (Path.home() / "Documents").resolve()
+            if not target.exists() or not target.is_dir():
+                print(
+                    f"Error: Target directory '{target}' does not exist or is not a directory.",
+                    file=sys.stderr,
+                )
+                continue
+            return target
+
+        if choice in ("4", "browse", "native", "picker", "dialog"):
+            try:
+                from app.core.native_dialog import (
+                    NativeDialogError,
+                    select_native_directory,
+                )
+
+                selected = select_native_directory()
+            except NativeDialogError as exc:
+                print(
+                    f"Native folder dialog unavailable: {exc}. Please enter path manually.",
+                    file=sys.stderr,
+                )
+                continue
+            except Exception as exc:
+                print(
+                    f"Error opening folder dialog: {exc}.",
+                    file=sys.stderr,
+                )
+                continue
+
+            if not selected:
+                print("Directory selection cancelled.", file=sys.stderr)
+                continue
+
+            target = Path(selected).expanduser().resolve()
+            if not target.exists() or not target.is_dir():
+                print(
+                    f"Error: Selected directory '{target}' does not exist or is not a directory.",
+                    file=sys.stderr,
+                )
+                continue
+            return target
+
+        if choice in ("5", "custom", "path"):
+            try:
+                path_input = input("Enter directory path: ").strip()
+            except (KeyboardInterrupt, EOFError):
+                raise ValueError("Directory selection cancelled.") from None
+
+            if not path_input:
+                continue
+
+            target = Path(path_input).expanduser().resolve()
+            if not target.exists() or not target.is_dir():
+                print(
+                    f"Error: Target directory '{target}' does not exist or is not a directory.",
+                    file=sys.stderr,
+                )
+                continue
+            return target
+
+        print(
+            f"Invalid selection '{choice}'. Please choose 1-5 or 'q' to quit.",
+            file=sys.stderr,
+        )
+
+
+def resolve_preset_and_directory(
+    args: argparse.Namespace, settings: Optional[AppSettings] = None
+) -> Path:
     """Resolve preset choice or target directory path from CLI arguments."""
     preset = getattr(args, "preset", None)
     directory = getattr(args, "directory", None)
@@ -341,7 +503,35 @@ def resolve_preset_and_directory(args: argparse.Namespace) -> Path:
     if directory:
         return Path(directory).resolve()
 
-    raise ValueError("Either target directory or --preset must be specified.")
+    # Determine non-interactive status via settings or fallback
+    is_non_interactive = False
+    if settings is not None:
+        try:
+            is_non_interactive = bool(settings.NON_INTERACTIVE)
+        except AttributeError:
+            is_non_interactive = bool(getattr(settings, "_non_interactive", False))
+    else:
+        is_non_interactive = bool(
+            getattr(args, "non_interactive", False)
+            or (
+                os.environ.get("NON_INTERACTIVE", "").strip().lower()
+                in ("1", "true", "yes", "on")
+            )
+        )
+
+    if getattr(args, "non_interactive", False):
+        is_non_interactive = True
+
+    is_tty = bool(
+        sys.stdin is not None and hasattr(sys.stdin, "isatty") and sys.stdin.isatty()
+    )
+
+    if not is_tty or is_non_interactive:
+        raise ValueError("Either target directory or --preset must be specified.")
+
+    target = _prompt_workspace_selection(args)
+    args.directory = str(target)
+    return target
 
 
 def _print_plan_for_humans(
@@ -413,7 +603,7 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
         sys.exit(0)
 
     try:
-        target_path = resolve_preset_and_directory(args)
+        target_path = resolve_preset_and_directory(args, settings)
     except ValueError as err:
         print(f"Error: {err}", file=sys.stderr)
         sys.exit(1)
@@ -548,7 +738,7 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
         sys.exit(0)
 
     try:
-        target_path = resolve_preset_and_directory(args)
+        target_path = resolve_preset_and_directory(args, settings)
     except ValueError as err:
         print(f"Error: {err}", file=sys.stderr)
         sys.exit(1)
