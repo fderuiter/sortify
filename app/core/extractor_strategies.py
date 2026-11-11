@@ -4,7 +4,7 @@ import contextlib
 import csv
 import io
 import logging
-from typing import Protocol, cast
+from typing import Any, Dict, Optional, Protocol, cast
 
 import pypdf
 
@@ -144,8 +144,16 @@ class DocxExtractor:
 class CsvExtractor:
     """Extractor for comma-separated values files."""
 
+    truncated: bool = False
+    truncation_reason: Optional[str] = None
+    truncated_bounds: Optional[Dict[str, Any]] = None
+
     def extract(self, file_path: str, settings=None) -> str:
         """Extract text from a .csv file using row-by-row streaming up to row and character limits."""
+        self.truncated = False
+        self.truncation_reason = None
+        self.truncated_bounds = None
+
         if settings is None:
             from app.config import AppSettings
 
@@ -175,6 +183,13 @@ class CsvExtractor:
             reader = csv.reader(f)
             for row in reader:
                 if row_count >= max_rows:
+                    self.truncated = True
+                    self.truncation_reason = "MAX_ROWS_EXCEEDED"
+                    self.truncated_bounds = {
+                        "max_rows": max_rows,
+                        "max_characters": max_chars,
+                        "max_chars": max_chars,
+                    }
                     break
                 row_str = " ".join(str(cell) for cell in row if cell is not None)
 
@@ -183,6 +198,13 @@ class CsvExtractor:
                     remaining = max_chars - total_chars - (1 if extracted_rows else 0)
                     if remaining > 0:
                         extracted_rows.append(row_str[:remaining])
+                    self.truncated = True
+                    self.truncation_reason = "MAX_CHARACTERS_EXCEEDED"
+                    self.truncated_bounds = {
+                        "max_rows": max_rows,
+                        "max_characters": max_chars,
+                        "max_chars": max_chars,
+                    }
                     break
 
                 extracted_rows.append(row_str)
@@ -195,8 +217,16 @@ class CsvExtractor:
 class XlsxExtractor:
     """Extractor for Excel spreadsheets."""
 
+    truncated: bool = False
+    truncation_reason: Optional[str] = None
+    truncated_bounds: Optional[Dict[str, Any]] = None
+
     def extract(self, file_path: str, settings=None) -> str:
         """Extract text from an Excel file using read-only streaming mode across sheets."""
+        self.truncated = False
+        self.truncation_reason = None
+        self.truncated_bounds = None
+
         if settings is None:
             from app.config import AppSettings
 
@@ -232,14 +262,42 @@ class XlsxExtractor:
 
             wb = openpyxl.load_workbook(file_path, read_only=True, data_only=True)
             try:
-                sheet_names = wb.sheetnames[:max_sheets]
+                all_sheets = wb.sheetnames
+                if len(all_sheets) > max_sheets:
+                    self.truncated = True
+                    self.truncation_reason = "MAX_SHEETS_EXCEEDED"
+                    self.truncated_bounds = {
+                        "max_sheets": max_sheets,
+                        "max_rows": max_rows,
+                        "max_characters": max_chars,
+                        "max_chars": max_chars,
+                    }
+                sheet_names = all_sheets[:max_sheets]
                 for sheet_name in sheet_names:
                     if total_chars >= max_chars:
+                        self.truncated = True
+                        if not self.truncation_reason:
+                            self.truncation_reason = "MAX_CHARACTERS_EXCEEDED"
+                            self.truncated_bounds = {
+                                "max_sheets": max_sheets,
+                                "max_rows": max_rows,
+                                "max_characters": max_chars,
+                                "max_chars": max_chars,
+                            }
                         break
                     sheet = wb[sheet_name]
                     row_count = 0
                     for row in sheet.iter_rows(values_only=True):
                         if row_count >= max_rows:
+                            self.truncated = True
+                            if not self.truncation_reason:
+                                self.truncation_reason = "MAX_ROWS_EXCEEDED"
+                                self.truncated_bounds = {
+                                    "max_sheets": max_sheets,
+                                    "max_rows": max_rows,
+                                    "max_characters": max_chars,
+                                    "max_chars": max_chars,
+                                }
                             break
                         row_str = " ".join(
                             str(cell) for cell in row if cell is not None
@@ -253,6 +311,15 @@ class XlsxExtractor:
                             if remaining > 0:
                                 extracted_lines.append(row_str[:remaining])
                             total_chars = max_chars
+                            self.truncated = True
+                            if not self.truncation_reason:
+                                self.truncation_reason = "MAX_CHARACTERS_EXCEEDED"
+                                self.truncated_bounds = {
+                                    "max_sheets": max_sheets,
+                                    "max_rows": max_rows,
+                                    "max_characters": max_chars,
+                                    "max_chars": max_chars,
+                                }
                             break
 
                         extracted_lines.append(row_str)
@@ -275,17 +342,37 @@ class XlsxExtractor:
 
             try:
                 xl = pd.ExcelFile(file_path)
-                sheet_names = xl.sheet_names[:max_sheets]
+                all_sheet_names = xl.sheet_names
                 xl.close()
             except Exception:
                 logging.debug(
                     f"Could not list Excel sheets for {file_path}, reading the first",
                     exc_info=True,
                 )
-                sheet_names = [0]
+                all_sheet_names = [0]
+
+            if len(all_sheet_names) > max_sheets:
+                self.truncated = True
+                self.truncation_reason = "MAX_SHEETS_EXCEEDED"
+                self.truncated_bounds = {
+                    "max_sheets": max_sheets,
+                    "max_rows": max_rows,
+                    "max_characters": max_chars,
+                    "max_chars": max_chars,
+                }
+            sheet_names = all_sheet_names[:max_sheets]
 
             for sheet_name in sheet_names:
                 if total_chars >= max_chars:
+                    self.truncated = True
+                    if not self.truncation_reason:
+                        self.truncation_reason = "MAX_CHARACTERS_EXCEEDED"
+                        self.truncated_bounds = {
+                            "max_sheets": max_sheets,
+                            "max_rows": max_rows,
+                            "max_characters": max_chars,
+                            "max_chars": max_chars,
+                        }
                     break
                 df = pd.read_excel(file_path, sheet_name=sheet_name, nrows=max_rows)
                 df_str = df.to_string()
@@ -297,6 +384,15 @@ class XlsxExtractor:
                     remaining = max_chars - total_chars - (1 if extracted_lines else 0)
                     if remaining > 0:
                         extracted_lines.append(df_str[:remaining])
+                    self.truncated = True
+                    if not self.truncation_reason:
+                        self.truncation_reason = "MAX_CHARACTERS_EXCEEDED"
+                        self.truncated_bounds = {
+                            "max_sheets": max_sheets,
+                            "max_rows": max_rows,
+                            "max_characters": max_chars,
+                            "max_chars": max_chars,
+                        }
                     break
 
                 extracted_lines.append(df_str)
