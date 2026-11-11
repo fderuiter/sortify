@@ -131,7 +131,15 @@ def test_onboarding_cta_card_sample_data_button(tmp_path):
 
             btn_sample = app.query_one("#btn-cta-sample-data", Button)
             btn_sample.press()
-            await pilot.pause(0.05)
+            await pilot.pause(0.1)
+
+            from app.ui.modals.sample_playground import SamplePlaygroundModal
+
+            assert isinstance(app.screen, SamplePlaygroundModal)
+            btn_commit = app.screen.query_one("#btn-commit-playground", Button)
+            btn_commit.press()
+            await pilot.pause(0.1)
+
             for _ in range(50):
                 if not app._running_pipeline_worker():
                     break

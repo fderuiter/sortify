@@ -2401,6 +2401,8 @@ def test_sample_dataset_goes_to_subfolder_of_non_empty_folder(temp_workspace):
     """[G] never writes sample files next to the user's own documents."""
 
     async def _test():
+        from app.ui.modals.sample_playground import SamplePlaygroundModal
+
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
@@ -2410,7 +2412,12 @@ def test_sample_dataset_goes_to_subfolder_of_non_empty_folder(temp_workspace):
             await pilot.pause()
             with patch.object(app, "run_scan_worker") as scan_worker:
                 app.action_generate_sample_corpus()
-                await pilot.pause()
+                await pilot.pause(0.1)
+                assert isinstance(app.screen, SamplePlaygroundModal)
+                btn_commit = app.screen.query_one("#btn-commit-playground", Button)
+                btn_commit.press()
+                await pilot.pause(0.1)
+
                 sample_dir = os.path.join(temp_workspace, "sortify-sample-dataset")
                 assert sorted(os.listdir(temp_workspace)) == sorted(
                     before + ["sortify-sample-dataset"]
@@ -2420,11 +2427,17 @@ def test_sample_dataset_goes_to_subfolder_of_non_empty_folder(temp_workspace):
                 assert app.source_dirs == [sample_dir]
                 scan_worker.assert_called_once()
 
-                # Pressing G again reuses the dataset instead of nesting or overwriting.
+                # Pressing G again opens playground with target_dir as sample_dir instead of nesting
                 with open(os.path.join(sample_dir, "demo_finance.txt"), "w") as f:
                     f.write("edited")
                 app.action_generate_sample_corpus()
-                await pilot.pause()
+                await pilot.pause(0.1)
+                assert isinstance(app.screen, SamplePlaygroundModal)
+                assert app.screen.target_dir == sample_dir
+                btn_close = app.screen.query_one("#btn-close-playground", Button)
+                btn_close.press()
+                await pilot.pause(0.1)
+
                 assert app.base_dir == sample_dir
                 assert not os.path.exists(
                     os.path.join(sample_dir, "sortify-sample-dataset")
@@ -2441,6 +2454,8 @@ def test_sample_dataset_fills_an_empty_folder_directly(tmp_path):
     empty.mkdir()
 
     async def _test():
+        from app.ui.modals.sample_playground import SamplePlaygroundModal
+
         settings = AppSettings()
         settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=str(empty))
@@ -2449,7 +2464,11 @@ def test_sample_dataset_fills_an_empty_folder_directly(tmp_path):
             await pilot.pause()
             with patch.object(app, "run_scan_worker"):
                 app.action_generate_sample_corpus()
-                await pilot.pause()
+                await pilot.pause(0.1)
+                assert isinstance(app.screen, SamplePlaygroundModal)
+                btn_commit = app.screen.query_one("#btn-commit-playground", Button)
+                btn_commit.press()
+                await pilot.pause(0.1)
             assert "demo_tech.txt" in os.listdir(empty)
             assert app.base_dir == str(empty)
 
