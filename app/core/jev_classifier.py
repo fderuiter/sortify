@@ -13,6 +13,11 @@ from typing import Any, Dict, Optional, Tuple
 
 from pydantic import BaseModel, ConfigDict, Field
 
+try:
+    import pypdf
+except ImportError:  # pragma: no cover
+    pypdf = None  # type: ignore[assignment]
+
 from app.core.cache import BoundedMemoryCache
 
 logger = logging.getLogger(__name__)
@@ -65,10 +70,14 @@ class JevClassificationResult(BaseModel):
 
 def _extract_pdf_snippet(file_path: str) -> str:
     """Extract page 0 text snippet from a PDF file up to 4096 characters."""
+    if pypdf is None:
+        return ""
     try:
-        import pypdf
-
         with open(file_path, "rb") as f:
+            header = f.read(1024)
+            if b"%PDF" not in header:
+                return ""
+            f.seek(0)
             with pypdf.PdfReader(f) as reader:
                 if reader.pages:
                     text = reader.pages[0].extract_text() or ""
