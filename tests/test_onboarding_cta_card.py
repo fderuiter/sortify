@@ -132,6 +132,12 @@ def test_onboarding_cta_card_sample_data_button(tmp_path):
             btn_sample = app.query_one("#btn-cta-sample-data", Button)
             btn_sample.press()
             await pilot.pause(0.05)
+            if (
+                hasattr(app, "screen")
+                and app.screen.__class__.__name__ == "SamplePlaygroundModal"
+            ):
+                app.screen.query_one("#btn-commit-playground", Button).press()
+                await pilot.pause(0.05)
             for _ in range(50):
                 if not app._running_pipeline_worker():
                     break

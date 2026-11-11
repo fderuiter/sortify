@@ -24,7 +24,10 @@ if not hasattr(AppSettings, "NON_INTERACTIVE"):
 
     def _patched_appsettings_setattr(self, name, value):
         if name == "NON_INTERACTIVE":
-            setattr(self, "_non_interactive", bool(value))
+            object.__setattr__(self, "_non_interactive", bool(value))
+            return
+        if name in ("_non_interactive", "_skip_wizard"):
+            object.__setattr__(self, name, value)
             return
         _orig_appsettings_setattr(self, name, value)
 
@@ -41,7 +44,7 @@ if not hasattr(AppSettings, "NON_INTERACTIVE"):
                     in ("1", "true", "yes", "on")
                 )
             ),
-            lambda self, val: setattr(self, "_non_interactive", bool(val)),
+            lambda self, val: object.__setattr__(self, "_non_interactive", bool(val)),
         ),
     )
 
@@ -337,9 +340,9 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
         or accept_consent
         or decline_consent
     ):
-        setattr(settings, "_skip_wizard", True)
-        setattr(settings, "_non_interactive", True)
-        setattr(settings, "NON_INTERACTIVE", True)
+        object.__setattr__(settings, "_skip_wizard", True)
+        object.__setattr__(settings, "_non_interactive", True)
+        settings.NON_INTERACTIVE = True
         if settings.AI_CONSENT_GRANTED is None:
             settings.override("AI_CONSENT_GRANTED", False)
 
