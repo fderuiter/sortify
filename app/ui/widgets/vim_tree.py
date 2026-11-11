@@ -74,7 +74,7 @@ class VimTree(Tree):
             event.prevent_default()
         elif event.key in ("g", "G", "shift+g"):
             if hasattr(self.app, "action_generate_sample_corpus"):
-                self.app.action_generate_sample_corpus()
+                self.app.action_generate_sample_corpus(True)
             event.stop()
             event.prevent_default()
         elif event.key in ("/", "slash") or getattr(event, "character", None) == "/":

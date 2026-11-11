@@ -130,9 +130,9 @@ class AutoSorterTUI(
         Binding("ctrl+x", "open_extraction_preview", "Extraction Preview", show=False),
         Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
         Binding("ctrl+f", "focus_search", "Search Tree", show=True),
-        Binding("g", "generate_sample_corpus", "Sample Dataset", show=False),
-        Binding("G", "generate_sample_corpus", "Sample Dataset", show=False),
-        Binding("shift+g", "generate_sample_corpus", "Sample Dataset", show=False),
+        Binding("g", "generate_sample_corpus(True)", "Sample Dataset", show=False),
+        Binding("G", "generate_sample_corpus(True)", "Sample Dataset", show=False),
+        Binding("shift+g", "generate_sample_corpus(True)", "Sample Dataset", show=False),
         Binding("question_mark", "open_cheat_sheet", "Help", show=True),
         Binding("f1", "open_cheat_sheet", "Help (F1)", show=False),
         Binding("ctrl+q", "quit", "Quit", show=True),
@@ -810,16 +810,34 @@ class AutoSorterTUI(
             on_selected,
         )
 
-    def action_generate_sample_corpus(self) -> None:
-        """Launch interactive sample playground modal [G]."""
+    def action_generate_sample_corpus(self, open_modal: bool = False) -> None:
+        """Generate sample document corpus in active workspace directory, or launch interactive playground modal."""
         if self._is_text_control_focused():
             return
 
         target_dir = self._sample_dataset_dir(self.base_dir or os.getcwd())
 
-        from app.ui.modals.sample_playground import SamplePlaygroundModal
+        if open_modal:
+            from app.ui.modals.sample_playground import SamplePlaygroundModal
 
-        self.push_screen(SamplePlaygroundModal(self.settings, target_dir=target_dir))
+            self.push_screen(SamplePlaygroundModal(self.settings, target_dir=target_dir))
+            return
+
+        from app.core.sample_corpus import generate_sample_corpus
+
+        try:
+            try:
+                generate_sample_corpus(target_dir, overwrite=False)
+                self.announce(f"Generated sample dataset in {target_dir}.")
+            except FileExistsError:
+                self.announce(f"Using the existing sample dataset in {target_dir}.")
+        except Exception as exc:
+            logger.error(f"Error generating sample dataset: {exc}")
+            self.announce(f"Failed to generate sample dataset: {exc}")
+            return
+        self.base_dir = target_dir
+        self.source_dirs = [target_dir]
+        self.action_scan_directory()
 
     SAMPLE_DATASET_DIRNAME = "sortify-sample-dataset"
 
