@@ -1,8 +1,8 @@
 """Unit tests for spreadsheet extraction truncation flags and notification event dispatching."""
 
 import logging
+
 import openpyxl
-import pytest
 
 from app.config import Settings
 from app.core.extractor import ExtractionResult, ExtractionStatus, extract_file_text
