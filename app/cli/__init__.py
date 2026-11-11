@@ -6,10 +6,6 @@ from pathlib import Path
 from typing import Any
 
 from app.cli.error_emitter import emit_cli_error
-from app.cli.ledger_cli import handle_ledger_command
-from app.cli.ledger_cli import register_subparser as register_ledger
-from app.cli.quarantine_cli import handle_quarantine_command
-from app.cli.quarantine_cli import register_subparser as register_quarantine
 from app.config import AppSettings
 
 
@@ -30,12 +26,18 @@ def json_default(obj: Any) -> Any:
 
 def register_cli_subcommands(subparsers: argparse._SubParsersAction) -> None:
     """Register core domain subcommand subparsers into the central parser."""
+    from app.cli.ledger_cli import register_subparser as register_ledger
+    from app.cli.quarantine_cli import register_subparser as register_quarantine
+
     register_ledger(subparsers)
     register_quarantine(subparsers)
 
 
 def handle_cli_command(args: argparse.Namespace, settings: AppSettings) -> bool:
     """Dispatch command to domain CLI handlers. Returns True if handled."""
+    from app.cli.ledger_cli import handle_ledger_command
+    from app.cli.quarantine_cli import handle_quarantine_command
+
     subcmd = getattr(args, "subcommand", None)
     if subcmd == "ledger":
         return handle_ledger_command(args, settings)

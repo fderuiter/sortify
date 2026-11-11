@@ -11,7 +11,7 @@ import sys
 from pathlib import Path
 from typing import Any, NoReturn, cast
 
-from app.cli import emit_cli_error
+from app.cli.error_emitter import emit_cli_error
 from app.config import AppSettings
 from app.core.domain_contracts import _make_json_serializable
 from app.core.path_utils import is_packaged
