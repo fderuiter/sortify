@@ -1,6 +1,7 @@
 """Simulation Exporter for dry-run reports in JSON and HTML formats."""
 
 import contextlib
+import html
 import json
 import os
 import re
@@ -344,7 +345,9 @@ class SimulationExporter:
             badge_text = "SAFETY HOLD"
 
         # Build warning banners
-        warning_items_html = [f"<li>{w}</li>" for w in warnings]
+        warning_items_html = [
+            f"<li>{html.escape(w, quote=True)}</li>" for w in warnings
+        ]
         warning_banner_html = (
             f"""
             <div class="warning-banner">
@@ -395,11 +398,11 @@ class SimulationExporter:
                     col="true" if is_col else "false",
                     hold="true" if is_hold else "false",
                     conf="true" if is_conf else "false",
-                    src=m["source_path"],
-                    tgt=m["target_path"],
-                    fn=m["target_filename"],
+                    src=html.escape(m["source_path"], quote=True),
+                    tgt=html.escape(m["target_path"], quote=True),
+                    fn=html.escape(m["target_filename"], quote=True),
                     sens_cls=sens_badge_class,
-                    sens=sens,
+                    sens=html.escape(sens, quote=True),
                     hold_badge=badge_quarantine_hold if is_hold else "",
                     col_badge=badge_collision if is_col else badge_ok,
                     conf_badge=badge_confirmed if is_conf else badge_unconfirmed,
@@ -407,6 +410,7 @@ class SimulationExporter:
             )
 
         table_rows_html = "".join(table_rows)
+        data_base_dir = html.escape(data["base_directory"], quote=True)
 
         html_content = f"""<!DOCTYPE html>
 <html lang="en">
@@ -581,7 +585,7 @@ class SimulationExporter:
         <div class="header-title">
             <h1>Sortify Dry-Run Simulation Report</h1>
             <div class="header-meta">
-                Generated: {data["generated_at"]} | Target Directory: <code>{data["base_directory"]}</code>
+                Generated: {data["generated_at"]} | Target Directory: <code>{data_base_dir}</code>
             </div>
         </div>
         <div>

@@ -441,7 +441,7 @@ class JevClassifierEngine:
                 return None
             abs_path = os.path.abspath(file_path).replace("\\", "/")
             stat = os.stat(file_path)
-            return (abs_path, float(stat.st_mtime), int(stat.st_size))
+            return (abs_path, round(float(stat.st_mtime), 3), int(stat.st_size))
         except (OSError, ValueError) as e:
             logger.debug(f"Could not calculate stat key for {file_path}: {e}")
             return None
@@ -536,7 +536,9 @@ class JevClassifierEngine:
                     is_class,
                     meta_json,
                 ) = row
-                if db_mtime == mtime and db_size == size:
+                if abs(float(db_mtime) - float(mtime)) <= 0.05 and int(db_size) == int(
+                    size
+                ):
                     try:
                         metadata = json.loads(meta_json) if meta_json else {}
                     except (ValueError, TypeError):

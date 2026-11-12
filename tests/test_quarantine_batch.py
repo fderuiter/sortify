@@ -4,6 +4,7 @@ import argparse
 import asyncio
 import json
 import os
+import shutil
 import tempfile
 
 import pytest
@@ -200,6 +201,112 @@ def test_cli_quarantine_batch_commands(test_db_and_dir, capsys):
 
     rec3 = db.get_quarantine_record(job3)
     assert rec3["status"] == "DISMISSED"
+
+
+def test_cli_quarantine_release_flags(test_db_and_dir, capsys):
+    """Test CLI release with --conflict-policy and --allow-external-dest flags."""
+    db, tmp_dir = test_db_and_dir
+    service = QuarantineInterceptorService(db=db)
+
+    # 1. External destination rejection without --allow-external-dest
+    ext_dir = os.path.join(tempfile.gettempdir(), f"sortify_ext_{os.getpid()}")
+    os.makedirs(ext_dir, exist_ok=True)
+    try:
+        job_ext = stage_dummy_file(service, tmp_dir, "ext1.txt")
+        args_ext_fail = argparse.Namespace(
+            subcommand="quarantine",
+            quarantine_command="release",
+            job_ids_pos=[job_ext],
+            job_ids=None,
+            job_id=None,
+            dest_dir=ext_dir,
+            conflict_policy="rename",
+            allow_external_dest=False,
+            db_path=db.db_path,
+            quiet=True,
+            json=True,
+        )
+        with pytest.raises(SystemExit) as exc:
+            handle_quarantine_command(args_ext_fail, None)
+        assert exc.value.code == 1
+
+        captured = capsys.readouterr()
+        out = json.loads(captured.out)
+        assert out["status"] == "failed"
+
+        # 2. External destination success with --allow-external-dest
+        args_ext_ok = argparse.Namespace(
+            subcommand="quarantine",
+            quarantine_command="release",
+            job_ids_pos=[job_ext],
+            job_ids=None,
+            job_id=None,
+            dest_dir=ext_dir,
+            conflict_policy="rename",
+            allow_external_dest=True,
+            db_path=db.db_path,
+            quiet=True,
+            json=True,
+        )
+        with pytest.raises(SystemExit) as exc:
+            handle_quarantine_command(args_ext_ok, None)
+        assert exc.value.code == 0
+
+        captured = capsys.readouterr()
+        out = json.loads(captured.out)
+        assert out["status"] == "success"
+
+        # 3. Conflict policy 'skip' collision fails via CLI
+        job_skip = stage_dummy_file(service, tmp_dir, "collision.txt")
+        dest_folder = os.path.join(tmp_dir, "cli_collision_dest")
+        os.makedirs(dest_folder, exist_ok=True)
+        with open(os.path.join(dest_folder, "collision.txt"), "w") as f:
+            f.write("existing")
+
+        args_skip = argparse.Namespace(
+            subcommand="quarantine",
+            quarantine_command="release",
+            job_ids_pos=[job_skip],
+            job_ids=None,
+            job_id=None,
+            dest_dir=dest_folder,
+            conflict_policy="skip",
+            allow_external_dest=False,
+            db_path=db.db_path,
+            quiet=True,
+            json=True,
+        )
+        with pytest.raises(SystemExit) as exc:
+            handle_quarantine_command(args_skip, None)
+        assert exc.value.code == 1
+
+        captured = capsys.readouterr()
+        out = json.loads(captured.out)
+        assert out["status"] == "failed"
+
+        # 4. Conflict policy 'overwrite' replaces and succeeds via CLI
+        args_overwrite = argparse.Namespace(
+            subcommand="quarantine",
+            quarantine_command="release",
+            job_ids_pos=[job_skip],
+            job_ids=None,
+            job_id=None,
+            dest_dir=dest_folder,
+            conflict_policy="overwrite",
+            allow_external_dest=False,
+            db_path=db.db_path,
+            quiet=True,
+            json=True,
+        )
+        with pytest.raises(SystemExit) as exc:
+            handle_quarantine_command(args_overwrite, None)
+        assert exc.value.code == 0
+
+        captured = capsys.readouterr()
+        out = json.loads(captured.out)
+        assert out["status"] == "success"
+    finally:
+        shutil.rmtree(ext_dir, ignore_errors=True)
 
 
 def test_quarantine_vault_modal_multi_selection(test_db_and_dir):

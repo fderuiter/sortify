@@ -1,10 +1,12 @@
 """Event-driven compliance interceptor service with quarantine staging and async pipeline."""
 
+import contextlib
 import logging
 import os
 import re
 import shutil
 import time
+import unicodedata
 import uuid
 from typing import Any, Dict, List, Optional
 
@@ -15,13 +17,14 @@ from app.core.domain_contracts import QuarantineRecordModel, validate_quarantine
 from app.core.exceptions import ArchiveSafetyError
 from app.core.extractor import extract_file_text
 from app.core.forensic_scanner import ForensicScanner
-from app.core.mover import is_subpath_or_equal
+from app.core.mover import get_safe_path, is_subpath_or_equal, overwrite_backup_dir
 from app.core.path_utils import safe_relpath, validate_target_path
 from app.core.policy_engine import PolicyEngine
 from app.core.resilient_file_ops import (
     _set_posix_mode,
     atomic_quarantine_relocation,
     resilient_file_hash,
+    resilient_move,
     resilient_remove,
 )
 from app.core.text_utils import sanitize_secret_patterns
@@ -850,15 +853,33 @@ class QuarantineInterceptorService:
         return results
 
     def release_quarantine_batch(
-        self, job_ids: List[str], dest_dir: Optional[str] = None
+        self,
+        job_ids: List[str],
+        dest_dir: Optional[str] = None,
+        conflict_policy: str = "rename",
+        allow_external: bool = False,
+        **kwargs: Any,
     ) -> List[Dict[str, Any]]:
         """Release a batch of quarantined items to target destination directories.
 
         Guarantees isolated atomic file relocations and individual audit logging.
         """
+        if isinstance(conflict_policy, bool):
+            allow_external = conflict_policy
+            conflict_policy = "rename"
+        allow_external = allow_external or kwargs.get("allow_external_dest", False)
+
+        normalized_conflict_policy = (conflict_policy or "rename").lower()
+        if normalized_conflict_policy not in ("rename", "skip", "overwrite"):
+            raise ValueError(
+                f"Invalid conflict policy: '{conflict_policy}'. Expected 'rename', 'skip', or 'overwrite'."
+            )
+
         results = []
         unique_ids = list(dict.fromkeys(job_ids))
         for job_id in unique_ids:
+            displaced_backup = None
+            dest_file_path = None
             try:
                 record = self.db.get_quarantine_record(job_id)
                 if not record:
@@ -905,28 +926,97 @@ class QuarantineInterceptorService:
 
                 base_dir = record.get("base_dir") or ""
                 orig_rel = record.get("original_filepath") or "released_file"
+                effective_base = os.path.abspath(base_dir) if base_dir else os.getcwd()
 
                 if dest_dir:
                     target_parent = os.path.abspath(dest_dir)
                 else:
-                    target_parent = (
-                        os.path.abspath(base_dir) if base_dir else os.getcwd()
+                    target_parent = effective_base
+
+                if not allow_external and not is_subpath_or_equal(
+                    target_parent, effective_base
+                ):
+                    err_msg = (
+                        f"Release destination directory '{target_parent}' escapes "
+                        f"base directory boundary '{effective_base}'"
                     )
-
-                os.makedirs(target_parent, exist_ok=True)
-                dest_file_path = os.path.join(target_parent, os.path.basename(orig_rel))
-
-                with atomic_quarantine_relocation(staged_path, dest_file_path):
                     self.db.update_quarantine_status(
                         job_id=job_id,
-                        status="RELEASED",
-                        policy_action="release",
+                        status="MANUAL_REVIEW_REQUIRED",
+                        error_message=err_msg,
                         audit_entry={
                             "timestamp": time.time(),
-                            "status": "RELEASED",
-                            "details": f"Released from quarantine modal review to {dest_file_path}",
+                            "status": "MANUAL_REVIEW_REQUIRED",
+                            "details": f"Batch release failed: {err_msg}",
                         },
                     )
+                    results.append(
+                        {
+                            "job_id": job_id,
+                            "status": "FAILED",
+                            "error": err_msg,
+                        }
+                    )
+                    continue
+
+                os.makedirs(target_parent, exist_ok=True)
+                candidate_dest = os.path.join(target_parent, os.path.basename(orig_rel))
+
+                if os.path.lexists(candidate_dest):
+                    if normalized_conflict_policy == "skip":
+                        err_msg = (
+                            f"Destination file already exists: '{candidate_dest}' "
+                            f"(conflict policy: 'skip')"
+                        )
+                        raise FileExistsError(err_msg)
+                    elif normalized_conflict_policy == "rename":
+                        safe_dest = get_safe_path(
+                            target_parent, os.path.basename(candidate_dest), staged_path
+                        )
+                        dest_file_path = unicodedata.normalize("NFC", safe_dest)
+                    elif normalized_conflict_policy == "overwrite":
+                        backup_dir = overwrite_backup_dir(effective_base, job_id)
+                        try:
+                            rel_p = safe_relpath(candidate_dest, effective_base)
+                            if rel_p.startswith("..") or os.path.isabs(rel_p):
+                                rel_p = os.path.basename(candidate_dest)
+                        except (ValueError, OSError):
+                            rel_p = os.path.basename(candidate_dest)
+                        backup_file_path = os.path.join(backup_dir, rel_p)
+                        os.makedirs(os.path.dirname(backup_file_path), exist_ok=True)
+                        if os.path.lexists(backup_file_path):
+                            backup_file_path = get_safe_path(
+                                os.path.dirname(backup_file_path),
+                                os.path.basename(backup_file_path),
+                            )
+                        displaced_backup = resilient_move(
+                            candidate_dest, backup_file_path
+                        )
+                        dest_file_path = candidate_dest
+                else:
+                    dest_file_path = candidate_dest
+
+                try:
+                    with atomic_quarantine_relocation(staged_path, dest_file_path):
+                        self.db.update_quarantine_status(
+                            job_id=job_id,
+                            status="RELEASED",
+                            policy_action="release",
+                            audit_entry={
+                                "timestamp": time.time(),
+                                "status": "RELEASED",
+                                "details": f"Released from quarantine modal review to {dest_file_path}",
+                            },
+                        )
+                except Exception:
+                    if (
+                        displaced_backup
+                        and os.path.lexists(displaced_backup)
+                        and not os.path.lexists(dest_file_path)
+                    ):
+                        with contextlib.suppress(Exception):
+                            resilient_move(displaced_backup, dest_file_path)
+                    raise
 
                 results.append(
                     {
@@ -939,6 +1029,17 @@ class QuarantineInterceptorService:
                 logger.error(
                     f"Batch release failure for job ID '{job_id}': {e}", exc_info=True
                 )
+                with contextlib.suppress(Exception):
+                    self.db.update_quarantine_status(
+                        job_id=job_id,
+                        status="MANUAL_REVIEW_REQUIRED",
+                        error_message=str(e),
+                        audit_entry={
+                            "timestamp": time.time(),
+                            "status": "MANUAL_REVIEW_REQUIRED",
+                            "details": f"Batch release failed: {e}",
+                        },
+                    )
                 results.append(
                     {
                         "job_id": job_id,
