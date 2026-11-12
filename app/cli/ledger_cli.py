@@ -4,6 +4,7 @@ import argparse
 import json
 import sys
 
+from app.cli.error_emitter import emit_cli_error
 from app.config import AppSettings
 from app.core.exceptions import AuditExportError
 from app.core.ledger import TransactionLedger, get_default_ledger_path
@@ -14,6 +15,11 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
     parser_ledger = subparsers.add_parser(
         "ledger",
         help="Manage transaction ledger entries and automated reconciliation",
+    )
+    parser_ledger.add_argument(
+        "--json",
+        action="store_true",
+        help="Output response in structured JSON format",
     )
     ledger_subparsers = parser_ledger.add_subparsers(
         dest="ledger_command", help="Ledger subcommands"
@@ -143,19 +149,19 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
     if getattr(args, "subcommand", None) != "ledger":
         return False
 
+    is_json = getattr(args, "json", False)
     ledger_cmd = getattr(args, "ledger_command", None)
     if not ledger_cmd:
-        print(
+        emit_cli_error(
             "Error: Missing ledger subcommand. Use 'status', 'reconcile', 'purge', or 'export'.",
-            file=sys.stderr,
+            json_mode=is_json,
+            exit_code=2,
         )
-        sys.exit(2)
 
     ledger_db_path = getattr(args, "ledger_db", None) or get_default_ledger_path()
     ledger = TransactionLedger(db_path=ledger_db_path)
 
     quiet = getattr(args, "quiet", False)
-    is_json = getattr(args, "json", False)
 
     db = None
     try:
@@ -244,17 +250,20 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
 
             if not has_explicit_filter and not force:
                 if not sys.stdin.isatty():
-                    print(
+                    emit_cli_error(
                         "Error: Purging transaction ledger records requires explicit flags or confirmation. Use --completed, --failed, --aborted, or --force.",
-                        file=sys.stderr,
+                        json_mode=is_json,
+                        exit_code=1,
                     )
-                    sys.exit(1)
                 response = input(
                     "Are you sure you want to purge transaction ledger records? [y/N]: "
                 )
                 if response.strip().lower() not in ("y", "yes"):
-                    print("Purge operation cancelled.", file=sys.stderr)
-                    sys.exit(1)
+                    emit_cli_error(
+                        "Purge operation cancelled.",
+                        json_mode=is_json,
+                        exit_code=1,
+                    )
 
             if failed_only:
                 ledger.purge_failed(session_id=session_id)
@@ -327,13 +336,11 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
                         )
                 sys.exit(0)
             except (ValueError, AuditExportError) as ve:
-                err_res = {"status": "error", "message": str(ve)}
-                if is_json:
-                    sys.stdout.write(json.dumps(err_res, indent=2) + "\n")
-                    sys.stdout.flush()
-                else:
-                    print(f"Error: {ve}", file=sys.stderr)
-                sys.exit(1)
+                emit_cli_error(
+                    str(ve),
+                    json_mode=is_json,
+                    exit_code=1,
+                )
 
     finally:
         if db and hasattr(db, "worker") and db.worker:

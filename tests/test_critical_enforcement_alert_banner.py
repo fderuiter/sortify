@@ -31,20 +31,17 @@ def temp_workspace():
 def test_verifier_differentiates_critical_collisions_and_warnings(temp_workspace):
     """Verify VerificationEngine distinguishes critical path collisions from non-fatal broken links."""
     base_dir = temp_workspace
+    existing_dir = os.path.join(base_dir, "ExistingDir")
+    os.makedirs(existing_dir, exist_ok=True)
 
-    # Collision plan: two source files targeting identical destination filename in same directory
+    # Collision plan: structural collision moving onto existing directory
     collision_plan = {
         "doc1.txt": {
             "__type__": "file",
             "relative_source": "doc1.txt",
             "filepath": os.path.join(base_dir, "doc1.txt"),
-            "target_filename": "conflicting_target.txt",
-        },
-        "doc2.txt": {
-            "__type__": "file",
-            "relative_source": "doc2.txt",
-            "filepath": os.path.join(base_dir, "doc2.txt"),
-            "target_filename": "conflicting_target.txt",
+            "target_filename": "ExistingDir",
+            "confirmed": True,
         },
     }
 
@@ -84,7 +81,7 @@ def test_verifier_differentiates_critical_collisions_and_warnings(temp_workspace
 
 
 def test_execution_button_disabled_on_collision_alert_banner_rendered(temp_workspace):
-    """Verify execution button is disabled immediately when a destination collision occurs, and alert banner displays source and target paths."""
+    """Verify execution button is disabled immediately when a structural collision occurs, and alert banner displays collision details."""
 
     async def _test():
         settings = AppSettings()
@@ -93,10 +90,9 @@ def test_execution_button_disabled_on_collision_alert_banner_rendered(temp_works
 
         async with app.run_test() as pilot:
             file1_path = os.path.join(temp_workspace, "doc1.txt")
-            file2_path = os.path.join(temp_workspace, "doc2.txt")
-            target_path = os.path.normpath(
-                os.path.join(temp_workspace, "Finance", "same_target.txt")
-            )
+            existing_dir = os.path.join(temp_workspace, "Finance", "ExistingSub")
+            os.makedirs(existing_dir, exist_ok=True)
+            target_path = os.path.normpath(existing_dir)
 
             app.plan = {
                 "Finance": {
@@ -104,14 +100,7 @@ def test_execution_button_disabled_on_collision_alert_banner_rendered(temp_works
                         "__type__": "file",
                         "relative_source": "doc1.txt",
                         "filepath": file1_path,
-                        "target_filename": "same_target.txt",
-                        "confirmed": True,
-                    },
-                    "doc2.txt": {
-                        "__type__": "file",
-                        "relative_source": "doc2.txt",
-                        "filepath": file2_path,
-                        "target_filename": "same_target.txt",
+                        "target_filename": "ExistingSub",
                         "confirmed": True,
                     },
                 }
@@ -128,14 +117,14 @@ def test_execution_button_disabled_on_collision_alert_banner_rendered(temp_works
             assert btn.disabled is True
             assert app.has_critical_errors is True
 
-            # Verify alert banner displays source and destination paths
+            # Verify alert banner displays structural collision details
             banner = app.query_one("#alert-banner", Static)
             assert banner.display is True
             assert "alert-critical" in banner.classes
             banner_text = str(banner.render())
-            assert "CRITICAL FILE COLLISION" in banner_text
+            assert "STRUCTURAL DIRECTORY COLLISION" in banner_text
             assert "Destination:" in banner_text
-            assert target_path in banner_text or "same_target.txt" in banner_text
+            assert target_path in banner_text or "ExistingSub" in banner_text
 
     asyncio.run(_test())
 
@@ -209,23 +198,17 @@ def test_dynamic_recalculation_enables_button_within_500ms(temp_workspace):
 
         async with app.run_test() as pilot:
             file1_path = os.path.join(temp_workspace, "doc1.txt")
-            file2_path = os.path.join(temp_workspace, "doc2.txt")
+            existing_dir = os.path.join(temp_workspace, "Finance", "ExistingSub")
+            os.makedirs(existing_dir, exist_ok=True)
 
-            # Initial collision state
+            # Initial collision state: moving onto existing directory
             app.plan = {
                 "Finance": {
                     "doc1.txt": {
                         "__type__": "file",
                         "relative_source": "doc1.txt",
                         "filepath": file1_path,
-                        "target_filename": "same_target.txt",
-                        "confirmed": True,
-                    },
-                    "doc2.txt": {
-                        "__type__": "file",
-                        "relative_source": "doc2.txt",
-                        "filepath": file2_path,
-                        "target_filename": "same_target.txt",
+                        "target_filename": "ExistingSub",
                         "confirmed": True,
                     },
                 }
@@ -241,8 +224,8 @@ def test_dynamic_recalculation_enables_button_within_500ms(temp_workspace):
             btn = app.query_one("#btn-execute", Button)
             assert btn.disabled is True
 
-            # Resolve collision by renaming target of doc2.txt
-            app.plan["Finance"]["doc2.txt"]["target_filename"] = "unique_doc2.txt"
+            # Resolve collision by renaming target to a valid file name
+            app.plan["Finance"]["doc1.txt"]["target_filename"] = "valid_doc.txt"
 
             # Trigger recalculation
             app.rebuild_tree()
