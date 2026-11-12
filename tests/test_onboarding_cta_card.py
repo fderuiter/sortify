@@ -126,22 +126,23 @@ def test_onboarding_cta_card_sample_data_button(tmp_path):
         os.makedirs(workspace, exist_ok=True)
 
         app = AutoSorterTUI(settings=settings, base_dir=workspace, skip_wizard=True)
-        async with app.run_test() as pilot:
+        async with app.run_test(size=(120, 60)) as pilot:
             await pilot.pause(0.05)
 
             btn_sample = app.query_one("#btn-cta-sample-data", Button)
             btn_sample.press()
-            await pilot.pause(0.2)
+            await pilot.pause(0.05)
             from app.ui.modals.sample_playground import SamplePlaygroundModal
 
             if isinstance(app.screen, SamplePlaygroundModal):
                 btn_commit = app.screen.query_one("#btn-commit-playground", Button)
                 btn_commit.press()
-                await pilot.pause(0.2)
+                await pilot.pause(0.05)
+
             for _ in range(50):
-                await pilot.pause(0.1)
                 if not app._running_pipeline_worker():
                     break
+                await pilot.pause(0.1)
 
             await pilot.pause(0.05)
 

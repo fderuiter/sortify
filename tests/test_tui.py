@@ -2431,6 +2431,10 @@ def test_sample_dataset_goes_to_subfolder_of_non_empty_folder(temp_workspace):
                     f.write("edited")
                 app.action_generate_sample_corpus()
                 await pilot.pause()
+                if isinstance(app.screen, SamplePlaygroundModal):
+                    btn_commit = app.screen.query_one("#btn-commit-playground", Button)
+                    btn_commit.press()
+                    await pilot.pause()
                 assert app.base_dir == sample_dir
                 assert not os.path.exists(
                     os.path.join(sample_dir, "sortify-sample-dataset")
