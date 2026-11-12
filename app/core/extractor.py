@@ -42,6 +42,9 @@ class ExtractionResult(BaseModel):
     text: str = ""
     status: ExtractionStatus = ExtractionStatus.SUCCESS
     error_message: Optional[str] = None
+    truncated: bool = False
+    truncation_reason: Optional[str] = None
+    truncated_bounds: Optional[Dict[str, Any]] = None
 
     model_config = ConfigDict(extra="allow")
 
@@ -89,6 +92,12 @@ class ExtractionResult(BaseModel):
             return self.status
         if item == "error_message":
             return self.error_message
+        if item == "truncated":
+            return self.truncated
+        if item == "truncation_reason":
+            return self.truncation_reason
+        if item == "truncated_bounds":
+            return self.truncated_bounds
         extra = getattr(self, "__pydantic_extra__", None)
         if extra and item in extra:
             return extra[item]
@@ -108,6 +117,27 @@ class ExtractionResult(BaseModel):
     def __bool__(self) -> bool:
         """Evaluate truthiness based on text presence or success status."""
         return bool(self.text) or self.status == ExtractionStatus.SUCCESS
+
+
+def _get_notification_manager() -> Any:
+    """Retrieve the central NotificationManager instance dynamically without architectural layer violations."""
+    try:
+        import importlib
+
+        mod = importlib.import_module("app.ui.notifications")
+        return getattr(mod, "NotificationManager").get_instance()
+    except (ImportError, AttributeError):
+        return None
+
+
+def __getattr__(name: str) -> Any:
+    """Lazy module attribute resolver for NotificationManager to avoid layer violations."""
+    if name == "NotificationManager":
+        import importlib
+
+        mod = importlib.import_module("app.ui.notifications")
+        return getattr(mod, "NotificationManager")
+    raise AttributeError(f"module {__name__!r} has no attribute {name!r}")
 
 
 def get_file_hash(file_path: str) -> str:
@@ -205,6 +235,41 @@ def extract_file_text(
             raw_text = extractor.extract(file_path, **kwargs)
             text = sanitize_text(raw_text)
 
+            truncated = bool(getattr(extractor, "truncated", False))
+            truncation_reason = getattr(extractor, "truncation_reason", None)
+            truncated_bounds = getattr(extractor, "truncated_bounds", None)
+
+            if isinstance(raw_text, ExtractionResult):
+                truncated = bool(raw_text.truncated or truncated)
+                truncation_reason = raw_text.truncation_reason or truncation_reason
+                truncated_bounds = raw_text.truncated_bounds or truncated_bounds
+
+            if truncated:
+                logger.warning(
+                    f"Tabular extraction truncated for {file_path}: reason={truncation_reason}, bounds={truncated_bounds}",
+                    extra={
+                        "file_path": file_path,
+                        "truncation_reason": truncation_reason,
+                        "truncated_bounds": truncated_bounds,
+                    },
+                )
+                try:
+                    notif_mgr = _get_notification_manager()
+                    if notif_mgr is not None:
+                        notif_mgr.notify(
+                            message=f"Tabular extraction reached boundary and truncated {os.path.basename(file_path)} ({truncation_reason})",
+                            type="warning",
+                            caption="Spreadsheet Truncation",
+                            file_path=file_path,
+                            truncation_reason=truncation_reason,
+                            truncated_bounds=truncated_bounds,
+                        )
+                except Exception as notif_err:
+                    logger.debug(
+                        f"Failed to dispatch truncation notification: {notif_err}",
+                        exc_info=True,
+                    )
+
             if fast_triage:
                 confidence = evaluate_text_confidence(text, ext)
                 if confidence < 0.8:
@@ -224,11 +289,21 @@ def extract_file_text(
 
                         db.worker.submit_background_job(_bg_escalation_job)
                     return ExtractionResult(
-                        text="", status=ExtractionStatus.PROVISIONAL
+                        text="",
+                        status=ExtractionStatus.PROVISIONAL,
+                        truncated=truncated,
+                        truncation_reason=truncation_reason,
+                        truncated_bounds=truncated_bounds,
                     )
 
             if not text.strip():
-                return ExtractionResult(text="", status=ExtractionStatus.EMPTY)
+                return ExtractionResult(
+                    text="",
+                    status=ExtractionStatus.EMPTY,
+                    truncated=truncated,
+                    truncation_reason=truncation_reason,
+                    truncated_bounds=truncated_bounds,
+                )
 
             if text.startswith("[STATUS:"):
                 tag = text[8:-1] if text.endswith("]") else text[8:]
@@ -255,9 +330,18 @@ def extract_file_text(
                     error_message=tag
                     if status_enum == ExtractionStatus.ERROR
                     else None,
+                    truncated=truncated,
+                    truncation_reason=truncation_reason,
+                    truncated_bounds=truncated_bounds,
                 )
 
-            return ExtractionResult(text=text, status=ExtractionStatus.SUCCESS)
+            return ExtractionResult(
+                text=text,
+                status=ExtractionStatus.SUCCESS,
+                truncated=truncated,
+                truncation_reason=truncation_reason,
+                truncated_bounds=truncated_bounds,
+            )
         else:
             return ExtractionResult(text="", status=ExtractionStatus.UNSUPPORTED)
     except pypdf.errors.FileNotDecryptedError:
