@@ -133,16 +133,14 @@ def reset_shared_registry():
     from app.core.network_guard import _thread_local
     from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
 
-    def _cleanup_settings():
-        AppSettings.clear_observers()
-        try:
-            settings_file = get_app_dir() / "settings.json"
-            if settings_file.is_file():
-                settings_file.unlink()
-        except Exception:
-            pass
+    try:
+        settings_file = get_app_dir() / "settings.json"
+        if settings_file.exists():
+            settings_file.unlink()
+    except Exception:
+        pass
 
-    _cleanup_settings()
+    AppSettings.clear_observers()
     DownloadManager.reset_instance()
     SharedModelRegistry._instance = None
     _thread_local.sandboxed = False
@@ -154,7 +152,13 @@ def reset_shared_registry():
             pass
         SharedWorkerPool._instance = None
     yield
-    _cleanup_settings()
+    try:
+        settings_file = get_app_dir() / "settings.json"
+        if settings_file.exists():
+            settings_file.unlink()
+    except Exception:
+        pass
+    AppSettings.clear_observers()
     DownloadManager.reset_instance()
     SharedModelRegistry._instance = None
     _thread_local.sandboxed = False

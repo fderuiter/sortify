@@ -89,6 +89,50 @@ def test_export_html_structure(sample_plan_with_data, tmp_path):
     assert "https://" not in html_str
 
 
+def test_export_html_escaping(tmp_path):
+    """Verify dynamic strings (paths, filenames, base_directory, warnings) are escaped against XSS."""
+    base_dir = str(tmp_path / "test <dir> & 'quotes'")
+    plan = {
+        "Sub <1>": {
+            "<script>alert(1)</script>.txt": {
+                "__type__": "file",
+                "relative_source": "Folder & File <1>.txt",
+                "target_filename": 'report "draft" <final> & note.pdf',
+                "sensitivity_rating": "LOW",
+                "confirmed": True,
+            }
+        }
+    }
+    simulation_results = {
+        "success": True,
+        "warnings": [
+            "Warning with <script>alert(2)</script> & 'single' and \"double\" quotes"
+        ],
+    }
+    exporter = SimulationExporter(
+        plan, base_dir=base_dir, simulation_results=simulation_results
+    )
+    out_html = tmp_path / "escaped_report.html"
+    html_str = exporter.export_html(out_html)
+
+    assert out_html.exists()
+    # Malicious or special characters should not appear unescaped
+    assert "<script>alert(1)</script>" not in html_str
+    assert "<script>alert(2)</script>" not in html_str
+    assert "&lt;script&gt;alert(2)&lt;/script&gt;" in html_str
+    assert "Folder &amp; File &lt;1&gt;.txt" in html_str
+    assert "report &quot;draft&quot; &lt;final&gt; &amp; note.pdf" in html_str
+    assert "test &lt;dir&gt; &amp; &#x27;quotes&#x27;" in html_str
+    assert (
+        "Warning with &lt;script&gt;alert(2)&lt;/script&gt; &amp; &#x27;single&#x27; and &quot;double&quot; quotes"
+        in html_str
+    )
+
+    # Structural badge elements remain intact
+    assert '<span class="badge badge-success">OK</span>' in html_str
+    assert '<span class="badge badge-info">Confirmed</span>' in html_str
+
+
 def test_scrubbing_user_home_and_credentials(tmp_path):
     home_dir = str(Path.home())
     home_file = os.path.join(
