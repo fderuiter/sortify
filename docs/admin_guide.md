@@ -297,7 +297,7 @@ Main command-line interface for Smart AutoSorter AI Pro.
 #### Top-Level Usage
 ```text
 usage: smart-autosorter [-h] [-q] [--no-color] [--demo] [--smoke-test]
-                        [--daemon] [--tui] [--interactive]
+                        [--json] [--daemon] [--tui] [--interactive]
                         [--accept-ai-consent | --decline-ai-consent]
                         [--skip-wizard] [--non-interactive]
                         {sort,scan,config,daemon,undo,drop,ledger,quarantine}
@@ -330,6 +330,7 @@ options:
   --no-color            Disable ANSI color and style formatting
   --demo                Run interactive CLI demo mode
   --smoke-test          Run automated database smoke test and exit
+  --json                Output in structured JSON format
   --daemon              Launch the persistent directory-watching daemon
   --tui                 Launch full-screen Textual TUI interface
   --interactive         Same as --tui
@@ -675,7 +676,8 @@ options:
 
 ##### `ledger`
 ```text
-usage: smart-autosorter ledger [-h] {status,reconcile,purge,export} ...
+usage: smart-autosorter ledger [-h] [--json]
+                               {status,reconcile,purge,export} ...
 
 positional arguments:
   {status,reconcile,purge,export}
@@ -690,11 +692,12 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
+  --json                Output response in structured JSON format
 ```
 
 ##### `quarantine`
 ```text
-usage: smart-autosorter quarantine [-h]
+usage: smart-autosorter quarantine [-h] [--json]
                                    {list,inspect,process,release,dismiss} ...
 
 positional arguments:
@@ -710,6 +713,7 @@ positional arguments:
 
 options:
   -h, --help            show this help message and exit
+  --json                Output response in structured JSON format
 ```
 
 ### `sandbox_cli.py`

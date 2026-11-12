@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "b786fbd8779e82417099930d7dce6a754a56dbf401bedf1a5a554e800470a72d"
+    "checksum": "af12d79e20c5ed811053520ada5ad8714c8d7a83e04e319fc6deca3d37998cca"
   },
   "cli": [
     {
@@ -47,6 +47,17 @@
       "keywords": {
         "action": "store_true",
         "help": "Run automated database smoke test and exit"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--json"
+      ],
+      "caller": "parser",
+      "keywords": {
+        "action": "store_true",
+        "help": "Output in structured JSON format"
       },
       "method": "add_argument"
     },

@@ -9,8 +9,9 @@ import os
 import re
 import sys
 from pathlib import Path
-from typing import Any, cast
+from typing import Any, NoReturn, cast
 
+from app.cli.error_emitter import emit_cli_error
 from app.config import AppSettings
 from app.core.domain_contracts import _make_json_serializable
 from app.core.path_utils import is_packaged
@@ -412,18 +413,23 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
         )
         sys.exit(0)
 
+    is_json = getattr(args, "json", False)
+
     try:
         target_path = resolve_preset_and_directory(args)
     except ValueError as err:
-        print(f"Error: {err}", file=sys.stderr)
-        sys.exit(1)
+        emit_cli_error(
+            f"Error: {err}",
+            json_mode=is_json,
+            exit_code=1,
+        )
 
     if not target_path.exists() or not target_path.is_dir():
-        print(
+        emit_cli_error(
             f"Error: Target directory '{target_path}' does not exist or is not a directory.",
-            file=sys.stderr,
+            json_mode=is_json,
+            exit_code=1,
         )
-        sys.exit(1)
 
     args.directory = str(target_path)
 
@@ -523,8 +529,11 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
 
         sys.exit(0)
     except Exception as e:
-        print(f"Error during sorting operation: {e}", file=sys.stderr)
-        sys.exit(1)
+        emit_cli_error(
+            f"Error during sorting operation: {e}",
+            json_mode=getattr(args, "json", False),
+            exit_code=1,
+        )
     finally:
         if session is not None:
             session.close()
@@ -547,18 +556,23 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
         )
         sys.exit(0)
 
+    is_json = getattr(args, "json", False)
+
     try:
         target_path = resolve_preset_and_directory(args)
     except ValueError as err:
-        print(f"Error: {err}", file=sys.stderr)
-        sys.exit(1)
+        emit_cli_error(
+            f"Error: {err}",
+            json_mode=is_json,
+            exit_code=1,
+        )
 
     if not target_path.exists() or not target_path.is_dir():
-        print(
+        emit_cli_error(
             f"Error: Target directory '{target_path}' does not exist or is not a directory.",
-            file=sys.stderr,
+            json_mode=is_json,
+            exit_code=1,
         )
-        sys.exit(1)
 
     args.directory = str(target_path)
 
@@ -624,8 +638,11 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
 
         sys.exit(0)
     except Exception as e:
-        print(f"Error during scan operation: {e}", file=sys.stderr)
-        sys.exit(1)
+        emit_cli_error(
+            f"Error during scan operation: {e}",
+            json_mode=getattr(args, "json", False),
+            exit_code=1,
+        )
     finally:
         if session is not None:
             session.close()
@@ -654,17 +671,17 @@ def handle_config_command(args: argparse.Namespace, settings: AppSettings):
                     setattr(settings, key_upper, new_val)
                     settings.flush()
                 except Exception as ex:
-                    print(
+                    emit_cli_error(
                         f"Error: Failed to set configuration key '{key_upper}' to '{value}': {ex}",
-                        file=sys.stderr,
+                        json_mode=getattr(args, "json", False),
+                        exit_code=1,
                     )
-                    sys.exit(1)
             else:
-                print(
+                emit_cli_error(
                     f"Error: Unknown configuration key '{key}'.",
-                    file=sys.stderr,
+                    json_mode=getattr(args, "json", False),
+                    exit_code=1,
                 )
-                sys.exit(1)
 
     quiet = getattr(args, "quiet", False)
     settings_dict = settings._settings_model.model_dump(mode="json")
@@ -711,11 +728,11 @@ def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
 
     if action == "start":
         if not target_path.exists() or not target_path.is_dir():
-            print(
+            emit_cli_error(
                 f"Error: Target directory '{target_dir}' does not exist or is not a directory.",
-                file=sys.stderr,
+                json_mode=getattr(args, "json", False),
+                exit_code=1,
             )
-            sys.exit(1)
         start_daemon(settings, str(target_path))
     else:
         client = DaemonIPCClient(str(target_path))
@@ -784,8 +801,11 @@ def handle_daemon_command(args: argparse.Namespace, settings: AppSettings):
             else:
                 print(json.dumps(res, indent=2))
         except Exception as e:
-            print(f"Error: {e}", file=sys.stderr)
-            sys.exit(1)
+            emit_cli_error(
+                str(e),
+                json_mode=getattr(args, "json", False),
+                exit_code=1,
+            )
 
 
 def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
@@ -856,15 +876,11 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
         if undoable:
             target_session = undoable[0]
         else:
-            msg = "Error: No historical sorting sessions available to undo."
-            if json_output:
-                sys.stdout.write(
-                    json.dumps({"status": "error", "message": msg}, indent=2) + "\n"
-                )
-                sys.stdout.flush()
-            else:
-                print(msg, file=sys.stderr)
-            sys.exit(1)
+            emit_cli_error(
+                "Error: No historical sorting sessions available to undo.",
+                json_mode=json_output,
+                exit_code=1,
+            )
 
     # --latest is the default, so a branch above picked a session or exited.
     target_session_id: str = cast(dict[str, Any], target_session)["session_id"]
@@ -894,23 +910,12 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
 
         sys.exit(0)
     except Exception as ex:
-        err_msg = f"Rollback failed for session '{target_session_id}': {ex}"
-        if json_output:
-            sys.stdout.write(
-                json.dumps(
-                    {
-                        "status": "error",
-                        "session_id": target_session_id,
-                        "message": str(ex),
-                    },
-                    indent=2,
-                )
-                + "\n"
-            )
-            sys.stdout.flush()
-        else:
-            print(err_msg, file=sys.stderr)
-        sys.exit(1)
+        emit_cli_error(
+            f"Rollback failed for session '{target_session_id}': {ex}",
+            json_mode=json_output,
+            exit_code=1,
+            extra={"session_id": target_session_id},
+        )
 
 
 def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
@@ -918,6 +923,7 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
     import json
 
     apply_config_overrides(settings, args)
+    json_output = getattr(args, "json", False)
 
     if getattr(args, "tui", False) or getattr(args, "interactive", False):
         from app.ui.tui import run_tui
@@ -940,8 +946,11 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
 
     raw_paths = getattr(args, "paths", [])
     if not raw_paths:
-        print("Error: No target paths provided for drop command.", file=sys.stderr)
-        sys.exit(1)
+        emit_cli_error(
+            "Error: No target paths provided for drop command.",
+            json_mode=json_output,
+            exit_code=1,
+        )
 
     validated_paths = []
     for p in raw_paths:
@@ -950,26 +959,34 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
             continue
         abs_p = os.path.abspath(clean_p)
         if not os.path.exists(abs_p):
-            print(f"Error: Target path '{clean_p}' does not exist.", file=sys.stderr)
-            sys.exit(1)
+            emit_cli_error(
+                f"Error: Target path '{clean_p}' does not exist.",
+                json_mode=json_output,
+                exit_code=1,
+            )
 
         protected = getattr(settings, "PROTECTED_PATHS", [])
         from app.core.mover import is_subpath_or_equal
 
         for prot in protected:
             if prot and is_subpath_or_equal(abs_p, prot):
-                print(f"Error: Target path '{clean_p}' is protected.", file=sys.stderr)
-                sys.exit(1)
+                emit_cli_error(
+                    f"Error: Target path '{clean_p}' is protected.",
+                    json_mode=json_output,
+                    exit_code=1,
+                )
 
         validated_paths.append(abs_p)
 
     if not validated_paths:
-        print("Error: No valid target paths to process.", file=sys.stderr)
-        sys.exit(1)
+        emit_cli_error(
+            "Error: No valid target paths to process.",
+            json_mode=json_output,
+            exit_code=1,
+        )
 
     dest_dir = getattr(args, "dest_dir", None)
     dry_run = getattr(args, "dry_run", False)
-    json_output = getattr(args, "json", False)
     quiet = getattr(args, "quiet", False)
 
     processed_results = []
@@ -1041,9 +1058,40 @@ Run 'smart-autosorter <command> --help' for a command's options.
 """
 
 
+class SortifyArgumentParser(argparse.ArgumentParser):
+    """Argument parser that emits structured JSON errors when --json is requested."""
+
+    _active_cli_args: Any = None
+
+    def parse_args(
+        self,
+        args: Any = None,
+        namespace: Any = None,
+    ) -> Any:
+        """Parse CLI arguments and record active arguments for error handling."""
+        SortifyArgumentParser._active_cli_args = args
+        return super().parse_args(args=args, namespace=namespace)
+
+    def error(self, message: str) -> NoReturn:
+        """Emit structured JSON error or standard argparse text error.
+
+        Parameters
+        ----------
+        message : str
+            The parser error message describing the syntax or option error.
+        """
+        active_args = SortifyArgumentParser._active_cli_args
+        has_json = (active_args is not None and "--json" in active_args) or (
+            "--json" in sys.argv
+        )
+        if has_json:
+            emit_cli_error(message, json_mode=True, exit_code=2)
+        super().error(message)
+
+
 def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentParser:
     """Build and return the main command-line argument parser for Smart AutoSorter AI Pro."""
-    parser = argparse.ArgumentParser(
+    parser = SortifyArgumentParser(
         prog=prog,
         description=(
             "Smart AutoSorter AI Pro: sort a folder of documents into topic\n"
@@ -1072,6 +1120,11 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         "--smoke-test",
         action="store_true",
         help="Run automated database smoke test and exit",
+    )
+    parser.add_argument(
+        "--json",
+        action="store_true",
+        help="Output in structured JSON format",
     )
     parser.add_argument(
         "--daemon",
@@ -1396,8 +1449,8 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
     return parser
 
 
-def main():
-    """Execute the main application GUI or Demo."""
+def _main_impl():
+    """Execute the internal application GUI, CLI, or Demo routing logic."""
     import multiprocessing
     import sys
 
@@ -1511,6 +1564,12 @@ def main():
                 )
             handle_sort_command(args, settings)
         else:
+            if getattr(args, "json", False) or "--json" in sys.argv:
+                emit_cli_error(
+                    "Error: No target directory or subcommand specified.",
+                    json_mode=True,
+                    exit_code=2,
+                )
             parser.print_help(sys.stderr)
             sys.exit(2)
 
@@ -1557,6 +1616,22 @@ def main():
             skip_wizard=_extract_bool_arg(args, "skip_wizard"),
             non_interactive=_extract_bool_arg(args, "non_interactive"),
         )
+
+
+def main():
+    """Execute the main application GUI or Demo with CLI exception boundary."""
+    try:
+        _main_impl()
+    except (SystemExit, KeyboardInterrupt):
+        raise
+    except Exception as exc:
+        active_args = getattr(SortifyArgumentParser, "_active_cli_args", None)
+        has_json = (active_args is not None and "--json" in active_args) or (
+            "--json" in sys.argv
+        )
+        if has_json:
+            emit_cli_error(str(exc) or type(exc).__name__, json_mode=True, exit_code=1)
+        raise
 
 
 if __name__ == "__main__":
