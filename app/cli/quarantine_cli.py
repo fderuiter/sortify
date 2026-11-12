@@ -158,6 +158,19 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
         default=None,
         help="Target destination directory for released file",
     )
+    p_release.add_argument(
+        "--conflict-policy",
+        type=str,
+        choices=["rename", "skip", "overwrite"],
+        default="rename",
+        help="Conflict resolution policy when destination file exists (rename, skip, overwrite; default: rename)",
+    )
+    p_release.add_argument(
+        "--allow-external-dest",
+        action="store_true",
+        default=False,
+        help="Allow release destination outside base directory boundary",
+    )
 
     # dismiss
     p_dismiss = quarantine_subparsers.add_parser(
@@ -384,11 +397,16 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
         elif quarantine_cmd == "release":
             job_ids = resolve_job_ids(args)
             dest_dir_override = getattr(args, "dest_dir", None)
+            conflict_policy = getattr(args, "conflict_policy", "rename") or "rename"
+            allow_external = getattr(args, "allow_external_dest", False)
 
             service = QuarantineInterceptorService(db=db)
             try:
                 results = service.release_quarantine_batch(
-                    job_ids, dest_dir=dest_dir_override
+                    job_ids,
+                    dest_dir=dest_dir_override,
+                    conflict_policy=conflict_policy,
+                    allow_external=allow_external,
                 )
                 success_count = sum(1 for r in results if r.get("status") == "RELEASED")
                 res = {

@@ -381,7 +381,9 @@ class SortPipelineMixin:
 
                 msgs = []
                 if structural_collisions:
-                    msgs.append("⛔ STRUCTURAL DIRECTORY COLLISION(S) DETECTED:")
+                    msgs.append(
+                        "⛔ CRITICAL FILE COLLISION(S) / STRUCTURAL DIRECTORY COLLISION(S) DETECTED:"
+                    )
                     for c in structural_collisions:
                         dst_p = c.get("path", "")
                         msgs.append(
