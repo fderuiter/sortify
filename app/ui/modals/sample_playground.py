@@ -275,9 +275,7 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
                     f"Committed sample documents to workspace '{self.target_dir}'."
                 )
             except FileExistsError:
-                self.announce(
-                    f"Using the existing sample dataset in {self.target_dir}."
-                )
+                self.announce(f"Using the existing sample dataset in {self.target_dir}.")
             if hasattr(self.app, "base_dir"):
                 self.app.base_dir = self.target_dir
             if hasattr(self.app, "source_dirs"):
