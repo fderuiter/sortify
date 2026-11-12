@@ -177,11 +177,13 @@ def test_config_subcommand_show_and_set():
 
 @pytest.mark.xdist_group(name="cli_subcommands")
 def test_subcommand_error_nonexistent_directory():
-    """Test non-existent directory error causes non-zero exit code 1."""
+    """Test non-existent directory error causes non-zero exit code 1 and structured JSON payload."""
     nonexistent = "/nonexistent/path/for/autosorter/test/12345"
     code, stdout, stderr = run_cli(["sort", nonexistent, "--json"])
     assert code == 1
-    assert "does not exist" in stderr
+    data = json.loads(stdout)
+    assert data["status"] == "error"
+    assert "does not exist" in data["message"]
 
 
 @pytest.mark.xdist_group(name="cli_subcommands")
