@@ -143,7 +143,8 @@ def test_wizard_modal_labeled_switch_click_label(tmp_path):
 
     async def _test():
         settings = AppSettings()
-        app = AutoSorterTUI(settings=settings, base_dir=tmp_path)
+        settings.AI_CONSENT_GRANTED = False
+        app = AutoSorterTUI(settings=settings, base_dir=tmp_path, skip_wizard=True)
 
         async with app.run_test(size=(100, 50)) as pilot:
             app.push_screen(WizardModal(app.settings))
