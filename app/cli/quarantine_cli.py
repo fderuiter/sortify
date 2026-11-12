@@ -7,6 +7,7 @@ import sys
 from pathlib import Path
 from typing import List
 
+from app.cli.error_emitter import emit_cli_error
 from app.config import AppSettings
 from app.core.db import Database
 from app.core.db_worker import DBWorker
@@ -20,6 +21,11 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
     parser_quarantine = subparsers.add_parser(
         "quarantine",
         help="Manage compliance quarantine staging, inspection, and release",
+    )
+    parser_quarantine.add_argument(
+        "--json",
+        action="store_true",
+        help="Output response in structured JSON format",
     )
     quarantine_subparsers = parser_quarantine.add_subparsers(
         dest="quarantine_command", help="Quarantine subcommands"
@@ -197,13 +203,14 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
     if getattr(args, "subcommand", None) != "quarantine":
         return False
 
+    is_json = getattr(args, "json", False)
     quarantine_cmd = getattr(args, "quarantine_command", None)
     if not quarantine_cmd:
-        print(
+        emit_cli_error(
             "Error: Missing quarantine subcommand. Use 'list', 'inspect', 'process', 'release', or 'dismiss'.",
-            file=sys.stderr,
+            json_mode=is_json,
+            exit_code=2,
         )
-        sys.exit(2)
 
     db_path = getattr(args, "db_path", None)
     if db_path:
@@ -249,11 +256,11 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
 
         unique_ids = list(dict.fromkeys(job_ids))
         if not unique_ids:
-            print(
+            emit_cli_error(
                 "Error: Job ID is required. Specify <job_id ...> or --job-ids <job_ids>.",
-                file=sys.stderr,
+                json_mode=is_json,
+                exit_code=2,
             )
-            sys.exit(2)
         return unique_ids
 
     try:
@@ -297,11 +304,12 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
             record = db.get_quarantine_record(job_id)
 
             if not record:
-                print(
+                emit_cli_error(
                     f"Error: Quarantine record not found for job ID '{job_id}'.",
-                    file=sys.stderr,
+                    json_mode=is_json,
+                    exit_code=1,
+                    extra={"job_id": job_id},
                 )
-                sys.exit(1)
 
             res = {
                 "status": "success",
@@ -380,8 +388,11 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
                 sys.exit(0 if success_count > 0 else 1)
             except Exception as e:
                 logger.debug("Quarantine batch process failed", exc_info=True)
-                print(f"Error processing quarantine batch: {e}", file=sys.stderr)
-                sys.exit(1)
+                emit_cli_error(
+                    f"Error processing quarantine batch: {e}",
+                    json_mode=is_json,
+                    exit_code=1,
+                )
 
         elif quarantine_cmd == "release":
             job_ids = resolve_job_ids(args)
@@ -439,8 +450,11 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
                 sys.exit(0 if success_count > 0 else 1)
             except Exception as e:
                 logger.debug("Quarantine batch release failed", exc_info=True)
-                print(f"Error releasing quarantine batch: {e}", file=sys.stderr)
-                sys.exit(1)
+                emit_cli_error(
+                    f"Error releasing quarantine batch: {e}",
+                    json_mode=is_json,
+                    exit_code=1,
+                )
 
         elif quarantine_cmd == "dismiss":
             job_ids = resolve_job_ids(args)
@@ -489,8 +503,11 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
                 sys.exit(0 if success_count > 0 else 1)
             except Exception as e:
                 logger.debug("Quarantine batch dismiss failed", exc_info=True)
-                print(f"Error dismissing quarantine batch: {e}", file=sys.stderr)
-                sys.exit(1)
+                emit_cli_error(
+                    f"Error dismissing quarantine batch: {e}",
+                    json_mode=is_json,
+                    exit_code=1,
+                )
 
     finally:
         if db and hasattr(db, "worker") and db.worker:

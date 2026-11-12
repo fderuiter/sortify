@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "f4104c9f415b4308c689574c31a156e203fd9d188b511ec4cfc59f73950972b4"
+    "checksum": "cf0846c9526052d7cf1146fdb645a8a6cdbb59747fc9e5a53b2b31db2614efa1"
   },
   "cli": [
     {
@@ -12,6 +12,17 @@
         "help": "Manage compliance quarantine staging, inspection, and release"
       },
       "method": "add_parser"
+    },
+    {
+      "args": [
+        "--json"
+      ],
+      "caller": "parser_quarantine",
+      "keywords": {
+        "action": "store_true",
+        "help": "Output response in structured JSON format"
+      },
+      "method": "add_argument"
     },
     {
       "args": [

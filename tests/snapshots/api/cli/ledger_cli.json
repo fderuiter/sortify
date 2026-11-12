@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "153590916d8410f08791c23744fc7eac7af8e1633bed27edf52a1528ca618a29"
+    "checksum": "8e76116687d18b3c05adea6b67e090b7089c4e42090c4190d222e6621ca078e1"
   },
   "cli": [
     {
@@ -12,6 +12,17 @@
         "help": "Manage transaction ledger entries and automated reconciliation"
       },
       "method": "add_parser"
+    },
+    {
+      "args": [
+        "--json"
+      ],
+      "caller": "parser_ledger",
+      "keywords": {
+        "action": "store_true",
+        "help": "Output response in structured JSON format"
+      },
+      "method": "add_argument"
     },
     {
       "args": [
