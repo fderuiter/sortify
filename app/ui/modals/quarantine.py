@@ -561,7 +561,9 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         self.app.push_screen(DirectorySelectModal(base_dir), _dir_selected_callback)
 
     @work(thread=True)
-    def execute_batch_release_async(self, job_ids: Any, target_dir: str) -> None:
+    def execute_batch_release_async(
+        self, job_ids: Any, target_dir: str, allow_external: bool = True
+    ) -> None:
         """Asynchronously release batch of quarantine items on background worker thread."""
         try:
             if isinstance(job_ids, (str, dict)):
@@ -578,16 +580,20 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
             service = QuarantineInterceptorService(db=db_inst)
             results = service.release_quarantine_batch(
-                clean_job_ids, dest_dir=target_dir
+                clean_job_ids, dest_dir=target_dir, allow_external=allow_external
             )
             self._call_ui(self._on_batch_release_complete, results)
         except Exception as e:
             logger.error(f"Failed batch quarantine release: {e}", exc_info=True)
             self._call_ui(self.announce, f"Batch release failed: {e}")
 
-    def execute_release_async(self, job_id: Any, dest_dir: str) -> None:
+    def execute_release_async(
+        self, job_id: Any, dest_dir: str, allow_external: bool = True
+    ) -> None:
         """Compatibility helper for single item release."""
-        self.execute_batch_release_async([job_id], dest_dir)
+        self.execute_batch_release_async(
+            [job_id], dest_dir, allow_external=allow_external
+        )
 
     def _on_batch_release_complete(self, results: List[Dict[str, Any]]) -> None:
         success_count = sum(1 for r in results if r.get("status") == "RELEASED")
