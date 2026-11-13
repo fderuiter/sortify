@@ -3,7 +3,7 @@
 import logging
 import os
 
-from textual import on
+from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -16,6 +16,11 @@ from app.ui.layout import ResponsiveLayoutMixin
 from app.ui.widgets.labeled_switch import LabeledSwitch
 
 logger = logging.getLogger(__name__)
+
+PRIVACY_GUARANTEE_ANNOUNCEMENT = (
+    "[100% On-Device & Offline] Privacy guarantees: 100% local model execution, "
+    "zero document cloud telemetry, and encrypted local SQLCipher storage."
+)
 
 
 class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
@@ -50,6 +55,32 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         color: $accent;
         margin-bottom: 1;
     }
+    .privacy-card {
+        border: round $primary;
+        padding: 0 1;
+        margin-top: 1;
+        margin-bottom: 1;
+        background: $surface;
+        height: auto;
+    }
+    .privacy-card:focus {
+        border: heavy $accent;
+    }
+    .narrow .privacy-card {
+        padding: 0 1;
+        border: round $primary;
+    }
+    .privacy-badge {
+        color: $success;
+        text-style: bold;
+    }
+    .privacy-title {
+        color: $accent;
+        text-style: bold;
+    }
+    .privacy-guarantee {
+        color: $text;
+    }
     .field-label {
         margin-top: 1;
         color: $text;
@@ -66,9 +97,14 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         height: 3;
         align: right middle;
     }
-    Button:focus, Checkbox:focus, Switch:focus {
+    Button:focus, Checkbox:focus, Switch:focus, .privacy-card:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    Checkbox {
+        height: 1;
+        border: none;
+        padding: 0 1;
     }
     """
 
@@ -88,6 +124,39 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             yield Label("Welcome to Smart AutoSorter AI Pro TUI.")
             yield Label("Enable AI semantic categorization consent below:")
 
+            priv_card = Vertical(id="privacy-card", classes="privacy-card")
+            priv_card.can_focus = True
+            priv_card.tooltip = (
+                "Local-first privacy guarantees: 100% local model execution, "
+                "zero document cloud telemetry, and encrypted local SQLCipher storage"
+            )
+            with priv_card:
+                yield Label(
+                    "[100% On-Device & Offline]",
+                    classes="privacy-badge",
+                    id="privacy-badge",
+                )
+                yield Label(
+                    "Local-First Privacy Guarantees:",
+                    classes="privacy-title",
+                    id="privacy-card-title",
+                )
+                yield Label(
+                    "• 100% local model execution: ML classification and clustering run entirely on-device.",
+                    classes="privacy-guarantee",
+                    id="privacy-guarantee-local",
+                )
+                yield Label(
+                    "• Zero document cloud telemetry: Document contents and names are never sent to external servers.",
+                    classes="privacy-guarantee",
+                    id="privacy-guarantee-telemetry",
+                )
+                yield Label(
+                    "• Encrypted local SQLCipher storage: Databases, extracted text, and vectors are encrypted at rest.",
+                    classes="privacy-guarantee",
+                    id="privacy-guarantee-storage",
+                )
+
             consent_val = getattr(self.settings, "AI_CONSENT_GRANTED", None)
             if consent_val is None:
                 consent_val = False
@@ -95,7 +164,11 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 label="AI Consent Granted",
                 value=bool(consent_val),
                 switch_id="switch-consent",
-                tooltip="Toggle AI consent for semantic document classification",
+                tooltip=(
+                    "Toggle AI consent for semantic document classification "
+                    "([100% On-Device & Offline]: 100% local model execution, "
+                    "zero document cloud telemetry, and encrypted local SQLCipher storage)"
+                ),
             )
 
             btn_pg = Button(
@@ -155,6 +228,19 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             pass
         self.announce("Opened model onboarding wizard dialog.")
 
+    @on(events.DescendantFocus)
+    def on_descendant_focus(self, event: events.DescendantFocus) -> None:
+        """Announce privacy disclosure when focus lands on AI consent switch or privacy card."""
+        widget_id = getattr(event.widget, "id", None)
+        if widget_id == "switch-consent":
+            self.announce(
+                f"AI Consent switch focused. {PRIVACY_GUARANTEE_ANNOUNCEMENT}"
+            )
+        elif widget_id == "privacy-card":
+            self.announce(
+                f"Privacy disclosure card focused. {PRIVACY_GUARANTEE_ANNOUNCEMENT}"
+            )
+
     @on(Switch.Changed)
     def on_switch_changed(self, event: Switch.Changed) -> None:
         """Announce switch state changes for screen reader accessibility."""
@@ -167,6 +253,7 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         if switch_id == "switch-consent":
             state = "enabled" if event.value else "disabled"
             self.announce(f"AI consent {state}.")
+            self.announce(f"AI consent {state}. {PRIVACY_GUARANTEE_ANNOUNCEMENT}")
         elif switch_id == "switch-sample-corpus":
             state = "enabled" if event.value else "disabled"
             self.announce(f"Sample document corpus generation {state}.")

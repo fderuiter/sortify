@@ -1,10 +1,13 @@
 import asyncio
 
+import pytest
 from textual.app import App, ComposeResult
 from textual.widgets import Input, Label, Switch
 
 from app.config import AppSettings
 from app.ui.tui import AutoSorterTUI, LabeledSwitch, SettingsModal, WizardModal
+
+pytestmark = pytest.mark.xdist_group(name="tui")
 
 
 class LabeledSwitchTestApp(App):
