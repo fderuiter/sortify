@@ -63,7 +63,7 @@ class ModelProperties(tuple):
         return obj
 
 
-def _parse_onnx_type(node_type_str) -> "np.dtype":
+def _parse_onnx_type(node_type_str) -> type:
     """Parse the ONNX type string (e.g., 'tensor(int64)') to a numpy dtype."""
     if not isinstance(node_type_str, str):
         try:

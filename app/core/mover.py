@@ -546,7 +546,7 @@ def _is_foreign_hidden_dir(path: str) -> bool:
     return name.startswith(".") and name not in _OWNED_HIDDEN_DIRS
 
 
-def _remove_empty_dirs(path: str, protected_paths: list[str] = None):
+def _remove_empty_dirs(path: str, protected_paths: list[str] | None = None):
     """Recursively remove empty directories, respecting protected paths."""
     if protected_paths:
         for p in protected_paths:
@@ -869,7 +869,7 @@ def _collect_move_items(
     current_dest: str = "",
     active_parent_path: str = "",
     depth: int = 0,
-    priority: str = None,
+    priority: str | None = None,
 ) -> list:
     """Traverse relocation plan and collect flat list of file move items."""
     base_dir = os.path.normpath(base_dir)
@@ -1212,7 +1212,7 @@ def _process_move_item(
                 logging.error(
                     f"Failed to move file {source_path} to {dest_path}: {err}"
                 )
-                if displaced_path:
+                if displaced_path and overwritten_path:
                     _restore_displaced(displaced_path, overwritten_path)
                 raise
         except Exception as err:

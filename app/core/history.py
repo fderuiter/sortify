@@ -749,7 +749,7 @@ class HistoryManager:
         session_id: str,
         steps: list,
         base_dir: str,
-        safety_session_id: str,
+        safety_session_id: str | None = None,
         ignore_missing: bool = False,
     ):
         """Replay recorded transaction ledger step entries in reverse order."""
@@ -836,9 +836,10 @@ class HistoryManager:
                             logging.error(
                                 f"Pre-step file hash mismatch for {destination_path}. Halting step replay and restoring state from safety snapshot."
                             )
-                            self._rollback_from_snapshot_internal(
-                                safety_session_id, ignore_missing=True
-                            )
+                            if safety_session_id:
+                                self._rollback_from_snapshot_internal(
+                                    safety_session_id, ignore_missing=True
+                                )
                             raise ValueError(
                                 f"Rollback halted: file hash mismatch detected for {destination_path}. Disk state restored from safety snapshot."
                             )
@@ -846,9 +847,10 @@ class HistoryManager:
                         logging.error(
                             f"Pre-step file missing at {destination_path}. Halting step replay and restoring state from safety snapshot."
                         )
-                        self._rollback_from_snapshot_internal(
-                            safety_session_id, ignore_missing=True
-                        )
+                        if safety_session_id:
+                            self._rollback_from_snapshot_internal(
+                                safety_session_id, ignore_missing=True
+                            )
                         raise ValueError(
                             f"Rollback halted: file missing at {destination_path}. Disk state restored from safety snapshot."
                         )
@@ -921,9 +923,10 @@ class HistoryManager:
                         logging.error(
                             f"Post-step file hash mismatch for {source_path}. Halting step replay and restoring state from safety snapshot."
                         )
-                        self._rollback_from_snapshot_internal(
-                            safety_session_id, ignore_missing=True
-                        )
+                        if safety_session_id:
+                            self._rollback_from_snapshot_internal(
+                                safety_session_id, ignore_missing=True
+                            )
                         raise ValueError(
                             f"Rollback halted: post-step file hash mismatch for {source_path}. Disk state restored from safety snapshot."
                         )

@@ -319,7 +319,7 @@ class QuarantineInterceptorService:
                         }
                         return validate_quarantine_record(fallback)
                 else:
-                    extracted_text = extract_file_text(staged_path) or ""
+                    extracted_text = str(extract_file_text(staged_path) or "")
 
             # Re-check timeout guardrail
             if (
@@ -444,10 +444,10 @@ class QuarantineInterceptorService:
                         )
                         rec = self.db.get_quarantine_record(job_id)
                         if rec:
-                            return rec
+                            return validate_quarantine_record(rec)
                         record["status"] = "QUARANTINED"
                         record["policy_action"] = "sensitivity_hold"
-                        return record
+                        return validate_quarantine_record(record)
                 except Exception as jev_err:
                     logger.warning(
                         f"Jev pre-classification warning for {orig_rel_path}: {jev_err}",
