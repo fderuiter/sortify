@@ -138,7 +138,6 @@ def test_onboarding_cta_card_sample_data_button(tmp_path):
                 btn_commit = app.screen.query_one("#btn-commit-playground", Button)
                 btn_commit.press()
                 await pilot.pause(0.05)
-
             for _ in range(50):
                 if not app._running_pipeline_worker():
                     break
