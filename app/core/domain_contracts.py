@@ -11,7 +11,73 @@ from app.core.jev_classifier import JevClassificationResult
 logger = logging.getLogger(__name__)
 
 
-class QuarantineRecordModel(BaseModel):
+_SENTINEL = object()
+
+
+class DictCompatMixin:
+    """Reusable mixin providing dictionary subscripting, get, containment, and dict conversion."""
+
+    @classmethod
+    def _resolve_field_name(cls, key: str) -> str:
+        """Resolve field alias to its underlying model field name if applicable."""
+        fields = getattr(cls, "model_fields", None)
+        if not fields:
+            return key
+        if key in fields:
+            return key
+        for field_name, field_info in fields.items():
+            if (
+                getattr(field_info, "alias", None) == key
+                or getattr(field_info, "validation_alias", None) == key
+            ):
+                return field_name
+        return key
+
+    def __getitem__(self, item: str) -> Any:
+        """Provide item lookup subscripting for dictionary backward compatibility."""
+        attr = self._resolve_field_name(item)
+        try:
+            return getattr(self, attr)
+        except AttributeError:
+            extra = getattr(self, "__pydantic_extra__", None)
+            if extra is not None and item in extra:
+                return extra[item]
+            raise KeyError(item) from None
+
+    def get(self, item: str, default: Any = None) -> Any:
+        """Provide dictionary get method for backward compatibility."""
+        attr = self._resolve_field_name(item)
+        val = getattr(self, attr, _SENTINEL)
+        if val is not _SENTINEL:
+            return val
+        extra = getattr(self, "__pydantic_extra__", None)
+        if extra is not None and item in extra:
+            return extra[item]
+        return default
+
+    def __contains__(self, item: str) -> bool:
+        """Provide in containment check for dictionary backward compatibility."""
+        fields = getattr(type(self), "model_fields", None)
+        if fields is not None:
+            if item in fields:
+                return True
+            for field_info in fields.values():
+                if (
+                    getattr(field_info, "alias", None) == item
+                    or getattr(field_info, "validation_alias", None) == item
+                ):
+                    return True
+        extra = getattr(self, "__pydantic_extra__", None)
+        return extra is not None and item in extra
+
+    def dict(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+        """Provide dict conversion method for backward compatibility."""
+        if "by_alias" not in kwargs:
+            kwargs["by_alias"] = True
+        return self.model_dump(*args, **kwargs)  # ty: ignore[missing-attribute]
+
+
+class QuarantineRecordModel(DictCompatMixin, BaseModel):
     """Pydantic v2 contract model for quarantine staging records."""
 
     job_id: str
@@ -29,29 +95,8 @@ class QuarantineRecordModel(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    def __getitem__(self, item: str) -> Any:
-        """Provide item lookup subscripting for dictionary backward compatibility."""
-        try:
-            return getattr(self, item)
-        except AttributeError:
-            raise KeyError(item) from None
 
-    def get(self, item: str, default: Any = None) -> Any:
-        """Provide dictionary get method for backward compatibility."""
-        return getattr(self, item, default)
-
-    def __contains__(self, item: str) -> bool:
-        """Provide in containment check for dictionary backward compatibility."""
-        return item in type(self).model_fields or (
-            self.__pydantic_extra__ is not None and item in self.__pydantic_extra__
-        )
-
-    def dict(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
-        """Provide dict conversion method for backward compatibility."""
-        return self.model_dump(*args, **kwargs)
-
-
-class SortingPlanNodeModel(BaseModel):
+class SortingPlanNodeModel(DictCompatMixin, BaseModel):
     """Pydantic v2 contract model for sorting plan node payloads."""
 
     node_type: str = Field(default="file", alias="__type__")
@@ -110,37 +155,6 @@ class SortingPlanNodeModel(BaseModel):
             return "file"
         return v
 
-    def __getitem__(self, item: str) -> Any:
-        """Provide item lookup subscripting for dictionary backward compatibility."""
-        if item == "__type__":
-            return getattr(self, "node_type", "file")
-        try:
-            return getattr(self, item)
-        except AttributeError:
-            raise KeyError(item) from None
-
-    def get(self, item: str, default: Any = None) -> Any:
-        """Provide dictionary get method for backward compatibility."""
-        if item == "__type__":
-            return getattr(
-                self, "node_type", default if default is not None else "file"
-            )
-        return getattr(self, item, default)
-
-    def __contains__(self, item: str) -> bool:
-        """Provide in containment check for dictionary backward compatibility."""
-        if item == "__type__":
-            return True
-        return item in type(self).model_fields or (
-            self.__pydantic_extra__ is not None and item in self.__pydantic_extra__
-        )
-
-    def dict(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
-        """Provide dict conversion method for backward compatibility."""
-        if "by_alias" not in kwargs:
-            kwargs["by_alias"] = True
-        return self.model_dump(*args, **kwargs)
-
 
 class SortingPlanModel(BaseModel):
     """Pydantic v2 contract model for complete sorting plans."""
@@ -193,7 +207,7 @@ class SortingPlanModel(BaseModel):
         return self.model_dump(*args, **kwargs)
 
 
-class CorpusExampleModel(BaseModel):
+class CorpusExampleModel(DictCompatMixin, BaseModel):
     """Pydantic v2 contract model for individual historical corpus examples."""
 
     filepath: str
@@ -202,27 +216,6 @@ class CorpusExampleModel(BaseModel):
     text: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
-
-    def __getitem__(self, item: str) -> Any:
-        """Provide item lookup subscripting for dictionary backward compatibility."""
-        try:
-            return getattr(self, item)
-        except AttributeError:
-            raise KeyError(item) from None
-
-    def get(self, item: str, default: Any = None) -> Any:
-        """Provide dictionary get method for backward compatibility."""
-        return getattr(self, item, default)
-
-    def __contains__(self, item: str) -> bool:
-        """Provide in containment check for dictionary backward compatibility."""
-        return item in type(self).model_fields or (
-            self.__pydantic_extra__ is not None and item in self.__pydantic_extra__
-        )
-
-    def dict(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
-        """Provide dict conversion method for backward compatibility."""
-        return self.model_dump(*args, **kwargs)
 
 
 class CorpusPreFetchBatchModel(BaseModel):
@@ -270,7 +263,7 @@ class CorpusPreFetchBatchModel(BaseModel):
         return self.model_dump(*args, **kwargs)
 
 
-class VectorBatchPayloadModel(BaseModel):
+class VectorBatchPayloadModel(DictCompatMixin, BaseModel):
     """Pydantic v2 contract model for vector batch payloads."""
 
     base_dir: Optional[str] = None
@@ -278,33 +271,6 @@ class VectorBatchPayloadModel(BaseModel):
     metadata: Dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow")
-
-    def get(self, key: str, default: Any = None) -> Any:
-        """Provide dictionary get method for vector payload keys."""
-        if key in ("base_dir", "vectors", "metadata"):
-            return getattr(self, key)
-        return getattr(self, key, default)
-
-    def __getitem__(self, item: str) -> Any:
-        """Provide item lookup subscripting for vector payload keys."""
-        if item in ("base_dir", "vectors", "metadata"):
-            return getattr(self, item)
-        try:
-            return getattr(self, item)
-        except AttributeError:
-            raise KeyError(item) from None
-
-    def __contains__(self, item: str) -> bool:
-        """Provide in containment check for vector payload keys."""
-        if item in ("base_dir", "vectors", "metadata"):
-            return True
-        return item in type(self).model_fields or (
-            self.__pydantic_extra__ is not None and item in self.__pydantic_extra__
-        )
-
-    def dict(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
-        """Provide dict conversion method for backward compatibility."""
-        return self.model_dump(*args, **kwargs)
 
 
 def validate_quarantine_record(payload: Any) -> QuarantineRecordModel:
