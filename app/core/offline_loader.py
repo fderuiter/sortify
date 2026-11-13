@@ -21,6 +21,7 @@ from app.core.exceptions import (
     ModelWeightsNotFoundError,
     OfflineModelLoadError,
 )
+from app.core.path_utils import safe_extract_path
 from app.core.shared_registry import block_external_network
 from app.core.text_utils import sanitize_text
 
@@ -235,6 +236,7 @@ class OfflineModelLoader:
                 total_files = len(file_list)
 
                 for idx, zip_info in enumerate(file_list):
+                    safe_extract_path(target_path, zip_info.filename)
                     zip_file.extract(zip_info, target_path)
                     current_progress = 0.1 + (0.6 * ((idx + 1) / max(total_files, 1)))
                     emit_progress(
