@@ -16,7 +16,7 @@ from typing import Callable, Dict, List, Optional
 
 from app.core.exceptions import ArchiveSafetyError
 from app.core.extractor import extract_file_text
-from app.core.path_utils import safe_relpath
+from app.core.path_utils import safe_extract_path, safe_relpath
 from app.core.progress import emit_progress
 from app.core.resilient_file_ops import _set_posix_mode, resilient_rmtree
 
@@ -161,11 +161,12 @@ class ForensicScanner:
                 with zipfile.ZipFile(archive_path, "r") as zf:
                     for member in zf.namelist():
                         # Sanitize paths against directory traversal (Zip Slip)
-                        if member.startswith("/") or ".." in member:
-                            continue
-                        target = os.path.abspath(os.path.join(destination_dir, member))
-                        dest_abs = os.path.abspath(destination_dir)
-                        if not target.startswith(dest_abs):
+                        try:
+                            target_obj = safe_extract_path(
+                                destination_dir, member, allow_same_dir=True
+                            )
+                            target = str(target_obj)
+                        except ValueError:
                             continue
 
                         if member.endswith("/"):
@@ -197,13 +198,12 @@ class ForensicScanner:
             elif tarfile.is_tarfile(archive_path):
                 with tarfile.open(archive_path, "r:*") as tf:
                     for member in tf.getmembers():
-                        if member.name.startswith("/") or ".." in member.name:
-                            continue
-                        target = os.path.abspath(
-                            os.path.join(destination_dir, member.name)
-                        )
-                        dest_abs = os.path.abspath(destination_dir)
-                        if not target.startswith(dest_abs):
+                        try:
+                            target_obj = safe_extract_path(
+                                destination_dir, member.name, allow_same_dir=True
+                            )
+                            target = str(target_obj)
+                        except ValueError:
                             continue
 
                         if member.isdir():
@@ -282,8 +282,25 @@ class ForensicScanner:
                 elif "attachment" in disposition or part.get_filename():
                     filename = part.get_filename()
                     if filename:
-                        os.makedirs(destination_dir, exist_ok=True)
-                        att_path = os.path.join(destination_dir, filename)
+                        # Sanitize attachment filename and enforce path containment
+                        clean_filename = os.path.basename(filename.replace("\\", "/"))
+                        if not clean_filename or clean_filename in (".", ".."):
+                            logger.warning(
+                                f"Skipping attachment with unsafe filename: '{filename}'"
+                            )
+                            continue
+                        try:
+                            att_path_obj = safe_extract_path(
+                                destination_dir, clean_filename
+                            )
+                            att_path = str(att_path_obj)
+                        except ValueError as err:
+                            logger.warning(
+                                f"Skipping attachment '{filename}' failing path containment: {err}"
+                            )
+                            continue
+
+                        os.makedirs(os.path.dirname(att_path), exist_ok=True)
                         payload = part.get_payload(decode=True)
                         if isinstance(payload, bytes) and payload:
                             with open(att_path, "wb") as af:

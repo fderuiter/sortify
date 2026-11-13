@@ -164,3 +164,127 @@ def test_error_hash_not_cached():
             assert "ERROR" not in scanner.seen_texts
 
         scanner.cleanup()
+
+
+def test_parse_eml_attachment_traversal_neutralized():
+    """Verify parse_eml_file neutralizes relative traversal in attachment filenames and confines writes to destination_dir."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        scanner = ForensicScanner(temp_staging_dir=os.path.join(tmpdir, "staging"))
+
+        eml_content = (
+            b"From: attacker@example.com\r\n"
+            b"To: victim@example.com\r\n"
+            b"Subject: Critical Invoice\r\n"
+            b'Content-Type: multipart/mixed; boundary="BOUNDARY"\r\n\r\n'
+            b"--BOUNDARY\r\n"
+            b"Content-Type: text/plain; charset=utf-8\r\n\r\n"
+            b"Please see attached invoice.\r\n"
+            b"--BOUNDARY\r\n"
+            b"Content-Type: application/octet-stream\r\n"
+            b'Content-Disposition: attachment; filename="../../traversal_test.txt"\r\n\r\n'
+            b"malicious payload content\r\n"
+            b"--BOUNDARY--"
+        )
+        eml_path = os.path.join(tmpdir, "traversal.eml")
+        with open(eml_path, "wb") as f:
+            f.write(eml_content)
+
+        dest = os.path.join(tmpdir, "eml_out")
+        body, attachments = scanner.parse_eml_file(eml_path, dest)
+
+        # File must be written strictly inside dest
+        assert len(attachments) == 1
+        att_file = attachments[0]
+        assert att_file == os.path.join(dest, "traversal_test.txt")
+        assert os.path.exists(att_file)
+
+        # File must NOT exist outside dest
+        assert not os.path.exists(os.path.join(tmpdir, "traversal_test.txt"))
+        assert not os.path.exists("/tmp/traversal_test.txt")
+
+        scanner.cleanup()
+
+
+def test_parse_eml_attachment_windows_backslash_traversal():
+    """Verify parse_eml_file neutralizes Windows backslash traversal in attachment filenames."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        scanner = ForensicScanner(temp_staging_dir=os.path.join(tmpdir, "staging"))
+
+        eml_content = (
+            b"From: attacker@example.com\r\n"
+            b"To: victim@example.com\r\n"
+            b"Subject: Backslash Traversal\r\n"
+            b'Content-Type: multipart/mixed; boundary="BOUNDARY"\r\n\r\n'
+            b"--BOUNDARY\r\n"
+            b"Content-Type: text/plain; charset=utf-8\r\n\r\n"
+            b"Body\r\n"
+            b"--BOUNDARY\r\n"
+            b"Content-Type: application/octet-stream\r\n"
+            b'Content-Disposition: attachment; filename="..\\..\\win_traversal.txt"\r\n\r\n'
+            b"payload\r\n"
+            b"--BOUNDARY--"
+        )
+        eml_path = os.path.join(tmpdir, "win_traversal.eml")
+        with open(eml_path, "wb") as f:
+            f.write(eml_content)
+
+        dest = os.path.join(tmpdir, "eml_out")
+        body, attachments = scanner.parse_eml_file(eml_path, dest)
+
+        assert len(attachments) == 1
+        assert attachments[0] == os.path.join(dest, "win_traversal.txt")
+        assert os.path.exists(attachments[0])
+        assert not os.path.exists(os.path.join(tmpdir, "win_traversal.txt"))
+
+        scanner.cleanup()
+
+
+def test_parse_eml_attachment_pure_traversal_skipped():
+    """Verify parse_eml_file skips attachments that reduce to empty or directory traversal operators."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        scanner = ForensicScanner(temp_staging_dir=os.path.join(tmpdir, "staging"))
+
+        eml_content = (
+            b"From: attacker@example.com\r\n"
+            b"To: victim@example.com\r\n"
+            b"Subject: Empty Traversal\r\n"
+            b'Content-Type: multipart/mixed; boundary="BOUNDARY"\r\n\r\n'
+            b"--BOUNDARY\r\n"
+            b"Content-Type: application/octet-stream\r\n"
+            b'Content-Disposition: attachment; filename="../../"\r\n\r\n'
+            b"empty\r\n"
+            b"--BOUNDARY--"
+        )
+        eml_path = os.path.join(tmpdir, "empty.eml")
+        with open(eml_path, "wb") as f:
+            f.write(eml_content)
+
+        dest = os.path.join(tmpdir, "eml_out")
+        body, attachments = scanner.parse_eml_file(eml_path, dest)
+
+        assert len(attachments) == 0
+
+        scanner.cleanup()
+
+
+def test_unpack_archive_zip_slip_rejected():
+    """Verify unpack_archive ignores zip slip traversal entries and extracts only safe paths."""
+    with tempfile.TemporaryDirectory() as tmpdir:
+        scanner = ForensicScanner(temp_staging_dir=os.path.join(tmpdir, "staging"))
+
+        zip_path = os.path.join(tmpdir, "slip.zip")
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("../../zip_slip.txt", "escaped content")
+            zf.writestr(r"..\..\win_slip.txt", "win escaped content")
+            zf.writestr("nested/valid.txt", "legit content")
+
+        dest = os.path.join(tmpdir, "extracted")
+        extracted = scanner.unpack_archive(zip_path, dest)
+
+        assert len(extracted) == 1
+        assert extracted[0] == os.path.join(dest, "nested", "valid.txt")
+        assert os.path.exists(extracted[0])
+        assert not os.path.exists(os.path.join(tmpdir, "zip_slip.txt"))
+        assert not os.path.exists(os.path.join(tmpdir, "win_slip.txt"))
+
+        scanner.cleanup()

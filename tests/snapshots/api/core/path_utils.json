@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "8e83e67fcf2d6c27c9f8d8abbadb00cdd24d84d0c931dc696afc10c26a64c471"
+    "checksum": "34186c55f7a8988eb22b99d2f882e81ef344a2f3a7109d7e303a431feefe2841"
   },
   "classes": [],
   "functions": [
@@ -114,6 +114,29 @@
         }
       ],
       "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "safe_extract_path",
+      "parameters": [
+        {
+          "annotation": "str | Path",
+          "default": null,
+          "name": "target_dir"
+        },
+        {
+          "annotation": "str | Path",
+          "default": null,
+          "name": "member_path"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "allow_same_dir"
+        }
+      ],
+      "returns": "Path"
     },
     {
       "async": false,
