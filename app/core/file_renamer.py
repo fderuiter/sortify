@@ -10,6 +10,7 @@ import gc
 import logging
 import os
 import re
+from collections import Counter
 from typing import Dict, List, Optional, Set
 
 from app.core.mover import is_subpath_or_equal
@@ -212,47 +213,17 @@ class ContextExtractor:
             if w not in all_stop_words and not _is_high_entropy_token(w)
         ]
 
-        if not filtered_words:
+        if not filtered_words or max_keywords <= 0:
             return []
 
-        try:
-            from sklearn.feature_extraction.text import TfidfVectorizer
-
-            vectorizer = TfidfVectorizer(
-                stop_words=list(all_stop_words),
-                max_features=100,
-                token_pattern=r"\b[a-zA-Z]{3,20}\b",
-            )
-            clean_doc = " ".join(filtered_words)
-            tfidf_matrix = vectorizer.fit_transform([clean_doc])
-            feature_names = vectorizer.get_feature_names_out()
-            scores = tfidf_matrix.toarray()[0]
-
-            top_indices = scores.argsort()[::-1][:max_keywords]
-            top_terms = [
-                feature_names[i]
-                for i in top_indices
-                if scores[i] > 0
-                and not _is_high_entropy_token(feature_names[i])
-                and not contains_secrets(feature_names[i])
-            ]
-            if top_terms:
-                return top_terms
-        except Exception as e:
-            logger.debug(
-                f"TF-IDF extraction fallback to frequency count due to: {e}",
-                exc_info=True,
-            )
-
-        # Fallback to simple frequency count
-        from collections import Counter
-
         counts = Counter(filtered_words)
-        return [
-            w
-            for w, _ in counts.most_common(max_keywords)
-            if not _is_high_entropy_token(w) and not contains_secrets(w)
-        ]
+        keywords: List[str] = []
+        for word, _ in counts.most_common():
+            if not _is_high_entropy_token(word) and not contains_secrets(word):
+                keywords.append(word)
+                if len(keywords) >= max_keywords:
+                    break
+        return keywords
 
 
 def is_file_protected_or_locked(
