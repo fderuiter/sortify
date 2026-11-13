@@ -2,15 +2,12 @@ import json
 import os
 import subprocess
 import sys
-import xml.etree.ElementTree as ET
 
 import pytest
 
 from scripts.snapshot_merge_driver import (
     compute_payload_checksum,
     extract_metadata_and_payload,
-    is_conflicted_json_payload,
-    is_conflicted_svg_payload,
     run_json_merge_driver,
     run_svg_merge_driver,
 )
@@ -195,7 +192,7 @@ def test_contract_breaking_change_detection(tmp_path):
 
 
 def test_json_collision_conflict_marker_fallback(tmp_path):
-    """Verify that unresolvable AST/JSON collisions trigger structured JSON conflict payloads and exit code 1."""
+    """Verify that unresolvable AST/JSON collisions trigger conflict markers and exit code 1."""
     o_data = {
         "functions": [
             {
@@ -225,22 +222,35 @@ def test_json_collision_conflict_marker_fallback(tmp_path):
     exit_code = run_json_merge_driver(str(f_o), str(f_a), str(f_b), "test_api.json")
     assert exit_code == 1
 
-    # Verify structured JSON conflict payload parses cleanly without JSONDecodeError
     content = f_a.read_text()
-    parsed_conflict = json.loads(content)
-    assert is_conflicted_json_payload(parsed_conflict) is True
-    assert parsed_conflict["conflict"] is True
-    assert parsed_conflict["_metadata"]["conflict"] is True
+    assert "<<<<<<< OURS" in content
+    assert "=======" in content
+    assert ">>>>>>> THEIRS" in content
 
-    # Verify both branch definitions are preserved for inspection
-    assert parsed_conflict["local"]["functions"][0]["returns"] == "int"
-    assert parsed_conflict["incoming"]["functions"][0]["returns"] == "bool"
-    assert parsed_conflict["ours"]["functions"][0]["returns"] == "int"
-    assert parsed_conflict["theirs"]["functions"][0]["returns"] == "bool"
+
+def test_json_invalid_syntax_conflict_marker_fallback(tmp_path):
+    """Verify that malformed JSON or existing conflict markers trigger conflict marker fallback and exit code 1."""
+    f_o = tmp_path / "O.json"
+    f_a = tmp_path / "A.json"
+    f_b = tmp_path / "B.json"
+
+    f_o.write_text("{")
+    f_a.write_text("invalid json ours <<<<")
+    f_b.write_text("invalid json theirs >>>>")
+
+    exit_code = run_json_merge_driver(str(f_o), str(f_a), str(f_b), "test_api.json")
+    assert exit_code == 1
+
+    content = f_a.read_text()
+    assert "<<<<<<< OURS" in content
+    assert "=======" in content
+    assert ">>>>>>> THEIRS" in content
+    assert "invalid json ours <<<<" in content
+    assert "invalid json theirs >>>>" in content
 
 
 def test_svg_3way_merge_and_conflict_fallback(tmp_path):
-    """Verify 3-way SVG merging of additions and fallback to structured SVG XML conflict payload on collision."""
+    """Verify 3-way SVG merging of additions and fallback to conflict markers on collision."""
     svg_o = '<svg xmlns="http://www.w3.org/2000/svg"><g id="main"></g></svg>'
     svg_a = (
         '<svg xmlns="http://www.w3.org/2000/svg"><g id="main"></g><rect id="r1"/></svg>'
@@ -269,14 +279,9 @@ def test_svg_3way_merge_and_conflict_fallback(tmp_path):
     assert exit_code == 1
 
     content = f_a.read_text()
-    # Verify XML parses successfully without raising syntax errors
-    root = ET.fromstring(content)
-    assert root.attrib.get("data-conflict") == "true"
-    assert is_conflicted_svg_payload(content) is True
-
-    # Verify both branch definitions are preserved inside comment blocks
-    assert "invalid svgours" in content
-    assert "invalid svgtheirs" in content
+    assert "<<<<<<< OURS" in content
+    assert "=======" in content
+    assert ">>>>>>> THEIRS" in content
 
 
 def test_cli_setup_command(base_dir):
