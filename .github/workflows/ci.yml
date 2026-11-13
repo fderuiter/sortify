@@ -309,6 +309,9 @@ jobs:
           docs:
             - 'docs/**'
             - 'mkdocs.yml'
+            - 'app/**'
+            - 'scripts/generate_docs.py'
+            - 'pyproject.toml'
 
   # The only job that keeps checkout credentials: mkdocs gh-deploy pushes.
   doc-deploy:

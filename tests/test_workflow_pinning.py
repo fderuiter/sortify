@@ -85,3 +85,29 @@ def test_checkouts_do_not_persist_credentials(path):
                 assert persist is False, (
                     f"{path.name}: {job_name} checks out with persisted credentials"
                 )
+
+
+def test_docs_path_filter_includes_application_source():
+    """Application source and doc generator changes must trigger documentation workflow."""
+    ci_path = next(
+        (p for p in WORKFLOWS if p.name == "ci.yml"),
+        Path(".github/workflows/ci.yml"),
+    )
+    workflow = yaml.safe_load(ci_path.read_text(encoding="utf-8"))
+    changes_job = workflow.get("jobs", {}).get("changes", {})
+    steps = changes_job.get("steps") or []
+    filter_step = next(
+        (s for s in steps if "dorny/paths-filter@" in s.get("uses", "")), None
+    )
+    assert filter_step is not None, "paths-filter step not found in changes job"
+    raw_filters = (filter_step.get("with") or {}).get("filters", "")
+    filters = yaml.safe_load(raw_filters)
+    assert "docs" in filters, "docs filter not defined in paths-filter"
+    docs_patterns = filters["docs"]
+    assert "app/**" in docs_patterns, "app/** must be included in docs path filter"
+    assert "scripts/generate_docs.py" in docs_patterns, (
+        "scripts/generate_docs.py must be included in docs path filter"
+    )
+    assert "pyproject.toml" in docs_patterns, (
+        "pyproject.toml must be included in docs path filter"
+    )
