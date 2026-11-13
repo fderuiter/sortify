@@ -8,10 +8,12 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+from enum import Enum
+from typing import Any, Dict, List, Optional, Union
 
 from app.config import get_app_dir
 from app.core.db_conn import get_db_connection
+from app.core.exceptions import EntryNotFoundError, InvalidStateTransitionError
 from app.core.migrations import Migration, migrate
 from app.core.text_utils import sanitize_secret_patterns
 
@@ -35,11 +37,61 @@ EXEMPT_KEY_NAMES = {
     "key_type",
 }
 
-STATUS_COMPLETED = "COMPLETED"
-STATUS_RECONCILED_SUCCESS = "RECONCILED_SUCCESS"
-STATUS_ABORTED = "ABORTED"
-STATUS_FAILED_CONFLICT = "FAILED_CONFLICT"
-STATUS_FAILED_MISSING = "FAILED_MISSING"
+
+class LedgerStatus(str, Enum):
+    """Lifecycle statuses for file move transactions in the ledger."""
+
+    PENDING = "PENDING"
+    MOVED_PHYSICAL = "MOVED_PHYSICAL"
+    COMPLETED = "COMPLETED"
+    RECONCILED_SUCCESS = "RECONCILED_SUCCESS"
+    ABORTED = "ABORTED"
+    FAILED_CONFLICT = "FAILED_CONFLICT"
+    FAILED_MISSING = "FAILED_MISSING"
+
+
+TERMINAL_STATUSES: frozenset[LedgerStatus] = frozenset(
+    {
+        LedgerStatus.COMPLETED,
+        LedgerStatus.RECONCILED_SUCCESS,
+        LedgerStatus.ABORTED,
+        LedgerStatus.FAILED_CONFLICT,
+        LedgerStatus.FAILED_MISSING,
+    }
+)
+
+ALLOWED_TRANSITIONS: Dict[LedgerStatus, frozenset[LedgerStatus]] = {
+    LedgerStatus.PENDING: frozenset(
+        {
+            LedgerStatus.MOVED_PHYSICAL,
+            LedgerStatus.COMPLETED,
+            LedgerStatus.RECONCILED_SUCCESS,
+            LedgerStatus.ABORTED,
+            LedgerStatus.FAILED_CONFLICT,
+            LedgerStatus.FAILED_MISSING,
+        }
+    ),
+    LedgerStatus.MOVED_PHYSICAL: frozenset(
+        {
+            LedgerStatus.COMPLETED,
+            LedgerStatus.RECONCILED_SUCCESS,
+            LedgerStatus.ABORTED,
+            LedgerStatus.FAILED_CONFLICT,
+            LedgerStatus.FAILED_MISSING,
+        }
+    ),
+    LedgerStatus.COMPLETED: frozenset(),
+    LedgerStatus.RECONCILED_SUCCESS: frozenset(),
+    LedgerStatus.ABORTED: frozenset(),
+    LedgerStatus.FAILED_CONFLICT: frozenset(),
+    LedgerStatus.FAILED_MISSING: frozenset(),
+}
+
+STATUS_COMPLETED = LedgerStatus.COMPLETED.value
+STATUS_RECONCILED_SUCCESS = LedgerStatus.RECONCILED_SUCCESS.value
+STATUS_ABORTED = LedgerStatus.ABORTED.value
+STATUS_FAILED_CONFLICT = LedgerStatus.FAILED_CONFLICT.value
+STATUS_FAILED_MISSING = LedgerStatus.FAILED_MISSING.value
 
 FAILURE_REASONS = {
     STATUS_ABORTED: "Move aborted prior to physical file move; source file preserved at origin.",
@@ -181,39 +233,118 @@ class TransactionLedger:
         now = time.time()
         conn = get_db_connection(self.db_path)
         with conn:
-            conn.execute(
-                """
-                INSERT OR REPLACE INTO transaction_ledger (
-                    entry_id, session_id, base_dir, source_path, dest_path,
-                    source_rel_path, dest_rel_path, current_dest, file_hash,
-                    status, created_at, updated_at
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                """,
-                (
-                    entry_id,
-                    session_id,
-                    base_dir,
-                    source_path,
-                    dest_path,
-                    source_rel_path,
-                    dest_rel_path,
-                    current_dest,
-                    file_hash or "",
-                    "PENDING",
-                    now,
-                    now,
-                ),
+            cur = conn.execute(
+                "SELECT status FROM transaction_ledger WHERE entry_id = ?",
+                (entry_id,),
             )
+            row = cur.fetchone()
+            if row is not None:
+                existing_status = row[0]
+                if existing_status != LedgerStatus.PENDING.value:
+                    raise InvalidStateTransitionError(
+                        f"Cannot reset transaction '{entry_id}' with status '{existing_status}' back to 'PENDING'"
+                    )
+                conn.execute(
+                    """
+                    UPDATE transaction_ledger SET
+                        session_id = ?, base_dir = ?, source_path = ?, dest_path = ?,
+                        source_rel_path = ?, dest_rel_path = ?, current_dest = ?,
+                        file_hash = ?, updated_at = ?
+                    WHERE entry_id = ?
+                    """,
+                    (
+                        session_id,
+                        base_dir,
+                        source_path,
+                        dest_path,
+                        source_rel_path,
+                        dest_rel_path,
+                        current_dest,
+                        file_hash or "",
+                        now,
+                        entry_id,
+                    ),
+                )
+            else:
+                conn.execute(
+                    """
+                    INSERT INTO transaction_ledger (
+                        entry_id, session_id, base_dir, source_path, dest_path,
+                        source_rel_path, dest_rel_path, current_dest, file_hash,
+                        status, created_at, updated_at
+                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                    """,
+                    (
+                        entry_id,
+                        session_id,
+                        base_dir,
+                        source_path,
+                        dest_path,
+                        source_rel_path,
+                        dest_rel_path,
+                        current_dest,
+                        file_hash or "",
+                        LedgerStatus.PENDING.value,
+                        now,
+                        now,
+                    ),
+                )
         return entry_id
 
-    def update_status(self, entry_id: str, status: str):
+    def update_status(self, entry_id: str, status: Union[LedgerStatus, str]) -> None:
         """Update transaction state (e.g. MOVED_PHYSICAL, COMPLETED)."""
+        if isinstance(status, LedgerStatus):
+            target_status = status
+        elif isinstance(status, str):
+            try:
+                target_status = LedgerStatus(status)
+            except ValueError:
+                raise InvalidStateTransitionError(f"Invalid ledger status: '{status}'")
+        else:
+            raise InvalidStateTransitionError(
+                f"Invalid status type: {type(status).__name__}"
+            )
+
         now = time.time()
         conn = get_db_connection(self.db_path)
         with conn:
+            cur = conn.execute(
+                "SELECT status FROM transaction_ledger WHERE entry_id = ?",
+                (entry_id,),
+            )
+            row = cur.fetchone()
+            if row is None:
+                raise EntryNotFoundError(
+                    f"Transaction entry '{entry_id}' not found in ledger"
+                )
+
+            raw_current = row[0]
+            try:
+                curr_status = LedgerStatus(raw_current)
+            except ValueError:
+                raise InvalidStateTransitionError(
+                    f"Corrupted current status '{raw_current}' in ledger for '{entry_id}'"
+                )
+
+            # Idempotence: repeated calls with identical status remain idempotent
+            if curr_status == target_status:
+                return
+
+            # Terminal immutability: terminal records cannot be mutated
+            if curr_status in TERMINAL_STATUSES:
+                raise InvalidStateTransitionError(
+                    f"Cannot mutate terminal transaction '{entry_id}' from '{curr_status.value}' to '{target_status.value}'"
+                )
+
+            # Transition validation
+            if target_status not in ALLOWED_TRANSITIONS.get(curr_status, frozenset()):
+                raise InvalidStateTransitionError(
+                    f"Illegal status transition for transaction '{entry_id}': from '{curr_status.value}' to '{target_status.value}'"
+                )
+
             conn.execute(
                 "UPDATE transaction_ledger SET status = ?, updated_at = ? WHERE entry_id = ?",
-                (status, now, entry_id),
+                (target_status.value, now, entry_id),
             )
 
     def get_pending_entries(
@@ -365,6 +496,14 @@ class TransactionLedger:
             current_dest = entry["current_dest"]
             file_hash = entry["file_hash"]
             status = entry["status"]
+
+            if status in TERMINAL_STATUSES or status in {
+                s.value for s in TERMINAL_STATUSES
+            }:
+                logger.warning(
+                    f"Skipping reconciliation for entry {entry_id} in terminal state '{status}'"
+                )
+                continue
 
             source_exists = os.path.exists(source_path) or os.path.islink(source_path)
             dest_exists = os.path.exists(dest_path) or os.path.islink(dest_path)
