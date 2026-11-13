@@ -1,0 +1,12 @@
+flowchart TD
+    dir_node["Target Search Directory"]
+    walk[["Recursive Directory Walk"]]
+    filter_node{Ignore & Transient Filter}
+    stream(["Discovered File Stream"])
+    dir_node --> walk
+    walk --> filter_node
+    filter_node -->|Valid Files| stream
+    click dir_node "docs/api_reference.md#appcorescanner" "Search Directory"
+    click walk tooltip "Recursive Walk Exec"
+    click filter_node "docs/api_reference.md#appcorepath_utils" "Transient Filter"
+    click stream tooltip "File Stream Yield"

@@ -1,0 +1,29 @@
+graph LR
+    subgraph nav ["Navigation & Layout"]
+        tui_app["Textual Application Shell"]
+        heading["Heading Component"]
+    end
+    subgraph inputs ["Selection & Controls"]
+        vim_tree["VimTree Plan View"]
+        density_slider["Density Slider Widget"]
+        path_diff["Path Diff Comparison"]
+    end
+    subgraph views ["Display & Modals"]
+        edit_modal["Edit & Reassign Modal"]
+        settings_modal["Settings Modal"]
+        setup_wizard["Setup Wizard Modal"]
+    end
+    tui_app --> heading
+    tui_app --> vim_tree
+    vim_tree --> edit_modal
+    vim_tree --> path_diff
+    tui_app --> settings_modal
+    settings_modal --> setup_wizard
+    click tui_app "docs/ui.md#appuitui" "Main Terminal UI Container"
+    click heading "docs/ui.md#appuiheading" "Header & Title Bar"
+    click vim_tree "docs/ui.md#appuiwidgetsvim_tree" "Interactive Directory Plan Tree"
+    click density_slider "docs/ui.md#appuiwidgetsdensity_slider" "Layout Density Control"
+    click path_diff "docs/ui.md#appuiwidgetspath_diff" "Path Diff Preview Component"
+    click edit_modal "docs/ui.md#appuimodalsedit" "File Reassignment and Node Edit Dialog"
+    click settings_modal "docs/ui.md#appuimodalssettings" "Application Settings Dialog"
+    click setup_wizard "docs/ui.md#appuimodalswizard" "First-Run Configuration Wizard"

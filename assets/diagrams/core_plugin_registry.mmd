@@ -1,0 +1,12 @@
+flowchart TD
+    discover["Discover Extension Modules"]
+    validate{Plugin Manifest Integrity Check}
+    hooks[["Register Analysis Hooks"]]
+    pool[("Active Plugin Registry Pool")]
+    discover --> validate
+    validate -->|Valid Signature| hooks
+    hooks -->|Loaded| pool
+    click discover "docs/api_reference.md#appcoreplugin_registry" "Discover Extensions"
+    click validate tooltip "Manifest Validation"
+    click hooks tooltip "Register Hooks"
+    click pool tooltip "Plugin Pool"

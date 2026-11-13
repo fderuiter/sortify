@@ -1,0 +1,18 @@
+flowchart TD
+    subgraph scan_stage ["Drive Ingestion & Scan"]
+        forensic_scan[["app.core.forensic_scanner"]]
+        study_disambiguation{app.core.study_disambiguator}
+    end
+    subgraph taxonomy_stage ["Taxonomy & Compliance Rules"]
+        clinical_taxonomy["app.core.clinical_taxonomy"]
+        clinical_compliance{app.core.clinical_compliance}
+    end
+    subgraph binding_stage ["TMF Binder Relocation"]
+        clinical_renamer["app.core.clinical_renamer"]
+        cro_pipeline_output(["TMF Clean Binders Output"])
+    end
+    forensic_scan -->|Raw Drives| study_disambiguation
+    study_disambiguation -->|Protocols Disambiguated| clinical_taxonomy
+    clinical_taxonomy -->|Mapped Taxonomy| clinical_compliance
+    clinical_compliance -->|Compliance Validated| clinical_renamer
+    clinical_renamer -->|Compiled Binders| cro_pipeline_output

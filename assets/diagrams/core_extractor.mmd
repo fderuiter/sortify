@@ -1,0 +1,16 @@
+flowchart TD
+    file["Target Document File"]
+    router{Extractor Strategies Dispatcher}
+    extractor[["Structured Text Extractor"]]
+    forensic["Forensic Scanner Fallback"]
+    text(["Extracted Text Payload"])
+    file --> router
+    router -->|Standard Format| extractor
+    router -->|Unrecognized Format| forensic
+    extractor --> text
+    forensic --> text
+    click file "docs/api_reference.md#appcoreextractor" "Document File Input"
+    click router "docs/api_reference.md#appcoreextractor_strategies" "Strategy Router"
+    click extractor tooltip "Text Extractor Exec"
+    click forensic "docs/api_reference.md#appcoreforensic_scanner" "Forensic Fallback"
+    click text tooltip "Extracted Text Output"

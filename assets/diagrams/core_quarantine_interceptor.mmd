@@ -1,0 +1,15 @@
+flowchart TD
+    eval{Quarantine Evaluation}
+    policy["Compliance Policy Check"]
+    isolate["Isolate Quarantine Record"]
+    notify[("Audit Trail Event Logger")]
+    bypass(["Safe Path Release"])
+    eval -->|Flagged Violation| policy
+    policy -->|Confirm Isolation| isolate
+    isolate -->|Log Audit Record| notify
+    eval -->|Clean File| bypass
+    click eval "docs/api_reference.md#appcorequarantine_interceptor" "Quarantine Evaluation Node"
+    click policy "docs/admin_guide.md" "Compliance Policy Check"
+    click isolate "docs/api_reference.md#appcorequarantine_interceptor" "Isolate File Record"
+    click notify "docs/api_reference.md#appcoreaudit_reporter" "Logger Node"
+    click bypass tooltip "Bypass Release"

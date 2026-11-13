@@ -1,0 +1,12 @@
+flowchart TD
+    event("User Action / Move Event")
+    writer[["Encrypted DB Writer"]]
+    stack[("Reversible Operation Stack")]
+    view(["History Audit Query View"])
+    event --> writer
+    writer -->|Push Reversal Link| stack
+    stack -->|Query History| view
+    click event "docs/api_reference.md#appcorehistory" "History Event"
+    click writer "docs/api_reference.md#appcoredb" "DB Writer"
+    click stack tooltip "Undo Stack"
+    click view tooltip "History View"
