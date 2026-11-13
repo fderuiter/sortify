@@ -13,6 +13,17 @@ repos:
       - id: no-commit-to-branch
         args: ['--branch', 'main']
 
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.24.0
+    hooks:
+      - id: gitleaks
+        args: ['--config', '.gitleaks.toml']
+
+  - repo: https://github.com/rhysd/actionlint
+    rev: v1.7.7
+    hooks:
+      - id: actionlint
+
   - repo: local
     hooks:
       - id: ruff-format
