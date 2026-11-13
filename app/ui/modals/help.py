@@ -140,6 +140,9 @@ class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None
             )
             yield Label("  Ctrl+E      - Execute sorting plan", classes="shortcut-row")
             yield Label(
+                "  Ctrl+Z      - Undo last sorting session", classes="shortcut-row"
+            )
+            yield Label(
                 "  Ctrl+B      - Choose the folder to sort",
                 classes="shortcut-row",
             )

@@ -2329,10 +2329,11 @@ def test_main_screen_bindings_avoid_keys_terminals_cannot_send():
         ("ctrl+k", "action_open_command_palette"),
         ("ctrl+y", "action_open_history"),
         ("ctrl+x", "action_open_extraction_preview"),
+        ("ctrl+z", "action_undo_last_sort"),
     ],
 )
 def test_rebound_shortcuts_reach_their_actions(temp_workspace, key, action):
-    """The Model Manager, History and Extraction Preview keys open their dialogs."""
+    """The Model Manager, History, Extraction Preview, and Undo keys reach their actions."""
 
     async def _test():
         settings = AppSettings()
@@ -2347,6 +2348,15 @@ def test_rebound_shortcuts_reach_their_actions(temp_workspace, key, action):
                 handler.assert_called_once()
 
     asyncio.run(_test())
+
+
+def test_ctrl_z_undo_keybinding_definition():
+    """Verify ctrl+z is bound to undo_last_sort with label 'Undo Sort' and show=True."""
+    binding = next((b for b in AutoSorterTUI.BINDINGS if b.key == "ctrl+z"), None)
+    assert binding is not None
+    assert binding.action == "undo_last_sort"
+    assert binding.description == "Undo Sort"
+    assert binding.show is True
 
 
 @pytest.mark.parametrize("speak", [False, True])
