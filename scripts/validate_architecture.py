@@ -613,6 +613,94 @@ def validate_no_test_detection(errors: list, filepath: str, tree: ast.AST) -> No
             )
 
 
+HEAVY_ML_PACKAGES = frozenset(
+    {
+        "torch",
+        "transformers",
+        "easyocr",
+        "onnxruntime",
+        "llama_cpp",
+        "sentence_transformers",
+    }
+)
+
+
+def _is_type_checking_expr(test: ast.AST) -> bool:
+    """True if expression is TYPE_CHECKING or typing.TYPE_CHECKING (or logical AND containing it)."""
+    if isinstance(test, ast.Name) and test.id == "TYPE_CHECKING":
+        return True
+    if isinstance(test, ast.Attribute) and test.attr == "TYPE_CHECKING":
+        return True
+    if isinstance(test, ast.BoolOp) and isinstance(test.op, ast.And):
+        return any(_is_type_checking_expr(v) for v in test.values)
+    return False
+
+
+def _is_type_checking_guard(node: ast.If) -> bool:
+    """True if node represents an `if TYPE_CHECKING:` conditional branch."""
+    return _is_type_checking_expr(node.test)
+
+
+class LazyMLImportVisitor(ast.NodeVisitor):
+    """AST visitor to detect top-level or class-level eager imports of heavy ML packages."""
+
+    def __init__(self, filepath: str, errors: list):
+        self.filepath = filepath.replace("\\", "/")
+        self.errors = errors
+
+    def visit_FunctionDef(self, node: ast.FunctionDef) -> None:
+        # Lazy imports placed inside function or method bodies are permitted
+        pass
+
+    def visit_AsyncFunctionDef(self, node: ast.AsyncFunctionDef) -> None:
+        # Lazy imports placed inside async function or method bodies are permitted
+        pass
+
+    def visit_Lambda(self, node: ast.Lambda) -> None:
+        # Deferred evaluation inside lambdas is permitted
+        pass
+
+    def visit_If(self, node: ast.If) -> None:
+        if _is_type_checking_guard(node):
+            # Guarded by TYPE_CHECKING; do not inspect body. Inspect orelse branch if present.
+            for stmt in node.orelse:
+                self.visit(stmt)
+        else:
+            self.generic_visit(node)
+
+    def visit_Import(self, node: ast.Import) -> None:
+        for alias in node.names:
+            pkg = alias.name.split(".", 1)[0]
+            if pkg in HEAVY_ML_PACKAGES:
+                self.errors.append(
+                    f"{self.filepath}:{node.lineno}: Top-level import of heavy ML package '{pkg}' found. "
+                    "Heavy ML packages must be lazily imported inside function or method bodies, "
+                    "or guarded under 'if TYPE_CHECKING:'."
+                )
+
+    def visit_ImportFrom(self, node: ast.ImportFrom) -> None:
+        if node.level == 0 and node.module:
+            pkg = node.module.split(".", 1)[0]
+            if pkg in HEAVY_ML_PACKAGES:
+                self.errors.append(
+                    f"{self.filepath}:{node.lineno}: Top-level import of heavy ML package '{pkg}' found. "
+                    "Heavy ML packages must be lazily imported inside function or method bodies, "
+                    "or guarded under 'if TYPE_CHECKING:'."
+                )
+
+
+def validate_lazy_ml_imports(errors: list, filepath: str, tree: ast.AST) -> None:
+    """Validate that heavy ML packages are not imported at top-level or class-level across app/.
+
+    Heavy ML dependencies (torch, transformers, easyocr, onnxruntime, llama_cpp,
+    sentence_transformers) must be lazily imported inside function or method
+    bodies to prevent startup crashes and bloat in base installations without ML extras.
+    Imports guarded by `if TYPE_CHECKING:` are allowed for type hints.
+    """
+    visitor = LazyMLImportVisitor(filepath, errors)
+    visitor.visit(tree)
+
+
 def main():
     """Execute all architectural validation checks."""
     parser = argparse.ArgumentParser(
@@ -667,6 +755,7 @@ def main():
 
             validate_import_layers(errors, filepath, tree)
             validate_settings_keys(errors, filepath, tree, declared_settings)
+            validate_lazy_ml_imports(errors, filepath, tree)
 
             validate_import_time_globals(errors, filepath, tree)
             validate_no_test_detection(errors, filepath, tree)
