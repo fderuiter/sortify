@@ -582,3 +582,149 @@ async def test_rollback_confirm_modal_healthy_load():
 
         btn_confirm = modal.query_one("#btn-confirm-rollback", Button)
         assert btn_confirm.disabled is False
+
+
+@pytest.mark.anyio
+async def test_undo_last_sort_no_completed_session(tmp_path, monkeypatch):
+    """Verify action_undo_last_sort announces error and does not open modal when no completed session exists."""
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    settings.AI_CONSENT_GRANTED = False
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app"))
+    monkeypatch.setattr(
+        "app.core.session_catalog.find_abandoned_sessions", lambda *a, **k: []
+    )
+    monkeypatch.setattr("app.core.session_catalog.list_sessions", lambda: [])
+
+    app = AutoSorterTUI(settings=settings)
+    async with app.run_test() as pilot:
+        announced = []
+        app.announce = lambda msg, *args, **kwargs: announced.append(msg)
+
+        await pilot.press("ctrl+z")
+        await pilot.pause()
+
+        assert not isinstance(app.screen, RollbackConfirmModal)
+        assert any("No completed sorting session" in m for m in announced)
+
+
+@pytest.mark.anyio
+async def test_undo_last_sort_opens_modal_and_executes_rollback(tui_rollback_env):
+    """Verify Ctrl+Z triggers RollbackConfirmModal for latest completed session and executes restoration."""
+    session_id = tui_rollback_env["session_id"]
+    history_mgr = tui_rollback_env["history_mgr"]
+    settings = tui_rollback_env["settings"]
+
+    # Mark session completed in DB
+    conn = get_db_connection(history_mgr.db_path)
+    with conn:
+        conn.execute(
+            "UPDATE sessions SET status = 'completed' WHERE session_id = ?",
+            (session_id,),
+        )
+
+    # Before rollback: targets exist, sources do not
+    assert os.path.exists(tui_rollback_env["target1"])
+    assert os.path.exists(tui_rollback_env["target2"])
+    assert not os.path.exists(tui_rollback_env["file1"])
+    assert not os.path.exists(tui_rollback_env["file2"])
+
+    app = AutoSorterTUI(settings=settings)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("ctrl+z")
+        confirm_screen = await _wait_for_screen(app, RollbackConfirmModal, pilot=pilot)
+        assert isinstance(confirm_screen, RollbackConfirmModal)
+
+        btn_confirm = await _wait_for_widget(
+            confirm_screen, "#btn-confirm-rollback", Button, pilot=pilot
+        )
+        btn_confirm.press()
+
+        # Await worker execution
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        # Files should now be restored to original locations
+        assert os.path.exists(tui_rollback_env["file1"])
+        assert os.path.exists(tui_rollback_env["file2"])
+        assert not os.path.exists(tui_rollback_env["target1"])
+
+        # Check session status in DB
+        with conn:
+            cur = conn.execute(
+                "SELECT status FROM sessions WHERE session_id = ?", (session_id,)
+            )
+            status = cur.fetchone()[0]
+        assert status == "rolled_back"
+
+
+@pytest.mark.anyio
+async def test_undo_last_sort_rollback_failure(tui_rollback_env, monkeypatch):
+    """Verify Ctrl+Z rollback failure displays error announcement and pushes RollbackErrorModal."""
+    session_id = tui_rollback_env["session_id"]
+    history_mgr = tui_rollback_env["history_mgr"]
+    settings = tui_rollback_env["settings"]
+
+    conn = get_db_connection(history_mgr.db_path)
+    with conn:
+        conn.execute(
+            "UPDATE sessions SET status = 'completed' WHERE session_id = ?",
+            (session_id,),
+        )
+
+    def mock_rollback_error(self, sid, **kwargs):
+        raise PermissionError("Disk failure during undo restoration")
+
+    monkeypatch.setattr("app.core.history.HistoryManager.rollback", mock_rollback_error)
+
+    app = AutoSorterTUI(settings=settings)
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("ctrl+z")
+        confirm_screen = await _wait_for_screen(app, RollbackConfirmModal, pilot=pilot)
+        btn_confirm = await _wait_for_widget(
+            confirm_screen, "#btn-confirm-rollback", Button, pilot=pilot
+        )
+        btn_confirm.press()
+
+        await pilot.pause()
+        await app.workers.wait_for_complete()
+        await pilot.pause()
+
+        error_screen = await _wait_for_screen(app, RollbackErrorModal, pilot=pilot)
+        assert isinstance(error_screen, RollbackErrorModal)
+
+
+@pytest.mark.anyio
+async def test_pipeline_execution_announces_undo_available(tmp_path):
+    """Verify executing moves announces '[Ctrl+Z] Undo available'."""
+    from unittest.mock import MagicMock, patch
+
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    settings.AI_CONSENT_GRANTED = False
+    app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+    async with app.run_test() as pilot:
+        announced = []
+        orig_announce = app.announce
+
+        def track_announce(msg, *args, **kwargs):
+            announced.append(str(msg))
+            return orig_announce(msg, *args, **kwargs)
+
+        app.announce = track_announce
+        app.app_session = MagicMock()
+        app.app_session.execute_moves.return_value = {"moves": 1}
+        app.app_session.base_dir = str(tmp_path)
+        app.plan = {"doc.txt": {}}
+
+        with patch.object(app, "_get_executable_plan", return_value={"doc.txt": {}}), \
+             patch.object(app, "_start_scan"), \
+             patch.object(app, "action_open_audit_report"):
+            app.run_execute_worker()
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+        assert any("[Ctrl+Z] Undo available" in msg for msg in announced)
+

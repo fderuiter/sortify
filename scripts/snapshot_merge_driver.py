@@ -431,13 +431,22 @@ def run_json_merge_driver(
     """Run 3-way merge driver for JSON snapshot files."""
     try:
         with open(ancestor_path, "r", encoding="utf-8") as f:
-            base_data = json.load(f)
+            base_str = f.read()
         with open(current_path, "r", encoding="utf-8") as f:
-            ours_data = json.load(f)
+            ours_str = f.read()
         with open(incoming_path, "r", encoding="utf-8") as f:
-            theirs_data = json.load(f)
+            theirs_str = f.read()
     except Exception as e:
         print(f"Error reading JSON snapshot versions for merge: {e}", file=sys.stderr)
+        return 1
+
+    try:
+        base_data = json.loads(base_str)
+        ours_data = json.loads(ours_str)
+        theirs_data = json.loads(theirs_str)
+    except Exception as e:
+        print(f"Error parsing JSON snapshot versions for merge: {e}", file=sys.stderr)
+        write_conflict_file(current_path, ours_str, theirs_str)
         return 1
 
     _, base_payload = extract_metadata_and_payload(base_data)
@@ -460,24 +469,12 @@ def run_json_merge_driver(
     success, merged_payload = three_way_json_merge(base_data, ours_data, theirs_data)
     if not success:
         print(
-            f"Conflict: Unresolvable JSON snapshot collision in '{pathname or current_path}'. Writing structured JSON conflict payload.",
+            f"Conflict: Unresolvable JSON snapshot collision in '{pathname or current_path}'. Writing conflict markers.",
             file=sys.stderr,
         )
-        conflict_payload = {
-            "_metadata": {
-                "conflict": True,
-                "conflict_status": "unresolved",
-                "pathname": pathname or current_path,
-            },
-            "conflict": True,
-            "local": ours_data,
-            "incoming": theirs_data,
-            "ours": ours_data,
-            "theirs": theirs_data,
-        }
-        with open(current_path, "w", encoding="utf-8") as f:
-            json.dump(conflict_payload, f, indent=2, sort_keys=True)
-            f.write("\n")
+        ours_str = json.dumps(ours_data, indent=2, sort_keys=True)
+        theirs_str = json.dumps(theirs_data, indent=2, sort_keys=True)
+        write_conflict_file(current_path, ours_str, theirs_str)
         return 1
 
     # Recompute payload SHA-256 checksum
@@ -570,14 +567,10 @@ def run_svg_merge_driver(
         return 0
 
     print(
-        f"Conflict: Unresolvable SVG snapshot collision in '{pathname or current_path}'. Writing structured SVG conflict payload.",
+        f"Conflict: Unresolvable SVG snapshot collision in '{pathname or current_path}'. Writing conflict markers.",
         file=sys.stderr,
     )
-    svg_conflict = build_svg_conflict_payload(
-        ours_str, theirs_str, pathname or current_path
-    )
-    with open(current_path, "w", encoding="utf-8") as f:
-        f.write(svg_conflict)
+    write_conflict_file(current_path, ours_str, theirs_str)
     return 1
 
 

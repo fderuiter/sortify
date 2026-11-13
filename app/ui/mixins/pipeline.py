@@ -450,7 +450,7 @@ class SortPipelineMixin:
                 exec_plan,
                 progress_callback=move_progress_cb,
             )
-            msg = f"Execution completed successfully! Summary: {summary}"
+            msg = f"Execution completed successfully! [Ctrl+Z] Undo available. Summary: {summary}"
             self.call_from_thread(self.announce, msg)
 
             audit_report = (

@@ -28,6 +28,7 @@ Press `?` or `F1` in the app to see these shortcuts.
 | `Ctrl+Y` | History View |
 | `Ctrl+U` | Quarantine Vault |
 | `Ctrl+E` | Execute Plan |
+| `Ctrl+Z` | Undo Sort |
 | `Ctrl+A` | Audit Report |
 | `Ctrl+X` | Extraction Preview |
 | `Ctrl+B` | Browse Dir |
