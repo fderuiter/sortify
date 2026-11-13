@@ -4,8 +4,15 @@ import os
 import shutil
 import time
 
+import pytest
+
 from app.core.db_conn import get_db_connection
-from app.core.ledger import TransactionLedger
+from app.core.exceptions import EntryNotFoundError, InvalidStateTransitionError
+from app.core.ledger import (
+    TERMINAL_STATUSES,
+    LedgerStatus,
+    TransactionLedger,
+)
 from app.core.mover import execute_moves
 
 
@@ -93,6 +100,242 @@ def test_incremental_logging_lifecycle(tmp_path):
     ledger.update_status(entry_id, "COMPLETED")
     pending = ledger.get_pending_entries(session_id)
     assert len(pending) == 0
+
+
+def test_direct_move_completion_lifecycle(tmp_path):
+    """Verify direct PENDING -> COMPLETED move lifecycle for in-place moves."""
+    ledger_db = str(tmp_path / "ledger.db")
+    ledger = TransactionLedger(ledger_db)
+
+    session_id = "session-direct"
+    entry_id = ledger.log_intent(
+        session_id=session_id,
+        base_dir=str(tmp_path),
+        source_path=str(tmp_path / "inplace.txt"),
+        dest_path=str(tmp_path / "inplace.txt"),
+        source_rel_path="inplace.txt",
+        dest_rel_path="inplace.txt",
+    )
+
+    ledger.update_status(entry_id, LedgerStatus.COMPLETED)
+    conn = get_db_connection(ledger_db)
+    with conn:
+        cur = conn.execute(
+            "SELECT status FROM transaction_ledger WHERE entry_id = ?",
+            (entry_id,),
+        )
+        assert cur.fetchone()[0] == LedgerStatus.COMPLETED.value
+
+
+def test_update_status_idempotency(tmp_path):
+    """Verify that repeated calls with identical status remain idempotent."""
+    ledger_db = str(tmp_path / "ledger.db")
+    ledger = TransactionLedger(ledger_db)
+
+    entry_id = ledger.log_intent(
+        session_id="session-idem",
+        base_dir=str(tmp_path),
+        source_path=str(tmp_path / "f.txt"),
+        dest_path=str(tmp_path / "f2.txt"),
+        source_rel_path="f.txt",
+        dest_rel_path="f2.txt",
+    )
+
+    # Calling identical status on PENDING should be a no-op
+    ledger.update_status(entry_id, LedgerStatus.PENDING)
+    ledger.update_status(entry_id, "PENDING")
+
+    # Transition to MOVED_PHYSICAL
+    ledger.update_status(entry_id, "MOVED_PHYSICAL")
+    ledger.update_status(entry_id, LedgerStatus.MOVED_PHYSICAL)
+
+    # Transition to COMPLETED
+    ledger.update_status(entry_id, "COMPLETED")
+    # Repeated calls on terminal status with identical value must be idempotent
+    ledger.update_status(entry_id, "COMPLETED")
+    ledger.update_status(entry_id, LedgerStatus.COMPLETED)
+
+
+def test_update_status_missing_entry_raises(tmp_path):
+    """Verify that calling update_status on a missing entry raises EntryNotFoundError."""
+    ledger_db = str(tmp_path / "ledger.db")
+    ledger = TransactionLedger(ledger_db)
+
+    with pytest.raises(EntryNotFoundError) as exc_info:
+        ledger.update_status("nonexistent-entry-id", "MOVED_PHYSICAL")
+    assert "nonexistent-entry-id" in str(exc_info.value)
+
+    # Also verify it is caught as KeyError and ValueError
+    with pytest.raises(KeyError):
+        ledger.update_status("missing-key", "COMPLETED")
+    with pytest.raises(ValueError):
+        ledger.update_status("missing-val", "COMPLETED")
+
+
+def test_update_status_invalid_status_string_raises(tmp_path):
+    """Verify that invalid status strings and types raise InvalidStateTransitionError."""
+    ledger_db = str(tmp_path / "ledger.db")
+    ledger = TransactionLedger(ledger_db)
+
+    entry_id = ledger.log_intent(
+        session_id="session-inv",
+        base_dir=str(tmp_path),
+        source_path=str(tmp_path / "f.txt"),
+        dest_path=str(tmp_path / "f2.txt"),
+        source_rel_path="f.txt",
+        dest_rel_path="f2.txt",
+    )
+
+    with pytest.raises(InvalidStateTransitionError):
+        ledger.update_status(entry_id, "NON_EXISTENT_STATUS")
+
+    with pytest.raises(InvalidStateTransitionError):
+        ledger.update_status(entry_id, 12345)  # type: ignore[arg-type]
+
+
+def test_update_status_illegal_transitions_raise(tmp_path):
+    """Verify that illegal transitions raise InvalidStateTransitionError."""
+    ledger_db = str(tmp_path / "ledger.db")
+    ledger = TransactionLedger(ledger_db)
+
+    entry_id = ledger.log_intent(
+        session_id="session-illegal",
+        base_dir=str(tmp_path),
+        source_path=str(tmp_path / "f.txt"),
+        dest_path=str(tmp_path / "f2.txt"),
+        source_rel_path="f.txt",
+        dest_rel_path="f2.txt",
+    )
+
+    # Move to MOVED_PHYSICAL
+    ledger.update_status(entry_id, "MOVED_PHYSICAL")
+
+    # In-flight move cannot transition back to PENDING
+    with pytest.raises(InvalidStateTransitionError):
+        ledger.update_status(entry_id, "PENDING")
+
+
+def test_terminal_record_immutability(tmp_path):
+    """Verify that mutating terminal records raises InvalidStateTransitionError."""
+    ledger_db = str(tmp_path / "ledger.db")
+    ledger = TransactionLedger(ledger_db)
+
+    for terminal_status in TERMINAL_STATUSES:
+        entry_id = ledger.log_intent(
+            session_id=f"session-{terminal_status.value}",
+            base_dir=str(tmp_path),
+            source_path=str(tmp_path / f"{terminal_status.value}.txt"),
+            dest_path=str(tmp_path / f"{terminal_status.value}_dest.txt"),
+            source_rel_path=f"{terminal_status.value}.txt",
+            dest_rel_path=f"{terminal_status.value}_dest.txt",
+        )
+        ledger.update_status(entry_id, terminal_status)
+
+        # Attempting to mutate terminal record to any other status must fail
+        for other_status in LedgerStatus:
+            if other_status == terminal_status:
+                # Same status is idempotent
+                ledger.update_status(entry_id, other_status)
+            else:
+                with pytest.raises(InvalidStateTransitionError):
+                    ledger.update_status(entry_id, other_status)
+
+
+def test_log_intent_overwrite_guards(tmp_path):
+    """Verify log_intent blocks resetting in-flight moves or terminal records to PENDING."""
+    ledger_db = str(tmp_path / "ledger.db")
+    ledger = TransactionLedger(ledger_db)
+
+    session_id = "session-overwrite"
+    entry_id = ledger.log_intent(
+        session_id=session_id,
+        base_dir=str(tmp_path),
+        source_path=str(tmp_path / "doc.txt"),
+        dest_path=str(tmp_path / "dest.txt"),
+        source_rel_path="doc.txt",
+        dest_rel_path="dest.txt",
+    )
+
+    # Re-logging intent when already PENDING is allowed (idempotent / intent update)
+    entry_id2 = ledger.log_intent(
+        session_id=session_id,
+        base_dir=str(tmp_path),
+        source_path=str(tmp_path / "doc.txt"),
+        dest_path=str(tmp_path / "dest.txt"),
+        source_rel_path="doc.txt",
+        dest_rel_path="dest.txt",
+        current_dest="UpdatedDest",
+    )
+    assert entry_id2 == entry_id
+
+    # Advance to in-flight: MOVED_PHYSICAL
+    ledger.update_status(entry_id, LedgerStatus.MOVED_PHYSICAL)
+
+    # Attempting to reset in-flight move back to PENDING via log_intent must raise
+    with pytest.raises(InvalidStateTransitionError):
+        ledger.log_intent(
+            session_id=session_id,
+            base_dir=str(tmp_path),
+            source_path=str(tmp_path / "doc.txt"),
+            dest_path=str(tmp_path / "dest.txt"),
+            source_rel_path="doc.txt",
+            dest_rel_path="dest.txt",
+        )
+
+    # Complete the transaction
+    ledger.update_status(entry_id, LedgerStatus.COMPLETED)
+
+    # Attempting to reset terminal record back to PENDING via log_intent must raise
+    with pytest.raises(InvalidStateTransitionError):
+        ledger.log_intent(
+            session_id=session_id,
+            base_dir=str(tmp_path),
+            source_path=str(tmp_path / "doc.txt"),
+            dest_path=str(tmp_path / "dest.txt"),
+            source_rel_path="doc.txt",
+            dest_rel_path="dest.txt",
+        )
+
+
+def test_reconciliation_terminal_immutability_guard(tmp_path, mocker):
+    """Verify reconcile_incomplete_transactions skips entries already in terminal states."""
+    ledger_db = str(tmp_path / "ledger.db")
+    ledger = TransactionLedger(ledger_db)
+
+    entry_id = ledger.log_intent(
+        session_id="session-recon-term",
+        base_dir=str(tmp_path),
+        source_path=str(tmp_path / "f.txt"),
+        dest_path=str(tmp_path / "f2.txt"),
+        source_rel_path="f.txt",
+        dest_rel_path="f2.txt",
+    )
+    ledger.update_status(entry_id, LedgerStatus.COMPLETED)
+
+    # Mock get_pending_entries to return the terminal entry (e.g. simulating race condition)
+    mocker.patch.object(
+        ledger,
+        "get_pending_entries",
+        return_value=[
+            {
+                "entry_id": entry_id,
+                "base_dir": str(tmp_path),
+                "source_path": str(tmp_path / "f.txt"),
+                "dest_path": str(tmp_path / "f2.txt"),
+                "source_rel_path": "f.txt",
+                "dest_rel_path": "f2.txt",
+                "current_dest": "",
+                "file_hash": "",
+                "status": "COMPLETED",
+            }
+        ],
+    )
+
+    spy_update = mocker.spy(ledger, "update_status")
+    reconciled = ledger.reconcile_incomplete_transactions()
+    assert reconciled == 0
+    # update_status should not have been called because terminal entry was skipped
+    assert spy_update.call_count == 0
 
 
 def test_session_purging_upon_completion(tmp_path):
