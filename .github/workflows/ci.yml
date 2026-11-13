@@ -136,6 +136,8 @@ jobs:
         uv run deptry .
 
     - name: Validate Agent Prompts Manifest
+      env:
+        PROMPT_MANIFEST_SECRET: ${{ secrets.PROMPT_MANIFEST_SECRET }}
       run: |
         uv run python scripts/prompt_manifest.py verify
 
