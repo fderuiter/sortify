@@ -3,6 +3,7 @@ import json
 import pytest
 
 from scripts.prompt_manifest import (
+    compute_manifest_hmac,
     compute_sha256,
     generate,
     parse_and_validate_prompt,
@@ -254,6 +255,7 @@ def test_end_to_end_generate_and_verify(tmp_path, monkeypatch):
 
     monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
     monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
+    monkeypatch.setenv("PROMPT_MANIFEST_SECRET", "test-secret-key-123")
 
     # Create two agent prompts
     agent1 = agents_dir / "agent1.md"
@@ -277,6 +279,7 @@ def test_end_to_end_generate_and_verify(tmp_path, monkeypatch):
     with open(manifest_path, "r", encoding="utf-8") as f:
         manifest_data = json.load(f)
 
+    assert "_signature" in manifest_data
     assert "agent1.md" in manifest_data
     assert "agent2.md" in manifest_data
 
@@ -310,6 +313,7 @@ def test_verify_with_deleted_file(tmp_path, monkeypatch):
 
     monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
     monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
+    monkeypatch.setenv("PROMPT_MANIFEST_SECRET", "test-secret-key-123")
 
     agent1 = agents_dir / "agent1.md"
     agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
@@ -333,6 +337,7 @@ def test_verify_with_missing_manifest_file(tmp_path, monkeypatch):
 
     monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
     monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
+    monkeypatch.setenv("PROMPT_MANIFEST_SECRET", "test-secret-key-123")
 
     agent1 = agents_dir / "agent1.md"
     agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
@@ -349,7 +354,7 @@ def test_verify_with_missing_manifest_file(tmp_path, monkeypatch):
 
 
 def test_main_cli(tmp_path, monkeypatch):
-    """Test main entry point parsing and delegation."""
+    """Test main entry point parsing and delegation with --secret argument."""
     from scripts.prompt_manifest import main
 
     agents_dir = tmp_path / "AGENTS"
@@ -358,16 +363,224 @@ def test_main_cli(tmp_path, monkeypatch):
 
     monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
     monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
+    monkeypatch.delenv("PROMPT_MANIFEST_SECRET", raising=False)
 
     agent1 = agents_dir / "agent1.md"
     agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
 
-    # Mock command line arguments for generate
-    monkeypatch.setattr("sys.argv", ["prompt_manifest.py", "generate"])
+    # Mock command line arguments for generate with --secret
+    monkeypatch.setattr(
+        "sys.argv",
+        ["prompt_manifest.py", "generate", "--secret", "cli-test-secret"],
+    )
     main()
 
     assert manifest_path.exists()
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest_data = json.load(f)
+    assert "_signature" in manifest_data
 
-    # Mock command line arguments for verify
-    monkeypatch.setattr("sys.argv", ["prompt_manifest.py", "verify"])
+    # Mock command line arguments for verify with --secret
+    monkeypatch.setattr(
+        "sys.argv",
+        ["prompt_manifest.py", "verify", "--secret", "cli-test-secret"],
+    )
     main()  # Should succeed without throwing SystemExit or exception
+
+
+def test_compute_manifest_hmac_deterministic_sorting():
+    """Test that HMAC calculation sorts filenames alphabetically and is deterministic."""
+    secret = "secret-key-xyz"
+    hashes_order_1 = {
+        "b_agent.md": "hash_b",
+        "a_agent.md": "hash_a",
+        "c_agent.md": "hash_c",
+    }
+    hashes_order_2 = {
+        "c_agent.md": "hash_c",
+        "a_agent.md": "hash_a",
+        "b_agent.md": "hash_b",
+    }
+    # Including an existing _signature in the dict should not affect computation
+    hashes_with_sig = {
+        "_signature": "old_sig",
+        "a_agent.md": "hash_a",
+        "b_agent.md": "hash_b",
+        "c_agent.md": "hash_c",
+    }
+
+    sig1 = compute_manifest_hmac(hashes_order_1, secret)
+    sig2 = compute_manifest_hmac(hashes_order_2, secret)
+    sig3 = compute_manifest_hmac(hashes_with_sig, secret)
+
+    assert sig1 == sig2
+    assert sig1 == sig3
+
+
+def test_compute_manifest_hmac_line_ending_normalization():
+    """Test that CRLF line endings normalize to LF for HMAC calculation."""
+    secret = "secret-key-xyz"
+    # Even if hashes dict or inputs have CRLF, normalization to LF ensures consistency
+    hashes = {"agent.md": "hash123"}
+    sig = compute_manifest_hmac(hashes, secret)
+    assert isinstance(sig, str)
+    assert len(sig) == 64  # SHA-256 hex digest length
+
+
+def test_generate_fails_without_secret(tmp_path, monkeypatch):
+    """Test that generate fails with exit code 1 if secret is missing."""
+    agents_dir = tmp_path / "AGENTS"
+    agents_dir.mkdir()
+    manifest_path = agents_dir / "manifest.json"
+
+    monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
+    monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
+    monkeypatch.delenv("PROMPT_MANIFEST_SECRET", raising=False)
+
+    agent1 = agents_dir / "agent1.md"
+    agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
+
+    with pytest.raises(SystemExit) as excinfo:
+        generate()
+    assert excinfo.value.code == 1
+    assert not manifest_path.exists()
+
+
+def test_verify_fails_with_tampered_signature(tmp_path, monkeypatch):
+    """Test that verification fails when _signature is tampered with."""
+    agents_dir = tmp_path / "AGENTS"
+    agents_dir.mkdir()
+    manifest_path = agents_dir / "manifest.json"
+
+    monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
+    monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
+    secret = "test-secret"
+
+    agent1 = agents_dir / "agent1.md"
+    agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
+
+    generate(secret=secret)
+
+    # Tamper with the signature
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest_data = json.load(f)
+    manifest_data["_signature"] = "tampered_signature_hex_value"
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest_data, f, indent=4)
+
+    with pytest.raises(SystemExit) as excinfo:
+        verify(secret=secret)
+    assert excinfo.value.code == 1
+
+
+def test_verify_fails_with_tampered_prompt_and_manifest_hash(tmp_path, monkeypatch):
+    """Test security threat model: attacker alters prompt AND updates manifest hash,
+    bypassing plain hash check, but fails HMAC signature verification.
+    """
+    agents_dir = tmp_path / "AGENTS"
+    agents_dir.mkdir()
+    manifest_path = agents_dir / "manifest.json"
+
+    monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
+    monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
+    secret = "maintainer-secret"
+
+    agent1 = agents_dir / "agent1.md"
+    agent1.write_text("Original prompt text", encoding="utf-8", newline="\n")
+
+    generate(secret=secret)
+
+    # Contributor tampers with prompt and manually updates SHA-256 hash in manifest.json
+    # without knowing the maintainer secret
+    agent1.write_text("Tampered prompt text by PR author", encoding="utf-8", newline="\n")
+    new_hash = compute_sha256(agent1)
+
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest_data = json.load(f)
+    manifest_data["agent1.md"] = new_hash
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest_data, f, indent=4)
+
+    # CI runs verify with maintainer secret - should fail!
+    with pytest.raises(SystemExit) as excinfo:
+        verify(secret=secret)
+    assert excinfo.value.code == 1
+
+
+def test_verify_fails_with_missing_signature(tmp_path, monkeypatch):
+    """Test that verification fails when _signature is missing from manifest."""
+    agents_dir = tmp_path / "AGENTS"
+    agents_dir.mkdir()
+    manifest_path = agents_dir / "manifest.json"
+
+    monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
+    monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
+    secret = "test-secret"
+
+    agent1 = agents_dir / "agent1.md"
+    agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
+
+    generate(secret=secret)
+
+    # Remove signature key
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        manifest_data = json.load(f)
+    del manifest_data["_signature"]
+    with open(manifest_path, "w", encoding="utf-8") as f:
+        json.dump(manifest_data, f, indent=4)
+
+    with pytest.raises(SystemExit) as excinfo:
+        verify(secret=secret)
+    assert excinfo.value.code == 1
+
+
+def test_verify_strict_mode_missing_secret(tmp_path, monkeypatch):
+    """Test that verification fails with exit code 1 if secret is missing in strict mode."""
+    agents_dir = tmp_path / "AGENTS"
+    agents_dir.mkdir()
+    manifest_path = agents_dir / "manifest.json"
+
+    monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
+    monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
+    monkeypatch.delenv("PROMPT_MANIFEST_SECRET", raising=False)
+
+    agent1 = agents_dir / "agent1.md"
+    agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
+
+    generate(secret="temp-secret")
+
+    # Explicit strict=True
+    monkeypatch.delenv("CI", raising=False)
+    with pytest.raises(SystemExit) as excinfo:
+        verify(strict=True)
+    assert excinfo.value.code == 1
+
+    # Implicit strict via CI environment variable
+    monkeypatch.setenv("CI", "true")
+    with pytest.raises(SystemExit) as excinfo:
+        verify()
+    assert excinfo.value.code == 1
+
+
+def test_verify_non_strict_mode_missing_secret(tmp_path, monkeypatch, capsys):
+    """Test that non-strict verification warns and passes hash checks when secret is absent."""
+    agents_dir = tmp_path / "AGENTS"
+    agents_dir.mkdir()
+    manifest_path = agents_dir / "manifest.json"
+
+    monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
+    monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
+    monkeypatch.delenv("PROMPT_MANIFEST_SECRET", raising=False)
+    monkeypatch.delenv("CI", raising=False)
+
+    agent1 = agents_dir / "agent1.md"
+    agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
+
+    generate(secret="temp-secret")
+
+    # Non-strict verify without secret
+    verify(strict=False)
+
+    captured = capsys.readouterr()
+    assert "skipping HMAC signature verification" in captured.err
+    assert "Verification passed" in captured.out

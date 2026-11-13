@@ -2,7 +2,9 @@
 
 import argparse
 import hashlib
+import hmac
 import json
+import os
 import sys
 from pathlib import Path
 
@@ -115,22 +117,52 @@ def get_hashes():
     return hashes
 
 
-def generate():
-    """Generate the manifest.json file containing hashes of agent prompts."""
+def compute_manifest_hmac(hashes: dict[str, str], secret: str) -> str:
+    """Compute HMAC-SHA256 signature across all prompt content hashes sorted alphabetically."""
+    sorted_files = sorted(f for f in hashes if f != "_signature")
+    lines = [f"{f}:{hashes[f]}" for f in sorted_files]
+    payload = "\n".join(lines)
+    if lines:
+        payload += "\n"
+    # Ensure line endings are normalized to LF
+    normalized_payload = payload.replace("\r\n", "\n").replace("\r", "\n")
+    return hmac.new(
+        secret.encode("utf-8"),
+        normalized_payload.encode("utf-8"),
+        hashlib.sha256,
+    ).hexdigest()
+
+
+def generate(secret: str | None = None):
+    """Generate the manifest.json file containing hashes of agent prompts and HMAC signature."""
+    resolved_secret = secret or os.environ.get("PROMPT_MANIFEST_SECRET")
+    if not resolved_secret:
+        print(
+            "Error: PROMPT_MANIFEST_SECRET is required to generate the manifest signature.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
     try:
         hashes = get_hashes()
     except (ValueError, TypeError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
+    signature = compute_manifest_hmac(hashes, resolved_secret)
+    manifest_data = {"_signature": signature, **hashes}
+
     with open(MANIFEST_PATH, "w", encoding="utf-8", newline="") as f:
-        json.dump(hashes, f, indent=4, sort_keys=True)
+        json.dump(manifest_data, f, indent=4, sort_keys=True)
         f.write("\n")
     print(f"Manifest successfully generated at {MANIFEST_PATH}")
 
 
-def verify():
-    """Verify that all agent prompt files match the hashes in manifest.json."""
+def verify(secret: str | None = None, strict: bool = False):
+    """Verify that all agent prompt files match the hashes in manifest.json and the signature is valid."""
+    resolved_secret = secret or os.environ.get("PROMPT_MANIFEST_SECRET")
+    is_strict = strict or bool(os.environ.get("CI"))
+
     if not MANIFEST_PATH.exists():
         print(f"Error: Manifest file {MANIFEST_PATH} does not exist.", file=sys.stderr)
         sys.exit(1)
@@ -143,10 +175,27 @@ def verify():
         sys.exit(1)
 
     try:
-        manifest_hashes = json.loads(manifest_bytes.decode("utf-8-sig"))
+        manifest_data = json.loads(manifest_bytes.decode("utf-8-sig"))
     except json.JSONDecodeError:
         print("Error: Manifest file is not valid JSON.", file=sys.stderr)
         sys.exit(1)
+
+    if not isinstance(manifest_data, dict):
+        print("Error: Manifest file must be a JSON dictionary.", file=sys.stderr)
+        sys.exit(1)
+
+    if not resolved_secret:
+        if is_strict:
+            print(
+                "Error: PROMPT_MANIFEST_SECRET is missing during strict CI verification runs.",
+                file=sys.stderr,
+            )
+            sys.exit(1)
+        else:
+            print(
+                "Warning: PROMPT_MANIFEST_SECRET is not set; skipping HMAC signature verification.",
+                file=sys.stderr,
+            )
 
     try:
         current_hashes = get_hashes()
@@ -156,7 +205,38 @@ def verify():
 
     mismatches = False
 
+    # Verify HMAC signature
+    manifest_signature = manifest_data.get("_signature")
+    if resolved_secret or is_strict:
+        if not manifest_signature:
+            print(
+                "Error: Manifest signature '_signature' is missing.",
+                file=sys.stderr,
+            )
+            mismatches = True
+        elif resolved_secret:
+            if not isinstance(manifest_signature, str):
+                print(
+                    "Error: Manifest signature '_signature' must be a string.",
+                    file=sys.stderr,
+                )
+                mismatches = True
+            else:
+                expected_signature = compute_manifest_hmac(current_hashes, resolved_secret)
+                if not hmac.compare_digest(manifest_signature, expected_signature):
+                    print(
+                        "Error: Manifest HMAC signature mismatch.",
+                        file=sys.stderr,
+                    )
+                    mismatches = True
+
     # Check for missing files or mismatched hashes
+    manifest_hashes = {
+        filename: hsh
+        for filename, hsh in manifest_data.items()
+        if filename != "_signature"
+    }
+
     for filename, current_hash in current_hashes.items():
         if filename not in manifest_hashes:
             print(
@@ -198,13 +278,23 @@ def main():
     parser.add_argument(
         "action", choices=["generate", "verify"], help="Action to perform"
     )
+    parser.add_argument(
+        "--secret",
+        default=None,
+        help="Secret key for HMAC signature (defaults to PROMPT_MANIFEST_SECRET env var)",
+    )
+    parser.add_argument(
+        "--strict",
+        action="store_true",
+        help="Enforce strict verification (fail if secret is missing; enabled by default in CI)",
+    )
 
     args = parser.parse_args()
 
     if args.action == "generate":
-        generate()
+        generate(secret=args.secret)
     elif args.action == "verify":
-        verify()
+        verify(secret=args.secret, strict=args.strict)
 
 
 if __name__ == "__main__":
