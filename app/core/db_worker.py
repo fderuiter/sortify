@@ -5,10 +5,19 @@ import queue
 import threading
 import time
 from contextlib import contextmanager
+from typing import Any, TypedDict
 
 from app.core.db_conn import clear_connection_cache, get_db_connection
 
 logger = logging.getLogger(__name__)
+
+
+class _ActiveSession(TypedDict):
+    session_id: str
+    db_path: str | None
+    timeout: float
+    start_time: float
+    conn: Any
 
 
 class DBWorker:
@@ -19,7 +28,7 @@ class DBWorker:
         self._stopped = False
         self._lock = threading.Lock()
         self._listeners = []
-        self._active_session = None
+        self._active_session: _ActiveSession | None = None
         from app.core.shared_registry import ContextPropagatingThread
 
         self.thread = ContextPropagatingThread(
@@ -51,7 +60,7 @@ class DBWorker:
             "conn": conn,
         }
 
-    def _do_commit_session(self, session_id: str = None):
+    def _do_commit_session(self, session_id: str | None = None):
         if not self._active_session:
             return
         if session_id and str(self._active_session.get("session_id")) != str(
@@ -74,7 +83,7 @@ class DBWorker:
         else:
             self._active_session = None
 
-    def _do_rollback_session(self, session_id: str = None):
+    def _do_rollback_session(self, session_id: str | None = None):
         if not self._active_session:
             return
         conn = self._active_session.get("conn")
@@ -215,7 +224,8 @@ class DBWorker:
     def get_active_session_id(self) -> str | None:
         """Return active session ID if a session is currently open."""
         if self.is_in_session() and self._active_session:
-            return self._active_session.get("session_id")
+            sess_id = self._active_session.get("session_id")
+            return str(sess_id) if sess_id is not None else None
         return None
 
     @contextmanager

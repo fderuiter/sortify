@@ -131,35 +131,21 @@ allowed-unresolved-imports = [
 # `def f(x: str = None)` is used throughout; mypy ran with implicit_optional.
 invalid-parameter-default = "ignore"
 
-# Modules mypy skipped with ignore_errors. Shrink this list as modules are typed.
+# UI and CLI modules report dynamic typing findings as warnings.
 [[tool.ty.overrides]]
 include = [
     "app/ui/**",
     "app/cli/**",
-    "app/core/db.py",
-    "app/core/db_conn.py",
-    "app/core/db_worker.py",
-    "app/core/quarantine_interceptor.py",
-    "app/core/semantic_embeddings.py",
-    "app/core/session.py",
 ]
 
 [tool.ty.overrides.rules]
-all = "ignore"
-
-# Modules mypy passed only because it skips the bodies of unannotated functions.
-# ty checks them, so their findings are warnings until fixed.
-[[tool.ty.overrides]]
-include = [
-    "app/core/history.py",
-    "app/core/mover.py",
-]
-
-[tool.ty.overrides.rules]
+call-non-callable = "warn"
+incompatible-method-override = "warn"
 invalid-argument-type = "warn"
-invalid-method-override = "warn"
+invalid-assignment = "warn"
+missing-attribute = "warn"
+missing-union-attribute = "warn"
 no-matching-overload = "warn"
-unresolved-attribute = "warn"
 
 [dependency-groups]
 dev = [

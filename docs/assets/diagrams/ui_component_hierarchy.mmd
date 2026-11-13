@@ -1,28 +1,29 @@
 graph LR
-    subgraph nav ["Navigation Components"]
-        header_bar["Application Header Bar"]
-        toolbar["Top Action Toolbar"]
+    subgraph nav ["Navigation & Layout"]
+        tui_app["Textual Application Shell"]
+        heading["Heading Component"]
     end
     subgraph inputs ["Selection & Controls"]
-        directory_selection["Directory Selection Card"]
-        settings_modal["Settings Dialog View"]
-        setup_wizard["AI Model Setup Wizard"]
+        vim_tree["VimTree Plan View"]
+        density_slider["Density Slider Widget"]
+        path_diff["Path Diff Comparison"]
     end
-    subgraph views ["Display & Audits"]
-        plan_treeview["Proposed Reorganization Plan"]
-        cro_forensic_dialog["CRO Forensic View"]
-        status_progress_panel["Status & Progress Panel"]
+    subgraph views ["Display & Modals"]
+        edit_modal["Edit & Reassign Modal"]
+        settings_modal["Settings Modal"]
+        setup_wizard["Setup Wizard Modal"]
     end
-    header_bar --> directory_selection
-    directory_selection --> plan_treeview
-    plan_treeview --> status_progress_panel
+    tui_app --> heading
+    tui_app --> vim_tree
+    vim_tree --> edit_modal
+    vim_tree --> path_diff
+    tui_app --> settings_modal
     settings_modal --> setup_wizard
-    cro_forensic_dialog --> status_progress_panel
-    click header_bar "docs/ui.md#appuiheading" "Header Bar Component"
-    click toolbar "docs/ui.md#appuitui" "Top Action Toolbar"
-    click directory_selection "docs/ui.md#appuimixinsselection" "Directory Selection Component"
-    click settings_modal "docs/ui.md#appuimodalssettings" "Settings Dialog View Component"
-    click setup_wizard "docs/ui.md#appuimodalswizard" "AI Model Setup Wizard Component"
-    click plan_treeview "docs/ui.md#appuimixinstree_view" "Proposed Reorganization Plan Component"
-    click cro_forensic_dialog "docs/ui.md#appuitui" "CRO Forensic View Component"
-    click status_progress_panel "docs/ui.md#appuimixinspipeline" "Status & Progress Panel Component"
+    click tui_app "docs/ui.md#appuitui" "Main Terminal UI Container"
+    click heading "docs/ui.md#appuiheading" "Header & Title Bar"
+    click vim_tree "docs/ui.md#appuiwidgetsvim_tree" "Interactive Directory Plan Tree"
+    click density_slider "docs/ui.md#appuiwidgetsdensity_slider" "Layout Density Control"
+    click path_diff "docs/ui.md#appuiwidgetspath_diff" "Path Diff Preview Component"
+    click edit_modal "docs/ui.md#appuimodalsedit" "File Reassignment and Node Edit Dialog"
+    click settings_modal "docs/ui.md#appuimodalssettings" "Application Settings Dialog"
+    click setup_wizard "docs/ui.md#appuimodalswizard" "First-Run Configuration Wizard"

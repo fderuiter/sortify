@@ -20,7 +20,7 @@ sequenceDiagram
     Worker->>UI: Render Tree
     deactivate Worker
     note over User, Analyzer: Debounced Plan Recalculation Flow
-    User->>UI: Drag & Drop Move / Lock Toggle
+    User->>UI: Keyboard Reassign [R] / Lock Toggle
     UI->>UI: _rebuild_plan_async()
     opt Active recalc token or debounce task running
         UI->>UI: token.set() & debounce_task.cancel()

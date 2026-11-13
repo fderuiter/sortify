@@ -9,6 +9,7 @@ from scripts.generate_docs import (
     _describe_default,
     _describe_type,
     _format_key,
+    audit_auto_merge_policy,
     audit_handwritten_docs,
     get_handwritten_docs,
     main,
@@ -57,6 +58,32 @@ def test_get_handwritten_docs():
 def test_audit_handwritten_docs_clean():
     errors = audit_handwritten_docs()
     assert errors == []
+
+
+def test_auto_merge_policy_bot_authors_consistency():
+    """Verify that every entry in BOT_AUTHORS exists in docs/auto_merge_policy.md:L15-L52."""
+    from scripts.classify_pr import BOT_AUTHORS
+
+    policy_file = Path("docs/auto_merge_policy.md")
+    assert policy_file.exists(), f"{policy_file} does not exist"
+
+    lines = policy_file.read_text(encoding="utf-8").splitlines()
+    section_content = "\n".join(lines[14:52])
+
+    for bot in BOT_AUTHORS:
+        assert bot in section_content, (
+            f"Bot author '{bot}' from BOT_AUTHORS is missing from docs/auto_merge_policy.md:L15-L52"
+        )
+
+
+def test_audit_auto_merge_policy_detects_missing_bot(tmp_path):
+    bad_policy = tmp_path / "auto_merge_policy.md"
+    bad_policy.write_text("# Auto-Merge Policy\nOnly dependabot[bot] is supported.\n")
+    errors = audit_auto_merge_policy(doc_path=str(bad_policy))
+    assert errors
+    assert any("stitch" in e for e in errors)
+    assert any("jules" in e for e in errors)
+    assert any("github-actions[bot]" in e for e in errors)
 
 
 def test_audit_handwritten_docs_detects_invalid_path(tmp_path):

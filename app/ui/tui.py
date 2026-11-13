@@ -127,6 +127,7 @@ class AutoSorterTUI(
         Binding("ctrl+y", "open_history", "History View", show=False),
         Binding("ctrl+u", "open_quarantine_vault", "Quarantine Vault", show=False),
         Binding("ctrl+e", "execute_sort", "Execute Plan", show=True),
+        Binding("ctrl+z", "undo_last_sort", "Undo Sort", show=True),
         Binding("ctrl+a", "open_audit_report", "Audit Report", show=False),
         Binding("ctrl+x", "open_extraction_preview", "Extraction Preview", show=False),
         Binding("ctrl+b", "select_dir", "Browse Dir", show=True),
@@ -1120,6 +1121,93 @@ class AutoSorterTUI(
         self.push_screen(
             HistoryModal(sessions=sessions, base_dir=self.base_dir),
             handle_history_modal_result,
+        )
+
+    def action_undo_last_sort(self) -> None:
+        """Trigger instant undo rollback for the most recent completed sorting session."""
+        if self._is_text_control_focused(allow_tree_search=True):
+            return
+        from app.core.session_catalog import list_sessions
+
+        sessions = list_sessions()
+        target_sess = None
+        for s in sessions:
+            if str(s.get("status", "")).lower() == "completed":
+                target_sess = s
+                break
+
+        if not target_sess:
+            self.announce("No completed sorting session available to undo.")
+            return
+
+        def handle_confirm_result(result: Optional[Dict[str, Any]]) -> None:
+            if not result or not result.get("confirmed"):
+                return
+            sid = result["session_id"]
+            ignore_missing = result.get("ignore_missing", False)
+            selected_step_ids = result.get("selected_step_ids")
+            self.run_undo_worker(sid, ignore_missing, selected_step_ids)
+
+        self.push_screen(
+            RollbackConfirmModal(session_info=target_sess),
+            handle_confirm_result,
+        )
+
+    @work(thread=True)
+    def run_undo_worker(
+        self,
+        session_id: str,
+        ignore_missing: bool = False,
+        selected_step_ids: Optional[List[Any]] = None,
+    ) -> None:
+        """Execute session rollback restoration asynchronously in background worker thread."""
+        try:
+            from app.core.history import open_session_history
+
+            kwargs: Dict[str, Any] = {"ignore_missing": ignore_missing}
+            if selected_step_ids is not None:
+                kwargs["selected_step_ids"] = selected_step_ids
+
+            with open_session_history() as history_mgr:
+                restored_count = history_mgr.rollback(session_id, **kwargs)
+
+            if hasattr(self, "call_from_thread"):
+                self.call_from_thread(
+                    self._on_undo_success, session_id, restored_count
+                )
+            else:
+                self._on_undo_success(session_id, restored_count)
+        except Exception as err:
+            logger.error(f"Error rolling back session {session_id}: {err}")
+            if hasattr(self, "call_from_thread"):
+                self.call_from_thread(self._on_undo_failure, session_id, err)
+            else:
+                self._on_undo_failure(session_id, err)
+
+    def _on_undo_success(self, session_id: str, restored_count: int) -> None:
+        """Handle successful session rollback completion on main thread."""
+        msg = f"Session {session_id[:8]}... successfully rolled back ({restored_count} file(s) restored)."
+        self.announce(msg)
+        try:
+            from app.ui.notifications import notify
+
+            notify(msg, type="info")
+        except Exception:
+            pass
+
+    def _on_undo_failure(self, session_id: str, err: Exception) -> None:
+        """Handle session rollback failure on main thread."""
+        msg = f"Rollback failed for session {session_id[:8]}...: {err}"
+        self.announce(msg)
+        try:
+            from app.ui.notifications import notify
+
+            notify(msg, type="error")
+        except Exception:
+            pass
+
+        self.push_screen(
+            RollbackErrorModal(title="Rollback Failed", error_message=str(err))
         )
 
     @on(Button.Pressed, "#btn-execute")
