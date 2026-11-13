@@ -5,6 +5,7 @@ import contextlib
 import json
 import logging
 import os
+import secrets
 import sys
 import tempfile
 import time
@@ -75,6 +76,7 @@ class DaemonIPCServer:
         self.server: Optional[asyncio.Server] = None
         self.socket_path: Optional[str] = None
         self.pid_path = os.path.join(self.base_dir, PID_FILE_NAME)
+        self.auth_token: Optional[str] = None
         self.is_running = False
 
     async def start(self):
@@ -106,6 +108,9 @@ class DaemonIPCServer:
                         f"Failed to remove stale pid file {self.pid_path}: {e}"
                     )
 
+        # Generate 256-bit secret token for server authentication
+        self.auth_token = secrets.token_hex(32)
+
         # Step 2: Determine socket path
         if sys.platform == "win32":
             # On Windows, use a local TCP server on loopback interface
@@ -135,15 +140,19 @@ class DaemonIPCServer:
                 with contextlib.suppress(OSError):
                     os.unlink(self.socket_path)
 
-            self.server = await asyncio.start_unix_server(
-                self._handle_client, path=self.socket_path
-            )
+            old_umask = os.umask(0o077)
+            try:
+                self.server = await asyncio.start_unix_server(
+                    self._handle_client, path=self.socket_path
+                )
+            finally:
+                os.umask(old_umask)
 
             # Restrict socket permissions on POSIX
             try:
-                os.chmod(self.socket_path, 0o600)
+                os.chmod(self.socket_path, 0o700)
             except OSError as e:
-                logger.warning(f"Failed to set 0600 permissions on IPC socket: {e}")
+                logger.warning(f"Failed to set 0700 permissions on IPC socket: {e}")
 
         self.is_running = True
 
@@ -151,6 +160,7 @@ class DaemonIPCServer:
         pid_info = {
             "pid": os.getpid(),
             "socket_path": self.socket_path,
+            "auth_token": self.auth_token,
             "base_dir": self.base_dir,
             "start_time": time.time(),
         }
@@ -216,6 +226,26 @@ class DaemonIPCServer:
         req_id = data.get("id", 1)
         method = data.get("method")
         params = data.get("params") or {}
+
+        # Validate authentication token against server secret
+        token = data.get("auth_token") or data.get("token")
+        if not token and isinstance(params, dict):
+            token = params.get("auth_token") or params.get("token")
+
+        if (
+            not self.auth_token
+            or not token
+            or not isinstance(token, str)
+            or not secrets.compare_digest(token, self.auth_token)
+        ):
+            return {
+                "jsonrpc": "2.0",
+                "id": req_id,
+                "error": {
+                    "code": -32001,
+                    "message": "Unauthorized: Missing or invalid authentication token",
+                },
+            }
 
         if not method or not isinstance(method, str):
             return {
@@ -352,6 +382,7 @@ class DaemonIPCServer:
     def stop(self):
         """Stop the IPC server and remove socket and PID lockfiles."""
         self.is_running = False
+        self.auth_token = None
         if self.server:
             try:
                 self.server.close()
@@ -393,6 +424,7 @@ class DaemonIPCClient:
 
         pid = pid_info.get("pid")
         socket_path = pid_info.get("socket_path")
+        auth_token = pid_info.get("auth_token") or pid_info.get("token")
 
         if not pid or not is_process_alive(pid):
             raise RuntimeError(
@@ -402,12 +434,25 @@ class DaemonIPCClient:
         if not socket_path:
             raise RuntimeError("Invalid socket path in daemon lockfile.")
 
+        payload_params = dict(params) if isinstance(params, dict) else (params or {})
+        explicit_token = None
+        if isinstance(payload_params, dict):
+            explicit_token = payload_params.get("auth_token") or payload_params.get(
+                "token"
+            )
+            if not explicit_token and auth_token:
+                payload_params["auth_token"] = auth_token
+
         req_payload = {
             "jsonrpc": "2.0",
             "id": 1,
             "method": method,
-            "params": params or {},
+            "params": payload_params,
         }
+        effective_token = explicit_token if explicit_token is not None else auth_token
+        if effective_token:
+            req_payload["auth_token"] = effective_token
+
         req_bytes = (json.dumps(req_payload) + "\n").encode("utf-8")
 
         async def _communicate():

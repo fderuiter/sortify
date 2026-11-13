@@ -102,7 +102,7 @@ def test_settings_modal_labeled_switch_click_label(tmp_path):
     """Verify clicking switch labels in SettingsModal toggles state and focuses switch."""
 
     async def _test():
-        settings = AppSettings()
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
         settings.AI_CONSENT_GRANTED = False
         app = AutoSorterTUI(settings=settings, base_dir=tmp_path, skip_wizard=True)
 
@@ -142,7 +142,7 @@ def test_wizard_modal_labeled_switch_click_label(tmp_path):
     """Verify clicking switch labels in WizardModal toggles state and focuses switch."""
 
     async def _test():
-        settings = AppSettings()
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
         settings.AI_CONSENT_GRANTED = False
         app = AutoSorterTUI(settings=settings, base_dir=tmp_path, skip_wizard=True)
 
@@ -177,7 +177,7 @@ def test_modal_tab_navigation_focuses_switches(tmp_path):
     """Verify Tab navigation focuses interactive Switch controls without stopping on static labels or escaping modal."""
 
     async def _test():
-        settings = AppSettings()
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
         app = AutoSorterTUI(settings=settings, base_dir=tmp_path, skip_wizard=True)
 
         async with app.run_test(size=(100, 50)) as pilot:
