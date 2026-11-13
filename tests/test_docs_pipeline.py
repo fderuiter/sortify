@@ -482,6 +482,14 @@ def test_diagram_toolchain_click_directives_and_fallback_svg():
     mmd_valid = """graph TD
     A["Node A"]
     click A "https://example.com" "Tooltip A" _blank
+    B["Node B"]
+    click B "docs/ui.md#appuiheading" "Tooltip B"
+    C["Node C"]
+    click C "docs/ui.md#appuimixinstree_view" "Tooltip C"
+    D["Node D"]
+    click D "https://example.com#section" "Tooltip D"
+    E["Node E"]
+    click E "#local-anchor" "Tooltip E"
     """
     errs_valid = parse_and_validate_click_directives(mmd_valid)
     assert len(errs_valid) == 0
@@ -493,6 +501,39 @@ def test_diagram_toolchain_click_directives_and_fallback_svg():
     errs_invalid = parse_and_validate_click_directives(mmd_invalid)
     assert len(errs_invalid) > 0
     assert "Unsafe or invalid URL" in errs_invalid[0]
+
+    # Verify missing anchor in valid markdown target file triggers error
+    mmd_missing_anchor = """graph TD
+    A["Node A"]
+    click A "docs/ui.md#missing_anchor_xyz" "Tooltip Missing Anchor"
+    """
+    errs_missing_anchor = parse_and_validate_click_directives(mmd_missing_anchor)
+    assert len(errs_missing_anchor) == 1
+    assert (
+        "Line 3: Target anchor 'missing_anchor_xyz' does not exist in 'docs/ui.md'"
+        in errs_missing_anchor[0]
+    )
+
+    # Verify empty anchor fragment triggers error
+    mmd_empty_anchor = """graph TD
+    A["Node A"]
+    click A "docs/ui.md#" "Tooltip Empty Anchor"
+    """
+    errs_empty_anchor = parse_and_validate_click_directives(mmd_empty_anchor)
+    assert len(errs_empty_anchor) == 1
+    assert "Empty anchor fragment" in errs_empty_anchor[0]
+
+    # Verify missing target file triggers error
+    mmd_missing_file = """graph TD
+    A["Node A"]
+    click A "docs/nonexistent_doc.md#some_anchor" "Tooltip Missing File"
+    """
+    errs_missing_file = parse_and_validate_click_directives(mmd_missing_file)
+    assert len(errs_missing_file) == 1
+    assert (
+        "Click directive target file 'docs/nonexistent_doc.md' does not exist"
+        in errs_missing_file[0]
+    )
 
     fallback = generate_fallback_svg("Test Title", mmd_valid)
     assert '<a href="https://example.com" target="_blank"' in fallback

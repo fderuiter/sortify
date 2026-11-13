@@ -35,6 +35,7 @@ def generate_api_docs():
         f.write(
             "![Core Architecture Diagram](assets/diagrams/core_architecture.svg)\n\n"
         )
+        f.write('<a id="appcoresanitizer"></a>\n\n')
 
         # Find all python files except ui and binaries
         py_files = glob.glob(os.path.join(app_dir, "**", "*.py"), recursive=True)

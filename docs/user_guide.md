@@ -5,6 +5,7 @@ Smart AutoSorter AI Pro organizes a folder of documents into a generated folder 
 The examples below use `smart-autosorter`. When running from a source checkout, prefix each command with `uv run`.
 
 ## First Run and AI Consent
+<a id="first-run-steps--setup-wizard"></a>
 
 On first launch the **Privacy & Data Setup Wizard** asks whether you allow the optional AI model download: a one-time, roughly 80 MB embedding model from Hugging Face.
 
@@ -71,6 +72,7 @@ Each file goes through these steps in order, and the first one that matches deci
 5. The folder a file with the same content went to before.
 6. Content clustering for everything else.
 
+<a id="ai-clustering-constraints"></a>
 Clustering groups documents with similar wording and names each folder after its two strongest keywords (for example `Finance-Budget`). It recurses into large groups to make sub-folders, up to five levels deep. When fewer than three documents are left to cluster at the top level they go to `Miscellaneous`.
 
 ## Supported File Formats
@@ -124,11 +126,13 @@ smart-autosorter daemon stop
 - **Bursts are batched.** After a file event the daemon waits 0.6 seconds (`DEBOUNCE_DELAY`) for more changes, and never more than 5 seconds (`MAX_DEBOUNCE_DELAY`) during a continuous stream of writes.
 
 ## Offline Mode
+<a id="offline-non-semantic-mode"></a>
 
 If you decline the model download, are offline during setup, or the model is missing, the app runs without the embedding model:
 - Documents are still clustered by content, using TF-IDF keyword vectors instead of sentence embeddings. Groupings can be a little less precise for documents that use different words for the same topic.
 - No network connections are made for the model.
 
 ## Privacy
+<a id="privacy-configurations"></a>
 
 All document processing happens on your machine, and local databases are encrypted. The app's only network traffic is the optional model download and a security-advisory check for that model. See the Privacy Policy (`PRIVACY.md` in the repository) for details.
