@@ -24,7 +24,7 @@ easyocr==1.7.2
     # via smart-autosorter (pyproject.toml)
 et-xmlfile==2.0.0
     # via openpyxl
-filelock==4.2.9
+filelock==4.2.10
     # via torch
 frozenlist==1.8.0
     # via
@@ -128,7 +128,7 @@ pypdf==7.0.1
     # via smart-autosorter (pyproject.toml)
 python-bidi==0.6.12
     # via easyocr
-python-dateutil==3.0.0
+python-dateutil==4.0.0
     # via pandas
 python-docx==1.2.0
     # via smart-autosorter (pyproject.toml)
