@@ -9,6 +9,7 @@ from pydantic import ValidationError
 from app.core.domain_contracts import (
     CorpusExampleModel,
     CorpusPreFetchBatchModel,
+    DictCompatMixin,
     QuarantineRecordModel,
     SortingPlanModel,
     SortingPlanNodeModel,
@@ -38,6 +39,8 @@ def test_quarantine_record_model_validation():
 
     model = validate_quarantine_record(payload)
     assert isinstance(model, QuarantineRecordModel)
+    assert isinstance(model, DictCompatMixin)
+    assert issubclass(QuarantineRecordModel, DictCompatMixin)
     assert model.job_id == "qjob_1234567890ab"
     assert model["status"] == "STAGED"
     assert model.get("policy_action") == "quarantine"
@@ -134,6 +137,8 @@ def test_corpus_example_model_dict_compatibility():
         vector=[0.1, 0.2],
         text="Sample text",
     )
+    assert isinstance(example, DictCompatMixin)
+    assert issubclass(CorpusExampleModel, DictCompatMixin)
     assert example["filepath"] == "docs/test.pdf"
     assert example.get("user_verified_target_path") == "Verified/test.pdf"
     assert example.get("non_existent", "default") == "default"
@@ -190,6 +195,8 @@ def test_sorting_plan_node_and_plan_validation():
 
     node = validate_sorting_plan_node(node_payload)
     assert isinstance(node, SortingPlanNodeModel)
+    assert isinstance(node, DictCompatMixin)
+    assert issubclass(SortingPlanNodeModel, DictCompatMixin)
     assert node.node_type == "file"
     assert node["__type__"] == "file"
     assert node.get("__type__") == "file"
@@ -218,6 +225,8 @@ def test_vector_batch_payload_validation():
 
     model = validate_vector_batch_payload(payload)
     assert isinstance(model, VectorBatchPayloadModel)
+    assert isinstance(model, DictCompatMixin)
+    assert issubclass(VectorBatchPayloadModel, DictCompatMixin)
     assert model.base_dir == "/tmp/workspace"
     assert len(model.vectors) == 2
 
@@ -311,3 +320,16 @@ def test_domain_contracts_containment_checks():
     assert "metadata" in vector_payload
     assert "extra_v" in vector_payload
     assert "missing" not in vector_payload
+
+
+def test_refactored_domain_models_inherit_dict_compat_mixin():
+    """Verify that all refactored domain contract models inherit from DictCompatMixin."""
+    refactored_models = [
+        QuarantineRecordModel,
+        SortingPlanNodeModel,
+        CorpusExampleModel,
+        VectorBatchPayloadModel,
+    ]
+    for model_cls in refactored_models:
+        assert issubclass(model_cls, DictCompatMixin)
+

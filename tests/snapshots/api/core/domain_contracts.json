@@ -1,59 +1,12 @@
 {
   "_metadata": {
-    "checksum": "e61c5dae5e8755dc84a23f13d3a680de44501c46339a1dbf9a4fd89b7a5d30e2"
+    "checksum": "37d18fba6ef17200fe79be36649acc4bbdc95d05cb393c492ecb23f23716ef9f"
   },
   "classes": [
     {
       "class_name": "CorpusExampleModel",
       "decorators": [],
-      "methods": [
-        {
-          "async": false,
-          "decorators": [],
-          "name": "dict",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "Any",
-              "default": null,
-              "name": "*args"
-            },
-            {
-              "annotation": "Any",
-              "default": null,
-              "name": "**kwargs"
-            }
-          ],
-          "returns": "Dict[str, Any]"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "get",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "item"
-            },
-            {
-              "annotation": "Any",
-              "default": "None",
-              "name": "default"
-            }
-          ],
-          "returns": "Any"
-        }
-      ]
+      "methods": []
     },
     {
       "class_name": "CorpusPreFetchBatchModel",
@@ -121,7 +74,7 @@
       ]
     },
     {
-      "class_name": "QuarantineRecordModel",
+      "class_name": "DictCompatMixin",
       "decorators": [],
       "methods": [
         {
@@ -171,6 +124,11 @@
           "returns": "Any"
         }
       ]
+    },
+    {
+      "class_name": "QuarantineRecordModel",
+      "decorators": [],
+      "methods": []
     },
     {
       "class_name": "SortingPlanModel",
@@ -269,52 +227,6 @@
       "methods": [
         {
           "async": false,
-          "decorators": [],
-          "name": "dict",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "Any",
-              "default": null,
-              "name": "*args"
-            },
-            {
-              "annotation": "Any",
-              "default": null,
-              "name": "**kwargs"
-            }
-          ],
-          "returns": "Dict[str, Any]"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "get",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "item"
-            },
-            {
-              "annotation": "Any",
-              "default": "None",
-              "name": "default"
-            }
-          ],
-          "returns": "Any"
-        },
-        {
-          "async": false,
           "decorators": [
             "@field_validator('confidence', mode='before')",
             "@classmethod"
@@ -360,54 +272,7 @@
     {
       "class_name": "VectorBatchPayloadModel",
       "decorators": [],
-      "methods": [
-        {
-          "async": false,
-          "decorators": [],
-          "name": "dict",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "Any",
-              "default": null,
-              "name": "*args"
-            },
-            {
-              "annotation": "Any",
-              "default": null,
-              "name": "**kwargs"
-            }
-          ],
-          "returns": "Dict[str, Any]"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "get",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "key"
-            },
-            {
-              "annotation": "Any",
-              "default": "None",
-              "name": "default"
-            }
-          ],
-          "returns": "Any"
-        }
-      ]
+      "methods": []
     }
   ],
   "functions": [

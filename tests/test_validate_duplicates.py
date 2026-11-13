@@ -151,3 +151,69 @@ class MyModel:
 """)
     visitor.visit(tree)
     assert len(hashes) == 0
+
+
+def test_dict_compat_mixin_canonical_registration():
+    assert "DictCompatMixin" in CANONICAL_UTILITY_REGISTRY
+    assert CANONICAL_UTILITY_REGISTRY["DictCompatMixin"] == "app/core/domain_contracts.py"
+
+    # Re-defining DictCompatMixin as a class outside home module raises error
+    errors = []
+    hashes = {}
+    bad_visitor = UtilityAntiDuplicationVisitor("app/ui/custom_ui.py", errors, hashes)
+    tree = ast.parse("class DictCompatMixin:\n    pass\n")
+    bad_visitor.visit(tree)
+    assert len(errors) == 1
+    assert "Re-definition of canonical utility 'DictCompatMixin' found." in errors[0]
+
+    # Defining DictCompatMixin inside home module is allowed
+    good_errors = []
+    good_hashes = {}
+    good_visitor = UtilityAntiDuplicationVisitor("app/core/domain_contracts.py", good_errors, good_hashes)
+    good_tree = ast.parse("class DictCompatMixin:\n    pass\n")
+    good_visitor.visit(good_tree)
+    assert len(good_errors) == 0
+
+
+def test_redundant_dict_adapter_methods_flagged_in_domain_models():
+    # Defining redundant dictionary adapter methods in QuarantineRecordModel is flagged
+    errors = []
+    hashes = {}
+    visitor = UtilityAntiDuplicationVisitor("app/core/domain_contracts.py", errors, hashes)
+    tree = ast.parse("""
+class QuarantineRecordModel:
+    def __getitem__(self, item: str):
+        return getattr(self, item)
+    def get(self, item: str, default=None):
+        return getattr(self, item, default)
+    def __contains__(self, item: str):
+        return item in self.model_fields
+    def dict(self, *args, **kwargs):
+        return self.model_dump(*args, **kwargs)
+""")
+    visitor.visit(tree)
+    assert len(errors) == 4
+    for method_name in ("__getitem__", "get", "__contains__", "dict"):
+        assert any(
+            f"Redundant dictionary adapter method '{method_name}' found in class 'QuarantineRecordModel'." in err
+            for err in errors
+        )
+
+    # DictCompatMixin itself defining dictionary methods is allowed
+    mixin_errors = []
+    mixin_hashes = {}
+    mixin_visitor = UtilityAntiDuplicationVisitor("app/core/domain_contracts.py", mixin_errors, mixin_hashes)
+    mixin_tree = ast.parse("""
+class DictCompatMixin:
+    def __getitem__(self, item: str):
+        pass
+    def get(self, item: str, default=None):
+        pass
+    def __contains__(self, item: str):
+        pass
+    def dict(self, *args, **kwargs):
+        pass
+""")
+    mixin_visitor.visit(mixin_tree)
+    assert len(mixin_errors) == 0
+
