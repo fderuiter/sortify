@@ -189,7 +189,7 @@ def test_parse_eml_attachment_traversal_neutralized():
         with open(eml_path, "wb") as f:
             f.write(eml_content)
 
-        dest = os.path.join(tmpdir, "eml_out")
+        dest = os.path.realpath(os.path.join(tmpdir, "eml_out"))
         body, attachments = scanner.parse_eml_file(eml_path, dest)
 
         # File must be written strictly inside dest
@@ -228,7 +228,7 @@ def test_parse_eml_attachment_windows_backslash_traversal():
         with open(eml_path, "wb") as f:
             f.write(eml_content)
 
-        dest = os.path.join(tmpdir, "eml_out")
+        dest = os.path.realpath(os.path.join(tmpdir, "eml_out"))
         body, attachments = scanner.parse_eml_file(eml_path, dest)
 
         assert len(attachments) == 1
@@ -259,7 +259,7 @@ def test_parse_eml_attachment_pure_traversal_skipped():
         with open(eml_path, "wb") as f:
             f.write(eml_content)
 
-        dest = os.path.join(tmpdir, "eml_out")
+        dest = os.path.realpath(os.path.join(tmpdir, "eml_out"))
         body, attachments = scanner.parse_eml_file(eml_path, dest)
 
         assert len(attachments) == 0
@@ -278,7 +278,7 @@ def test_unpack_archive_zip_slip_rejected():
             zf.writestr(r"..\..\win_slip.txt", "win escaped content")
             zf.writestr("nested/valid.txt", "legit content")
 
-        dest = os.path.join(tmpdir, "extracted")
+        dest = os.path.realpath(os.path.join(tmpdir, "extracted"))
         extracted = scanner.unpack_archive(zip_path, dest)
 
         assert len(extracted) == 1
