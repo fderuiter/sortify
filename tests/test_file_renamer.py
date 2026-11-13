@@ -85,6 +85,75 @@ def test_contextual_renaming_fallback_offline():
     )
 
 
+def test_keyword_extraction_benchmark_latency():
+    """Verify ContextExtractor.extract_keywords_tfidf executes in under 100 microseconds per document."""
+    import sys
+    import time
+
+    sample_doc = (
+        "Annual Financial Statement and Tax Audit Report for Acme Corporation."
+    )
+
+    # Warm up JIT and caches
+    for _ in range(50):
+        ContextExtractor.extract_keywords_tfidf(sample_doc, max_keywords=3)
+
+    # Suspend any active profiler/coverage tracer during microsecond benchmarking to measure true runtime
+    orig_trace = sys.gettrace()
+    try:
+        sys.settrace(None)
+        iterations = 500
+        start_time = time.perf_counter()
+        for _ in range(iterations):
+            ContextExtractor.extract_keywords_tfidf(sample_doc, max_keywords=3)
+        total_elapsed = time.perf_counter() - start_time
+    finally:
+        sys.settrace(orig_trace)
+
+    avg_time_per_doc = total_elapsed / iterations
+    # Confirm keyword extraction executes in under 100 microseconds per document
+    assert avg_time_per_doc < 0.0001, (
+        f"Keyword extraction too slow: {avg_time_per_doc * 1e6:.2f} microseconds per doc "
+        f"(expected < 100 microseconds)"
+    )
+
+
+def test_keyword_extraction_edge_cases():
+    """Test edge cases for ContextExtractor keyword extraction."""
+    # Empty string, whitespace, and None
+    assert ContextExtractor.extract_keywords_tfidf("") == []
+    assert ContextExtractor.extract_keywords_tfidf("   \n\t  ") == []
+    assert ContextExtractor.extract_keywords_tfidf(None) == []  # type: ignore
+
+    # Status headers
+    assert ContextExtractor.extract_keywords_tfidf("[STATUS: Processing file...]") == []
+
+    # max_keywords <= 0
+    assert (
+        ContextExtractor.extract_keywords_tfidf(
+            "Important business contract", max_keywords=0
+        )
+        == []
+    )
+    assert (
+        ContextExtractor.extract_keywords_tfidf(
+            "Important business contract", max_keywords=-1
+        )
+        == []
+    )
+
+    # All stop words
+    assert (
+        ContextExtractor.extract_keywords_tfidf("the and for this that with from") == []
+    )
+
+    # Pure secrets / high entropy that sanitize to empty
+    assert (
+        ContextExtractor.extract_keywords_tfidf("sk_live_51Nxabc123XYZ4567890abcdef")
+        == []
+    )
+
+
 def test_ai_consent_verification():
     """Test verification of AI consent settings before ML contextual generation."""
     # Scenario 1: AI consent granted & AI assisted naming enabled
