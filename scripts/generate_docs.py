@@ -648,6 +648,31 @@ def get_handwritten_docs():
     return sorted(list(set(docs)))
 
 
+def audit_auto_merge_policy(content=None, doc_path="docs/auto_merge_policy.md"):
+    """Audit auto-merge policy documentation consistency against classifier definitions."""
+    from scripts.classify_pr import BOT_AUTHORS
+
+    errors = []
+    if content is None:
+        p = Path(doc_path)
+        if not p.exists():
+            return [f"Missing auto-merge policy document: {doc_path}"]
+        try:
+            content = p.read_text(encoding="utf-8")
+        except Exception as e:
+            return [f"Could not read auto-merge policy document {doc_path}: {e}"]
+
+    lines = content.splitlines()
+    section_content = "\n".join(lines[14:52]) if len(lines) >= 52 else content
+    for bot in sorted(BOT_AUTHORS):
+        if bot not in section_content:
+            errors.append(
+                f"Auto-merge policy ({doc_path}) is missing bot author: '{bot}'"
+            )
+
+    return errors
+
+
 def audit_handwritten_docs():
     """Audit external links and relative codebase path references in handwritten docs."""
     import re
@@ -704,6 +729,10 @@ def audit_handwritten_docs():
             rel_to_doc = os.path.join(doc_dir, p) if doc_dir else p
             if not (os.path.exists(p) or os.path.exists(rel_to_doc)):
                 errors.append(f"Invalid codebase path reference in {doc_path}: {p}")
+
+        # 3. Auto-merge policy consistency check
+        if doc_path.endswith("auto_merge_policy.md"):
+            errors.extend(audit_auto_merge_policy(content=content, doc_path=doc_path))
 
     return errors
 
