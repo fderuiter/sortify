@@ -19,6 +19,7 @@ CANONICAL_UTILITY_REGISTRY = {
     "is_masked_by": "app/core/policy_engine.py",
     "_make_json_serializable": "app/core/domain_contracts.py",
     "_get_val": "app/core/domain_contracts.py",
+    "DictCompatMixin": "app/core/domain_contracts.py",
 }
 
 # Standard python dunder methods and data model adapter methods excluded from AST structural hashing
@@ -37,6 +38,22 @@ EXCLUDED_METHOD_NAMES = {
     "dict",
     "get",
     "get_instance",
+}
+
+# Canonical dictionary emulation methods registered to DictCompatMixin in app/core/domain_contracts.py
+CANONICAL_DICT_METHODS = {
+    "__getitem__",
+    "__contains__",
+    "dict",
+    "get",
+}
+
+# Domain contract models that must inherit from DictCompatMixin rather than defining redundant adapter methods
+REDUNDANT_DICT_MODELS = {
+    "QuarantineRecordModel",
+    "SortingPlanNodeModel",
+    "CorpusExampleModel",
+    "VectorBatchPayloadModel",
 }
 
 # Python builtins and special identifiers preserved during AST variable normalization
@@ -225,6 +242,22 @@ class UtilityAntiDuplicationVisitor(ast.NodeVisitor):
         self.filepath = filepath.replace("\\", "/")
         self.errors = errors
         self.function_hashes = function_hashes
+        self.current_class = None
+
+    def visit_ClassDef(self, node):
+        class_name = node.name
+        if class_name in CANONICAL_UTILITY_REGISTRY:
+            expected_home = CANONICAL_UTILITY_REGISTRY[class_name]
+            if self.filepath != expected_home:
+                home_module = expected_home.replace(".py", "").replace("/", ".")
+                self.errors.append(
+                    f"{self.filepath}:{node.lineno}: Re-definition of canonical utility '{class_name}' found. "
+                    f"Use '{home_module}.{class_name}' instead."
+                )
+        prev_class = self.current_class
+        self.current_class = class_name
+        self.generic_visit(node)
+        self.current_class = prev_class
 
     def _check_function(self, node):
         func_name = node.name
@@ -238,6 +271,28 @@ class UtilityAntiDuplicationVisitor(ast.NodeVisitor):
                     f"{self.filepath}:{node.lineno}: Re-definition of canonical utility '{func_name}' found. "
                     f"Use '{home_module}.{func_name}' instead."
                 )
+
+        # Requirement 3b: Flag redundant dictionary adapter methods on domain contract models
+        if (
+            self.filepath == "app/core/domain_contracts.py"
+            and (
+                self.current_class in REDUNDANT_DICT_MODELS
+                or (
+                    self.current_class
+                    and self.current_class
+                    not in (
+                        "DictCompatMixin",
+                        "SortingPlanModel",
+                        "CorpusPreFetchBatchModel",
+                    )
+                )
+            )
+            and func_name in CANONICAL_DICT_METHODS
+        ):
+            self.errors.append(
+                f"{self.filepath}:{node.lineno}: Redundant dictionary adapter method '{func_name}' found in class '{self.current_class}'. "
+                f"Use canonical 'DictCompatMixin' from 'app.core.domain_contracts' instead."
+            )
 
         # Requirement 4: Record function hash for structural anti-duplication comparison if non-excluded
         if func_name not in EXCLUDED_METHOD_NAMES:

@@ -134,6 +134,14 @@ DEFAULT_COMMAND_CATALOG: List[PaletteCommand] = [
         action_name="action_open_history",
     ),
     PaletteCommand(
+        id="undo_last_sort",
+        title="Undo Last Sort",
+        category="History",
+        shortcut="Ctrl+Z",
+        description="Revert the last completed sorting session",
+        action_name="action_undo_last_sort",
+    ),
+    PaletteCommand(
         id="open_extraction_preview",
         title="Preview PDF Extraction",
         category="Tools",

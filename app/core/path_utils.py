@@ -825,3 +825,76 @@ def is_junction_entry(entry) -> bool:
         return os.path.isjunction(path)
     except (AttributeError, OSError):
         return False
+
+
+def safe_extract_path(
+    target_dir: str | Path,
+    member_path: str | Path,
+    allow_same_dir: bool = False,
+) -> Path:
+    """Validate that member_path resolves safely inside target_dir and return resolved destination Path.
+
+    Sanitizes cross-platform path separators, rejects null bytes, absolute roots,
+    Windows drive prefixes, and directory traversal attempts that escape target_dir.
+
+    Args:
+        target_dir: The destination directory where files should be extracted.
+        member_path: The relative file or directory path from the archive or attachment.
+        allow_same_dir: Whether to allow member_path resolving to target_dir itself (default False).
+
+    Returns
+    -------
+        The resolved Path object representing the safe destination path within target_dir.
+
+    Raises
+    ------
+        ValueError: If target_dir or member_path is empty, contains null bytes, is absolute,
+            contains a drive prefix, or attempts to traverse outside target_dir.
+    """
+    if not target_dir or not str(target_dir).strip():
+        raise ValueError("Target directory must not be empty.")
+    if not member_path or not str(member_path).strip():
+        raise ValueError("Member path must not be empty.")
+
+    target_str = str(target_dir)
+    member_str = str(member_path)
+
+    if "\x00" in target_str or "\x00" in member_str:
+        raise ValueError("Path cannot contain null bytes.")
+
+    clean_member = member_str.replace("\\", "/")
+
+    # Check for absolute paths, UNC network shares, or Windows drive prefixes
+    if clean_member.startswith("/") or bool(re.match(r"^[a-zA-Z]:", clean_member)):
+        raise ValueError(
+            f"Path traversal attempt: entry '{member_path}' is an absolute path or contains drive prefix."
+        )
+
+    target_dir_path = Path(target_dir).resolve()
+    candidate_path = (target_dir_path / clean_member).resolve()
+
+    # Verify containment within target directory
+    is_contained = False
+    try:
+        if candidate_path.is_relative_to(target_dir_path):
+            is_contained = True
+    except (AttributeError, ValueError):
+        pass
+
+    if not is_contained:
+        s_candidate = str(candidate_path).replace("\\", "/").rstrip("/").lower()
+        s_target = str(target_dir_path).replace("\\", "/").rstrip("/").lower()
+        if s_candidate == s_target or s_candidate.startswith(s_target + "/"):
+            is_contained = True
+
+    if not is_contained:
+        raise ValueError(
+            f"Path traversal detected: entry '{member_path}' escapes target directory '{target_dir}'."
+        )
+
+    if candidate_path == target_dir_path and not allow_same_dir:
+        raise ValueError(
+            f"Path traversal detected: entry '{member_path}' resolves to target directory itself."
+        )
+
+    return candidate_path

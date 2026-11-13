@@ -5,8 +5,10 @@ from unittest.mock import MagicMock
 
 import pytest
 
+from app.core.exceptions import ArchiveCorruptionError
 from app.core.mover import AsyncMoveEngine
-from app.core.path_utils import sanitize_filename, sanitize_plan
+from app.core.offline_loader import OfflineModelLoader
+from app.core.path_utils import safe_extract_path, sanitize_filename, sanitize_plan
 from app.core.verifier import VerificationEngine, VirtualFilesystemTracker
 
 
@@ -208,3 +210,177 @@ def test_async_move_engine_rejects_escaping_paths():
                 ValueError, match="Plan validation or confirmation failed"
             ):
                 engine.execute(base_dir, plan, db=None, history_manager=MagicMock())
+
+
+def test_safe_extract_path_valid_nested_and_flat():
+    """Verify safe_extract_path resolves valid relative and nested paths within target_dir."""
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        base = Path(tmp_dir) / "staging"
+        base.mkdir()
+
+        # Flat file
+        p1 = safe_extract_path(base, "model.bin")
+        assert p1 == base.resolve() / "model.bin"
+
+        # Legitimate nested directory
+        p2 = safe_extract_path(base, "models/onnx/weights.bin")
+        assert p2 == base.resolve() / "models" / "onnx" / "weights.bin"
+
+        # Legitimate nested directory with redundant dot
+        p3 = safe_extract_path(base, "models/./onnx/weights.bin")
+        assert p3 == base.resolve() / "models" / "onnx" / "weights.bin"
+
+        # Path objects as inputs
+        p4 = safe_extract_path(Path(tmp_dir), Path("test.txt"))
+        assert p4 == Path(tmp_dir).resolve() / "test.txt"
+
+
+def test_safe_extract_path_rejects_traversal_payloads():
+    """Verify safe_extract_path rejects relative directory traversal payloads attempting escape."""
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        base = Path(tmp_dir) / "staging"
+        base.mkdir()
+
+        traversal_payloads = [
+            "../../test.txt",
+            "../test.txt",
+            "sub/../../test.txt",
+            "a/b/../../../test.txt",
+            "..",
+            "sub/..",
+        ]
+
+        for payload in traversal_payloads:
+            with pytest.raises(
+                ValueError,
+                match="escapes target directory|resolves to target directory",
+            ):
+                safe_extract_path(base, payload)
+
+
+def test_safe_extract_path_rejects_cross_platform_separators_and_absolute_paths():
+    """Verify safe_extract_path handles cross-platform backslashes and rejects absolute/drive paths."""
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        base = Path(tmp_dir) / "staging"
+        base.mkdir()
+
+        # Windows backslash traversal
+        with pytest.raises(ValueError, match="escapes target directory"):
+            safe_extract_path(base, r"..\..\test.txt")
+
+        with pytest.raises(ValueError, match="escapes target directory"):
+            safe_extract_path(base, r"sub\..\..\test.txt")
+
+        # Legitimate nested path with Windows backslashes
+        nested = safe_extract_path(base, r"models\onnx\model.bin")
+        assert nested == base.resolve() / "models" / "onnx" / "model.bin"
+
+        # POSIX absolute path
+        with pytest.raises(ValueError, match="absolute path or contains drive prefix"):
+            safe_extract_path(base, "/etc/passwd")
+
+        # Windows drive prefixes
+        with pytest.raises(ValueError, match="absolute path or contains drive prefix"):
+            safe_extract_path(base, "C:/Windows/System32/cmd.exe")
+
+        with pytest.raises(ValueError, match="absolute path or contains drive prefix"):
+            safe_extract_path(base, r"C:\Windows\System32\cmd.exe")
+
+        with pytest.raises(ValueError, match="absolute path or contains drive prefix"):
+            safe_extract_path(base, "D:file.txt")
+
+        # UNC share paths
+        with pytest.raises(ValueError, match="absolute path or contains drive prefix"):
+            safe_extract_path(base, "//server/share/payload.bin")
+
+        with pytest.raises(ValueError, match="absolute path or contains drive prefix"):
+            safe_extract_path(base, r"\\server\share\payload.bin")
+
+
+def test_safe_extract_path_invalid_inputs():
+    """Verify safe_extract_path rejects empty, whitespace, and null-byte containing inputs."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        with pytest.raises(ValueError, match="Target directory must not be empty"):
+            safe_extract_path("", "file.txt")
+
+        with pytest.raises(ValueError, match="Member path must not be empty"):
+            safe_extract_path(tmp_dir, "")
+
+        with pytest.raises(ValueError, match="Member path must not be empty"):
+            safe_extract_path(tmp_dir, "   ")
+
+        with pytest.raises(ValueError, match="Path cannot contain null bytes"):
+            safe_extract_path(tmp_dir, "evil\x00.txt")
+
+        with pytest.raises(ValueError, match="Path cannot contain null bytes"):
+            safe_extract_path(f"{tmp_dir}\x00", "test.txt")
+
+
+def test_safe_extract_path_same_dir_guard():
+    """Verify allow_same_dir guard controls whether resolving to target_dir itself is permitted."""
+    from pathlib import Path
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        base = Path(tmp_dir) / "staging"
+        base.mkdir()
+
+        # By default allow_same_dir is False
+        with pytest.raises(ValueError, match="resolves to target directory itself"):
+            safe_extract_path(base, ".")
+
+        # When explicitly allowed
+        resolved = safe_extract_path(base, ".", allow_same_dir=True)
+        assert resolved == base.resolve()
+
+
+def test_offline_loader_extract_and_verify_rejects_path_traversal():
+    """Verify OfflineModelLoader._extract_and_verify detects traversal payloads in zip archives."""
+    import zipfile
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        zip_path = os.path.join(tmp_dir, "malicious.zip")
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("../../traversal_test.txt", b"evil content")
+            zf.writestr("safe_model.bin", b"safe content")
+
+        staging_target = os.path.join(tmp_dir, "staging")
+        os.makedirs(staging_target, exist_ok=True)
+
+        with pytest.raises(ArchiveCorruptionError) as exc_info:
+            OfflineModelLoader._extract_and_verify(zip_path, staging_target)
+
+        assert "Failed to extract sidecar model package" in str(exc_info.value)
+
+        # Verify no file was written outside staging_target
+        assert not os.path.exists(os.path.join(tmp_dir, "traversal_test.txt"))
+        assert not os.path.exists("/tmp/traversal_test.txt")
+
+
+def test_offline_loader_extract_and_verify_legitimate_nested_archive():
+    """Verify OfflineModelLoader._extract_and_verify unpacks legitimate nested directory structures."""
+    import zipfile
+
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        zip_path = os.path.join(tmp_dir, "valid_model.zip")
+        with zipfile.ZipFile(zip_path, "w") as zf:
+            zf.writestr("models/nested/config.json", b'{"vocab_size": 1000}')
+            zf.writestr("models/nested/weights.bin", b"\x00" * 32)
+
+        staging_target = os.path.join(tmp_dir, "staging")
+        os.makedirs(staging_target, exist_ok=True)
+
+        # Extraction should succeed without error
+        OfflineModelLoader._extract_and_verify(zip_path, staging_target)
+
+        assert os.path.exists(
+            os.path.join(staging_target, "models", "nested", "config.json")
+        )
+        assert os.path.exists(
+            os.path.join(staging_target, "models", "nested", "weights.bin")
+        )
