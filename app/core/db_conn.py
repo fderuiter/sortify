@@ -179,6 +179,7 @@ def _open_connection(db_path: str, abs_path: str, cache_key):
     from contextlib import closing
 
     conn = None
+    assert sqlite3 is not None
     try:
         conn = sqlite3.connect(abs_path, timeout=30.0, check_same_thread=False)
         if raw_key and HAS_SQLCIPHER:
@@ -325,6 +326,7 @@ def _open_connection(db_path: str, abs_path: str, cache_key):
                                 pass
 
                     temp_conn = None
+                    assert sqlite3 is not None
                     try:
                         temp_conn = sqlite3.connect(
                             str(temp_db_path), timeout=5.0, check_same_thread=False
@@ -381,7 +383,7 @@ def _open_connection(db_path: str, abs_path: str, cache_key):
         crypto = None
         raw_key = None
         cache_key = None
-        abs_path = None
+        abs_path = ""
 
         if is_decryption_err and not isinstance(
             e, (RuntimeError, SystemExit, KeyboardInterrupt)
@@ -391,6 +393,7 @@ def _open_connection(db_path: str, abs_path: str, cache_key):
                 "This indicates a locked OS keyring, mismatched cryptographic keys, or decryption failure. "
                 f"Database path: '{db_path}'. Error detail: {e}"
             )
+            assert sqlite3 is not None
             raise sqlite3.DatabaseError(
                 f"Failed to decrypt database at '{db_path}'. Please ensure your OS keyring is unlocked and configured correctly."
             ) from e

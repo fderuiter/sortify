@@ -4,7 +4,7 @@ import logging
 import os
 import weakref
 from pathlib import Path
-from typing import Optional
+from typing import Any, Optional
 
 from app.core.db_conn import get_db_connection
 from app.core.db_worker import DBWorker
@@ -192,7 +192,7 @@ class Database:
 
         self._cache_lock = threading.Lock()
         self._cached_base_dir = None
-        self._cached_documents = None
+        self._cached_documents: Any = None
         self.corrupted_vectors = set()
         self._corrupted_vectors_lock = threading.Lock()
         from app.core.cache import SparseMatrixLRUCache
@@ -1721,7 +1721,7 @@ class Database:
             return []
 
         conn = get_db_connection(self.db_path)
-        results = []
+        results: list[tuple[str, str]] = []
         with conn:
             # Process in small chunks to avoid sqlite query argument limits
             chunk_size = 50
@@ -1741,7 +1741,7 @@ class Database:
                     dec_text = (
                         self.crypto.decrypt_text(enc_text)
                         if enc_text is not None
-                        else None
+                        else ""
                     )
                     results.append((filepath, dec_text))
         return results
@@ -1881,7 +1881,7 @@ class Database:
             self.corrupted_vectors.clear()
         if hasattr(self, "matrix_lru_cache") and self.matrix_lru_cache:
             try:
-                self.matrix_lru_cache.clear()
+                self.matrix_lru_cache.invalidate(None)
             except Exception:
                 pass
 
@@ -1941,10 +1941,10 @@ class Database:
                 (base_dir, sig, limit, offset),
             )
             rows = cursor.fetchall()
-            results = []
+            results: list[tuple[str, str]] = []
             for filepath, enc_text in rows:
                 dec_text = (
-                    self.crypto.decrypt_text(enc_text) if enc_text is not None else None
+                    self.crypto.decrypt_text(enc_text) if enc_text is not None else ""
                 )
                 results.append((filepath, dec_text))
             return results

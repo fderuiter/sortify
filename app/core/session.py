@@ -39,7 +39,9 @@ class AppSession:
 
         from app.core.path_utils import get_base_path, setup_session_directory
 
-        self.session_id, self.session_dir = setup_session_directory(session_id)
+        self.session_id, self.session_dir = setup_session_directory(
+            str(session_id) if session_id else ""
+        )
 
         from app.core.db_worker import DBWorker
         from app.core.store import open_store
@@ -96,13 +98,19 @@ class AppSession:
 
             strat = clustering_registry.get_strategy(strategy_name)
             if strat and hasattr(strat, "smart_renaming"):
-                strat.smart_renaming = getattr(
-                    self.settings, "CLINICAL_SMART_RENAMING", False
+                setattr(
+                    strat,
+                    "smart_renaming",
+                    bool(getattr(self.settings, "CLINICAL_SMART_RENAMING", False)),
                 )
-                strat.generate_audit_report = getattr(
-                    self.settings, "CLINICAL_GENERATE_AUDIT_REPORT", True
+                setattr(
+                    strat,
+                    "generate_audit_report",
+                    bool(
+                        getattr(self.settings, "CLINICAL_GENERATE_AUDIT_REPORT", True)
+                    ),
                 )
-                strat.base_dir = self.base_dir
+                setattr(strat, "base_dir", self.base_dir)
         else:
             strategy_name = (
                 "generative"
@@ -122,12 +130,15 @@ class AppSession:
         self, items_to_sort, cancel_check, progress_callback=None
     ):
         """Build corpus asynchronous generator for files, yielded file-by-file sequentially."""
-        if not self.base_dir and not self.source_dirs:
+        effective_base_dir = self.base_dir or (
+            self.source_dirs[0] if self.source_dirs else None
+        )
+        if not effective_base_dir:
             return
         from app.core.extractor import build_corpus_generator_async
 
         async for item, text, file_hash, was_skipped in build_corpus_generator_async(
-            self.base_dir,
+            effective_base_dir,
             items_to_sort,
             db=self.db,
             cancel_check=cancel_check,
@@ -139,9 +150,12 @@ class AppSession:
 
     def partial_fit(self, chunk):
         """Incrementally train the analyzer."""
-        if not self.base_dir and not self.source_dirs:
+        effective_base_dir = self.base_dir or (
+            self.source_dirs[0] if self.source_dirs else None
+        )
+        if not effective_base_dir:
             return
-        self.analyzer.partial_fit(self.base_dir, chunk, self.settings)
+        self.analyzer.partial_fit(effective_base_dir, chunk, self.settings)
 
     def generate_sorting_plan(
         self,
@@ -150,20 +164,23 @@ class AppSession:
         jev_results: Optional[Dict[str, Any]] = None,
     ):
         """Generate sorting plan from analyzer."""
-        if not self.base_dir and not self.source_dirs:
+        effective_base_dir = self.base_dir or (
+            self.source_dirs[0] if self.source_dirs else None
+        )
+        if not effective_base_dir:
             return {}
         locked = {}
         dirs_to_check = (
             self.source_dirs
             if self.source_dirs
-            else ([self.base_dir] if self.base_dir else [])
+            else ([effective_base_dir] if effective_base_dir else [])
         )
         for s_dir in dirs_to_check:
             _, lk, _, _ = self.cache_manager.load_cache(s_dir)
             if lk:
                 locked.update(lk)
         return self.analyzer.generate_sorting_plan(
-            self.base_dir,
+            effective_base_dir,
             self.settings,
             locked_files=locked,
             fast_path_only=fast_path_only,
@@ -199,7 +216,10 @@ class AppSession:
         -------
             dict: Summary dictionary containing move execution results and statistics.
         """
-        if not self.base_dir and not self.source_dirs:
+        effective_base_dir = self.base_dir or (
+            self.source_dirs[0] if self.source_dirs else None
+        )
+        if not effective_base_dir:
             return {}
 
         plan_path = self.session_dir / "plan.json"
@@ -209,28 +229,36 @@ class AppSession:
 
         from app.core.mover import execute_moves
 
+        move_kwargs: dict[str, Any] = dict(kwargs)
+        if chunk_size is not None:
+            move_kwargs["chunk_size"] = chunk_size
+
         with self._lock_folders():
             return execute_moves(
-                self.base_dir,
+                effective_base_dir,
                 plan,
                 self.db,
                 self.history_manager,
                 self.settings,
                 resume=resume,
                 cancel_check=cancel_check,
-                chunk_size=chunk_size,
                 progress_callback=progress_callback,
                 source_dirs=self.source_dirs,
-                **kwargs,
+                **move_kwargs,
             )
 
     def retry_failed_moves(self, failed_items, progress_callback=None, **kwargs):
         """Re-attempt move operations for failed items."""
+        effective_base_dir = self.base_dir or (
+            self.source_dirs[0] if self.source_dirs else None
+        )
+        if not effective_base_dir:
+            return {}
         from app.core.mover import retry_failed_moves
 
         with self._lock_folders():
             return retry_failed_moves(
-                self.base_dir,
+                effective_base_dir,
                 failed_items,
                 db=self.db,
                 history_manager=self.history_manager,
