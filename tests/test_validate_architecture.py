@@ -409,4 +409,3 @@ def test_validate_architecture_incremental_ml_violation(monkeypatch, tmp_path):
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
-
