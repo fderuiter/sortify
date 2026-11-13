@@ -228,3 +228,185 @@ def test_app_has_no_test_detection():
         tree = ast.parse(path.read_text(encoding="utf-8"))
         validate_no_test_detection(errors, str(path), tree)
     assert errors == []
+
+
+def _ml_errors(source, filepath="app/core/example.py"):
+    import ast
+
+    from scripts.validate_architecture import validate_lazy_ml_imports
+
+    errors = []
+    validate_lazy_ml_imports(errors, filepath, ast.parse(source))
+    return errors
+
+
+@pytest.mark.parametrize(
+    "pkg",
+    [
+        "torch",
+        "transformers",
+        "easyocr",
+        "onnxruntime",
+        "llama_cpp",
+        "sentence_transformers",
+    ],
+)
+def test_lazy_ml_imports_flag_top_level_packages(pkg):
+    errors_import = _ml_errors(f"import {pkg}\n")
+    assert len(errors_import) == 1
+    assert "app/core/example.py:1" in errors_import[0]
+    assert pkg in errors_import[0]
+    assert "lazily imported" in errors_import[0]
+
+    errors_from = _ml_errors(f"from {pkg} import helper\n")
+    assert len(errors_from) == 1
+    assert "app/core/example.py:1" in errors_from[0]
+    assert pkg in errors_from[0]
+
+
+def test_lazy_ml_imports_flag_submodules_and_multiple_aliases():
+    assert _ml_errors("import torch.nn as nn\n")
+    assert _ml_errors("from transformers.models.bert import BertModel\n")
+    assert _ml_errors("from sentence_transformers.util import cos_sim\n")
+
+    multiple = _ml_errors("import os, torch, transformers\n")
+    assert len(multiple) == 2
+    assert any("torch" in e for e in multiple)
+    assert any("transformers" in e for e in multiple)
+
+
+def test_lazy_ml_imports_flag_class_level_imports():
+    source_class_import = """
+class TextClassifier:
+    import torch
+"""
+    errors = _ml_errors(source_class_import)
+    assert len(errors) == 1
+    assert "torch" in errors[0]
+
+    source_class_from = """
+class ModelPipeline:
+    from sentence_transformers import SentenceTransformer
+"""
+    errors_from = _ml_errors(source_class_from)
+    assert len(errors_from) == 1
+    assert "sentence_transformers" in errors_from[0]
+
+
+def test_lazy_ml_imports_flag_unguarded_control_flow():
+    assert _ml_errors("if True:\n    import torch\n")
+    assert _ml_errors("try:\n    import easyocr\nexcept ImportError:\n    pass\n")
+    assert _ml_errors("if not TYPE_CHECKING:\n    import onnxruntime\n")
+    assert _ml_errors("if TYPE_CHECKING:\n    pass\nelse:\n    import llama_cpp\n")
+
+
+def test_lazy_ml_imports_allow_function_and_method_scopes():
+    func_source = """
+def run_embedding():
+    import torch
+    from transformers import AutoModel
+    return AutoModel
+"""
+    assert _ml_errors(func_source) == []
+
+    async_source = """
+async def async_embed():
+    from sentence_transformers import SentenceTransformer
+    return SentenceTransformer
+"""
+    assert _ml_errors(async_source) == []
+
+    method_source = """
+class EmbeddingEngine:
+    def __init__(self):
+        self.ready = True
+
+    def compute(self):
+        import onnxruntime as ort
+        from llama_cpp import Llama
+        return ort
+
+    async def ocr(self):
+        import easyocr
+        return easyocr
+"""
+    assert _ml_errors(method_source) == []
+
+
+def test_lazy_ml_imports_allow_type_checking_guards():
+    name_guard = """
+if TYPE_CHECKING:
+    import torch
+    from transformers import AutoModel
+    from sentence_transformers import SentenceTransformer
+"""
+    assert _ml_errors(name_guard) == []
+
+    attr_guard = """
+import typing
+
+if typing.TYPE_CHECKING:
+    import easyocr
+    from onnxruntime import InferenceSession
+"""
+    assert _ml_errors(attr_guard) == []
+
+    and_guard = """
+import sys
+
+if TYPE_CHECKING and sys.version_info >= (3, 11):
+    import llama_cpp
+"""
+    assert _ml_errors(and_guard) == []
+
+    class_guard = """
+class Classifier:
+    if TYPE_CHECKING:
+        from torch import Tensor
+"""
+    assert _ml_errors(class_guard) == []
+
+
+def test_lazy_ml_imports_allow_unrelated_packages():
+    ordinary_code = """
+import os
+import sys
+import sklearn
+from pathlib import Path
+
+class Foo:
+    pass
+"""
+    assert _ml_errors(ordinary_code) == []
+
+
+def test_app_has_no_eager_ml_imports():
+    import ast
+    from pathlib import Path
+
+    from scripts.validate_architecture import validate_lazy_ml_imports
+
+    errors = []
+    for path in Path("app").rglob("*.py"):
+        tree = ast.parse(path.read_text(encoding="utf-8"))
+        validate_lazy_ml_imports(errors, str(path), tree)
+    assert errors == []
+
+
+def test_validate_architecture_incremental_ml_violation(monkeypatch, tmp_path):
+    bad_file = tmp_path / "bad_ml_module.py"
+    bad_file.write_text("import torch\n", encoding="utf-8")
+
+    rel_path = f"app/{bad_file.name}"
+    real_bad_path = tmp_path / rel_path
+    real_bad_path.parent.mkdir(parents=True, exist_ok=True)
+    real_bad_path.write_text("import torch\n", encoding="utf-8")
+
+    monkeypatch.chdir(tmp_path)
+    (tmp_path / "app").mkdir(exist_ok=True)
+
+    monkeypatch.setattr(sys, "argv", ["validate_architecture.py", rel_path])
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 1
+
