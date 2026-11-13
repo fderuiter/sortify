@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional
+from typing import TYPE_CHECKING, Dict, List, Optional, Set
 
 if TYPE_CHECKING:
     from scripts.diagram_schema import BaseDiagramSpec
@@ -137,6 +137,28 @@ def find_mmdc_executable(verify_browser: bool = True) -> Optional[List[str]]:
     if verify_browser:
         if is_browser_available(candidate):
             return candidate
+        # Try with local Chrome puppeteer configuration if available
+        chrome_path = (
+            shutil.which("google-chrome")
+            or shutil.which("chromium")
+            or shutil.which("chromium-browser")
+        )
+        if chrome_path:
+            config_path = Path("/tmp/puppeteer-config.json")
+            if not config_path.exists():
+                config_path.write_text(
+                    json.dumps(
+                        {
+                            "executablePath": chrome_path,
+                            "args": ["--no-sandbox", "--disable-setuid-sandbox"],
+                        }
+                    ),
+                    encoding="utf-8",
+                )
+            candidate_with_config = candidate + ["-p", str(config_path)]
+            reset_browser_cache()
+            if is_browser_available(candidate_with_config):
+                return candidate_with_config
         return None
 
     return candidate
@@ -410,6 +432,73 @@ def generate_fallback_svg(title: str, mmd_content: str) -> str:
 """
 
 
+_MARKDOWN_ANCHORS_CACHE: Dict[Path, Set[str]] = {}
+
+
+def reset_markdown_anchors_cache() -> None:
+    """Reset cached markdown anchors (useful for testing)."""
+    global _MARKDOWN_ANCHORS_CACHE
+    _MARKDOWN_ANCHORS_CACHE = {}
+
+
+def extract_markdown_anchors(file_path: Path) -> Set[str]:
+    """Parse a target markdown file to discover valid heading slugs and HTML anchor identifiers."""
+    resolved_path = file_path.resolve()
+    if resolved_path in _MARKDOWN_ANCHORS_CACHE:
+        return _MARKDOWN_ANCHORS_CACHE[resolved_path]
+
+    anchors: Set[str] = set()
+    try:
+        content = resolved_path.read_text(encoding="utf-8")
+    except Exception:
+        _MARKDOWN_ANCHORS_CACHE[resolved_path] = anchors
+        return anchors
+
+    # 1. Parse standard markdown headings while ignoring code blocks (``` or ~~~)
+    in_code_block = False
+    for line in content.splitlines():
+        trimmed = line.strip()
+        if trimmed.startswith("```") or trimmed.startswith("~~~"):
+            in_code_block = not in_code_block
+            continue
+        if in_code_block:
+            continue
+
+        m_heading = re.match(r"^#{1,6}\s+(.+)$", trimmed)
+        if m_heading:
+            heading_text = m_heading.group(1).strip()
+            # Explicit attribute list identifier: {#custom-id}
+            attr_match = re.search(r"\{#([a-zA-Z0-9_\-]+)\}\s*$", heading_text)
+            if attr_match:
+                anchors.add(attr_match.group(1))
+                anchors.add(attr_match.group(1).lower())
+                heading_text = heading_text[: attr_match.start()].strip()
+
+            # GitHub-style markdown heading slugification
+            slug_base = re.sub(r"[^\w\- ]", "", heading_text.lower())
+            slug1 = slug_base.replace(" ", "-")
+            if slug1:
+                anchors.add(slug1)
+            slug2 = re.sub(r"-+", "-", slug1).strip("-")
+            if slug2:
+                anchors.add(slug2)
+
+    # 2. Parse explicit HTML anchor identifiers (id="..." or name="...")
+    tag_matches = re.finditer(
+        r'<[a-zA-Z0-9_\-]+\s+[^>]*?(?:id|name)=["\']([^"\']+)["\']',
+        content,
+        re.IGNORECASE,
+    )
+    for tm in tag_matches:
+        val = tm.group(1).strip()
+        if val:
+            anchors.add(val)
+            anchors.add(val.lower())
+
+    _MARKDOWN_ANCHORS_CACHE[resolved_path] = anchors
+    return anchors
+
+
 def parse_and_validate_click_directives(mmd_content: str) -> List[str]:
     """Parse and validate Mermaid click directives within diagram markup."""
     errors = []
@@ -447,7 +536,7 @@ def parse_and_validate_click_directives(mmd_content: str) -> List[str]:
                             f"Line {idx}: Unsafe or invalid URL in click directive: {ve}"
                         )
 
-                    # Check relative file path target existence if not an absolute URI scheme or hash-only
+                    # Check relative file path target existence and anchor fragments if not an absolute URI scheme or hash-only
                     lower_url = url_candidate.lower()
                     if not (
                         lower_url.startswith(
@@ -455,13 +544,38 @@ def parse_and_validate_click_directives(mmd_content: str) -> List[str]:
                         )
                         or "://" in lower_url
                     ):
-                        file_part = url_candidate.split("#")[0].strip()
+                        if "#" in url_candidate:
+                            file_part, anchor_part = url_candidate.split("#", 1)
+                            file_part = file_part.strip()
+                            anchor_part = anchor_part.strip()
+                        else:
+                            file_part = url_candidate.strip()
+                            anchor_part = None
+
                         if file_part:
                             target_file = REPO_ROOT / file_part
                             if not target_file.exists():
                                 errors.append(
                                     f"Line {idx}: Click directive target file '{file_part}' does not exist relative to REPO_ROOT ({REPO_ROOT})"
                                 )
+                            elif anchor_part is not None and file_part.lower().endswith(
+                                ".md"
+                            ):
+                                if not anchor_part:
+                                    errors.append(
+                                        f"Line {idx}: Empty anchor fragment in click directive URL '{url_candidate}'"
+                                    )
+                                else:
+                                    valid_anchors = extract_markdown_anchors(
+                                        target_file
+                                    )
+                                    if (
+                                        anchor_part not in valid_anchors
+                                        and anchor_part.lower() not in valid_anchors
+                                    ):
+                                        errors.append(
+                                            f"Line {idx}: Target anchor '{anchor_part}' does not exist in '{file_part}'"
+                                        )
 
     return errors
 

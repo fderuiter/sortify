@@ -912,7 +912,7 @@ ARCHITECTURE_DATAFLOW_SPEC = DataFlowDiagramSpec(
         ExternalEntityNode(
             id="H",
             label="UI Tree Rendering",
-            url="docs/ui.md#appuiplan_treeview",
+            url="docs/ui.md#appuimixinstree_view",
             tooltip="UI Rendering Step",
             step_number=8,
             step_description="Render sorting plan in tree view",
@@ -2010,7 +2010,7 @@ def _create_architecture_dataflow_spec() -> DataFlowDiagramSpec:
             ExternalEntityNode(
                 id="H",
                 label="UI Tree Rendering",
-                url="docs/ui.md#appuiplan_treeview",
+                url="docs/ui.md#appuimixinstree_view",
                 tooltip="UI Rendering Step",
                 step_number=8,
                 step_description="Render sorting plan in tree view",

@@ -6,6 +6,8 @@ This document is automatically generated. Do not edit manually.
 
 ![Core Architecture Diagram](assets/diagrams/core_architecture.svg)
 
+<a id="appcoresanitizer"></a>
+
 ## `app.cli.error_emitter`
 
 ::: app.cli.error_emitter
