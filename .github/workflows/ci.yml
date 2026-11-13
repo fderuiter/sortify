@@ -307,10 +307,10 @@ jobs:
       with:
         filters: |
           docs:
+            - 'app/**'
+            - 'scripts/**'
             - 'docs/**'
             - 'mkdocs.yml'
-            - 'app/**'
-            - 'scripts/generate_docs.py'
             - 'pyproject.toml'
 
   # The only job that keeps checkout credentials: mkdocs gh-deploy pushes.
@@ -343,6 +343,26 @@ jobs:
     - name: Install dependencies
       run: |
         uv sync --frozen --group docs
+
+    - name: Set up Node
+      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
+      with:
+        node-version: "22"
+
+    - name: Install Mermaid renderer
+      run: |
+        npm install --global @mermaid-js/mermaid-cli@12.0.0
+        # Ubuntu 24.04 runners block unprivileged user namespaces through
+        # AppArmor, so headless Chrome dies with "No usable sandbox!". Allow
+        # them rather than running Chrome with --no-sandbox.
+        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
+        # Fail here, not silently in doc compilation, if headless Chrome can't start.
+        printf 'graph TD\n  A --> B\n' > "$RUNNER_TEMP/probe.mmd"
+        mmdc -i "$RUNNER_TEMP/probe.mmd" -o "$RUNNER_TEMP/probe.svg"
+
+    - name: Compile Documentation
+      run: |
+        uv run python scripts/generate_docs.py
 
     - name: Deploy Documentation
       if: github.ref == 'refs/heads/main'

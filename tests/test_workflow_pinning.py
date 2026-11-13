@@ -105,9 +105,9 @@ def test_docs_path_filter_includes_application_source():
     assert "docs" in filters, "docs filter not defined in paths-filter"
     docs_patterns = filters["docs"]
     assert "app/**" in docs_patterns, "app/** must be included in docs path filter"
-    assert "scripts/generate_docs.py" in docs_patterns, (
-        "scripts/generate_docs.py must be included in docs path filter"
-    )
+    assert (
+        "scripts/generate_docs.py" in docs_patterns or "scripts/**" in docs_patterns
+    ), "scripts/generate_docs.py or scripts/** must be included in docs path filter"
     assert "pyproject.toml" in docs_patterns, (
         "pyproject.toml must be included in docs path filter"
     )

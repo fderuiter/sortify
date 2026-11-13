@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "11af979abc799d137daed4c16a16dff7f5d50f8da68d712332967eba62cfae93"
+    "checksum": "21a7a89f1c5421209970181d3356b6efb20feb02277def537ea6326dcd959626"
   },
   "classes": [
     {
@@ -34,7 +34,17 @@
       "methods": []
     },
     {
+      "class_name": "EntryNotFoundError",
+      "decorators": [],
+      "methods": []
+    },
+    {
       "class_name": "HashVerificationError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "InvalidStateTransitionError",
       "decorators": [],
       "methods": []
     },
