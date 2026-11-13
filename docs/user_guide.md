@@ -39,7 +39,7 @@ Reopen the wizard any time with `[Ctrl+W]`.
 ### In the terminal interface
 1. Start the app with `smart-autosorter` (or `smart-autosorter --tui`).
 2. Press `[Ctrl+B]` to choose a folder, then `[Ctrl+S]` to scan it. The proposed folder tree appears; nothing has moved yet.
-3. Review the plan. `[Ctrl+F]` searches the tree, `[Space]` checks items, `[Ctrl+L]` locks a file in place, `[Ctrl+R]` renames a folder and `[Ctrl+N]` creates one. Drag-and-drop moves files between folders.
+3. Review the plan. `[Ctrl+F]` searches the tree, `[Space]` checks items, `[Ctrl+L]` locks a file in place, `[Ctrl+R]` renames a folder and `[Ctrl+N]` creates one. Press `[R]` to reassign checked files or the active item to a target folder (if the search box is focused, defocus it first before pressing `[R]`; see [Keyboard Shortcuts](keyboard_shortcuts.md)).
 4. Press `[Ctrl+E]` to execute. You can review duplicates first, and an audit report is shown when the moves finish.
 
 Press `[?]` or `[F1]` for the full list of shortcuts and `[Ctrl+Q]` to quit. Every shortcut is also listed in [Keyboard Shortcuts](keyboard_shortcuts.md).

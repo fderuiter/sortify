@@ -10,7 +10,7 @@ Local, offline-first Python 3.12 file sorter (`smart-autosorter`). Read `CONTEXT
 - Type check: `uv run ty check`.
 - Dependency audit: `uv run deptry .`.
 - Architecture and import validation: `uv run python scripts/validate_architecture.py` and `uv run python scripts/validate_imports.py`.
-- Hooks: `uv run pre-commit install`; they run ruff plus the repo validators in `scripts/`.
+- Hooks: `uv run pre-commit install`; they run ruff, secret detection (gitleaks), workflow linting (actionlint), plus the repo validators in `scripts/`.
 
 ## Conventions
 

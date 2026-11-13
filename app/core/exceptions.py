@@ -113,3 +113,15 @@ class PartialMoveError(SortifyBaseError, RuntimeError):
     """
 
     pass
+
+
+class InvalidStateTransitionError(SortifyBaseError, ValueError):
+    """Raised when an illegal transaction status transition or terminal record mutation is attempted."""
+
+    pass
+
+
+class EntryNotFoundError(InvalidStateTransitionError, KeyError):
+    """Raised when a transaction entry identifier is not found in the transaction ledger."""
+
+    pass
