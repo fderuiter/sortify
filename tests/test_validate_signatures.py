@@ -5,6 +5,7 @@ import sys
 import pytest
 
 from scripts import validate_signatures
+from scripts.snapshot_utils import compute_payload_checksum
 from scripts.validate_signatures import (
     SNAPSHOT_DIR,
     collect_cli_definitions,
@@ -13,7 +14,6 @@ from scripts.validate_signatures import (
     collect_current_definitions,
     collect_modules_and_payloads,
     collect_plugins_definitions,
-    compute_payload_checksum,
     extract_cli,
     extract_module_signatures,
     extract_protocols,

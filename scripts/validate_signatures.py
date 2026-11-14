@@ -8,10 +8,15 @@ backwards compatibility against checked-in per-module API/CLI snapshot files und
 import argparse
 import ast
 import difflib
-import hashlib
 import json
 import os
 import sys
+
+from scripts.snapshot_utils import (
+    compute_payload_checksum,
+    extract_metadata_and_payload,
+    is_conflicted_json_payload,
+)
 
 BASE_DIR = os.path.realpath(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
 SNAPSHOT_DIR = os.path.join(BASE_DIR, "tests", "snapshots", "api")
@@ -469,46 +474,6 @@ def snapshot_path_to_source_path(snapshot_abs_path: str) -> str:
     if rel_snap.startswith("cli/"):
         return f"app/cli/{rel_snap[len('cli/') :].removesuffix('.json')}.py"
     return f"app/{rel_snap.removesuffix('.json')}.py"
-
-
-def compute_payload_checksum(payload: dict) -> str:
-    """Compute SHA-256 checksum of canonical JSON payload definitions."""
-    canonical_json = json.dumps(payload, indent=2, sort_keys=True)
-    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
-
-
-def extract_metadata_and_payload(snapshot_data: dict) -> tuple[dict | None, dict]:
-    """Separate metadata header from the definitions payload dictionary."""
-    metadata = None
-    if isinstance(snapshot_data, dict):
-        if "_metadata" in snapshot_data and isinstance(
-            snapshot_data["_metadata"], dict
-        ):
-            metadata = snapshot_data["_metadata"]
-        elif "metadata" in snapshot_data and isinstance(
-            snapshot_data["metadata"], dict
-        ):
-            metadata = snapshot_data["metadata"]
-
-    payload = {
-        k: v for k, v in snapshot_data.items() if k not in ("_metadata", "metadata")
-    }
-    return metadata, payload
-
-
-def is_conflicted_json_payload(snapshot_data: dict) -> bool:
-    """Check if snapshot JSON data dictionary represents a structured conflict payload."""
-    if not isinstance(snapshot_data, dict):
-        return False
-    if snapshot_data.get("_metadata", {}).get("conflict") is True:
-        return True
-    if snapshot_data.get("conflict") is True:
-        return True
-    if "local" in snapshot_data and "incoming" in snapshot_data:
-        return True
-    if "ours" in snapshot_data and "theirs" in snapshot_data:
-        return True
-    return False
 
 
 def verify_snapshot_integrity(
