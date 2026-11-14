@@ -385,3 +385,141 @@ def test_concurrent_mutating_read_write(cache_test_env):
     clear_dead_thread_connections()
 
     assert not errors, f"Encountered concurrent errors: {errors}"
+
+
+def test_get_document_unpopulated_cache_single_decryption(cache_test_env):
+    """Verify get_document on unpopulated cache performs exactly one decryption and does not populate cache."""
+    base_dir, db, _, _ = cache_test_env
+
+    # Insert multiple documents
+    for i in range(5):
+        db.upsert_document(base_dir, f"doc_{i}.txt", f"hash_{i}", f"text_{i}")
+
+    # Cache must be unpopulated after upsert invalidation
+    assert db._cached_documents is None
+    assert db._cached_base_dir is None
+
+    # Point query for a single document
+    with patch.object(
+        db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+    ) as mock_decrypt:
+        doc = db.get_document(base_dir, "doc_2.txt")
+        assert doc is not None
+        assert doc["file_hash"] == "hash_2"
+        assert doc["extracted_text"] == "text_2"
+        # Exactly one decryption should have been performed (not all 5 documents)
+        assert mock_decrypt.call_count == 1
+        # Cache must NOT have been populated
+        assert db._cached_documents is None
+        assert db._cached_base_dir is None
+
+    # Querying another document still performs only one decryption and leaves cache unpopulated
+    with patch.object(
+        db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+    ) as mock_decrypt:
+        doc = db.get_document(base_dir, "doc_4.txt")
+        assert doc is not None
+        assert doc["file_hash"] == "hash_4"
+        assert doc["extracted_text"] == "text_4"
+        assert mock_decrypt.call_count == 1
+        assert db._cached_documents is None
+        assert db._cached_base_dir is None
+
+
+def test_get_document_populated_cache_miss_updates_cache(cache_test_env):
+    """Verify get_document on cache miss with an initialized cache updates the cache."""
+    base_dir, db, _, _ = cache_test_env
+
+    db.upsert_document(base_dir, "doc1.txt", "hash1", "text1")
+    # Populate the cache
+    docs = db.get_all_documents(base_dir)
+    assert len(docs) == 1
+    assert db._cached_documents is not None
+    assert db._cached_base_dir == base_dir
+
+    # Insert another document directly to DB bypassing cache invalidation to simulate cache miss
+    from app.core.db_conn import get_db_connection
+
+    encrypted_text2 = db.crypto.encrypt_text("text2")
+    conn = get_db_connection(db.db_path)
+    with conn:
+        conn.execute(
+            "INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, user_verified_target_path) "
+            "VALUES (?, ?, ?, ?, ?)",
+            (base_dir, "doc2.txt", "hash2", encrypted_text2, "target2"),
+        )
+
+    # Cache is still populated for base_dir, but doc2.txt is missing from cache
+    assert "doc2.txt" not in db._cached_documents
+
+    # Point lookup on cache miss
+    with patch.object(
+        db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+    ) as mock_decrypt:
+        doc2 = db.get_document(base_dir, "doc2.txt")
+        assert doc2 is not None
+        assert doc2["file_hash"] == "hash2"
+        assert doc2["extracted_text"] == "text2"
+        # Only doc2 was decrypted
+        assert mock_decrypt.call_count == 1
+        # doc2.txt should now be stored in the cache
+        assert "doc2.txt" in db._cached_documents
+        cached_row = db._cached_documents["doc2.txt"]
+        assert cached_row[0] == "doc2.txt"
+        assert cached_row[1] == "text2"
+        assert cached_row[2] == "hash2"
+        assert cached_row[3] == "target2"
+
+    # Subsequent lookup of doc2.txt hits the cache
+    with patch.object(
+        db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+    ) as mock_decrypt:
+        doc2_again = db.get_document(base_dir, "doc2.txt")
+        assert doc2_again is not None
+        assert doc2_again["extracted_text"] == "text2"
+        assert mock_decrypt.call_count == 0
+
+
+def test_get_document_missing_record_returns_none(cache_test_env):
+    """Verify get_document on nonexistent document returns None without caching empty rows."""
+    base_dir, db, _, _ = cache_test_env
+
+    # 1. On unpopulated cache
+    with patch.object(
+        db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+    ) as mock_decrypt:
+        doc = db.get_document(base_dir, "nonexistent.txt")
+        assert doc is None
+        assert mock_decrypt.call_count == 0
+        assert db._cached_documents is None
+
+    # 2. On populated cache
+    db.upsert_document(base_dir, "doc1.txt", "hash1", "text1")
+    db.get_all_documents(base_dir)
+    assert db._cached_documents is not None
+
+    with patch.object(
+        db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
+    ) as mock_decrypt:
+        doc = db.get_document(base_dir, "nonexistent.txt")
+        assert doc is None
+        assert mock_decrypt.call_count == 0
+        assert "nonexistent.txt" not in db._cached_documents
+
+
+def test_get_document_path_normalization(cache_test_env):
+    """Verify get_document normalizes backslashes and multi-root prefix."""
+    base_dir, db, _, _ = cache_test_env
+    db.upsert_document(base_dir, "sub/nested/doc.txt", "hash_sub", "sub text")
+
+    # Point query with Windows backslashes
+    doc_bs = db.get_document(base_dir, "sub\\nested\\doc.txt")
+    assert doc_bs is not None
+    assert doc_bs["file_hash"] == "hash_sub"
+    assert doc_bs["extracted_text"] == "sub text"
+
+    # Point query with multi-root prefix
+    doc_prefix = db.get_document("ignored_root", f"{base_dir}::sub/nested/doc.txt")
+    assert doc_prefix is not None
+    assert doc_prefix["file_hash"] == "hash_sub"
+    assert doc_prefix["extracted_text"] == "sub text"
