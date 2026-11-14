@@ -1101,7 +1101,17 @@ def _process_move_item(
     # Hash the bytes being moved with the same function as the post-move check.
     # The DB hash can be an MD5 of extracted text, or stale (#844).
     pre_hash = ""
+    src_dev = None
+    src_ino = None
+    src_size = None
     if os.path.exists(source_path):
+        try:
+            st = os.stat(source_path)
+            src_dev = st.st_dev
+            src_ino = st.st_ino
+            src_size = st.st_size
+        except Exception:
+            pass
         try:
             from app.core.extractor import get_file_hash
 
@@ -1264,7 +1274,26 @@ def _process_move_item(
         try:
             from app.core.extractor import get_file_hash
 
-            step_hash = get_file_hash(dest_path)
+            dest_stat = None
+            try:
+                dest_stat = os.stat(dest_path)
+            except Exception:
+                pass
+
+            if (
+                dest_stat
+                and src_ino
+                and dest_stat.st_ino
+                and src_dev is not None
+                and dest_stat.st_dev == src_dev
+                and dest_stat.st_ino == src_ino
+                and src_size is not None
+                and dest_stat.st_size == src_size
+                and pre_hash
+            ):
+                step_hash = pre_hash
+            else:
+                step_hash = get_file_hash(dest_path)
         except Exception:
             pass
     if step_hash and step_hash == pre_hash:
@@ -1273,6 +1302,7 @@ def _process_move_item(
         logging.warning(
             f"Moved {source_path} to {dest_path}, but its hash no longer matches the source."
         )
+    dest_file_hash = step_hash
     if not step_hash and doc:
         step_hash = doc.get("file_hash")
 
@@ -1330,8 +1360,8 @@ def _process_move_item(
                 )
 
     if audit_records is not None:
-        post_hash = None
-        if os.path.exists(dest_path):
+        post_hash = dest_file_hash
+        if post_hash is None and os.path.exists(dest_path):
             try:
                 from app.core.extractor import get_file_hash
 
