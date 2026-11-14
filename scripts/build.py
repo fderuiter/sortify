@@ -236,6 +236,83 @@ def verify_scientific_binaries(dist_dir: str) -> bool:
     return True
 
 
+def verify_documentation_assets(dist_dir: str) -> bool:
+    """Statically verify that bundled markdown documentation and compiled SVG diagrams exist."""
+    print("Executing post-build documentation asset verification...")
+    docs_dist = os.path.join(dist_dir, "docs")
+    if not os.path.exists(docs_dist):
+        print(
+            f"Error: Missing documentation directory in standalone bundle: {docs_dist}"
+        )
+        sys.exit(1)
+
+    required_docs = [
+        "user_guide.md",
+        "admin_guide.md",
+        "architecture.md",
+        "troubleshooting.md",
+        "keyboard_shortcuts.md",
+    ]
+
+    missing_docs = [
+        doc for doc in required_docs if not os.path.exists(os.path.join(docs_dist, doc))
+    ]
+    if missing_docs:
+        print(
+            f"Error: Post-build documentation verification failed! Missing required documentation files in {docs_dist}: {missing_docs}"
+        )
+        sys.exit(1)
+
+    # Verify diagram assets if present in source repository
+    src_diagrams_dir = os.path.join("docs", "assets", "diagrams")
+    dist_diagrams_dir = os.path.join(docs_dist, "assets", "diagrams")
+
+    if os.path.exists(src_diagrams_dir):
+        src_svgs = [
+            f for f in os.listdir(src_diagrams_dir) if f.lower().endswith(".svg")
+        ]
+        if src_svgs:
+            if not os.path.exists(dist_diagrams_dir):
+                print(
+                    f"Error: Post-build documentation verification failed! Diagram assets directory missing in bundle: {dist_diagrams_dir}"
+                )
+                sys.exit(1)
+            missing_svgs = [
+                svg
+                for svg in src_svgs
+                if not os.path.exists(os.path.join(dist_diagrams_dir, svg))
+            ]
+            if missing_svgs:
+                print(
+                    f"Error: Post-build documentation verification failed! Missing compiled diagram SVG files in {dist_diagrams_dir}: {missing_svgs}"
+                )
+                sys.exit(1)
+            print(
+                f"Verification passed: Verified {len(src_svgs)} diagram SVG assets in {dist_diagrams_dir}"
+            )
+        else:
+            print(
+                "Notice: Source diagram directory is empty; skipping SVG diagram verification."
+            )
+    else:
+        if os.path.exists(dist_diagrams_dir):
+            dist_svgs = [
+                f for f in os.listdir(dist_diagrams_dir) if f.lower().endswith(".svg")
+            ]
+            print(
+                f"Verification passed: Verified {len(dist_svgs)} diagram SVG assets in {dist_diagrams_dir}"
+            )
+        else:
+            print(
+                "Notice: No source diagrams directory found; skipping SVG diagram verification."
+            )
+
+    print(
+        f"Verification passed: Verified required documentation files ({', '.join(required_docs)}) in {docs_dist}"
+    )
+    return True
+
+
 def main():
     """Build the standalone executable."""
     import importlib.util
@@ -342,6 +419,8 @@ def main():
         )
 
         bundle_license(dist_dir)
+
+        verify_documentation_assets(dist_dir)
 
         if not is_lite:
             verify_scientific_binaries(dist_dir)

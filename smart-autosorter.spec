@@ -73,10 +73,24 @@ else:
 
 # Note: offline_bundle model weights are excluded from embedded datas and packaged into sidecar smart-autosorter-models.zip
 
-# Explicitly bundle documentation files
-docs_src = os.path.join('docs', 'user_guide.md')
-if os.path.exists(docs_src):
-    datas.append((os.path.abspath(docs_src), 'docs'))
+# Explicitly bundle documentation files and compiled diagrams
+docs_dir = 'docs'
+if os.path.exists(docs_dir):
+    for root, _dirs, files in os.walk(docs_dir):
+        for file in sorted(files):
+            if file.endswith('.md'):
+                abs_path = os.path.abspath(os.path.join(root, file))
+                rel_dir = os.path.relpath(root, docs_dir).replace('\\', '/')
+                dest_dir = 'docs' if rel_dir in ('.', '') else f'docs/{rel_dir}'
+                datas.append((abs_path, dest_dir))
+
+diagrams_dir = os.path.join('docs', 'assets', 'diagrams')
+if os.path.exists(diagrams_dir):
+    for root, _dirs, files in os.walk(diagrams_dir):
+        for file in sorted(files):
+            if file.endswith('.svg'):
+                abs_path = os.path.abspath(os.path.join(root, file))
+                datas.append((abs_path, 'docs/assets/diagrams'))
 
 # On Windows, find and bundle any dependent OpenSSL/SQLCipher DLLs from the active Python or virtualenv environments
 if (platform.system().lower() == "windows" or sys.platform == "win32") and "pytest" not in sys.modules:
@@ -325,8 +339,13 @@ def is_prunable_asset(name):
     name_lower = name.lower().replace('\\', '/')
     parts = name_lower.split('/')
     
+    # Protect bundled documentation markdown files and SVG diagrams
+    norm_path = name_lower.removeprefix('./').lstrip('/')
+    if norm_path.startswith('docs/') and norm_path.endswith(('.md', '.svg')):
+        return False
+
     # Safety Rule: Core weights, model files, and crucial bin targets must NEVER be pruned.
-    safety_keywords = ("weight", "bin", "model", "checkpoint", "offline_bundle", "easyocr", "user_guide", "scipy")
+    safety_keywords = ("weight", "bin", "model", "checkpoint", "offline_bundle", "easyocr", "scipy")
     if any(sk in name_lower for sk in safety_keywords):
         return False
         
