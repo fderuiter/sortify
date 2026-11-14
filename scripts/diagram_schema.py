@@ -754,9 +754,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                 id="core_simulation_exporter", label="app.core.simulation_exporter"
             ),
             DiagramNode(id="core_audit_reporter", label="app.core.audit_reporter"),
-            DiagramNode(
-                id="core_accessible_html", label="app.core.accessible_html"
-            ),
+            DiagramNode(id="core_accessible_html", label="app.core.accessible_html"),
             DiagramNode(id="core_mover", label="app.core.mover"),
             DiagramNode(id="core_file_renamer", label="app.core.file_renamer"),
             DiagramNode(
