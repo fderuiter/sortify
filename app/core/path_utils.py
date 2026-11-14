@@ -455,12 +455,25 @@ def sanitize_name(name: str) -> str:
         return clean_stem
 
 
+def _is_absolute_path(path: str) -> bool:
+    """Check if a path string is absolute (POSIX, Windows drive letter, or UNC network path)."""
+    if not isinstance(path, str) or not path:
+        return False
+    return (
+        path.startswith("/")
+        or path.startswith("\\")
+        or os.path.isabs(path)
+        or bool(re.match(r"^[a-zA-Z]:[/\\]?", path))
+    )
+
+
 def sanitize_folder_key(key: str) -> tuple[str, bool]:
     """Sanitize a folder hierarchy key to be OS-safe and clean.
 
     Strips secret patterns, PII expressions, path traversal elements, removes null bytes,
     replaces illegal filesystem characters and slashes with safe delimiters,
     strips trailing dots/spaces, and maps OS-reserved names to safe variants.
+    Accepts and preserves validated absolute destination paths.
 
     Returns (safe_key, transformed).
     """
@@ -480,6 +493,66 @@ def sanitize_folder_key(key: str) -> tuple[str, bool]:
     # Remove null bytes and replace control characters
     s = s.replace("\x00", "")
     s = re.sub(r"[\x00-\x1f\x7f]", "_", s)
+
+    # If key represents an absolute destination path, preserve its root/drive while sanitizing each segment
+    if _is_absolute_path(orig_key):
+        is_unc = s.startswith(r"\\") or s.startswith("//")
+        drive_match = re.match(r"^([a-zA-Z]:)[/\\]?", s)
+        is_posix = s.startswith("/") and not is_unc
+
+        if drive_match:
+            drive_prefix = drive_match.group(1).upper()
+            rest = s[len(drive_match.group(0)) :]
+            sep = "\\"
+            root = f"{drive_prefix}\\"
+        elif is_unc:
+            parts_unc = [
+                p for p in re.split(r"[/\\]+", s) if p and p not in ("..", ".")
+            ]
+            if len(parts_unc) >= 2:
+                root = f"\\\\{parts_unc[0]}\\{parts_unc[1]}\\"
+                rest = "\\".join(parts_unc[2:])
+            else:
+                root = "\\\\"
+                rest = "\\".join(parts_unc)
+            sep = "\\"
+        elif is_posix:
+            root = "/"
+            rest = s[1:]
+            sep = "/"
+        else:
+            root = "/"
+            rest = s.lstrip(r"/\ ")
+            sep = "/"
+
+        parts = re.split(r"[/\\]+", rest)
+        clean_parts = [p for p in parts if p not in ("..", ".")]
+
+        sanitized_parts = []
+        escaped_chars = "".join(re.escape(c) for c in ILLEGAL_PATH_CHARS_SET)
+        for part in clean_parts:
+            part_s = re.sub(f"[{escaped_chars}]", "_", part)
+            part_s = part_s.rstrip(". ")
+            upper_name = part_s.upper()
+            base_name = upper_name.split(".")[0]
+            if base_name in RESERVED_NAMES:
+                subparts = part_s.split(".")
+                subparts[0] = subparts[0] + "_safe"
+                part_s = ".".join(subparts)
+            if part_s:
+                sanitized_parts.append(part_s)
+
+        if sanitized_parts:
+            s = (
+                root + sep.join(sanitized_parts)
+                if root.endswith(sep)
+                else root + sep + sep.join(sanitized_parts)
+            )
+        else:
+            s = root.rstrip(sep) if root not in ("/", "\\") else root
+
+        transformed = s != orig_key
+        return s, transformed
 
     # Split by slashes/backslashes to clean path traversal segments
     parts = re.split(r"[/\\]+", s)

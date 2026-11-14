@@ -320,7 +320,13 @@ class VerificationEngine:
                 ):
                     continue
 
-                if depth > 0:
+                src_root = _get_val(content, "source_root")
+                effective_base = src_root if src_root else base_dir
+
+                src_p = _get_val(content, "source_path")
+                if src_p and os.path.isabs(src_p):
+                    source_path = os.path.normpath(src_p)
+                elif depth > 0:
                     rel_src_val = _get_val(content, "relative_source")
                     if rel_src_val is None:
                         raise ValueError(
@@ -339,17 +345,19 @@ class VerificationEngine:
                             active_parent_path, relative_source
                         )
                     source_path = os.path.normpath(
-                        os.path.join(base_dir, rel_src_with_parent)
+                        os.path.join(effective_base, rel_src_with_parent)
                     )
                 else:
                     rel_src_val = _get_val(content, "relative_source")
                     if rel_src_val is not None:
                         relative_source = rel_src_val
                         source_path = os.path.normpath(
-                            os.path.join(base_dir, relative_source)
+                            os.path.join(effective_base, relative_source)
                         )
                     else:
-                        source_path = os.path.normpath(os.path.join(base_dir, key))
+                        source_path = os.path.normpath(
+                            os.path.join(effective_base, key)
+                        )
 
                 tgt_fn = _get_val(content, "target_filename")
                 if tgt_fn is not None:
@@ -357,16 +365,44 @@ class VerificationEngine:
                 else:
                     filename = re.split(r"[/\\]+", key)[-1]
 
-                dest_dir = os.path.join(base_dir, current_dest)
-                dest_path = os.path.normpath(os.path.join(dest_dir, filename))
+                from app.core.path_utils import _is_absolute_path
+
+                dest_override = _get_val(content, "destination_override")
+                if dest_override and _is_absolute_path(dest_override):
+                    dest_dir = dest_override
+                elif dest_override:
+                    dest_dir = os.path.join(base_dir, dest_override)
+                elif _is_absolute_path(current_dest):
+                    dest_dir = current_dest
+                else:
+                    dest_dir = os.path.join(base_dir, current_dest)
+
+                if re.match(r"^[a-zA-Z]:[/\\]", dest_dir):
+                    sep = "\\" if "\\" in dest_dir else "/"
+                    dest_path = f"{dest_dir.rstrip('/\\')}{sep}{filename}"
+                else:
+                    dest_path = os.path.normpath(os.path.join(dest_dir, filename))
                 moves.append((key, source_path, dest_path))
             else:
+                from app.core.path_utils import _is_absolute_path
+
+                if depth == 0 and _is_absolute_path(key):
+                    next_dest = key
+                    next_active_parent = active_parent_path
+                else:
+                    next_dest = os.path.join(current_dest, key)
+                    next_active_parent = (
+                        active_parent_path
+                        if _is_absolute_path(key)
+                        else os.path.join(active_parent_path, key)
+                    )
+
                 moves.extend(
                     VerificationEngine.get_moves(
                         base_dir,
                         content,
-                        os.path.join(current_dest, key),
-                        os.path.join(active_parent_path, key),
+                        next_dest,
+                        next_active_parent,
                         depth + 1,
                     )
                 )

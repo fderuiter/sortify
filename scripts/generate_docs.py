@@ -836,13 +836,13 @@ def main():
 
     # 2. Run documentation generation
     tasks = [
-        ("compile_diagram_assets", compile_diagram_assets),
         ("generate_tutorial_docs", generate_tutorial_docs),
         ("generate_api_docs", generate_api_docs),
         ("generate_ui_docs", generate_ui_docs),
         ("generate_admin_guide", generate_admin_guide),
         ("generate_keyboard_docs", generate_keyboard_docs),
         ("update_security_md", update_security_md),
+        ("compile_diagram_assets", compile_diagram_assets),
     ]
 
     errors = []
