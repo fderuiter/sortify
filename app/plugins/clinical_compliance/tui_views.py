@@ -238,6 +238,7 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
 
             from app.plugins.clinical_compliance.cro_multi_study_pipeline import (
                 CROMultiStudyPipeline,
+                CROPipelineState,
             )
 
             pipeline = CROMultiStudyPipeline(
@@ -282,10 +283,14 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
             )
 
             def finish_ui() -> None:
-                if self._cancel_event.is_set():
+                if result.status == CROPipelineState.CANCELLED:
                     log_w.write_line("CRO Forensic Ingestion cancelled by user.")
                     self.announce("CRO forensic ingestion cancelled.")
-                else:
+                elif result.status == CROPipelineState.FAILED:
+                    err_msg = result.error_message or "Unknown failure"
+                    log_w.write_line(f"CRO Forensic Ingestion failed: {err_msg}")
+                    self.announce(f"CRO forensic ingestion failed: {err_msg}")
+                elif result.status == CROPipelineState.COMPLETED:
                     try:
                         pb = self.query_one("#progress-bar", ProgressBar)
                         pb.progress = 100.0
@@ -294,6 +299,14 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
                     summary_msg = f"Completed successfully! Total scanned: {result.total_scanned_files}, Discovered studies: {result.discovered_studies_count}"
                     log_w.write_line(summary_msg)
                     self.announce(summary_msg)
+                else:
+                    if self._cancel_event.is_set():
+                        log_w.write_line("CRO Forensic Ingestion cancelled by user.")
+                        self.announce("CRO forensic ingestion cancelled.")
+                    else:
+                        summary_msg = f"Finished with status {result.status}."
+                        log_w.write_line(summary_msg)
+                        self.announce(summary_msg)
 
             self._call_ui(finish_ui)
 
