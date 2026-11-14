@@ -54,16 +54,23 @@ class SortPipelineMixin:
 
         Both workers share the default exclusive group, so starting one cancels
         the other and replaces the AppSession that a running move depends on.
+        Also warns users or prevents conflicts when the watchdog daemon is active.
         """
         running = self._running_pipeline_worker()
-        if running is None:
-            return False
-        if running == "run_execute_worker":
-            msg = f"Files are still being moved. Wait for it to finish before you {action}."
-        else:
-            msg = f"A scan is still running. Wait for it to finish before you {action}."
-        self.announce(msg, priority="assertive")
-        return True
+        if running is not None:
+            if running == "run_execute_worker":
+                msg = f"Files are still being moved. Wait for it to finish before you {action}."
+            else:
+                msg = f"A scan is still running. Wait for it to finish before you {action}."
+            self.announce(msg, priority="assertive")
+            return True
+
+        if getattr(self, "_daemon_is_moving", False):
+            msg = f"Watchdog daemon is currently moving files. Wait for it to finish or pause monitoring before you {action}."
+            self.announce(msg, priority="assertive")
+            return True
+
+        return False
 
     @work(exclusive=True, thread=True)
     def run_scan_worker(self) -> None:

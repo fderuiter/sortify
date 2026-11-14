@@ -166,6 +166,10 @@ class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None
                 classes="shortcut-row",
             )
             yield Label(
+                "  Ctrl+T / p  - Toggle background daemon pause / resume",
+                classes="shortcut-row",
+            )
+            yield Label(
                 "  Ctrl+A      - Open the audit report of the last run",
                 classes="shortcut-row",
             )

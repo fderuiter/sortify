@@ -123,6 +123,8 @@ class AutoSorterTUI(
         Binding("ctrl+w", "open_wizard", "Wizard", show=False),
         Binding("ctrl+c", "open_cro_forensic", "CRO Ingest", show=False),
         Binding("ctrl+d", "open_dropzone", "DropZone", show=False),
+        Binding("ctrl+t", "toggle_daemon", "Toggle Daemon", show=False),
+        Binding("p", "toggle_daemon", "Toggle Daemon", show=False),
         Binding("ctrl+s", "scan_directory", "Scan", show=True),
         Binding("ctrl+y", "open_history", "History View", show=False),
         Binding("ctrl+u", "open_quarantine_vault", "Quarantine Vault", show=False),
@@ -315,6 +317,8 @@ class AutoSorterTUI(
         self.has_critical_errors: bool = False
         self.critical_error_paths: set = set()
         self.warning_paths: set = set()
+        self._daemon_state: str = "idle"
+        self._daemon_is_moving: bool = False
 
     def compose(self) -> ComposeResult:
         """Compose main dual-pane TUI layout."""
@@ -419,7 +423,7 @@ class AutoSorterTUI(
         pb.tooltip = "Active operation background progress indicator"
         pb.display = False
         yield pb
-        initial_status = f"{self._get_ai_status_badge()} Ready. Press [Ctrl+S] to Scan or [Ctrl+B] to select Directory."
+        initial_status = f"{self._get_ai_status_badge()} {self._get_daemon_status_badge()} Ready. Press [Ctrl+S] to Scan or [Ctrl+B] to select Directory."
         sb = Static(
             initial_status,
             id="status-bar",
@@ -489,7 +493,9 @@ class AutoSorterTUI(
                     u_type = unit_type or "items"
                     status_msg = f"[{pct:.0f}%] ({count_val} {u_type}) {stage_text}"
                 sb = self.query_one("#status-bar", Static)
-                sb.update(f"{self._get_ai_status_badge()} {status_msg}")
+                sb.update(
+                    f"{self._get_ai_status_badge()} {self._get_daemon_status_badge()} {status_msg}"
+                )
                 try:
                     log_w = self.query_one("#tui-log", Log)
                     log_w.write_line(status_msg)
@@ -550,6 +556,8 @@ class AutoSorterTUI(
         self.announce(f"Ready. {self._start_hint()}")
         self._update_onboarding_cta_visibility()
         self.check_abandoned_sessions()
+        self.set_interval(1.0, self._poll_daemon_status)
+        self.run_worker(self._poll_daemon_status(), name="poll_daemon_startup")
 
         env_non_interactive = os.environ.get("NON_INTERACTIVE")
         is_non_interactive_env = bool(
@@ -693,6 +701,68 @@ class AutoSorterTUI(
         forget_abandoned_session(session_info)
         self.announce(f"Cleaned session files for '{session_info.get('session_id')}'.")
 
+    def _get_daemon_status_badge(self) -> str:
+        """Return visual watchdog daemon status badge string."""
+        state = getattr(self, "_daemon_state", "idle")
+        if state == "active":
+            return "[Daemon: Active]"
+        elif state == "paused":
+            return "[Daemon: Paused]"
+        return "[Daemon: Idle]"
+
+    async def _poll_daemon_status(self) -> None:
+        """Asynchronously poll background daemon lockfile and query IPC status."""
+        base_dir = getattr(self, "base_dir", None)
+        new_state = "idle"
+        is_moving = False
+        if base_dir and os.path.exists(base_dir):
+            try:
+                import asyncio
+
+                from app.core.ipc import (
+                    DaemonIPCClient,
+                    is_process_alive,
+                    read_pid_file,
+                )
+
+                pid_info = await asyncio.to_thread(read_pid_file, base_dir)
+                if pid_info and is_process_alive(pid_info.get("pid", 0)):
+                    client = DaemonIPCClient(base_dir)
+                    res = await client.send_command("status", timeout=1.0)
+                    if res.get("is_paused") is True or res.get("status") == "paused":
+                        new_state = "paused"
+                    elif (
+                        res.get("is_running") is True or res.get("status") == "running"
+                    ):
+                        new_state = "active"
+                    else:
+                        new_state = "idle"
+                    is_moving = bool(res.get("is_moving", False))
+            except Exception as e:
+                logger.debug(f"Daemon IPC polling error: {e}")
+                new_state = "idle"
+                is_moving = False
+
+        self._daemon_is_moving = is_moving
+        prev_state = getattr(self, "_daemon_state", "idle")
+        self._daemon_state = new_state
+
+        if not getattr(self, "_daemon_initialized", False):
+            self._daemon_initialized = True
+            self.update_status()
+            if new_state == "active":
+                self.announce("Watchdog daemon active.", priority="assertive")
+            elif new_state == "paused":
+                self.announce("Watchdog daemon paused.", priority="assertive")
+        elif prev_state != new_state:
+            self.update_status()
+            if new_state == "active":
+                self.announce("Watchdog daemon resumed.", priority="assertive")
+            elif new_state == "paused":
+                self.announce("Watchdog daemon paused.", priority="assertive")
+            elif new_state == "idle":
+                self.announce("Watchdog daemon idle.", priority="assertive")
+
     def _get_ai_status_badge(self) -> str:
         """Return visual AI consent status badge string."""
         consent = getattr(self.settings, "AI_CONSENT_GRANTED", None)
@@ -721,11 +791,18 @@ class AutoSorterTUI(
             self.announce("AI processing enabled.", priority="high")
 
     def update_status(self, text: Optional[str] = None) -> None:
-        """Update status bar label with current message and AI consent badge."""
+        """Update status bar label with current message, AI consent badge, and daemon badge."""
         try:
             if text is not None:
                 clean_text = str(text)
                 for badge_str in ("[AI: Active]", "[AI: Disabled]"):
+                    if clean_text.startswith(badge_str):
+                        clean_text = clean_text[len(badge_str) :].lstrip()
+                for badge_str in (
+                    "[Daemon: Active]",
+                    "[Daemon: Paused]",
+                    "[Daemon: Idle]",
+                ):
                     if clean_text.startswith(badge_str):
                         clean_text = clean_text[len(badge_str) :].lstrip()
                 self._current_status_text = clean_text
@@ -734,11 +811,13 @@ class AutoSorterTUI(
                     "Ready. Press [Ctrl+S] to Scan or [Ctrl+B] to select Directory."
                 )
 
-            badge = self._get_ai_status_badge()
+            ai_badge = self._get_ai_status_badge()
+            daemon_badge = self._get_daemon_status_badge()
+            badges = f"{ai_badge} {daemon_badge}"
             full_text = (
-                f"{badge} {self._current_status_text}"
+                f"{badges} {self._current_status_text}"
                 if getattr(self, "_current_status_text", "")
-                else badge
+                else badges
             )
             sb = self.query_one("#status-bar", Static)
             sb.update(full_text)
@@ -805,6 +884,9 @@ class AutoSorterTUI(
             if valid_paths:
                 self.source_dirs = valid_paths
                 self.base_dir = valid_paths[0]
+                self.run_worker(
+                    self._poll_daemon_status(), name="poll_daemon_on_dir_select"
+                )
                 msg = f"Selected directory: {', '.join(self.source_dirs)}"
                 self.announce(msg)
                 self.action_scan_directory()
@@ -822,6 +904,68 @@ class AutoSorterTUI(
             ),
             on_selected,
         )
+
+    async def action_toggle_daemon(self) -> None:
+        """Toggle watchdog daemon pause / resume state."""
+        if self._is_text_control_focused(allow_tree_search=True):
+            return
+
+        base_dir = getattr(self, "base_dir", None)
+        if not base_dir or not os.path.exists(base_dir):
+            self.announce(
+                "No workspace folder selected for daemon monitoring.",
+                priority="assertive",
+            )
+            return
+
+        import asyncio
+
+        from app.core.ipc import DaemonIPCClient, is_process_alive, read_pid_file
+
+        pid_info = await asyncio.to_thread(read_pid_file, base_dir)
+        if not pid_info or not is_process_alive(pid_info.get("pid", 0)):
+            self._daemon_state = "idle"
+            self.update_status()
+            self.announce(
+                "No background watchdog daemon is running for this workspace.",
+                priority="assertive",
+            )
+            return
+
+        client = DaemonIPCClient(base_dir)
+        try:
+            current_state = getattr(self, "_daemon_state", "idle")
+            if current_state == "paused":
+                await client.send_command("resume", timeout=2.0)
+                self._daemon_state = "active"
+                self.update_status()
+                self.announce("Watchdog daemon resumed.", priority="assertive")
+            elif current_state == "active":
+                await client.send_command("pause", timeout=2.0)
+                self._daemon_state = "paused"
+                self.update_status()
+                self.announce("Watchdog daemon paused.", priority="assertive")
+            else:
+                status_res = await client.send_command("status", timeout=2.0)
+                if (
+                    status_res.get("is_paused") is True
+                    or status_res.get("status") == "paused"
+                ):
+                    await client.send_command("resume", timeout=2.0)
+                    self._daemon_state = "active"
+                    self.update_status()
+                    self.announce("Watchdog daemon resumed.", priority="assertive")
+                else:
+                    await client.send_command("pause", timeout=2.0)
+                    self._daemon_state = "paused"
+                    self.update_status()
+                    self.announce("Watchdog daemon paused.", priority="assertive")
+        except Exception as e:
+            logger.warning(f"Failed to communicate with daemon: {e}")
+            self.announce(
+                f"Failed to communicate with daemon: {e}",
+                priority="assertive",
+            )
 
     def action_generate_sample_corpus(self, open_modal: bool = False) -> None:
         """Generate sample document corpus in active workspace directory, or launch interactive playground modal."""
@@ -1172,9 +1316,7 @@ class AutoSorterTUI(
                 restored_count = history_mgr.rollback(session_id, **kwargs)
 
             if hasattr(self, "call_from_thread"):
-                self.call_from_thread(
-                    self._on_undo_success, session_id, restored_count
-                )
+                self.call_from_thread(self._on_undo_success, session_id, restored_count)
             else:
                 self._on_undo_success(session_id, restored_count)
         except Exception as err:
