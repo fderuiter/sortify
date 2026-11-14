@@ -13,6 +13,34 @@ from app.ui.tui import AutoSorterTUI
 pytestmark = pytest.mark.xdist_group(name="tui")
 
 
+@pytest.fixture(autouse=True)
+def isolated_app_dir(monkeypatch, tmp_path):
+    """Ensure AppSettings is isolated from persistent disk configuration changes."""
+    import app.config
+    import app.core.session_catalog
+
+    monkeypatch.setenv("FORCE_COLOR", "1")
+    monkeypatch.setenv("COLORTERM", "truecolor")
+    monkeypatch.setenv("TERM", "xterm-256color")
+    monkeypatch.delenv("NO_COLOR", raising=False)
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
+    monkeypatch.setattr(app.config, "get_app_dir", lambda: tmp_path)
+    monkeypatch.setattr(
+        app.config.AppSettings, "_trigger_save", lambda self: self._save()
+    )
+    monkeypatch.setattr(app.core.session_catalog, "find_abandoned_sessions", lambda: [])
+    monkeypatch.delenv("AUTOSORTER_PROTECTED_PATHS", raising=False)
+
+
+async def _wait_for_screen(app, screen_cls, pilot, timeout_steps=50):
+    """Wait asynchronously for app.screen to match expected screen class."""
+    for _ in range(timeout_steps):
+        if isinstance(app.screen, screen_cls):
+            return True
+        await pilot.pause(0.05)
+    return isinstance(app.screen, screen_cls)
+
+
 def test_onboarding_cta_card_initial_visibility(tmp_path):
     """Verify onboarding CTA card renders in #right-meta-pane on startup with no plan."""
 
@@ -26,7 +54,10 @@ def test_onboarding_cta_card_initial_visibility(tmp_path):
             settings=settings, base_dir=empty_workspace, skip_wizard=True
         )
         async with app.run_test() as pilot:
-            await pilot.pause(0.05)
+            for _ in range(50):
+                if app.query("#onboarding-cta-card"):
+                    break
+                await pilot.pause(0.05)
 
             # Requirement 1: #onboarding-cta-card container inside #right-meta-pane
             right_pane = app.query_one("#right-meta-pane")
@@ -68,14 +99,16 @@ def test_onboarding_cta_card_select_dir_button(tmp_path):
             settings=settings, base_dir=empty_workspace, skip_wizard=True
         )
         async with app.run_test() as pilot:
-            await pilot.pause(0.05)
+            for _ in range(50):
+                if app.query("#btn-cta-select-dir"):
+                    break
+                await pilot.pause(0.05)
 
             btn_select = app.query_one("#btn-cta-select-dir", Button)
             btn_select.press()
-            await pilot.pause(0.05)
 
-            # Check screen pushed is DirectorySelectModal
-            assert isinstance(app.screen, DirectorySelectModal)
+            # Wait for DirectorySelectModal to be pushed and mounted
+            assert await _wait_for_screen(app, DirectorySelectModal, pilot)
 
     asyncio.run(_test())
 
@@ -94,17 +127,20 @@ def test_onboarding_cta_card_scan_dir_button(tmp_path):
 
         app = AutoSorterTUI(settings=settings, base_dir=workspace, skip_wizard=True)
         async with app.run_test() as pilot:
-            await pilot.pause(0.05)
+            for _ in range(50):
+                if app.query("#btn-cta-scan-dir"):
+                    break
+                await pilot.pause(0.05)
 
             btn_scan = app.query_one("#btn-cta-scan-dir", Button)
             btn_scan.press()
-            await pilot.pause(0.05)
-            for _ in range(50):
-                if not app._running_pipeline_worker():
-                    break
-                await pilot.pause(0.1)
 
-            await pilot.pause(0.05)
+            # Wait for scan pipeline worker to finish and onboarding card to hide
+            for _ in range(100):
+                cta_card = app.query_one("#onboarding-cta-card")
+                if cta_card.display is False and not app._running_pipeline_worker():
+                    break
+                await pilot.pause(0.05)
 
             # After scan finishes, card should be hidden as plan data exists
             cta_card = app.query_one("#onboarding-cta-card")
@@ -127,26 +163,36 @@ def test_onboarding_cta_card_sample_data_button(tmp_path):
 
         app = AutoSorterTUI(settings=settings, base_dir=workspace, skip_wizard=True)
         async with app.run_test(size=(120, 60)) as pilot:
-            await pilot.pause(0.05)
+            for _ in range(50):
+                if app.query("#btn-cta-sample-data"):
+                    break
+                await pilot.pause(0.05)
 
             btn_sample = app.query_one("#btn-cta-sample-data", Button)
             btn_sample.press()
-            await pilot.pause(0.05)
             from app.ui.modals.sample_playground import SamplePlaygroundModal
 
-            if isinstance(app.screen, SamplePlaygroundModal):
-                btn_commit = app.screen.query_one("#btn-commit-playground", Button)
-                btn_commit.press()
-                await pilot.pause(0.05)
             for _ in range(50):
-                if not app._running_pipeline_worker():
+                if isinstance(app.screen, SamplePlaygroundModal):
+                    btn_commit = app.screen.query_one("#btn-commit-playground", Button)
+                    btn_commit.press()
+                    break
+                sample_dir = os.path.join(workspace, "sortify-sample-dataset")
+                if os.path.exists(
+                    os.path.join(sample_dir, "demo_finance.txt")
+                ) or os.path.exists(os.path.join(workspace, "demo_finance.txt")):
+                    break
+                await pilot.pause(0.05)
+
+            sample_dir = os.path.join(workspace, "sortify-sample-dataset")
+            target_file = os.path.join(sample_dir, "demo_finance.txt")
+            alt_file = os.path.join(workspace, "demo_finance.txt")
+            for _ in range(50):
+                if os.path.exists(target_file) or os.path.exists(alt_file):
                     break
                 await pilot.pause(0.1)
 
-            await pilot.pause(0.05)
-
             # Sample dataset generated
-            sample_dir = os.path.join(workspace, "sortify-sample-dataset")
             if not os.path.exists(sample_dir):
                 sample_dir = workspace
             assert os.path.exists(os.path.join(sample_dir, "demo_finance.txt"))
@@ -176,7 +222,11 @@ def test_onboarding_cta_card_transition_on_node_selection(tmp_path):
                 }
             }
             app.rebuild_tree(run_validation=False)
-            await pilot.pause(0.05)
+            for _ in range(50):
+                cta_card = app.query_one("#onboarding-cta-card")
+                if cta_card.display is False:
+                    break
+                await pilot.pause(0.05)
 
             cta_card = app.query_one("#onboarding-cta-card")
             inspector = app.query_one("#inspector-container")
