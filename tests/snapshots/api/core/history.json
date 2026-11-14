@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "30abdc32eff10216964912af2765282ce7db0e1417dfb77e741e3c28f72d2509"
+    "checksum": "cd454836dc3794360ac47b85fe57bdeaaff967387c5c86bd697221e7558959bb"
   },
   "classes": [
     {
@@ -312,6 +312,287 @@
             }
           ],
           "returns": "int"
+        }
+      ]
+    },
+    {
+      "class_name": "RollbackBatchTransaction",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "conn"
+            },
+            {
+              "annotation": "int",
+              "default": "50",
+              "name": "batch_size"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "begin_batch",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "commit_batch",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "execute",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "query"
+            },
+            {
+              "annotation": "Union[tuple, list]",
+              "default": "()",
+              "name": "params"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "executemany",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "query"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "seq_of_params"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "flush",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "rollback_batch",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "step",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        }
+      ]
+    },
+    {
+      "class_name": "SessionStateMachine",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "db_path"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "add_transition_listener",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable[[Dict[str, Any]], None]",
+              "default": null,
+              "name": "callback"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_audit_events",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "session_id"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "conn"
+            }
+          ],
+          "returns": "List[Dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "remove_transition_listener",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable[[Dict[str, Any]], None]",
+              "default": null,
+              "name": "callback"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "transition",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "new_status"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "conn"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "error_details"
+            },
+            {
+              "annotation": "Optional[Dict[str, Any]]",
+              "default": "None",
+              "name": "metadata"
+            }
+          ],
+          "returns": "Tuple[str, str]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "validate_transition",
+          "parameters": [
+            {
+              "annotation": "Optional[str]",
+              "default": null,
+              "name": "current_status"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "new_status"
+            }
+          ],
+          "returns": "None"
         }
       ]
     }

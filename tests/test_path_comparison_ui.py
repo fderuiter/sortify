@@ -37,17 +37,19 @@ def test_diff_highlight_paths_identical():
 
 
 def test_diff_highlight_paths_differences():
-    """Verify contrasting styles are applied to changed path segments."""
+    """Verify contrasting styles and dual-coded text markers are applied to changed path segments."""
     src, tgt = _diff_highlight_paths("docs/invoice.pdf", "Finance/2026_invoice.pdf")
-    assert src.plain == "docs/invoice.pdf"
-    assert tgt.plain == "Finance/2026_invoice.pdf"
+    assert "[-]" in src.plain
+    assert "[+]" in tgt.plain
 
-    # Check that red style exists in src spans and green style exists in tgt spans
-    src_styles = [span.style for span in src.spans]
-    tgt_styles = [span.style for span in tgt.spans]
+    # Check that red and strikethrough style exists in src spans and green and underline style exists in tgt spans
+    src_styles = [str(span.style) for span in src.spans]
+    tgt_styles = [str(span.style) for span in tgt.spans]
 
-    assert any("red" in str(s) for s in src_styles)
-    assert any("green" in str(s) for s in tgt_styles)
+    assert any(
+        "red" in s and ("strike" in s or "strikethrough" in s) for s in src_styles
+    )
+    assert any("green" in s and "underline" in s for s in tgt_styles)
 
 
 def test_format_side_by_side_path_comparison_table():

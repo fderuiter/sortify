@@ -24,6 +24,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.config
 
+## `app.core.accessible_html`
+
+::: app.core.accessible_html
+
 ## `app.core.analyzer`
 
 ::: app.core.analyzer

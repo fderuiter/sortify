@@ -647,6 +647,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                     "core_verifier",
                     "core_simulation_exporter",
                     "core_audit_reporter",
+                    "core_accessible_html",
                     "core_mover",
                     "core_file_renamer",
                     "core_resilient_file_ops",
@@ -753,6 +754,7 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
                 id="core_simulation_exporter", label="app.core.simulation_exporter"
             ),
             DiagramNode(id="core_audit_reporter", label="app.core.audit_reporter"),
+            DiagramNode(id="core_accessible_html", label="app.core.accessible_html"),
             DiagramNode(id="core_mover", label="app.core.mover"),
             DiagramNode(id="core_file_renamer", label="app.core.file_renamer"),
             DiagramNode(
@@ -847,6 +849,9 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramEdge(source="core_mover", target="core_metadata"),
             DiagramEdge(source="core_text_utils", target="core_exceptions"),
             DiagramEdge(source="core_path_utils", target="core_exceptions"),
+            DiagramEdge(
+                source="core_simulation_exporter", target="core_accessible_html"
+            ),
         ],
     )
 

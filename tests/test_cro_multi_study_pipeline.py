@@ -7,8 +7,11 @@ import zipfile
 
 import pytest
 
+from app.core.exceptions import InvalidStateTransitionError
 from app.plugins.clinical_compliance.cro_multi_study_pipeline import (
+    _VALID_CRO_TRANSITIONS,
     CROMultiStudyPipeline,
+    CROPipelineState,
 )
 
 pytestmark = [pytest.mark.slow, pytest.mark.integration]
@@ -347,3 +350,163 @@ def test_cro_pipeline_identical_source_and_target_physical_files():
         res2 = pipeline.run_pipeline(source_root=target_dir, target_root=target_dir)
         assert res2.total_scanned_files >= 1
         assert os.path.exists(first_dest_abs)
+
+
+def test_cro_pipeline_state_machine_valid_transitions():
+    """Verify CROMultiStudyPipeline transitions through allowed paths in _VALID_CRO_TRANSITIONS."""
+    pipeline = CROMultiStudyPipeline()
+    assert pipeline._VALID_CRO_TRANSITIONS == _VALID_CRO_TRANSITIONS
+    assert pipeline.state == CROPipelineState.IDLE
+
+    # Normal full lifecycle
+    pipeline.transition_to(CROPipelineState.SCANNING)
+    assert pipeline.state == CROPipelineState.SCANNING
+
+    pipeline.transition_to(CROPipelineState.DISAMBIGUATING)
+    assert pipeline.state == CROPipelineState.DISAMBIGUATING
+
+    pipeline.transition_to(CROPipelineState.PARTITIONING)
+    assert pipeline.state == CROPipelineState.PARTITIONING
+
+    pipeline.transition_to(CROPipelineState.FINALIZING)
+    assert pipeline.state == CROPipelineState.FINALIZING
+
+    pipeline.transition_to(CROPipelineState.COMPLETED)
+    assert pipeline.state == CROPipelineState.COMPLETED
+
+    # Reset to IDLE
+    pipeline.transition_to(CROPipelineState.IDLE)
+    assert pipeline.state == CROPipelineState.IDLE
+
+    # Cancellation from scanning
+    pipeline.transition_to(CROPipelineState.SCANNING)
+    pipeline.transition_to(CROPipelineState.CANCELLED)
+    assert pipeline.state == CROPipelineState.CANCELLED
+
+    # Reset to IDLE
+    pipeline.transition_to(CROPipelineState.IDLE)
+    assert pipeline.state == CROPipelineState.IDLE
+
+
+def test_cro_pipeline_state_machine_invalid_transitions():
+    """Verify attempting an out-of-order state transition raises InvalidStateTransitionError."""
+    pipeline = CROMultiStudyPipeline()
+    assert pipeline.state == CROPipelineState.IDLE
+
+    # Out of order from IDLE
+    with pytest.raises(InvalidStateTransitionError):
+        pipeline.transition_to(CROPipelineState.PARTITIONING)
+
+    with pytest.raises(InvalidStateTransitionError):
+        pipeline.transition_to(CROPipelineState.COMPLETED)
+
+    with pytest.raises(InvalidStateTransitionError):
+        pipeline.transition_to(CROPipelineState.FINALIZING)
+
+    with pytest.raises(InvalidStateTransitionError):
+        pipeline.transition_to(CROPipelineState.DISAMBIGUATING)
+
+    # Transition to SCANNING
+    pipeline.transition_to(CROPipelineState.SCANNING)
+
+    # Out of order from SCANNING
+    with pytest.raises(InvalidStateTransitionError):
+        pipeline.transition_to(CROPipelineState.PARTITIONING)
+
+    with pytest.raises(InvalidStateTransitionError):
+        pipeline.transition_to(CROPipelineState.COMPLETED)
+
+    with pytest.raises(InvalidStateTransitionError):
+        pipeline.transition_to(CROPipelineState.IDLE)
+
+
+def test_cro_pipeline_cancellation_during_scan_stage():
+    """Verify cancellation during scan transitions to CANCELLED and returns MasterPipelineResult with status CANCELLED."""
+    with (
+        tempfile.TemporaryDirectory() as source_dir,
+        tempfile.TemporaryDirectory() as target_dir,
+    ):
+        with open(os.path.join(source_dir, "doc1.txt"), "w") as f:
+            f.write("Clinical Trial Protocol PROTO-101")
+
+        pipeline = CROMultiStudyPipeline()
+
+        # cancel_check returns True immediately
+        result = pipeline.run_pipeline(
+            source_root=source_dir,
+            target_root=target_dir,
+            cancel_check=lambda: True,
+        )
+
+        assert pipeline.state == CROPipelineState.CANCELLED
+        assert result.status == CROPipelineState.CANCELLED
+        assert result.chain_of_custody_manifest_path == ""
+        assert not os.path.exists(
+            os.path.join(target_dir, "chain_of_custody_manifest.json")
+        )
+
+
+def test_cro_pipeline_cancellation_during_partitioning_stage():
+    """Verify cancellation during partition stops immediately and never creates chain_of_custody_manifest.json."""
+    with (
+        tempfile.TemporaryDirectory() as source_dir,
+        tempfile.TemporaryDirectory() as target_dir,
+    ):
+        for i in range(5):
+            with open(os.path.join(source_dir, f"doc_{i}.txt"), "w") as f:
+                f.write(
+                    f"Form FDA 1572 Statement of Investigator Protocol ID: PROTO-STAGE3 File {i}"
+                )
+
+        pipeline = CROMultiStudyPipeline()
+
+        # Cancellation flag triggered when partitioning starts
+        cancelled_flag = False
+
+        def conditional_cancel():
+            nonlocal cancelled_flag
+            if pipeline.state == CROPipelineState.PARTITIONING:
+                cancelled_flag = True
+                return True
+            return False
+
+        result = pipeline.run_pipeline(
+            source_root=source_dir,
+            target_root=target_dir,
+            cancel_check=conditional_cancel,
+        )
+
+        assert cancelled_flag is True
+        assert pipeline.state == CROPipelineState.CANCELLED
+        assert result.status == CROPipelineState.CANCELLED
+        assert not os.path.exists(
+            os.path.join(target_dir, "chain_of_custody_manifest.json")
+        )
+
+
+def test_cro_pipeline_no_completion_progress_on_cancellation():
+    """Verify pipeline does not emit progress value 1.0 or completion message when cancelled."""
+    with (
+        tempfile.TemporaryDirectory() as source_dir,
+        tempfile.TemporaryDirectory() as target_dir,
+    ):
+        with open(os.path.join(source_dir, "doc1.txt"), "w") as f:
+            f.write("Clinical Trial Protocol PROTO-101")
+
+        pipeline = CROMultiStudyPipeline()
+        emitted_progress = []
+
+        def track_progress(prog, msg=""):
+            emitted_progress.append((prog, msg))
+
+        result = pipeline.run_pipeline(
+            source_root=source_dir,
+            target_root=target_dir,
+            progress_callback=track_progress,
+            cancel_check=lambda: True,
+        )
+
+        assert result.status == CROPipelineState.CANCELLED
+        for prog, msg in emitted_progress:
+            assert prog < 1.0
+            assert "complete" not in str(msg).lower()
