@@ -1,0 +1,174 @@
+{
+  "_metadata": {
+    "checksum": "ea4db5a649c1bbb9265938814e9293a09a5ca48331678182a923861fb15a989a"
+  },
+  "classes": [
+    {
+      "class_name": "CROMultiStudyPipeline",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": "'tmf'",
+              "name": "mode"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "smart_renaming"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "run_pipeline",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "source_root"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "target_root"
+            },
+            {
+              "annotation": "Optional[Callable[[int, str], None]]",
+              "default": "None",
+              "name": "progress_callback"
+            },
+            {
+              "annotation": "Optional[Callable[[], bool]]",
+              "default": "None",
+              "name": "cancel_check"
+            }
+          ],
+          "returns": "MasterPipelineResult"
+        }
+      ]
+    },
+    {
+      "class_name": "MasterPipelineResult",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "dict",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "item"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "default"
+            }
+          ],
+          "returns": "Any"
+        }
+      ]
+    },
+    {
+      "class_name": "StudyIngestSummary",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "dict",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "item"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "default"
+            }
+          ],
+          "returns": "Any"
+        }
+      ]
+    }
+  ],
+  "functions": []
+}

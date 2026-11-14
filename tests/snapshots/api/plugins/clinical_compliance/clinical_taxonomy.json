@@ -1,0 +1,29 @@
+{
+  "_metadata": {
+    "checksum": "6e53092a404d59530b67ac6070f634646d27646ed7af3fa07085ed641826b670"
+  },
+  "classes": [
+    {
+      "class_name": "ClinicalArtifactDefinition",
+      "decorators": [
+        "@dataclass"
+      ],
+      "methods": []
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_artifact_by_id",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "artifact_id"
+        }
+      ],
+      "returns": "Optional[ClinicalArtifactDefinition]"
+    }
+  ]
+}

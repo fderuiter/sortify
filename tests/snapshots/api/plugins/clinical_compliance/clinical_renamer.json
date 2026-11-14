@@ -1,0 +1,99 @@
+{
+  "_metadata": {
+    "checksum": "93d8dfa35757d4a0cc2fa64749ade10cf6cb0ec2c5eb79170173169db621be8e"
+  },
+  "classes": [
+    {
+      "class_name": "ClinicalRenamer",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "extract_date_or_version",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filename"
+            }
+          ],
+          "returns": "Optional[str]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "extract_investigator_name",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "Optional[str]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "extract_protocol_id",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "filename"
+            }
+          ],
+          "returns": "Optional[str]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "generate_standard_filename",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "original_filename"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "artifact_name"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    }
+  ],
+  "functions": []
+}
