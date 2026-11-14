@@ -134,7 +134,7 @@ def test_parse_eml_attachment_path_traversal():
         with open(eml_path, "wb") as f:
             f.write(eml_content)
 
-        dest = os.path.join(tmpdir, "eml_out")
+        dest = os.path.realpath(os.path.join(tmpdir, "eml_out"))
         dest_abs = os.path.abspath(dest)
         body, attachments = scanner.parse_eml_file(eml_path, dest)
 
@@ -183,7 +183,7 @@ def test_parse_eml_attachment_empty_and_whitespace_filename():
         with open(eml_path, "wb") as f:
             f.write(eml_content)
 
-        dest = os.path.join(tmpdir, "eml_out")
+        dest = os.path.realpath(os.path.join(tmpdir, "eml_out"))
         dest_abs = os.path.abspath(dest)
         body, attachments = scanner.parse_eml_file(eml_path, dest)
 
