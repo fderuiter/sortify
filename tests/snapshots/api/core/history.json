@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "30abdc32eff10216964912af2765282ce7db0e1417dfb77e741e3c28f72d2509"
+    "checksum": "6052263d09ebd10ca68817c6b3f36fa633ecf8de681de76dd60ed041db8875bb"
   },
   "classes": [
     {
@@ -312,6 +312,147 @@
             }
           ],
           "returns": "int"
+        }
+      ]
+    },
+    {
+      "class_name": "SessionStateMachine",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "db_path"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "add_transition_listener",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable[[Dict[str, Any]], None]",
+              "default": null,
+              "name": "callback"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_audit_events",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "session_id"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "conn"
+            }
+          ],
+          "returns": "List[Dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "remove_transition_listener",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable[[Dict[str, Any]], None]",
+              "default": null,
+              "name": "callback"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "transition",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "new_status"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "conn"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "error_details"
+            },
+            {
+              "annotation": "Optional[Dict[str, Any]]",
+              "default": "None",
+              "name": "metadata"
+            }
+          ],
+          "returns": "Tuple[str, str]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "validate_transition",
+          "parameters": [
+            {
+              "annotation": "Optional[str]",
+              "default": null,
+              "name": "current_status"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "new_status"
+            }
+          ],
+          "returns": "None"
         }
       ]
     }
