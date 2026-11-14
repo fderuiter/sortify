@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "29fc081f8dc3bfc16f09f7fbf12c212cc5e04482c01718ffaa986bf84a127780"
+    "checksum": "09918f71d8a4c9d0fc2ac9699d2d7b9599d0599418a313abfa205595f03b6e61"
   },
   "classes": [
     {
@@ -101,7 +101,20 @@
               "name": "progress_callback"
             }
           ],
-          "returns": "dict"
+          "returns": "MoveResult"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "reset",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "MoveEngineState"
         },
         {
           "async": false,
@@ -150,8 +163,345 @@
             }
           ],
           "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "state",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "MoveEngineState"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "transition_to",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "MoveEngineState | str",
+              "default": null,
+              "name": "target"
+            }
+          ],
+          "returns": "MoveEngineState"
         }
       ]
+    },
+    {
+      "class_name": "DirectoryCleanupStatus",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "InvalidMoveStateError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "MoveEngineState",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "MoveOpState",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "MoveResult",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "session_id"
+            },
+            {
+              "annotation": "int",
+              "default": "0",
+              "name": "deleted_folders"
+            },
+            {
+              "annotation": "int",
+              "default": "0",
+              "name": "protected_folders"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "cancelled"
+            },
+            {
+              "annotation": "Optional[dict[str, Any]]",
+              "default": "None",
+              "name": "audit_report"
+            },
+            {
+              "annotation": "Optional[MoveEngineState]",
+              "default": "None",
+              "name": "state"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "audit_report",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "Optional[dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@audit_report.setter"
+          ],
+          "name": "audit_report",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[dict[str, Any]]",
+              "default": null,
+              "name": "val"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "cancelled",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@cancelled.setter"
+          ],
+          "name": "cancelled",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "bool",
+              "default": null,
+              "name": "val"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "deleted_folders",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@deleted_folders.setter"
+          ],
+          "name": "deleted_folders",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "val"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "ok",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "protected_folders",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@protected_folders.setter"
+          ],
+          "name": "protected_folders",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "val"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "session_id",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "Optional[str]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@session_id.setter"
+          ],
+          "name": "session_id",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": null,
+              "name": "val"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "state",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "Optional[MoveEngineState]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@state.setter"
+          ],
+          "name": "state",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[MoveEngineState]",
+              "default": null,
+              "name": "val"
+            }
+          ],
+          "returns": "None"
+        }
+      ]
+    },
+    {
+      "class_name": "MoveVerificationStatus",
+      "decorators": [],
+      "methods": []
     }
   ],
   "functions": [
@@ -236,7 +586,7 @@
           "name": "source_dirs"
         }
       ],
-      "returns": "dict"
+      "returns": "MoveResult"
     },
     {
       "async": true,
