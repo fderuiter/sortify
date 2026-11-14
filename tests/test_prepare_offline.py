@@ -49,6 +49,19 @@ def test_prepare_offline_cpu_success(
                     "offline_bundle", "zip", "offline_bundle"
                 )
 
+                # Verify subprocess.run invocations
+                assert mock_run.call_count == 3
+
+                # Verify uv pip compile uses --index-strategy first-index
+                compile_cmd = mock_run.call_args_list[0][0][0]
+                assert "--index-strategy" in compile_cmd
+                strategy_idx = compile_cmd.index("--index-strategy")
+                assert compile_cmd[strategy_idx + 1] == "first-index"
+
+                # Verify pip download uses --require-hashes
+                download_cmd = mock_run.call_args_list[2][0][0]
+                assert "--require-hashes" in download_cmd
+
 
 @patch("scripts.prepare_offline.subprocess.run")
 @patch("scripts.prepare_offline.shutil.rmtree")
