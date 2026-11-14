@@ -12,6 +12,7 @@ import tarfile
 import tempfile
 import zipfile
 from dataclasses import dataclass
+from pathlib import Path
 from typing import Callable, Dict, List, Optional
 
 from app.core.exceptions import ArchiveSafetyError
@@ -165,7 +166,12 @@ class ForensicScanner:
                             target_obj = safe_extract_path(
                                 destination_dir, member, allow_same_dir=True
                             )
-                            target = str(target_obj)
+                            rel_member = target_obj.relative_to(
+                                Path(destination_dir).resolve()
+                            )
+                            target = os.path.abspath(
+                                os.path.join(destination_dir, rel_member)
+                            )
                         except ValueError:
                             continue
 
@@ -202,7 +208,12 @@ class ForensicScanner:
                             target_obj = safe_extract_path(
                                 destination_dir, member.name, allow_same_dir=True
                             )
-                            target = str(target_obj)
+                            rel_member = target_obj.relative_to(
+                                Path(destination_dir).resolve()
+                            )
+                            target = os.path.abspath(
+                                os.path.join(destination_dir, rel_member)
+                            )
                         except ValueError:
                             continue
 
@@ -301,10 +312,11 @@ class ForensicScanner:
                         continue
 
                     try:
-                        att_path_obj = safe_extract_path(
-                            destination_dir, safe_filename
+                        att_path_obj = safe_extract_path(destination_dir, safe_filename)
+                        rel_member = att_path_obj.relative_to(
+                            Path(destination_dir).resolve()
                         )
-                        att_path = str(att_path_obj)
+                        att_path = os.path.abspath(os.path.join(dest_abs, rel_member))
                     except ValueError as err:
                         logger.warning(
                             f"Skipping email attachment extraction: path '{att_path}' is outside destination '{dest_abs}': {err}"
