@@ -163,6 +163,216 @@ def test_db_get_all_documents_targeted_query(tmp_path):
         clear_connection_cache(only_current_and_inactive=False)
 
 
+def test_db_get_all_documents_zero_decryption_on_unrequested_rows(tmp_path, mocker):
+    """Verify worker threads decrypt only rows confirmed by the pre-decryption guard and execute zero calls on unrequested rows."""
+    from app.core.db_conn import clear_connection_cache
+
+    db_path = tmp_path / "autosorter.db"
+    worker = DBWorker()
+    db = Database(db_path, worker)
+
+    try:
+        base_dir = str(tmp_path)
+        db.upsert_documents(
+            [
+                (base_dir, "file1.txt", "hash1", "Content 1"),
+                (base_dir, "file2.txt", "hash2", "Content 2"),
+                (base_dir, "file3.txt", "hash3", "Content 3"),
+                (base_dir, "file4.txt", "hash4", "Content 4"),
+                (base_dir, "file5.txt", "hash5", "Content 5"),
+            ]
+        )
+        db.invalidate_cache()
+
+        decrypt_spy = mocker.spy(db.crypto, "decrypt_text")
+
+        # Query specifically for file2.txt
+        docs = db.get_all_documents(base_dir, target_paths=["file2.txt"])
+
+        assert len(docs) == 1
+        assert docs[0][0] == "file2.txt"
+        assert docs[0][1] == "Content 2"
+
+        # Exactly 1 decryption call occurred on worker threads for the requested file, 0 on unrequested rows
+        assert decrypt_spy.call_count == 1
+    finally:
+        worker.stop()
+        clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_db_get_all_documents_chunked_queries_500_items(tmp_path, mocker):
+    """Verify targeted lookups utilize parameterized filepath clauses chunked at 500 items."""
+    import re
+
+    from app.core.db_conn import clear_connection_cache, get_db_connection
+
+    db_path = tmp_path / "autosorter.db"
+    worker = DBWorker()
+    db = Database(db_path, worker)
+
+    try:
+        base_dir = str(tmp_path)
+        # Create 1200 target paths to force chunking across multiple 500-item batches
+        target_paths = [f"batch_doc_{i:04d}.txt" for i in range(1200)]
+
+        # Insert 3 records corresponding to items in chunk 0, chunk 1, and chunk 2
+        db.upsert_documents(
+            [
+                (base_dir, target_paths[10], "hash10", "Batch Content 10"),
+                (base_dir, target_paths[550], "hash550", "Batch Content 550"),
+                (base_dir, target_paths[1150], "hash1150", "Batch Content 1150"),
+            ]
+        )
+        db.invalidate_cache()
+
+        # Intercept connection execute calls to record SQL queries and parameters
+        real_conn = get_db_connection(str(db_path))
+        captured_queries = []
+
+        class ConnProxy:
+            def __init__(self, raw):
+                self._raw = raw
+
+            def __enter__(self):
+                self._raw.__enter__()
+                return self
+
+            def __exit__(self, *args):
+                return self._raw.__exit__(*args)
+
+            def execute(self, sql, *args):
+                if "FROM documents" in sql and "filepath IN" in sql:
+                    params = args[0] if args else ()
+                    captured_queries.append((sql, params))
+                return self._raw.execute(sql, *args)
+
+            def __getattr__(self, name):
+                return getattr(self._raw, name)
+
+        proxy = ConnProxy(real_conn)
+        mocker.patch("app.core.db.get_db_connection", return_value=proxy)
+
+        docs = db.get_all_documents(base_dir, target_paths=target_paths)
+
+        # 1200 items chunked at 500 items yields ceil(1200 / 500) = 3 query batches
+        assert len(captured_queries) == 3
+
+        # Validate chunk sizing
+        for idx, (sql, params) in enumerate(captured_queries):
+            # Find the filepath IN clause placeholders
+            match = re.search(r"filepath IN \(([^)]+)\)", sql)
+            assert match is not None
+            placeholders = match.group(1).split(",")
+            if idx in (0, 1):
+                assert len(placeholders) == 500
+            else:
+                assert len(placeholders) == 200
+
+        assert len(docs) == 3
+        returned_fps = {d[0] for d in docs}
+        assert returned_fps == {target_paths[10], target_paths[550], target_paths[1150]}
+    finally:
+        worker.stop()
+        clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_db_get_all_documents_multi_root_targeted_guard(tmp_path, mocker):
+    """Verify multi-root targeted queries only decrypt rows confirmed for the specific root key."""
+    from app.core.db_conn import clear_connection_cache
+
+    root1 = str(tmp_path / "root1")
+    root2 = str(tmp_path / "root2")
+    db_path = tmp_path / "autosorter.db"
+    worker = DBWorker()
+    db = Database(db_path, worker)
+
+    try:
+        # Both roots have a file with the identical relative filepath 'shared_report.pdf'
+        db.upsert_documents(
+            [
+                (root1, "shared_report.pdf", "hash1", "Root 1 Report"),
+                (root2, "shared_report.pdf", "hash2", "Root 2 Report"),
+            ]
+        )
+        db.invalidate_cache()
+
+        decrypt_spy = mocker.spy(db.crypto, "decrypt_text")
+
+        # Query targeting only root1's version
+        docs = db.get_all_documents(
+            root1,
+            target_paths=[f"{root1}::shared_report.pdf"],
+            source_dirs=[root1, root2],
+        )
+
+        assert len(docs) == 1
+        assert docs[0][0] == f"{root1}::shared_report.pdf"
+        assert docs[0][1] == "Root 1 Report"
+
+        # Worker threads decrypted ONLY root1's row; root2's row was blocked by the pre-decryption guard
+        assert decrypt_spy.call_count == 1
+    finally:
+        worker.stop()
+        clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_db_get_all_documents_empty_target_paths(tmp_path, mocker):
+    """Verify empty target_paths immediately returns empty list without database or decryption overhead."""
+    import app.core.db
+    from app.core.db_conn import clear_connection_cache
+
+    db_path = tmp_path / "autosorter.db"
+    worker = DBWorker()
+    db = Database(db_path, worker)
+
+    try:
+        base_dir = str(tmp_path)
+        db.upsert_documents([(base_dir, "doc.txt", "hash", "Some Content")])
+        db.invalidate_cache()
+
+        decrypt_spy = mocker.spy(db.crypto, "decrypt_text")
+        conn_spy = mocker.spy(app.core.db, "get_db_connection")
+
+        docs = db.get_all_documents(base_dir, target_paths=[])
+        assert docs == []
+        assert decrypt_spy.call_count == 0
+        assert conn_spy.call_count == 0
+    finally:
+        worker.stop()
+        clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_db_get_all_documents_indexed_primary_key_lookup(tmp_path):
+    """Verify that chunked targeted queries leverage the composite primary key index without full table scans."""
+    from app.core.db_conn import clear_connection_cache, get_db_connection
+
+    db_path = tmp_path / "autosorter.db"
+    worker = DBWorker()
+    db = Database(db_path, worker)
+
+    try:
+        base_dir = str(tmp_path)
+        db.upsert_documents([(base_dir, "doc1.txt", "hash1", "Content 1")])
+        db.invalidate_cache()
+
+        conn = get_db_connection(str(db_path))
+        query = (
+            "EXPLAIN QUERY PLAN "
+            "SELECT base_dir, filepath, extracted_text, file_hash, user_verified_target_path "
+            "FROM documents WHERE base_dir IN (?) AND filepath IN (?)"
+        )
+        plan_rows = conn.execute(query, (base_dir, "doc1.txt")).fetchall()
+        plan_text = " ".join(str(r) for r in plan_rows)
+
+        # Confirm SQLite uses the primary key index (sqlite_autoindex_documents_1)
+        assert "sqlite_autoindex_documents_1" in plan_text
+        assert "SCAN" not in plan_text
+        assert "SEARCH" in plan_text
+    finally:
+        worker.stop()
+        clear_connection_cache(only_current_and_inactive=False)
+
+
 @pytest.mark.anyio
 async def test_triage_file_path_passes_target_paths_and_no_get_files_recursively(
     tmp_path,
