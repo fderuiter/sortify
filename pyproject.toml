@@ -46,6 +46,7 @@ dependencies = [
     "numpy",
     "pydantic",
     "psutil",
+    "defusedxml>=0.7.1",
 ]
 
 [project.urls]

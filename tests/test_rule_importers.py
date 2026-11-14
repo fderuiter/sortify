@@ -238,6 +238,42 @@ def test_dropit_rule_importer_xml():
         Path(temp_path).unlink(missing_ok=True)
 
 
+def test_dropit_rule_importer_xml_entity_expansion_forbidden():
+    """Verify that XML inputs with DTD entities fail safely with warnings."""
+    xml_with_entity = """<?xml version="1.0" encoding="UTF-8"?>
+    <!DOCTYPE Profile [
+        <!ENTITY expand "evil_entity_value">
+        <!ENTITY quadratic "&expand;&expand;&expand;&expand;">
+    ]>
+    <Profile>
+        <Association>
+            <Name>&quadratic;</Name>
+            <Pattern>*.pdf</Pattern>
+            <Destination>Documents</Destination>
+            <Action>Move</Action>
+        </Association>
+    </Profile>
+    """
+
+    with tempfile.NamedTemporaryFile(
+        suffix=".xml", mode="w", encoding="utf-8", delete=False
+    ) as f:
+        f.write(xml_with_entity)
+        temp_path = f.name
+
+    try:
+        importer = DropItRuleImporter()
+        assert importer.can_import(temp_path) is True
+        res = importer.parse_file(temp_path)
+        assert isinstance(res, ImportResult)
+        assert len(res.warnings) >= 1
+        assert any("Failed to parse XML" in w for w in res.warnings)
+        assert len(res.policies) == 0
+        assert len(res.keyword_rules) == 0
+    finally:
+        Path(temp_path).unlink(missing_ok=True)
+
+
 def test_dropit_rule_importer_json():
     """Verify DropItRuleImporter parses DropIt JSON profile export files."""
     json_data = [
