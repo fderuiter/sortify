@@ -221,3 +221,217 @@ def test_audio_document_path_update_bypasses_tfidf(tmp_path):
         assert cursor.fetchone()[0] == 0
 
     db_worker.stop()
+
+
+def test_startup_purging_zero_decryption_calls_for_valid_documents(
+    tmp_path, monkeypatch
+):
+    """Verify that legacy audio records are purged on startup while zero decryption calls occur for valid documents."""
+    import app.core.path_utils as path_utils
+
+    db_path = tmp_path / "zero_decrypt_test.db"
+    db_worker = DBWorker()
+    db = Database(db_path=db_path, worker=db_worker)
+
+    base_dir = str(tmp_path)
+    audio_path_lower = "audio_memo.wav"
+    audio_path_upper = "recordings/OLD_MEMO.MP3"
+    audio_path_win = "win\\legacy_voice.FLAC"
+    valid_pdf = "documents/contract.pdf"
+    valid_docx = "reports\\Q3_REPORT.DOCX"
+    unsupported_file = "assets/photo.PNG"
+
+    db.upsert_documents(
+        [
+            (base_dir, audio_path_lower, "h1", "audio terms content"),
+            (base_dir, audio_path_upper, "h2", "audio terms upper content"),
+            (base_dir, audio_path_win, "h3", "audio terms flac content"),
+            (base_dir, valid_pdf, "h4", "contract terms content"),
+            (base_dir, valid_docx, "h5", "report terms content"),
+            (base_dir, unsupported_file, "h6", "photo binary content"),
+        ]
+    )
+
+    # Manually populate tfidf_doc_terms and tfidf_vocab simulating legacy database state
+    with closing(get_db_connection(str(db_path))) as conn, conn:
+        conn.executemany(
+            "INSERT INTO tfidf_doc_terms (base_dir, filepath, term, tf) VALUES (?, ?, ?, ?)",
+            [
+                (base_dir, audio_path_lower, "audio", 1),
+                (base_dir, audio_path_upper, "audio", 1),
+                (base_dir, audio_path_win, "audio", 1),
+                (base_dir, unsupported_file, "photo", 1),
+                (base_dir, valid_pdf, "contract", 1),
+                (base_dir, valid_docx, "report", 1),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO tfidf_vocab (base_dir, term, df) VALUES (?, ?, ?)",
+            [
+                (base_dir, "audio", 3),
+                (base_dir, "photo", 1),
+                (base_dir, "contract", 1),
+                (base_dir, "report", 1),
+            ],
+        )
+
+    db_worker.stop()
+    clear_connection_cache(only_current_and_inactive=False)
+
+    # Intercept resolve_db_crypto to monitor decryption calls on startup
+    decrypt_calls = []
+    orig_resolve = path_utils.resolve_db_crypto
+
+    def counting_resolve(path):
+        crypto = orig_resolve(path)
+        orig_decrypt = crypto.decrypt_text
+
+        def spy_decrypt(data):
+            decrypt_calls.append(data)
+            return orig_decrypt(data)
+
+        crypto.decrypt_text = spy_decrypt
+        return crypto
+
+    monkeypatch.setattr(path_utils, "resolve_db_crypto", counting_resolve)
+
+    # Startup / re-initialize Database
+    new_worker = DBWorker()
+    new_db = Database(db_path=db_path, worker=new_worker)
+    new_worker.stop()
+
+    # CRITICAL: Zero decryption calls MUST occur for valid documents and purged records on startup
+    assert len(decrypt_calls) == 0, (
+        f"Expected 0 decryption calls, got {len(decrypt_calls)}"
+    )
+
+    # Verify purge results
+    with closing(get_db_connection(str(db_path))) as conn, conn:
+        cursor = conn.cursor()
+        # Audio and unsupported records must be purged
+        for purged_path in [
+            audio_path_lower,
+            audio_path_upper,
+            audio_path_win,
+            unsupported_file,
+        ]:
+            cursor.execute(
+                "SELECT COUNT(*) FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ?",
+                (base_dir, purged_path.replace("\\", "/")),
+            )
+            assert cursor.fetchone()[0] == 0, f"Expected {purged_path} to be purged"
+
+        # Valid document records must remain
+        for kept_path in [valid_pdf, valid_docx]:
+            cursor.execute(
+                "SELECT COUNT(*) FROM tfidf_doc_terms WHERE base_dir = ? AND (filepath = ? OR filepath = ?)",
+                (base_dir, kept_path, kept_path.replace("\\", "/")),
+            )
+            assert cursor.fetchone()[0] == 1, f"Expected {kept_path} terms to remain"
+
+        # Purged vocab terms must be deleted
+        cursor.execute(
+            "SELECT COUNT(*) FROM tfidf_vocab WHERE base_dir = ? AND term IN ('audio', 'photo')",
+            (base_dir,),
+        )
+        assert cursor.fetchone()[0] == 0
+
+        # Valid vocab terms must remain
+        cursor.execute(
+            "SELECT term, df FROM tfidf_vocab WHERE base_dir = ? ORDER BY term",
+            (base_dir,),
+        )
+        remaining_vocab = dict(cursor.fetchall())
+        assert remaining_vocab == {"contract": 1, "report": 1}
+
+
+def test_startup_no_legacy_audio_zero_documents_table_queries(tmp_path):
+    """Verify that when no legacy audio documents exist, startup purge runs zero queries to documents table."""
+    db_path = tmp_path / "no_legacy_test.db"
+    db_worker = DBWorker()
+    db = Database(db_path=db_path, worker=db_worker)
+
+    base_dir = str(tmp_path)
+    valid_doc1 = "doc1.pdf"
+    valid_doc2 = "sub\\doc2.txt"
+
+    db.upsert_documents(
+        [
+            (base_dir, valid_doc1, "h1", "sample content 1"),
+            (base_dir, valid_doc2, "h2", "sample content 2"),
+        ]
+    )
+
+    with closing(get_db_connection(str(db_path))) as conn, conn:
+        conn.executemany(
+            "INSERT INTO tfidf_doc_terms (base_dir, filepath, term, tf) VALUES (?, ?, ?, ?)",
+            [
+                (base_dir, valid_doc1, "sample", 1),
+                (base_dir, valid_doc2.replace("\\", "/"), "content", 1),
+            ],
+        )
+        conn.executemany(
+            "INSERT INTO tfidf_vocab (base_dir, term, df) VALUES (?, ?, ?)",
+            [
+                (base_dir, "sample", 1),
+                (base_dir, "content", 1),
+            ],
+        )
+
+    db_worker.stop()
+    clear_connection_cache(only_current_and_inactive=False)
+
+    # Monkeypatch execute on Database connection to track any query referencing documents table
+    import app.core.db as db_module
+
+    executed_queries = []
+    orig_get_db_connection = db_module.get_db_connection
+
+    def tracking_get_db_connection(*args, **kwargs):
+        conn = orig_get_db_connection(*args, **kwargs)
+        conn.set_trace_callback(executed_queries.append)
+        return conn
+
+    db_module.get_db_connection = tracking_get_db_connection
+    try:
+        new_worker = DBWorker()
+        new_db = Database(db_path=db_path, worker=new_worker)
+        new_worker.stop()
+    finally:
+        db_module.get_db_connection = orig_get_db_connection
+
+    # Filter out schema migration / vector purge queries, specifically checking for queries
+    # reading extracted_text from documents during startup purge
+    extracted_text_queries = [
+        q
+        for q in executed_queries
+        if "extracted_text" in str(q).lower() and "documents" in str(q).lower()
+    ]
+    assert len(extracted_text_queries) == 0, (
+        f"Expected 0 queries reading extracted_text from documents, got: {extracted_text_queries}"
+    )
+
+
+def test_is_tfidf_eligible_extension_normalization():
+    """Verify extension validation correctly handles casing, backslashes, and unsupported types."""
+    # Audio extensions -> False
+    assert Database._is_tfidf_eligible_extension("test.mp3") is False
+    assert Database._is_tfidf_eligible_extension("folder/TEST.WAV") is False
+    assert Database._is_tfidf_eligible_extension("windows\\path\\MEMO.M4A") is False
+    assert Database._is_tfidf_eligible_extension("deep\\nested\\file.flac") is False
+
+    # Unsupported non-audio extensions -> False
+    assert Database._is_tfidf_eligible_extension("image.png") is False
+    assert Database._is_tfidf_eligible_extension("archive.ZIP") is False
+    assert Database._is_tfidf_eligible_extension("binary.exe") is False
+    assert Database._is_tfidf_eligible_extension("") is False
+    assert Database._is_tfidf_eligible_extension(None) is False
+
+    # Supported document extensions -> True
+    assert Database._is_tfidf_eligible_extension("document.pdf") is True
+    assert Database._is_tfidf_eligible_extension("REPORT.PDF") is True
+    assert Database._is_tfidf_eligible_extension("folder/data.csv") is True
+    assert Database._is_tfidf_eligible_extension("windows\\path\\sheet.XLSX") is True
+    assert Database._is_tfidf_eligible_extension("sub\\notes.TXT") is True
+    assert Database._is_tfidf_eligible_extension("file.docx") is True
+    assert Database._is_tfidf_eligible_extension("sheet.xls") is True
