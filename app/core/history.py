@@ -1,15 +1,18 @@
 """History management module for snapshotting and rollback."""
 
+import json
 import logging
 import os
+import sqlite3
 import time
 import uuid
-from collections.abc import Collection, Iterator
+from collections.abc import Callable, Collection, Iterator
 from contextlib import contextmanager
 from pathlib import Path
 from typing import Any, Optional
 
 from app.core.db_conn import get_db_connection
+from app.core.exceptions import InvalidStateTransitionError
 from app.core.migrations import Migration, add_missing_columns, migrate
 from app.core.moves import FAILED, INTENT, Move, MoveLedger, migrate_add_moves
 from app.core.path_utils import is_junction_path, safe_relpath
@@ -19,9 +22,323 @@ try:
 except ImportError:
     pylnk3 = None
 
+# Valid session lifecycle statuses
+ACTIVE = "active"
+COMPLETED = "completed"
+ROLLED_BACK = "rolled_back"
+PARTIALLY_ROLLED_BACK = "partially_rolled_back"
+FAILED_STATUS = "failed"
+UNDO_SNAPSHOT = "undo_snapshot"
+ABANDONED = "abandoned"
+UNCOMMITTED = "uncommitted"
+
+ALL_SESSION_STATUSES: set[str] = {
+    ACTIVE,
+    COMPLETED,
+    ROLLED_BACK,
+    PARTIALLY_ROLLED_BACK,
+    FAILED_STATUS,
+    UNDO_SNAPSHOT,
+    ABANDONED,
+    UNCOMMITTED,
+}
+
+# Explicit transition matrix: current_status -> set of allowed target statuses
+TRANSITION_MATRIX: dict[str, set[str]] = {
+    ACTIVE: {
+        ACTIVE,
+        COMPLETED,
+        ROLLED_BACK,
+        PARTIALLY_ROLLED_BACK,
+        FAILED_STATUS,
+        UNDO_SNAPSHOT,
+        ABANDONED,
+    },
+    COMPLETED: {
+        COMPLETED,
+        ROLLED_BACK,
+        PARTIALLY_ROLLED_BACK,
+        FAILED_STATUS,
+        ABANDONED,
+    },
+    PARTIALLY_ROLLED_BACK: {
+        PARTIALLY_ROLLED_BACK,
+        ROLLED_BACK,
+        FAILED_STATUS,
+        ABANDONED,
+    },
+    FAILED_STATUS: {
+        FAILED_STATUS,
+        ROLLED_BACK,
+        PARTIALLY_ROLLED_BACK,
+        ABANDONED,
+        ACTIVE,
+        COMPLETED,
+    },
+    UNDO_SNAPSHOT: {
+        UNDO_SNAPSHOT,
+        ROLLED_BACK,
+        FAILED_STATUS,
+        ABANDONED,
+    },
+    ABANDONED: {
+        ABANDONED,
+        ROLLED_BACK,
+        PARTIALLY_ROLLED_BACK,
+        FAILED_STATUS,
+    },
+    ROLLED_BACK: {
+        # Terminal state: only idempotent self-transition is permitted
+        ROLLED_BACK,
+    },
+    UNCOMMITTED: {
+        UNCOMMITTED,
+        COMPLETED,
+        ROLLED_BACK,
+        PARTIALLY_ROLLED_BACK,
+        FAILED_STATUS,
+        ABANDONED,
+    },
+}
+
+
+def _ensure_lifecycle_audit_schema(conn) -> None:
+    """Ensure the session lifecycle audit ledger exists."""
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS session_lifecycle_audit (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            session_id TEXT NOT NULL,
+            previous_status TEXT,
+            new_status TEXT NOT NULL,
+            timestamp REAL NOT NULL,
+            error_details TEXT,
+            metadata TEXT
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_session_lifecycle_audit_sid ON session_lifecycle_audit (session_id)"
+    )
+
+
+class SessionStateMachine:
+    """Enforces lifecycle transition rules and records structured audit and telemetry events."""
+
+    def __init__(self, db_path: Optional[str] = None):
+        self.db_path = db_path
+        self._listeners: list[Callable[[dict[str, Any]], None]] = []
+
+    def add_transition_listener(
+        self, callback: Callable[[dict[str, Any]], None]
+    ) -> None:
+        """Register a callback to receive structured telemetry events on status change."""
+        self._listeners.append(callback)
+
+    def remove_transition_listener(
+        self, callback: Callable[[dict[str, Any]], None]
+    ) -> None:
+        """Unregister a telemetry event callback."""
+        if callback in self._listeners:
+            self._listeners.remove(callback)
+
+    @staticmethod
+    def validate_transition(current_status: Optional[str], new_status: str) -> None:
+        """Validate whether a status transition is permitted by the explicit transition matrix.
+
+        Raises InvalidStateTransitionError if the transition is disallowed.
+        Executes within microseconds (<5ms constraint).
+        """
+        curr = (current_status or ACTIVE).lower()
+        target = new_status.lower()
+
+        allowed = TRANSITION_MATRIX.get(curr)
+        if allowed is None or target not in allowed:
+            raise InvalidStateTransitionError(
+                f"Invalid session lifecycle transition from '{curr}' to '{target}'. "
+                f"Allowed transitions from '{curr}': {sorted(list(allowed)) if allowed else []}"
+            )
+
+    def transition(
+        self,
+        session_id: str,
+        new_status: str,
+        conn=None,
+        *,
+        error_details: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> tuple[str, str]:
+        """Atomically validate and execute a session status transition in the database.
+
+        Records audit logs and structured telemetry events.
+        Returns (previous_status, new_status).
+        """
+        if conn is None:
+            if not self.db_path:
+                raise ValueError(
+                    "db_path or an active SQLite connection must be provided to transition session status."
+                )
+            managed_conn = get_db_connection(self.db_path)
+            with managed_conn:
+                return self._execute_transition(
+                    managed_conn,
+                    session_id,
+                    new_status,
+                    error_details=error_details,
+                    metadata=metadata,
+                )
+        else:
+            return self._execute_transition(
+                conn,
+                session_id,
+                new_status,
+                error_details=error_details,
+                metadata=metadata,
+            )
+
+    def _execute_transition(
+        self,
+        conn,
+        session_id: str,
+        new_status: str,
+        *,
+        error_details: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> tuple[str, str]:
+        cur = conn.execute(
+            "SELECT status FROM sessions WHERE session_id = ?",
+            (session_id,),
+        )
+        row = cur.fetchone()
+        if not row:
+            previous_status = UNCOMMITTED
+            self.validate_transition(previous_status, new_status)
+            conn.execute(
+                "INSERT OR REPLACE INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
+                (session_id, time.time(), "", new_status),
+            )
+        else:
+            previous_status = row[0] or ACTIVE
+            self.validate_transition(previous_status, new_status)
+            conn.execute(
+                "UPDATE sessions SET status = ? WHERE session_id = ?",
+                (new_status, session_id),
+            )
+
+        now = time.time()
+        meta_json = json.dumps(metadata) if metadata else None
+
+        # Write durable audit ledger record
+        try:
+            _ensure_lifecycle_audit_schema(conn)
+            conn.execute(
+                """
+                INSERT INTO session_lifecycle_audit (session_id, previous_status, new_status, timestamp, error_details, metadata)
+                VALUES (?, ?, ?, ?, ?, ?)
+                """,
+                (
+                    session_id,
+                    previous_status,
+                    new_status,
+                    now,
+                    error_details,
+                    meta_json,
+                ),
+            )
+        except sqlite3.Error as audit_exc:
+            logging.warning(
+                "Failed to write session lifecycle audit ledger: %s", audit_exc
+            )
+
+        # Structured audit log
+        logging.info(
+            "AUDIT: Session %s status transitioned from '%s' to '%s'%s",
+            session_id,
+            previous_status,
+            new_status,
+            f" [error: {error_details}]" if error_details else "",
+        )
+
+        # Structured telemetry event
+        telemetry_event = {
+            "event_type": "SESSION_STATUS_CHANGED",
+            "session_id": session_id,
+            "previous_status": previous_status,
+            "new_status": new_status,
+            "timestamp": now,
+            "error_details": error_details,
+            "metadata": metadata or {},
+        }
+        logging.debug("TELEMETRY: %s", telemetry_event)
+
+        for listener in list(self._listeners):
+            try:
+                listener(telemetry_event)
+            except Exception as listener_exc:  # noqa: BLE001 - user-supplied listener callback
+                logging.warning(
+                    "Error executing session telemetry listener: %s", listener_exc
+                )
+
+        return previous_status, new_status
+
+    def get_audit_events(
+        self, session_id: Optional[str] = None, conn=None
+    ) -> list[dict[str, Any]]:
+        """Retrieve historical lifecycle audit events for a session."""
+        close_conn = False
+        if conn is None:
+            if not self.db_path:
+                return []
+            conn = get_db_connection(self.db_path)
+            close_conn = True
+
+        try:
+            _ensure_lifecycle_audit_schema(conn)
+            if session_id:
+                cur = conn.execute(
+                    """
+                    SELECT session_id, previous_status, new_status, timestamp, error_details, metadata
+                    FROM session_lifecycle_audit WHERE session_id = ?
+                    ORDER BY id ASC
+                    """,
+                    (session_id,),
+                )
+            else:
+                cur = conn.execute(
+                    """
+                    SELECT session_id, previous_status, new_status, timestamp, error_details, metadata
+                    FROM session_lifecycle_audit
+                    ORDER BY id ASC
+                    """
+                )
+
+            events = []
+            for row in cur.fetchall():
+                meta = {}
+                if row[5]:
+                    try:
+                        meta = json.loads(row[5])
+                    except (json.JSONDecodeError, TypeError):
+                        meta = {}
+                events.append(
+                    {
+                        "session_id": row[0],
+                        "previous_status": row[1],
+                        "new_status": row[2],
+                        "timestamp": row[3],
+                        "error_details": row[4],
+                        "metadata": meta,
+                    }
+                )
+            return events
+        except sqlite3.Error as e:
+            logging.warning("Failed to query session lifecycle audit events: %s", e)
+            return []
+        finally:
+            if close_conn:
+                conn.close()
+
 
 # Session status of the safety snapshot an undo takes before it touches files.
-UNDO_SNAPSHOT_STATUS = "undo_snapshot"
+UNDO_SNAPSHOT_STATUS = UNDO_SNAPSHOT
 
 
 def _robust_move(src, dst):
@@ -253,6 +570,7 @@ class HistoryManager:
         self.db_path = db_path or str(Path(db.db_path).parent / "history.db")
         self.migrations = migrations
         self._init_db()
+        self.state_machine = SessionStateMachine(self.db_path)
         # The move ledger (ADR 0006) lives in this database and writes through its worker.
         self.moves = MoveLedger(self.db_path, getattr(db, "worker", None))
 
@@ -260,6 +578,24 @@ class HistoryManager:
         conn = get_db_connection(self.db_path)
         with conn:
             migrate(conn, self.migrations, label=f"History {self.db_path}")
+
+    def _transition_session_status(
+        self,
+        session_id: str,
+        new_status: str,
+        conn=None,
+        *,
+        error_details: Optional[str] = None,
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> tuple[str, str]:
+        """Atomically validate and execute a session status transition."""
+        return self.state_machine.transition(
+            session_id,
+            new_status,
+            conn=conn,
+            error_details=error_details,
+            metadata=metadata,
+        )
 
     def _create_snapshot_internal(self, base_dir: str) -> str:
         session_id = str(uuid.uuid4())
@@ -944,18 +1280,24 @@ class HistoryManager:
 
         if failed_steps:
             first_err = failed_steps[0][1]
+            try:
+                self._transition_session_status(
+                    session_id,
+                    "failed",
+                    error_details=str(first_err),
+                    metadata={"failed_steps_count": len(failed_steps)},
+                )
+            except Exception as st_err:  # noqa: BLE001
+                logging.warning(
+                    f"Could not transition session {session_id} to failed: {st_err}"
+                )
             if isinstance(first_err, ValueError):
                 raise first_err
             raise PermissionError(
                 f"Recovery incomplete: {len(failed_steps)} step(s) failed during rollback. Error: {first_err}"
             )
 
-        conn = get_db_connection(self.db_path)
-        with conn:
-            conn.execute(
-                "UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?",
-                (session_id,),
-            )
+        self._transition_session_status(session_id, "rolled_back")
 
         # Every step reversed, so the journal no longer describes unfinished work.
         try:
@@ -971,12 +1313,7 @@ class HistoryManager:
         Left "active", the startup scan reports it as interrupted work; marked
         "completed", ``undo --latest`` picks it instead of the previous sort.
         """
-        conn = get_db_connection(self.db_path)
-        with conn:
-            conn.execute(
-                "UPDATE sessions SET status = ? WHERE session_id = ?",
-                (UNDO_SNAPSHOT_STATUS, session_id),
-            )
+        self._transition_session_status(session_id, UNDO_SNAPSHOT_STATUS)
 
     def log_step(
         self,
@@ -1132,10 +1469,7 @@ class HistoryManager:
         conn = get_db_connection(self.db_path)
         with conn:
             conn.execute("DELETE FROM step_ledger WHERE session_id = ?", (session_id,))
-            conn.execute(
-                "UPDATE sessions SET status = 'completed' WHERE session_id = ?",
-                (session_id,),
-            )
+            self._transition_session_status(session_id, "completed", conn=conn)
 
     def export_audit_log(
         self,
@@ -1393,10 +1727,12 @@ class HistoryManager:
             )
 
         steps = self.get_step_ledger(session_id)
-        if selected_step_ids is not None and steps:
+        if selected_step_ids is not None:
             sel_set = {str(x) for x in selected_step_ids}
-            steps_to_unwind = [s for s in steps if str(s["step_id"]) in sel_set]
-            is_partial = len(steps_to_unwind) < len(steps)
+            steps_to_unwind = (
+                [s for s in steps if str(s["step_id"]) in sel_set] if steps else []
+            )
+            is_partial = bool(not steps or len(steps_to_unwind) < len(steps))
         else:
             steps_to_unwind = steps
             is_partial = False
@@ -1426,7 +1762,10 @@ class HistoryManager:
         if not steps_to_unwind and not snapshot_files:
             if selected_step_ids is None and not steps:
                 return self._rollback_from_snapshot_internal(
-                    session_id, base_dir=base_dir, ignore_missing=True
+                    session_id,
+                    base_dir=base_dir,
+                    ignore_missing=True,
+                    is_partial=is_partial,
                 )
             return 0
 
@@ -1486,10 +1825,23 @@ class HistoryManager:
                         )
                         failed_unwinds.append((step, move_err))
         elif snapshot_files:
-            return self._rollback_from_snapshot_internal(session_id, base_dir=base_dir)
+            return self._rollback_from_snapshot_internal(
+                session_id, base_dir=base_dir, is_partial=is_partial
+            )
 
         if failed_unwinds:
             first_err = failed_unwinds[0][1]
+            try:
+                self._transition_session_status(
+                    session_id,
+                    "failed",
+                    error_details=str(first_err),
+                    metadata={"failed_unwinds_count": len(failed_unwinds)},
+                )
+            except Exception as st_err:  # noqa: BLE001
+                logging.warning(
+                    f"Could not transition session {session_id} to failed: {st_err}"
+                )
             raise PermissionError(
                 f"Recovery incomplete: {len(failed_unwinds)} step(s) failed to unwind. Error: {first_err}"
             )
@@ -1506,10 +1858,7 @@ class HistoryManager:
 
         conn = get_db_connection(self.db_path)
         with conn:
-            conn.execute(
-                "UPDATE sessions SET status = ? WHERE session_id = ?",
-                (status_to_set, session_id),
-            )
+            self._transition_session_status(session_id, status_to_set, conn=conn)
             unwound_ids = [s["step_id"] for s in steps_to_unwind]
             if is_partial and unwound_ids:
                 placeholders = ",".join("?" for _ in unwound_ids)
@@ -1626,11 +1975,33 @@ class HistoryManager:
             _prune_emptied_dirs(dirs_to_prune, base_dir)
 
         if failures:
+            try:
+                self._transition_session_status(
+                    session_id,
+                    "failed",
+                    error_details=str(failures[0]),
+                    metadata={"failures_count": len(failures)},
+                )
+            except Exception as st_err:  # noqa: BLE001
+                logging.warning(
+                    f"Could not transition session {session_id} to failed: {st_err}"
+                )
             raise PermissionError(
                 f"Recovery incomplete: {len(failures)} move(s) failed to undo. "
                 f"Error: {failures[0]}"
             )
         if conflicts:
+            try:
+                self._transition_session_status(
+                    session_id,
+                    "failed",
+                    error_details=f"Rollback incomplete: file hash mismatch for {len(conflicts)} file(s)",
+                    metadata={"conflicts_count": len(conflicts)},
+                )
+            except Exception as st_err:  # noqa: BLE001
+                logging.warning(
+                    f"Could not transition session {session_id} to failed: {st_err}"
+                )
             raise ValueError(
                 f"Rollback incomplete: file hash mismatch for {len(conflicts)} file(s) "
                 f"that changed since the sort, left in place (e.g. {conflicts[0]})."
@@ -1640,10 +2011,7 @@ class HistoryManager:
         unwound_seqs = [m.seq for m in moves]
 
         with conn:
-            conn.execute(
-                "UPDATE sessions SET status = ? WHERE session_id = ?",
-                (status_to_set, session_id),
-            )
+            self._transition_session_status(session_id, status_to_set, conn=conn)
             if is_partial and unwound_seqs:
                 placeholders = ",".join("?" for _ in unwound_seqs)
                 conn.execute(
@@ -1669,6 +2037,7 @@ class HistoryManager:
         base_dir: Optional[str] = None,
         safety_session_id: Optional[str] = None,
         ignore_missing: bool = False,
+        is_partial: bool = False,
     ):
         conn = get_db_connection(self.db_path)
         if not base_dir:
@@ -2302,11 +2671,13 @@ class HistoryManager:
                             )
 
                 except Exception as e:
-                    conn.execute(
-                        "UPDATE sessions SET status = 'failed' WHERE session_id = ?",
-                        (session_id,),
-                    )
-                    conn.commit()
+                    try:
+                        self._transition_session_status(
+                            session_id, "failed", conn=conn, error_details=str(e)
+                        )
+                        conn.commit()
+                    except Exception:  # noqa: BLE001
+                        pass
                     raise e
 
                 # Only remove staging files this tool created; never files that
@@ -2359,10 +2730,10 @@ class HistoryManager:
                             (base_dir,),
                         )
 
-                conn.execute(
-                    "UPDATE sessions SET status = 'rolled_back' WHERE session_id = ?",
-                    (session_id,),
+                snapshot_status = (
+                    "partially_rolled_back" if is_partial else "rolled_back"
                 )
+                self._transition_session_status(session_id, snapshot_status, conn=conn)
                 self.db.invalidate_cache(base_dir)
                 try:
                     from app.core.shared_registry import SharedModelRegistry
@@ -2424,34 +2795,44 @@ class HistoryManager:
                 safety_session_id = self._create_snapshot_internal(base_dir)
                 self._mark_undo_snapshot(safety_session_id)
 
-            if step_count > 0 or self.moves.list_moves(session_id):
-                result = self._unwind_session_internal(
-                    session_id, db=self.db, selected_step_ids=selected_step_ids
-                )
-            elif steps := self.db.get_transaction_steps(session_id):
-                result = self._rollback_from_steps(
-                    session_id,
-                    steps,
-                    base_dir,
-                    safety_session_id,
-                    ignore_missing=ignore_missing,
-                )
-            else:
-                missing = self.check_missing_files(session_id)
-                if missing and not ignore_missing:
-                    raise ValueError(
-                        f"Cannot rollback: {len(missing)} files from the snapshot are missing from the disk (e.g., {missing[0]})."
+            try:
+                if step_count > 0 or self.moves.list_moves(session_id):
+                    result = self._unwind_session_internal(
+                        session_id, db=self.db, selected_step_ids=selected_step_ids
                     )
-                result = self._rollback_from_snapshot_internal(
-                    session_id,
-                    base_dir=base_dir,
-                    safety_session_id=safety_session_id,
-                    ignore_missing=ignore_missing,
-                )
+                elif steps := self.db.get_transaction_steps(session_id):
+                    result = self._rollback_from_steps(
+                        session_id,
+                        steps,
+                        base_dir,
+                        safety_session_id,
+                        ignore_missing=ignore_missing,
+                    )
+                else:
+                    missing = self.check_missing_files(session_id)
+                    if missing and not ignore_missing:
+                        raise ValueError(
+                            f"Cannot rollback: {len(missing)} files from the snapshot are missing from the disk (e.g., {missing[0]})."
+                        )
+                    result = self._rollback_from_snapshot_internal(
+                        session_id,
+                        base_dir=base_dir,
+                        safety_session_id=safety_session_id,
+                        ignore_missing=ignore_missing,
+                        is_partial=bool(selected_step_ids is not None),
+                    )
 
-            if safety_session_id:
-                self._mark_undo_snapshot(safety_session_id)
-            return result
+                if safety_session_id:
+                    self._mark_undo_snapshot(safety_session_id)
+                return result
+            except Exception as exc:
+                try:
+                    self._transition_session_status(
+                        session_id, "failed", error_details=str(exc)
+                    )
+                except Exception:  # noqa: BLE001
+                    pass
+                raise exc
 
         return self.db.worker.execute_write(_write)
 
