@@ -144,6 +144,7 @@ class TreeViewMixin:
                     if isinstance(node.label, Text)
                     else str(node.label)
                 )
+                plain_txt = re.sub(r"\[(ERR|WARN)\]\s*", "", plain_txt)
 
                 if data.get("is_file"):
                     file_info = data.get("info") or {}
@@ -229,6 +230,21 @@ class TreeViewMixin:
                             plain_txt = f"{clean_txt} [COLLISION: {pol.upper()}]"
                     else:
                         plain_txt = clean_txt
+
+                if is_crit:
+                    if "📄 " in plain_txt:
+                        plain_txt = plain_txt.replace("📄 ", "📄 [ERR] ", 1)
+                    elif "📁 " in plain_txt:
+                        plain_txt = plain_txt.replace("📁 ", "📁 [ERR] ", 1)
+                    else:
+                        plain_txt = f"[ERR] {plain_txt}"
+                elif is_warn:
+                    if "📄 " in plain_txt:
+                        plain_txt = plain_txt.replace("📄 ", "📄 [WARN] ", 1)
+                    elif "📁 " in plain_txt:
+                        plain_txt = plain_txt.replace("📁 ", "📁 [WARN] ", 1)
+                    else:
+                        plain_txt = f"[WARN] {plain_txt}"
 
                 new_txt = Text(plain_txt)
                 if is_crit:
@@ -526,8 +542,47 @@ class TreeViewMixin:
                 file_info["is_checked"] = is_checked
                 file_info["is_excluded"] = is_excluded
 
+                norm_fp = os.path.normpath(filepath) if filepath else ""
+                abs_fp = os.path.normpath(os.path.abspath(filepath)) if filepath else ""
+                norm_key = os.path.normpath(file_key) if file_key else ""
+
+                is_crit_node = (
+                    norm_fp in self.critical_error_paths
+                    or norm_key in self.critical_error_paths
+                    or any(
+                        p
+                        and (
+                            p == norm_fp
+                            or p == abs_fp
+                            or p == norm_key
+                            or p.endswith("/" + norm_key)
+                            or p.endswith("\\" + norm_key)
+                        )
+                        for p in self.critical_error_paths
+                    )
+                )
+                is_warn_node = not is_crit_node and (
+                    norm_fp in self.warning_paths
+                    or norm_key in self.warning_paths
+                    or any(
+                        p
+                        and (
+                            p == norm_fp
+                            or p == abs_fp
+                            or p == norm_key
+                            or p.endswith("/" + norm_key)
+                            or p.endswith("\\" + norm_key)
+                        )
+                        for p in self.warning_paths
+                    )
+                )
+
                 cb_str = "[x]" if is_checked else "[ ]"
                 label_parts = [cb_str]
+                if is_crit_node:
+                    label_parts.append("[ERR]")
+                elif is_warn_node:
+                    label_parts.append("[WARN]")
                 if is_invalid_lock:
                     label_parts.append("[LOCK WARNING]")
                 elif is_locked:
@@ -593,15 +648,12 @@ class TreeViewMixin:
                     )
 
                 collision_paths = getattr(self, "collision_paths", set()) or set()
-                norm_fp = os.path.normpath(filepath) if filepath else ""
-                abs_fp = os.path.normpath(os.path.abspath(filepath)) if filepath else ""
                 norm_tp = os.path.normpath(target_path) if target_path else ""
                 abs_tp = (
                     os.path.normpath(os.path.abspath(target_path))
                     if target_path
                     else ""
                 )
-                norm_key = os.path.normpath(file_key) if file_key else ""
 
                 is_collision = bool(
                     file_info.get("collision")
@@ -634,37 +686,6 @@ class TreeViewMixin:
                 label_parts.append(file_key)
                 if target_filename and target_filename != file_key:
                     label_parts.append(f"-> {target_filename}")
-
-                is_crit_node = (
-                    norm_fp in self.critical_error_paths
-                    or norm_key in self.critical_error_paths
-                    or any(
-                        p
-                        and (
-                            p == norm_fp
-                            or p == abs_fp
-                            or p == norm_key
-                            or p.endswith("/" + norm_key)
-                            or p.endswith("\\" + norm_key)
-                        )
-                        for p in self.critical_error_paths
-                    )
-                )
-                is_warn_node = (
-                    norm_fp in self.warning_paths
-                    or norm_key in self.warning_paths
-                    or any(
-                        p
-                        and (
-                            p == norm_fp
-                            or p == abs_fp
-                            or p == norm_key
-                            or p.endswith("/" + norm_key)
-                            or p.endswith("\\" + norm_key)
-                        )
-                        for p in self.warning_paths
-                    )
-                )
 
                 label_str = cb_str + " 📄 " + " ".join(label_parts[1:])
                 text_obj = Text(label_str)
