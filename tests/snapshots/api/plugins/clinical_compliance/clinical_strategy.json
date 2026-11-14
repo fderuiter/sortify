@@ -1,0 +1,100 @@
+{
+  "_metadata": {
+    "checksum": "964bea7f55ce6b2159aca610b6f1d696e500f8c1aa3e01c52f0410c3f1858ff9"
+  },
+  "classes": [
+    {
+      "class_name": "ClinicalTMFStrategy",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": "'tmf'",
+              "name": "mode"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "smart_renaming"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "generate_audit_report"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "generate_plan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "filenames"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "documents"
+            },
+            {
+              "annotation": "int",
+              "default": "15",
+              "name": "max_folders"
+            },
+            {
+              "annotation": "Optional[set]",
+              "default": "None",
+              "name": "stop_words"
+            },
+            {
+              "annotation": "int",
+              "default": "5",
+              "name": "max_depth"
+            },
+            {
+              "annotation": "int",
+              "default": "3",
+              "name": "max_features"
+            },
+            {
+              "annotation": "Optional[List[list]]",
+              "default": "None",
+              "name": "pre_fetched_vectors"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "cancel_check"
+            },
+            {
+              "annotation": "Optional[Any]",
+              "default": "None",
+              "name": "pre_fetched_corpus"
+            }
+          ],
+          "returns": "Tuple[dict, float]"
+        }
+      ]
+    }
+  ],
+  "functions": []
+}

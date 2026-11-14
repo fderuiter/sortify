@@ -1,0 +1,44 @@
+{
+  "_metadata": {
+    "checksum": "47b753ddebf9f11e8bc3a116674231547fff113111c5b7a36eb0ec5dab37c6b9"
+  },
+  "classes": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "quarantine_scan_hook",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "orig_rel_path"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "extracted_text"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        }
+      ],
+      "returns": "None"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "register_plugin",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "registry"
+        }
+      ],
+      "returns": "None"
+    }
+  ]
+}

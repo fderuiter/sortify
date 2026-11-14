@@ -19,6 +19,8 @@ SNAPSHOT_PATH = SNAPSHOT_DIR  # Backwards-compatibility alias
 
 MAIN_CLI_PATH = os.path.join(BASE_DIR, "app", "main.py")
 SANDBOX_CLI_PATH = os.path.join(BASE_DIR, "sandbox_cli.py")
+CONFIG_PATH = os.path.join(BASE_DIR, "app", "config.py")
+PLUGINS_DIR = os.path.join(BASE_DIR, "app", "plugins")
 
 
 def get_snapshot_root_dir():
@@ -373,11 +375,72 @@ def collect_core_definitions(core_dir=None):
     return dict(sorted(core_data.items()))
 
 
-def collect_current_definitions(cli_dir=None, core_dir=None):
+def collect_plugins_definitions(plugins_dir=None):
+    """Dynamically scan plugins package modules recursively and extract public definitions."""
+    if plugins_dir is None:
+        plugins_dir = PLUGINS_DIR
+
+    plugins_data = {}
+    if os.path.exists(plugins_dir):
+        for root, dirs, files in os.walk(plugins_dir):
+            dirs.sort()
+            files.sort()
+            dirs[:] = [
+                d
+                for d in dirs
+                if not d.startswith(".")
+                and not d.startswith("_")
+                and d.lower() not in ("tests", "test", "mocks", "mock", "__pycache__")
+                and not d.lower().startswith("test")
+                and not d.lower().startswith("mock")
+            ]
+            for file in files:
+                if not file.endswith(".py") or file.startswith("."):
+                    continue
+                if file.startswith("_"):
+                    continue
+                file_lower = file.lower()
+                stem = file_lower.removesuffix(".py")
+                if (
+                    stem.startswith("test_")
+                    or stem.endswith("_test")
+                    or stem in ("test", "tests", "conftest")
+                    or stem.startswith("mock_")
+                    or stem.endswith("_mock")
+                    or stem in ("mock", "mocks")
+                    or "mock" in stem
+                ):
+                    continue
+
+                full_path = os.path.join(root, file)
+                rel_path = safe_relpath(full_path, BASE_DIR).replace("\\", "/")
+                plugins_data[rel_path] = extract_module_signatures(full_path)
+
+    return dict(sorted(plugins_data.items()))
+
+
+def collect_config_definitions(config_path=None):
+    """Extract configuration contract signatures from config module."""
+    if config_path is None:
+        config_path = CONFIG_PATH
+
+    config_data = {}
+    if os.path.exists(config_path):
+        rel_path = safe_relpath(config_path, BASE_DIR).replace("\\", "/")
+        config_data[rel_path] = extract_module_signatures(config_path)
+
+    return dict(sorted(config_data.items()))
+
+
+def collect_current_definitions(
+    cli_dir=None, core_dir=None, plugins_dir=None, config_path=None
+):
     """Parse codebase files and return the complete current definitions structure."""
     return {
         "cli": collect_cli_definitions(cli_dir=cli_dir),
         "core": collect_core_definitions(core_dir=core_dir),
+        "plugins": collect_plugins_definitions(plugins_dir=plugins_dir),
+        "config": collect_config_definitions(config_path=config_path),
     }
 
 
@@ -560,6 +623,34 @@ def collect_modules_and_payloads():
                 modules.append(
                     {
                         "category": "core",
+                        "source_rel": source_rel,
+                        "snapshot_path": snap_path,
+                        "payload": payload,
+                    }
+                )
+
+        plugins_dict = defs.get("plugins", {})
+        if isinstance(plugins_dict, dict):
+            for source_rel, plugin_sigs in plugins_dict.items():
+                snap_path = source_path_to_snapshot_path(source_rel)
+                payload = plugin_sigs
+                modules.append(
+                    {
+                        "category": "plugins",
+                        "source_rel": source_rel,
+                        "snapshot_path": snap_path,
+                        "payload": payload,
+                    }
+                )
+
+        config_dict = defs.get("config", {})
+        if isinstance(config_dict, dict):
+            for source_rel, config_sigs in config_dict.items():
+                snap_path = source_path_to_snapshot_path(source_rel)
+                payload = config_sigs
+                modules.append(
+                    {
+                        "category": "config",
                         "source_rel": source_rel,
                         "snapshot_path": snap_path,
                         "payload": payload,
