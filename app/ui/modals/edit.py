@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 from typing import Any, Dict, List, Optional, Union
 
 from textual import on, work
@@ -11,6 +12,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select, Static
 
+from app.core.path_utils import _is_absolute_path
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
 from app.ui.layout import ResponsiveLayoutMixin
@@ -18,8 +20,31 @@ from app.ui.layout import ResponsiveLayoutMixin
 logger = logging.getLogger(__name__)
 
 
-class RenameModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]):
-    """Modal dialog for renaming a file or folder node with pattern token formatting support."""
+class RenameResult(str):
+    """String subclass representing rename outcome with optional destination override."""
+
+    destination_override: Optional[str] = None
+
+    def __new__(cls, value: str, destination_override: Optional[str] = None):
+        """Instantiate string value with optional destination path override."""
+        instance = super().__new__(cls, value)
+        instance.destination_override = destination_override
+        return instance
+
+    @property
+    def name(self) -> str:
+        """Return base string name value."""
+        return str(self)
+
+    def to_tuple(self) -> tuple[str, Optional[str]]:
+        """Return (name, destination_override) tuple representation."""
+        return (str(self), self.destination_override)
+
+
+class RenameModal(
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Union[str, RenameResult]]]
+):
+    """Modal dialog for renaming a file or folder node with pattern token formatting and destination path override support."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
@@ -58,6 +83,12 @@ class RenameModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]):
         color: $text-muted;
         margin-bottom: 1;
     }
+    .modal-warning {
+        color: $warning;
+        text-style: bold;
+        margin-top: 1;
+        margin-bottom: 1;
+    }
     .modal-preview {
         color: $accent;
         margin-top: 1;
@@ -83,6 +114,11 @@ class RenameModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]):
         category: str = "",
         file_date: str = "",
         seq: int = 1,
+        destination_override: str = "",
+        is_folder: bool = False,
+        plan: Optional[Dict[str, Any]] = None,
+        base_dir: Optional[str] = None,
+        source_path: Optional[str] = None,
     ):
         super().__init__()
         self.modal_title = title
@@ -91,6 +127,12 @@ class RenameModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]):
         self.category = category
         self.file_date = file_date
         self.seq = seq
+        self.destination_override = destination_override
+        self.is_folder = is_folder
+        self.plan = plan
+        self.base_dir = base_dir
+        self.source_path = source_path
+        self._last_collision_state: Optional[str] = None
 
     def _evaluate_preview(self, pattern_str: str) -> str:
         """Evaluate formatted pattern string for live preview."""
@@ -140,6 +182,20 @@ class RenameModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]):
             )
             inp.tooltip = "Enter new file or folder name or pattern template"
             yield inp
+
+            yield Heading(
+                "Optional Destination Path Override (relative or absolute):", level=2
+            )
+            dest_inp = Input(
+                value=self.destination_override,
+                placeholder="e.g. /external/backup, D:\\Archive, or subcategory...",
+                id="input-destination",
+            )
+            dest_inp.tooltip = "Enter optional destination directory path override (absolute or relative)"
+            yield dest_inp
+
+            yield Label("", id="warning-collision", classes="modal-warning")
+
             yield Label(
                 f"Preview: {self._evaluate_preview(self.current_name)}",
                 id="label-preview",
@@ -160,27 +216,202 @@ class RenameModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]):
         self.announce(
             f"Opened rename dialog for '{self.modal_title}'. Enter new name or pattern and press Enter or click Rename."
         )
+        self._check_collision_and_update_ui()
+
+    def _validate_path_security(self, path_str: str) -> Optional[str]:
+        """Validate path string for directory traversal and illegal characters."""
+        if not path_str:
+            return None
+        if "\x00" in path_str:
+            return "Null bytes are not permitted in paths."
+        segments = re.split(r"[/\\]+", path_str)
+        if ".." in segments:
+            return "Directory traversal ('..') segments are not permitted."
+        return None
+
+    def _set_collision_warning(self, msg: str, is_error: bool = False) -> None:
+        """Update warning label widget text and styles."""
+        try:
+            lbl = self.query_one("#warning-collision", Label)
+            lbl.update(msg)
+            if is_error:
+                lbl.remove_class("modal-warning")
+                lbl.add_class("modal-error")
+            else:
+                lbl.remove_class("modal-error")
+                lbl.add_class("modal-warning")
+        except Exception:
+            pass
+
+    def _check_collision_and_update_ui(self) -> tuple[bool, Optional[str]]:
+        """Run live collision check and path validation across plan and filesystem.
+
+        Returns (is_blocked, message).
+        """
+        try:
+            name_inp = self.query_one("#input-name", Input)
+            name_val = name_inp.value.strip()
+        except Exception:
+            return False, None
+
+        try:
+            dest_inp = self.query_one("#input-destination", Input)
+            dest_val = dest_inp.value.strip()
+        except Exception:
+            dest_val = ""
+
+        # Check directory traversal segments (..) and null bytes
+        err = self._validate_path_security(name_val) or self._validate_path_security(
+            dest_val
+        )
+        if err:
+            msg = f"⚠️ Security Error: {err}"
+            self._set_collision_warning(msg, is_error=True)
+            if self._last_collision_state != msg:
+                self.announce(msg)
+                self._last_collision_state = msg
+            return True, err
+
+        # Check illegal characters in filename
+        formatted = self._evaluate_preview(name_val) if name_val else ""
+        if self.extension and formatted and not formatted.endswith(self.extension):
+            formatted_name = f"{formatted}{self.extension}"
+        else:
+            formatted_name = formatted
+
+        if not self.is_folder and formatted_name:
+            if any(c in formatted_name for c in '<>:"/\\|?*\x00'):
+                msg = "Filename contains illegal filesystem characters."
+                self._set_collision_warning(f"⚠️ Validation Error: {msg}", is_error=True)
+                return True, msg
+
+        if dest_val:
+            s_check = re.sub(r"^[a-zA-Z]:", "", dest_val)
+            if any(c in s_check for c in '<>"|?*\x00'):
+                msg = "Destination path contains illegal characters."
+                self._set_collision_warning(f"⚠️ Validation Error: {msg}", is_error=True)
+                return True, msg
+
+        collision_msg: Optional[str] = None
+
+        if self.is_folder:
+            target_folder = dest_val if dest_val else formatted_name
+            if target_folder and target_folder != self.current_name:
+                if self.plan and target_folder in self.plan:
+                    collision_msg = (
+                        f"Folder '{target_folder}' already exists in plan. "
+                        "Confirming will merge folder contents safely."
+                    )
+                elif self.base_dir:
+                    disk_path = (
+                        target_folder
+                        if _is_absolute_path(target_folder)
+                        else os.path.join(self.base_dir, target_folder)
+                    )
+                    if os.path.isdir(disk_path):
+                        collision_msg = (
+                            f"Target folder '{target_folder}' exists on disk. "
+                            "Contents will merge safely."
+                        )
+        else:
+            target_folder = dest_val if dest_val else self.category
+            if formatted_name:
+                if self.plan:
+                    folder_dict = self.plan.get(target_folder)
+                    if isinstance(folder_dict, dict) and formatted_name in folder_dict:
+                        existing_node = folder_dict[formatted_name]
+                        if not (
+                            isinstance(existing_node, dict)
+                            and existing_node.get("filepath")
+                            and self.source_path
+                            and existing_node.get("filepath") == self.source_path
+                        ):
+                            collision_msg = (
+                                f"Collision detected: '{formatted_name}' already exists in "
+                                f"'{target_folder or 'root'}'. Overwrite will be blocked (names disambiguated)."
+                            )
+
+                if not collision_msg and (
+                    self.base_dir or (target_folder and _is_absolute_path(target_folder))
+                ):
+                    if target_folder and _is_absolute_path(target_folder):
+                        dest_file_path = os.path.normpath(
+                            os.path.join(target_folder, formatted_name)
+                        )
+                    elif self.base_dir:
+                        dest_file_path = os.path.normpath(
+                            os.path.join(self.base_dir, target_folder, formatted_name)
+                        )
+                    else:
+                        dest_file_path = None
+
+                    if dest_file_path and os.path.lexists(dest_file_path):
+                        is_same = False
+                        if self.source_path and os.path.lexists(self.source_path):
+                            try:
+                                is_same = os.path.samefile(
+                                    dest_file_path, self.source_path
+                                )
+                            except OSError:
+                                is_same = os.path.normcase(
+                                    os.path.abspath(dest_file_path)
+                                ) == os.path.normcase(os.path.abspath(self.source_path))
+                        if not is_same:
+                            collision_msg = (
+                                f"Collision detected: File '{formatted_name}' exists on disk at destination. "
+                                "Overwrite will be blocked (names disambiguated)."
+                            )
+
+        if collision_msg:
+            full_warn = f"⚠️ {collision_msg}"
+            self._set_collision_warning(full_warn, is_error=False)
+            if self._last_collision_state != full_warn:
+                self.announce(full_warn)
+                self._last_collision_state = full_warn
+            return False, collision_msg
+        else:
+            self._set_collision_warning("", is_error=False)
+            self._last_collision_state = None
+            return False, None
 
     @on(Input.Changed, "#input-name")
     def on_input_changed(self, event: Input.Changed) -> None:
-        """Update live preview on input value change."""
+        """Update live preview and collision status on input value change."""
         try:
             preview_str = self._evaluate_preview(event.value)
             lbl = self.query_one("#label-preview", Label)
             lbl.update(f"Preview: {preview_str}")
         except Exception:
             pass
+        self._check_collision_and_update_ui()
+
+    @on(Input.Changed, "#input-destination")
+    def on_destination_changed(self, event: Input.Changed) -> None:
+        """Update collision status on destination path override change."""
+        self._check_collision_and_update_ui()
 
     @on(Button.Pressed, "#btn-confirm")
     def action_confirm(self) -> None:
         """Confirm renaming action."""
+        is_blocked, err = self._check_collision_and_update_ui()
+        if is_blocked:
+            self.announce(f"Cannot confirm rename: {err}")
+            return
+
         val = self.query_one("#input-name", Input).value.strip()
         formatted = self._evaluate_preview(val) if val else ""
+        dest_val = self.query_one("#input-destination", Input).value.strip()
+
         if formatted:
-            self.announce(f"Confirmed rename to '{formatted}'.")
+            result = RenameResult(
+                formatted, destination_override=dest_val if dest_val else None
+            )
+            dest_desc = f" with destination override '{dest_val}'" if dest_val else ""
+            self.announce(f"Confirmed rename to '{formatted}'{dest_desc}.")
+            self.dismiss(result)
         else:
             self.announce("Cancelled rename action.")
-        self.dismiss(formatted if formatted else None)
+            self.dismiss(None)
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
@@ -320,6 +551,18 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
         color: $accent;
         margin-bottom: 1;
     }
+    .modal-warning {
+        color: $warning;
+        text-style: bold;
+        margin-top: 1;
+        margin-bottom: 1;
+    }
+    .modal-error {
+        color: $error;
+        text-style: bold;
+        margin-top: 1;
+        margin-bottom: 1;
+    }
     .button-row {
         margin-top: 1;
         height: 3;
@@ -331,10 +574,21 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
     }
     """
 
-    def __init__(self, existing_folders: List[str], count: int = 1):
+    def __init__(
+        self,
+        existing_folders: List[str],
+        count: int = 1,
+        plan: Optional[Dict[str, Any]] = None,
+        base_dir: Optional[str] = None,
+        target_files: Optional[List[Dict[str, Any]]] = None,
+    ):
         super().__init__()
         self.existing_folders = [f for f in existing_folders if f]
         self.count = count
+        self.plan = plan
+        self.base_dir = base_dir
+        self.target_files = target_files or []
+        self._last_collision_state: Optional[str] = None
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
@@ -349,13 +603,18 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
             options = [(f, f) for f in sorted(self.existing_folders)]
             if options:
                 yield Select(options, prompt="Choose folder...", id="select-folder")
-            yield Heading("Or Enter New Target Category Folder Name:", level=2)
+            yield Heading(
+                "Or Enter Target Category / External Directory Path:", level=2
+            )
             inp = Input(
-                placeholder="e.g. Drafts, Financials, Archive",
+                placeholder="e.g. Drafts, /Volumes/Backup, or D:\\External\\Archive",
                 id="input-target-folder",
             )
-            inp.tooltip = "Enter target folder category name"
+            inp.tooltip = (
+                "Enter relative folder name or absolute external directory path"
+            )
             yield inp
+            yield Label("", id="warning-collision", classes="modal-warning")
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel reassign dialog"
@@ -369,16 +628,143 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
         self._update_layout(self.size.width)
         self.query_one("#input-target-folder", Input).focus()
         self.announce(f"Opened bulk reassign dialog for {self.count} items.")
+        self._check_collision_and_update_ui()
+
+    def _set_collision_warning(self, msg: str, is_error: bool = False) -> None:
+        """Update collision warning label."""
+        try:
+            lbl = self.query_one("#warning-collision", Label)
+            lbl.update(msg)
+            if is_error:
+                lbl.remove_class("modal-warning")
+                lbl.add_class("modal-error")
+            else:
+                lbl.remove_class("modal-error")
+                lbl.add_class("modal-warning")
+        except Exception:
+            pass
+
+    def _check_collision_and_update_ui(self) -> tuple[bool, Optional[str]]:
+        """Run live collision check and path validation across plan and filesystem."""
+        try:
+            inp = self.query_one("#input-target-folder", Input)
+            target = inp.value.strip()
+            if not target:
+                sel = self.query_one("#select-folder", Select)
+                if sel.value is not Select.BLANK and sel.value:
+                    target = str(sel.value).strip()
+        except Exception:
+            return False, None
+
+        if not target:
+            self._set_collision_warning("", is_error=False)
+            self._last_collision_state = None
+            return False, None
+
+        if "\x00" in target:
+            msg = "Null bytes are not permitted in paths."
+            self._set_collision_warning(f"⚠️ Security Error: {msg}", is_error=True)
+            return True, msg
+
+        segments = re.split(r"[/\\]+", target)
+        if ".." in segments:
+            msg = "Directory traversal ('..') segments are not permitted."
+            self._set_collision_warning(f"⚠️ Security Error: {msg}", is_error=True)
+            if self._last_collision_state != msg:
+                self.announce(f"⚠️ Security Error: {msg}")
+                self._last_collision_state = msg
+            return True, msg
+
+        s_check = re.sub(r"^[a-zA-Z]:", "", target)
+        if any(c in s_check for c in '<>"|?*\x00'):
+            msg = "Destination path contains illegal characters."
+            self._set_collision_warning(f"⚠️ Validation Error: {msg}", is_error=True)
+            return True, msg
+
+        # Check collision across staging plan and filesystem
+        collisions = []
+        target_dict = (
+            self.plan.get(target, {})
+            if self.plan and isinstance(self.plan.get(target), dict)
+            else {}
+        )
+
+        for fi in self.target_files:
+            fn = fi.get("target_filename") or fi.get("key")
+            src_fp = fi.get("filepath")
+            if not fn:
+                continue
+
+            if fn in target_dict:
+                existing_item = target_dict[fn]
+                if (
+                    isinstance(existing_item, dict)
+                    and existing_item is not fi
+                    and existing_item.get("filepath") != src_fp
+                ):
+                    collisions.append(fn)
+            elif self.base_dir or _is_absolute_path(target):
+                if _is_absolute_path(target):
+                    dst_disk = os.path.normpath(os.path.join(target, fn))
+                elif self.base_dir:
+                    dst_disk = os.path.normpath(os.path.join(self.base_dir, target, fn))
+                else:
+                    dst_disk = None
+
+                if dst_disk and os.path.lexists(dst_disk):
+                    is_same = False
+                    if src_fp and os.path.lexists(src_fp):
+                        try:
+                            is_same = os.path.samefile(dst_disk, src_fp)
+                        except OSError:
+                            is_same = os.path.normcase(
+                                os.path.abspath(dst_disk)
+                            ) == os.path.normcase(os.path.abspath(src_fp))
+                    if not is_same:
+                        collisions.append(fn)
+
+        if collisions:
+            preview_files = ", ".join(f"'{c}'" for c in collisions[:3])
+            more = f" and {len(collisions) - 3} more" if len(collisions) > 3 else ""
+            warn_msg = (
+                f"Collision detected: File(s) {preview_files}{more} already exist in '{target}'. "
+                "Accidental overwrites blocked (will disambiguate)."
+            )
+            full_warn = f"⚠️ {warn_msg}"
+            self._set_collision_warning(full_warn, is_error=False)
+            if self._last_collision_state != full_warn:
+                self.announce(full_warn)
+                self._last_collision_state = full_warn
+            return False, warn_msg
+        else:
+            self._set_collision_warning("", is_error=False)
+            self._last_collision_state = None
+            return False, None
+
+    @on(Input.Changed, "#input-target-folder")
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Update collision status on manual target folder input change."""
+        self._check_collision_and_update_ui()
+
+    @on(Select.Changed, "#select-folder")
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Update collision status on select folder change."""
+        self._check_collision_and_update_ui()
 
     @on(Button.Pressed, "#btn-confirm")
     def action_confirm(self) -> None:
         """Confirm reassign action."""
+        is_blocked, err = self._check_collision_and_update_ui()
+        if is_blocked:
+            self.announce(f"Cannot confirm reassignment: {err}")
+            return
+
         val = self.query_one("#input-target-folder", Input).value.strip()
         if not val:
             try:
                 sel = self.query_one("#select-folder", Select)
                 if sel.value is not Select.BLANK and sel.value:
-                    val = str(sel.value)
+                    val = str(sel.value).strip()
             except Exception:
                 pass
         if val:

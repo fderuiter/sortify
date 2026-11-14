@@ -357,15 +357,37 @@ class VerificationEngine:
                 else:
                     filename = re.split(r"[/\\]+", key)[-1]
 
-                dest_dir = os.path.join(base_dir, current_dest)
-                dest_path = os.path.normpath(os.path.join(dest_dir, filename))
+                from app.core.path_utils import _is_absolute_path
+
+                dest_override = _get_val(content, "destination_override")
+                if dest_override and _is_absolute_path(dest_override):
+                    dest_dir = dest_override
+                elif dest_override:
+                    dest_dir = os.path.join(base_dir, dest_override)
+                elif _is_absolute_path(current_dest):
+                    dest_dir = current_dest
+                else:
+                    dest_dir = os.path.join(base_dir, current_dest)
+
+                if re.match(r"^[a-zA-Z]:[/\\]", dest_dir):
+                    sep = "\\" if "\\" in dest_dir else "/"
+                    dest_path = f"{dest_dir.rstrip('/\\')}{sep}{filename}"
+                else:
+                    dest_path = os.path.normpath(os.path.join(dest_dir, filename))
                 moves.append((key, source_path, dest_path))
             else:
+                from app.core.path_utils import _is_absolute_path
+
+                if depth == 0 and _is_absolute_path(key):
+                    next_dest = key
+                else:
+                    next_dest = os.path.join(current_dest, key)
+
                 moves.extend(
                     VerificationEngine.get_moves(
                         base_dir,
                         content,
-                        os.path.join(current_dest, key),
+                        next_dest,
                         os.path.join(active_parent_path, key),
                         depth + 1,
                     )
