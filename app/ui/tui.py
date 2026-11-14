@@ -149,6 +149,9 @@ class AutoSorterTUI(
         layout: vertical;
         background: $surface;
     }
+    #app-title-heading {
+        display: none;
+    }
     #main-dual-pane {
         layout: horizontal;
         height: 1fr;
@@ -322,6 +325,7 @@ class AutoSorterTUI(
 
     def compose(self) -> ComposeResult:
         """Compose main dual-pane TUI layout."""
+        yield Heading(self.TITLE, level=1, id="app-title-heading")
         yield Header(show_clock=True)
         with Horizontal(id="main-dual-pane"):
             with Vertical(id="left-tree-pane"):
