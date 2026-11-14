@@ -8,16 +8,19 @@ from pathlib import Path
 logger = logging.getLogger(__name__)
 
 # Statuses of a session whose moves never finished.
-UNFINISHED_STATUSES = ("active", "uncommitted", "failed")
+UNFINISHED_STATUSES = ("active", "uncommitted", "failed", "partially_rolled_back")
 
 ROLLBACK_JOURNAL = "rollback_journal.json"
 
 
 def _count(conn, table: str, session_id: str) -> int:
-    row = conn.execute(
-        f"SELECT COUNT(*) FROM {table} WHERE session_id = ?", (session_id,)
-    ).fetchone()
-    return row[0] if row else 0
+    try:
+        row = conn.execute(
+            f"SELECT COUNT(*) FROM {table} WHERE session_id = ?", (session_id,)
+        ).fetchone()
+        return row[0] if row else 0
+    except Exception:  # noqa: BLE001 - table may not exist in legacy database
+        return 0
 
 
 def list_sessions(store=None) -> list:
@@ -115,13 +118,20 @@ def find_abandoned_sessions(store=None, session_root: Path | None = None) -> lis
             f"WHERE status IN ({placeholders}) ORDER BY timestamp DESC",
             UNFINISHED_STATUSES,
         ).fetchall()
-        steps = {sid: _count(conn, "step_ledger", sid) for sid, _b, _s in rows}
+        steps = {
+            sid: _count(conn, "step_ledger", sid) or _count(conn, "moves", sid)
+            for sid, _b, _s in rows
+        }
 
     for sid, base_dir, status in rows:
         branch_dir = os.path.join(base_dir, ".branches", sid) if base_dir else ""
         has_trapped = bool(branch_dir) and os.path.isdir(branch_dir)
         has_trapped = has_trapped and _has_files(branch_dir)
-        if not steps[sid] and not has_trapped:
+        if (
+            status not in ("failed", "partially_rolled_back")
+            and not steps[sid]
+            and not has_trapped
+        ):
             continue
         entry = {
             "session_id": sid,
@@ -141,15 +151,14 @@ def find_abandoned_sessions(store=None, session_root: Path | None = None) -> lis
 def mark_session_abandoned(session_id: str, store=None) -> None:
     """Record that the user chose to leave an unfinished session as it is."""
     from app.core.db_conn import get_db_connection
+    from app.core.history import SessionStateMachine
     from app.core.store import open_store
 
     store = store or open_store()
     conn = get_db_connection(str(store.path))
     with conn:
-        conn.execute(
-            "UPDATE sessions SET status = 'abandoned' WHERE session_id = ?",
-            (session_id,),
-        )
+        sm = SessionStateMachine(str(store.path))
+        sm.transition(session_id, "abandoned", conn=conn)
 
 
 def roll_back_abandoned_session(settings, session_info: dict) -> bool:
