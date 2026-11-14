@@ -454,6 +454,35 @@ def test_verify_documentation_assets_success(tmp_path, monkeypatch):
     assert verify_documentation_assets(str(bundle)) is True
 
 
+def test_verify_documentation_assets_internal_docs_success(tmp_path, monkeypatch):
+    """Verify that verify_documentation_assets passes when docs are placed in _internal/docs."""
+    from scripts.build import verify_documentation_assets
+
+    bundle = tmp_path / "dist" / "smart-autosorter"
+    docs_dist = bundle / "_internal" / "docs"
+    docs_dist.mkdir(parents=True, exist_ok=True)
+    for doc in (
+        "user_guide.md",
+        "admin_guide.md",
+        "architecture.md",
+        "troubleshooting.md",
+        "keyboard_shortcuts.md",
+    ):
+        (docs_dist / doc).write_text(f"# {doc}\n")
+
+    # Create source diagrams and corresponding bundled diagrams
+    src_diagrams = tmp_path / "docs" / "assets" / "diagrams"
+    src_diagrams.mkdir(parents=True, exist_ok=True)
+    (src_diagrams / "test_diagram.svg").write_text("<svg></svg>")
+
+    dist_diagrams = docs_dist / "assets" / "diagrams"
+    dist_diagrams.mkdir(parents=True, exist_ok=True)
+    (dist_diagrams / "test_diagram.svg").write_text("<svg></svg>")
+
+    monkeypatch.chdir(tmp_path)
+    assert verify_documentation_assets(str(bundle)) is True
+
+
 def test_verify_documentation_assets_missing_docs_dir(tmp_path, monkeypatch):
     """Verify that verify_documentation_assets exits with code 1 if docs directory is missing."""
     from scripts.build import verify_documentation_assets

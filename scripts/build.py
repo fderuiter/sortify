@@ -241,10 +241,14 @@ def verify_documentation_assets(dist_dir: str) -> bool:
     print("Executing post-build documentation asset verification...")
     docs_dist = os.path.join(dist_dir, "docs")
     if not os.path.exists(docs_dist):
-        print(
-            f"Error: Missing documentation directory in standalone bundle: {docs_dist}"
-        )
-        sys.exit(1)
+        internal_docs = os.path.join(dist_dir, "_internal", "docs")
+        if os.path.exists(internal_docs):
+            docs_dist = internal_docs
+        else:
+            print(
+                f"Error: Missing documentation directory in standalone bundle: {docs_dist}"
+            )
+            sys.exit(1)
 
     required_docs = [
         "user_guide.md",
