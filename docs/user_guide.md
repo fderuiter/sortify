@@ -29,9 +29,14 @@ Declining is fine. Sorting still works offline using TF-IDF keyword clustering (
 
 ### In the terminal interface
 The wizard opens automatically on first launch of `smart-autosorter`:
-1. Use `[Tab]` / `[Shift+Tab]` to move between the AI Consent switch and the buttons.
-2. Press `[Space]` or `[Enter]` on the switch to toggle consent.
-3. Highlight **Finish & Save** and press `[Enter]`.
+1. **AI Consent**: Use `[Tab]` / `[Shift+Tab]` to focus the AI Consent switch (`#switch-consent`), then press `[Space]` or `[Enter]` to toggle consent for local semantic AI sorting.
+2. **Workspace Directory**: Navigate to the workspace directory input field (`#input-dir`) to enter the absolute path of the directory you want to organize. If left empty, it falls back to the current working directory.
+3. **Quick Presets**: Alternatively, choose one of the quick preset buttons to quickly populate `#input-dir`:
+   - **Demo Workspace**: sandbox demo folder (`sandbox/demo_workspace`, created automatically if needed).
+   - **Downloads**: your user `~/Downloads` directory.
+   - **Documents**: your user `~/Documents` directory.
+4. **Validation and Error Handling**: If an invalid or non-existent path is entered, selecting **Finish & Save** (or pressing `[Enter]` inside `#input-dir`) displays an inline error banner (`#lbl-error`), announces the error message via screen reader, and restores focus directly to the input field so you can correct it. The wizard remains open until a valid directory path is provided.
+5. **Finish & Save**: Highlight **Finish & Save** (or press `[Enter]` inside `#input-dir`). The wizard validates the directory path through path validation before saving settings, applying any selected starter templates, and initiating the initial directory scan.
 
 Reopen the wizard any time with `[Ctrl+W]`.
 
