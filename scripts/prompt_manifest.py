@@ -222,7 +222,9 @@ def verify(secret: str | None = None, strict: bool = False):
                 )
                 mismatches = True
             else:
-                expected_signature = compute_manifest_hmac(current_hashes, resolved_secret)
+                expected_signature = compute_manifest_hmac(
+                    current_hashes, resolved_secret
+                )
                 if not hmac.compare_digest(manifest_signature, expected_signature):
                     print(
                         "Error: Manifest HMAC signature mismatch.",
