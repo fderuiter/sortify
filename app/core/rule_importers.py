@@ -522,18 +522,18 @@ class HazelRuleImporter(BaseRuleImporter):
 
 
 class DropItRuleImporter(BaseRuleImporter):
-    """Importer strategy for DropIt XML and JSON profile export packages."""
+    """Importer strategy for DropIt XML, JSON, and INI profile export packages."""
 
     def can_import(self, file_path: str | Path) -> bool:
         """Return True if file extension or content matches DropIt export formats."""
         p = Path(file_path)
         ext = p.suffix.lower()
-        if ext in (".xml", ".json", ".dropit"):
+        if ext in (".xml", ".json", ".dropit", ".ini"):
             return True
         return False
 
     def parse_file(self, file_path: str | Path) -> ImportResult:
-        """Parse DropIt XML or JSON profile export file into Sortify rules."""
+        """Parse DropIt XML, JSON, or INI profile export file into Sortify rules."""
         result = ImportResult(source_format="DropIt Export")
         p = Path(file_path)
 
@@ -555,10 +555,146 @@ class DropItRuleImporter(BaseRuleImporter):
             result.warnings.append(f"DropIt export file '{p.name}' is empty.")
             return result
 
-        if content_strip.startswith("<") or p.suffix.lower() == ".xml":
+        if p.suffix.lower() == ".ini":
+            return self._parse_ini(content_strip, p.name, result)
+        elif content_strip.startswith("<") or p.suffix.lower() == ".xml":
             return self._parse_xml(content_strip, p.name, result)
+        elif p.suffix.lower() == ".json":
+            return self._parse_json(content_strip, p.name, result)
+        elif re.match(r"^\[[\w\s.-]+\]\s*$", content_strip.splitlines()[0].strip()):
+            return self._parse_ini(content_strip, p.name, result)
         else:
             return self._parse_json(content_strip, p.name, result)
+
+    def _parse_ini(
+        self, ini_content: str, file_name: str, result: ImportResult
+    ) -> ImportResult:
+        """Parse DropIt INI profile representation."""
+        result.source_format = "DropIt INI Profile"
+        import configparser
+
+        config = configparser.ConfigParser(interpolation=None)
+        try:
+            config.read_string(ini_content)
+        except (configparser.Error, OSError) as exc:
+            logger.warning(f"Failed to parse INI in '{file_name}': {exc}")
+            result.warnings.append(
+                f"Failed to parse INI in DropIt profile '{file_name}': {exc}"
+            )
+            return result
+
+        if config.has_section("Associations"):
+            for _key, val in config.items("Associations"):
+                val_str = str(val).strip()
+                if "**" in val_str:
+                    parts = val_str.split("**")
+                    rule_name = parts[0].strip()
+                    pattern = parts[1].strip() if len(parts) > 1 else rule_name
+                    action = parts[2].strip() if len(parts) > 2 else "Move"
+                    dest = parts[3].strip() if len(parts) > 3 else ""
+
+                    if self._is_script_action(action):
+                        result.unsupported.append(
+                            {
+                                "rule": rule_name,
+                                "reason": f"External script action '{action}' omitted.",
+                            }
+                        )
+                        result.warnings.append(
+                            f"DropIt rule '{rule_name}' contains command/script execution action which was omitted for security."
+                        )
+
+                    target_dir = self._sanitize_path(dest)
+                    if not target_dir:
+                        result.warnings.append(
+                            f"DropIt rule '{rule_name}' has no target directory; omitted auto-routing."
+                        )
+                        result.unsupported.append(
+                            {
+                                "rule": rule_name,
+                                "reason": "Missing target destination path",
+                            }
+                        )
+                        continue
+
+                    self._process_pattern_and_dest(
+                        rule_name, pattern, target_dir, result
+                    )
+
+        for sec_name in config.sections():
+            sec_lower = sec_name.lower()
+            if sec_lower in (
+                "dropit",
+                "general",
+                "settings",
+                "profile",
+                "associations",
+            ):
+                if not any(
+                    k in config[sec_name]
+                    for k in (
+                        "rules",
+                        "pattern",
+                        "destination",
+                        "directory",
+                        "folder",
+                        "target",
+                    )
+                ):
+                    continue
+
+            sec = config[sec_name]
+            rule_name = (
+                sec.get("Name") or sec.get("title") or sec.get("name") or sec_name
+            )
+            pattern = (
+                sec.get("Rules")
+                or sec.get("Pattern")
+                or sec.get("Filter")
+                or sec.get("Mask")
+                or ""
+            )
+            dest = (
+                sec.get("Destination")
+                or sec.get("Directory")
+                or sec.get("Folder")
+                or sec.get("Target")
+                or ""
+            )
+            action = sec.get("Action") or sec.get("Type") or "Move"
+
+            if self._is_script_action(action):
+                result.unsupported.append(
+                    {
+                        "rule": rule_name,
+                        "reason": f"External script action '{action}' omitted.",
+                    }
+                )
+                result.warnings.append(
+                    f"DropIt rule '{rule_name}' contains command/script execution action which was omitted for security."
+                )
+
+            target_dir = self._sanitize_path(dest)
+            if not target_dir:
+                result.warnings.append(
+                    f"DropIt rule '{rule_name}' has no target directory; omitted auto-routing."
+                )
+                result.unsupported.append(
+                    {
+                        "rule": rule_name,
+                        "reason": "Missing target destination path",
+                    }
+                )
+                continue
+
+            self._process_pattern_and_dest(rule_name, pattern, target_dir, result)
+
+        if not result.keyword_rules and not result.policies and not result.warnings:
+            result.warnings.append(
+                f"No convertible rules found in DropIt INI profile '{file_name}'."
+            )
+
+        return result
 
     def _parse_xml(
         self, xml_content: str, file_name: str, result: ImportResult
@@ -1222,6 +1358,96 @@ class TagSpacesRuleImporter(BaseRuleImporter):
             )
 
 
+class SortifyRuleImporter(BaseRuleImporter):
+    """Importer strategy for native Sortify JSON rule backup packages."""
+
+    def can_import(self, file_path: str | Path) -> bool:
+        """Return True if file is a Sortify JSON rule backup file."""
+        p = Path(file_path)
+        if p.suffix.lower() != ".json":
+            return False
+        if not p.exists():
+            return "sortify" in p.name.lower()
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if isinstance(data, dict):
+                if (
+                    "KEYWORD_RULES" in data
+                    or "POLICIES" in data
+                    or data.get("format") == "sortify"
+                ):
+                    return True
+                if "keyword_rules" in data and (
+                    "policies" in data or data.get("source") == "Sortify"
+                ):
+                    return True
+        except (json.JSONDecodeError, OSError, UnicodeDecodeError):
+            return False
+        return False
+
+    def parse_file(self, file_path: str | Path) -> ImportResult:
+        """Parse Sortify JSON backup file into Sortify rules."""
+        result = ImportResult(source_format="Sortify JSON")
+        p = Path(file_path)
+
+        if not p.exists():
+            result.warnings.append(f"File not found: '{file_path}'")
+            return result
+
+        try:
+            with open(p, "r", encoding="utf-8") as f:
+                data = json.load(f)
+        except Exception as exc:
+            logger.warning(
+                f"Failed to parse Sortify JSON file '{file_path}': {exc}",
+                exc_info=True,
+            )
+            result.warnings.append(
+                f"Failed to parse Sortify JSON file '{p.name}': {exc}"
+            )
+            return result
+
+        if not isinstance(data, dict):
+            result.warnings.append(
+                f"Invalid Sortify rule file structure in '{p.name}'."
+            )
+            return result
+
+        raw_kw = data.get("KEYWORD_RULES") or data.get("keyword_rules") or {}
+        if isinstance(raw_kw, dict):
+            for k, v in raw_kw.items():
+                k_clean = str(k).strip()
+                v_clean = self._sanitize_path(str(v))
+                if k_clean and v_clean:
+                    result.keyword_rules[k_clean.lower()] = v_clean
+
+        raw_pol = data.get("POLICIES") or data.get("policies") or []
+        if isinstance(raw_pol, list):
+            for pol in raw_pol:
+                if isinstance(pol, dict):
+                    p_type = str(pol.get("type", "keyword")).strip().lower()
+                    p_expr = str(pol.get("expression", "")).strip()
+                    p_target = self._sanitize_path(str(pol.get("target_path", "")))
+                    p_prio = pol.get("priority", 75)
+                    p_halt = bool(pol.get("halting", False))
+                    if p_expr and p_target:
+                        result.policies.append(
+                            {
+                                "type": p_type,
+                                "expression": p_expr,
+                                "target_path": p_target,
+                                "priority": int(p_prio) if p_prio is not None else 75,
+                                "halting": p_halt,
+                            }
+                        )
+
+        if not result.keyword_rules and not result.policies and not result.warnings:
+            result.warnings.append(f"Sortify rule package '{p.name}' is empty.")
+
+        return result
+
+
 def get_rule_importer(file_path: str | Path) -> BaseRuleImporter:
     """Return auto-detected rule importer strategy for the given file path.
 
@@ -1237,9 +1463,13 @@ def get_rule_importer(file_path: str | Path) -> BaseRuleImporter:
         ValueError: If file format is not supported.
     """
     p = Path(file_path)
+    sortify_importer = SortifyRuleImporter()
     tagspaces_importer = TagSpacesRuleImporter()
     hazel_importer = HazelRuleImporter()
     dropit_importer = DropItRuleImporter()
+
+    if sortify_importer.can_import(p):
+        return sortify_importer
 
     if tagspaces_importer.can_import(p):
         return tagspaces_importer
@@ -1259,9 +1489,9 @@ def get_rule_importer(file_path: str | Path) -> BaseRuleImporter:
         return tagspaces_importer
     elif ext in (".hazelrules", ".plist"):
         return hazel_importer
-    elif ext in (".xml", ".json", ".dropit"):
+    elif ext in (".xml", ".json", ".dropit", ".ini"):
         return dropit_importer
 
     raise ValueError(
-        f"Unsupported rule file format for '{p.name}'. Expected .hazelrules, .plist, .xml, or .json."
+        f"Unsupported rule file format for '{p.name}'. Expected .hazelrules, .plist, .xml, .json, or .ini."
     )

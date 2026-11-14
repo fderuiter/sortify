@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "93b3e4ecb32e53bcf77ef2b8c10c0edba7c3cc9daa09cff0aef0b0b79ffbfc6d"
+    "checksum": "77dc6a754dba62441ed6affca251e4b3af112efad6e9adcc8f64b1885ce34a43"
   },
   "classes": [
     {
@@ -51,19 +51,57 @@
               "name": "target_root"
             },
             {
-              "annotation": "Optional[Callable[[int, str], None]]",
+              "annotation": "Callable[[int, str], None] | None",
               "default": "None",
               "name": "progress_callback"
             },
             {
-              "annotation": "Optional[Callable[[], bool]]",
+              "annotation": "Callable[[], bool] | None",
               "default": "None",
               "name": "cancel_check"
             }
           ],
           "returns": "MasterPipelineResult"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "state",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "CROPipelineState"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "transition_to",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "CROPipelineState | str",
+              "default": null,
+              "name": "new_state"
+            }
+          ],
+          "returns": "None"
         }
       ]
+    },
+    {
+      "class_name": "CROPipelineState",
+      "decorators": [],
+      "methods": []
     },
     {
       "class_name": "MasterPipelineResult",

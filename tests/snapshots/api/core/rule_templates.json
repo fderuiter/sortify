@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "31864bc14c897f0d59dbb237ace5bce31c0eb9e3ab1919fed55f3f766242ac9c"
+    "checksum": "5cba9f0e1d675cd87a4a2dd51769dfadfae33fb883be4ffdf5abcef5215622c7"
   },
   "classes": [
     {
@@ -29,6 +29,29 @@
         }
       ],
       "returns": "tuple[dict[str, str], list[dict[str, Any]]]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "export_active_rules",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "settings"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "target_format"
+        },
+        {
+          "annotation": "str | Path",
+          "default": null,
+          "name": "destination_path"
+        }
+      ],
+      "returns": "Path"
     },
     {
       "async": false,

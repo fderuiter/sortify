@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "ea043f8fb0c1e698b7b0b23b96203b41628f77662d6e68cb44bc44346804baf3"
+    "checksum": "b0d6dbf0de1b3ec6c8390fc646cfc6ac71673dd41468e1a0218a458e8f48262a"
   },
   "classes": [
     {
@@ -199,6 +199,48 @@
             }
           ],
           "returns": "list[RuleConflict]"
+        }
+      ]
+    },
+    {
+      "class_name": "SortifyRuleImporter",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "can_import",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | Path",
+              "default": null,
+              "name": "file_path"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "parse_file",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | Path",
+              "default": null,
+              "name": "file_path"
+            }
+          ],
+          "returns": "ImportResult"
         }
       ]
     },

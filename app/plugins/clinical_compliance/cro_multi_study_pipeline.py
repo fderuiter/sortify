@@ -8,13 +8,16 @@ import json
 import logging
 import os
 import shutil
+import threading
 from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, Optional
+from enum import Enum
+from typing import Any
 
 from pydantic import BaseModel, Field
 
 from app.core.domain_contracts import DictCompatMixin
+from app.core.exceptions import InvalidStateTransitionError
 from app.core.forensic_scanner import ForensicScanner
 from app.core.mover import get_safe_path
 from app.core.path_utils import safe_relpath, sanitize_name
@@ -25,6 +28,56 @@ from app.plugins.clinical_compliance.clinical_strategy import ClinicalTMFStrateg
 from app.plugins.clinical_compliance.study_disambiguator import StudyDisambiguator
 
 logger = logging.getLogger(__name__)
+
+
+class CROPipelineState(str, Enum):
+    """Lifecycle states for CRO Multi-Study pipeline execution."""
+
+    IDLE = "IDLE"
+    SCANNING = "SCANNING"
+    DISAMBIGUATING = "DISAMBIGUATING"
+    PARTITIONING = "PARTITIONING"
+    FINALIZING = "FINALIZING"
+    CANCELLED = "CANCELLED"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+_VALID_CRO_TRANSITIONS: dict[CROPipelineState, set[CROPipelineState]] = {
+    CROPipelineState.IDLE: {
+        CROPipelineState.SCANNING,
+        CROPipelineState.CANCELLED,
+    },
+    CROPipelineState.SCANNING: {
+        CROPipelineState.DISAMBIGUATING,
+        CROPipelineState.CANCELLED,
+        CROPipelineState.FAILED,
+    },
+    CROPipelineState.DISAMBIGUATING: {
+        CROPipelineState.PARTITIONING,
+        CROPipelineState.CANCELLED,
+        CROPipelineState.FAILED,
+    },
+    CROPipelineState.PARTITIONING: {
+        CROPipelineState.FINALIZING,
+        CROPipelineState.CANCELLED,
+        CROPipelineState.FAILED,
+    },
+    CROPipelineState.FINALIZING: {
+        CROPipelineState.COMPLETED,
+        CROPipelineState.CANCELLED,
+        CROPipelineState.FAILED,
+    },
+    CROPipelineState.COMPLETED: {
+        CROPipelineState.IDLE,
+    },
+    CROPipelineState.CANCELLED: {
+        CROPipelineState.IDLE,
+    },
+    CROPipelineState.FAILED: {
+        CROPipelineState.IDLE,
+    },
+}
 
 
 class StudyIngestSummary(DictCompatMixin, BaseModel):
@@ -50,6 +103,8 @@ class MasterPipelineResult(DictCompatMixin, BaseModel):
     total_unique_documents: int
     total_duplicates_detected: int
     discovered_studies_count: int
+    status: CROPipelineState = CROPipelineState.COMPLETED
+    error_message: str | None = None
     studies_summary: list[StudyIngestSummary] = Field(default_factory=list)
     chain_of_custody_manifest_path: str = ""
 
@@ -57,19 +112,51 @@ class MasterPipelineResult(DictCompatMixin, BaseModel):
 class CROMultiStudyPipeline:
     """Executes end-to-end multi-study forensic ingestion and organization."""
 
+    _VALID_CRO_TRANSITIONS = _VALID_CRO_TRANSITIONS
+
     def __init__(self, mode: str = "tmf", smart_renaming: bool = True):
         self.mode = mode
         self.smart_renaming = smart_renaming
         self.scanner = ForensicScanner()
         self.disambiguator = StudyDisambiguator()
         self.compliance_engine = ClinicalComplianceEngine()
+        self._state_lock = threading.Lock()
+        self._state: CROPipelineState = CROPipelineState.IDLE
+        self.error_message: str | None = None
+
+    @property
+    def state(self) -> CROPipelineState:
+        """Current lifecycle state of the pipeline."""
+        with self._state_lock:
+            return self._state
+
+    def _transition_to_locked(self, new_state: CROPipelineState | str) -> None:
+        if isinstance(new_state, str):
+            try:
+                new_state = CROPipelineState(new_state)
+            except ValueError:
+                raise InvalidStateTransitionError(f"Invalid target state: {new_state}")
+        valid_targets = _VALID_CRO_TRANSITIONS.get(self._state, set())
+        if new_state not in valid_targets:
+            raise InvalidStateTransitionError(
+                f"Invalid state transition from {self._state} to {new_state}."
+            )
+        self._state = new_state
+
+    def _transition_to(self, new_state: CROPipelineState | str) -> None:
+        with self._state_lock:
+            self._transition_to_locked(new_state)
+
+    def transition_to(self, new_state: CROPipelineState | str) -> None:
+        """Public method for state transitions with validation."""
+        self._transition_to(new_state)
 
     def run_pipeline(
         self,
         source_root: str,
         target_root: str,
-        progress_callback: Optional[Callable[[int, str], None]] = None,
-        cancel_check: Optional[Callable[[], bool]] = None,
+        progress_callback: Callable[[int, str], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> MasterPipelineResult:
         """Run the full CRO forensic discovery, multi-study partition, and safe copying workflow."""
         source_root = os.path.abspath(source_root)
@@ -80,11 +167,38 @@ class CROMultiStudyPipeline:
 
         registry = SharedModelRegistry.get_instance()
 
+        with self._state_lock:
+            if self._state in (
+                CROPipelineState.COMPLETED,
+                CROPipelineState.CANCELLED,
+                CROPipelineState.FAILED,
+            ):
+                self._transition_to_locked(CROPipelineState.IDLE)
+            self.error_message = None
+
         try:
+            # Check for cancellation before scanning
+            if cancel_check and cancel_check():
+                self._transition_to(CROPipelineState.CANCELLED)
+                logger.info("Pipeline cancelled before scanning.")
+                return MasterPipelineResult(
+                    source_root=source_root,
+                    target_root=target_root,
+                    timestamp_utc=datetime.now(timezone.utc).isoformat(),
+                    total_scanned_files=0,
+                    total_unique_documents=0,
+                    total_duplicates_detected=0,
+                    discovered_studies_count=0,
+                    status=CROPipelineState.CANCELLED,
+                )
+
             # 1. Forensic Scan & Archive Extraction
+            self._transition_to(CROPipelineState.SCANNING)
             emit_progress(progress_callback, 0.05, "Scanning source storage volume...")
 
             def scan_cb(update: ProgressUpdate) -> None:
+                if self.state in (CROPipelineState.CANCELLED, CROPipelineState.FAILED):
+                    return
                 c = update.unit_count or 0
                 ratio = min(0.40, 0.05 + c * 0.005)
                 emit_progress(
@@ -104,6 +218,7 @@ class CROMultiStudyPipeline:
             registry.unload_model("florence-2")
 
             if cancel_check and cancel_check():
+                self._transition_to(CROPipelineState.CANCELLED)
                 logger.info("Pipeline cancelled during scanning.")
                 return MasterPipelineResult(
                     source_root=source_root,
@@ -113,9 +228,11 @@ class CROMultiStudyPipeline:
                     total_unique_documents=0,
                     total_duplicates_detected=0,
                     discovered_studies_count=0,
+                    status=CROPipelineState.CANCELLED,
                 )
 
             # 2. Study Disambiguation & Entity Resolution
+            self._transition_to(CROPipelineState.DISAMBIGUATING)
             emit_progress(
                 progress_callback,
                 0.45,
@@ -129,13 +246,34 @@ class CROMultiStudyPipeline:
             # Stage 2 transition: Unload embedding models after disambiguation
             registry.unload_model("onnx")
 
+            if cancel_check and cancel_check():
+                self._transition_to(CROPipelineState.CANCELLED)
+                logger.info("Pipeline cancelled after study disambiguation.")
+                return MasterPipelineResult(
+                    source_root=source_root,
+                    target_root=target_root,
+                    timestamp_utc=datetime.now(timezone.utc).isoformat(),
+                    total_scanned_files=len(discovered_docs),
+                    total_unique_documents=len(
+                        [d for d in discovered_docs if not d.is_duplicate]
+                    ),
+                    total_duplicates_detected=len(
+                        [d for d in discovered_docs if d.is_duplicate]
+                    ),
+                    discovered_studies_count=len(study_partitions),
+                    status=CROPipelineState.CANCELLED,
+                )
+
             # 3. Process each Study Partition
+            self._transition_to(CROPipelineState.PARTITIONING)
             studies_summary: list[StudyIngestSummary] = []
             manifest_records: list[dict[str, Any]] = []
 
             total_partitions = len(study_partitions)
+            is_cancelled = False
             for p_idx, (study_id, docs) in enumerate(study_partitions.items()):
                 if cancel_check and cancel_check():
+                    is_cancelled = True
                     break
 
                 study_folder_name = sanitize_name(study_id)
@@ -165,6 +303,7 @@ class CROMultiStudyPipeline:
                 classified_map = {}
                 for doc in docs:
                     if cancel_check and cancel_check():
+                        is_cancelled = True
                         break
 
                     artifact, _ = strategy._classify_document(
@@ -241,6 +380,9 @@ class CROMultiStudyPipeline:
                         }
                     )
 
+                if is_cancelled:
+                    break
+
                 # Compliance evaluation & report generation for this study
                 comp_eval = self.compliance_engine.evaluate_compliance(
                     classified_map, filenames, base_dir=study_target_dir
@@ -270,7 +412,47 @@ class CROMultiStudyPipeline:
             # Stage 3 transition: Unload generative models after classification/renaming
             registry.unload_model("generative_naming")
 
+            if is_cancelled or (cancel_check and cancel_check()):
+                self._transition_to(CROPipelineState.CANCELLED)
+                logger.info("Pipeline cancelled during partitioning.")
+                return MasterPipelineResult(
+                    source_root=source_root,
+                    target_root=target_root,
+                    timestamp_utc=datetime.now(timezone.utc).isoformat(),
+                    total_scanned_files=len(discovered_docs),
+                    total_unique_documents=len(
+                        [d for d in discovered_docs if not d.is_duplicate]
+                    ),
+                    total_duplicates_detected=len(
+                        [d for d in discovered_docs if d.is_duplicate]
+                    ),
+                    discovered_studies_count=len(study_partitions),
+                    studies_summary=studies_summary,
+                    status=CROPipelineState.CANCELLED,
+                )
+
             # 4. Generate Master Chain of Custody Manifest
+            self._transition_to(CROPipelineState.FINALIZING)
+
+            if cancel_check and cancel_check():
+                self._transition_to(CROPipelineState.CANCELLED)
+                logger.info("Pipeline cancelled during finalizing.")
+                return MasterPipelineResult(
+                    source_root=source_root,
+                    target_root=target_root,
+                    timestamp_utc=datetime.now(timezone.utc).isoformat(),
+                    total_scanned_files=len(discovered_docs),
+                    total_unique_documents=len(
+                        [d for d in discovered_docs if not d.is_duplicate]
+                    ),
+                    total_duplicates_detected=len(
+                        [d for d in discovered_docs if d.is_duplicate]
+                    ),
+                    discovered_studies_count=len(study_partitions),
+                    studies_summary=studies_summary,
+                    status=CROPipelineState.CANCELLED,
+                )
+
             manifest_path = os.path.join(target_root, "chain_of_custody_manifest.json")
             unique_docs_count = len([d for d in discovered_docs if not d.is_duplicate])
             dups_count = len([d for d in discovered_docs if d.is_duplicate])
@@ -294,6 +476,8 @@ class CROMultiStudyPipeline:
             with open(manifest_path, "w", encoding="utf-8") as f:
                 json.dump(master_manifest, f, indent=2)
 
+            self._transition_to(CROPipelineState.COMPLETED)
+
             emit_progress(progress_callback, 1.0, "CRO Multi-Study Ingestion complete!")
 
             return MasterPipelineResult(
@@ -306,7 +490,21 @@ class CROMultiStudyPipeline:
                 discovered_studies_count=len(self.disambiguator.studies),
                 studies_summary=studies_summary,
                 chain_of_custody_manifest_path=manifest_path,
+                status=CROPipelineState.COMPLETED,
             )
+        except Exception as e:
+            with self._state_lock:
+                if self._state not in (
+                    CROPipelineState.CANCELLED,
+                    CROPipelineState.COMPLETED,
+                    CROPipelineState.FAILED,
+                ):
+                    try:
+                        self._transition_to_locked(CROPipelineState.FAILED)
+                    except Exception:  # noqa: BLE001
+                        self._state = CROPipelineState.FAILED
+            self.error_message = str(e)
+            raise
         finally:
             # Stage 4 transition: Guarantee full cleanup at pipeline end
             try:
