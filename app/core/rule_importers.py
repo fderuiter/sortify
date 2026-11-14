@@ -9,10 +9,12 @@ import json
 import logging
 import plistlib
 import re
-import xml.etree.ElementTree as ET
 from dataclasses import dataclass, field
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Tuple, Union
+
+import defusedxml.ElementTree as ET
+from defusedxml.common import DefusedXmlException
 
 logger = logging.getLogger(__name__)
 
@@ -565,7 +567,7 @@ class DropItRuleImporter(BaseRuleImporter):
         result.source_format = "DropIt XML Profile"
         try:
             root = ET.fromstring(xml_content)
-        except (ET.ParseError, ValueError) as exc:
+        except (ET.ParseError, DefusedXmlException, ValueError) as exc:
             logger.warning(f"Failed to parse XML in '{file_name}': {exc}")
             result.warnings.append(
                 f"Failed to parse XML in DropIt profile '{file_name}': {exc}"
