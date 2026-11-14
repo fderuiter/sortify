@@ -24,11 +24,21 @@ class RenameResult(str):
     """String subclass representing rename outcome with optional destination override."""
 
     destination_override: Optional[str] = None
+    batch_items: Optional[List[Dict[str, Any]]] = None
+    is_batch: bool = False
 
-    def __new__(cls, value: str, destination_override: Optional[str] = None):
+    def __new__(
+        cls,
+        value: str,
+        destination_override: Optional[str] = None,
+        batch_items: Optional[List[Dict[str, Any]]] = None,
+        is_batch: bool = False,
+    ):
         """Instantiate string value with optional destination path override."""
         instance = super().__new__(cls, value)
         instance.destination_override = destination_override
+        instance.batch_items = batch_items
+        instance.is_batch = is_batch
         return instance
 
     @property
@@ -119,9 +129,11 @@ class RenameModal(
         plan: Optional[Dict[str, Any]] = None,
         base_dir: Optional[str] = None,
         source_path: Optional[str] = None,
+        files: Optional[List[Any]] = None,
     ):
         super().__init__()
         self.modal_title = title
+        self.files = list(files) if files is not None else None
         self.current_name = current_name
         self.extension = extension
         self.category = category
@@ -134,8 +146,118 @@ class RenameModal(
         self.source_path = source_path
         self._last_collision_state: Optional[str] = None
 
+    def _extract_file_metadata(
+        self, f: Any, seq: int
+    ) -> tuple[Dict[str, Any], str, str, str, Optional[Dict[str, Any]]]:
+        """Extract metadata dict, fallback filename, key, folder, and info dict from a file item."""
+        if isinstance(f, str):
+            key = f
+            stem, ext = os.path.splitext(os.path.basename(f))
+            cat = self.category
+            date = self.file_date
+            info = None
+            folder = self.category
+            fallback = f"{stem}{ext}" if ext else stem
+            meta = {
+                "original": stem,
+                "extension": ext,
+                "category": cat,
+                "date": date,
+                "seq": seq,
+            }
+            return meta, fallback, key, folder, info
+
+        if isinstance(f, dict):
+            key = (
+                f.get("key")
+                or f.get("target_filename")
+                or f.get("name")
+                or f.get("original")
+                or ""
+            )
+            info = f.get("info") if isinstance(f.get("info"), dict) else f
+            if not key and info and isinstance(info, dict):
+                key = info.get("target_filename") or info.get("key", "")
+
+            stem = f.get("original") or f.get("current_name") or f.get("stem")
+            ext = f.get("extension") or f.get("ext")
+            if not stem or ext is None:
+                base = os.path.basename(key or (f.get("filepath") or ""))
+                base_stem, base_ext = os.path.splitext(base)
+                if not stem:
+                    stem = base_stem
+                if ext is None:
+                    ext = base_ext
+
+            folder = (
+                f.get("folder")
+                or f.get("category")
+                or (info.get("folder") if isinstance(info, dict) else None)
+                or self.category
+            )
+            date = (
+                f.get("date")
+                or f.get("file_date")
+                or (
+                    (info.get("date") or info.get("file_date"))
+                    if isinstance(info, dict)
+                    else None
+                )
+                or self.file_date
+            )
+            seq_val = f.get("seq", seq)
+            fallback = f"{stem}{ext}" if ext else stem
+            meta = {
+                "original": stem,
+                "extension": ext,
+                "category": folder,
+                "date": date,
+                "seq": seq_val,
+            }
+            return meta, fallback, key, folder, info
+
+        key_str = str(f)
+        stem, ext = os.path.splitext(os.path.basename(key_str))
+        meta = {
+            "original": stem,
+            "extension": ext,
+            "category": self.category,
+            "date": self.file_date,
+            "seq": seq,
+        }
+        return meta, key_str, key_str, self.category, None
+
+    def get_batch_previews(self, pattern_str: str) -> List[str]:
+        """Calculate sequential seq numbering and preview token substitution for each checked file."""
+        if not self.files:
+            return []
+        from app.core.pattern_formatter import PatternTokenFormatter
+
+        previews = []
+        for idx, f in enumerate(self.files):
+            file_seq = self.seq + idx
+            meta, fallback, _, _, _ = self._extract_file_metadata(f, file_seq)
+            formatted = PatternTokenFormatter.format_pattern(
+                pattern=pattern_str,
+                metadata=meta,
+                seq=file_seq,
+                fallback_original=fallback,
+            )
+            previews.append(formatted)
+        return previews
+
     def _evaluate_preview(self, pattern_str: str) -> str:
         """Evaluate formatted pattern string for live preview."""
+        if self.files:
+            previews = self.get_batch_previews(pattern_str)
+            if not previews:
+                return ""
+            if len(previews) == 1:
+                return previews[0]
+            if len(previews) <= 3:
+                return ", ".join(previews)
+            return f"{previews[0]}, {previews[1]}, ... (+{len(previews) - 2} more)"
+
         from app.core.pattern_formatter import PatternTokenFormatter
 
         metadata = {
@@ -166,7 +288,12 @@ class RenameModal(
                 classes="modal-title",
                 id="modal-title",
             )
-            if self.extension:
+            if self.files:
+                yield Label(
+                    f"Batch renaming {len(self.files)} files. Sequential index starts at {self.seq:02d}.",
+                    classes="modal-subtitle",
+                )
+            elif self.extension:
                 yield Label(
                     f"Extension '{self.extension}' is locked unless modified in template",
                     classes="modal-subtitle",
@@ -273,17 +400,29 @@ class RenameModal(
             return True, err
 
         # Check illegal characters in filename
-        formatted = self._evaluate_preview(name_val) if name_val else ""
-        if self.extension and formatted and not formatted.endswith(self.extension):
-            formatted_name = f"{formatted}{self.extension}"
+        if self.files:
+            batch_previews = self.get_batch_previews(name_val) if name_val else []
+            for formatted_name in batch_previews:
+                if any(c in formatted_name for c in '<>:"/\\|?*\x00'):
+                    msg = "Filename contains illegal filesystem characters."
+                    self._set_collision_warning(
+                        f"⚠️ Validation Error: {msg}", is_error=True
+                    )
+                    return True, msg
         else:
-            formatted_name = formatted
+            formatted = self._evaluate_preview(name_val) if name_val else ""
+            if self.extension and formatted and not formatted.endswith(self.extension):
+                formatted_name = f"{formatted}{self.extension}"
+            else:
+                formatted_name = formatted
 
-        if not self.is_folder and formatted_name:
-            if any(c in formatted_name for c in '<>:"/\\|?*\x00'):
-                msg = "Filename contains illegal filesystem characters."
-                self._set_collision_warning(f"⚠️ Validation Error: {msg}", is_error=True)
-                return True, msg
+            if not self.is_folder and formatted_name:
+                if any(c in formatted_name for c in '<>:"/\\|?*\x00'):
+                    msg = "Filename contains illegal filesystem characters."
+                    self._set_collision_warning(
+                        f"⚠️ Validation Error: {msg}", is_error=True
+                    )
+                    return True, msg
 
         if dest_val:
             s_check = re.sub(r"^[a-zA-Z]:", "", dest_val)
@@ -313,6 +452,31 @@ class RenameModal(
                             f"Target folder '{target_folder}' exists on disk. "
                             "Contents will merge safely."
                         )
+        elif self.files:
+            target_folder = dest_val if dest_val else self.category
+            if batch_previews:
+                seen_names = set()
+                dup_name = None
+                for nm in batch_previews:
+                    if nm in seen_names:
+                        dup_name = nm
+                        break
+                    seen_names.add(nm)
+                if dup_name:
+                    collision_msg = (
+                        f"Collision detected: Multiple files resolve to duplicate name '{dup_name}'. "
+                        "Names will be disambiguated upon renaming."
+                    )
+                elif self.plan:
+                    folder_dict = self.plan.get(target_folder, {})
+                    if isinstance(folder_dict, dict):
+                        for fn in batch_previews:
+                            if fn in folder_dict:
+                                collision_msg = (
+                                    f"Collision detected: '{fn}' already exists in "
+                                    f"'{target_folder or 'root'}'. Overwrite will be blocked (names disambiguated)."
+                                )
+                                break
         else:
             target_folder = dest_val if dest_val else self.category
             if formatted_name:
@@ -400,8 +564,50 @@ class RenameModal(
             return
 
         val = self.query_one("#input-name", Input).value.strip()
-        formatted = self._evaluate_preview(val) if val else ""
         dest_val = self.query_one("#input-destination", Input).value.strip()
+
+        if self.files:
+            if not val and not dest_val:
+                self.announce("Cancelled rename action.")
+                self.dismiss(None)
+                return
+
+            batch_previews = self.get_batch_previews(val)
+            batch_items = []
+            for idx, f in enumerate(self.files):
+                file_seq = self.seq + idx
+                meta, fallback, key, folder, info = self._extract_file_metadata(
+                    f, file_seq
+                )
+                formatted_name = (
+                    batch_previews[idx] if idx < len(batch_previews) else fallback
+                )
+                target_folder = dest_val if dest_val else folder
+                batch_items.append(
+                    {
+                        "file": f,
+                        "key": key,
+                        "old_name": key,
+                        "new_name": formatted_name,
+                        "folder": target_folder,
+                        "old_folder": folder,
+                        "info": info,
+                    }
+                )
+            result = RenameResult(
+                val,
+                destination_override=dest_val if dest_val else None,
+                batch_items=batch_items,
+                is_batch=True,
+            )
+            dest_desc = f" with destination override '{dest_val}'" if dest_val else ""
+            self.announce(
+                f"Confirmed batch rename for {len(batch_items)} files{dest_desc}."
+            )
+            self.dismiss(result)
+            return
+
+        formatted = self._evaluate_preview(val) if val else ""
 
         if formatted:
             result = RenameResult(

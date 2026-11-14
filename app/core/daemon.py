@@ -11,6 +11,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass, field
+from enum import Enum
 from typing import Any, Optional
 
 from watchdog.events import FileSystemEventHandler
@@ -169,6 +170,43 @@ class DaemonFolderHandler(FileSystemEventHandler):
         self.daemon.enqueue_event(change_event)
 
 
+class DaemonState(str, Enum):
+    """Operational lifecycle states of ContinuousWatchdogDaemon."""
+
+    STOPPED = "stopped"
+    RUNNING = "running"
+    PAUSED = "paused"
+    RECALCULATING = "recalculating"
+
+
+class InvalidStateError(RuntimeError, ValueError):
+    """Raised when an invalid daemon state transition is attempted."""
+
+    pass
+
+
+_VALID_TRANSITIONS: dict[DaemonState, set[DaemonState]] = {
+    DaemonState.STOPPED: {DaemonState.STOPPED, DaemonState.RUNNING},
+    DaemonState.RUNNING: {
+        DaemonState.STOPPED,
+        DaemonState.RUNNING,
+        DaemonState.PAUSED,
+        DaemonState.RECALCULATING,
+    },
+    DaemonState.PAUSED: {
+        DaemonState.STOPPED,
+        DaemonState.PAUSED,
+        DaemonState.RUNNING,
+    },
+    DaemonState.RECALCULATING: {
+        DaemonState.STOPPED,
+        DaemonState.RUNNING,
+        DaemonState.PAUSED,
+        DaemonState.RECALCULATING,
+    },
+}
+
+
 class ContinuousWatchdogDaemon:
     """Daemon that continuously monitors a folder using an async queue pipeline."""
 
@@ -177,10 +215,11 @@ class ContinuousWatchdogDaemon:
         self.base_dir = os.path.abspath(base_dir)
         self.observer = None
 
+        self._state: DaemonState = DaemonState.STOPPED
         self._lock = threading.RLock()
         self._debounce_timer = None
         self._cancel_event = threading.Event()
-        self._is_running = False
+        self._scoped_run_token: Optional[threading.Event] = None
         self._move_ref_count = 0
         self._pending_dirty = False
         self._active_move_paths = set()
@@ -206,7 +245,6 @@ class ContinuousWatchdogDaemon:
         self._queue_sequence_counter: int = 0
 
         # Telemetry & IPC Server State
-        self._is_paused: bool = False
         self._events_enqueued_count: int = 0
         self._events_processed_count: int = 0
         self._start_time: Optional[float] = None
@@ -226,21 +264,107 @@ class ContinuousWatchdogDaemon:
         self._rerun_pending: bool = False
 
     @property
+    def state(self) -> DaemonState:
+        """Get the current operational lifecycle state of the daemon."""
+        with self._lock:
+            return self._state
+
+    @state.setter
+    def state(self, new_state: DaemonState) -> None:
+        """Set daemon state through validated transition guards."""
+        with self._lock:
+            self._transition_to(new_state)
+
+    def _transition_to(self, new_state: DaemonState) -> None:
+        """Validate and transition to a new daemon state."""
+        if not isinstance(new_state, DaemonState):
+            try:
+                new_state = DaemonState(new_state)
+            except ValueError:
+                raise InvalidStateError(f"Invalid daemon state: {new_state}")
+
+        if new_state == self._state:
+            return
+
+        valid_targets = _VALID_TRANSITIONS.get(self._state, set())
+        if new_state not in valid_targets:
+            raise InvalidStateError(
+                f"Cannot transition daemon state from {self._state.name} to {new_state.name}"
+            )
+
+        old_state = self._state
+        self._state = new_state
+        logger.info(f"Daemon state transitioned: {old_state.name} -> {new_state.name}")
+
+    @property
+    def is_running(self) -> bool:
+        """Check if daemon is currently active (running, paused, or recalculating)."""
+        with self._lock:
+            return self._state != DaemonState.STOPPED
+
+    @property
+    def _is_running(self) -> bool:
+        """Backwards compatibility accessor for running state."""
+        with self._lock:
+            return self._state != DaemonState.STOPPED
+
+    @_is_running.setter
+    def _is_running(self, value: bool) -> None:
+        with self._lock:
+            if value:
+                if self._state == DaemonState.STOPPED:
+                    self._state = DaemonState.RUNNING
+            else:
+                self._state = DaemonState.STOPPED
+
+    @property
     def is_paused(self) -> bool:
         """Check if daemon triage processing is currently paused."""
         with self._lock:
-            return self._is_paused
+            return self._state == DaemonState.PAUSED
+
+    @property
+    def _is_paused(self) -> bool:
+        """Backwards compatibility accessor for paused state."""
+        with self._lock:
+            return self._state == DaemonState.PAUSED
+
+    @_is_paused.setter
+    def _is_paused(self, value: bool) -> None:
+        with self._lock:
+            if value:
+                self._transition_to(DaemonState.PAUSED)
+            else:
+                if self._state == DaemonState.PAUSED:
+                    self._transition_to(DaemonState.RUNNING)
+
+    @property
+    def scoped_run_token(self) -> Optional[threading.Event]:
+        """Get the current scoped recalculation cancellation token, if active."""
+        with self._lock:
+            return self._scoped_run_token
+
+    def _is_cancelled(self, token: Optional[threading.Event] = None) -> bool:
+        """Cooperatively check if lifecycle token or scoped run token is cancelled."""
+        if not self.is_running or self._cancel_event.is_set():
+            return True
+        if token is not None and token.is_set():
+            return True
+        return False
 
     def pause(self):
         """Pause processing of queued file triage events."""
         with self._lock:
-            self._is_paused = True
+            self._transition_to(DaemonState.PAUSED)
         logger.info("Daemon triage processing paused.")
 
     def resume(self):
         """Resume processing of queued file triage events."""
         with self._lock:
-            self._is_paused = False
+            if self._state == DaemonState.PAUSED:
+                self._transition_to(DaemonState.RUNNING)
+            elif self._state == DaemonState.STOPPED:
+                raise InvalidStateError("Cannot resume daemon when stopped")
         logger.info("Daemon triage processing resumed.")
 
     def get_status_telemetry(self) -> dict:
@@ -250,14 +374,14 @@ class ContinuousWatchdogDaemon:
         uptime = time.time() - self._start_time if self._start_time else 0.0
         with self._lock:
             active_triages = list(self._active_triage_paths)
-            paused = self._is_paused
+            curr_state = self._state
+            paused = curr_state == DaemonState.PAUSED
+            running = curr_state != DaemonState.STOPPED
 
         return {
-            "status": "paused"
-            if paused
-            else ("running" if self._is_running else "stopped"),
+            "status": curr_state.value,
             "is_paused": paused,
-            "is_running": self._is_running,
+            "is_running": running,
             "pid": os.getpid(),
             "base_dir": self.base_dir,
             "queue_depth": queue_depth,
@@ -690,11 +814,14 @@ class ContinuousWatchdogDaemon:
         self._execution_thread.start()
         ready_event.wait(timeout=5.0)
 
-    async def _triage_worker(self, worker_id: int):
+    async def _triage_worker(
+        self, worker_id: int, cancel_token: Optional[threading.Event] = None
+    ):
         """Async worker task that continuously consumes FileChangeEvents and triages paths."""
         logger.info(f"Async triage worker {worker_id} started.")
-        while self._is_running and not self._cancel_event.is_set():
-            if self._is_paused:
+        token = cancel_token or self._cancel_event
+        while self.is_running and not self._is_cancelled(token):
+            if self.is_paused:
                 await asyncio.sleep(0.05)
                 continue
             try:
@@ -717,7 +844,7 @@ class ContinuousWatchdogDaemon:
                 event = raw_item
 
             try:
-                await self._process_single_event(event)
+                await self._process_single_event(event, cancel_token=token)
                 with self._lock:
                     self._events_processed_count += 1
             except Exception as e:
@@ -729,7 +856,9 @@ class ContinuousWatchdogDaemon:
                 if self._event_queue is not None:
                     self._event_queue.task_done()
 
-    async def _process_single_event(self, event: FileChangeEvent):
+    async def _process_single_event(
+        self, event: FileChangeEvent, cancel_token: Optional[threading.Event] = None
+    ):
         """Triage a single file event without whole-directory scans."""
         file_path = event.file_path
         if not file_path or self.should_ignore_path(file_path):
@@ -749,7 +878,7 @@ class ContinuousWatchdogDaemon:
             with self._lock:
                 self._active_triage_paths.add(norm_p)
             try:
-                await self._triage_file_path(abs_path)
+                await self._triage_file_path(abs_path, cancel_token=cancel_token)
             finally:
                 with self._lock:
                     self._active_triage_paths.discard(norm_p)
@@ -765,7 +894,9 @@ class ContinuousWatchdogDaemon:
             self._sort_executor, functools.partial(fn, *args, **kwargs)
         )
 
-    async def _triage_file_path(self, abs_path: str):
+    async def _triage_file_path(
+        self, abs_path: str, cancel_token: Optional[threading.Event] = None
+    ):
         """Targeted triage on a single item path using QuarantineInterceptorService staging and compliance policy evaluation."""
         if not os.path.exists(abs_path):
             logger.debug(f"Target file missing before triage: {abs_path}")
@@ -792,7 +923,7 @@ class ContinuousWatchdogDaemon:
         app_session = self._get_or_create_session()
 
         def cancel_check():
-            return self._cancel_event.is_set() or not self._is_running
+            return self._is_cancelled(cancel_token)
 
         try:
             save_timer = getattr(self.settings, "_save_timer", None)
@@ -1037,16 +1168,19 @@ class ContinuousWatchdogDaemon:
                 f"Targeted Slow-Path AI triage completed for {rel_path}: {summary}"
             )
 
-    async def _reconciliation_worker(self):
+    async def _reconciliation_worker(
+        self, cancel_token: Optional[threading.Event] = None
+    ):
         """Periodic background reconciliation task executing low-priority directory audits."""
         logger.info("Background reconciliation task started.")
-        while self._is_running and not self._cancel_event.is_set():
+        token = cancel_token or self._cancel_event
+        while self.is_running and not self._is_cancelled(token):
             try:
                 await asyncio.sleep(self.reconciliation_interval)
             except asyncio.CancelledError:
                 break
 
-            if not self._is_running or self._cancel_event.is_set():
+            if self._is_cancelled(token):
                 break
 
             if (
@@ -1055,17 +1189,21 @@ class ContinuousWatchdogDaemon:
                 and not self.is_moving
             ):
                 try:
-                    await self._run_reconciliation_audit()
+                    await self._run_reconciliation_audit(cancel_token=token)
                 except Exception as e:
                     logger.error(
                         f"Error during periodic background reconciliation: {e}",
                         exc_info=True,
                     )
 
-    async def _run_reconciliation_audit(self):
+    async def _run_reconciliation_audit(
+        self, cancel_token: Optional[threading.Event] = None
+    ):
         """Low-priority directory audit to enqueue any untracked files missed during OS buffer overflows."""
         if not self.base_dir or not os.path.exists(self.base_dir):
             return
+
+        token = cancel_token or self._cancel_event
 
         def _scan():
             files = get_files_recursively(self.base_dir)
@@ -1076,7 +1214,7 @@ class ContinuousWatchdogDaemon:
         enqueued_count = 0
 
         for file_path in scanned_files:
-            if self._cancel_event.is_set() or not self._is_running:
+            if self._is_cancelled(token):
                 break
             norm_p = os.path.normcase(os.path.abspath(file_path))
             with self._lock:
@@ -1091,6 +1229,8 @@ class ContinuousWatchdogDaemon:
                 file_path=file_path,
                 timestamp=now,
             )
+            if self._is_cancelled(token):
+                break
             if self.enqueue_event(change_event):
                 enqueued_count += 1
 
@@ -1174,14 +1314,15 @@ class ContinuousWatchdogDaemon:
     def start(self):
         """Start the continuous watchdog daemon, workers, event loop, and file system observer."""
         with self._lock:
-            if self._is_running:
+            if self._state == DaemonState.RUNNING:
                 return
-            self._is_running = True
+            self._transition_to(DaemonState.RUNNING)
             self._queue_sequence_counter = 0
             self._move_ref_count = 0
             self._pending_dirty = False
             self._active_move_paths.clear()
             self._cancel_event.clear()
+            self._scoped_run_token = None
             self._recent_events.clear()
             self._active_path_locks.clear()
             self._active_triage_paths.clear()
@@ -1209,14 +1350,16 @@ class ContinuousWatchdogDaemon:
     def stop(self):
         """Stop the continuous watchdog daemon, workers, observer, and event loop."""
         with self._lock:
-            if not self._is_running:
+            if self._state == DaemonState.STOPPED:
                 return
-            self._is_running = False
+            self._transition_to(DaemonState.STOPPED)
             self._move_ref_count = 0
             self._pending_dirty = False
             self._rerun_pending = False
             self._active_move_paths.clear()
             self._cancel_event.set()
+            if self._scoped_run_token is not None:
+                self._scoped_run_token.set()
             if self._proc_cancel_event is not None:
                 try:
                     self._proc_cancel_event.set()
@@ -1301,7 +1444,7 @@ class ContinuousWatchdogDaemon:
     def trigger_recalculation(self):
         """Thread-safe and debounced trigger for sorting run."""
         with self._lock:
-            if not self._is_running or self._move_ref_count > 0:
+            if not self.is_running or self._move_ref_count > 0:
                 return
 
             # Track the start time of the first event in a sequence
@@ -1321,16 +1464,20 @@ class ContinuousWatchdogDaemon:
                 # This guarantees that the run initiates and doesn't get starved by rapid events.
                 return
 
-            # Interrupt current run immediately by setting the cancel event
-            self._cancel_event.set()
+            if self._state != DaemonState.RECALCULATING:
+                self._transition_to(DaemonState.RECALCULATING)
+
+            # Interrupt current run immediately by signaling active scoped run token
+            if self._scoped_run_token is not None:
+                self._scoped_run_token.set()
             if self._proc_cancel_event is not None:
                 try:
                     self._proc_cancel_event.set()
                 except Exception:
                     logger.debug("Failed to signal worker cancel event", exc_info=True)
 
-            # Reset cancel event for the upcoming run
-            self._cancel_event = threading.Event()
+            # Create a new scoped run token for the upcoming run without replacing daemon lifecycle token
+            self._scoped_run_token = threading.Event()
 
             max_delay = max(0.0, max_debounce_delay - elapsed)
             delay = min(debounce_delay, max_delay)
@@ -1339,7 +1486,7 @@ class ContinuousWatchdogDaemon:
                 self._debounce_timer.cancel()
 
             self._debounce_timer = threading.Timer(
-                delay, self._schedule_run, args=(self._cancel_event,)
+                delay, self._schedule_run, args=(self._scoped_run_token,)
             )
             self._debounce_timer.daemon = True
             self._debounce_timer.start()
@@ -1347,9 +1494,14 @@ class ContinuousWatchdogDaemon:
     def _schedule_run(self, cancel_event):
         """Timer callback that executes or queues the worker subprocess execution."""
         with self._lock:
-            if not self._is_running or (
+            if not self.is_running or (
                 cancel_event is not None and cancel_event.is_set()
             ):
+                if (
+                    self._state == DaemonState.RECALCULATING
+                    and self._scoped_run_token is cancel_event
+                ):
+                    self._transition_to(DaemonState.RUNNING)
                 return
             self._first_event_time = None
 
@@ -1365,7 +1517,7 @@ class ContinuousWatchdogDaemon:
     def _spawn_sorting_process(self, cancel_event=None):
         """Spawn a process-isolated worker subprocess to execute the sorting routine."""
         with self._lock:
-            if not self._is_running:
+            if not self.is_running:
                 return
             self._rerun_pending = False
 
@@ -1406,9 +1558,11 @@ class ContinuousWatchdogDaemon:
                 self._sorting_process = None
                 self._proc_cancel_event = None
 
-            if self._is_running and self._rerun_pending:
+            if self.is_running and self._rerun_pending:
                 self._rerun_pending = False
                 should_rerun = True
+            elif self._state == DaemonState.RECALCULATING:
+                self._transition_to(DaemonState.RUNNING)
 
         if should_rerun:
             logger.info(
@@ -1420,13 +1574,19 @@ class ContinuousWatchdogDaemon:
         """Run the core synchronous sorting runner."""
         # Check if canceled before starting
         if cancel_event.is_set():
+            with self._lock:
+                if (
+                    self._state == DaemonState.RECALCULATING
+                    and self._scoped_run_token is cancel_event
+                ):
+                    self._transition_to(DaemonState.RUNNING)
             return
 
         logger.info("Executing background sorting run...")
 
         # Define the cancel check callback
         def cancel_check():
-            return cancel_event.is_set() or not self._is_running
+            return cancel_event.is_set() or self._is_cancelled()
 
         # Dynamic reload of settings
         try:
@@ -1551,6 +1711,12 @@ class ContinuousWatchdogDaemon:
                 f"Error during continuous watchdog execution run: {e}", exc_info=True
             )
         finally:
+            with self._lock:
+                if (
+                    self._state == DaemonState.RECALCULATING
+                    and self._scoped_run_token is cancel_event
+                ):
+                    self._transition_to(DaemonState.RUNNING)
             if app_session:
                 app_session.close()
             try:
