@@ -44,7 +44,11 @@ class AppSession:
         )
 
         from app.core.db_worker import DBWorker
+        from app.core.pipeline import PipelineLifecycleState
         from app.core.store import open_store
+
+        self.lifecycle_state = PipelineLifecycleState.CREATED
+        self.pipeline = None
 
         # Every session reads and writes the one app store (ADR 0008).
         self.store = store or open_store()
@@ -150,6 +154,31 @@ class AppSession:
 
     def partial_fit(self, chunk):
         """Incrementally train the analyzer."""
+        if hasattr(self, "lifecycle_state"):
+            from app.core.pipeline import (
+                IllegalStateTransitionError,
+                PipelineLifecycleState,
+            )
+
+            if self.lifecycle_state in (
+                PipelineLifecycleState.EXECUTING,
+                PipelineLifecycleState.ROLLING_BACK,
+            ):
+                raise IllegalStateTransitionError(
+                    f"Cannot fit analyzer while execution is in progress (current state: '{self.lifecycle_state.value}')."
+                )
+            if self.lifecycle_state == PipelineLifecycleState.CREATED:
+                self.lifecycle_state = PipelineLifecycleState.PLANNING
+                if (
+                    hasattr(self, "pipeline")
+                    and self.pipeline
+                    and getattr(self.pipeline, "state", None)
+                    == PipelineLifecycleState.CREATED
+                ):
+                    try:
+                        self.pipeline.transition_to(PipelineLifecycleState.PLANNING)
+                    except Exception:
+                        pass
         effective_base_dir = self.base_dir or (
             self.source_dirs[0] if self.source_dirs else None
         )
@@ -164,6 +193,19 @@ class AppSession:
         jev_results: Optional[Dict[str, Any]] = None,
     ):
         """Generate sorting plan from analyzer."""
+        if hasattr(self, "lifecycle_state"):
+            from app.core.pipeline import (
+                IllegalStateTransitionError,
+                PipelineLifecycleState,
+            )
+
+            if self.lifecycle_state in (
+                PipelineLifecycleState.EXECUTING,
+                PipelineLifecycleState.ROLLING_BACK,
+            ):
+                raise IllegalStateTransitionError(
+                    f"Cannot generate plan while execution is in progress (current state: '{self.lifecycle_state.value}')."
+                )
         effective_base_dir = self.base_dir or (
             self.source_dirs[0] if self.source_dirs else None
         )
@@ -179,7 +221,7 @@ class AppSession:
             _, lk, _, _ = self.cache_manager.load_cache(s_dir)
             if lk:
                 locked.update(lk)
-        return self.analyzer.generate_sorting_plan(
+        plan = self.analyzer.generate_sorting_plan(
             effective_base_dir,
             self.settings,
             locked_files=locked,
@@ -188,6 +230,22 @@ class AppSession:
             jev_results=jev_results,
             source_dirs=self.source_dirs,
         )
+        if (
+            hasattr(self, "lifecycle_state")
+            and self.lifecycle_state != PipelineLifecycleState.EXECUTING
+        ):
+            self.lifecycle_state = PipelineLifecycleState.PLANNED
+            if (
+                hasattr(self, "pipeline")
+                and self.pipeline
+                and getattr(self.pipeline, "state", None)
+                != PipelineLifecycleState.PLANNED
+            ):
+                try:
+                    self.pipeline.transition_to(PipelineLifecycleState.PLANNED)
+                except Exception:
+                    pass
+        return plan
 
     def rollback(self, session_id, ignore_missing=False):
         """Rollback a past session."""
@@ -200,6 +258,7 @@ class AppSession:
         cancel_check=None,
         chunk_size=None,
         progress_callback=None,
+        pipeline=None,
         **kwargs,
     ):
         """Execute move operations using asynchronous chunked worker pipeline.
@@ -210,6 +269,7 @@ class AppSession:
             cancel_check: Optional callable that checks if cancellation was requested.
             chunk_size: Optional chunk size for worker execution.
             progress_callback: Optional progress callback for emitting status updates.
+            pipeline: Optional SortPipeline instance coordinating lifecycle state.
             **kwargs: Additional arguments passed to execute_moves.
 
         Returns
@@ -221,6 +281,37 @@ class AppSession:
         )
         if not effective_base_dir:
             return {}
+
+        effective_pipeline = pipeline or getattr(self, "pipeline", None)
+        if hasattr(self, "lifecycle_state"):
+            from app.core.pipeline import (
+                IllegalStateTransitionError,
+                PipelineLifecycleState,
+            )
+
+            if (
+                self.lifecycle_state
+                not in (
+                    PipelineLifecycleState.PLANNED,
+                    PipelineLifecycleState.EXECUTING,
+                )
+                and not resume
+                and not kwargs.get("force")
+                and plan
+            ):
+                raise IllegalStateTransitionError(
+                    f"Cannot execute moves from state '{self.lifecycle_state.value}'; session must be in 'planned' state."
+                )
+            self.lifecycle_state = PipelineLifecycleState.EXECUTING
+            if (
+                effective_pipeline
+                and hasattr(effective_pipeline, "state")
+                and effective_pipeline.state != PipelineLifecycleState.EXECUTING
+            ):
+                try:
+                    effective_pipeline.transition_to(PipelineLifecycleState.EXECUTING)
+                except Exception:
+                    pass
 
         plan_path = self.session_dir / "plan.json"
         serializable_plan = _make_json_serializable(plan)
@@ -234,18 +325,36 @@ class AppSession:
             move_kwargs["chunk_size"] = chunk_size
 
         with self._lock_folders():
-            return execute_moves(
-                effective_base_dir,
-                plan,
-                self.db,
-                self.history_manager,
-                self.settings,
-                resume=resume,
-                cancel_check=cancel_check,
-                progress_callback=progress_callback,
-                source_dirs=self.source_dirs,
-                **move_kwargs,
-            )
+            try:
+                summary = execute_moves(
+                    effective_base_dir,
+                    plan,
+                    self.db,
+                    self.history_manager,
+                    self.settings,
+                    resume=resume,
+                    cancel_check=cancel_check,
+                    progress_callback=progress_callback,
+                    source_dirs=self.source_dirs,
+                    pipeline=effective_pipeline,
+                    **move_kwargs,
+                )
+                if hasattr(self, "lifecycle_state"):
+                    from app.core.pipeline import PipelineLifecycleState
+
+                    if summary.get("cancelled"):
+                        self.lifecycle_state = PipelineLifecycleState.CANCELLED
+                    elif summary.get("error"):
+                        self.lifecycle_state = PipelineLifecycleState.FAILED
+                    else:
+                        self.lifecycle_state = PipelineLifecycleState.COMPLETED
+                return summary
+            except Exception:
+                if hasattr(self, "lifecycle_state"):
+                    from app.core.pipeline import PipelineLifecycleState
+
+                    self.lifecycle_state = PipelineLifecycleState.FAILED
+                raise
 
     def retry_failed_moves(self, failed_items, progress_callback=None, **kwargs):
         """Re-attempt move operations for failed items."""

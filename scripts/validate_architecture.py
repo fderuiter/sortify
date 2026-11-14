@@ -38,6 +38,7 @@ EXCLUDED_METHOD_NAMES = {
     "dict",
     "get",
     "get_instance",
+    "state",
 }
 
 # Canonical dictionary emulation methods registered to DictCompatMixin in app/core/domain_contracts.py

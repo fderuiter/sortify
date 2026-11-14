@@ -1,8 +1,49 @@
 {
   "_metadata": {
-    "checksum": "d841dac2ac51a127ad55b53a6e4eba7ca8a83424526f05bdd0970301bac73641"
+    "checksum": "e35c7ac505bcae24e72f05550e9af0300482815fe5329f246cff5608ecd2f5ab"
   },
   "classes": [
+    {
+      "class_name": "IllegalStateTransitionError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "PipelineLifecycleState",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "is_active",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "is_terminal",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        }
+      ]
+    },
     {
       "class_name": "SortPipeline",
       "decorators": [],
@@ -27,6 +68,42 @@
         },
         {
           "async": false,
+          "decorators": [],
+          "name": "add_state_change_hook",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable",
+              "default": null,
+              "name": "callback"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "add_telemetry_hook",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable",
+              "default": null,
+              "name": "callback"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
           "decorators": [
             "@property"
           ],
@@ -39,6 +116,34 @@
             }
           ],
           "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "emit_telemetry",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "event"
+            },
+            {
+              "annotation": "Optional[dict]",
+              "default": "None",
+              "name": "data"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "None"
         },
         {
           "async": false,
@@ -138,6 +243,44 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "state",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "PipelineLifecycleState"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "transition_to",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "PipelineLifecycleState",
+              "default": null,
+              "name": "target_state"
+            },
+            {
+              "annotation": "Optional[dict]",
+              "default": "None",
+              "name": "context"
+            }
+          ],
+          "returns": "None"
         },
         {
           "async": false,
