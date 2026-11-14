@@ -59,8 +59,9 @@ def generate_api_docs():
 
 def compile_diagram_assets():
     """Compile diagram specifications into SVG/PNG visual assets and Mermaid files."""
-    from scripts.diagram_toolchain import build_diagrams
+    from scripts.diagram_toolchain import build_diagrams, reset_markdown_anchors_cache
 
+    reset_markdown_anchors_cache()
     if not build_diagrams(force=False, verify_only=False):
         raise RuntimeError(
             "One or more diagrams failed schema validation or rendering; "
@@ -836,13 +837,13 @@ def main():
 
     # 2. Run documentation generation
     tasks = [
-        ("compile_diagram_assets", compile_diagram_assets),
         ("generate_tutorial_docs", generate_tutorial_docs),
         ("generate_api_docs", generate_api_docs),
         ("generate_ui_docs", generate_ui_docs),
         ("generate_admin_guide", generate_admin_guide),
         ("generate_keyboard_docs", generate_keyboard_docs),
         ("update_security_md", update_security_md),
+        ("compile_diagram_assets", compile_diagram_assets),
     ]
 
     errors = []
@@ -861,6 +862,7 @@ def main():
             traceback.print_exception(*exc_info, file=sys.stderr)
             sys.stderr.write("\n")
         sys.exit(1)
+        return
 
     # Validate Mermaid diagram syntax across documentation files
     mermaid_validation_errors = validate_mermaid_diagrams()
@@ -871,6 +873,7 @@ def main():
         for err in mermaid_validation_errors:
             sys.stderr.write(f"  - {err}\n")
         sys.exit(1)
+        return
 
     # 3. Check for unsynced files and audit handwritten docs if requested
     changed_files = []
@@ -894,6 +897,7 @@ def main():
             for err in doc_audit_errors:
                 sys.stderr.write(f"  - {err}\n")
             sys.exit(1)
+            return
 
     # 4. Run MkDocs build (and preserve strict build flags)
     if not args.no_build:
@@ -924,6 +928,7 @@ def main():
                     f"Error: MkDocs build failed with exit code {result.returncode}\n"
                 )
                 sys.exit(result.returncode)
+                return
     else:
         print("Skipping MkDocs build (--no-build).")
 
@@ -936,6 +941,7 @@ def main():
             sys.stderr.write(f"  - {f}\n")
         sys.stderr.write("\nPlease commit the updated documentation files.\n")
         sys.exit(1)
+        return
 
     print("Documentation generation and validation completed successfully.")
 
