@@ -296,35 +296,11 @@ jobs:
                 print("No smoke_test_error.txt found.")
             sys.exit(res.returncode)
 
-  changes:
-    name: Detect Documentation Changes
-    runs-on: ubuntu-latest
-    timeout-minutes: 5
-    permissions:
-      contents: read
-      pull-requests: read  # paths-filter lists the PR's files
-    outputs:
-      docs: ${{ steps.filter.outputs.docs }}
-    steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
-      with:
-        persist-credentials: false
-    - uses: dorny/paths-filter@ceb8a2b8f2d89434be7ff52d3de7ec3738c5cc9d # v4.0.3
-      id: filter
-      with:
-        filters: |
-          docs:
-            - 'app/**'
-            - 'scripts/**'
-            - 'docs/**'
-            - 'mkdocs.yml'
-            - 'pyproject.toml'
-
   # The only job that keeps checkout credentials: mkdocs gh-deploy pushes.
   doc-deploy:
     name: Doc Deploy
-    needs: [static-checks, changes]
-    if: needs.changes.outputs.docs == 'true'
+    needs: [static-checks]
+    if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
     permissions:
