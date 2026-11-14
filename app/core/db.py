@@ -26,6 +26,15 @@ AUDIO_EXTENSIONS = (
     ".3gp",
 )
 
+ELIGIBLE_DOCUMENT_EXTENSIONS = (
+    ".txt",
+    ".docx",
+    ".csv",
+    ".xlsx",
+    ".xls",
+    ".pdf",
+)
+
 
 def _main_db_baseline(conn) -> None:
     """Bring a new or pre-migration main database to the schema of version 7.
@@ -214,19 +223,7 @@ class Database:
                 )
                 indexed_docs = purge_cursor.fetchall()
                 for b_dir, f_path in indexed_docs:
-                    cursor2 = conn.execute(
-                        "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
-                        (b_dir, f_path),
-                    )
-                    row = cursor2.fetchone()
-                    decrypted_text = None
-                    if row and row[0]:
-                        try:
-                            decrypted_text = self.crypto.decrypt_text(row[0])
-                        except Exception:
-                            decrypted_text = None
-
-                    if not self._is_tfidf_eligible(f_path, decrypted_text):
+                    if not self._is_tfidf_eligible_extension(f_path):
                         self._update_tfidf_for_document_conn(
                             conn, b_dir, f_path, None, False
                         )
@@ -969,13 +966,21 @@ class Database:
 
         self.worker.execute_write(_write)
 
-    def _is_tfidf_eligible(self, filepath: str, extracted_text: str | None) -> bool:
-        if not filepath or not extracted_text:
+    @staticmethod
+    def _is_tfidf_eligible_extension(filepath: str) -> bool:
+        if not filepath:
             return False
-        fp_lower = filepath.lower()
+        fp_lower = filepath.replace("\\", "/").lower()
         if any(fp_lower.endswith(ext) for ext in AUDIO_EXTENSIONS):
             return False
-        if not fp_lower.endswith((".txt", ".docx", ".csv", ".xlsx", ".xls", ".pdf")):
+        if not fp_lower.endswith(ELIGIBLE_DOCUMENT_EXTENSIONS):
+            return False
+        return True
+
+    def _is_tfidf_eligible(self, filepath: str, extracted_text: str | None) -> bool:
+        if not self._is_tfidf_eligible_extension(filepath):
+            return False
+        if not extracted_text:
             return False
         if extracted_text.startswith("[STATUS:"):
             return False
@@ -1037,10 +1042,11 @@ class Database:
         stop_words_list=None,
         term_counts: dict[str, int] | None = None,
     ):
+        orig_filepath = filepath
         filepath = filepath.replace("\\", "/")
         cursor = conn.execute(
-            "SELECT term, tf FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ?",
-            (base_dir, filepath),
+            "SELECT term, tf FROM tfidf_doc_terms WHERE base_dir = ? AND (filepath = ? OR filepath = ?)",
+            (base_dir, filepath, orig_filepath),
         )
         existing_terms = {row[0]: row[1] for row in cursor.fetchall()}
 
@@ -1111,8 +1117,8 @@ class Database:
         else:
             if existing_terms:
                 conn.execute(
-                    "DELETE FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ?",
-                    (base_dir, filepath),
+                    "DELETE FROM tfidf_doc_terms WHERE base_dir = ? AND (filepath = ? OR filepath = ?)",
+                    (base_dir, filepath, orig_filepath),
                 )
                 for t in existing_terms:
                     conn.execute(
