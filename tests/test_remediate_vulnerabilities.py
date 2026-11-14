@@ -2,6 +2,8 @@
 
 from __future__ import annotations
 
+import base64
+import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -411,4 +413,153 @@ certifi 2026.7.22 has 1 known vulnerability:
     assert res is True
     mock_run_tests.assert_called_once_with(tmp_path)
     assert mock_client.create_pull_request.call_count == 1
+
+    # Assert git push command excludes token values and uses clean URL
+    push_calls = [
+        call
+        for call in mock_sub_run.call_args_list
+        if len(call[0]) > 0 and call[0][0][:2] == ["git", "push"]
+    ]
+    assert len(push_calls) == 1
+    push_cmd = push_calls[0][0][0]
+    assert "dummy_token" not in " ".join(push_cmd)
+    assert push_cmd == [
+        "git",
+        "push",
+        "-u",
+        "https://github.com/owner/repo.git",
+        "security/patch-certifi-2026-10-19",
+    ]
+
+    # Verify subprocess environment parameters include the required git configuration keys
+    push_kwargs = push_calls[0][1]
+    push_env = push_kwargs.get("env")
+    assert push_env is not None
+    assert push_env.get("GIT_CONFIG_COUNT") == "1"
+    assert push_env.get("GIT_CONFIG_KEY_0") == "http.extraHeader"
+    expected_b64 = base64.b64encode(b"x-access-token:dummy_token").decode("ascii")
+    assert push_env.get("GIT_CONFIG_VALUE_0") == f"AUTHORIZATION: basic {expected_b64}"
+
+
+@patch("scripts.remediate_vulnerabilities.GitHubRemediationClient")
+@patch("scripts.remediate_vulnerabilities.subprocess.run")
+@patch("scripts.remediate_vulnerabilities.run_local_tests")
+@patch("scripts.remediate_vulnerabilities.get_locked_package_version")
+@patch("scripts.remediate_vulnerabilities.run_lock_upgrade")
+@patch("scripts.remediate_vulnerabilities.run_uv_audit")
+def test_remediate_vulnerabilities_empty_token_omits_git_headers(
+    mock_audit,
+    mock_lock_upgrade,
+    mock_get_version,
+    mock_run_tests,
+    mock_sub_run,
+    mock_gh_client_cls,
+    tmp_path: Path,
+):
+    sample_audit = """
+certifi 2026.7.22 has 1 known vulnerability:
+
+- GHSA-6q48-6c7w-9gw2: certifi vulnerability
+
+  Fixed in: 2026.10.19
+    """
+    mock_audit.side_effect = [(1, sample_audit), (0, "Audit passed")]
+    mock_lock_upgrade.return_value = True
+    mock_get_version.side_effect = ["2026.7.22", "2026.10.19"]
+    mock_run_tests.return_value = (0, "All 50 tests passed")
+
+    mock_client = MagicMock()
+    mock_client.has_open_pr_for_package.return_value = False
+    mock_gh_client_cls.return_value = mock_client
+
+    (tmp_path / "SECURITY.md").write_text("## Vulnerability Exemptions\n", encoding="utf-8")
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "certifi"\nversion = "2026.7.22"\n', encoding="utf-8"
+    )
+
+    # Pass whitespace token to verify empty token handling
+    with patch.dict(
+        "os.environ",
+        {
+            "GIT_CONFIG_COUNT": "1",
+            "GIT_CONFIG_KEY_0": "http.extraHeader",
+            "GIT_CONFIG_VALUE_0": "stale",
+        },
+    ):
+        res = remediate_vulnerabilities(
+            repo_root=tmp_path, dry_run=False, token="   ", repo_full="owner/repo"
+        )
+
+    assert res is True
+    push_calls = [
+        call
+        for call in mock_sub_run.call_args_list
+        if len(call[0]) > 0 and call[0][0][:2] == ["git", "push"]
+    ]
+    assert len(push_calls) == 1
+    push_env = push_calls[0][1].get("env")
+    assert push_env is not None
+    assert "GIT_CONFIG_COUNT" not in push_env
+    assert "GIT_CONFIG_KEY_0" not in push_env
+    assert "GIT_CONFIG_VALUE_0" not in push_env
+
+
+@patch("scripts.remediate_vulnerabilities.GitHubRemediationClient")
+@patch("scripts.remediate_vulnerabilities.subprocess.run")
+@patch("scripts.remediate_vulnerabilities.run_local_tests")
+@patch("scripts.remediate_vulnerabilities.get_locked_package_version")
+@patch("scripts.remediate_vulnerabilities.run_lock_upgrade")
+@patch("scripts.remediate_vulnerabilities.run_uv_audit")
+def test_remediate_vulnerabilities_push_failure_called_process_error(
+    mock_audit,
+    mock_lock_upgrade,
+    mock_get_version,
+    mock_run_tests,
+    mock_sub_run,
+    mock_gh_client_cls,
+    tmp_path: Path,
+):
+    sample_audit = """
+certifi 2026.7.22 has 1 known vulnerability:
+
+- GHSA-6q48-6c7w-9gw2: certifi vulnerability
+
+  Fixed in: 2026.10.19
+    """
+    mock_audit.side_effect = [(1, sample_audit), (0, "Audit passed")]
+    mock_lock_upgrade.return_value = True
+    mock_get_version.side_effect = ["2026.7.22", "2026.10.19"]
+    mock_run_tests.return_value = (0, "All 50 tests passed")
+
+    mock_client = MagicMock()
+    mock_client.has_open_pr_for_package.return_value = False
+    mock_gh_client_cls.return_value = mock_client
+
+    (tmp_path / "SECURITY.md").write_text("## Vulnerability Exemptions\n", encoding="utf-8")
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "certifi"\nversion = "2026.7.22"\n', encoding="utf-8"
+    )
+
+    secret_token = "super_secret_pat_9999"
+
+    def fake_sub_run(cmd, *args, **kwargs):
+        if len(cmd) > 1 and cmd[:2] == ["git", "push"]:
+            raise subprocess.CalledProcessError(1, cmd, output="Push rejected")
+        return MagicMock(returncode=0)
+
+    mock_sub_run.side_effect = fake_sub_run
+
+    remediate_vulnerabilities(
+        repo_root=tmp_path, dry_run=False, token=secret_token, repo_full="owner/repo"
+    )
+
+    push_calls = [
+        call
+        for call in mock_sub_run.call_args_list
+        if len(call[0]) > 0 and call[0][0][:2] == ["git", "push"]
+    ]
+    assert len(push_calls) == 1
+    push_cmd = push_calls[0][0][0]
+    assert secret_token not in " ".join(push_cmd)
+
 

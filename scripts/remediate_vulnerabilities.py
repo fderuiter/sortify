@@ -9,6 +9,7 @@ maintainers via issues when unfixable vulnerabilities or CI failures occur.
 from __future__ import annotations
 
 import argparse
+import base64
 import logging
 import os
 import re
@@ -743,14 +744,28 @@ def remediate_vulnerabilities(
             )
 
             if gh_client:
-                # Push branch using token-authenticated remote URL
-                push_target = (
-                    f"https://x-access-token:{token}@github.com/{repo_full}.git"
-                )
+                # Push branch using clean remote URL and git HTTP extra headers for auth
+                push_target = f"https://github.com/{repo_full}.git"
+                push_env = os.environ.copy()
+                if token and token.strip():
+                    encoded_auth = base64.b64encode(
+                        f"x-access-token:{token.strip()}".encode("utf-8")
+                    ).decode("ascii")
+                    push_env["GIT_CONFIG_COUNT"] = "1"
+                    push_env["GIT_CONFIG_KEY_0"] = "http.extraHeader"
+                    push_env["GIT_CONFIG_VALUE_0"] = (
+                        f"AUTHORIZATION: basic {encoded_auth}"
+                    )
+                else:
+                    push_env.pop("GIT_CONFIG_COUNT", None)
+                    push_env.pop("GIT_CONFIG_KEY_0", None)
+                    push_env.pop("GIT_CONFIG_VALUE_0", None)
+
                 subprocess.run(
                     ["git", "push", "-u", push_target, branch_name],
                     cwd=repo_root,
                     check=True,
+                    env=push_env,
                 )
                 # Create PR with dynamic labels
                 gh_client.create_pull_request(
