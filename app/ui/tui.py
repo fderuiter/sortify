@@ -315,6 +315,7 @@ class AutoSorterTUI(
         self.has_critical_errors: bool = False
         self.critical_error_paths: set = set()
         self.warning_paths: set = set()
+        self.collision_paths: set = set()
 
     def compose(self) -> ComposeResult:
         """Compose main dual-pane TUI layout."""
