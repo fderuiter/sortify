@@ -26,6 +26,15 @@ AUDIO_EXTENSIONS = (
     ".3gp",
 )
 
+ELIGIBLE_DOCUMENT_EXTENSIONS = (
+    ".txt",
+    ".docx",
+    ".csv",
+    ".xlsx",
+    ".xls",
+    ".pdf",
+)
+
 
 def _main_db_baseline(conn) -> None:
     """Bring a new or pre-migration main database to the schema of version 7.
@@ -214,19 +223,7 @@ class Database:
                 )
                 indexed_docs = purge_cursor.fetchall()
                 for b_dir, f_path in indexed_docs:
-                    cursor2 = conn.execute(
-                        "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
-                        (b_dir, f_path),
-                    )
-                    row = cursor2.fetchone()
-                    decrypted_text = None
-                    if row and row[0]:
-                        try:
-                            decrypted_text = self.crypto.decrypt_text(row[0])
-                        except Exception:
-                            decrypted_text = None
-
-                    if not self._is_tfidf_eligible(f_path, decrypted_text):
+                    if not self._is_tfidf_eligible_extension(f_path):
                         self._update_tfidf_for_document_conn(
                             conn, b_dir, f_path, None, False
                         )
@@ -343,7 +340,6 @@ class Database:
             filepath = rel_p
 
         filepath = filepath.replace("\\", "/")
-        self._populate_cache_if_needed(base_dir)
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
                 if hasattr(self._cached_documents, "get") and not isinstance(
@@ -355,7 +351,6 @@ class Database:
                             "file_hash": row[2],
                             "extracted_text": row[1],
                         }
-                    return None
                 else:
                     for row in self._cached_documents:
                         if row[0] == filepath:
@@ -363,22 +358,44 @@ class Database:
                                 "file_hash": row[2],
                                 "extracted_text": row[1],
                             }
-                    return None
 
         # Fallback to DB
         conn = get_db_connection(self.db_path)
         with conn:
             cursor = conn.execute(
-                "SELECT file_hash, extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                "SELECT file_hash, extracted_text, user_verified_target_path FROM documents WHERE base_dir = ? AND filepath = ?",
                 (base_dir, filepath),
             )
             row = cursor.fetchone()
             if row:
+                file_hash, raw_text, user_verified_target = row[0], row[1], row[2]
                 decrypted_text = (
-                    self.crypto.decrypt_text(row[1]) if row[1] is not None else None
+                    self.crypto.decrypt_text(raw_text) if raw_text is not None else None
                 )
+                with self._cache_lock:
+                    if (
+                        self._cached_base_dir == base_dir
+                        and self._cached_documents is not None
+                    ):
+                        doc_tuple = (
+                            filepath,
+                            decrypted_text,
+                            file_hash,
+                            user_verified_target,
+                        )
+                        if hasattr(
+                            self._cached_documents, "__setitem__"
+                        ) and not isinstance(self._cached_documents, list):
+                            self._cached_documents[filepath] = doc_tuple
+                        elif isinstance(self._cached_documents, list):
+                            for i, r in enumerate(self._cached_documents):
+                                if r[0] == filepath:
+                                    self._cached_documents[i] = doc_tuple
+                                    break
+                            else:
+                                self._cached_documents.append(doc_tuple)
                 return {
-                    "file_hash": row[0],
+                    "file_hash": file_hash,
                     "extracted_text": decrypted_text,
                 }
             return None
@@ -780,6 +797,7 @@ class Database:
         new_filepath = new_filepath.replace("\\", "/")
         new_dir = os.path.dirname(new_filepath).replace("\\", "/")
 
+        ext_text = None
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
                 if (
@@ -789,6 +807,7 @@ class Database:
                 ):
                     row = self._cached_documents.pop(old_filepath, None)
                     if row is not None:
+                        ext_text = row[1]
                         self._cached_documents[new_filepath] = (
                             new_filepath,
                             row[1],
@@ -799,6 +818,7 @@ class Database:
                     new_docs = []
                     for row in self._cached_documents:
                         if row[0] == old_filepath:
+                            ext_text = row[1]
                             new_docs.append((new_filepath, row[1], row[2], new_dir))
                         else:
                             new_docs.append(row)
@@ -807,11 +827,12 @@ class Database:
         precomputed_counts = None
         if new_dir:
             try:
-                doc = self.get_document(base_dir, old_filepath)
-                if doc and doc.get("extracted_text"):
-                    ext_text = doc["extracted_text"]
-                    if self._is_tfidf_eligible(new_filepath, ext_text):
-                        precomputed_counts = self.compute_term_frequencies(ext_text)
+                if not ext_text:
+                    doc = self.get_document(base_dir, old_filepath)
+                    if doc and doc.get("extracted_text"):
+                        ext_text = doc["extracted_text"]
+                if ext_text and self._is_tfidf_eligible(new_filepath, ext_text):
+                    precomputed_counts = self.compute_term_frequencies(ext_text)
             except Exception:
                 pass
 
@@ -969,13 +990,21 @@ class Database:
 
         self.worker.execute_write(_write)
 
-    def _is_tfidf_eligible(self, filepath: str, extracted_text: str | None) -> bool:
-        if not filepath or not extracted_text:
+    @staticmethod
+    def _is_tfidf_eligible_extension(filepath: str) -> bool:
+        if not filepath:
             return False
-        fp_lower = filepath.lower()
+        fp_lower = filepath.replace("\\", "/").lower()
         if any(fp_lower.endswith(ext) for ext in AUDIO_EXTENSIONS):
             return False
-        if not fp_lower.endswith((".txt", ".docx", ".csv", ".xlsx", ".xls", ".pdf")):
+        if not fp_lower.endswith(ELIGIBLE_DOCUMENT_EXTENSIONS):
+            return False
+        return True
+
+    def _is_tfidf_eligible(self, filepath: str, extracted_text: str | None) -> bool:
+        if not self._is_tfidf_eligible_extension(filepath):
+            return False
+        if not extracted_text:
             return False
         if extracted_text.startswith("[STATUS:"):
             return False
@@ -1037,10 +1066,11 @@ class Database:
         stop_words_list=None,
         term_counts: dict[str, int] | None = None,
     ):
+        orig_filepath = filepath
         filepath = filepath.replace("\\", "/")
         cursor = conn.execute(
-            "SELECT term, tf FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ?",
-            (base_dir, filepath),
+            "SELECT term, tf FROM tfidf_doc_terms WHERE base_dir = ? AND (filepath = ? OR filepath = ?)",
+            (base_dir, filepath, orig_filepath),
         )
         existing_terms = {row[0]: row[1] for row in cursor.fetchall()}
 
@@ -1108,8 +1138,8 @@ class Database:
         else:
             if existing_terms:
                 conn.execute(
-                    "DELETE FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ?",
-                    (base_dir, filepath),
+                    "DELETE FROM tfidf_doc_terms WHERE base_dir = ? AND (filepath = ? OR filepath = ?)",
+                    (base_dir, filepath, orig_filepath),
                 )
                 conn.executemany(
                     "UPDATE tfidf_vocab SET df = df - 1 WHERE base_dir = ? AND term = ?",

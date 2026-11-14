@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "ea4db5a649c1bbb9265938814e9293a09a5ca48331678182a923861fb15a989a"
+    "checksum": "93b3e4ecb32e53bcf77ef2b8c10c0edba7c3cc9daa09cff0aef0b0b79ffbfc6d"
   },
   "classes": [
     {
@@ -68,106 +68,12 @@
     {
       "class_name": "MasterPipelineResult",
       "decorators": [],
-      "methods": [
-        {
-          "async": false,
-          "decorators": [],
-          "name": "dict",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "*args"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "**kwargs"
-            }
-          ],
-          "returns": "Dict[str, Any]"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "get",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "item"
-            },
-            {
-              "annotation": "Any",
-              "default": "None",
-              "name": "default"
-            }
-          ],
-          "returns": "Any"
-        }
-      ]
+      "methods": []
     },
     {
       "class_name": "StudyIngestSummary",
       "decorators": [],
-      "methods": [
-        {
-          "async": false,
-          "decorators": [],
-          "name": "dict",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "*args"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "**kwargs"
-            }
-          ],
-          "returns": "Dict[str, Any]"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "get",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "item"
-            },
-            {
-              "annotation": "Any",
-              "default": "None",
-              "name": "default"
-            }
-          ],
-          "returns": "Any"
-        }
-      ]
+      "methods": []
     }
   ],
   "functions": []

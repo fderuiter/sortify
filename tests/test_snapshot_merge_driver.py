@@ -6,10 +6,12 @@ import sys
 import pytest
 
 from scripts.snapshot_merge_driver import (
-    compute_payload_checksum,
-    extract_metadata_and_payload,
     run_json_merge_driver,
     run_svg_merge_driver,
+)
+from scripts.snapshot_utils import (
+    compute_payload_checksum,
+    extract_metadata_and_payload,
 )
 
 
