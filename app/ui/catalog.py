@@ -12,7 +12,9 @@ import sys
 from typing import Any, Optional
 
 from app.config import AppSettings
+from app.plugins.clinical_compliance.tui_views import CROForensicModal
 from app.ui.a11y import A11yViolation, inspect_tui_component
+from app.ui.modals.command_palette import CommandPaletteModal
 from app.ui.modals.drop_zone import DropPlanConfirmModal, DropZoneModal
 from app.ui.modals.edit import (
     DirectorySelectModal,
@@ -31,6 +33,7 @@ from app.ui.modals.reports import (
     ExtractionPreviewModal,
 )
 from app.ui.modals.rules import ExportRulesModal, RuleImportModal, TemplateGalleryModal
+from app.ui.modals.sample_playground import SamplePlaygroundModal
 from app.ui.modals.session import (
     HistoryModal,
     MultiSessionRecoveryModal,
@@ -294,6 +297,31 @@ CATALOG_REGISTRY: list[dict[str, Any]] = [
         "category": "modal",
         "description": "Modal onboarding wizard for configuring initial preferences.",
         "factory": lambda settings=None: WizardModal(
+            settings=settings or _build_default_settings()
+        ),
+    },
+    {
+        "id": "command_palette_modal",
+        "name": "Command Palette Modal",
+        "category": "modal",
+        "description": "Modal dialog presenting searchable command palette overlay and keybindings.",
+        "factory": lambda settings=None: CommandPaletteModal(),
+    },
+    {
+        "id": "sample_playground_modal",
+        "name": "Sample Playground Modal",
+        "category": "modal",
+        "description": "Modal dialog for interactive onboarding sample playground with live rule simulation.",
+        "factory": lambda settings=None: SamplePlaygroundModal(
+            settings=settings or _build_default_settings()
+        ),
+    },
+    {
+        "id": "cro_forensic_modal",
+        "name": "CRO Forensic Modal",
+        "category": "modal",
+        "description": "Modal dialog for running CRO multi-study forensic ingestion worker.",
+        "factory": lambda settings=None: CROForensicModal(
             settings=settings or _build_default_settings()
         ),
     },

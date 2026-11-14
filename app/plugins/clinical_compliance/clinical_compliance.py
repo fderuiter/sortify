@@ -7,6 +7,11 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
+from app.core.accessible_html import (
+    COLOR_AMBER_ACCESSIBLE,
+    AccessibleHtmlBuilder,
+    render_table,
+)
 from app.core.domain_contracts import DictCompatMixin
 from app.plugins.clinical_compliance.clinical_taxonomy import (
     ICH_GCP_ESSENTIAL_CHECKLIST,
@@ -173,7 +178,11 @@ class ClinicalComplianceEngine:
         score = data["compliance_score_percent"]
         status = data["audit_readiness_status"]
         status_color = (
-            "#16a34a" if score >= 90 else "#d97706" if score >= 60 else "#dc2626"
+            "#16a34a"
+            if score >= 90
+            else COLOR_AMBER_ACCESSIBLE
+            if score >= 60
+            else "#dc2626"
         )
 
         found_rows = ""
@@ -201,12 +210,7 @@ class ClinicalComplianceEngine:
             </tr>
             """
 
-        html_content = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <title>Clinical Research Compliance Audit Report</title>
-    <style>
+        styles = f"""
         body {{ font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif; background-color: #f8fafc; color: #1e293b; margin: 0; padding: 32px; }}
         .container {{ max-width: 960px; margin: 0 auto; background: #ffffff; border-radius: 12px; box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1); padding: 32px; }}
         .header {{ display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #f1f5f9; padding-bottom: 20px; }}
@@ -219,19 +223,39 @@ class ClinicalComplianceEngine:
         table {{ width: 100%; border-collapse: collapse; margin-top: 16px; }}
         th {{ background: #f1f5f9; text-align: left; padding: 12px; font-size: 13px; font-weight: 600; color: #475569; }}
         .section-title {{ font-size: 18px; font-weight: 700; margin-top: 32px; color: #1e293b; }}
-    </style>
-</head>
-<body>
-    <div class="container">
-        <div class="header">
-            <div>
+        """
+
+        header_content = f"""            <div>
                 <h1 class="title">Clinical Trial Regulatory Compliance Audit Dossier</h1>
                 <p style="color: #64748b; margin: 4px 0 0 0; font-size: 14px;">Standards: ICH-GCP E6(R2), FDA 21 CFR 312 / 812, DIA TMF Reference Model</p>
             </div>
-            <div class="badge">{status}</div>
-        </div>
+            <div class="badge">{status}</div>"""
 
-        <div class="metrics-grid">
+        missing_table_html = (
+            "<p style='color: #16a34a; font-weight: 500;'>All required ICH-GCP regulatory essential documents are present and accounted for!</p>"
+            if not missing_rows
+            else render_table(
+                columns=[
+                    "Document Requirement",
+                    "Regulatory Citation",
+                    "Status",
+                    "Recommended Remediation",
+                ],
+                rows_html=missing_rows,
+            )
+        )
+
+        found_table_html = render_table(
+            columns=[
+                "Document Classification",
+                "Regulatory Citation",
+                "Audit Status",
+                "Mapped Source Documents",
+            ],
+            rows_html=found_rows,
+        )
+
+        main_content = f"""        <div class="metrics-grid">
             <div class="metric-card">
                 <div class="metric-val" style="color: {status_color};">{score}%</div>
                 <div class="metric-label">Compliance Score</div>
@@ -251,25 +275,20 @@ class ClinicalComplianceEngine:
         </div>
 
         <h2 class="section-title">Regulatory Gap Analysis (Missing Essential Items)</h2>
-        {"<p style='color: #16a34a; font-weight: 500;'>All required ICH-GCP regulatory essential documents are present and accounted for!</p>" if not missing_rows else f"<table><thead><tr><th>Document Requirement</th><th>Regulatory Citation</th><th>Status</th><th>Recommended Remediation</th></tr></thead><tbody>{missing_rows}</tbody></table>"}
+        {missing_table_html}
 
         <h2 class="section-title">Verified Essential Documents (Audited & Mapped)</h2>
-        <table>
-            <thead>
-                <tr>
-                    <th>Document Classification</th>
-                    <th>Regulatory Citation</th>
-                    <th>Audit Status</th>
-                    <th>Mapped Source Documents</th>
-                </tr>
-            </thead>
-            <tbody>
-                {found_rows}
-            </tbody>
-        </table>
-    </div>
-</body>
-</html>"""
+        {found_table_html}"""
+
+        builder = AccessibleHtmlBuilder(
+            title="Clinical Research Compliance Audit Report",
+            lang="en",
+            styles=styles,
+        )
+        builder.set_body_container("container")
+        builder.set_header(header_content, header_class="header")
+        builder.set_main(main_content)
+        html_content = builder.render()
         os.makedirs(os.path.dirname(os.path.abspath(output_path)), exist_ok=True)
         with open(output_path, "w", encoding="utf-8") as f:
             f.write(html_content)

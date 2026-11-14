@@ -12,12 +12,15 @@ import shutil  # noqa: F401
 import threading
 import unicodedata
 import uuid
+from enum import Enum
 from pathlib import Path
 from typing import Any
 
 from pydantic import BaseModel
 
 from app.core.domain_contracts import _get_val
+from app.core.exceptions import SortifyBaseError
+from app.core.ledger import LedgerStatus
 from app.core.link_manager import LinkManager
 from app.core.path_utils import is_junction_path, safe_relpath
 from app.core.progress import emit_progress
@@ -27,6 +30,245 @@ try:
     import pylnk3
 except ImportError:
     pylnk3 = None
+
+
+class MoveEngineState(str, Enum):
+    """Lifecycle states for AsyncMoveEngine."""
+
+    IDLE = "IDLE"
+    PREPARING = "PREPARING"
+    MOVING_CHUNK = "MOVING_CHUNK"
+    RESOLVING_LINKS = "RESOLVING_LINKS"
+    CLEANING_DIRS = "CLEANING_DIRS"
+    CANCELLING = "CANCELLING"
+    CANCELLED = "CANCELLED"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+    ROLLING_BACK = "ROLLING_BACK"
+    ROLLED_BACK = "ROLLED_BACK"
+
+
+class InvalidMoveStateError(SortifyBaseError, RuntimeError, ValueError):
+    """Raised when an invalid MoveEngineState transition is attempted."""
+
+    pass
+
+
+_VALID_MOVE_ENGINE_TRANSITIONS: dict[MoveEngineState, set[MoveEngineState]] = {
+    MoveEngineState.IDLE: {
+        MoveEngineState.IDLE,
+        MoveEngineState.PREPARING,
+    },
+    MoveEngineState.PREPARING: {
+        MoveEngineState.PREPARING,
+        MoveEngineState.MOVING_CHUNK,
+        MoveEngineState.RESOLVING_LINKS,
+        MoveEngineState.CLEANING_DIRS,
+        MoveEngineState.COMPLETED,
+        MoveEngineState.CANCELLING,
+        MoveEngineState.CANCELLED,
+        MoveEngineState.FAILED,
+    },
+    MoveEngineState.MOVING_CHUNK: {
+        MoveEngineState.MOVING_CHUNK,
+        MoveEngineState.RESOLVING_LINKS,
+        MoveEngineState.CLEANING_DIRS,
+        MoveEngineState.COMPLETED,
+        MoveEngineState.CANCELLING,
+        MoveEngineState.CANCELLED,
+        MoveEngineState.FAILED,
+    },
+    MoveEngineState.RESOLVING_LINKS: {
+        MoveEngineState.RESOLVING_LINKS,
+        MoveEngineState.CLEANING_DIRS,
+        MoveEngineState.COMPLETED,
+        MoveEngineState.CANCELLING,
+        MoveEngineState.CANCELLED,
+        MoveEngineState.FAILED,
+    },
+    MoveEngineState.CLEANING_DIRS: {
+        MoveEngineState.CLEANING_DIRS,
+        MoveEngineState.COMPLETED,
+        MoveEngineState.CANCELLING,
+        MoveEngineState.CANCELLED,
+        MoveEngineState.FAILED,
+    },
+    MoveEngineState.CANCELLING: {
+        MoveEngineState.CANCELLING,
+        MoveEngineState.CANCELLED,
+        MoveEngineState.FAILED,
+    },
+    MoveEngineState.CANCELLED: {
+        MoveEngineState.CANCELLED,
+        MoveEngineState.IDLE,
+        MoveEngineState.PREPARING,
+    },
+    MoveEngineState.COMPLETED: {
+        MoveEngineState.COMPLETED,
+        MoveEngineState.IDLE,
+        MoveEngineState.PREPARING,
+    },
+    MoveEngineState.FAILED: {
+        MoveEngineState.FAILED,
+        MoveEngineState.ROLLING_BACK,
+        MoveEngineState.IDLE,
+        MoveEngineState.PREPARING,
+    },
+    MoveEngineState.ROLLING_BACK: {
+        MoveEngineState.ROLLING_BACK,
+        MoveEngineState.ROLLED_BACK,
+        MoveEngineState.FAILED,
+    },
+    MoveEngineState.ROLLED_BACK: {
+        MoveEngineState.ROLLED_BACK,
+        MoveEngineState.IDLE,
+        MoveEngineState.PREPARING,
+    },
+}
+
+
+class MoveOpState(str, Enum):
+    """Operation states for individual move records."""
+
+    INTENT = "intent"
+    DISPLACEMENT = "displacement"
+    DONE = "done"
+    VERIFIED = "verified"
+    FAILED = "failed"
+
+
+class DirectoryCleanupStatus(str, Enum):
+    """Status values for directory cleanup nodes."""
+
+    TO_BE_DELETED = "To Be Deleted"
+    PROTECTED = "Protected"
+
+
+class MoveVerificationStatus(str, Enum):
+    """Verification statuses for moved and retried files."""
+
+    VERIFIED_PASS = "VERIFIED_PASS"
+    MISMATCH_FAIL = "MISMATCH_FAIL"
+    MOVE_FAIL = "MOVE_FAIL"
+    SKIPPED = "SKIPPED"
+    UNVERIFIED = "UNVERIFIED"
+
+
+class MoveResult(dict):
+    """Typed mover execution result preserving dictionary backward compatibility."""
+
+    def __init__(
+        self,
+        session_id: str | None = None,
+        deleted_folders: int = 0,
+        protected_folders: int = 0,
+        cancelled: bool = False,
+        audit_report: dict[str, Any] | None = None,
+        state: MoveEngineState | None = None,
+        **kwargs: Any,
+    ):
+        data: dict[str, Any] = {
+            "session_id": session_id,
+            "deleted_folders": deleted_folders,
+            "protected_folders": protected_folders,
+            "cancelled": cancelled,
+            "audit_report": audit_report,
+        }
+        if state is not None:
+            data["state"] = state
+        data.update(kwargs)
+        super().__init__(data)
+
+    @property
+    def session_id(self) -> str | None:
+        """Return the unique relocation session identifier."""
+        return self.get("session_id")
+
+    @session_id.setter
+    def session_id(self, val: str | None) -> None:
+        """Set the unique relocation session identifier."""
+        self["session_id"] = val
+
+    @property
+    def deleted_folders(self) -> int:
+        """Return count of deleted empty directories."""
+        return self.get("deleted_folders", 0)
+
+    @deleted_folders.setter
+    def deleted_folders(self, val: int) -> None:
+        """Set count of deleted empty directories."""
+        self["deleted_folders"] = val
+
+    @property
+    def protected_folders(self) -> int:
+        """Return count of protected directories preserved during cleanup."""
+        return self.get("protected_folders", 0)
+
+    @protected_folders.setter
+    def protected_folders(self, val: int) -> None:
+        """Set count of protected directories preserved during cleanup."""
+        self["protected_folders"] = val
+
+    @property
+    def cancelled(self) -> bool:
+        """Return whether relocation execution was cancelled."""
+        return bool(self.get("cancelled", False))
+
+    @cancelled.setter
+    def cancelled(self, val: bool) -> None:
+        """Set cancellation status flag."""
+        self["cancelled"] = bool(val)
+
+    @property
+    def audit_report(self) -> dict[str, Any] | None:
+        """Return structured audit report for file operations."""
+        return self.get("audit_report")
+
+    @audit_report.setter
+    def audit_report(self, val: dict[str, Any] | None) -> None:
+        """Set structured audit report for file operations."""
+        self["audit_report"] = val
+
+    @property
+    def state(self) -> MoveEngineState | None:
+        """Return terminal lifecycle state of the move engine."""
+        return self.get("state")
+
+    @state.setter
+    def state(self, val: MoveEngineState | None) -> None:
+        """Set terminal lifecycle state of the move engine."""
+        self["state"] = val
+
+    @property
+    def ok(self) -> bool:
+        """True when the move execution finished successfully without cancellation or failure."""
+        return not self.cancelled and self.get("state") not in (
+            MoveEngineState.FAILED,
+            MoveEngineState.ROLLING_BACK,
+            MoveEngineState.ROLLED_BACK,
+        )
+
+    def __getattr__(self, name: str) -> Any:
+        """Retrieve attribute from internal dictionary storage."""
+        try:
+            return self[name]
+        except KeyError:
+            raise AttributeError(
+                f"'MoveResult' object has no attribute {name!r}"
+            ) from None
+
+    def __setattr__(self, name: str, value: Any) -> None:
+        """Store attribute in internal dictionary storage."""
+        self[name] = value
+
+    def __delattr__(self, name: str) -> None:
+        """Remove attribute from internal dictionary storage."""
+        try:
+            del self[name]
+        except KeyError:
+            raise AttributeError(
+                f"'MoveResult' object has no attribute {name!r}"
+            ) from None
 
 
 def _is_same_path(p1: str, p2: str) -> bool:
@@ -527,18 +769,19 @@ def _record_move_intent(moves, session_id, source_path, dest_path, src_sha256):
 
 
 def _record_move_state(
-    moves, session_id, seq, state: str, required: bool = True, **fields
+    moves, session_id, seq, state: MoveOpState | str, required: bool = True, **fields
 ) -> None:
     """Move the intent row ``seq`` to ``state``; a failure raises unless not ``required``."""
     if not (moves and session_id) or seq is None:
         return
-    method = "record_displacement" if state == "displacement" else f"mark_{state}"
+    st_val = state.value if isinstance(state, MoveOpState) else str(state)
+    method = "record_displacement" if st_val == "displacement" else f"mark_{st_val}"
     try:
         getattr(moves, method)(session_id, seq, **fields)
     except Exception as err:
         if required:
             raise
-        logging.warning(f"Failed to mark move {session_id}#{seq} {state}: {err}")
+        logging.warning(f"Failed to mark move {session_id}#{seq} {st_val}: {err}")
 
 
 def _is_foreign_hidden_dir(path: str) -> bool:
@@ -1209,7 +1452,11 @@ def _process_move_item(
                     base_dir,
                     session_id,
                     journal=lambda path: _record_move_state(
-                        moves, session_id, move_seq, "displacement", displaced=path
+                        moves,
+                        session_id,
+                        move_seq,
+                        MoveOpState.DISPLACEMENT,
+                        displaced=path,
                     ),
                 )
 
@@ -1227,18 +1474,28 @@ def _process_move_item(
                 raise
         except Exception as err:
             _record_move_state(
-                moves, session_id, move_seq, "failed", required=False, error=str(err)
+                moves,
+                session_id,
+                move_seq,
+                MoveOpState.FAILED,
+                required=False,
+                error=str(err),
             )
             raise
 
     _record_move_state(
-        moves, session_id, move_seq, "done", dst=dest_path, displaced=displaced_path
+        moves,
+        session_id,
+        move_seq,
+        MoveOpState.DONE,
+        dst=dest_path,
+        displaced=displaced_path,
     )
 
     if ledger and entry_id:
         with db_lock:
             try:
-                ledger.update_status(entry_id, "MOVED_PHYSICAL")
+                ledger.update_status(entry_id, LedgerStatus.MOVED_PHYSICAL)
             except Exception as exc:
                 logging.warning(f"Failed to update transaction ledger status: {exc}")
 
@@ -1297,7 +1554,9 @@ def _process_move_item(
         except Exception:
             pass
     if step_hash and step_hash == pre_hash:
-        _record_move_state(moves, session_id, move_seq, "verified", required=False)
+        _record_move_state(
+            moves, session_id, move_seq, MoveOpState.VERIFIED, required=False
+        )
     elif move_seq is not None and pre_hash:
         logging.warning(
             f"Moved {source_path} to {dest_path}, but its hash no longer matches the source."
@@ -1387,6 +1646,41 @@ class AsyncMoveEngine:
     def __init__(self, max_workers: int = None, chunk_size: int = None):
         self.max_workers = max_workers
         self.chunk_size = chunk_size
+        self._state_lock = threading.RLock()
+        self._state = MoveEngineState.IDLE
+
+    @property
+    def state(self) -> MoveEngineState:
+        """Return the current lifecycle state of the move engine."""
+        with self._state_lock:
+            return self._state
+
+    def transition_to(self, target: MoveEngineState | str) -> MoveEngineState:
+        """Safely transition engine state protected by re-entrant thread lock."""
+        with self._state_lock:
+            try:
+                target_state = (
+                    target
+                    if isinstance(target, MoveEngineState)
+                    else MoveEngineState(target)
+                )
+            except ValueError:
+                raise InvalidMoveStateError(
+                    f"Unknown or invalid target state: {target!r}"
+                ) from None
+
+            valid_targets = _VALID_MOVE_ENGINE_TRANSITIONS.get(self._state, set())
+            if target_state not in valid_targets:
+                raise InvalidMoveStateError(
+                    f"Illegal move engine transition from {self._state.value} to {target_state.value}"
+                )
+            self._state = target_state
+            return self._state
+
+    def reset(self) -> MoveEngineState:
+        """Reset the engine back to IDLE state."""
+        with self._state_lock:
+            return self.transition_to(MoveEngineState.IDLE)
 
     def execute(
         self,
@@ -1402,7 +1696,7 @@ class AsyncMoveEngine:
         cancellation_token=None,
         priority: str = None,
         progress_callback=None,
-    ) -> dict:
+    ) -> MoveResult:
         """Partition relocation plan into bounded worker chunks and execute file moves off-thread.
 
         Args:
@@ -1421,7 +1715,7 @@ class AsyncMoveEngine:
 
         Returns
         -------
-            dict: Execution results containing overall session status and processed item counts.
+            MoveResult: Execution results containing overall session status and processed item counts.
 
         Raises
         ------
@@ -1429,123 +1723,130 @@ class AsyncMoveEngine:
             RuntimeError: If a history manager is given but the undo snapshot cannot be created.
         """
         base_dir = os.path.normpath(base_dir)
-
-        effective_progress_cb = progress_callback or getattr(
-            runtime_settings, "progress_callback", None
-        )
-
-        integrity_result = VerificationEngine.verify_plan_integrity(base_dir, plan)
-        if (
-            integrity_result.get("invalid_renames")
-            or integrity_result.get("unconfirmed_renames")
-            or integrity_result.get("circular_renames")
-            or integrity_result.get("escaping_paths")
-        ):
-            warn_text = (
-                "; ".join(integrity_result.get("warnings", []))
-                or "Plan validation failed."
-            )
-            raise ValueError(f"Plan validation or confirmation failed: {warn_text}")
+        self.transition_to(MoveEngineState.PREPARING)
 
         session_id = None
-        if not resume and history_manager:
-            # Without a snapshot nothing could undo or roll back the moves, so
-            # refuse to start rather than move files under an unknown session.
-            try:
-                session_id = history_manager.create_snapshot(base_dir)
-            except Exception as snap_err:
-                raise RuntimeError(
-                    f"Refusing to move files: could not create an undo snapshot for {base_dir}: {snap_err}"
-                ) from snap_err
-            if not session_id:
-                raise RuntimeError(
-                    f"Refusing to move files: could not create an undo snapshot for {base_dir}."
-                )
-            logging.info(f"Created snapshot session {session_id} for {base_dir}")
-        elif history_manager:
-            logging.info(f"Resuming snapshot session for {base_dir}")
-            try:
-                sessions = history_manager.get_sessions()
-                for s in sessions:
-                    if (
-                        _is_same_path(s["base_dir"], base_dir)
-                        and s["status"] == "active"
-                    ):
-                        session_id = s["session_id"]
-                        break
-            except Exception:
-                pass
-
-        if not session_id:
-            session_id = str(uuid.uuid4())
-
-        # No transaction spans the sort. Documents, steps and history share one
-        # store (ADR 0008), so a sort-long write lock would stall every step
-        # logged from a move thread. Each chunk's updates commit on their own,
-        # and unwind_session moves document paths back if the sort fails.
-        ledger = getattr(runtime_settings, "transaction_ledger", None)
-        if ledger is None:
-            try:
-                from app.core.ledger import TransactionLedger
-
-                ledger = TransactionLedger()
-            except Exception as ledger_err:
-                logging.warning(f"Could not initialize TransactionLedger: {ledger_err}")
-                ledger = None
-
-        moves_list = VerificationEngine.get_moves(base_dir, plan)
-        path_map = {
-            os.path.normcase(os.path.abspath(src)): os.path.abspath(dst)
-            for rel_src, src, dst in moves_list
-        }
-
-        cancel_token = (
-            cancel_check
-            or cancel_event
-            or cancellation_token
-            or getattr(runtime_settings, "cancel_check", None)
-            or getattr(runtime_settings, "cancel_event", None)
-        )
-
-        effective_chunk_size = self.chunk_size or batch_size
-
-        effective_max_workers = (
-            self.max_workers or getattr(runtime_settings, "MAX_WORKERS", None) or 1
-        )
-
-        effective_priority = priority or getattr(runtime_settings, "priority", None)
-
-        move_items = _collect_move_items(base_dir, plan, priority=effective_priority)
-        total_items = len(move_items)
-        chunks = [
-            move_items[i : i + effective_chunk_size]
-            for i in range(0, len(move_items), effective_chunk_size)
-        ]
-        total_chunks = len(chunks)
-
-        if total_chunks == 0:
-            emit_progress(
-                effective_progress_cb,
-                1.0,
-                stage="Relocation complete",
-                unit_count=0,
-                unit_type="files",
-            )
-
         db_lock = threading.Lock()
         db_updates_batch: list[Any] = []
         audit_records: list[dict] = []
         pending_links: list = []
         step_counter = [1]
         has_flushed_db = False
-        summary: dict[str, Any] = {
-            "session_id": session_id,
-            "deleted_folders": 0,
-            "protected_folders": 0,
-            "cancelled": False,
-        }
 
         try:
+            effective_progress_cb = progress_callback or getattr(
+                runtime_settings, "progress_callback", None
+            )
+
+            integrity_result = VerificationEngine.verify_plan_integrity(base_dir, plan)
+            if (
+                integrity_result.get("invalid_renames")
+                or integrity_result.get("unconfirmed_renames")
+                or integrity_result.get("circular_renames")
+                or integrity_result.get("escaping_paths")
+            ):
+                warn_text = (
+                    "; ".join(integrity_result.get("warnings", []))
+                    or "Plan validation failed."
+                )
+                raise ValueError(f"Plan validation or confirmation failed: {warn_text}")
+
+            if not resume and history_manager:
+                # Without a snapshot nothing could undo or roll back the moves, so
+                # refuse to start rather than move files under an unknown session.
+                try:
+                    session_id = history_manager.create_snapshot(base_dir)
+                except Exception as snap_err:
+                    raise RuntimeError(
+                        f"Refusing to move files: could not create an undo snapshot for {base_dir}: {snap_err}"
+                    ) from snap_err
+                if not session_id:
+                    raise RuntimeError(
+                        f"Refusing to move files: could not create an undo snapshot for {base_dir}."
+                    )
+                logging.info(f"Created snapshot session {session_id} for {base_dir}")
+            elif history_manager:
+                logging.info(f"Resuming snapshot session for {base_dir}")
+                try:
+                    sessions = history_manager.get_sessions()
+                    for s in sessions:
+                        if (
+                            _is_same_path(s["base_dir"], base_dir)
+                            and s["status"] == "active"
+                        ):
+                            session_id = s["session_id"]
+                            break
+                except Exception:
+                    pass
+
+            if not session_id:
+                session_id = str(uuid.uuid4())
+
+            # No transaction spans the sort. Documents, steps and history share one
+            # store (ADR 0008), so a sort-long write lock would stall every step
+            # logged from a move thread. Each chunk's updates commit on their own,
+            # and unwind_session moves document paths back if the sort fails.
+            ledger = getattr(runtime_settings, "transaction_ledger", None)
+            if ledger is None:
+                try:
+                    from app.core.ledger import TransactionLedger
+
+                    ledger = TransactionLedger()
+                except Exception as ledger_err:
+                    logging.warning(
+                        f"Could not initialize TransactionLedger: {ledger_err}"
+                    )
+                    ledger = None
+
+            moves_list = VerificationEngine.get_moves(base_dir, plan)
+            path_map = {
+                os.path.normcase(os.path.abspath(src)): os.path.abspath(dst)
+                for rel_src, src, dst in moves_list
+            }
+
+            cancel_token = (
+                cancel_check
+                or cancel_event
+                or cancellation_token
+                or getattr(runtime_settings, "cancel_check", None)
+                or getattr(runtime_settings, "cancel_event", None)
+            )
+
+            effective_chunk_size = self.chunk_size or batch_size
+
+            effective_max_workers = (
+                self.max_workers or getattr(runtime_settings, "MAX_WORKERS", None) or 1
+            )
+
+            effective_priority = priority or getattr(runtime_settings, "priority", None)
+
+            move_items = _collect_move_items(
+                base_dir, plan, priority=effective_priority
+            )
+            total_items = len(move_items)
+            chunks = [
+                move_items[i : i + effective_chunk_size]
+                for i in range(0, len(move_items), effective_chunk_size)
+            ]
+            total_chunks = len(chunks)
+
+            if total_chunks == 0:
+                emit_progress(
+                    effective_progress_cb,
+                    1.0,
+                    stage="Relocation complete",
+                    unit_count=0,
+                    unit_type="files",
+                )
+
+            summary = MoveResult(
+                session_id=session_id,
+                deleted_folders=0,
+                protected_folders=0,
+                cancelled=False,
+                state=self.state,
+            )
+
             from app.core.shared_registry import SharedWorkerPool
 
             pool = SharedWorkerPool.get_instance(max_workers=effective_max_workers)
@@ -1554,8 +1855,12 @@ class AsyncMoveEngine:
                     logging.info(
                         f"Cancellation requested before scheduling chunk {chunk_idx}. Halting worker scheduling."
                     )
-                    summary["cancelled"] = True
+                    self.transition_to(MoveEngineState.CANCELLING)
+                    summary.cancelled = True
                     break
+
+                self.transition_to(MoveEngineState.MOVING_CHUNK)
+                summary.state = self.state
 
                 futures = [
                     pool.submit(
@@ -1614,11 +1919,21 @@ class AsyncMoveEngine:
                     logging.info(
                         f"Cancellation requested after chunk {chunk_idx}. Stopping pipeline execution."
                     )
-                    summary["cancelled"] = True
+                    self.transition_to(MoveEngineState.CANCELLING)
+                    summary.cancelled = True
                     break
 
-            if not summary["cancelled"]:
+            if summary.cancelled or self.state == MoveEngineState.CANCELLING:
+                with db_lock:
+                    if db_updates_batch and hasattr(db, "execute_batch_updates"):
+                        db.execute_batch_updates(list(db_updates_batch))
+                        db_updates_batch.clear()
+                self.transition_to(MoveEngineState.CANCELLED)
+                summary.state = self.state
+            else:
                 if pending_links:
+                    self.transition_to(MoveEngineState.RESOLVING_LINKS)
+                    summary.state = self.state
                     _resolve_pending_links(
                         base_dir=base_dir,
                         pending_links=pending_links,
@@ -1658,6 +1973,8 @@ class AsyncMoveEngine:
                 )
 
                 if cleanup_enabled:
+                    self.transition_to(MoveEngineState.CLEANING_DIRS)
+                    summary.state = self.state
                     protected_paths = getattr(runtime_settings, "PROTECTED_PATHS", [])
                     protected_paths = [os.path.normpath(p) for p in protected_paths]
 
@@ -1672,7 +1989,10 @@ class AsyncMoveEngine:
 
                         if is_protected:
                             summary["protected_folders"] += 1
-                        elif node.get("status") == "To Be Deleted":
+                        elif node.get("status") in (
+                            DirectoryCleanupStatus.TO_BE_DELETED,
+                            "To Be Deleted",
+                        ):
                             try:
                                 src_path = node.get("source_path")
                                 if src_path and (
@@ -1734,11 +2054,9 @@ class AsyncMoveEngine:
                         history_manager.clear_step_ledger(session_id)
                     except Exception:
                         pass
-            else:
-                with db_lock:
-                    if db_updates_batch and hasattr(db, "execute_batch_updates"):
-                        db.execute_batch_updates(list(db_updates_batch))
-                        db_updates_batch.clear()
+
+                self.transition_to(MoveEngineState.COMPLETED)
+                summary.state = self.state
 
             from app.core.audit_reporter import generate_audit_report
 
@@ -1754,16 +2072,19 @@ class AsyncMoveEngine:
                     except Exception:
                         pass
 
+            self.transition_to(MoveEngineState.FAILED)
             if (
                 session_id
                 and history_manager
                 and hasattr(history_manager, "unwind_session")
             ):
+                self.transition_to(MoveEngineState.ROLLING_BACK)
                 logging.error(
                     f"Error during background sorting: {e}. Initiating automatic rollback for session {session_id}"
                 )
                 try:
                     history_manager.unwind_session(session_id, db=db)
+                    self.transition_to(MoveEngineState.ROLLED_BACK)
                     logging.info(
                         f"Automatic rollback completed successfully for session {session_id}"
                     )
@@ -1812,7 +2133,7 @@ def execute_moves(
     priority: str = None,
     progress_callback=None,
     source_dirs: list[str] | None = None,
-) -> dict:
+) -> MoveResult:
     """Create directories and safely move files using chunked asynchronous execution.
 
     Args:
@@ -1833,7 +2154,7 @@ def execute_moves(
 
     Returns
     -------
-        dict: Execution summary and status details.
+        MoveResult: Execution summary and status details.
     """
     engine = AsyncMoveEngine(max_workers=max_workers, chunk_size=chunk_size)
     return engine.execute(
@@ -1976,11 +2297,15 @@ def retry_failed_moves(
             if not pre_hash:
                 pre_hash = post_hash
 
-            status = "VERIFIED_PASS" if (pre_hash == post_hash) else "MISMATCH_FAIL"
-            if status == "MISMATCH_FAIL":
+            status = (
+                MoveVerificationStatus.VERIFIED_PASS
+                if (pre_hash == post_hash)
+                else MoveVerificationStatus.MISMATCH_FAIL
+            )
+            if status == MoveVerificationStatus.MISMATCH_FAIL:
                 move_error = "Pre-sort and post-sort SHA-256 hash mismatch"
         else:
-            status = "MOVE_FAIL"
+            status = MoveVerificationStatus.MOVE_FAIL
             if not move_error:
                 move_error = "Source file does not exist or move failed"
 
@@ -1989,8 +2314,10 @@ def retry_failed_moves(
             "destination_path": dst,
             "pre_hash": pre_hash,
             "post_hash": post_hash,
-            "status": status,
-            "error": move_error if status != "VERIFIED_PASS" else None,
+            "status": status.value,
+            "error": (
+                move_error if status != MoveVerificationStatus.VERIFIED_PASS else None
+            ),
         }
         retried_records.append(rec)
 

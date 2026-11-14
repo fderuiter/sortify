@@ -106,11 +106,18 @@ class ExtractionPreviewModal(A11yMixin, ModalScreen[Optional[int]]):
 
             yield Label("Density Threshold (chars/page):", classes="field-label")
             with Horizontal(classes="threshold-row"):
-                yield Input(
+                thresh_inp = Input(
                     value=str(self.current_threshold),
+                    placeholder="Density Threshold (chars/page)",
+                    name="Density Threshold",
                     id="preview-input-threshold",
                     classes="narrow-input",
                 )
+                thresh_inp.tooltip = (
+                    "Adjust PDF text density threshold in characters per page"
+                )
+                thresh_inp.label = "Density Threshold (chars/page)"
+                yield thresh_inp
                 slider = DensitySlider(
                     value=self.current_threshold,
                     min_value=0,
