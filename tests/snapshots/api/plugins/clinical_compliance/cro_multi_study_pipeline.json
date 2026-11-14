@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "93b3e4ecb32e53bcf77ef2b8c10c0edba7c3cc9daa09cff0aef0b0b79ffbfc6d"
+    "checksum": "8eec77cf864a5a21c78b6d3912fc9a2c616eb5076a3e9ec4ba52b284dff53d9e"
   },
   "classes": [
     {
@@ -62,8 +62,46 @@
             }
           ],
           "returns": "MasterPipelineResult"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "state",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "CROPipelineState"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "transition_to",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "CROPipelineState | str",
+              "default": null,
+              "name": "new_state"
+            }
+          ],
+          "returns": "None"
         }
       ]
+    },
+    {
+      "class_name": "CROPipelineState",
+      "decorators": [],
+      "methods": []
     },
     {
       "class_name": "MasterPipelineResult",

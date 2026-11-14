@@ -115,6 +115,13 @@ class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 )
                 btn_import.tooltip = "Import Hazel (.hazelrules), DropIt XML/JSON, or TagSpaces taggroup.json rule files"
                 yield btn_import
+                btn_export = Button(
+                    "Export Rules",
+                    id="btn-export-rules",
+                    variant="primary",
+                )
+                btn_export.tooltip = "Export active rules to Sortify JSON, Hazel (.hazelrules), or DropIt (.ini)"
+                yield btn_export
                 btn_apply = Button(
                     "Apply Selected Templates",
                     id="btn-apply-templates",
@@ -204,6 +211,11 @@ class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         """Open external rule importer modal."""
         self.app.push_screen(RuleImportModal(self.settings))
 
+    @on(Button.Pressed, "#btn-export-rules")
+    def action_export_rules(self) -> None:
+        """Open export rules modal."""
+        self.app.push_screen(ExportRulesModal(self.settings))
+
     @on(Button.Pressed, "#btn-close-gallery")
     def action_close(self) -> None:
         """Close template gallery dialog."""
@@ -213,6 +225,230 @@ class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     def action_cancel(self) -> None:
         """Cancel on Escape key."""
         self.announce("Closed starter rule template gallery.")
+        self.dismiss(None)
+
+
+class ExportRulesModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Path]]):
+    """Modal screen for exporting active keyword rules and policies to external formats."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    ExportRulesModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .modal-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 80;
+        min-width: 35;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .modal-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .field-label {
+        margin-top: 1;
+        color: $text;
+        text-style: bold;
+    }
+    .status-text {
+        color: $accent;
+        margin-top: 1;
+        text-style: bold;
+    }
+    .error-text {
+        color: $error;
+        margin-top: 1;
+        text-style: bold;
+    }
+    .summary-text {
+        color: $text-muted;
+        margin-top: 1;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Input:focus, Select:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(self, settings: Any):
+        super().__init__()
+        self.settings = settings
+
+    def compose(self) -> ComposeResult:
+        """Compose export rules modal children."""
+        kw_count = len(getattr(self.settings, "KEYWORD_RULES", {}) or {})
+        pol_count = len(getattr(self.settings, "POLICIES", []) or [])
+
+        with Vertical(classes="modal-box"):
+            yield Heading(
+                "Export Active Rules",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
+            yield Label(
+                f"Export {kw_count} active keyword rule(s) and {pol_count} policy rule(s) to disk:",
+                id="lbl-export-summary",
+                classes="summary-text",
+            )
+
+            yield Label("Export Format:", classes="field-label")
+            yield Select(
+                [
+                    ("Sortify JSON (*.json)", "sortify_json"),
+                    ("Hazel Rules (*.hazelrules)", "hazel"),
+                    ("DropIt Configuration (*.ini)", "dropit_ini"),
+                ],
+                value="sortify_json",
+                id="select-export-format",
+                allow_blank=False,
+            )
+
+            yield Label("Destination File Path:", classes="field-label")
+            yield Input(
+                placeholder="/path/to/exported_rules.json",
+                value="exported_rules.json",
+                id="input-export-path",
+            )
+
+            yield Label(
+                "",
+                id="lbl-export-status",
+                classes="status-text",
+            )
+
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button("Cancel", id="btn-cancel-export", variant="default")
+                btn_cancel.tooltip = "Close export dialog without saving"
+                yield btn_cancel
+
+                btn_export = Button(
+                    "Export Rules",
+                    id="btn-do-export",
+                    variant="primary",
+                )
+                btn_export.tooltip = "Export active rules to destination path"
+                yield btn_export
+
+    def on_mount(self) -> None:
+        """Focus initial widget on mount and emit accessibility announcement."""
+        self._update_layout(self.size.width)
+        try:
+            self.query_one("#input-export-path", Input).focus()
+        except Exception:
+            pass
+        self.announce("Opened export rules modal.")
+
+    @on(Select.Changed, "#select-export-format")
+    def on_format_changed(self, event: Select.Changed) -> None:
+        """Update destination filename placeholder and value when format changes."""
+        if not event.value or event.value == Select.BLANK:
+            return
+        fmt = str(event.value)
+        ext_map = {
+            "sortify_json": ".json",
+            "hazel": ".hazelrules",
+            "dropit_ini": ".ini",
+        }
+        name_map = {
+            "sortify_json": "Sortify JSON",
+            "hazel": "Hazel (.hazelrules)",
+            "dropit_ini": "DropIt (.ini)",
+        }
+        new_ext = ext_map.get(fmt, ".json")
+        fmt_label = name_map.get(fmt, fmt)
+        self.announce(f"Selected export format: {fmt_label}")
+
+        try:
+            inp = self.query_one("#input-export-path", Input)
+            val = inp.value.strip()
+            if val:
+                p = Path(val)
+                if p.suffix.lower() in (".json", ".hazelrules", ".ini"):
+                    inp.value = str(p.with_suffix(new_ext))
+                else:
+                    inp.value = f"{val}{new_ext}"
+            else:
+                inp.value = f"exported_rules{new_ext}"
+            inp.placeholder = f"/path/to/exported_rules{new_ext}"
+        except Exception:
+            pass
+
+    @on(Button.Pressed, "#btn-do-export")
+    @on(Input.Submitted, "#input-export-path")
+    def action_export(self) -> None:
+        """Export active rules to selected format and path."""
+        from app.core.rule_templates import export_active_rules
+
+        path_str = self.query_one("#input-export-path", Input).value.strip()
+        lbl_status = self.query_one("#lbl-export-status", Label)
+
+        if not path_str:
+            err_msg = "Please provide a valid destination file path."
+            lbl_status.update(err_msg)
+            lbl_status.remove_class("status-text")
+            lbl_status.add_class("error-text")
+            self.announce(err_msg)
+            if hasattr(self.app, "notify"):
+                self.app.notify(err_msg, severity="error")
+            return
+
+        fmt = "sortify_json"
+        try:
+            sel_val = self.query_one("#select-export-format", Select).value
+            if sel_val and sel_val != Select.BLANK:
+                fmt = str(sel_val)
+        except Exception:
+            pass
+
+        try:
+            saved_path = export_active_rules(self.settings, fmt, path_str)
+            success_msg = f"Successfully exported active rules to {saved_path}"
+            lbl_status.update(success_msg)
+            lbl_status.remove_class("error-text")
+            lbl_status.add_class("status-text")
+            self.announce(success_msg)
+            if hasattr(self.app, "notify"):
+                self.app.notify(success_msg)
+            self.dismiss(saved_path)
+        except Exception as exc:
+            err_msg = f"Failed to export rules: {exc}"
+            lbl_status.update(err_msg)
+            lbl_status.remove_class("status-text")
+            lbl_status.add_class("error-text")
+            self.announce(err_msg)
+            if hasattr(self.app, "notify"):
+                self.app.notify(err_msg, severity="error")
+
+    @on(Button.Pressed, "#btn-cancel-export")
+    def action_close(self) -> None:
+        """Close export modal without changes."""
+        self.announce("Closed export rules modal.")
+        self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        """Cancel on Escape key."""
+        self.announce("Closed export rules modal.")
         self.dismiss(None)
 
 
