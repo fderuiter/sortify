@@ -8,33 +8,17 @@ SHA-256 payload checksum calculation, Git conflict marker fallback, and interact
 import argparse
 import ast
 import difflib
-import hashlib
 import json
 import os
 import subprocess
 import sys
 import xml.etree.ElementTree as ET
 
-
-def compute_payload_checksum(payload: dict) -> str:
-    """Compute SHA-256 checksum of canonical JSON payload definitions."""
-    canonical_json = json.dumps(payload, indent=2, sort_keys=True)
-    return hashlib.sha256(canonical_json.encode("utf-8")).hexdigest()
-
-
-def is_conflicted_json_payload(snapshot_data: dict) -> bool:
-    """Check if snapshot JSON data dictionary represents a structured conflict payload."""
-    if not isinstance(snapshot_data, dict):
-        return False
-    if snapshot_data.get("_metadata", {}).get("conflict") is True:
-        return True
-    if snapshot_data.get("conflict") is True:
-        return True
-    if "local" in snapshot_data and "incoming" in snapshot_data:
-        return True
-    if "ours" in snapshot_data and "theirs" in snapshot_data:
-        return True
-    return False
+from scripts.snapshot_utils import (
+    compute_payload_checksum,
+    extract_metadata_and_payload,
+    is_conflicted_json_payload,
+)
 
 
 def is_conflicted_svg_payload(svg_str: str) -> bool:
@@ -74,25 +58,6 @@ def build_svg_conflict_payload(
         f"  <!--\n{safe_theirs}\n  -->\n"
         "</svg>\n"
     )
-
-
-def extract_metadata_and_payload(snapshot_data: dict) -> tuple[dict, dict]:
-    """Separate metadata header from definition payload dictionary."""
-    metadata = {}
-    if isinstance(snapshot_data, dict):
-        if "_metadata" in snapshot_data and isinstance(
-            snapshot_data["_metadata"], dict
-        ):
-            metadata = snapshot_data["_metadata"]
-        elif "metadata" in snapshot_data and isinstance(
-            snapshot_data["metadata"], dict
-        ):
-            metadata = snapshot_data["metadata"]
-
-    payload = {
-        k: v for k, v in snapshot_data.items() if k not in ("_metadata", "metadata")
-    }
-    return metadata, payload
 
 
 def parse_annotation_ast(annotation_str: str | None):
