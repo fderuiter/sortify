@@ -320,6 +320,7 @@ class AutoSorterTUI(
         self.has_critical_errors: bool = False
         self.critical_error_paths: set = set()
         self.warning_paths: set = set()
+        self.collision_paths: set = set()
         self._daemon_state: str = "idle"
         self._daemon_is_moving: bool = False
 
