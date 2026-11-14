@@ -32,16 +32,8 @@ def test_heading_initialization_and_clamping():
     h1 = Heading("Main Screen Title", level=1, id="title-h1", classes="modal-title")
     assert h1.level == 1
     assert h1.tag == "h1"
-    assert h1.html_tag == "h1"
-    assert h1.dom_tag == "h1"
     assert h1.role == "heading"
     assert h1.aria_level == "1"
-    assert h1.dom_attributes == {
-        "role": "heading",
-        "aria-level": "1",
-        "data-heading-level": "1",
-        "data-tag": "h1",
-    }
 
     # Test levels clamping
     h_low = Heading("Low Level", level=0)
@@ -65,25 +57,6 @@ def test_heading_initialization_and_clamping():
     assert h_func.id == "card-3"
 
 
-def test_heading_to_html_rendering():
-    """Verify to_html() generates valid semantic HTML markup."""
-    h = Heading(
-        "Application Settings", level=1, id="settings-title", classes="modal-title"
-    )
-    html = h.to_html()
-    assert (
-        html
-        == '<h1 role="heading" aria-level="1" id="settings-title" class="modal-title">Application Settings</h1>'
-    )
-
-    h2 = Heading("Sorting Strategy", level=2, classes="field-label")
-    html2 = h2.to_html()
-    assert (
-        html2
-        == '<h2 role="heading" aria-level="2" class="field-label">Sorting Strategy</h2>'
-    )
-
-
 def test_heading_reactivity():
     """Verify reactive updates for heading content and level."""
     h = Heading("Initial Header", level=1)
@@ -96,7 +69,7 @@ def test_heading_reactivity():
     assert h.aria_level == "2"
 
     h.update("Updated Reactive Title")
-    assert "Updated Reactive Title" in h.to_html()
+    assert "Updated Reactive Title" in str(h.render())
 
 
 @pytest.fixture

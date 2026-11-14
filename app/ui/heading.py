@@ -1,13 +1,10 @@
 """Centralized native semantic heading helper module for accessible TUI and GUI views."""
 
-import logging
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from rich.console import RenderableType
 from textual.reactive import reactive
 from textual.widgets import Label
-
-logger = logging.getLogger(__name__)
 
 
 class Heading(Label):
@@ -63,16 +60,6 @@ class Heading(Label):
         return f"h{self.level}"
 
     @property
-    def html_tag(self) -> str:
-        """Alias for tag name."""
-        return self.tag
-
-    @property
-    def dom_tag(self) -> str:
-        """Alias for tag name."""
-        return self.tag
-
-    @property
     def role(self) -> str:
         """Return ARIA role for accessibility tree indexing."""
         return "heading"
@@ -81,29 +68,6 @@ class Heading(Label):
     def aria_level(self) -> str:
         """Return string value of ARIA level attribute."""
         return str(self.level)
-
-    @property
-    def dom_attributes(self) -> Dict[str, str]:
-        """Return dictionary of semantic accessibility DOM attributes."""
-        return {
-            "role": "heading",
-            "aria-level": str(self.level),
-            "data-heading-level": str(self.level),
-            "data-tag": self.tag,
-        }
-
-    def to_html(self) -> str:
-        """Export native semantic HTML heading string."""
-        cls_str = " ".join(sorted(self.classes)) if self.classes else ""
-        class_attr = f' class="{cls_str}"' if cls_str else ""
-        id_attr = f' id="{self.id}"' if self.id else ""
-        try:
-            text = str(self.render())
-        except Exception:
-            # Unmounted widgets can fail to render; export the raw content.
-            logger.debug("Heading render failed; using raw content", exc_info=True)
-            text = str(getattr(self, "renderable", getattr(self, "_content", "")))
-        return f'<{self.tag} role="heading" aria-level="{self.level}"{id_attr}{class_attr}>{text}</{self.tag}>'
 
 
 # Alias for Heading to support explicit SemanticHeading component references
