@@ -125,8 +125,8 @@ class AutoSorterTUI(
         Binding("ctrl+w", "open_wizard", "Wizard", show=False),
         Binding("ctrl+c", "open_cro_forensic", "CRO Ingest", show=False),
         Binding("ctrl+d", "open_dropzone", "DropZone", show=False),
-        Binding("ctrl+t", "toggle_daemon", "Toggle Daemon", show=False),
-        Binding("p", "toggle_daemon", "Toggle Daemon", show=False),
+        Binding("ctrl+t", "toggle_daemon(False)", "Toggle Daemon", show=False),
+        Binding("p", "toggle_daemon(True)", "Toggle Daemon", show=False),
         Binding("ctrl+s", "scan_directory", "Scan", show=True),
         Binding("ctrl+y", "open_history", "History View", show=False),
         Binding("ctrl+u", "open_quarantine_vault", "Quarantine Vault", show=False),
@@ -141,8 +141,14 @@ class AutoSorterTUI(
         Binding(
             "shift+g", "generate_sample_corpus(True)", "Sample Dataset", show=False
         ),
-        Binding("question_mark", "open_cheat_sheet", "Help", show=True),
-        Binding("f1", "open_cheat_sheet", "Help (F1)", show=False),
+        Binding("question_mark", "open_cheat_sheet(True)", "Help", show=True),
+        Binding("f1", "open_cheat_sheet(False)", "Help (F1)", show=False),
+        Binding(
+            "ctrl+alt+k",
+            "toggle_character_shortcuts",
+            "Toggle Shortcuts",
+            show=False,
+        ),
         Binding("ctrl+q", "quit", "Quit", show=True),
     ]
 
@@ -551,6 +557,10 @@ class AutoSorterTUI(
             from app.config import AppSettings
 
             AppSettings.add_observer("AI_CONSENT_GRANTED", self._on_ai_consent_changed)
+            AppSettings.add_observer(
+                "ENABLE_CHARACTER_KEY_SHORTCUTS",
+                self._on_character_shortcuts_changed,
+            )
         except Exception:
             pass
         try:
@@ -831,6 +841,14 @@ class AutoSorterTUI(
         elif consent_val is True:
             self.announce("AI processing enabled.", priority="high")
 
+    def _on_character_shortcuts_changed(self, value: Any = None) -> None:
+        """Handle ENABLE_CHARACTER_KEY_SHORTCUTS setting change notification."""
+        self.update_status()
+        try:
+            self.refresh_bindings()
+        except Exception:
+            pass
+
     def update_status(self, text: Optional[str] = None) -> None:
         """Update status bar label with current message, AI consent badge, and daemon badge."""
         try:
@@ -910,6 +928,47 @@ class AutoSorterTUI(
             return False
         return True
 
+    def _tree_has_focus(self) -> bool:
+        """Return True if the plan tree widget currently holds active focus."""
+        try:
+            tree = self.query_one("#plan-tree", Tree)
+            return bool(tree.has_focus)
+        except Exception:
+            return False
+
+    def _character_shortcuts_enabled(self) -> bool:
+        """Return True if single-character keyboard shortcuts are enabled."""
+        settings = getattr(self, "settings", None)
+        if settings is None:
+            return True
+        return bool(getattr(settings, "ENABLE_CHARACTER_KEY_SHORTCUTS", True))
+
+    def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
+        """Check whether an action is enabled before dispatching key bindings."""
+        is_char_action = action in {
+            "toggle_selection",
+            "exclude_selected",
+            "include_selected",
+            "reassign_selected",
+            "visual_range_select",
+            "toggle_select_all",
+            "rate_positive",
+            "rate_negative",
+            "generate_sample_corpus",
+        }
+        if (
+            action in ("open_cheat_sheet", "toggle_daemon")
+            and parameters
+            and parameters[0] is True
+        ):
+            is_char_action = True
+
+        if is_char_action:
+            if not self._tree_has_focus() or not self._character_shortcuts_enabled():
+                return False
+
+        return super().check_action(action, parameters)
+
     # --- Actions ---
 
     def action_select_dir(self) -> None:
@@ -946,8 +1005,11 @@ class AutoSorterTUI(
             on_selected,
         )
 
-    async def action_toggle_daemon(self) -> None:
+    async def action_toggle_daemon(self, from_character: bool = False) -> None:
         """Toggle watchdog daemon pause / resume state."""
+        if from_character:
+            if not self._tree_has_focus() or not self._character_shortcuts_enabled():
+                return
         if self._is_text_control_focused(allow_tree_search=True):
             return
 
@@ -1092,6 +1154,10 @@ class AutoSorterTUI(
                     self.settings.AI_CONSENT_GRANTED = res["AI_CONSENT_GRANTED"]
                 if "SPEAK_ANNOUNCEMENTS" in res:
                     self.settings.SPEAK_ANNOUNCEMENTS = res["SPEAK_ANNOUNCEMENTS"]
+                if "ENABLE_CHARACTER_KEY_SHORTCUTS" in res:
+                    self.settings.ENABLE_CHARACTER_KEY_SHORTCUTS = res[
+                        "ENABLE_CHARACTER_KEY_SHORTCUTS"
+                    ]
                 if "PDF_TEXT_DENSITY_THRESHOLD" in res:
                     self.settings.PDF_TEXT_DENSITY_THRESHOLD = res[
                         "PDF_TEXT_DENSITY_THRESHOLD"
@@ -1195,11 +1261,29 @@ class AutoSorterTUI(
         else:
             self.announce("CRO Forensic ingestion plugin is not enabled.")
 
-    def action_open_cheat_sheet(self) -> None:
+    def action_open_cheat_sheet(self, from_character: bool = False) -> None:
         """Open keyboard shortcut cheat sheet modal screen."""
+        if from_character:
+            if not self._tree_has_focus() or not self._character_shortcuts_enabled():
+                return
         if self._is_text_control_focused(allow_tree_search=True):
             return
         self.push_screen(ShortcutCheatSheetModal())
+
+    def action_toggle_character_shortcuts(self) -> None:
+        """Toggle single-character keyboard shortcuts preference [Ctrl+Alt+K]."""
+        current = self._character_shortcuts_enabled()
+        new_val = not current
+        self.settings.ENABLE_CHARACTER_KEY_SHORTCUTS = new_val
+        if hasattr(self.settings, "_save"):
+            self.settings._save()
+        state_str = "enabled" if new_val else "disabled"
+        self.announce(f"Character key shortcuts {state_str}.", priority="polite")
+        self.update_status()
+        try:
+            self.refresh_bindings()
+        except Exception:
+            pass
 
     def action_open_dropzone(self) -> None:
         """Open floating dropzone overlay modal screen."""
