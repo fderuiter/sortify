@@ -28,12 +28,12 @@ def _diff_highlight_paths(src_path: str, tgt_path: str) -> Tuple[Text, Text]:
             src_formatted.append(src_clean[i1:i2])
             tgt_formatted.append(tgt_clean[j1:j2])
         elif tag == "replace":
-            src_formatted.append(src_clean[i1:i2], style="bold red")
-            tgt_formatted.append(tgt_clean[j1:j2], style="bold green")
+            src_formatted.append(f"[-]{src_clean[i1:i2]}", style="bold red strike")
+            tgt_formatted.append(f"[+]{tgt_clean[j1:j2]}", style="bold green underline")
         elif tag == "delete":
-            src_formatted.append(src_clean[i1:i2], style="bold red")
+            src_formatted.append(f"[-]{src_clean[i1:i2]}", style="bold red strike")
         elif tag == "insert":
-            tgt_formatted.append(tgt_clean[j1:j2], style="bold green")
+            tgt_formatted.append(f"[+]{tgt_clean[j1:j2]}", style="bold green underline")
 
     return src_formatted, tgt_formatted
 

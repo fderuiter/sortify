@@ -228,10 +228,11 @@ class A11yMixin:
                         or getattr(widget, "_text", None)
                         or (
                             getattr(widget, "value", None)
-                            if w_type != "DensitySlider"
+                            if w_type not in ("DensitySlider", "Input")
                             else None
                         )
                         or getattr(widget, "placeholder", None)
+                        or getattr(widget, "prompt", None)
                     )
                     if not (has_tooltip or has_label):
                         violations.append(

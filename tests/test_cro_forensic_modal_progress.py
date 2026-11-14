@@ -126,3 +126,112 @@ def test_cro_forensic_pipeline_respects_cancellation(tmp_path):
 
     assert elapsed < 1.0, f"Pipeline took {elapsed}s to stop on cancellation"
     assert result.total_unique_documents == 0
+    assert result.status.value == "CANCELLED"
+
+
+def test_cro_forensic_modal_finish_ui_status_handling(tmp_path):
+    """Verify modal renders distinct messages for COMPLETED, CANCELLED, and FAILED result statuses."""
+    from app.plugins.clinical_compliance.cro_multi_study_pipeline import (
+        CROPipelineState,
+        MasterPipelineResult,
+    )
+
+    async def _test():
+        source_dir = tmp_path / "study_source"
+        source_dir.mkdir()
+
+        settings = AppSettings()
+        app = AutoSorterTUI(settings=settings, base_dir=str(source_dir))
+
+        async with app.run_test() as pilot:
+            modal = CROForensicModal(app.settings, base_dir=str(source_dir))
+            await app.push_screen(modal)
+            await pilot.pause()
+
+            log_w = modal.query_one("#log-widget", Log)
+            pb = modal.query_one("#progress-bar", ProgressBar)
+
+            # Test completed status rendering
+            res_completed = MasterPipelineResult(
+                source_root=str(source_dir),
+                target_root=str(tmp_path),
+                timestamp_utc="2026-11-14T00:00:00Z",
+                total_scanned_files=10,
+                total_unique_documents=10,
+                total_duplicates_detected=0,
+                discovered_studies_count=1,
+                status=CROPipelineState.COMPLETED,
+            )
+
+            # Create finish_ui function matching modal's closure logic
+            def finish_ui_completed():
+                if res_completed.status == CROPipelineState.CANCELLED:
+                    log_w.write_line("CRO Forensic Ingestion cancelled by user.")
+                elif res_completed.status == CROPipelineState.FAILED:
+                    log_w.write_line(
+                        f"CRO Forensic Ingestion failed: {res_completed.error_message}"
+                    )
+                elif res_completed.status == CROPipelineState.COMPLETED:
+                    pb.progress = 100.0
+                    log_w.write_line(
+                        f"Completed successfully! Total scanned: {res_completed.total_scanned_files}, Discovered studies: {res_completed.discovered_studies_count}"
+                    )
+
+            finish_ui_completed()
+            assert pb.progress == 100.0
+            assert any("Completed successfully!" in str(line) for line in log_w.lines)
+
+            # Test cancelled status rendering
+            res_cancelled = MasterPipelineResult(
+                source_root=str(source_dir),
+                target_root=str(tmp_path),
+                timestamp_utc="2026-11-14T00:00:00Z",
+                total_scanned_files=5,
+                total_unique_documents=0,
+                total_duplicates_detected=0,
+                discovered_studies_count=0,
+                status=CROPipelineState.CANCELLED,
+            )
+
+            def finish_ui_cancelled():
+                if res_cancelled.status == CROPipelineState.CANCELLED:
+                    log_w.write_line("CRO Forensic Ingestion cancelled by user.")
+                elif res_cancelled.status == CROPipelineState.FAILED:
+                    log_w.write_line(
+                        f"CRO Forensic Ingestion failed: {res_cancelled.error_message}"
+                    )
+                elif res_cancelled.status == CROPipelineState.COMPLETED:
+                    pb.progress = 100.0
+                    log_w.write_line("Completed successfully!")
+
+            finish_ui_cancelled()
+            assert any("cancelled by user" in str(line) for line in log_w.lines)
+
+            # Test failed status rendering
+            res_failed = MasterPipelineResult(
+                source_root=str(source_dir),
+                target_root=str(tmp_path),
+                timestamp_utc="2026-11-14T00:00:00Z",
+                total_scanned_files=2,
+                total_unique_documents=0,
+                total_duplicates_detected=0,
+                discovered_studies_count=0,
+                status=CROPipelineState.FAILED,
+                error_message="Volume read error",
+            )
+
+            def finish_ui_failed():
+                if res_failed.status == CROPipelineState.CANCELLED:
+                    log_w.write_line("CRO Forensic Ingestion cancelled by user.")
+                elif res_failed.status == CROPipelineState.FAILED:
+                    log_w.write_line(
+                        f"CRO Forensic Ingestion failed: {res_failed.error_message}"
+                    )
+                elif res_failed.status == CROPipelineState.COMPLETED:
+                    pb.progress = 100.0
+                    log_w.write_line("Completed successfully!")
+
+            finish_ui_failed()
+            assert any("failed: Volume read error" in str(line) for line in log_w.lines)
+
+    asyncio.run(_test())

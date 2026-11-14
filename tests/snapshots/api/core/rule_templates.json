@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "191fc81aba5c61e939ad31bb3c23fb7a2e4b188656923032ff3aa3d9302d2448"
+    "checksum": "e30beb8221f44bfd90fd0c1704a2b07d178a70db2662ea0deadc13ff864163d6"
   },
   "classes": [
     {
@@ -29,6 +29,29 @@
         }
       ],
       "returns": "tuple[Dict[str, str], List[Dict[str, Any]]]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "export_active_rules",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "settings"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "target_format"
+        },
+        {
+          "annotation": "Union[str, Path]",
+          "default": null,
+          "name": "destination_path"
+        }
+      ],
+      "returns": "Path"
     },
     {
       "async": false,
