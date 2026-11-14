@@ -1132,3 +1132,4 @@ class InteractiveCollisionResolverModal(
 
 
 DuplicateReviewModal = InteractiveCollisionResolverModal
+DirectoryModal = DirectorySelectModal
