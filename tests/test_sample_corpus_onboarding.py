@@ -105,6 +105,7 @@ def test_empty_workspace_guided_state_card_and_shortcut(tmp_path):
             await pilot.pause(0.1)
 
             from app.ui.modals.sample_playground import SamplePlaygroundModal
+
             assert isinstance(app.screen, SamplePlaygroundModal)
             btn_commit = app.screen.query_one("#btn-commit-playground", Button)
             btn_commit.press()

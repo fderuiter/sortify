@@ -1,5 +1,7 @@
 import os
+import sys
 import tempfile
+import time
 
 from app.core.link_manager import LinkManager
 from app.core.verifier import VerificationEngine, VirtualFilesystemTracker, VirtualNode
@@ -64,6 +66,65 @@ def test_parent_directory_collision():
     assert len(collisions) > 0
     assert any(c["type"] == "parent_directory_collision" for c in collisions)
     assert "blocked because ancestor" in collisions[0]["message"]
+
+
+def test_collision_check_linear_scaling_2000_moves():
+    """Verify check_collisions scales linearly with 2000 simulated moves and preserves alerts."""
+    base_dir = "/base/dir"
+    tracker = VirtualFilesystemTracker()
+
+    moves_list = []
+    for i in range(1999):
+        moves_list.append(
+            (
+                f"file_{i}.txt",
+                f"/base/dir/file_{i}.txt",
+                f"/base/dir/file_{i + 1}.txt",
+            )
+        )
+    blocked_path = "/base/dir/blocked_unmoved.txt"
+    moves_list.append(
+        (
+            "file_1999.txt",
+            "/base/dir/file_1999.txt",
+            blocked_path,
+        )
+    )
+
+    tracker.populate_from_moves(moves_list)
+
+    # Add the unmoving target file into tracker nodes so it is an existing file
+    tracker.nodes[os.path.abspath(blocked_path)] = VirtualNode(
+        path=os.path.abspath(blocked_path),
+        is_dir=False,
+        inode=99999,
+        size=1024,
+    )
+
+    # Suspend any active profiler/coverage tracer during microsecond/millisecond benchmarking
+    orig_trace = sys.gettrace()
+    try:
+        sys.settrace(None)
+        start_time = time.perf_counter()
+        collisions = tracker.check_collisions(moves_list, base_dir)
+        elapsed_time = time.perf_counter() - start_time
+    finally:
+        sys.settrace(orig_trace)
+
+    # Collisions should preserve alert for unmoving destination file
+    assert len(collisions) == 1
+    assert collisions[0]["type"] == "target_collision"
+    assert collisions[0]["path"] == os.path.abspath(blocked_path)
+    assert collisions[0]["source"] == os.path.abspath("/base/dir/file_1999.txt")
+    assert (
+        "blocked by an existing file that is not being moved"
+        in collisions[0]["message"]
+    )
+
+    # Linear scaling requirement: 2000 moves should execute in well under 0.25s (typically < 0.05s)
+    assert elapsed_time < 0.25, (
+        f"check_collisions took too long: {elapsed_time:.4f}s for 2000 moves (expected < 0.25s)"
+    )
 
 
 def test_broken_symlink_detection():

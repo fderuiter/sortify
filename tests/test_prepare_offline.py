@@ -55,12 +55,15 @@ def test_prepare_offline_cpu_success(
                 # Verify uv pip compile uses --index-strategy first-index
                 compile_cmd = mock_run.call_args_list[0][0][0]
                 assert "--index-strategy" in compile_cmd
-                strategy_idx = compile_cmd.index("--index-strategy")
-                assert compile_cmd[strategy_idx + 1] == "first-index"
+                assert (
+                    compile_cmd[compile_cmd.index("--index-strategy") + 1]
+                    == "first-index"
+                )
 
-                # Verify pip download uses --require-hashes
+                # Verify pip download uses --require-hashes and --no-deps
                 download_cmd = mock_run.call_args_list[2][0][0]
                 assert "--require-hashes" in download_cmd
+                assert "--no-deps" in download_cmd
 
 
 @patch("scripts.prepare_offline.subprocess.run")

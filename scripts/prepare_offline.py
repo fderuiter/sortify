@@ -78,6 +78,7 @@ def main():
             "-r",
             str(reqs_file),
             "--require-hashes",
+            "--no-deps",
             "--extra-index-url",
             "https://download.pytorch.org/whl/cpu",
             "-d",
