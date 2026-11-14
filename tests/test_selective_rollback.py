@@ -10,6 +10,30 @@ from app.core.store import open_store
 from app.ui.modals.session import RollbackConfirmModal
 from app.ui.tui import AutoSorterTUI
 
+pytestmark = pytest.mark.xdist_group(name="tui")
+
+
+async def wait_for_rows(pilot, table: DataTable, expected: int) -> None:
+    """Pause until filter handlers repopulate the table.
+
+    The Changed message hops from the widget to the modal, so one pause
+    is not always enough on a slow runner.
+    """
+    for _ in range(40):
+        if table.row_count == expected:
+            return
+        await pilot.pause(0.05)
+    assert table.row_count == expected
+
+
+async def wait_for_count(pilot, label: Label, expected_substr: str) -> None:
+    """Pause until selection count label updates."""
+    for _ in range(40):
+        if expected_substr in str(label.render()):
+            return
+        await pilot.pause(0.05)
+    assert expected_substr in str(label.render())
+
 
 @pytest.fixture
 def selective_env(tmp_path, monkeypatch):
@@ -219,28 +243,23 @@ async def test_rollback_confirm_modal_ui(selective_env):
         # Test search filter
         search_inp = modal.query_one("#rollback-search-input", Input)
         search_inp.value = "file1"
-        await pilot.pause()
-        assert dt.row_count == 1
+        await wait_for_rows(pilot, dt, 1)
 
         # Test Deselect All on filtered item
         modal.query_one("#btn-deselect-all", Button).press()
-        await pilot.pause()
-        assert "2 / 3" in str(count_lbl.render())
+        await wait_for_count(pilot, count_lbl, "2 / 3")
 
         # Clear search filter
         search_inp.value = ""
-        await pilot.pause()
-        assert dt.row_count == 3
+        await wait_for_rows(pilot, dt, 3)
 
         # Select All
         modal.query_one("#btn-select-all", Button).press()
-        await pilot.pause()
-        assert "3 / 3" in str(count_lbl.render())
+        await wait_for_count(pilot, count_lbl, "3 / 3")
 
         # Invert Selection
         modal.query_one("#btn-invert-selection", Button).press()
-        await pilot.pause()
-        assert "0 / 3" in str(count_lbl.render())
+        await wait_for_count(pilot, count_lbl, "0 / 3")
 
 
 def test_preview_rollback_simulation(selective_env):
@@ -329,7 +348,7 @@ def test_preview_rollback_snapshot_fallback(selective_env, tmp_path):
     history_mgr = selective_env["history_mgr"]
     snap_dir = tmp_path / "snap_workspace"
     snap_dir.mkdir()
-    
+
     # Create files for a snapshot session
     snap_file1 = snap_dir / "snap1.txt"
     snap_file2 = snap_dir / "snap2.txt"
@@ -393,7 +412,7 @@ async def test_two_stage_rollback_confirm_modal_workflow(selective_env):
         assert "Collisions: 1" in str(lbl_collisions.render())
 
         diff_table = modal.query_one("#dryrun-diff-table", DataTable)
-        assert diff_table.row_count == 3
+        await wait_for_rows(pilot, diff_table, 3)
 
         btn_back = modal.query_one("#btn-back-to-selection", Button)
         btn_back.press()
