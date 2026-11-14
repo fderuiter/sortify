@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "25ba6829f1211aa90b13dd607e900c15c17e4e31344ec2b6c26e53147dba9693"
+    "checksum": "c69d42af2b0ae4c385b91b5341286289cd1e44650f1f610875783a263083e70b"
   },
   "classes": [
     {
@@ -203,36 +203,6 @@
               "annotation": "str",
               "default": null,
               "name": "session_id"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [
-            "@contextmanager"
-          ],
-          "name": "session_scope",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
-            },
-            {
-              "annotation": "str",
-              "default": "None",
-              "name": "db_path"
-            },
-            {
-              "annotation": "float",
-              "default": "300.0",
-              "name": "timeout"
             }
           ],
           "returns": null
