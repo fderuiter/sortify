@@ -69,6 +69,16 @@ def compile_diagram_assets():
         )
 
 
+def sync_config_schema():
+    """Synchronize application configuration JSON schema."""
+    from scripts.validate_config import sync_config_schema as _sync_schema
+
+    _sync_schema()
+
+
+generate_config_schema = sync_config_schema
+
+
 def generate_ui_docs():
     """Generate UI Reference from app/ui/*.py."""
     app_dir = os.path.join("app", "ui")
@@ -915,6 +925,7 @@ def main():
         Path("docs/admin_guide.md").as_posix(),
         Path("docs/keyboard_shortcuts.md").as_posix(),
         "SECURITY.md",
+        Path("app/config_schema.json").as_posix(),
     ]
 
     initial_contents = {}
@@ -938,6 +949,7 @@ def main():
         ("generate_keyboard_docs", generate_keyboard_docs),
         ("update_security_md", update_security_md),
         ("compile_diagram_assets", compile_diagram_assets),
+        ("sync_config_schema", sync_config_schema),
     ]
 
     errors = []

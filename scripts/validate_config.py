@@ -50,9 +50,8 @@ def validate_build_system_config():
         sys.exit(1)
 
 
-try:
-    validate_build_system_config()
-
+def generate_config_schema() -> dict:
+    """Generate normalized JSON schema for application Settings."""
     from app.config import Settings
 
     # Instantiate to ensure default schema is valid
@@ -61,34 +60,68 @@ try:
     schema = Settings.model_json_schema()
     # Normalize LOG_FILE default to use a placeholder or remove it to avoid user-specific paths
     if (
-        "LOG_FILE" in schema["properties"]
+        "LOG_FILE" in schema.get("properties", {})
         and "default" in schema["properties"]["LOG_FILE"]
     ):
         schema["properties"]["LOG_FILE"]["default"] = "autosorter.log"
 
-    schema_path = repo_root / "app" / "config_schema.json"
+    return schema
+
+
+def sync_config_schema(schema_path: Path | None = None) -> bool:
+    """Synchronize app/config_schema.json with runtime Settings schema.
+
+    Returns True if the file was modified or newly created, False if already up to date.
+    """
+    if schema_path is None:
+        schema_path = repo_root / "app" / "config_schema.json"
+
+    schema = generate_config_schema()
 
     existing_schema = None
     if schema_path.exists():
-        with open(schema_path, "r", encoding="utf-8") as f:
-            existing_schema = json.load(f)
+        try:
+            with open(schema_path, "r", encoding="utf-8") as f:
+                existing_schema = json.load(f)
+        except Exception:
+            existing_schema = None
 
     if existing_schema != schema:
+        schema_path.parent.mkdir(parents=True, exist_ok=True)
         with open(schema_path, "w", encoding="utf-8", newline="\n") as f:
             json.dump(schema, f, indent=2)
             f.write("\n")
-        print(
-            "Configuration schema updated. Please commit the changes.", file=sys.stderr
-        )
-        sys.exit(1)
+        return True
 
-    print(
-        "Configuration schema and build-system requirements are valid and up-to-date."
-    )
-    sys.exit(0)
-except ValidationError as e:
-    print(f"Configuration schema validation failed:\n{e}", file=sys.stderr)
-    sys.exit(1)
-except Exception as e:
-    print(f"Unexpected error validating configuration schema: {e}", file=sys.stderr)
-    sys.exit(1)
+    return False
+
+
+def main() -> int:
+    """Validate configuration schema and build system requirements."""
+    try:
+        validate_build_system_config()
+
+        schema_path = repo_root / "app" / "config_schema.json"
+        was_updated = sync_config_schema(schema_path)
+
+        if was_updated:
+            print(
+                "Configuration schema updated. Please commit the changes.",
+                file=sys.stderr,
+            )
+            return 1
+
+        print(
+            "Configuration schema and build-system requirements are valid and up-to-date."
+        )
+        return 0
+    except ValidationError as e:
+        print(f"Configuration schema validation failed:\n{e}", file=sys.stderr)
+        return 1
+    except Exception as e:
+        print(f"Unexpected error validating configuration schema: {e}", file=sys.stderr)
+        return 1
+
+
+if __name__ == "__main__":
+    sys.exit(main())
