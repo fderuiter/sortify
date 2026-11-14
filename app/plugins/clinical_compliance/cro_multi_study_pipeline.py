@@ -13,6 +13,7 @@ from typing import Any, Callable, Dict, List, Optional
 
 from pydantic import BaseModel, Field
 
+from app.core.domain_contracts import DictCompatMixin
 from app.core.forensic_scanner import ForensicScanner
 from app.core.mover import get_safe_path
 from app.core.path_utils import safe_relpath, sanitize_name
@@ -25,7 +26,7 @@ from app.plugins.clinical_compliance.study_disambiguator import StudyDisambiguat
 logger = logging.getLogger(__name__)
 
 
-class StudyIngestSummary(BaseModel):
+class StudyIngestSummary(DictCompatMixin, BaseModel):
     """Summary metrics for an individual clinical study."""
 
     study_id: str
@@ -37,33 +38,8 @@ class StudyIngestSummary(BaseModel):
     target_directory: str
     audit_report_html_path: str
 
-    def dict(self, *args, **kwargs) -> Dict[str, Any]:
-        """Backward compatibility method for legacy callers."""
-        return self.model_dump(*args, **kwargs)
 
-    def __getitem__(self, item: str) -> Any:
-        """Support item lookup via bracket syntax for dictionary compatibility."""
-        if hasattr(self, item):
-            return getattr(self, item)
-        extra = getattr(self, "__pydantic_extra__", None)
-        if extra and item in extra:
-            return extra[item]
-        raise KeyError(item)
-
-    def get(self, item: str, default: Any = None) -> Any:
-        """Support dictionary get method."""
-        try:
-            return self[item]
-        except KeyError:
-            return default
-
-    def __contains__(self, item: str) -> bool:
-        """Check if key exists in attributes or extra fields."""
-        extra = getattr(self, "__pydantic_extra__", None)
-        return hasattr(self, item) or (extra is not None and item in extra)
-
-
-class MasterPipelineResult(BaseModel):
+class MasterPipelineResult(DictCompatMixin, BaseModel):
     """Complete result of a CRO Multi-Study forensic ingestion run."""
 
     source_root: str
@@ -75,31 +51,6 @@ class MasterPipelineResult(BaseModel):
     discovered_studies_count: int
     studies_summary: List[StudyIngestSummary] = Field(default_factory=list)
     chain_of_custody_manifest_path: str = ""
-
-    def dict(self, *args, **kwargs) -> Dict[str, Any]:
-        """Backward compatibility method for legacy callers."""
-        return self.model_dump(*args, **kwargs)
-
-    def __getitem__(self, item: str) -> Any:
-        """Support item lookup via bracket syntax for dictionary compatibility."""
-        if hasattr(self, item):
-            return getattr(self, item)
-        extra = getattr(self, "__pydantic_extra__", None)
-        if extra and item in extra:
-            return extra[item]
-        raise KeyError(item)
-
-    def get(self, item: str, default: Any = None) -> Any:
-        """Support dictionary get method."""
-        try:
-            return self[item]
-        except KeyError:
-            return default
-
-    def __contains__(self, item: str) -> bool:
-        """Check if key exists in attributes or extra fields."""
-        extra = getattr(self, "__pydantic_extra__", None)
-        return hasattr(self, item) or (extra is not None and item in extra)
 
 
 class CROMultiStudyPipeline:

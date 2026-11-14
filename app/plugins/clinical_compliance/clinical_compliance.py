@@ -7,12 +7,13 @@ from typing import Any, Dict, List, Set, Union
 
 from pydantic import BaseModel, ConfigDict
 
+from app.core.domain_contracts import DictCompatMixin
 from app.plugins.clinical_compliance.clinical_taxonomy import (
     ICH_GCP_ESSENTIAL_CHECKLIST,
 )
 
 
-class FoundEssentialDocument(BaseModel):
+class FoundEssentialDocument(DictCompatMixin, BaseModel):
     """Model representing a found essential clinical document."""
 
     key: str
@@ -25,33 +26,8 @@ class FoundEssentialDocument(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    def dict(self, *args, **kwargs) -> Dict[str, Any]:
-        """Backward compatibility method for legacy callers."""
-        return self.model_dump(*args, **kwargs)
 
-    def __getitem__(self, item: str) -> Any:
-        """Support item lookup via bracket syntax for dictionary compatibility."""
-        if hasattr(self, item):
-            return getattr(self, item)
-        extra = getattr(self, "__pydantic_extra__", None)
-        if extra and item in extra:
-            return extra[item]
-        raise KeyError(item)
-
-    def get(self, item: str, default: Any = None) -> Any:
-        """Support dictionary get method."""
-        try:
-            return self[item]
-        except KeyError:
-            return default
-
-    def __contains__(self, item: str) -> bool:
-        """Check if key exists in attributes or extra fields."""
-        extra = getattr(self, "__pydantic_extra__", None)
-        return hasattr(self, item) or (extra is not None and item in extra)
-
-
-class MissingEssentialDocument(BaseModel):
+class MissingEssentialDocument(DictCompatMixin, BaseModel):
     """Model representing a missing essential clinical document."""
 
     key: str
@@ -62,33 +38,8 @@ class MissingEssentialDocument(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    def dict(self, *args, **kwargs) -> Dict[str, Any]:
-        """Backward compatibility method for legacy callers."""
-        return self.model_dump(*args, **kwargs)
 
-    def __getitem__(self, item: str) -> Any:
-        """Support item lookup via bracket syntax for dictionary compatibility."""
-        if hasattr(self, item):
-            return getattr(self, item)
-        extra = getattr(self, "__pydantic_extra__", None)
-        if extra and item in extra:
-            return extra[item]
-        raise KeyError(item)
-
-    def get(self, item: str, default: Any = None) -> Any:
-        """Support dictionary get method."""
-        try:
-            return self[item]
-        except KeyError:
-            return default
-
-    def __contains__(self, item: str) -> bool:
-        """Check if key exists in attributes or extra fields."""
-        extra = getattr(self, "__pydantic_extra__", None)
-        return hasattr(self, item) or (extra is not None and item in extra)
-
-
-class ClinicalComplianceResult(BaseModel):
+class ClinicalComplianceResult(DictCompatMixin, BaseModel):
     """Structured Pydantic model for clinical compliance evaluation results."""
 
     total_files_scanned: int
@@ -104,31 +55,6 @@ class ClinicalComplianceResult(BaseModel):
     base_dir: str = ""
 
     model_config = ConfigDict(extra="allow")
-
-    def dict(self, *args, **kwargs) -> Dict[str, Any]:
-        """Backward compatibility method for legacy callers."""
-        return self.model_dump(*args, **kwargs)
-
-    def __getitem__(self, item: str) -> Any:
-        """Support item lookup via bracket syntax for dictionary compatibility."""
-        if hasattr(self, item):
-            return getattr(self, item)
-        extra = getattr(self, "__pydantic_extra__", None)
-        if extra and item in extra:
-            return extra[item]
-        raise KeyError(item)
-
-    def get(self, item: str, default: Any = None) -> Any:
-        """Support dictionary get method."""
-        try:
-            return self[item]
-        except KeyError:
-            return default
-
-    def __contains__(self, item: str) -> bool:
-        """Check if key exists in attributes or extra fields."""
-        extra = getattr(self, "__pydantic_extra__", None)
-        return hasattr(self, item) or (extra is not None and item in extra)
 
 
 class ClinicalComplianceEngine:

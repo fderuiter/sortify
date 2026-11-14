@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "fdc58c3614bd1dfc59a7ee0a901339daddd43c80c532853ae2932225cdd259f1"
+    "checksum": "557d2484cf7738c50f262925aeb70352b52cc3effbaceec50f11cf09f46157e0"
   },
   "classes": [
     {
@@ -99,158 +99,17 @@
     {
       "class_name": "ClinicalComplianceResult",
       "decorators": [],
-      "methods": [
-        {
-          "async": false,
-          "decorators": [],
-          "name": "dict",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "*args"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "**kwargs"
-            }
-          ],
-          "returns": "Dict[str, Any]"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "get",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "item"
-            },
-            {
-              "annotation": "Any",
-              "default": "None",
-              "name": "default"
-            }
-          ],
-          "returns": "Any"
-        }
-      ]
+      "methods": []
     },
     {
       "class_name": "FoundEssentialDocument",
       "decorators": [],
-      "methods": [
-        {
-          "async": false,
-          "decorators": [],
-          "name": "dict",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "*args"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "**kwargs"
-            }
-          ],
-          "returns": "Dict[str, Any]"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "get",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "item"
-            },
-            {
-              "annotation": "Any",
-              "default": "None",
-              "name": "default"
-            }
-          ],
-          "returns": "Any"
-        }
-      ]
+      "methods": []
     },
     {
       "class_name": "MissingEssentialDocument",
       "decorators": [],
-      "methods": [
-        {
-          "async": false,
-          "decorators": [],
-          "name": "dict",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "*args"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "**kwargs"
-            }
-          ],
-          "returns": "Dict[str, Any]"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "get",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "item"
-            },
-            {
-              "annotation": "Any",
-              "default": "None",
-              "name": "default"
-            }
-          ],
-          "returns": "Any"
-        }
-      ]
+      "methods": []
     }
   ],
   "functions": []

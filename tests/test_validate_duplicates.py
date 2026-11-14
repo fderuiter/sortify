@@ -225,3 +225,58 @@ class DictCompatMixin:
 """)
     mixin_visitor.visit(mixin_tree)
     assert len(mixin_errors) == 0
+
+
+def test_redundant_dict_adapter_methods_flagged_in_clinical_models():
+    # Defining redundant dictionary adapter methods in clinical compliance models is flagged
+    errors = []
+    hashes = {}
+    visitor = UtilityAntiDuplicationVisitor(
+        "app/plugins/clinical_compliance/clinical_compliance.py", errors, hashes
+    )
+    tree = ast.parse("""
+class FoundEssentialDocument:
+    def __getitem__(self, item: str):
+        return getattr(self, item)
+    def get(self, item: str, default=None):
+        return getattr(self, item, default)
+    def __contains__(self, item: str):
+        return item in self.model_fields
+    def dict(self, *args, **kwargs):
+        return self.model_dump(*args, **kwargs)
+""")
+    visitor.visit(tree)
+    assert len(errors) == 4
+    for method_name in ("__getitem__", "get", "__contains__", "dict"):
+        assert any(
+            f"Redundant dictionary adapter method '{method_name}' found in class 'FoundEssentialDocument'."
+            in err
+            for err in errors
+        )
+
+    pipeline_errors = []
+    pipeline_hashes = {}
+    pipeline_visitor = UtilityAntiDuplicationVisitor(
+        "app/plugins/clinical_compliance/cro_multi_study_pipeline.py",
+        pipeline_errors,
+        pipeline_hashes,
+    )
+    pipeline_tree = ast.parse("""
+class MasterPipelineResult:
+    def __getitem__(self, item: str):
+        return getattr(self, item)
+    def get(self, item: str, default=None):
+        return getattr(self, item, default)
+    def __contains__(self, item: str):
+        return item in self.model_fields
+    def dict(self, *args, **kwargs):
+        return self.model_dump(*args, **kwargs)
+""")
+    pipeline_visitor.visit(pipeline_tree)
+    assert len(pipeline_errors) == 4
+    for method_name in ("__getitem__", "get", "__contains__", "dict"):
+        assert any(
+            f"Redundant dictionary adapter method '{method_name}' found in class 'MasterPipelineResult'."
+            in err
+            for err in pipeline_errors
+        )
