@@ -166,9 +166,10 @@ def test_wizard_modal_labeled_switch_click_label(tmp_path):
             modal.query_one(".modal-box").scroll_to_widget(
                 ls_consent, center=True, animate=False
             )
-            await pilot.pause(0.05)
+            await pilot.pause()
+            await pilot.pause(0.1)
             await pilot.click(ls_consent.label_widget)
-            await pilot.pause(0.05)
+            await pilot.pause(0.1)
 
             assert sw_consent.value is True
             assert app.focused == sw_consent
