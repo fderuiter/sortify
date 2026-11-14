@@ -12,44 +12,13 @@ def _load_ci_workflow():
         return yaml.safe_load(f)
 
 
-def test_changes_job_docs_path_filter():
-    """Verify that the changes job path filter accurately includes all doc-relevant paths
-
-    and excludes unmonitored directories like tests/ and .github/.
-    """
+def test_no_changes_path_filter_job():
+    """Verify that the redundant changes path filter job is removed from ci.yml."""
     workflow = _load_ci_workflow()
     jobs = workflow.get("jobs", {})
-    assert "changes" in jobs, "Missing 'changes' job in ci.yml"
-
-    changes_job = jobs["changes"]
-    steps = changes_job.get("steps", [])
-    filter_step = next(
-        (s for s in steps if "dorny/paths-filter" in s.get("uses", "")), None
+    assert "changes" not in jobs, (
+        "Redundant 'changes' path filter job should be removed from ci.yml"
     )
-    assert filter_step is not None, "Missing dorny/paths-filter step in changes job"
-
-    filters_raw = filter_step.get("with", {}).get("filters", "")
-    filters = yaml.safe_load(filters_raw)
-    assert "docs" in filters, "Missing 'docs' filter key in changes job"
-
-    doc_paths = filters["docs"]
-    required_paths = [
-        "app/**",
-        "scripts/**",
-        "docs/**",
-        "mkdocs.yml",
-        "pyproject.toml",
-    ]
-    for req in required_paths:
-        assert req in doc_paths, (
-            f"Expected '{req}' in doc path filters, found {doc_paths}"
-        )
-
-    # Guardrails: verify unmonitored paths are not included
-    for excluded in ["tests/**", ".github/**"]:
-        assert excluded not in doc_paths, (
-            f"Unmonitored path '{excluded}' should not be in doc filter"
-        )
 
 
 def test_doc_deploy_job_configuration_and_steps():
@@ -63,8 +32,8 @@ def test_doc_deploy_job_configuration_and_steps():
 
     job = jobs["doc-deploy"]
     assert job.get("timeout-minutes") == 15
-    assert job.get("if") == "needs.changes.outputs.docs == 'true'"
-    assert set(job.get("needs", [])) == {"static-checks", "changes"}
+    assert job.get("if") == "github.ref == 'refs/heads/main'"
+    assert set(job.get("needs", [])) == {"static-checks"}
 
     steps = job.get("steps", [])
     step_names = [s.get("name", "") for s in steps]

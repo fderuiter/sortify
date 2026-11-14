@@ -49,6 +49,18 @@ def test_prepare_offline_cpu_success(
                     "offline_bundle", "zip", "offline_bundle"
                 )
 
+                assert mock_run.call_count == 3
+                compile_cmd = mock_run.call_args_list[0][0][0]
+                assert "--index-strategy" in compile_cmd
+                assert (
+                    compile_cmd[compile_cmd.index("--index-strategy") + 1]
+                    == "first-index"
+                )
+
+                download_cmd = mock_run.call_args_list[2][0][0]
+                assert "--require-hashes" in download_cmd
+                assert "--no-deps" in download_cmd
+
 
 @patch("scripts.prepare_offline.subprocess.run")
 @patch("scripts.prepare_offline.shutil.rmtree")
