@@ -446,8 +446,101 @@ def generate_admin_guide():
         f.write(f"{install_offline.__doc__}\n\n")
 
 
-def update_security_md():
+def _get_expected_security_fallback_policy() -> str:
+    """Retrieve expected default advisory fallback policy from AppSettings or Settings."""
+    from app.config import AppSettings, Settings
+
+    if hasattr(AppSettings, "SECURITY_ADVISORY_FALLBACK_POLICY"):
+        val = getattr(AppSettings, "SECURITY_ADVISORY_FALLBACK_POLICY")
+        if isinstance(val, str):
+            return val.strip().lower()
+
+    field = getattr(Settings, "model_fields", {}).get(
+        "SECURITY_ADVISORY_FALLBACK_POLICY"
+    )
+    if field is not None and field.default is not None:
+        return str(field.default).strip().lower()
+
+    try:
+        inst = AppSettings(filepath="/tmp/sortify_nonexistent_settings.json")
+        val = getattr(inst, "SECURITY_ADVISORY_FALLBACK_POLICY", None)
+        if isinstance(val, str):
+            return val.strip().lower()
+    except Exception:
+        pass
+
+    return "strict"
+
+
+def validate_security_policy(content=None, doc_path="SECURITY.md"):
+    """Validate that documented security advisory fallback policy matches AppSettings."""
+    errors = []
+    if content is None:
+        p = Path(doc_path)
+        if not p.exists():
+            return [f"Missing security policy document: {doc_path}"]
+        try:
+            content = p.read_text(encoding="utf-8")
+        except Exception as e:
+            return [f"Could not read security policy document {doc_path}: {e}"]
+
+    # Safely handle unexpected file formatting or missing target headings
+    if (
+        "## Telemetry and Network Access" not in content
+        and "SECURITY_ADVISORY_FALLBACK_POLICY" not in content
+    ):
+        return errors
+
+    if "SECURITY_ADVISORY_FALLBACK_POLICY" not in content:
+        errors.append(
+            f"Target setting 'SECURITY_ADVISORY_FALLBACK_POLICY' not found under '## Telemetry and Network Access' in {doc_path}"
+        )
+        return errors
+
+    policy_lines = [
+        line
+        for line in content.splitlines()
+        if "SECURITY_ADVISORY_FALLBACK_POLICY" in line
+    ]
+    policy_context = " ".join(policy_lines)
+
+    # Match phrases documenting the default fallback policy
+    default_match = re.search(
+        r"(?:the\s+default,\s*[`']?(\w+)[`']?|default(?:s)?\s*(?:to|is|:)\s*[`']?(\w+)[`']?|[`']?(\w+)[`']?\s+(?:is|as)\s+the\s+default)",
+        policy_context,
+        re.IGNORECASE,
+    )
+
+    if not default_match:
+        errors.append(
+            f"Could not determine documented default fallback policy for 'SECURITY_ADVISORY_FALLBACK_POLICY' in {doc_path}"
+        )
+        return errors
+
+    documented_default = (
+        (default_match.group(1) or default_match.group(2) or default_match.group(3))
+        .strip()
+        .lower()
+    )
+
+    expected_policy = _get_expected_security_fallback_policy()
+    if documented_default != expected_policy:
+        errors.append(
+            f"Documented fallback policy in {doc_path} ('{documented_default}') does not match AppSettings default ('{expected_policy}')"
+        )
+
+    return errors
+
+
+def update_security_md(sec_file="SECURITY.md"):
     """Scan for network dependencies and update SECURITY.md."""
+    # Validate security policy prose in SECURITY.md against AppSettings
+    policy_errors = validate_security_policy(doc_path=sec_file)
+    if policy_errors:
+        raise ValueError(
+            f"Security policy validation failed: {'; '.join(policy_errors)}"
+        )
+
     import concurrent.futures
     import re
     from urllib.parse import urlparse
@@ -597,7 +690,8 @@ def update_security_md():
             "One or more network dependencies failed connectivity validation."
         )
 
-    sec_file = "SECURITY.md"
+    if not sec_file:
+        sec_file = "SECURITY.md"
     with open(sec_file, "r", encoding="utf-8") as f:
         lines = f.readlines()
 

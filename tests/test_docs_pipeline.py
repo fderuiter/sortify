@@ -13,7 +13,9 @@ from scripts.generate_docs import (
     audit_handwritten_docs,
     get_handwritten_docs,
     main,
+    update_security_md,
     validate_mermaid_diagrams,
+    validate_security_policy,
 )
 
 
@@ -58,6 +60,64 @@ def test_get_handwritten_docs():
 def test_audit_handwritten_docs_clean():
     errors = audit_handwritten_docs()
     assert errors == []
+
+
+def test_validate_security_policy_clean():
+    """Verify security policy documentation validation passes on repo's SECURITY.md."""
+    errors = validate_security_policy()
+    assert errors == []
+
+
+def test_validate_security_policy_detects_invalid_fallback_policy(tmp_path):
+    """Verify security policy validation fails when SECURITY.md contains invalid fallback policy text."""
+    bad_sec = tmp_path / "SECURITY.md"
+    bad_sec.write_text(
+        "# Security Policy\n\n"
+        "## Telemetry and Network Access\n\n"
+        "- **Model security advisories.** Before a downloaded or side-loaded model is loaded, "
+        "`app/core/security_advisory.py` queries `https://security.huggingface.co/api/advisories` with "
+        "the model's repository id and the SHA-256 hash of the model file. This is on by default. "
+        "Point `SECURITY_ADVISORY_ENDPOINT` at a mirror to change where it goes, and "
+        "`SECURITY_ADVISORY_FALLBACK_POLICY` (`strict` or `permissive`) decides what happens when the endpoint "
+        "is unreachable: the default, `permissive`, loads the model anyway, and `strict` refuses it.\n\n"
+        "## Network Dependencies\n"
+    )
+    errors = validate_security_policy(doc_path=str(bad_sec))
+    assert len(errors) == 1
+    assert "permissive" in errors[0]
+    assert "strict" in errors[0]
+
+
+def test_validate_security_policy_safely_handles_unexpected_formatting(tmp_path):
+    """Verify security policy validator safely handles missing target headings or unexpected formatting without crashing."""
+    bad_sec = tmp_path / "SECURITY.md"
+    bad_sec.write_text("# Security Policy\n\nMinimal doc without telemetry section.\n")
+    errors = validate_security_policy(doc_path=str(bad_sec))
+    assert errors == []
+
+
+def test_update_security_md_fails_on_policy_drift(tmp_path, monkeypatch):
+    """Verify update_security_md raises ValueError when SECURITY.md contains invalid fallback policy prose."""
+    import json
+
+    (tmp_path / "app").mkdir()
+    (tmp_path / "network_rules.json").write_text(
+        json.dumps({"targets": ["app"], "rules": []})
+    )
+    bad_sec = tmp_path / "SECURITY.md"
+    bad_sec.write_text(
+        "# Security Policy\n\n"
+        "## Telemetry and Network Access\n\n"
+        "- **Model security advisories.** Point `SECURITY_ADVISORY_ENDPOINT` at a mirror to change where it goes, "
+        "and `SECURITY_ADVISORY_FALLBACK_POLICY` (`strict` or `permissive`) decides what happens when the endpoint "
+        "is unreachable: the default, `permissive`, loads the model anyway, and `strict` refuses it.\n\n"
+        "## Network Dependencies\n\nstale\n"
+    )
+    monkeypatch.chdir(tmp_path)
+
+    with patch("scripts.validate_links.validate_url", return_value=(True, "ok", False)):
+        with pytest.raises(ValueError, match="(?i)fallback policy"):
+            update_security_md()
 
 
 def test_auto_merge_policy_bot_authors_consistency():
