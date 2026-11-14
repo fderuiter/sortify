@@ -8,9 +8,11 @@ from scripts import validate_signatures
 from scripts.validate_signatures import (
     SNAPSHOT_DIR,
     collect_cli_definitions,
+    collect_config_definitions,
     collect_core_definitions,
     collect_current_definitions,
     collect_modules_and_payloads,
+    collect_plugins_definitions,
     compute_payload_checksum,
     extract_cli,
     extract_module_signatures,
@@ -182,6 +184,8 @@ def test_collect_current_definitions():
     defs = collect_current_definitions()
     assert "core" in defs
     assert "cli" in defs
+    assert "plugins" in defs
+    assert "config" in defs
 
     # Check core module paths
     assert "app/core/analyzer.py" in defs["core"]
@@ -192,6 +196,10 @@ def test_collect_current_definitions():
     assert "sandbox_cli.py" in defs["cli"]
     assert "app/cli/ledger_cli.py" in defs["cli"]
     assert "app/cli/quarantine_cli.py" in defs["cli"]
+
+    # Check config and plugin keys
+    assert "app/config.py" in defs["config"]
+    assert "app/plugins/clinical_compliance/plugin.py" in defs["plugins"]
 
     main_cli = defs["cli"]["app/main.py"]
     assert len(main_cli) > 0
@@ -942,7 +950,69 @@ def test_validation_runner_detects_orphaned_snapshot_across_subdirectories(
 
 
 def test_validate_signatures_non_monitored_file(monkeypatch):
+    monkeypatch.setattr(
+        sys, "argv", ["validate_signatures.py", "scripts/validate_signatures.py"]
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+    assert exc_info.value.code == 0
+
+
+def test_dynamic_plugins_file_discovery(tmp_path):
+    plugins_dir = tmp_path / "plugins"
+    plugin_a = plugins_dir / "plugin_a"
+    plugin_a.mkdir(parents=True)
+    tests_dir = plugin_a / "tests"
+    tests_dir.mkdir(parents=True)
+
+    (plugin_a / "__init__.py").write_text("# init")
+    (plugin_a / "_private_helper.py").write_text("def _secret(): pass")
+    (plugin_a / "test_plugin.py").write_text("def test_it(): pass")
+    (plugin_a / "mock_service.py").write_text("def mock_run(): pass")
+    (tests_dir / "test_inside.py").write_text("def test_nested(): pass")
+    (plugin_a / "plugin.py").write_text("def register_plugin(): pass")
+    (plugin_a / "handler.py").write_text("def handle_event(): pass")
+
+    plugins_defs = collect_plugins_definitions(str(plugins_dir))
+    discovered = list(plugins_defs.keys())
+
+    assert len(discovered) == 2
+    assert any("plugin.py" in k for k in discovered)
+    assert any("handler.py" in k for k in discovered)
+    assert not any("__init__.py" in k for k in discovered)
+    assert not any("_private_helper.py" in k for k in discovered)
+    assert not any("test_plugin.py" in k for k in discovered)
+    assert not any("mock_service.py" in k for k in discovered)
+    assert not any("test_inside.py" in k for k in discovered)
+
+
+def test_dynamic_config_contract_extraction(tmp_path):
+    config_file = tmp_path / "custom_config.py"
+    config_file.write_text("class Config:\n    pass\ndef get_setting():\n    pass\n")
+
+    config_defs = collect_config_definitions(str(config_file))
+    keys = list(config_defs.keys())
+    assert len(keys) == 1
+    sigs = config_defs[keys[0]]
+    assert len(sigs["classes"]) == 1
+    assert sigs["classes"][0]["class_name"] == "Config"
+    assert len(sigs["functions"]) == 1
+    assert sigs["functions"][0]["name"] == "get_setting"
+
+
+def test_validate_signatures_target_config(monkeypatch):
     monkeypatch.setattr(sys, "argv", ["validate_signatures.py", "app/config.py"])
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+    assert exc_info.value.code == 0
+
+
+def test_validate_signatures_target_plugin(monkeypatch):
+    monkeypatch.setattr(
+        sys,
+        "argv",
+        ["validate_signatures.py", "app/plugins/clinical_compliance/plugin.py"],
+    )
     with pytest.raises(SystemExit) as exc_info:
         validate_signatures.main()
     assert exc_info.value.code == 0
