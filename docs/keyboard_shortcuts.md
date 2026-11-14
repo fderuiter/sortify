@@ -37,6 +37,7 @@ Press `?` or `F1` in the app to see these shortcuts.
 | `g` / `Shift+G` | Sample Dataset |
 | `?` | Help |
 | `F1` | Help (F1) |
+| `Ctrl+Alt+K` | Toggle Shortcuts |
 | `Ctrl+Q` | Quit |
 
 ## Dialogs

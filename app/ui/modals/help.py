@@ -186,6 +186,10 @@ class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None
             yield Label(
                 "  ? / F1      - Open shortcut cheat sheet", classes="shortcut-row"
             )
+            yield Label(
+                "  Ctrl+Alt+K  - Toggle single-character keyboard shortcuts",
+                classes="shortcut-row",
+            )
             yield Label("  Escape      - Close modal dialog", classes="shortcut-row")
             yield Label("  Ctrl+Q      - Quit application", classes="shortcut-row")
 

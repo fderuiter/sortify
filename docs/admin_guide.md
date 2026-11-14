@@ -46,6 +46,10 @@ The following parameters are extracted directly from the application's configura
 - **Type**: `bool`
 - **Default**: `False`
 
+### `ENABLE_CHARACTER_KEY_SHORTCUTS`
+- **Type**: `bool`
+- **Default**: `True`
+
 ### `KEYWORD_RULES`
 - **Type**: `dict`
 - **Default**: `{}`

@@ -7,10 +7,19 @@ from textual.widgets import Tree
 class VimTree(Tree):
     """Tree control with native vim motion navigation (h, j, k, l)."""
 
+    def _character_shortcuts_enabled(self) -> bool:
+        """Check whether single-character keyboard shortcuts are enabled."""
+        settings = getattr(getattr(self, "app", None), "settings", None)
+        if settings is None:
+            return True
+        return bool(getattr(settings, "ENABLE_CHARACTER_KEY_SHORTCUTS", True))
+
     def on_key(self, event: events.Key) -> None:
         """Handle key events for native vim tree navigation."""
         if not self.has_focus:
             return
+
+        char_shortcuts_enabled = self._character_shortcuts_enabled()
 
         if event.key == "j":
             self.action_cursor_down()
@@ -43,43 +52,69 @@ class VimTree(Tree):
             event.stop()
             event.prevent_default()
         elif event.key in ("space", " "):
-            if hasattr(self.app, "action_toggle_selection"):
-                self.app.action_toggle_selection()
+            action = getattr(self.app, "action_toggle_selection", None)
+            if char_shortcuts_enabled and callable(action):
+                action()
             event.stop()
             event.prevent_default()
         elif event.key in ("x", "X"):
-            if hasattr(self.app, "action_exclude_selected"):
-                self.app.action_exclude_selected()
+            action = getattr(self.app, "action_exclude_selected", None)
+            if char_shortcuts_enabled and callable(action):
+                action()
             event.stop()
             event.prevent_default()
         elif event.key in ("i", "I"):
-            if hasattr(self.app, "action_include_selected"):
-                self.app.action_include_selected()
+            action = getattr(self.app, "action_include_selected", None)
+            if char_shortcuts_enabled and callable(action):
+                action()
             event.stop()
             event.prevent_default()
         elif event.key in ("r", "R"):
-            if hasattr(self.app, "action_reassign_selected"):
-                self.app.action_reassign_selected()
+            action = getattr(self.app, "action_reassign_selected", None)
+            if char_shortcuts_enabled and callable(action):
+                action()
             event.stop()
             event.prevent_default()
         elif event.key in ("v", "V"):
-            if hasattr(self.app, "action_visual_range_select"):
-                self.app.action_visual_range_select()
+            action = getattr(self.app, "action_visual_range_select", None)
+            if char_shortcuts_enabled and callable(action):
+                action()
             event.stop()
             event.prevent_default()
         elif event.key in ("a", "A"):
-            if hasattr(self.app, "action_toggle_select_all"):
-                self.app.action_toggle_select_all()
+            action = getattr(self.app, "action_toggle_select_all", None)
+            if char_shortcuts_enabled and callable(action):
+                action()
             event.stop()
             event.prevent_default()
         elif event.key in ("g", "G", "shift+g"):
-            if hasattr(self.app, "action_generate_sample_corpus"):
-                self.app.action_generate_sample_corpus(True)
+            action = getattr(self.app, "action_generate_sample_corpus", None)
+            if char_shortcuts_enabled and callable(action):
+                action(True)
+            event.stop()
+            event.prevent_default()
+        elif event.key in ("plus", "+"):
+            action = getattr(self.app, "action_rate_positive", None)
+            if char_shortcuts_enabled and callable(action):
+                action()
+            event.stop()
+            event.prevent_default()
+        elif event.key in ("minus", "-"):
+            action = getattr(self.app, "action_rate_negative", None)
+            if char_shortcuts_enabled and callable(action):
+                action()
+            event.stop()
+            event.prevent_default()
+        elif event.key in ("question_mark", "?"):
+            action = getattr(self.app, "action_open_cheat_sheet", None)
+            if char_shortcuts_enabled and callable(action):
+                action()
             event.stop()
             event.prevent_default()
         elif event.key in ("/", "slash") or getattr(event, "character", None) == "/":
-            if hasattr(self.app, "action_focus_search"):
-                self.app.action_focus_search()
+            action = getattr(self.app, "action_focus_search", None)
+            if char_shortcuts_enabled and callable(action):
+                action()
             event.stop()
             event.prevent_default()
         elif event.key in ("enter", "return"):
