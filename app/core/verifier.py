@@ -320,7 +320,13 @@ class VerificationEngine:
                 ):
                     continue
 
-                if depth > 0:
+                src_root = _get_val(content, "source_root")
+                effective_base = src_root if src_root else base_dir
+
+                src_p = _get_val(content, "source_path")
+                if src_p and os.path.isabs(src_p):
+                    source_path = os.path.normpath(src_p)
+                elif depth > 0:
                     rel_src_val = _get_val(content, "relative_source")
                     if rel_src_val is None:
                         raise ValueError(
@@ -339,17 +345,19 @@ class VerificationEngine:
                             active_parent_path, relative_source
                         )
                     source_path = os.path.normpath(
-                        os.path.join(base_dir, rel_src_with_parent)
+                        os.path.join(effective_base, rel_src_with_parent)
                     )
                 else:
                     rel_src_val = _get_val(content, "relative_source")
                     if rel_src_val is not None:
                         relative_source = rel_src_val
                         source_path = os.path.normpath(
-                            os.path.join(base_dir, relative_source)
+                            os.path.join(effective_base, relative_source)
                         )
                     else:
-                        source_path = os.path.normpath(os.path.join(base_dir, key))
+                        source_path = os.path.normpath(
+                            os.path.join(effective_base, key)
+                        )
 
                 tgt_fn = _get_val(content, "target_filename")
                 if tgt_fn is not None:
@@ -380,15 +388,21 @@ class VerificationEngine:
 
                 if depth == 0 and _is_absolute_path(key):
                     next_dest = key
+                    next_active_parent = active_parent_path
                 else:
                     next_dest = os.path.join(current_dest, key)
+                    next_active_parent = (
+                        active_parent_path
+                        if _is_absolute_path(key)
+                        else os.path.join(active_parent_path, key)
+                    )
 
                 moves.extend(
                     VerificationEngine.get_moves(
                         base_dir,
                         content,
                         next_dest,
-                        os.path.join(active_parent_path, key),
+                        next_active_parent,
                         depth + 1,
                     )
                 )
