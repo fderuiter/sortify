@@ -562,17 +562,113 @@ class Database:
         """Retrieve valid documents for a given base directory or list of source_dirs, optionally restricted by target_paths."""
         multi_root = bool(source_dirs and len(source_dirs) > 1)
 
+        sources = []
+        if source_dirs:
+            for s in source_dirs:
+                if s:
+                    if s not in sources:
+                        sources.append(s)
+                    norm_s = os.path.normpath(os.path.abspath(s))
+                    if norm_s not in sources:
+                        sources.append(norm_s)
+        elif base_dir:
+            sources.append(base_dir)
+            norm_b = os.path.normpath(os.path.abspath(base_dir))
+            if norm_b not in sources:
+                sources.append(norm_b)
+
+        if not sources:
+            return []
+
         norm_targets = None
+        candidate_filepaths = []
         if target_paths is not None:
             norm_targets = set()
+            cand_set = set()
+
             for p in target_paths:
                 if not p:
                     continue
                 if "::" in p:
+                    s_root, rel = p.split("::", 1)
+                    norm_s = os.path.normpath(os.path.abspath(s_root))
+                    norm_rel = rel.replace("\\", "/")
                     norm_targets.add(p)
+                    norm_targets.add(f"{s_root}::{norm_rel}")
+                    norm_targets.add(f"{norm_s}::{norm_rel}")
+                    norm_targets.add(
+                        f"{s_root}::{os.path.normpath(norm_rel).replace('\\', '/')}"
+                    )
+                    norm_targets.add(
+                        f"{norm_s}::{os.path.normpath(norm_rel).replace('\\', '/')}"
+                    )
+
+                    for fp_variant in (
+                        rel,
+                        norm_rel,
+                        os.path.normpath(norm_rel).replace("\\", "/"),
+                        rel.replace("/", "\\"),
+                        os.path.normpath(rel).replace("/", "\\"),
+                    ):
+                        if fp_variant and fp_variant not in cand_set:
+                            cand_set.add(fp_variant)
+                            candidate_filepaths.append(fp_variant)
                 else:
-                    norm_targets.add(p.replace("\\", "/"))
-                    norm_targets.add(os.path.normpath(p).replace("\\", "/"))
+                    norm_p = p.replace("\\", "/")
+                    norm_targets.add(p)
+                    norm_targets.add(norm_p)
+                    norm_targets.add(os.path.normpath(norm_p).replace("\\", "/"))
+
+                    if os.path.isabs(p):
+                        for s in sources:
+                            if s and p.startswith(s):
+                                try:
+                                    from app.core.path_utils import safe_relpath
+
+                                    rel_abs = safe_relpath(p, s).replace("\\", "/")
+                                    norm_targets.add(rel_abs)
+                                    norm_targets.add(
+                                        os.path.normpath(rel_abs).replace("\\", "/")
+                                    )
+                                    if multi_root:
+                                        norm_targets.add(f"{s}::{rel_abs}")
+                                        norm_s = os.path.normpath(os.path.abspath(s))
+                                        norm_targets.add(f"{norm_s}::{rel_abs}")
+                                    for v in (
+                                        rel_abs,
+                                        os.path.normpath(rel_abs).replace("\\", "/"),
+                                    ):
+                                        if v and v not in cand_set:
+                                            cand_set.add(v)
+                                            candidate_filepaths.append(v)
+                                except Exception:
+                                    pass
+
+                    if multi_root:
+                        for s in sources:
+                            norm_targets.add(f"{s}::{norm_p}")
+                            norm_targets.add(
+                                f"{s}::{os.path.normpath(norm_p).replace('\\', '/')}"
+                            )
+                            norm_s = os.path.normpath(os.path.abspath(s))
+                            norm_targets.add(f"{norm_s}::{norm_p}")
+                            norm_targets.add(
+                                f"{norm_s}::{os.path.normpath(norm_p).replace('\\', '/')}"
+                            )
+
+                    for fp_variant in (
+                        p,
+                        norm_p,
+                        os.path.normpath(norm_p).replace("\\", "/"),
+                        p.replace("/", "\\"),
+                        os.path.normpath(p).replace("/", "\\"),
+                    ):
+                        if fp_variant and fp_variant not in cand_set:
+                            cand_set.add(fp_variant)
+                            candidate_filepaths.append(fp_variant)
+
+            if not norm_targets:
+                return []
 
         if not multi_root and base_dir:
             with self._cache_lock:
@@ -608,55 +704,99 @@ class Database:
                         )
                         return list(cached)
 
-        sources = []
-        if source_dirs:
-            for s in source_dirs:
-                if s:
-                    if s not in sources:
-                        sources.append(s)
-                    norm_s = os.path.normpath(os.path.abspath(s))
-                    if norm_s not in sources:
-                        sources.append(norm_s)
-        elif base_dir:
-            sources.append(base_dir)
-            norm_b = os.path.normpath(os.path.abspath(base_dir))
-            if norm_b not in sources:
-                sources.append(norm_b)
+        def _row_matches_guard(row):
+            if norm_targets is None:
+                return True
+            doc_base, fp = row[0], row[1]
+            rel_p = fp.replace("\\", "/")
+            item_key = f"{doc_base}::{rel_p}" if multi_root else rel_p
+            if item_key in norm_targets:
+                return True
+            if os.path.normpath(item_key).replace("\\", "/") in norm_targets:
+                return True
+            if multi_root:
+                norm_doc_base = os.path.normpath(doc_base)
+                if f"{norm_doc_base}::{rel_p}" in norm_targets:
+                    return True
+                if (
+                    f"{norm_doc_base}::{os.path.normpath(rel_p).replace('\\', '/')}"
+                    in norm_targets
+                ):
+                    return True
+                norm_abs_base = os.path.normpath(os.path.abspath(doc_base))
+                if f"{norm_abs_base}::{rel_p}" in norm_targets:
+                    return True
+                if (
+                    f"{norm_abs_base}::{os.path.normpath(rel_p).replace('\\', '/')}"
+                    in norm_targets
+                ):
+                    return True
+            else:
+                if (
+                    rel_p in norm_targets
+                    or os.path.normpath(rel_p).replace("\\", "/") in norm_targets
+                ):
+                    return True
+            return False
 
-        if not sources:
-            return []
+        rows = []
         conn = get_db_connection(self.db_path)
         with conn:
-            placeholders = ",".join(["?"] * len(sources))
-            query = f"SELECT base_dir, filepath, extracted_text, file_hash, user_verified_target_path FROM documents WHERE base_dir IN ({placeholders})"
-            cursor = conn.execute(query, tuple(sources))
-            rows = cursor.fetchall()
-
-            from app.core.shared_registry import SharedWorkerPool
-
-            def _decrypt_row(row):
-                doc_base, fp, text_enc, f_hash, verified_target = row
-                decrypted_text = (
-                    self.crypto.decrypt_text(text_enc) if text_enc is not None else None
-                )
-                rel_p = fp.replace("\\", "/")
-                item_key = f"{doc_base}::{rel_p}" if multi_root else rel_p
-                return (item_key, decrypted_text, f_hash, verified_target, doc_base)
-
-            results = []
-            if rows:
-                pool = SharedWorkerPool.get_instance()
-                results = list(pool.map(_decrypt_row, rows))
-
             if norm_targets is not None:
-                results = [
-                    r
-                    for r in results
-                    if r[0] in norm_targets
-                    or os.path.normpath(r[0]).replace("\\", "/") in norm_targets
-                ]
+                CHUNK_SIZE = 500
+                seen_row_keys = set()
+                placeholders_sources = ",".join(["?"] * len(sources))
+                for i in range(0, len(candidate_filepaths), CHUNK_SIZE):
+                    chunk = candidate_filepaths[i : i + CHUNK_SIZE]
+                    placeholders_fps = ",".join(["?"] * len(chunk))
+                    query = (
+                        f"SELECT base_dir, filepath, extracted_text, file_hash, user_verified_target_path "
+                        f"FROM documents "
+                        f"WHERE base_dir IN ({placeholders_sources}) AND filepath IN ({placeholders_fps})"
+                    )
+                    cursor = conn.execute(query, tuple(sources) + tuple(chunk))
+                    for r in cursor.fetchall():
+                        rk = (r[0], r[1])
+                        if rk not in seen_row_keys:
+                            seen_row_keys.add(rk)
+                            rows.append(r)
+            else:
+                placeholders = ",".join(["?"] * len(sources))
+                query = (
+                    f"SELECT base_dir, filepath, extracted_text, file_hash, user_verified_target_path "
+                    f"FROM documents WHERE base_dir IN ({placeholders})"
+                )
+                cursor = conn.execute(query, tuple(sources))
+                rows = cursor.fetchall()
 
-            return results
+        # In-memory pre-decryption guard: decrypt only rows confirmed to match target criteria
+        confirmed_rows = [row for row in rows if _row_matches_guard(row)]
+
+        from app.core.shared_registry import SharedWorkerPool
+
+        def _decrypt_row(row):
+            doc_base, fp, text_enc, f_hash, verified_target = row
+            decrypted_text = (
+                self.crypto.decrypt_text(text_enc) if text_enc is not None else None
+            )
+            rel_p = fp.replace("\\", "/")
+            item_key = f"{doc_base}::{rel_p}" if multi_root else rel_p
+            return (item_key, decrypted_text, f_hash, verified_target, doc_base)
+
+        results = []
+        if confirmed_rows:
+            pool = SharedWorkerPool.get_instance()
+            results = list(pool.map(_decrypt_row, confirmed_rows))
+
+        if norm_targets is not None:
+            results = [
+                r
+                for r in results
+                if r[0] in norm_targets
+                or os.path.normpath(r[0]).replace("\\", "/") in norm_targets
+            ]
+
+        return results
 
     def set_user_verified_target(self, base_dir, file_hash, target_path):
         """Record the historical folder assignment for a specific document hash."""
