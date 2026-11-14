@@ -492,7 +492,9 @@ def test_verify_fails_with_tampered_prompt_and_manifest_hash(tmp_path, monkeypat
 
     # Contributor tampers with prompt and manually updates SHA-256 hash in manifest.json
     # without knowing the maintainer secret
-    agent1.write_text("Tampered prompt text by PR author", encoding="utf-8", newline="\n")
+    agent1.write_text(
+        "Tampered prompt text by PR author", encoding="utf-8", newline="\n"
+    )
     new_hash = compute_sha256(agent1)
 
     with open(manifest_path, "r", encoding="utf-8") as f:

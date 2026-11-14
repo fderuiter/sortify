@@ -332,7 +332,8 @@ class RenameModal(
                             )
 
                 if not collision_msg and (
-                    self.base_dir or (target_folder and _is_absolute_path(target_folder))
+                    self.base_dir
+                    or (target_folder and _is_absolute_path(target_folder))
                 ):
                     if target_folder and _is_absolute_path(target_folder):
                         dest_file_path = os.path.normpath(
