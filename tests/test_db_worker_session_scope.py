@@ -29,7 +29,7 @@ def temp_db_and_worker():
         pass
 
 
-def test_db_worker_session_scope_commit(temp_db_and_worker):
+def test_db_worker_session_commit(temp_db_and_worker):
     """Verify explicit session transaction commit persists all batched updates atomically."""
     db, worker, temp_dir = temp_db_and_worker
     base_dir = temp_dir
@@ -75,7 +75,7 @@ def test_db_worker_session_scope_commit(temp_db_and_worker):
     assert doc2 is not None
 
 
-def test_db_worker_session_scope_rollback(temp_db_and_worker):
+def test_db_worker_session_rollback(temp_db_and_worker):
     """Verify explicit session transaction rollback reverts all updates applied since session start."""
     db, worker, temp_dir = temp_db_and_worker
     base_dir = temp_dir

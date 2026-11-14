@@ -4,7 +4,6 @@ import logging
 import queue
 import threading
 import time
-from contextlib import contextmanager
 from typing import Any, TypedDict
 
 from app.core.db_conn import clear_connection_cache, get_db_connection
@@ -227,19 +226,6 @@ class DBWorker:
             sess_id = self._active_session.get("session_id")
             return str(sess_id) if sess_id is not None else None
         return None
-
-    @contextmanager
-    def session_scope(
-        self, session_id: str, db_path: str = None, timeout: float = 300.0
-    ):
-        """Context manager providing explicit transaction session scope."""
-        self.begin_session(session_id, db_path=db_path, timeout=timeout)
-        try:
-            yield
-            self.commit_session(session_id)
-        except Exception:
-            self.rollback_session(session_id)
-            raise
 
     def submit_write(self, func, *args, **kwargs):
         """Submit a database write operation to the queue without waiting for completion."""
