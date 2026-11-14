@@ -4130,6 +4130,7 @@ version = "0.1.0"
 source = { editable = "." }
 dependencies = [
     { name = "cryptography" },
+    { name = "defusedxml" },
     { name = "jsonschema" },
     { name = "keyring" },
     { name = "numpy" },
@@ -4199,6 +4200,7 @@ notebooks = [
 [package.metadata]
 requires-dist = [
     { name = "cryptography", specifier = ">=41.0.0" },
+    { name = "defusedxml", specifier = ">=0.7.1" },
     { name = "easyocr", marker = "extra == 'ml'", specifier = ">=1.7.0" },
     { name = "jsonschema", specifier = ">=4.25.1" },
     { name = "keyring", specifier = ">=24.0.0" },

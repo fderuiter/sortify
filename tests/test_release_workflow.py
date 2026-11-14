@@ -128,3 +128,42 @@ def test_release_builds_and_publishes_once():
     assert len(models) == 1
     assert models[0].get("if") == "matrix.os_name == 'Linux'"
     assert "smart-autosorter-models.zip.sha256" in models[0]["with"]["files"]
+
+
+def test_release_workflow_pe_dependency_verification():
+    """Verify that .github/workflows/release.yml verifies PE binary dependencies on Windows before archiving."""
+    workflow = _load_release_workflow()
+    build_steps = workflow["jobs"]["build-binaries"]["steps"]
+
+    verify_steps = [
+        s for s in build_steps if s.get("name") == "Verify PE binary dependencies"
+    ]
+    assert len(verify_steps) == 1, (
+        "Missing 'Verify PE binary dependencies' step in build-binaries job in release.yml"
+    )
+
+    verify_step = verify_steps[0]
+    assert verify_step.get("if") == "runner.os == 'Windows'"
+    assert "uv run python scripts/verify_pe_dependencies.py" in verify_step.get(
+        "run", ""
+    )
+
+    step_names = [s.get("name") for s in build_steps]
+    build_idx = step_names.index("Build executable")
+    verify_idx = step_names.index("Verify PE binary dependencies")
+    archive_win_idx = step_names.index("Package as Archive (Windows)")
+
+    assert build_idx < verify_idx < archive_win_idx, (
+        f"Step order invalid: Build ({build_idx}) must precede Verify ({verify_idx}), "
+        f"which must precede Windows Archive ({archive_win_idx})"
+    )
+
+    # Ensure verification strictly precedes all Windows archive packaging steps
+    for idx, step in enumerate(build_steps):
+        if (
+            "archive" in step.get("name", "").lower()
+            and step.get("if") == "runner.os == 'Windows'"
+        ):
+            assert verify_idx < idx, (
+                f"PE verification must run before archive step '{step.get('name')}'"
+            )
