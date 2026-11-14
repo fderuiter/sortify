@@ -33,6 +33,7 @@ from app.ui.modals.reports import (
 from app.ui.modals.rules import ExportRulesModal, RuleImportModal, TemplateGalleryModal
 from app.ui.modals.session import (
     HistoryModal,
+    MultiSessionRecoveryModal,
     RollbackConfirmModal,
     RollbackErrorModal,
     SessionRecoveryModal,
@@ -212,6 +213,29 @@ CATALOG_REGISTRY: List[Dict[str, Any]] = [
         "description": "Modal dialog prompting for recovery or rollback of interrupted sorting sessions.",
         "factory": lambda settings=None: SessionRecoveryModal(
             {"session_id": "session_001", "base_dir": "/app", "status": "failed"}
+        ),
+    },
+    {
+        "id": "multi_session_recovery_modal",
+        "name": "Multi-Session Recovery Modal",
+        "category": "modal",
+        "description": "Modal dialog prompting for recovery, rollback, or cleanup across multiple interrupted sorting sessions.",
+        "factory": lambda settings=None: MultiSessionRecoveryModal(
+            [
+                {
+                    "session_id": "session_001",
+                    "base_dir": "/app",
+                    "status": "failed",
+                    "step_count": 5,
+                },
+                {
+                    "session_id": "session_002",
+                    "base_dir": "/app/docs",
+                    "status": "uncommitted",
+                    "step_count": 12,
+                },
+            ],
+            settings=settings,
         ),
     },
     {

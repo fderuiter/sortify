@@ -325,6 +325,7 @@ def test_main_detects_unsynced_files_on_check():
             patch("scripts.generate_docs.generate_admin_guide"),
             patch("scripts.generate_docs.generate_keyboard_docs"),
             patch("scripts.generate_docs.update_security_md"),
+            patch("scripts.generate_docs.sync_config_schema"),
             patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
             patch("scripts.generate_docs.audit_handwritten_docs", return_value=[]),
             patch("subprocess.run") as mock_run,
@@ -339,6 +340,7 @@ def test_main_detects_unsynced_files_on_check():
                 Path("docs/ui.md").as_posix(): ["content2", "different_content2"],
                 Path("docs/admin_guide.md").as_posix(): ["content3", "content3"],
                 "SECURITY.md": ["content4", "content4"],
+                Path("app/config_schema.json").as_posix(): ["schema1", "schema1"],
             }
 
             counters = {k: 0 for k in file_contents}
@@ -389,6 +391,7 @@ def test_main_clean_on_check():
             patch("scripts.generate_docs.generate_admin_guide"),
             patch("scripts.generate_docs.generate_keyboard_docs"),
             patch("scripts.generate_docs.update_security_md"),
+            patch("scripts.generate_docs.sync_config_schema"),
             patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
             patch("scripts.generate_docs.audit_handwritten_docs", return_value=[]),
             patch("subprocess.run") as mock_run,
@@ -403,6 +406,7 @@ def test_main_clean_on_check():
                 Path("docs/ui.md").as_posix(): ["content2", "content2"],
                 Path("docs/admin_guide.md").as_posix(): ["content3", "content3"],
                 "SECURITY.md": ["content4", "content4"],
+                Path("app/config_schema.json").as_posix(): ["schema1", "schema1"],
             }
 
             counters = {k: 0 for k in file_contents}
@@ -439,6 +443,118 @@ def test_main_clean_on_check():
             main()
 
             mock_exit.assert_not_called()
+
+
+def test_main_detects_unsynced_config_schema_on_check():
+    """Verify that --check detects modified config_schema.json and exits with code 1."""
+    original_open = open
+    with patch("sys.argv", ["generate_docs.py", "--check", "--no-build"]):
+        with (
+            patch("scripts.generate_docs.compile_diagram_assets"),
+            patch("scripts.generate_docs.generate_tutorial_docs"),
+            patch("scripts.generate_docs.generate_api_docs"),
+            patch("scripts.generate_docs.generate_ui_docs"),
+            patch("scripts.generate_docs.generate_admin_guide"),
+            patch("scripts.generate_docs.generate_keyboard_docs"),
+            patch("scripts.generate_docs.update_security_md"),
+            patch("scripts.generate_docs.sync_config_schema"),
+            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch("scripts.generate_docs.audit_handwritten_docs", return_value=[]),
+            patch("subprocess.run") as mock_run,
+            patch("scripts.generate_docs.os.path.exists", return_value=True),
+            patch("builtins.open") as mock_open,
+            patch("sys.exit") as mock_exit,
+        ):
+            mock_run.return_value = MagicMock(returncode=0)
+
+            file_contents = {
+                Path("docs/api_reference.md").as_posix(): ["content1", "content1"],
+                Path("docs/ui.md").as_posix(): ["content2", "content2"],
+                Path("docs/admin_guide.md").as_posix(): ["content3", "content3"],
+                "SECURITY.md": ["content4", "content4"],
+                Path("app/config_schema.json").as_posix(): ["schema_old", "schema_new"],
+            }
+
+            counters = {k: 0 for k in file_contents}
+
+            class MockFile:
+                def __init__(self, filepath):
+                    self.filepath = filepath
+
+                def __enter__(self):
+                    return self
+
+                def __exit__(self, exc_type, exc_val, exc_tb):
+                    pass
+
+                def read(self):
+                    idx = counters[self.filepath]
+                    counters[self.filepath] = min(
+                        idx + 1, len(file_contents[self.filepath]) - 1
+                    )
+                    return file_contents[self.filepath][idx]
+
+            def mock_open_side_effect(filepath, *args, **kwargs):
+                key = (
+                    Path(filepath).as_posix()
+                    if isinstance(filepath, (str, Path))
+                    else str(filepath)
+                )
+                if key in file_contents:
+                    return MockFile(key)
+                return original_open(filepath, *args, **kwargs)
+
+            mock_open.side_effect = mock_open_side_effect
+
+            main()
+
+            mock_exit.assert_called_once_with(1)
+
+
+def test_main_sync_config_schema_task_registered_and_invoked():
+    """Verify that sync_config_schema task is registered and invoked in main()."""
+    with patch("sys.argv", ["generate_docs.py", "--no-build"]):
+        with (
+            patch("scripts.generate_docs.compile_diagram_assets"),
+            patch("scripts.generate_docs.generate_tutorial_docs"),
+            patch("scripts.generate_docs.generate_api_docs"),
+            patch("scripts.generate_docs.generate_ui_docs"),
+            patch("scripts.generate_docs.generate_admin_guide"),
+            patch("scripts.generate_docs.generate_keyboard_docs"),
+            patch("scripts.generate_docs.update_security_md"),
+            patch("scripts.generate_docs.sync_config_schema") as mock_sync_schema,
+            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch("subprocess.run") as mock_run,
+        ):
+            mock_run.return_value = MagicMock(returncode=0)
+            main()
+            mock_sync_schema.assert_called_once()
+
+
+def test_sync_config_schema_task_execution(tmp_path):
+    """Verify sync_config_schema normalizes LOG_FILE and writes schema to disk."""
+    import json
+
+    from scripts.validate_config import generate_config_schema, sync_config_schema
+
+    schema = generate_config_schema()
+    assert isinstance(schema, dict)
+    assert "properties" in schema
+    assert "LOG_FILE" in schema["properties"]
+    assert schema["properties"]["LOG_FILE"]["default"] == "autosorter.log"
+
+    target_file = tmp_path / "config_schema.json"
+    updated = sync_config_schema(schema_path=target_file)
+    assert updated is True
+    assert target_file.exists()
+
+    with open(target_file, "r", encoding="utf-8") as f:
+        written_schema = json.load(f)
+    assert written_schema == schema
+
+    # Second run with unchanged content should return False
+    updated_again = sync_config_schema(schema_path=target_file)
+    assert updated_again is False
 
 
 def test_component_diagram_spec_serialization():
