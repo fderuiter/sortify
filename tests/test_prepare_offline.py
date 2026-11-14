@@ -49,7 +49,10 @@ def test_prepare_offline_cpu_success(
                     "offline_bundle", "zip", "offline_bundle"
                 )
 
+                # Verify subprocess.run invocations
                 assert mock_run.call_count == 3
+
+                # Verify uv pip compile uses --index-strategy first-index
                 compile_cmd = mock_run.call_args_list[0][0][0]
                 assert "--index-strategy" in compile_cmd
                 assert (
@@ -57,6 +60,7 @@ def test_prepare_offline_cpu_success(
                     == "first-index"
                 )
 
+                # Verify pip download uses --require-hashes and --no-deps
                 download_cmd = mock_run.call_args_list[2][0][0]
                 assert "--require-hashes" in download_cmd
                 assert "--no-deps" in download_cmd
