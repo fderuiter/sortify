@@ -1823,6 +1823,37 @@ USER_GUIDE_SETUP_WIZARD_SPEC = ComponentDiagramSpec(
             url="#first-run-steps--setup-wizard",
             tooltip="User Guide Reference",
         ),
+        DiagramNode(
+            id="G",
+            label="Enter Workspace Directory Path",
+            url="#first-run-steps--setup-wizard",
+            tooltip="Workspace Directory Input Field (#input-dir)",
+        ),
+        DiagramNode(
+            id="H",
+            label="Select Quick Preset (Demo / Downloads / Documents)",
+            url="#first-run-steps--setup-wizard",
+            tooltip="Quick Preset Buttons",
+        ),
+        DiagramNode(
+            id="I",
+            label="Validate Directory Path",
+            shape="rhombus",
+            url="#first-run-steps--setup-wizard",
+            tooltip="Directory Path Validation",
+        ),
+        DiagramNode(
+            id="J",
+            label="Display Inline Error Banner",
+            url="#first-run-steps--setup-wizard",
+            tooltip="Inline Error Banner (#lbl-error)",
+        ),
+        DiagramNode(
+            id="K",
+            label="Begin Directory Scan",
+            url="#first-run-steps--setup-wizard",
+            tooltip="Scan and Organize Workspace",
+        ),
     ],
     edges=[
         DiagramEdge(source="A", target="B"),
@@ -1831,6 +1862,13 @@ USER_GUIDE_SETUP_WIZARD_SPEC = ComponentDiagramSpec(
         DiagramEdge(source="C", target="E", label="Network Error or Offline"),
         DiagramEdge(source="B", target="E", label="Decline"),
         DiagramEdge(source="B", target="F", label="Help"),
+        DiagramEdge(source="B", target="G", label="Enter Path"),
+        DiagramEdge(source="B", target="H", label="Select Preset"),
+        DiagramEdge(source="H", target="G", label="Populate Path"),
+        DiagramEdge(source="G", target="I", label="Finish & Save"),
+        DiagramEdge(source="I", target="J", label="Invalid Path"),
+        DiagramEdge(source="J", target="G", label="Correct Path"),
+        DiagramEdge(source="I", target="K", label="Valid Path"),
     ],
 )
 
@@ -3007,6 +3045,37 @@ def _create_user_guide_setup_wizard_spec() -> ComponentDiagramSpec:
                 url="#first-run-steps--setup-wizard",
                 tooltip="User Guide Reference",
             ),
+            DiagramNode(
+                id="G",
+                label="Enter Workspace Directory Path",
+                url="#first-run-steps--setup-wizard",
+                tooltip="Workspace Directory Input Field (#input-dir)",
+            ),
+            DiagramNode(
+                id="H",
+                label="Select Quick Preset (Demo / Downloads / Documents)",
+                url="#first-run-steps--setup-wizard",
+                tooltip="Quick Preset Buttons",
+            ),
+            DiagramNode(
+                id="I",
+                label="Validate Directory Path",
+                shape="rhombus",
+                url="#first-run-steps--setup-wizard",
+                tooltip="Directory Path Validation",
+            ),
+            DiagramNode(
+                id="J",
+                label="Display Inline Error Banner",
+                url="#first-run-steps--setup-wizard",
+                tooltip="Inline Error Banner (#lbl-error)",
+            ),
+            DiagramNode(
+                id="K",
+                label="Begin Directory Scan",
+                url="#first-run-steps--setup-wizard",
+                tooltip="Scan and Organize Workspace",
+            ),
         ],
         edges=[
             DiagramEdge(source="A", target="B"),
@@ -3015,6 +3084,13 @@ def _create_user_guide_setup_wizard_spec() -> ComponentDiagramSpec:
             DiagramEdge(source="C", target="E", label="Network Error or Offline"),
             DiagramEdge(source="B", target="E", label="Decline"),
             DiagramEdge(source="B", target="F", label="Help"),
+            DiagramEdge(source="B", target="G", label="Enter Path"),
+            DiagramEdge(source="B", target="H", label="Select Preset"),
+            DiagramEdge(source="H", target="G", label="Populate Path"),
+            DiagramEdge(source="G", target="I", label="Finish & Save"),
+            DiagramEdge(source="I", target="J", label="Invalid Path"),
+            DiagramEdge(source="J", target="G", label="Correct Path"),
+            DiagramEdge(source="I", target="K", label="Valid Path"),
         ],
     )
 
