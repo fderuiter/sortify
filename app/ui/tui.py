@@ -1172,9 +1172,7 @@ class AutoSorterTUI(
                 restored_count = history_mgr.rollback(session_id, **kwargs)
 
             if hasattr(self, "call_from_thread"):
-                self.call_from_thread(
-                    self._on_undo_success, session_id, restored_count
-                )
+                self.call_from_thread(self._on_undo_success, session_id, restored_count)
             else:
                 self._on_undo_success(session_id, restored_count)
         except Exception as err:

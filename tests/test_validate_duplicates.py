@@ -155,7 +155,9 @@ class MyModel:
 
 def test_dict_compat_mixin_canonical_registration():
     assert "DictCompatMixin" in CANONICAL_UTILITY_REGISTRY
-    assert CANONICAL_UTILITY_REGISTRY["DictCompatMixin"] == "app/core/domain_contracts.py"
+    assert (
+        CANONICAL_UTILITY_REGISTRY["DictCompatMixin"] == "app/core/domain_contracts.py"
+    )
 
     # Re-defining DictCompatMixin as a class outside home module raises error
     errors = []
@@ -169,7 +171,9 @@ def test_dict_compat_mixin_canonical_registration():
     # Defining DictCompatMixin inside home module is allowed
     good_errors = []
     good_hashes = {}
-    good_visitor = UtilityAntiDuplicationVisitor("app/core/domain_contracts.py", good_errors, good_hashes)
+    good_visitor = UtilityAntiDuplicationVisitor(
+        "app/core/domain_contracts.py", good_errors, good_hashes
+    )
     good_tree = ast.parse("class DictCompatMixin:\n    pass\n")
     good_visitor.visit(good_tree)
     assert len(good_errors) == 0
@@ -179,7 +183,9 @@ def test_redundant_dict_adapter_methods_flagged_in_domain_models():
     # Defining redundant dictionary adapter methods in QuarantineRecordModel is flagged
     errors = []
     hashes = {}
-    visitor = UtilityAntiDuplicationVisitor("app/core/domain_contracts.py", errors, hashes)
+    visitor = UtilityAntiDuplicationVisitor(
+        "app/core/domain_contracts.py", errors, hashes
+    )
     tree = ast.parse("""
 class QuarantineRecordModel:
     def __getitem__(self, item: str):
@@ -195,14 +201,17 @@ class QuarantineRecordModel:
     assert len(errors) == 4
     for method_name in ("__getitem__", "get", "__contains__", "dict"):
         assert any(
-            f"Redundant dictionary adapter method '{method_name}' found in class 'QuarantineRecordModel'." in err
+            f"Redundant dictionary adapter method '{method_name}' found in class 'QuarantineRecordModel'."
+            in err
             for err in errors
         )
 
     # DictCompatMixin itself defining dictionary methods is allowed
     mixin_errors = []
     mixin_hashes = {}
-    mixin_visitor = UtilityAntiDuplicationVisitor("app/core/domain_contracts.py", mixin_errors, mixin_hashes)
+    mixin_visitor = UtilityAntiDuplicationVisitor(
+        "app/core/domain_contracts.py", mixin_errors, mixin_hashes
+    )
     mixin_tree = ast.parse("""
 class DictCompatMixin:
     def __getitem__(self, item: str):
@@ -216,4 +225,3 @@ class DictCompatMixin:
 """)
     mixin_visitor.visit(mixin_tree)
     assert len(mixin_errors) == 0
-

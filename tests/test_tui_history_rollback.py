@@ -718,13 +718,14 @@ async def test_pipeline_execution_announces_undo_available(tmp_path):
         app.app_session.base_dir = str(tmp_path)
         app.plan = {"doc.txt": {}}
 
-        with patch.object(app, "_get_executable_plan", return_value={"doc.txt": {}}), \
-             patch.object(app, "_start_scan"), \
-             patch.object(app, "action_open_audit_report"):
+        with (
+            patch.object(app, "_get_executable_plan", return_value={"doc.txt": {}}),
+            patch.object(app, "_start_scan"),
+            patch.object(app, "action_open_audit_report"),
+        ):
             app.run_execute_worker()
             await pilot.pause()
             await app.workers.wait_for_complete()
             await pilot.pause()
 
         assert any("[Ctrl+Z] Undo available" in msg for msg in announced)
-
