@@ -9,6 +9,13 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Union
 
+from app.core.accessible_html import (
+    AccessibleHtmlBuilder,
+    render_accessible_input,
+    render_accessible_select,
+    render_table,
+    render_warning_banner,
+)
 from app.core.domain_contracts import _get_val, _make_json_serializable
 from app.core.path_utils import scrub_user_home_paths
 from app.core.text_utils import sanitize_secret_patterns
@@ -345,18 +352,9 @@ class SimulationExporter:
             badge_text = "SAFETY HOLD"
 
         # Build warning banners
-        warning_items_html = [
-            f"<li>{html.escape(w, quote=True)}</li>" for w in warnings
-        ]
-        warning_banner_html = (
-            f"""
-            <div class="warning-banner">
-                <h3>Simulation Warnings ({len(warnings)})</h3>
-                <ul>{"".join(warning_items_html)}</ul>
-            </div>
-            """
-            if warnings
-            else ""
+        warning_banner_html = render_warning_banner(
+            warnings=warnings,
+            heading_level=2,
         )
 
         # Build table rows with optimized row template
@@ -412,14 +410,8 @@ class SimulationExporter:
         table_rows_html = "".join(table_rows)
         data_base_dir = html.escape(data["base_directory"], quote=True)
 
-        html_content = f"""<!DOCTYPE html>
-<html lang="en">
-<head>
-    <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Sortify - Dry-Run Simulation Report</title>
-    <style>
-        :root {{
+        styles = """
+        :root {
             --bg-color: #0d1117;
             --card-bg: #161b22;
             --border-color: #30363d;
@@ -431,100 +423,101 @@ class SimulationExporter:
             --accent-danger: #da3633;
             --font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, Helvetica, Arial, sans-serif;
             --mono-font: SFMono-Regular, Consolas, "Liberation Mono", Menlo, monospace;
-        }}
-        body {{
+        }
+        body {
             background-color: var(--bg-color);
             color: var(--text-color);
             font-family: var(--font-family);
             margin: 0;
             padding: 24px;
             line-height: 1.5;
-        }}
-        .header-container {{
+        }
+        .header-container {
             display: flex;
             justify-content: space-between;
             align-items: center;
             border-bottom: 1px solid var(--border-color);
             padding-bottom: 16px;
             margin-bottom: 24px;
-        }}
-        .header-title h1 {{
+        }
+        .header-title h1 {
             margin: 0 0 8px 0;
             font-size: 24px;
             color: #ffffff;
-        }}
-        .header-meta {{
+        }
+        .header-meta {
             color: var(--text-muted);
             font-size: 14px;
-        }}
-        .status-badge {{
+        }
+        .status-badge {
             padding: 8px 16px;
             border-radius: 20px;
             font-weight: bold;
             font-size: 14px;
             text-transform: uppercase;
             letter-spacing: 0.5px;
-        }}
-        .status-passed {{
+        }
+        .status-passed {
             background-color: rgba(35, 134, 54, 0.2);
             border: 1px solid var(--accent-green);
             color: #3fb950;
-        }}
-        .status-warning {{
+        }
+        .status-warning {
             background-color: rgba(210, 153, 34, 0.2);
             border: 1px solid var(--accent-warning);
             color: #d29922;
-        }}
-        .status-danger {{
+        }
+        .status-danger {
             background-color: rgba(218, 54, 51, 0.2);
             border: 1px solid var(--accent-danger);
             color: #f85149;
-        }}
-        .metrics-grid {{
+        }
+        .metrics-grid {
             display: grid;
             grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
             gap: 16px;
             margin-bottom: 24px;
-        }}
-        .metric-card {{
+        }
+        .metric-card {
             background-color: var(--card-bg);
             border: 1px solid var(--border-color);
             border-radius: 8px;
             padding: 16px;
-        }}
-        .metric-value {{
+        }
+        .metric-value {
             font-size: 28px;
             font-weight: bold;
             color: #ffffff;
             margin-bottom: 4px;
-        }}
-        .metric-label {{
+        }
+        .metric-label {
             color: var(--text-muted);
             font-size: 13px;
             text-transform: uppercase;
-        }}
-        .warning-banner {{
+        }
+        .warning-banner {
             background-color: rgba(210, 153, 34, 0.1);
             border: 1px solid var(--accent-warning);
             border-radius: 8px;
             padding: 16px;
             margin-bottom: 24px;
-        }}
-        .warning-banner h3 {{
+        }
+        .warning-banner h2, .warning-banner h3 {
             margin: 0 0 12px 0;
             color: var(--accent-warning);
-        }}
-        .warning-banner ul {{
+            font-size: 18px;
+        }
+        .warning-banner ul {
             margin: 0;
             padding-left: 20px;
-        }}
-        .controls-row {{
+        }
+        .controls-row {
             display: flex;
             gap: 12px;
             margin-bottom: 16px;
             flex-wrap: wrap;
-        }}
-        .search-input {{
+        }
+        .search-input {
             flex: 1;
             min-width: 250px;
             background-color: var(--card-bg);
@@ -533,129 +526,144 @@ class SimulationExporter:
             padding: 8px 12px;
             border-radius: 6px;
             font-size: 14px;
-        }}
-        .filter-select {{
+        }
+        .filter-select {
             background-color: var(--card-bg);
             border: 1px solid var(--border-color);
             color: var(--text-color);
             padding: 8px 12px;
             border-radius: 6px;
             font-size: 14px;
-        }}
-        .data-table {{
+        }
+        .data-table {
             width: 100%;
             border-collapse: collapse;
             background-color: var(--card-bg);
             border: 1px solid var(--border-color);
             border-radius: 8px;
             overflow: hidden;
-        }}
-        .data-table th, .data-table td {{
+        }
+        .data-table th, .data-table td {
             padding: 10px 14px;
             text-align: left;
             border-bottom: 1px solid var(--border-color);
             font-size: 13px;
-        }}
-        .data-table th {{
+        }
+        .data-table th {
             background-color: #21262d;
             color: #ffffff;
             font-weight: 600;
-        }}
-        .code-cell {{
+        }
+        .code-cell {
             font-family: var(--mono-font);
             font-size: 12px;
             word-break: break-all;
-        }}
-        .badge {{
+        }
+        .badge {
             display: inline-block;
             padding: 2px 8px;
             border-radius: 12px;
             font-size: 11px;
             font-weight: 600;
-        }}
-        .badge-success {{ background: rgba(35, 134, 54, 0.2); color: #3fb950; border: 1px solid var(--accent-green); }}
-        .badge-warning {{ background: rgba(210, 153, 34, 0.2); color: #d29922; border: 1px solid var(--accent-warning); }}
-        .badge-danger {{ background: rgba(218, 54, 51, 0.2); color: #f85149; border: 1px solid var(--accent-danger); }}
-        .badge-info {{ background: rgba(88, 166, 255, 0.2); color: #58a6ff; border: 1px solid var(--accent-blue); }}
-        .badge-muted {{ background: rgba(139, 148, 158, 0.2); color: var(--text-muted); border: 1px solid var(--text-muted); }}
-    </style>
-</head>
-<body>
-    <div class="header-container">
-        <div class="header-title">
-            <h1>Sortify Dry-Run Simulation Report</h1>
-            <div class="header-meta">
-                Generated: {data["generated_at"]} | Target Directory: <code>{data_base_dir}</code>
+        }
+        .badge-success { background: rgba(35, 134, 54, 0.2); color: #3fb950; border: 1px solid var(--accent-green); }
+        .badge-warning { background: rgba(210, 153, 34, 0.2); color: #d29922; border: 1px solid var(--accent-warning); }
+        .badge-danger { background: rgba(218, 54, 51, 0.2); color: #f85149; border: 1px solid var(--accent-danger); }
+        .badge-info { background: rgba(88, 166, 255, 0.2); color: #58a6ff; border: 1px solid var(--accent-blue); }
+        .badge-muted { background: rgba(139, 148, 158, 0.2); color: var(--text-muted); border: 1px solid var(--text-muted); }
+        """
+
+        header_content = f"""        <div class="header-container">
+            <div class="header-title">
+                <h1>Sortify Dry-Run Simulation Report</h1>
+                <div class="header-meta">
+                    Generated: {data["generated_at"]} | Target Directory: <code>{data_base_dir}</code>
+                </div>
+            </div>
+            <div>
+                <span class="status-badge {badge_class}">{badge_text}</span>
+            </div>
+        </div>"""
+
+        search_input_html = render_accessible_input(
+            input_id="searchInput",
+            label_text="Search paths, filenames, or sensitivity",
+            input_type="text",
+            placeholder="Search paths, filenames, or sensitivity...",
+            input_class="search-input",
+            aria_label="Search paths, filenames, or sensitivity",
+        )
+        filter_select_html = render_accessible_select(
+            select_id="filterSelect",
+            label_text="Filter file mappings",
+            select_class="filter-select",
+            aria_label="Filter file mappings",
+            options=[
+                ("all", "All File Mappings"),
+                ("collisions", "Collisions Only"),
+                ("holds", "Quarantine Holds Only"),
+                ("confirmed", "Confirmed Only"),
+                ("unconfirmed", "Unconfirmed Only"),
+            ],
+        )
+
+        table_html = render_table(
+            columns=[
+                "Source Path",
+                "Target Path",
+                "Filename",
+                "Sensitivity Rating",
+                "Collision Flag",
+                "Confirmation Status",
+            ],
+            rows_html=table_rows_html,
+            table_id="mappingsTable",
+            table_class="data-table",
+        )
+
+        main_content = f"""        <div class="metrics-grid">
+            <div class="metric-card">
+                <div class="metric-value">{summary["total_files"]}</div>
+                <div class="metric-label">Total Files Analyzed</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">{summary["collisions_count"]}</div>
+                <div class="metric-label">Path Collisions</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">{summary["sensitivity_holds_count"]}</div>
+                <div class="metric-label">Sensitivity Quarantine Holds</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">{summary["broken_links_count"]}</div>
+                <div class="metric-label">Broken Symlinks / Links</div>
+            </div>
+            <div class="metric-card">
+                <div class="metric-value">{summary["total_warnings"]}</div>
+                <div class="metric-label">Total Warnings</div>
             </div>
         </div>
-        <div>
-            <span class="status-badge {badge_class}">{badge_text}</span>
-        </div>
-    </div>
 
-    <div class="metrics-grid">
-        <div class="metric-card">
-            <div class="metric-value">{summary["total_files"]}</div>
-            <div class="metric-label">Total Files Analyzed</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value">{summary["collisions_count"]}</div>
-            <div class="metric-label">Path Collisions</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value">{summary["sensitivity_holds_count"]}</div>
-            <div class="metric-label">Sensitivity Quarantine Holds</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value">{summary["broken_links_count"]}</div>
-            <div class="metric-label">Broken Symlinks / Links</div>
-        </div>
-        <div class="metric-card">
-            <div class="metric-value">{summary["total_warnings"]}</div>
-            <div class="metric-label">Total Warnings</div>
-        </div>
-    </div>
+        {warning_banner_html}
 
-    {warning_banner_html}
+        <div class="controls-row">
+            {search_input_html}
+            {filter_select_html}
+        </div>
 
-    <div class="controls-row">
-        <input type="text" id="searchInput" class="search-input" placeholder="Search paths, filenames, or sensitivity...">
-        <select id="filterSelect" class="filter-select">
-            <option value="all">All File Mappings</option>
-            <option value="collisions">Collisions Only</option>
-            <option value="holds">Quarantine Holds Only</option>
-            <option value="confirmed">Confirmed Only</option>
-            <option value="unconfirmed">Unconfirmed Only</option>
-        </select>
-    </div>
+        {table_html}"""
 
-    <table class="data-table" id="mappingsTable">
-        <thead>
-            <tr>
-                <th>Source Path</th>
-                <th>Target Path</th>
-                <th>Filename</th>
-                <th>Sensitivity Rating</th>
-                <th>Collision Flag</th>
-                <th>Confirmation Status</th>
-            </tr>
-        </thead>
-        <tbody>
-            {table_rows_html}
-        </tbody>
-    </table>
-
-    <script>
-        document.addEventListener('DOMContentLoaded', function() {{
+        scripts = """
+        document.addEventListener('DOMContentLoaded', function() {
             const searchInput = document.getElementById('searchInput');
             const filterSelect = document.getElementById('filterSelect');
             const tableRows = document.querySelectorAll('#mappingsTable tbody tr');
 
-            function filterTable() {{
+            function filterTable() {
                 const query = searchInput.value.toLowerCase();
                 const filterVal = filterSelect.value;
 
-                tableRows.forEach(row => {{
+                tableRows.forEach(row => {
                     const text = row.textContent.toLowerCase();
                     const matchesSearch = text.includes(query);
 
@@ -670,16 +678,23 @@ class SimulationExporter:
                     else if (filterVal === 'unconfirmed') matchesFilter = !isConfirmed;
 
                     row.style.display = (matchesSearch && matchesFilter) ? '' : 'none';
-                }});
-            }}
+                });
+            }
 
             searchInput.addEventListener('input', filterTable);
             filterSelect.addEventListener('change', filterTable);
-        }});
-    </script>
-</body>
-</html>
-"""
+        });
+        """
+
+        builder = AccessibleHtmlBuilder(
+            title="Sortify - Dry-Run Simulation Report",
+            lang="en",
+            styles=styles,
+            scripts=scripts,
+        )
+        builder.set_header(header_content)
+        builder.set_main(main_content)
+        html_content = builder.render()
 
         if output_path is not None:
             p = Path(output_path)
