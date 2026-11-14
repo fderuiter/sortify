@@ -253,6 +253,33 @@ class SortPipelineMixin:
             self.announce("Executing file moves according to plan...")
             self.run_execute_worker()
 
+    def _normalize_plan_for_verification(
+        self, plan_dict: Dict[str, Any], base_dir: str
+    ) -> Dict[str, Any]:
+        """Ensure file nodes in plan dictionary have source_path and relative_source populated."""
+        if not isinstance(plan_dict, dict):
+            return plan_dict
+        normalized: Dict[str, Any] = {}
+        for k, v in plan_dict.items():
+            if isinstance(v, dict):
+                if v.get("__type__") == "file":
+                    item = dict(v)
+                    fp = item.get("filepath")
+                    if fp:
+                        if not item.get("source_path"):
+                            item["source_path"] = fp
+                        if not item.get("relative_source") and base_dir:
+                            try:
+                                item["relative_source"] = os.path.relpath(fp, base_dir)
+                            except ValueError:
+                                item["relative_source"] = fp
+                    normalized[k] = item
+                else:
+                    normalized[k] = self._normalize_plan_for_verification(v, base_dir)
+            else:
+                normalized[k] = v
+        return normalized
+
     @work(group="validation", exclusive=True, thread=True)
     def run_validation_worker(self) -> None:
         """Asynchronously verify plan integrity in background worker thread."""
@@ -269,7 +296,13 @@ class SortPipelineMixin:
                 if self.app_session
                 else (self.base_dir or ".")
             )
-            result = VerificationEngine.verify_plan_integrity(base_dir, exec_plan)
+            conflict_policy = str(
+                getattr(self.settings, "CONFLICT_POLICY", "rename")
+            ).lower()
+            normalized_plan = self._normalize_plan_for_verification(exec_plan, base_dir)
+            result = VerificationEngine.verify_plan_integrity(
+                base_dir, normalized_plan, conflict_policy=conflict_policy
+            )
             self.call_from_thread(self._update_validation_state, result)
         except Exception as e:
             logger.error(f"Error running validation worker: {e}")
@@ -348,8 +381,18 @@ class SortPipelineMixin:
             if unc.get("source"):
                 warn_paths.add(os.path.normpath(unc["source"]))
 
+        collision_paths = set()
+        for c in collisions:
+            if c.get("path"):
+                collision_paths.add(os.path.normpath(c["path"]))
+            if c.get("source"):
+                collision_paths.add(os.path.normpath(c["source"]))
+            for s in c.get("sources", []):
+                collision_paths.add(os.path.normpath(s))
+
         self.critical_error_paths = crit_paths
         self.warning_paths = warn_paths
+        self.collision_paths = collision_paths
 
         # Update Execute Button
         try:

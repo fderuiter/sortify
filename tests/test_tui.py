@@ -2520,3 +2520,84 @@ def test_execute_button_waits_for_a_plan(temp_workspace):
             assert "Ctrl+E" in str(btn.tooltip)
 
     asyncio.run(_test())
+
+
+def test_tui_tree_rendering_zero_stat_and_collision_precomputation(temp_workspace):
+    """Verify tree rendering executes zero stat calls, pending validation renders without badges,
+    and background validation worker updates collision indicator labels and resets cleanly on empty plans."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        settings.CONFLICT_POLICY = "overwrite"
+        app = AutoSorterTUI(
+            settings=settings, base_dir=temp_workspace, skip_wizard=True
+        )
+
+        async with app.run_test() as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.pause(0.05)
+
+            # Create existing colliding file on disk
+            src_file = os.path.join(temp_workspace, "item.txt")
+            with open(src_file, "w") as f:
+                f.write("source")
+            target_dir = os.path.join(temp_workspace, "Output")
+            os.makedirs(target_dir, exist_ok=True)
+            target_file = os.path.join(target_dir, "item.txt")
+            with open(target_file, "w") as f:
+                f.write("existing")
+
+            app.plan = {
+                "Output": {
+                    "item.txt": {
+                        "__type__": "file",
+                        "filepath": src_file,
+                        "target_filename": "item.txt",
+                    }
+                }
+            }
+
+            # 1. Verify tree rendering executes 0 stat/lexists/samefile calls
+            with (
+                patch("os.path.lexists") as mock_lexists,
+                patch("os.path.samefile") as mock_samefile,
+                patch("os.stat") as mock_stat,
+                patch("os.lstat") as mock_lstat,
+            ):
+                app.render_tree()
+                assert mock_lexists.call_count == 0
+                assert mock_samefile.call_count == 0
+                assert mock_stat.call_count == 0
+                assert mock_lstat.call_count == 0
+
+            # 2. Before validation worker finishes, nodes render without collision badges
+            tree = app.query_one("#plan-tree", Tree)
+            nodes_labels_init = [
+                str(leaf.label) for leaf in tree.root.children[0].children
+            ]
+            assert not any("[COLLISION:" in lbl for lbl in nodes_labels_init)
+
+            # 3. Trigger validation worker and wait for completion
+            app.run_validation_worker()
+            await app.workers.wait_for_complete()
+            await pilot.pause(0.05)
+
+            # Verification state populated collision paths
+            assert os.path.normpath(target_file) in app.collision_paths
+            assert os.path.normpath(src_file) in app.collision_paths
+
+            # Tree labels refreshed with collision indicator
+            nodes_labels_after = [
+                str(leaf.label) for leaf in tree.root.children[0].children
+            ]
+            assert any("[COLLISION: OVERWRITE]" in lbl for lbl in nodes_labels_after)
+
+            # 4. Verify edge case: empty plan resets collision_paths cleanly to an empty set
+            app.plan = {}
+            app.rebuild_tree()
+            await app.workers.wait_for_complete()
+            await pilot.pause(0.05)
+            assert app.collision_paths == set()
+
+    asyncio.run(_test())

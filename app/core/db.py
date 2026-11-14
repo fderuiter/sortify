@@ -1140,21 +1140,6 @@ class Database:
 
         self.worker.execute_write_async(_write)
 
-    def set_document_rating_by_hash(
-        self, base_dir: str, file_hash: str, rating: str | None
-    ):
-        """Record the quality feedback rating associated with a document hash."""
-
-        def _write():
-            conn = get_db_connection(self.db_path)
-            with conn:
-                conn.execute(
-                    "UPDATE documents SET rating = ? WHERE base_dir = ? AND file_hash = ?",
-                    (rating, base_dir, file_hash),
-                )
-
-        self.worker.execute_write_async(_write)
-
     def get_all_document_ratings(self, base_dir: str) -> dict[str, str]:
         """Retrieve all document ratings for a given base directory."""
         conn = get_db_connection(self.db_path)
@@ -1191,19 +1176,6 @@ class Database:
         """Roll back an active background database transaction session."""
         if self.worker:
             self.worker.rollback_session(session_id)
-
-    from contextlib import contextmanager
-
-    @contextmanager
-    def transaction_scope(self, session_id: str, timeout: float = 300.0):
-        """Context manager providing an explicit database transaction session scope."""
-        self.begin_transaction_session(session_id, timeout=timeout)
-        try:
-            yield
-            self.commit_transaction_session(session_id)
-        except Exception:
-            self.rollback_transaction_session(session_id)
-            raise
 
     def _apply_batch_updates_on_conn(self, conn, updates, precomputed_updates_map=None):
         if precomputed_updates_map is None:

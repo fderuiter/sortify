@@ -131,6 +131,20 @@ def test_spec_file_partitioning():
         assert is_prunable("/some/path/to/pytorch/some_other_file.py") is False
         assert is_prunable("/some/path/to/scipy/sparse/_sparsetools.pyd") is False
 
+        # Verify bundled documentation files and diagrams are preserved
+        assert is_prunable("docs/user_guide.md") is False
+        assert is_prunable("docs/admin_guide.md") is False
+        assert is_prunable("docs/architecture.md") is False
+        assert is_prunable("docs/troubleshooting.md") is False
+        assert is_prunable("docs/keyboard_shortcuts.md") is False
+        assert is_prunable("docs/assets/diagrams/user_guide_setup_wizard.svg") is False
+        assert is_prunable("docs/assets/diagrams/core_architecture.svg") is False
+        # Verify third-party package documentation and non-markdown/non-svg files are pruned
+        assert is_prunable("site-packages/numpy/docs/index.md") is True
+        assert is_prunable("/some/path/to/pytorch/docs/README.md") is True
+        assert is_prunable("docs/assets/diagrams/user_guide_setup_wizard.mmd") is True
+        assert is_prunable("docs/arbitrary_file.txt") is True
+
         # Now let's inspect the `datas` and `binaries` that were passed to `Analysis`
         # Analysis is called as Analysis(...)
         analysis_call = mock_globals["Analysis"].call_args

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "54ad80b7966c87f47e6e54683acd37407ef58a1c50ad257a8a9479e877bc4322"
+    "checksum": "955872f438bb74cc013bbb5d20ef52dc324c3986f2ee04aae644493f2d2dd266"
   },
   "classes": [
     {
@@ -693,34 +693,6 @@
         {
           "async": false,
           "decorators": [],
-          "name": "set_document_rating_by_hash",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "base_dir"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "file_hash"
-            },
-            {
-              "annotation": "str | None",
-              "default": null,
-              "name": "rating"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
           "name": "set_model_metadata",
           "parameters": [
             {
@@ -859,31 +831,6 @@
               "annotation": "str",
               "default": null,
               "name": "filepath"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [
-            "@contextmanager"
-          ],
-          "name": "transaction_scope",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
-            },
-            {
-              "annotation": "float",
-              "default": "300.0",
-              "name": "timeout"
             }
           ],
           "returns": null

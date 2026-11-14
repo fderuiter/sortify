@@ -526,3 +526,66 @@ def test_search_filter_preserves_cursor_and_restores_folder_expansion_state(
             assert cdata.get("filepath") == file_a_path
 
     asyncio.run(_test())
+
+
+def test_tui_tree_filter_rendering_executes_zero_stat_calls(temp_workspace):
+    """Verify tree rendering during debounced search filtering executes zero synchronous stat/lexists/samefile calls."""
+    from unittest.mock import patch
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            file_a_path = os.path.join(temp_workspace, "report_a.pdf")
+            file_b_path = os.path.join(temp_workspace, "notes_b.txt")
+            app.plan = {
+                "Alpha_Dir": {
+                    "report_a.pdf": {
+                        "__type__": "file",
+                        "filepath": file_a_path,
+                        "target_filename": "report_a.pdf",
+                    }
+                },
+                "Beta_Dir": {
+                    "notes_b.txt": {
+                        "__type__": "file",
+                        "filepath": file_b_path,
+                        "target_filename": "notes_b.txt",
+                    }
+                },
+            }
+            app.rebuild_tree()
+            await app.workers.wait_for_complete()
+            await pilot.pause(0.05)
+
+            # Pre-populate collision paths as background worker would
+            target_a = os.path.join(temp_workspace, "Alpha_Dir", "report_a.pdf")
+            app.collision_paths = {os.path.normpath(target_a)}
+
+            # Intercept filesystem stat calls during tree rendering
+            with (
+                patch("os.path.lexists") as mock_lexists,
+                patch("os.path.samefile") as mock_samefile,
+                patch("os.stat") as mock_stat,
+                patch("os.lstat") as mock_lstat,
+            ):
+                search_input = app.query_one("#tree-search-input", Input)
+                search_input.focus()
+                await set_filter(app, pilot, "report")
+
+                assert mock_lexists.call_count == 0
+                assert mock_samefile.call_count == 0
+                assert mock_stat.call_count == 0
+                assert mock_lstat.call_count == 0
+
+            # Verify that collision badge is rendered correctly from collision_paths
+            tree = app.query_one("#plan-tree", Tree)
+            alpha_node = next(
+                node for node in tree.root.children if "Alpha_Dir" in str(node.label)
+            )
+            report_node = alpha_node.children[0]
+            assert "[COLLISION:" in str(report_node.label)
+
+    asyncio.run(_test())

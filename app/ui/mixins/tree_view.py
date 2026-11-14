@@ -84,7 +84,7 @@ class TreeViewMixin:
             self.active_tree_node = target_cursor_node
 
     def _apply_tree_node_styles(self) -> None:
-        """Apply red/yellow styling to existing tree nodes based on active error/warning paths."""
+        """Apply red/yellow styling to existing tree nodes and refresh collision labels."""
         try:
             tree = self.query_one("#plan-tree", Tree)
 
@@ -98,6 +98,7 @@ class TreeViewMixin:
                 filepath = data.get("filepath", "")
                 key = data.get("key", "")
                 norm_fp = os.path.normpath(filepath) if filepath else ""
+                abs_fp = os.path.normpath(os.path.abspath(filepath)) if filepath else ""
                 norm_key = os.path.normpath(key) if key else ""
 
                 is_crit = False
@@ -111,6 +112,7 @@ class TreeViewMixin:
                     p
                     and (
                         p == norm_fp
+                        or p == abs_fp
                         or p == norm_key
                         or p.endswith("/" + norm_key)
                         or p.endswith("\\" + norm_key)
@@ -128,6 +130,7 @@ class TreeViewMixin:
                         p
                         and (
                             p == norm_fp
+                            or p == abs_fp
                             or p == norm_key
                             or p.endswith("/" + norm_key)
                             or p.endswith("\\" + norm_key)
@@ -136,19 +139,114 @@ class TreeViewMixin:
                     ):
                         is_warn = True
 
-                if isinstance(node.label, Text):
-                    plain_txt = node.label.plain
-                    new_txt = Text(plain_txt)
-                    if is_crit:
-                        new_txt.stylize("bold red")
-                    elif is_warn:
-                        new_txt.stylize("bold yellow")
-                    node.label = new_txt
+                plain_txt = (
+                    node.label.plain
+                    if isinstance(node.label, Text)
+                    else str(node.label)
+                )
+
+                if data.get("is_file"):
+                    file_info = data.get("info") or {}
+                    collision_paths = getattr(self, "collision_paths", set()) or set()
+                    target_path = data.get("target_path")
+                    if not target_path:
+                        from app.core.path_utils import _is_absolute_path
+
+                        override_dir = file_info.get("destination_override")
+                        eff_folder = (
+                            override_dir if override_dir else data.get("folder", "")
+                        )
+                        target_filename = file_info.get("target_filename") or key
+                        if eff_folder and _is_absolute_path(eff_folder):
+                            if re.match(r"^[a-zA-Z]:[/\\]", eff_folder):
+                                sep = "\\" if "\\" in eff_folder else "/"
+                                target_path = (
+                                    f"{eff_folder.rstrip('/\\')}{sep}{target_filename}"
+                                )
+                            else:
+                                target_path = os.path.normpath(
+                                    os.path.join(eff_folder, target_filename)
+                                )
+                        elif self.base_dir:
+                            target_path = os.path.normpath(
+                                os.path.join(self.base_dir, eff_folder, target_filename)
+                            )
+                        elif eff_folder:
+                            target_path = os.path.normpath(
+                                os.path.join(eff_folder, target_filename)
+                            )
+
+                    norm_tp = os.path.normpath(target_path) if target_path else ""
+                    abs_tp = (
+                        os.path.normpath(os.path.abspath(target_path))
+                        if target_path
+                        else ""
+                    )
+
+                    is_node_collision = bool(
+                        file_info.get("collision")
+                        or file_info.get("has_collision")
+                        or file_info.get("is_collision")
+                        or (norm_tp and norm_tp in collision_paths)
+                        or (abs_tp and abs_tp in collision_paths)
+                        or (norm_fp and norm_fp in collision_paths)
+                        or (abs_fp and abs_fp in collision_paths)
+                        or (norm_key and norm_key in collision_paths)
+                        or any(
+                            p
+                            and (
+                                p == norm_fp
+                                or p == abs_fp
+                                or p == norm_tp
+                                or p == abs_tp
+                                or p == norm_key
+                                or p.endswith("/" + norm_key)
+                                or p.endswith("\\" + norm_key)
+                            )
+                            for p in collision_paths
+                        )
+                    )
+
+                    pol = str(
+                        getattr(self.settings, "CONFLICT_POLICY", "rename")
+                    ).lower()
+                    data["is_collision"] = is_node_collision
+                    data["conflict_policy"] = pol
+                    if target_path:
+                        data["target_path"] = target_path
+
+                    clean_txt = re.sub(r"\[COLLISION:\s*[^\]]+\]\s*", "", plain_txt)
+                    if is_node_collision:
+                        target_filename = file_info.get("target_filename") or key
+                        if target_filename and target_filename != key:
+                            suffix = f"{key} -> {target_filename}"
+                        else:
+                            suffix = f"{key}"
+                        if clean_txt.endswith(suffix):
+                            prefix = clean_txt[: -len(suffix)]
+                            plain_txt = f"{prefix}[COLLISION: {pol.upper()}] {suffix}"
+                        else:
+                            plain_txt = f"{clean_txt} [COLLISION: {pol.upper()}]"
+                    else:
+                        plain_txt = clean_txt
+
+                new_txt = Text(plain_txt)
+                if is_crit:
+                    new_txt.stylize("bold red")
+                elif is_warn:
+                    new_txt.stylize("bold yellow")
+                node.label = new_txt
 
                 for child in node.children:
                     _stylize_node(child)
 
             _stylize_node(tree.root)
+            if tree.cursor_node and tree.cursor_node.data:
+                self._update_inspector(tree.cursor_node, announce=False)
+            elif getattr(self, "active_tree_node", None) and getattr(
+                self.active_tree_node, "data", None
+            ):
+                self._update_inspector(self.active_tree_node, announce=False)
         except Exception as e:
             logger.debug(f"Error applying tree node styles: {e}")
 
@@ -494,25 +592,40 @@ class TreeViewMixin:
                         os.path.join(eff_folder, target_filename)
                     )
 
-                is_collision = (
+                collision_paths = getattr(self, "collision_paths", set()) or set()
+                norm_fp = os.path.normpath(filepath) if filepath else ""
+                abs_fp = os.path.normpath(os.path.abspath(filepath)) if filepath else ""
+                norm_tp = os.path.normpath(target_path) if target_path else ""
+                abs_tp = (
+                    os.path.normpath(os.path.abspath(target_path))
+                    if target_path
+                    else ""
+                )
+                norm_key = os.path.normpath(file_key) if file_key else ""
+
+                is_collision = bool(
                     file_info.get("collision")
                     or file_info.get("has_collision")
-                    or False
+                    or file_info.get("is_collision")
+                    or (norm_tp and norm_tp in collision_paths)
+                    or (abs_tp and abs_tp in collision_paths)
+                    or (norm_fp and norm_fp in collision_paths)
+                    or (abs_fp and abs_fp in collision_paths)
+                    or (norm_key and norm_key in collision_paths)
+                    or any(
+                        p
+                        and (
+                            p == norm_fp
+                            or p == abs_fp
+                            or p == norm_tp
+                            or p == abs_tp
+                            or p == norm_key
+                            or p.endswith("/" + norm_key)
+                            or p.endswith("\\" + norm_key)
+                        )
+                        for p in collision_paths
+                    )
                 )
-                if (
-                    not is_collision
-                    and target_path
-                    and filepath
-                    and os.path.lexists(target_path)
-                ):
-                    try:
-                        is_same = os.path.samefile(target_path, filepath)
-                    except Exception:
-                        is_same = os.path.normpath(
-                            os.path.abspath(target_path)
-                        ) == os.path.normpath(os.path.abspath(filepath))
-                    if not is_same:
-                        is_collision = True
 
                 pol = str(getattr(self.settings, "CONFLICT_POLICY", "rename")).lower()
                 if is_collision:
@@ -522,9 +635,6 @@ class TreeViewMixin:
                 if target_filename and target_filename != file_key:
                     label_parts.append(f"-> {target_filename}")
 
-                norm_fp = os.path.normpath(filepath) if filepath else ""
-                norm_key = os.path.normpath(file_key) if file_key else ""
-
                 is_crit_node = (
                     norm_fp in self.critical_error_paths
                     or norm_key in self.critical_error_paths
@@ -532,6 +642,7 @@ class TreeViewMixin:
                         p
                         and (
                             p == norm_fp
+                            or p == abs_fp
                             or p == norm_key
                             or p.endswith("/" + norm_key)
                             or p.endswith("\\" + norm_key)
@@ -546,6 +657,7 @@ class TreeViewMixin:
                         p
                         and (
                             p == norm_fp
+                            or p == abs_fp
                             or p == norm_key
                             or p.endswith("/" + norm_key)
                             or p.endswith("\\" + norm_key)
@@ -573,6 +685,7 @@ class TreeViewMixin:
                     "is_excluded": is_excluded,
                     "is_collision": is_collision,
                     "conflict_policy": pol,
+                    "target_path": target_path,
                 }
                 parent_item.add_leaf(text_obj, data=node_data)
                 added_count += 1
