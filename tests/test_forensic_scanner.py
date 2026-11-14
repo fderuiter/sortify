@@ -135,13 +135,13 @@ def test_parse_eml_attachment_path_traversal():
             f.write(eml_content)
 
         dest = os.path.join(tmpdir, "eml_out")
-        dest_abs = os.path.abspath(dest)
+        dest_abs = os.path.realpath(dest)
         body, attachments = scanner.parse_eml_file(eml_path, dest)
 
         assert len(attachments) == 4
         for att in attachments:
             # All extracted files must strictly reside within dest_abs
-            assert os.path.abspath(att).startswith(dest_abs + os.sep)
+            assert os.path.realpath(att).startswith(dest_abs + os.sep)
             assert os.path.isfile(att)
 
         # None of the payloads should have escaped into tmpdir
@@ -184,12 +184,12 @@ def test_parse_eml_attachment_empty_and_whitespace_filename():
             f.write(eml_content)
 
         dest = os.path.join(tmpdir, "eml_out")
-        dest_abs = os.path.abspath(dest)
+        dest_abs = os.path.realpath(dest)
         body, attachments = scanner.parse_eml_file(eml_path, dest)
 
         assert len(attachments) >= 1
         for att in attachments:
-            assert os.path.abspath(att).startswith(dest_abs + os.sep)
+            assert os.path.realpath(att).startswith(dest_abs + os.sep)
             assert os.path.basename(att) == "Unnamed_safe"
             assert os.path.isfile(att)
         scanner.cleanup()

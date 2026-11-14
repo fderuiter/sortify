@@ -276,6 +276,21 @@ def test_build_script_target_verification_success(tmp_path):
     (dist_dir / f"smart-autosorter{exe_ext}").write_text("mock_cli")
     (tmp_path / "LICENSE").write_text("GNU GENERAL PUBLIC LICENSE\n")
 
+    # Populate mock documentation assets in the bundle dist directory
+    docs_dist = dist_dir / "docs"
+    docs_dist.mkdir(parents=True, exist_ok=True)
+    for doc in (
+        "user_guide.md",
+        "admin_guide.md",
+        "architecture.md",
+        "troubleshooting.md",
+        "keyboard_shortcuts.md",
+    ):
+        (docs_dist / doc).write_text(f"# {doc}\n")
+    diagrams_dist = docs_dist / "assets" / "diagrams"
+    diagrams_dist.mkdir(parents=True, exist_ok=True)
+    (diagrams_dist / "user_guide_setup_wizard.svg").write_text("<svg></svg>")
+
     original_cwd = os.getcwd()
     os.chdir(tmp_path)
 
@@ -408,3 +423,147 @@ def test_bundle_license_fails_without_license(tmp_path, monkeypatch):
     with pytest.raises(SystemExit):
         bundle_license(str(bundle))
     assert not (bundle / "LICENSE").exists()
+
+
+def test_verify_documentation_assets_success(tmp_path, monkeypatch):
+    """Verify that verify_documentation_assets passes when all required docs and diagrams exist."""
+    from scripts.build import verify_documentation_assets
+
+    bundle = tmp_path / "dist" / "smart-autosorter"
+    docs_dist = bundle / "docs"
+    docs_dist.mkdir(parents=True, exist_ok=True)
+    for doc in (
+        "user_guide.md",
+        "admin_guide.md",
+        "architecture.md",
+        "troubleshooting.md",
+        "keyboard_shortcuts.md",
+    ):
+        (docs_dist / doc).write_text(f"# {doc}\n")
+
+    # Create source diagrams and corresponding bundled diagrams
+    src_diagrams = tmp_path / "docs" / "assets" / "diagrams"
+    src_diagrams.mkdir(parents=True, exist_ok=True)
+    (src_diagrams / "test_diagram.svg").write_text("<svg></svg>")
+
+    dist_diagrams = docs_dist / "assets" / "diagrams"
+    dist_diagrams.mkdir(parents=True, exist_ok=True)
+    (dist_diagrams / "test_diagram.svg").write_text("<svg></svg>")
+
+    monkeypatch.chdir(tmp_path)
+    assert verify_documentation_assets(str(bundle)) is True
+
+
+def test_verify_documentation_assets_internal_docs_success(tmp_path, monkeypatch):
+    """Verify that verify_documentation_assets passes when docs are placed in _internal/docs."""
+    from scripts.build import verify_documentation_assets
+
+    bundle = tmp_path / "dist" / "smart-autosorter"
+    docs_dist = bundle / "_internal" / "docs"
+    docs_dist.mkdir(parents=True, exist_ok=True)
+    for doc in (
+        "user_guide.md",
+        "admin_guide.md",
+        "architecture.md",
+        "troubleshooting.md",
+        "keyboard_shortcuts.md",
+    ):
+        (docs_dist / doc).write_text(f"# {doc}\n")
+
+    # Create source diagrams and corresponding bundled diagrams
+    src_diagrams = tmp_path / "docs" / "assets" / "diagrams"
+    src_diagrams.mkdir(parents=True, exist_ok=True)
+    (src_diagrams / "test_diagram.svg").write_text("<svg></svg>")
+
+    dist_diagrams = docs_dist / "assets" / "diagrams"
+    dist_diagrams.mkdir(parents=True, exist_ok=True)
+    (dist_diagrams / "test_diagram.svg").write_text("<svg></svg>")
+
+    monkeypatch.chdir(tmp_path)
+    assert verify_documentation_assets(str(bundle)) is True
+
+
+def test_verify_documentation_assets_missing_docs_dir(tmp_path, monkeypatch):
+    """Verify that verify_documentation_assets exits with code 1 if docs directory is missing."""
+    from scripts.build import verify_documentation_assets
+
+    bundle = tmp_path / "dist" / "smart-autosorter"
+    bundle.mkdir(parents=True, exist_ok=True)
+    monkeypatch.chdir(tmp_path)
+
+    with patch("sys.exit", side_effect=SystemExit) as mock_exit:
+        with pytest.raises(SystemExit):
+            verify_documentation_assets(str(bundle))
+        mock_exit.assert_called_once_with(1)
+
+
+def test_verify_documentation_assets_missing_required_md(tmp_path, monkeypatch):
+    """Verify that verify_documentation_assets exits with code 1 if a required markdown guide is missing."""
+    from scripts.build import verify_documentation_assets
+
+    bundle = tmp_path / "dist" / "smart-autosorter"
+    docs_dist = bundle / "docs"
+    docs_dist.mkdir(parents=True, exist_ok=True)
+    # Only populate some of the required docs
+    for doc in ("user_guide.md", "admin_guide.md"):
+        (docs_dist / doc).write_text(f"# {doc}\n")
+
+    monkeypatch.chdir(tmp_path)
+
+    with patch("sys.exit", side_effect=SystemExit) as mock_exit:
+        with pytest.raises(SystemExit):
+            verify_documentation_assets(str(bundle))
+        mock_exit.assert_called_once_with(1)
+
+
+def test_verify_documentation_assets_missing_diagrams(tmp_path, monkeypatch):
+    """Verify that verify_documentation_assets exits with code 1 if source diagrams exist but missing in bundle."""
+    from scripts.build import verify_documentation_assets
+
+    bundle = tmp_path / "dist" / "smart-autosorter"
+    docs_dist = bundle / "docs"
+    docs_dist.mkdir(parents=True, exist_ok=True)
+    for doc in (
+        "user_guide.md",
+        "admin_guide.md",
+        "architecture.md",
+        "troubleshooting.md",
+        "keyboard_shortcuts.md",
+    ):
+        (docs_dist / doc).write_text(f"# {doc}\n")
+
+    # Source has a diagram
+    src_diagrams = tmp_path / "docs" / "assets" / "diagrams"
+    src_diagrams.mkdir(parents=True, exist_ok=True)
+    (src_diagrams / "required_flow.svg").write_text("<svg></svg>")
+
+    monkeypatch.chdir(tmp_path)
+
+    with patch("sys.exit", side_effect=SystemExit) as mock_exit:
+        with pytest.raises(SystemExit):
+            verify_documentation_assets(str(bundle))
+        mock_exit.assert_called_once_with(1)
+
+
+def test_verify_documentation_assets_empty_diagrams_graceful(tmp_path, monkeypatch):
+    """Verify that verify_documentation_assets gracefully succeeds when source diagram directory is empty."""
+    from scripts.build import verify_documentation_assets
+
+    bundle = tmp_path / "dist" / "smart-autosorter"
+    docs_dist = bundle / "docs"
+    docs_dist.mkdir(parents=True, exist_ok=True)
+    for doc in (
+        "user_guide.md",
+        "admin_guide.md",
+        "architecture.md",
+        "troubleshooting.md",
+        "keyboard_shortcuts.md",
+    ):
+        (docs_dist / doc).write_text(f"# {doc}\n")
+
+    # Source has empty diagram dir
+    src_diagrams = tmp_path / "docs" / "assets" / "diagrams"
+    src_diagrams.mkdir(parents=True, exist_ok=True)
+
+    monkeypatch.chdir(tmp_path)
+    assert verify_documentation_assets(str(bundle)) is True
