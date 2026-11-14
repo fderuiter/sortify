@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "dce5db50c837eb1891988cd823f4fd20702c27ad43327e24cf354d200ddd697b"
+    "checksum": "87072781a5087015ba10cbc7294fa6bd1bbeadd5972568434492b500a66c2517"
   },
   "classes": [
     {
@@ -108,6 +108,21 @@
             "@property"
           ],
           "name": "is_paused",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "is_running",
           "parameters": [
             {
               "annotation": null,
@@ -244,6 +259,21 @@
         },
         {
           "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "scoped_run_token",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "Optional[threading.Event]"
+        },
+        {
+          "async": false,
           "decorators": [],
           "name": "should_ignore_path",
           "parameters": [
@@ -272,6 +302,41 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "state",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "DaemonState"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@state.setter"
+          ],
+          "name": "state",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "DaemonState",
+              "default": null,
+              "name": "new_state"
+            }
+          ],
+          "returns": "None"
         },
         {
           "async": false,
@@ -344,10 +409,20 @@
       ]
     },
     {
+      "class_name": "DaemonState",
+      "decorators": [],
+      "methods": []
+    },
+    {
       "class_name": "FileChangeEvent",
       "decorators": [
         "@dataclass"
       ],
+      "methods": []
+    },
+    {
+      "class_name": "InvalidStateError",
+      "decorators": [],
       "methods": []
     }
   ],
