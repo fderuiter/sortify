@@ -10,6 +10,10 @@ import pytest
 from app.core.downloader import (
     DiskSpaceError,
     DownloadCancelledError,
+    DownloadError,
+    DownloadManager,
+    DownloadState,
+    InvalidStateTransitionError,
     ModelVerificationError,
     run_background_download,
     verify_downloaded_model,
@@ -582,3 +586,223 @@ def test_downloader_proxy_maintained_across_retries(temp_model_dir):
         assert len(opener_calls) == 2
         assert opener_calls[0] == "http://proxy.test:8080"
         assert opener_calls[1] == "http://proxy.test:8080"
+
+
+def test_download_state_enum_and_valid_transitions():
+    """Verify DownloadState enum values and valid transitions."""
+    dm = DownloadManager()
+    assert dm.current_state == DownloadState.IDLE
+    assert dm.state["status"] == DownloadState.IDLE
+    assert dm.state["is_downloading"] is False
+
+    # Valid path: IDLE -> DOWNLOADING -> COMPLETED -> IDLE
+    dm.transition_to(DownloadState.DOWNLOADING)
+    assert dm.current_state == DownloadState.DOWNLOADING
+    assert dm.state["is_downloading"] is True
+
+    dm.transition_to(DownloadState.COMPLETED)
+    assert dm.current_state == DownloadState.COMPLETED
+    assert dm.state["success"] is True
+    assert dm.state["is_downloading"] is False
+
+    dm.transition_to(DownloadState.IDLE)
+    assert dm.current_state == DownloadState.IDLE
+
+    # Valid path: IDLE -> DOWNLOADING -> FAILED -> DOWNLOADING -> CANCELLED -> IDLE
+    dm.transition_to(DownloadState.DOWNLOADING)
+    dm.transition_to(DownloadState.FAILED)
+    assert dm.current_state == DownloadState.FAILED
+
+    dm.transition_to(DownloadState.DOWNLOADING)
+    dm.transition_to(DownloadState.CANCELLED)
+    assert dm.current_state == DownloadState.CANCELLED
+
+    dm.transition_to(DownloadState.IDLE)
+    assert dm.current_state == DownloadState.IDLE
+
+
+def test_download_state_invalid_transitions():
+    """Verify that invalid transitions raise InvalidStateTransitionError / DownloadError."""
+    dm = DownloadManager()
+    assert dm.current_state == DownloadState.IDLE
+
+    # From IDLE: cannot go directly to COMPLETED, FAILED, or CANCELLED
+    for invalid in (
+        DownloadState.COMPLETED,
+        DownloadState.FAILED,
+        DownloadState.CANCELLED,
+    ):
+        with pytest.raises((InvalidStateTransitionError, DownloadError)):
+            dm.transition_to(invalid)
+    assert dm.current_state == DownloadState.IDLE
+
+    # Transition to DOWNLOADING
+    dm.transition_to(DownloadState.DOWNLOADING)
+
+    # From DOWNLOADING: cannot transition to DOWNLOADING again
+    with pytest.raises((InvalidStateTransitionError, DownloadError)):
+        dm.transition_to(DownloadState.DOWNLOADING)
+
+    # Transition to CANCELLED
+    dm.transition_to(DownloadState.CANCELLED)
+    assert dm.current_state == DownloadState.CANCELLED
+
+    # From CANCELLED: cannot transition to COMPLETED or FAILED
+    for invalid in (DownloadState.COMPLETED, DownloadState.FAILED):
+        with pytest.raises((InvalidStateTransitionError, DownloadError)):
+            dm.transition_to(invalid)
+    assert dm.current_state == DownloadState.CANCELLED
+
+    # Reset to IDLE then DOWNLOADING -> COMPLETED
+    dm.transition_to(DownloadState.IDLE)
+    dm.transition_to(DownloadState.DOWNLOADING)
+    dm.transition_to(DownloadState.COMPLETED)
+    assert dm.current_state == DownloadState.COMPLETED
+
+    # From COMPLETED: cannot transition to CANCELLED or FAILED
+    for invalid in (DownloadState.CANCELLED, DownloadState.FAILED):
+        with pytest.raises((InvalidStateTransitionError, DownloadError)):
+            dm.transition_to(invalid)
+    assert dm.current_state == DownloadState.COMPLETED
+
+
+def test_download_manager_concurrent_cancellation_guards(temp_model_dir):
+    """Verify that cancelled downloads ignore stale worker completion and progress events."""
+    dm = DownloadManager()
+
+    # We mock run_background_download so we can capture callbacks
+    captured_callbacks = {}
+
+    def mock_run_background_download(**kwargs):
+        captured_callbacks["progress_callback"] = kwargs.get("progress_callback")
+        captured_callbacks["on_success"] = kwargs.get("on_success")
+        captured_callbacks["on_failure"] = kwargs.get("on_failure")
+        return MagicMock()
+
+    with patch(
+        "app.core.downloader.run_background_download",
+        side_effect=mock_run_background_download,
+    ):
+        dm.start_download("http://example.com/model.onnx", temp_model_dir)
+
+        assert dm.current_state == DownloadState.DOWNLOADING
+        assert dm.state["is_downloading"] is True
+
+        # User cancels the download
+        dm.cancel_download()
+        assert dm.current_state == DownloadState.CANCELLED
+        assert dm.state["is_downloading"] is False
+        assert dm.state["status_text"] == "Download cancelled."
+        assert dm.state["success"] is False
+
+        # Stale progress update arrives from worker thread
+        from app.core.progress import ProgressUpdate
+
+        captured_callbacks["progress_callback"](
+            ProgressUpdate(
+                progress=0.99, stage="Downloaded 99MB...", unit_count=99000000
+            )
+        )
+        # Progress callback must be rejected; status_text must NOT be overwritten
+        assert dm.state["status_text"] == "Download cancelled."
+
+        # Stale success callback arrives from worker thread
+        captured_callbacks["on_success"]()
+
+        # Success must NOT overwrite cancellation!
+        assert dm.current_state == DownloadState.CANCELLED
+        assert dm.state["success"] is False
+        assert dm.state["is_downloading"] is False
+        assert dm.state["status_text"] == "Download cancelled."
+
+        # Stale failure callback arrives from worker thread
+        captured_callbacks["on_failure"](Exception("Late failure"))
+        # Failure must not overwrite CANCELLED with FAILED
+        assert dm.current_state == DownloadState.CANCELLED
+        assert dm.state["status_text"] == "Download cancelled."
+
+
+def test_run_background_download_cancellation_before_completion(temp_model_dir):
+    """Verify cancellation arriving right before completion triggers cancellation, not success."""
+    cancel_event = threading.Event()
+    success_called = threading.Event()
+    failure_called = threading.Event()
+    captured_error = []
+
+    def on_success():
+        success_called.set()
+
+    def on_failure(err):
+        captured_error.append(err)
+        failure_called.set()
+
+    mock_data = b"chunk1chunk2"
+    mock_hash = hashlib.sha256(mock_data).hexdigest()
+    SharedModelRegistry.get_instance().register_expected_hashes(
+        "model_download", {"model.onnx": mock_hash}
+    )
+
+    mock_response = MagicMock()
+    mock_response.info.return_value.get.return_value = str(len(mock_data))
+    mock_response.read.side_effect = [b"chunk1", b"chunk2", b""]
+
+    mock_opener = MagicMock()
+    mock_opener.open.return_value.__enter__.return_value = mock_response
+
+    # Intercept verify_downloaded_model so that cancel_event is set right before completion check
+    from app.core import downloader as dm_mod
+
+    orig_verify = dm_mod.verify_downloaded_model
+
+    def cancel_during_verification(model_dir):
+        cancel_event.set()
+        return orig_verify(model_dir)
+
+    with (
+        patch("urllib.request.build_opener", return_value=mock_opener),
+        patch("shutil.disk_usage", return_value=(10000, 5000, 5000)),
+        patch(
+            "app.core.downloader.verify_downloaded_model",
+            side_effect=cancel_during_verification,
+        ),
+    ):
+        run_background_download(
+            "http://example.com/model.onnx",
+            temp_model_dir,
+            progress_callback=None,
+            on_success=on_success,
+            on_failure=on_failure,
+            cancel_event=cancel_event,
+        )
+
+        assert failure_called.wait(timeout=15)
+        assert not success_called.is_set()
+        assert len(captured_error) == 1
+        assert isinstance(captured_error[0], DownloadCancelledError)
+
+
+def test_delete_model_async_clears_cancellation_state(temp_model_dir):
+    """Verify that delete_model_async clears cancellation event and resets state to IDLE."""
+    dm = DownloadManager()
+    dm.transition_to(DownloadState.DOWNLOADING)
+    dm.cancel_download()
+    assert dm.current_state == DownloadState.CANCELLED
+    assert dm.cancel_event.is_set()
+
+    done_event = threading.Event()
+    callback_results = []
+
+    def on_done(success, err):
+        callback_results.append((success, err))
+        done_event.set()
+
+    dm.delete_model_async(temp_model_dir, on_done=on_done)
+    assert done_event.wait(timeout=15)
+    assert callback_results == [(True, None)]
+
+    # Cancellation state must be cleared and manager must be IDLE
+    assert dm.current_state == DownloadState.IDLE
+    assert dm.cancel_event.is_set() is False
+    assert dm.state["is_downloading"] is False
+    assert dm.state["success"] is False
+    assert dm.state["status_text"] == "Model deleted."

@@ -4,7 +4,11 @@ from unittest import mock
 
 import pytest
 
-from app.core.daemon import ContinuousWatchdogDaemon
+from app.core.daemon import (
+    ContinuousWatchdogDaemon,
+    DaemonState,
+    InvalidStateError,
+)
 
 
 class DummySettings:
@@ -71,16 +75,80 @@ def test_daemon_interruption_mid_execution(tmp_path):
 
     cancel_event_1 = daemon._cancel_event
     assert cancel_event_1.is_set() is False
+    assert daemon.state == DaemonState.RUNNING
 
-    # Triggering recalculation should set the old cancellation event and create a new one
+    # Triggering recalculation transitions state to RECALCULATING, allocates a scoped run token,
+    # and keeps the daemon lifecycle cancellation token reference stable and unset
     daemon.trigger_recalculation()
-    assert cancel_event_1.is_set() is True
+    assert daemon._cancel_event is cancel_event_1
+    assert cancel_event_1.is_set() is False
+    assert daemon.state == DaemonState.RECALCULATING
+    assert daemon.is_running is True
+    assert daemon.is_paused is False
+    assert daemon.get_status_telemetry()["status"] == "recalculating"
 
-    cancel_event_2 = daemon._cancel_event
-    assert cancel_event_2 is not cancel_event_1
-    assert cancel_event_2.is_set() is False
+    scoped_token_1 = daemon.scoped_run_token
+    assert scoped_token_1 is not None
+    assert scoped_token_1.is_set() is False
+
+    # Rapid recalculation events cooperatively signal the active scoped run token without replacing lifecycle token
+    daemon.trigger_recalculation()
+    assert scoped_token_1.is_set() is True
+    scoped_token_2 = daemon.scoped_run_token
+    assert scoped_token_2 is not None
+    assert scoped_token_2 is not scoped_token_1
+    assert scoped_token_2.is_set() is False
+    assert daemon._cancel_event is cancel_event_1
+    assert cancel_event_1.is_set() is False
+    assert daemon.state == DaemonState.RECALCULATING
+
+    # Worker cancellation is timely and detected via cooperative token check
+    assert daemon._is_cancelled(scoped_token_1) is True
+    assert daemon._is_cancelled(scoped_token_2) is False
+
+    # Stopping daemon transitions state to STOPPED and signals both lifecycle and scoped tokens
+    daemon.stop()
+    assert daemon.state == DaemonState.STOPPED
+    assert cancel_event_1.is_set() is True
+    assert scoped_token_2.is_set() is True
+    assert daemon.is_running is False
+    assert daemon.get_status_telemetry()["status"] == "stopped"
+
+
+def test_daemon_invalid_state_transitions(tmp_path):
+    settings = DummySettings()
+    daemon = ContinuousWatchdogDaemon(settings, str(tmp_path))
+    assert daemon.state == DaemonState.STOPPED
+
+    # Moving directly from STOPPED to PAUSED or RECALCULATING must be rejected
+    with pytest.raises(InvalidStateError):
+        daemon.pause()
+
+    with pytest.raises(InvalidStateError):
+        daemon.state = DaemonState.PAUSED
+
+    with pytest.raises(InvalidStateError):
+        daemon.state = DaemonState.RECALCULATING
+
+    # Transition to RUNNING
+    daemon._is_running = True
+    assert daemon.state == DaemonState.RUNNING
+
+    # Pause daemon -> PAUSED
+    daemon.pause()
+    assert daemon.state == DaemonState.PAUSED
+    assert daemon.is_paused is True
+
+    # Transitioning directly from PAUSED to RECALCULATING must be rejected
+    with pytest.raises(InvalidStateError):
+        daemon.state = DaemonState.RECALCULATING
+
+    # Resume daemon -> RUNNING
+    daemon.resume()
+    assert daemon.state == DaemonState.RUNNING
 
     daemon.stop()
+    assert daemon.state == DaemonState.STOPPED
 
 
 @pytest.mark.timeout(5)

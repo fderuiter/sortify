@@ -5,7 +5,12 @@ from typing import Any, Dict, List, Optional, Union
 
 from textual.widgets.tree import TreeNode
 
-from app.ui.modals.edit import NewFolderModal, ReassignModal, RenameModal
+from app.ui.modals.edit import (
+    NewFolderModal,
+    ReassignModal,
+    RenameModal,
+    RenameResult,
+)
 
 
 class SelectionActionsMixin:
@@ -335,11 +340,281 @@ class SelectionActionsMixin:
         self.announce(msg)
         self.rebuild_tree()
 
+    def _get_checked_file_keys(self) -> List[str]:
+        """Collect keys of checked, non-excluded file nodes."""
+        entries = self._get_checked_file_entries()
+        return [e["key"] for e in entries if e.get("key")]
+
+    def _get_checked_file_entries(self) -> List[Dict[str, Any]]:
+        """Collect full metadata entries for checked, non-excluded file nodes."""
+        entries: List[Dict[str, Any]] = []
+
+        # 1. First attempt to gather from tree widget to preserve visual display order
+        try:
+            from textual.widgets import Tree
+
+            tree = self.query_one("#plan-tree", Tree)
+            seen_ids = set()
+
+            def _walk(node: TreeNode) -> None:
+                data = getattr(node, "data", None)
+                if data and isinstance(data, dict) and data.get("is_file"):
+                    info = data.get("info", {})
+                    is_checked = data.get("is_checked", True)
+                    is_excluded = data.get("is_excluded", False)
+                    if is_checked and not is_excluded:
+                        info_id = id(info) if info else id(data)
+                        if info_id not in seen_ids:
+                            seen_ids.add(info_id)
+                            entries.append(
+                                {
+                                    "key": data.get("key")
+                                    or info.get("target_filename")
+                                    or "",
+                                    "folder": data.get("folder")
+                                    or info.get("folder", ""),
+                                    "info": info,
+                                    "filepath": data.get("filepath")
+                                    or info.get("filepath"),
+                                    "date": info.get("date")
+                                    or info.get("file_date", ""),
+                                    "category": data.get("folder")
+                                    or info.get("folder", ""),
+                                }
+                            )
+                for child in node.children:
+                    _walk(child)
+
+            _walk(tree.root)
+            if entries:
+                return entries
+        except Exception:
+            pass
+
+        # 2. Fall back to traversing self.plan dictionary
+        if not hasattr(self, "plan") or not isinstance(self.plan, dict):
+            return entries
+
+        seen_plan_ids = set()
+
+        def _walk_plan(d: Dict[str, Any], current_folder: str = "") -> None:
+            for k, v in d.items():
+                if isinstance(v, dict):
+                    if v.get("__type__") == "file":
+                        is_checked = v.get("is_checked", True)
+                        is_excluded = v.get("is_excluded", False)
+                        if is_checked and not is_excluded:
+                            v_id = id(v)
+                            if v_id not in seen_plan_ids:
+                                seen_plan_ids.add(v_id)
+                                entries.append(
+                                    {
+                                        "key": k,
+                                        "folder": v.get("folder") or current_folder,
+                                        "info": v,
+                                        "filepath": v.get("filepath"),
+                                        "date": v.get("date") or v.get("file_date", ""),
+                                        "category": v.get("folder") or current_folder,
+                                    }
+                                )
+                    else:
+                        sub = f"{current_folder}/{k}" if current_folder else k
+                        _walk_plan(v, sub)
+
+        _walk_plan(self.plan)
+        return entries
+
     def action_rename_node(self) -> None:
         """Rename file or folder category node [Ctrl+R]."""
         if self._is_text_control_focused(allow_tree_search=True):
             return
+
         node = self._get_active_node()
+
+        # If a folder category node is explicitly focused, preserve folder rename workflow
+        if node and node.data and not node.data.get("is_file"):
+            data = node.data
+            old_name = data.get("key")
+            modal = RenameModal(
+                title=f"Rename Folder: {old_name}",
+                current_name=old_name,
+                category=old_name,
+                is_folder=True,
+                plan=self.plan,
+                base_dir=self.base_dir,
+            )
+
+            def on_folder_renamed(new_name: Optional[Union[str, Any]]) -> None:
+                if not new_name:
+                    return
+
+                from app.core.path_utils import _merge_plan_dicts
+
+                dest_override = getattr(new_name, "destination_override", None)
+                if isinstance(new_name, tuple):
+                    new_name_str = str(new_name[0])
+                else:
+                    new_name_str = str(new_name)
+                eff_name = dest_override if dest_override else new_name_str
+
+                if not eff_name or eff_name == old_name:
+                    return
+
+                def _recursively_update_folder(
+                    content_dict: dict, parent_folder: str
+                ) -> None:
+                    for k, v in content_dict.items():
+                        if isinstance(v, dict):
+                            if v.get("__type__") == "file":
+                                v["folder"] = parent_folder
+                                self.locked_files[k] = parent_folder
+                            else:
+                                sub = f"{parent_folder}/{k}" if parent_folder else k
+                                _recursively_update_folder(v, sub)
+
+                if old_name in self.plan:
+                    old_content = self.plan.pop(old_name)
+                    if eff_name in self.plan and isinstance(self.plan[eff_name], dict):
+                        # Recursive non-clobbering merge
+                        _merge_plan_dicts(self.plan[eff_name], old_content)
+                        _recursively_update_folder(self.plan[eff_name], eff_name)
+                        self.rebuild_tree(run_validation=True)
+                        self.announce(
+                            f"Merged folder category '{old_name}' into '{eff_name}'"
+                        )
+                    else:
+                        self.plan[eff_name] = old_content
+                        _recursively_update_folder(self.plan[eff_name], eff_name)
+                        self.rebuild_tree(run_validation=True)
+                        self.announce(
+                            f"Renamed folder category '{old_name}' -> '{eff_name}'"
+                        )
+
+            self.push_screen(modal, on_folder_renamed)
+            return
+
+        checked_entries = self._get_checked_file_entries()
+        checked_keys = [e["key"] for e in checked_entries if e.get("key")]
+
+        # Branch to batch rename when multiple files are checked
+        if len(checked_keys) > 1:
+            first_folder = checked_entries[0].get("folder", "")
+            modal = RenameModal(
+                title=f"Batch Rename ({len(checked_entries)} files)",
+                current_name="{category}_{original}",
+                category=first_folder,
+                is_folder=False,
+                plan=self.plan,
+                base_dir=self.base_dir,
+                files=checked_entries,
+            )
+
+            def on_batch_renamed(result: Optional[Union[str, RenameResult]]) -> None:
+                if not result:
+                    return
+
+                from app.core.path_utils import _disambiguate_key
+
+                dest_override = getattr(result, "destination_override", None)
+                batch_items = getattr(result, "batch_items", None)
+
+                if not batch_items:
+                    pattern_str = str(result)
+                    previews = modal.get_batch_previews(pattern_str)
+                    batch_items = []
+                    for idx, entry in enumerate(checked_entries):
+                        meta, fallback, key, folder, info = (
+                            modal._extract_file_metadata(entry, modal.seq + idx)
+                        )
+                        target_fn = previews[idx] if idx < len(previews) else fallback
+                        target_fld = dest_override if dest_override else folder
+                        batch_items.append(
+                            {
+                                "key": key,
+                                "folder": target_fld,
+                                "new_name": target_fn,
+                                "info": info or entry.get("info", {}),
+                                "old_folder": entry.get("folder", ""),
+                            }
+                        )
+
+                renamed_count = 0
+                for item in batch_items:
+                    old_name = item.get("key") or item.get("old_name")
+                    new_filename = item.get("new_name")
+                    old_folder = item.get("old_folder") or item.get("folder", "")
+                    target_folder = (
+                        dest_override
+                        if dest_override
+                        else (item.get("folder") or old_folder)
+                    )
+                    data_info = item.get("info")
+
+                    if not old_name or not new_filename:
+                        continue
+
+                    # Search in self.plan if old_folder or old_name not directly found
+                    if (
+                        old_folder not in self.plan
+                        or old_name not in self.plan[old_folder]
+                    ):
+                        for f_name, f_content in list(self.plan.items()):
+                            if isinstance(f_content, dict) and old_name in f_content:
+                                old_folder = f_name
+                                if data_info is None:
+                                    data_info = f_content[old_name]
+                                break
+
+                    if not data_info or not isinstance(data_info, dict):
+                        if (
+                            old_folder in self.plan
+                            and old_name in self.plan[old_folder]
+                        ):
+                            data_info = self.plan[old_folder][old_name]
+
+                    # Remove from old location in self.plan
+                    if old_folder in self.plan and old_name in self.plan[old_folder]:
+                        self.plan[old_folder].pop(old_name, None)
+
+                    if target_folder not in self.plan:
+                        self.plan[target_folder] = {}
+
+                    # Collision check & numeric disambiguation
+                    if (
+                        new_filename in self.plan[target_folder]
+                        and self.plan[target_folder][new_filename] is not data_info
+                    ):
+                        new_filename = _disambiguate_key(
+                            self.plan[target_folder], new_filename, is_file=True
+                        )
+
+                    if data_info is not None:
+                        self.plan[target_folder][new_filename] = data_info
+                        data_info["target_filename"] = new_filename
+                        data_info["folder"] = target_folder
+                        data_info["is_locked"] = True
+                    else:
+                        self.plan[target_folder][new_filename] = {
+                            "__type__": "file",
+                            "target_filename": new_filename,
+                            "folder": target_folder,
+                            "is_locked": True,
+                        }
+
+                    self.locked_files[new_filename] = target_folder
+                    if self.app_session:
+                        self.app_session.db.set_user_verified_target_path(
+                            self.base_dir, new_filename, target_folder
+                        )
+                    renamed_count += 1
+
+                self.rebuild_tree(run_validation=True)
+                self.announce(f"Batch renamed {renamed_count} files [Locked]")
+
+            self.push_screen(modal, on_batch_renamed)
+            return
+
+        # Single file rename workflow
         if not node or not node.data:
             self.announce("Select a file or folder node to rename [Ctrl+R].")
             return
@@ -414,67 +689,10 @@ class SelectionActionsMixin:
                     self.app_session.db.set_user_verified_target_path(
                         self.base_dir, new_filename, target_folder
                     )
-                self.rebuild_tree()
+                self.rebuild_tree(run_validation=True)
                 self.announce(f"Renamed target file to '{new_filename}' [Locked]")
 
             self.push_screen(modal, on_renamed)
-        else:
-            modal = RenameModal(
-                title=f"Rename Folder: {old_name}",
-                current_name=old_name,
-                category=old_name,
-                is_folder=True,
-                plan=self.plan,
-                base_dir=self.base_dir,
-            )
-
-            def on_folder_renamed(new_name: Optional[Union[str, Any]]) -> None:
-                if not new_name:
-                    return
-
-                from app.core.path_utils import _merge_plan_dicts
-
-                dest_override = getattr(new_name, "destination_override", None)
-                if isinstance(new_name, tuple):
-                    new_name_str = str(new_name[0])
-                else:
-                    new_name_str = str(new_name)
-                eff_name = dest_override if dest_override else new_name_str
-
-                if not eff_name or eff_name == old_name:
-                    return
-
-                def _recursively_update_folder(
-                    content_dict: dict, parent_folder: str
-                ) -> None:
-                    for k, v in content_dict.items():
-                        if isinstance(v, dict):
-                            if v.get("__type__") == "file":
-                                v["folder"] = parent_folder
-                                self.locked_files[k] = parent_folder
-                            else:
-                                sub = f"{parent_folder}/{k}" if parent_folder else k
-                                _recursively_update_folder(v, sub)
-
-                if old_name in self.plan:
-                    old_content = self.plan.pop(old_name)
-                    if eff_name in self.plan and isinstance(self.plan[eff_name], dict):
-                        # Recursive non-clobbering merge
-                        _merge_plan_dicts(self.plan[eff_name], old_content)
-                        _recursively_update_folder(self.plan[eff_name], eff_name)
-                        self.rebuild_tree()
-                        self.announce(
-                            f"Merged folder category '{old_name}' into '{eff_name}'"
-                        )
-                    else:
-                        self.plan[eff_name] = old_content
-                        _recursively_update_folder(self.plan[eff_name], eff_name)
-                        self.rebuild_tree()
-                        self.announce(
-                            f"Renamed folder category '{old_name}' -> '{eff_name}'"
-                        )
-
-            self.push_screen(modal, on_folder_renamed)
 
     def action_new_folder(self) -> None:
         """Create a new folder category node [Ctrl+N]."""
