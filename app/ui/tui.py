@@ -63,6 +63,7 @@ from app.ui.modals.rules import RuleImportModal as RuleImportModal
 from app.ui.modals.rules import TemplateGalleryModal as TemplateGalleryModal
 from app.ui.modals.session import (
     HistoryModal,
+    MultiSessionRecoveryModal,
     SessionRecoveryModal,
 )
 from app.ui.modals.session import RollbackConfirmModal as RollbackConfirmModal
@@ -634,19 +635,53 @@ class AutoSorterTUI(
             if not abandoned:
                 return
 
-            session_info = abandoned[0]
+            if len(abandoned) == 1:
+                session_info = abandoned[0]
 
-            def on_recovery_choice(choice: Optional[str]) -> None:
-                if not choice:
-                    return
-                if choice == "resume":
-                    self._do_recovery_resume(session_info)
-                elif choice == "rollback":
-                    self._do_recovery_rollback(session_info)
-                elif choice == "clean":
-                    self._do_recovery_clean(session_info)
+                def on_recovery_choice(choice: Optional[str]) -> None:
+                    if not choice:
+                        return
+                    if choice == "resume":
+                        self._do_recovery_resume(session_info)
+                    elif choice == "rollback":
+                        self._do_recovery_rollback(session_info)
+                    elif choice == "clean":
+                        self._do_recovery_clean(session_info)
 
-            self.push_screen(SessionRecoveryModal(session_info), on_recovery_choice)
+                self.push_screen(SessionRecoveryModal(session_info), on_recovery_choice)
+            else:
+
+                def on_multi_recovery_choice(choice: Any) -> None:
+                    if not choice:
+                        return
+                    action = getattr(choice, "action", choice)
+                    target_session = getattr(choice, "session", None)
+                    if isinstance(choice, dict):
+                        action = choice.get("action")
+                        target_session = choice.get("session")
+
+                    if action == "clean_all":
+                        sessions_to_clean = getattr(choice, "sessions", abandoned)
+                        for sess in sessions_to_clean:
+                            self._do_recovery_clean(sess)
+                    elif action == "rollback_all":
+                        sessions_to_rollback = getattr(choice, "sessions", abandoned)
+                        for sess in sessions_to_rollback:
+                            self._do_recovery_rollback(sess)
+                        if self.base_dir:
+                            self.action_scan_directory()
+                            self.rebuild_tree()
+                    elif action == "resume" and target_session:
+                        self._do_recovery_resume(target_session)
+                    elif action == "rollback" and target_session:
+                        self._do_recovery_rollback(target_session)
+                    elif action == "clean" and target_session:
+                        self._do_recovery_clean(target_session)
+
+                self.push_screen(
+                    MultiSessionRecoveryModal(abandoned, settings=self.settings),
+                    on_multi_recovery_choice,
+                )
         except Exception as e:
             logger.error(f"Error checking abandoned sessions: {e}")
 
