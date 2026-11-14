@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "4b96ef7bd5af8888f0fb3760d5b418a3f2a07e040aa5cdbba3b5c2dc2741a4c1"
+    "checksum": "3443b80c646df89e13e04a3c720e84ff4693cdd441633d6b67066ef4c3e58394"
   },
   "classes": [
     {
@@ -95,6 +95,11 @@
             },
             {
               "annotation": null,
+              "default": "None",
+              "name": "pipeline"
+            },
+            {
+              "annotation": null,
               "default": null,
               "name": "**kwargs"
             }
@@ -117,12 +122,12 @@
               "name": "fast_path_only"
             },
             {
-              "annotation": "Optional[list[str]]",
+              "annotation": "list[str] | None",
               "default": "None",
               "name": "target_paths"
             },
             {
-              "annotation": "Optional[dict[str, Any]]",
+              "annotation": "dict[str, Any] | None",
               "default": "None",
               "name": "jev_results"
             }

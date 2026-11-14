@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Any, Optional
+from typing import Any
 
 from textual import work
 from textual.widgets import Button, Static
@@ -39,31 +39,59 @@ class SortPipelineMixin:
         self.announce(f"Scanning directories: {', '.join(self.source_dirs)} ...")
         self.run_scan_worker()
 
-    def _running_pipeline_worker(self) -> Optional[str]:
+    def _running_pipeline_worker(self) -> str | None:
         """Return the name of a running scan or execute worker, if any."""
-        for worker in self.workers:
-            if worker.is_running and worker.name in (
-                "run_scan_worker",
-                "run_execute_worker",
-            ):
-                return worker.name
+        pipeline = getattr(self, "pipeline", None)
+        if pipeline is not None and hasattr(pipeline, "state"):
+            from app.core.pipeline import PipelineLifecycleState
+
+            if pipeline.state == PipelineLifecycleState.EXECUTING:
+                return "run_execute_worker"
+            if pipeline.state == PipelineLifecycleState.PLANNING:
+                return "run_scan_worker"
+            if pipeline.state == PipelineLifecycleState.ROLLING_BACK:
+                return "run_execute_worker"
+        session = getattr(self, "app_session", None)
+        if session is not None and hasattr(session, "lifecycle_state"):
+            from app.core.pipeline import PipelineLifecycleState
+
+            if session.lifecycle_state == PipelineLifecycleState.EXECUTING:
+                return "run_execute_worker"
+            if session.lifecycle_state == PipelineLifecycleState.PLANNING:
+                return "run_scan_worker"
+            if session.lifecycle_state == PipelineLifecycleState.ROLLING_BACK:
+                return "run_execute_worker"
         return None
 
     def _announce_if_busy(self, action: str) -> bool:
         """Refuse to start ``action`` while a scan or move is still running.
 
-        Both workers share the default exclusive group, so starting one cancels
-        the other and replaces the AppSession that a running move depends on.
+        Queries the pipeline lifecycle state rather than inspecting thread names.
         Also warns users or prevents conflicts when the watchdog daemon is active.
         """
-        running = self._running_pipeline_worker()
-        if running is not None:
-            if running == "run_execute_worker":
+        pipeline = getattr(self, "pipeline", None)
+        session = getattr(self, "app_session", None)
+        state = None
+        if pipeline is not None and hasattr(pipeline, "state"):
+            state = pipeline.state
+        elif session is not None and hasattr(session, "lifecycle_state"):
+            state = session.lifecycle_state
+
+        if state is not None:
+            from app.core.pipeline import PipelineLifecycleState
+
+            if state == PipelineLifecycleState.EXECUTING:
                 msg = f"Files are still being moved. Wait for it to finish before you {action}."
-            else:
+                self.announce(msg, priority="assertive")
+                return True
+            if state == PipelineLifecycleState.PLANNING:
                 msg = f"A scan is still running. Wait for it to finish before you {action}."
-            self.announce(msg, priority="assertive")
-            return True
+                self.announce(msg, priority="assertive")
+                return True
+            if state == PipelineLifecycleState.ROLLING_BACK:
+                msg = f"Files are currently being rolled back. Wait for it to finish before you {action}."
+                self.announce(msg, priority="assertive")
+                return True
 
         if getattr(self, "_daemon_is_moving", False):
             msg = f"Watchdog daemon is currently moving files. Wait for it to finish or pause monitoring before you {action}."
@@ -71,6 +99,16 @@ class SortPipelineMixin:
             return True
 
         return False
+
+    def _handle_pipeline_state_transition(
+        self, old_state: Any, new_state: Any, context: dict | None = None
+    ) -> None:
+        """Track pipeline state transitions via registered event hook."""
+        logger.debug(f"UI observed pipeline state change: {old_state} -> {new_state}")
+
+    def _handle_pipeline_telemetry(self, event: str, payload: dict) -> None:
+        """Handle telemetry events broadcast by the pipeline."""
+        logger.debug(f"UI observed pipeline telemetry: {event} {payload}")
 
     @work(exclusive=True, thread=True)
     def run_scan_worker(self) -> None:
@@ -90,6 +128,13 @@ class SortPipelineMixin:
                 source_dirs=getattr(self, "source_dirs", None),
             )
 
+            from app.core.pipeline import PipelineLifecycleState, SortPipeline
+
+            self.pipeline = SortPipeline(self.app_session)
+            self.pipeline.add_state_change_hook(self._handle_pipeline_state_transition)
+            self.pipeline.add_telemetry_hook(self._handle_pipeline_telemetry)
+            self.pipeline.transition_to(PipelineLifecycleState.PLANNING)
+
             from app.core.scanner import get_files_from_sources
 
             s_dirs = getattr(self, "source_dirs", None) or (
@@ -100,7 +145,7 @@ class SortPipelineMixin:
             from app.core.metadata import MetadataPass
 
             def scan_progress_cb(
-                update_or_prog: Any, stage: Optional[str] = None, **kwargs: Any
+                update_or_prog: Any, stage: str | None = None, **kwargs: Any
             ) -> None:
                 self.call_from_thread(
                     self._handle_progress_update, update_or_prog, stage, **kwargs
@@ -158,6 +203,8 @@ class SortPipelineMixin:
                 pass
 
             self.plan = self.app_session.generate_sorting_plan()
+            if hasattr(self, "pipeline") and self.pipeline:
+                self.pipeline.transition_to(PipelineLifecycleState.PLANNED)
             self.call_from_thread(self.rebuild_tree)
             model_status = getattr(self.plan, "model_status", "HEALTHY")
             invalid_locks = getattr(self.plan, "invalid_locks", {}) or {}
@@ -198,6 +245,11 @@ class SortPipelineMixin:
                 msg += f" ({lock_str})."
             self.call_from_thread(self.announce, msg)
         except Exception as e:
+            if hasattr(self, "pipeline") and self.pipeline:
+                try:
+                    self.pipeline.transition_to(PipelineLifecycleState.FAILED)
+                except Exception:
+                    pass
             logger.error(f"Error in run_scan_worker: {e}")
             self.call_from_thread(self.announce, f"Scan error: {e}")
         finally:
@@ -231,7 +283,7 @@ class SortPipelineMixin:
         if duplicate_groups:
 
             def handle_duplicate_modal_result(
-                selections: Optional[dict[str, str]],
+                selections: dict[str, str] | None,
             ) -> None:
                 if selections is None:
                     self.announce("Move execution cancelled during duplicate review.")
@@ -489,17 +541,34 @@ class SortPipelineMixin:
         try:
 
             def move_progress_cb(
-                update_or_prog: Any, stage: Optional[str] = None, **kwargs: Any
+                update_or_prog: Any, stage: str | None = None, **kwargs: Any
             ) -> None:
                 self.call_from_thread(
                     self._handle_progress_update, update_or_prog, stage, **kwargs
                 )
 
             exec_plan = self._get_executable_plan()
-            summary = self.app_session.execute_moves(
+            from app.core.pipeline import PipelineLifecycleState, SortPipeline
+
+            if (
+                not hasattr(self, "pipeline")
+                or self.pipeline is None
+                or getattr(self.pipeline, "session", None) != self.app_session
+            ):
+                self.pipeline = SortPipeline(self.app_session)
+                self.pipeline.add_state_change_hook(
+                    self._handle_pipeline_state_transition
+                )
+                self.pipeline.add_telemetry_hook(self._handle_pipeline_telemetry)
+
+            if self.pipeline.state != PipelineLifecycleState.PLANNED:
+                self.pipeline.transition_to(PipelineLifecycleState.PLANNED)
+
+            result = self.pipeline.execute(
                 exec_plan,
                 progress_callback=move_progress_cb,
             )
+            summary = result.summary
             msg = f"Execution completed successfully! [Ctrl+Z] Undo available. Summary: {summary}"
             self.call_from_thread(self.announce, msg)
 

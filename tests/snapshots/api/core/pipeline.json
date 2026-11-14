@@ -1,8 +1,49 @@
 {
   "_metadata": {
-    "checksum": "d841dac2ac51a127ad55b53a6e4eba7ca8a83424526f05bdd0970301bac73641"
+    "checksum": "0c13fce4b3fbd6dd0518093a186917d8951f97f1b864df406946ade85e84653c"
   },
   "classes": [
+    {
+      "class_name": "IllegalStateTransitionError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "PipelineLifecycleState",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "is_active",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "is_terminal",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        }
+      ]
+    },
     {
       "class_name": "SortPipeline",
       "decorators": [],
@@ -27,6 +68,42 @@
         },
         {
           "async": false,
+          "decorators": [],
+          "name": "add_state_change_hook",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable",
+              "default": null,
+              "name": "callback"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "add_telemetry_hook",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable",
+              "default": null,
+              "name": "callback"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
           "decorators": [
             "@property"
           ],
@@ -39,6 +116,34 @@
             }
           ],
           "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "emit_telemetry",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "event"
+            },
+            {
+              "annotation": "dict | None",
+              "default": "None",
+              "name": "data"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "None"
         },
         {
           "async": false,
@@ -74,17 +179,17 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[list]",
+              "annotation": "list | None",
               "default": "None",
               "name": "items"
             },
             {
-              "annotation": "Optional[Callable]",
+              "annotation": "Callable | None",
               "default": "None",
               "name": "progress_callback"
             },
             {
-              "annotation": "Optional[Callable]",
+              "annotation": "Callable | None",
               "default": "None",
               "name": "cancel_check"
             },
@@ -107,7 +212,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[list]",
+              "annotation": "list | None",
               "default": "None",
               "name": "items"
             },
@@ -141,6 +246,44 @@
         },
         {
           "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "state",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "PipelineLifecycleState"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "transition_to",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "PipelineLifecycleState",
+              "default": null,
+              "name": "target_state"
+            },
+            {
+              "annotation": "dict | None",
+              "default": "None",
+              "name": "context"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
           "decorators": [],
           "name": "undo",
           "parameters": [
@@ -160,7 +303,7 @@
               "name": "ignore_missing"
             },
             {
-              "annotation": "Optional[Any]",
+              "annotation": "Any | None",
               "default": "None",
               "name": "selected_step_ids"
             }
@@ -201,7 +344,7 @@
               "name": "cls"
             },
             {
-              "annotation": "Optional[dict]",
+              "annotation": "dict | None",
               "default": null,
               "name": "summary"
             },
@@ -243,7 +386,7 @@
           "name": "path"
         }
       ],
-      "returns": "tuple[str, Optional[list]]"
+      "returns": "tuple[str, list | None]"
     }
   ]
 }

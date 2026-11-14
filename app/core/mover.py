@@ -23,6 +23,7 @@ from app.core.exceptions import SortifyBaseError
 from app.core.ledger import LedgerStatus
 from app.core.link_manager import LinkManager
 from app.core.path_utils import is_junction_path, safe_relpath
+from app.core.pipeline import PipelineLifecycleState
 from app.core.progress import emit_progress
 from app.core.verifier import VerificationEngine
 
@@ -1696,6 +1697,8 @@ class AsyncMoveEngine:
         cancellation_token=None,
         priority: str = None,
         progress_callback=None,
+        pipeline: Any = None,
+        **kwargs: Any,
     ) -> MoveResult:
         """Partition relocation plan into bounded worker chunks and execute file moves off-thread.
 
@@ -1712,6 +1715,8 @@ class AsyncMoveEngine:
             cancellation_token: Optional cancellation token object for cooperative cancellation.
             priority: Execution priority tier string.
             progress_callback: Optional callback receiving progress ratio updates during file movement.
+            pipeline: Optional pipeline instance for lifecycle state coordination.
+            **kwargs: Additional keyword arguments for future extensibility.
 
         Returns
         -------
@@ -1732,6 +1737,7 @@ class AsyncMoveEngine:
         pending_links: list = []
         step_counter = [1]
         has_flushed_db = False
+        summary: MoveResult | None = None
 
         try:
             effective_progress_cb = progress_callback or getattr(
@@ -1845,6 +1851,8 @@ class AsyncMoveEngine:
                 protected_folders=0,
                 cancelled=False,
                 state=self.state,
+                lifecycle_state=PipelineLifecycleState.COMPLETED,
+                rollback_completed=None,
             )
 
             from app.core.shared_registry import SharedWorkerPool
@@ -1857,6 +1865,13 @@ class AsyncMoveEngine:
                     )
                     self.transition_to(MoveEngineState.CANCELLING)
                     summary.cancelled = True
+                    summary["lifecycle_state"] = PipelineLifecycleState.CANCELLED
+                    if pipeline and hasattr(pipeline, "transition_to"):
+                        try:
+                            if pipeline.state != PipelineLifecycleState.CANCELLED:
+                                pipeline.transition_to(PipelineLifecycleState.CANCELLED)
+                        except Exception:
+                            pass
                     break
 
                 self.transition_to(MoveEngineState.MOVING_CHUNK)
@@ -2060,6 +2075,8 @@ class AsyncMoveEngine:
 
             from app.core.audit_reporter import generate_audit_report
 
+            if summary.get("cancelled"):
+                summary["lifecycle_state"] = PipelineLifecycleState.CANCELLED
             summary["audit_report"] = generate_audit_report(base_dir, audit_records)
             return summary
 
@@ -2073,6 +2090,7 @@ class AsyncMoveEngine:
                         pass
 
             self.transition_to(MoveEngineState.FAILED)
+            rollback_succeeded = False
             if (
                 session_id
                 and history_manager
@@ -2082,9 +2100,16 @@ class AsyncMoveEngine:
                 logging.error(
                     f"Error during background sorting: {e}. Initiating automatic rollback for session {session_id}"
                 )
+                if pipeline and hasattr(pipeline, "transition_to"):
+                    try:
+                        if pipeline.state != PipelineLifecycleState.ROLLING_BACK:
+                            pipeline.transition_to(PipelineLifecycleState.ROLLING_BACK)
+                    except Exception:
+                        pass
                 try:
                     history_manager.unwind_session(session_id, db=db)
                     self.transition_to(MoveEngineState.ROLLED_BACK)
+                    rollback_succeeded = True
                     logging.info(
                         f"Automatic rollback completed successfully for session {session_id}"
                     )
@@ -2093,6 +2118,16 @@ class AsyncMoveEngine:
                         f"Automatic rollback failed for session {session_id}: {rollback_err}",
                         exc_info=True,
                     )
+            if summary is not None:
+                summary["lifecycle_state"] = PipelineLifecycleState.FAILED
+                summary["rollback_completed"] = rollback_succeeded
+            if pipeline and hasattr(pipeline, "transition_to"):
+                try:
+                    setattr(pipeline, "_rollback_completed", rollback_succeeded)
+                    if pipeline.state != PipelineLifecycleState.FAILED:
+                        pipeline.transition_to(PipelineLifecycleState.FAILED)
+                except Exception:
+                    pass
             raise e
 
     def retry_failed_moves(
@@ -2133,6 +2168,8 @@ def execute_moves(
     priority: str = None,
     progress_callback=None,
     source_dirs: list[str] | None = None,
+    pipeline: Any = None,
+    **kwargs: Any,
 ) -> MoveResult:
     """Create directories and safely move files using chunked asynchronous execution.
 
@@ -2151,6 +2188,9 @@ def execute_moves(
         cancellation_token: Optional cancellation token object.
         priority: Priority level identifier.
         progress_callback: Optional progress emission callback function.
+        source_dirs: Optional list of individual source directories being sorted.
+        pipeline: Optional pipeline instance for lifecycle state coordination.
+        **kwargs: Additional keyword arguments for future extensibility.
 
     Returns
     -------
@@ -2170,6 +2210,8 @@ def execute_moves(
         cancellation_token=cancellation_token,
         priority=priority,
         progress_callback=progress_callback,
+        pipeline=pipeline,
+        **kwargs,
     )
 
 

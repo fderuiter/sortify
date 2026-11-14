@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "533aee5764f24e292db3f8ca9619365754f10d7eb3971340479a095b24f03b0e"
+    "checksum": "2aa96d746faea80a3a430e24ab9ce2daca38587ca439143f065d388b00114b63"
   },
   "classes": [
     {
@@ -99,6 +99,16 @@
               "annotation": null,
               "default": "None",
               "name": "progress_callback"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "pipeline"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "**kwargs"
             }
           ],
           "returns": "MoveResult"
@@ -584,6 +594,16 @@
           "annotation": "list[str] | None",
           "default": "None",
           "name": "source_dirs"
+        },
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "pipeline"
+        },
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "**kwargs"
         }
       ],
       "returns": "MoveResult"
