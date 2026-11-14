@@ -175,10 +175,38 @@ def test_tui_main_screen_heading_accessibility(test_app_settings, tmp_path):
 
             headings = [w for w in app.query("*") if isinstance(w, Heading)]
             assert len(headings) >= 2, "Main screen should contain panel headings"
+            h1_headings = [h for h in headings if h.level == 1]
+            assert len(h1_headings) == 1, (
+                "Main screen must contain exactly one level 1 Heading"
+            )
+            assert h1_headings[0].id == "app-title-heading"
             meta_headings = [
                 h for h in headings if "Node Metadata Inspector" in str(h.render())
             ]
             assert len(meta_headings) == 1
             assert meta_headings[0].level == 2
+
+    asyncio.run(_test())
+
+
+def test_audit_a11y_compliance_missing_root_h1():
+    """Verify audit_a11y_compliance reports A11Y_MISSING_ROOT_H1_HEADING when an App lacks a level 1 heading."""
+    from textual.app import App, ComposeResult
+    from textual.widgets import Label
+
+    from app.ui.a11y import A11yMixin
+
+    class MissingRootH1App(A11yMixin, App):
+        def compose(self) -> ComposeResult:
+            yield Heading("Section Title", level=2)
+            yield Label("No root h1 heading present")
+
+    async def _test():
+        app = MissingRootH1App()
+        async with app.run_test():
+            audit_res = app.audit_a11y_compliance()
+            assert audit_res["compliant"] is False
+            violation_rules = [v["rule"] for v in audit_res["violations"]]
+            assert "A11Y_MISSING_ROOT_H1_HEADING" in violation_rules
 
     asyncio.run(_test())
