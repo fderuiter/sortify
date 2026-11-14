@@ -1,7 +1,7 @@
 """Plan tree selection, include/exclude, reassign, rename, lock and rating actions."""
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Dict, List, Optional, Union
 
 from textual.widgets.tree import TreeNode
 
@@ -189,13 +189,26 @@ class SelectionActionsMixin:
                         self.plan[old_folder].pop(file_key, None)
                     if target_folder not in self.plan:
                         self.plan[target_folder] = {}
-                    self.plan[target_folder][file_key] = fi
+
+                    from app.core.path_utils import _disambiguate_key
+
+                    # Non-clobbering mutation with automatic numeric disambiguation
+                    if file_key in self.plan[target_folder]:
+                        dest_key = _disambiguate_key(
+                            self.plan[target_folder], file_key, is_file=True
+                        )
+                        fi["target_filename"] = dest_key
+                        fi["confirmed"] = True
+                    else:
+                        dest_key = file_key
+
+                    self.plan[target_folder][dest_key] = fi
                     fi["folder"] = target_folder
                     fi["is_locked"] = True
-                    self.locked_files[file_key] = target_folder
+                    self.locked_files[dest_key] = target_folder
                     if self.app_session:
                         self.app_session.db.set_user_verified_target_path(
-                            self.base_dir, file_key, target_folder
+                            self.base_dir, dest_key, target_folder
                         )
                     reassigned_count += 1
 
@@ -205,7 +218,14 @@ class SelectionActionsMixin:
             )
 
         self.push_screen(
-            ReassignModal(existing_folders, count=len(target_files)), on_reassigned
+            ReassignModal(
+                existing_folders,
+                count=len(target_files),
+                plan=self.plan,
+                base_dir=self.base_dir,
+                target_files=target_files,
+            ),
+            on_reassigned,
         )
 
     def action_toggle_select_all(self) -> None:
@@ -331,30 +351,68 @@ class SelectionActionsMixin:
         if is_file:
             stem, ext = os.path.splitext(old_name)
             folder_cat = data.get("folder", "")
+            filepath = data.get("filepath") or (
+                data.get("info", {}).get("filepath")
+                if isinstance(data.get("info"), dict)
+                else None
+            )
             modal = RenameModal(
                 title=f"Rename File: {old_name}",
                 current_name=stem,
                 extension=ext,
                 category=folder_cat,
+                is_folder=False,
+                plan=self.plan,
+                base_dir=self.base_dir,
+                source_path=filepath,
             )
 
-            def on_renamed(new_formatted: Optional[str]) -> None:
+            def on_renamed(new_formatted: Optional[Union[str, Any]]) -> None:
                 if not new_formatted:
                     return
-                if ext and not new_formatted.endswith(ext):
-                    new_filename = f"{new_formatted}{ext}"
-                else:
-                    new_filename = new_formatted
 
-                if new_filename == old_name:
+                from app.core.path_utils import _disambiguate_key
+
+                dest_override = getattr(new_formatted, "destination_override", None)
+                if isinstance(new_formatted, tuple):
+                    new_formatted_str, dest_override = new_formatted
+                else:
+                    new_formatted_str = str(new_formatted)
+
+                if ext and not new_formatted_str.endswith(ext):
+                    new_filename = f"{new_formatted_str}{ext}"
+                else:
+                    new_filename = new_formatted_str
+
+                target_folder = dest_override if dest_override else folder_cat
+                if not dest_override and new_filename == old_name:
                     return
+
+                # Remove from old location in self.plan
+                if folder_cat in self.plan and old_name in self.plan[folder_cat]:
+                    self.plan[folder_cat].pop(old_name, None)
+
+                if target_folder not in self.plan:
+                    self.plan[target_folder] = {}
+
+                # Collision check & numeric disambiguation
+                if new_filename in self.plan[target_folder] and self.plan[
+                    target_folder
+                ][new_filename] is not data.get("info"):
+                    new_filename = _disambiguate_key(
+                        self.plan[target_folder], new_filename, is_file=True
+                    )
+
+                self.plan[target_folder][new_filename] = data["info"]
                 data["info"]["target_filename"] = new_filename
+                data["info"]["folder"] = target_folder
                 data["info"]["is_locked"] = True
+                data["folder"] = target_folder
                 data["is_locked"] = True
-                self.locked_files[old_name] = data["folder"]
+                self.locked_files[new_filename] = target_folder
                 if self.app_session:
                     self.app_session.db.set_user_verified_target_path(
-                        self.base_dir, old_name, data["folder"]
+                        self.base_dir, new_filename, target_folder
                     )
                 self.rebuild_tree()
                 self.announce(f"Renamed target file to '{new_filename}' [Locked]")
@@ -365,17 +423,56 @@ class SelectionActionsMixin:
                 title=f"Rename Folder: {old_name}",
                 current_name=old_name,
                 category=old_name,
+                is_folder=True,
+                plan=self.plan,
+                base_dir=self.base_dir,
             )
 
-            def on_folder_renamed(new_name: Optional[str]) -> None:
-                if not new_name or new_name == old_name:
+            def on_folder_renamed(new_name: Optional[Union[str, Any]]) -> None:
+                if not new_name:
                     return
+
+                from app.core.path_utils import _merge_plan_dicts
+
+                dest_override = getattr(new_name, "destination_override", None)
+                if isinstance(new_name, tuple):
+                    new_name_str = str(new_name[0])
+                else:
+                    new_name_str = str(new_name)
+                eff_name = dest_override if dest_override else new_name_str
+
+                if not eff_name or eff_name == old_name:
+                    return
+
+                def _recursively_update_folder(
+                    content_dict: dict, parent_folder: str
+                ) -> None:
+                    for k, v in content_dict.items():
+                        if isinstance(v, dict):
+                            if v.get("__type__") == "file":
+                                v["folder"] = parent_folder
+                                self.locked_files[k] = parent_folder
+                            else:
+                                sub = f"{parent_folder}/{k}" if parent_folder else k
+                                _recursively_update_folder(v, sub)
+
                 if old_name in self.plan:
-                    self.plan[new_name] = self.plan.pop(old_name)
-                    self.rebuild_tree()
-                    self.announce(
-                        f"Renamed folder category '{old_name}' -> '{new_name}'"
-                    )
+                    old_content = self.plan.pop(old_name)
+                    if eff_name in self.plan and isinstance(self.plan[eff_name], dict):
+                        # Recursive non-clobbering merge
+                        _merge_plan_dicts(self.plan[eff_name], old_content)
+                        _recursively_update_folder(self.plan[eff_name], eff_name)
+                        self.rebuild_tree()
+                        self.announce(
+                            f"Merged folder category '{old_name}' into '{eff_name}'"
+                        )
+                    else:
+                        self.plan[eff_name] = old_content
+                        _recursively_update_folder(self.plan[eff_name], eff_name)
+                        self.rebuild_tree()
+                        self.announce(
+                            f"Renamed folder category '{old_name}' -> '{eff_name}'"
+                        )
 
             self.push_screen(modal, on_folder_renamed)
 
