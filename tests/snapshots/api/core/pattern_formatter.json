@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "6f9e6ec09956c56e5fdeed11fe732317a669224045cc9ddf238fd528f3c6047c"
+    "checksum": "e2a7b5a78d4216b030c052680aae774d77f0a3f650c278ba122ac98e173abfb7"
   },
   "classes": [
     {
@@ -25,7 +25,7 @@
               "name": "pattern"
             },
             {
-              "annotation": "Optional[Dict[str, Any]]",
+              "annotation": "Optional[dict[str, Any]]",
               "default": "None",
               "name": "metadata"
             },
@@ -60,7 +60,7 @@
               "name": "pattern"
             }
           ],
-          "returns": "List[str]"
+          "returns": "list[str]"
         }
       ]
     }
@@ -77,7 +77,7 @@
           "name": "pattern"
         },
         {
-          "annotation": "Optional[Dict[str, Any]]",
+          "annotation": "Optional[dict[str, Any]]",
           "default": "None",
           "name": "metadata"
         },

@@ -8,8 +8,9 @@ import json
 import logging
 import os
 import shutil
+from collections.abc import Callable
 from datetime import datetime, timezone
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any, Optional
 
 from pydantic import BaseModel, Field
 
@@ -49,7 +50,7 @@ class MasterPipelineResult(DictCompatMixin, BaseModel):
     total_unique_documents: int
     total_duplicates_detected: int
     discovered_studies_count: int
-    studies_summary: List[StudyIngestSummary] = Field(default_factory=list)
+    studies_summary: list[StudyIngestSummary] = Field(default_factory=list)
     chain_of_custody_manifest_path: str = ""
 
 
@@ -129,8 +130,8 @@ class CROMultiStudyPipeline:
             registry.unload_model("onnx")
 
             # 3. Process each Study Partition
-            studies_summary: List[StudyIngestSummary] = []
-            manifest_records: List[Dict[str, Any]] = []
+            studies_summary: list[StudyIngestSummary] = []
+            manifest_records: list[dict[str, Any]] = []
 
             total_partitions = len(study_partitions)
             for p_idx, (study_id, docs) in enumerate(study_partitions.items()):

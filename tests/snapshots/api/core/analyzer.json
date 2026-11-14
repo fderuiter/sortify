@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "d820f28472355ca72f69efd9a1c9349a13676cc759bdff46081d8b1e774d7caa"
+    "checksum": "e938c0b2fef8d09998d9b06e84a26deb1591a294c39de5826fc02c1f9b84fa8e"
   },
   "classes": [
     {
@@ -99,7 +99,7 @@
               "name": "target_paths"
             },
             {
-              "annotation": "Optional[Dict[str, Any]]",
+              "annotation": "Optional[dict[str, Any]]",
               "default": "None",
               "name": "jev_results"
             },
@@ -187,7 +187,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[Dict[str, Any]]",
+              "annotation": "Optional[dict[str, Any]]",
               "default": "None",
               "name": "plan"
             },
@@ -220,7 +220,7 @@
               "name": "**kwargs"
             }
           ],
-          "returns": "Dict[str, Any]"
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -266,7 +266,7 @@
               "name": "**kwargs"
             }
           ],
-          "returns": "Dict[str, Any]"
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -311,7 +311,7 @@
               "name": "self"
             }
           ],
-          "returns": "Dict[str, Any]"
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -326,7 +326,7 @@
               "name": "self"
             },
             {
-              "annotation": "Dict[str, Any]",
+              "annotation": "dict[str, Any]",
               "default": null,
               "name": "value"
             }
@@ -360,7 +360,7 @@
               "name": "**kwargs"
             }
           ],
-          "returns": "Dict[str, Any]"
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -383,7 +383,7 @@
               "name": "**kwargs"
             }
           ],
-          "returns": "Dict[str, Any]"
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,

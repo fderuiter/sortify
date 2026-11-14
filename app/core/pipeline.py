@@ -6,8 +6,9 @@ themselves. See issue #708 and the system design's "Target architecture".
 """
 
 import os
+from collections.abc import Callable
 from dataclasses import dataclass, field
-from typing import Any, Callable, Optional
+from typing import Any, Optional
 
 
 def drop_scope(path: str) -> tuple[str, Optional[list]]:

@@ -3,7 +3,7 @@
 import logging
 import os
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from textual import events, on, work
 from textual.app import ComposeResult
@@ -61,7 +61,7 @@ class DropPlanConfirmModal(A11yMixin, ModalScreen[bool]):
     }
     """
 
-    def __init__(self, summary: str, plan_lines: List[str]):
+    def __init__(self, summary: str, plan_lines: list[str]):
         super().__init__()
         self.summary = summary
         self.plan_lines = plan_lines
@@ -100,7 +100,7 @@ class DropPlanConfirmModal(A11yMixin, ModalScreen[bool]):
 
 
 class DropZoneModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Dict[str, Any]]]
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict[str, Any]]]
 ):
     """Floating overlay modal dialog for quick drag-and-drop or paste file triage."""
 
@@ -235,8 +235,8 @@ class DropZoneModal(
         super().__init__()
         self.settings = settings
         self.base_dir = base_dir
-        self.processed_result: Optional[Dict[str, Any]] = None
-        self.staged_items: List[Dict[str, Any]] = []
+        self.processed_result: Optional[dict[str, Any]] = None
+        self.staged_items: list[dict[str, Any]] = []
 
     def compose(self) -> ComposeResult:
         """Compose floating dropzone modal overlay controls."""
@@ -369,7 +369,7 @@ class DropZoneModal(
         except Exception:
             return ""
 
-    def get_filtered_items(self) -> List[Dict[str, Any]]:
+    def get_filtered_items(self) -> list[dict[str, Any]]:
         """Return list of staged items filtered by search query."""
         query = self.get_filter_query()
         if not query:
@@ -402,7 +402,7 @@ class DropZoneModal(
             )
         self.update_active_metadata_preview()
 
-    def update_metadata_preview(self, item: Optional[Dict[str, Any]] = None) -> None:
+    def update_metadata_preview(self, item: Optional[dict[str, Any]] = None) -> None:
         """Update metadata preview card panel for given staged item."""
         if item is None:
             path_str = "N/A"
@@ -507,7 +507,7 @@ class DropZoneModal(
         msg = f"Staged {new_count} item(s). Queue total: {len(self.staged_items)} ({ready_cnt} ready)."
         self.update_status_msg(msg)
 
-    def _add_single_file_to_staging(self, abs_p: str, protected: List[str]) -> None:
+    def _add_single_file_to_staging(self, abs_p: str, protected: list[str]) -> None:
         """Validate and append a single file path to staged_items."""
         from app.core.mover import is_subpath_or_equal
 
@@ -786,11 +786,11 @@ class DropZoneModal(
         self._pending_drop = []
 
     @work(exclusive=True, thread=True)
-    def run_drop_worker(self, target_paths: List[str]) -> None:
+    def run_drop_worker(self, target_paths: list[str]) -> None:
         """Plan the dropped items in a worker thread, then ask before moving."""
         app_ref = getattr(self, "_app_ref", None)
         self._close_pending_drop()
-        pending: List[Dict[str, Any]] = []
+        pending: list[dict[str, Any]] = []
         try:
             from app.core.pipeline import SortPipeline
             from app.core.scanner import get_files_recursively
@@ -798,7 +798,7 @@ class DropZoneModal(
 
             # Plan every staged file in a folder together, so a dropped folder
             # is clustered as a whole instead of one file at a time.
-            groups: Dict[str, List[str]] = {}
+            groups: dict[str, list[str]] = {}
             for path in target_paths:
                 if os.path.isdir(path):
                     groups.setdefault(path, []).extend(get_files_recursively(path))
@@ -844,7 +844,7 @@ class DropZoneModal(
         from app.core.domain_contracts import _make_json_serializable
         from app.core.plan_format import format_plan_tree
 
-        lines: List[str] = []
+        lines: list[str] = []
         total_files = total_folders = 0
         for item in self._pending_drop:
             plan = _make_json_serializable(item["plan"])

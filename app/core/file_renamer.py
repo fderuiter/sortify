@@ -11,7 +11,7 @@ import logging
 import os
 import re
 from collections import Counter
-from typing import Dict, List, Optional, Set
+from typing import Optional
 
 from app.core.mover import is_subpath_or_equal
 from app.core.path_utils import sanitize_name
@@ -139,8 +139,8 @@ class ContextExtractor:
 
     @staticmethod
     def extract_keywords_tfidf(
-        text: str, stop_words: Optional[Set[str]] = None, max_keywords: int = 3
-    ) -> List[str]:
+        text: str, stop_words: Optional[set[str]] = None, max_keywords: int = 3
+    ) -> list[str]:
         """Extract key terms using TF-IDF / term frequency analysis on single document text."""
         if not text or not text.strip():
             return []
@@ -217,7 +217,7 @@ class ContextExtractor:
             return []
 
         counts = Counter(filtered_words)
-        keywords: List[str] = []
+        keywords: list[str] = []
         for word, _ in counts.most_common():
             if not _is_high_entropy_token(word) and not contains_secrets(word):
                 keywords.append(word)
@@ -268,7 +268,7 @@ class FileRenamerEngine:
         self,
         original_filename: str,
         text: str,
-        stop_words: Optional[Set[str]] = None,
+        stop_words: Optional[set[str]] = None,
     ) -> str:
         """Generate a context-aware descriptive filename for a file.
 
@@ -370,10 +370,10 @@ class FileRenamerEngine:
     def process_sorting_plan(
         self,
         plan: dict,
-        documents_map: Dict[str, str],
+        documents_map: dict[str, str],
         base_dir: str,
         locked_files: Optional[dict] = None,
-        stop_words: Optional[Set[str]] = None,
+        stop_words: Optional[set[str]] = None,
     ) -> dict:
         """Traverse and update sorting plan with target_filename for poorly-named files.
 
@@ -383,7 +383,7 @@ class FileRenamerEngine:
             getattr(self.settings, "PROTECTED_PATHS", []) if self.settings else []
         )
 
-        context_buffer: Dict[str, str] = {}
+        context_buffer: dict[str, str] = {}
 
         try:
             for filepath, doc_text in documents_map.items():
@@ -409,7 +409,7 @@ class FileRenamerEngine:
             gc.collect()
 
     def _inject_renames_into_plan(
-        self, plan: dict, renames_map: Dict[str, str]
+        self, plan: dict, renames_map: dict[str, str]
     ) -> None:
         """Inject target_filename attributes into sorting plan file leaf nodes."""
         if not isinstance(plan, dict) or not renames_map:

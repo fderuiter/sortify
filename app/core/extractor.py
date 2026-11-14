@@ -7,8 +7,9 @@ import concurrent.futures
 import inspect
 import logging
 import os
+from collections.abc import Callable
 from enum import Enum
-from typing import Any, Callable, Dict, Optional, Tuple
+from typing import Any, Optional
 
 import pypdf.errors
 from pydantic import BaseModel, ConfigDict
@@ -44,11 +45,11 @@ class ExtractionResult(BaseModel):
     error_message: Optional[str] = None
     truncated: bool = False
     truncation_reason: Optional[str] = None
-    truncated_bounds: Optional[Dict[str, Any]] = None
+    truncated_bounds: Optional[dict[str, Any]] = None
 
     model_config = ConfigDict(extra="allow")
 
-    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+    def dict(self, *args, **kwargs) -> dict[str, Any]:
         """Backward compatibility method for legacy Pydantic v1 callers."""
         return self.model_dump(*args, **kwargs)
 
@@ -366,7 +367,7 @@ def fast_triage_extract(
 
 def process_item_worker(
     base_dir: str, item: str, progress_callback: Callable, db, settings=None
-) -> Tuple[str, str, str]:
+) -> tuple[str, str, str]:
     """Process a single item, checking hash first, and extract its text content."""
     try:
         from app.core.scanner import parse_item_identifier

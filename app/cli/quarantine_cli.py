@@ -5,7 +5,6 @@ import json
 import logging
 import sys
 from pathlib import Path
-from typing import List
 
 from app.cli.error_emitter import emit_cli_error
 from app.config import AppSettings
@@ -225,8 +224,8 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
     quiet = getattr(args, "quiet", False)
     is_json = getattr(args, "json", False)
 
-    def resolve_job_ids(args_obj: argparse.Namespace) -> List[str]:
-        job_ids: List[str] = []
+    def resolve_job_ids(args_obj: argparse.Namespace) -> list[str]:
+        job_ids: list[str] = []
 
         pos_val = getattr(args_obj, "job_ids_pos", None) or getattr(
             args_obj, "job_id_pos", None

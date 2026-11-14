@@ -6,7 +6,8 @@ and essential document compliance checklists for clinical trial document organiz
 
 import re
 from dataclasses import dataclass, field
-from typing import List, Optional, Pattern
+from re import Pattern
+from typing import Optional
 
 
 @dataclass
@@ -20,9 +21,9 @@ class ClinicalArtifactDefinition:
     isf_section: str
     description: str
     is_essential_gcp: bool = False
-    regex_signatures: List[Pattern] = field(default_factory=list)
-    keywords: List[str] = field(default_factory=list)
-    filename_patterns: List[Pattern] = field(default_factory=list)
+    regex_signatures: list[Pattern] = field(default_factory=list)
+    keywords: list[str] = field(default_factory=list)
+    filename_patterns: list[Pattern] = field(default_factory=list)
 
 
 # ---------------------------------------------------------------------------
@@ -64,7 +65,7 @@ ISF_SECTIONS = {
 # Comprehensive Clinical Artifact Catalog
 # ---------------------------------------------------------------------------
 
-CLINICAL_ARTIFACTS: List[ClinicalArtifactDefinition] = [
+CLINICAL_ARTIFACTS: list[ClinicalArtifactDefinition] = [
     # --- PROTOCOL & AMENDMENTS ---
     ClinicalArtifactDefinition(
         artifact_id="02.01.01",

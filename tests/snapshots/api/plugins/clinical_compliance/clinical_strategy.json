@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "964bea7f55ce6b2159aca610b6f1d696e500f8c1aa3e01c52f0410c3f1858ff9"
+    "checksum": "8bf4744e5445af0428a7cb8be186b8fd38f644bd1b8f15307ce4a626789f71a5"
   },
   "classes": [
     {
@@ -46,12 +46,12 @@
               "name": "self"
             },
             {
-              "annotation": "List[str]",
+              "annotation": "list[str]",
               "default": null,
               "name": "filenames"
             },
             {
-              "annotation": "List[str]",
+              "annotation": "list[str]",
               "default": null,
               "name": "documents"
             },
@@ -76,7 +76,7 @@
               "name": "max_features"
             },
             {
-              "annotation": "Optional[List[list]]",
+              "annotation": "Optional[list[list]]",
               "default": "None",
               "name": "pre_fetched_vectors"
             },
@@ -91,7 +91,7 @@
               "name": "pre_fetched_corpus"
             }
           ],
-          "returns": "Tuple[dict, float]"
+          "returns": "tuple[dict, float]"
         }
       ]
     }

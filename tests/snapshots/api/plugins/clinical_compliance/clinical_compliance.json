@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "557d2484cf7738c50f262925aeb70352b52cc3effbaceec50f11cf09f46157e0"
+    "checksum": "bc578f68ac0f6ba24a8c4ca5b604252987db63ae0ec6c6c5d23fc2c47a635dce"
   },
   "classes": [
     {
@@ -31,12 +31,12 @@
               "name": "self"
             },
             {
-              "annotation": "Dict[str, str]",
+              "annotation": "dict[str, str]",
               "default": null,
               "name": "classified_artifacts"
             },
             {
-              "annotation": "List[str]",
+              "annotation": "list[str]",
               "default": null,
               "name": "all_filenames"
             },
@@ -59,7 +59,7 @@
               "name": "self"
             },
             {
-              "annotation": "Union[ClinicalComplianceResult, Dict[str, Any]]",
+              "annotation": "ClinicalComplianceResult | dict[str, Any]",
               "default": null,
               "name": "compliance_data"
             },
@@ -82,7 +82,7 @@
               "name": "self"
             },
             {
-              "annotation": "Union[ClinicalComplianceResult, Dict[str, Any]]",
+              "annotation": "ClinicalComplianceResult | dict[str, Any]",
               "default": null,
               "name": "compliance_data"
             },

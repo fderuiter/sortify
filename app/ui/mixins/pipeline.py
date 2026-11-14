@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from textual import work
 from textual.widgets import Button, Static
@@ -231,7 +231,7 @@ class SortPipelineMixin:
         if duplicate_groups:
 
             def handle_duplicate_modal_result(
-                selections: Optional[Dict[str, str]],
+                selections: Optional[dict[str, str]],
             ) -> None:
                 if selections is None:
                     self.announce("Move execution cancelled during duplicate review.")
@@ -254,12 +254,12 @@ class SortPipelineMixin:
             self.run_execute_worker()
 
     def _normalize_plan_for_verification(
-        self, plan_dict: Dict[str, Any], base_dir: str
-    ) -> Dict[str, Any]:
+        self, plan_dict: dict[str, Any], base_dir: str
+    ) -> dict[str, Any]:
         """Ensure file nodes in plan dictionary have source_path and relative_source populated."""
         if not isinstance(plan_dict, dict):
             return plan_dict
-        normalized: Dict[str, Any] = {}
+        normalized: dict[str, Any] = {}
         for k, v in plan_dict.items():
             if isinstance(v, dict):
                 if v.get("__type__") == "file":
@@ -307,7 +307,7 @@ class SortPipelineMixin:
         except Exception as e:
             logger.error(f"Error running validation worker: {e}")
 
-    def _update_validation_state(self, result: Dict[str, Any]) -> None:
+    def _update_validation_state(self, result: dict[str, Any]) -> None:
         """Update UI controls, alert banner, and tree highlights based on validation result."""
         self.verification_result = result or {}
 

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "415495422b8db4c2eab7a739e0b05ef60bd9a3288c894b228faf7d930b18fd2b"
+    "checksum": "490c92bd22c7a1e310be380a2edabf8074dee1ca24074a09a45743dd029d7dd7"
   },
   "classes": [
     {
@@ -31,12 +31,12 @@
               "name": "self"
             },
             {
-              "annotation": "List[DiscoveredDocument]",
+              "annotation": "list[DiscoveredDocument]",
               "default": null,
               "name": "documents"
             }
           ],
-          "returns": "Dict[str, List[DiscoveredDocument]]"
+          "returns": "dict[str, list[DiscoveredDocument]]"
         },
         {
           "async": false,

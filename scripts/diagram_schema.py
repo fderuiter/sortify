@@ -1,7 +1,8 @@
 """Declarative Pydantic schema models for application, sequence, and state diagrams."""
 
 import threading
-from typing import Any, Callable, Dict, List, Literal, Optional, Union
+from collections.abc import Callable
+from typing import Any, Literal, Optional
 
 from pydantic import BaseModel, Field, field_validator
 
@@ -71,7 +72,7 @@ class DiagramSubgraph(BaseModel, defer_build=True):
 
     id: str
     title: str
-    nodes: List[str] = Field(default_factory=list)
+    nodes: list[str] = Field(default_factory=list)
 
 
 class ComponentDiagramSpec(BaseModel, defer_build=True):
@@ -81,9 +82,9 @@ class ComponentDiagramSpec(BaseModel, defer_build=True):
     title: str
     diagram_type: str = "graph"
     direction: Literal["TD", "LR", "BT", "RL"] = "TD"
-    nodes: List[DiagramNode] = Field(default_factory=list)
-    edges: List[DiagramEdge] = Field(default_factory=list)
-    subgraphs: List[DiagramSubgraph] = Field(default_factory=list)
+    nodes: list[DiagramNode] = Field(default_factory=list)
+    edges: list[DiagramEdge] = Field(default_factory=list)
+    subgraphs: list[DiagramSubgraph] = Field(default_factory=list)
 
     def to_mermaid(self) -> str:
         """Compile diagram specification object into standard Mermaid markup string."""
@@ -209,7 +210,7 @@ class SequenceNote(BaseModel, defer_build=True):
 
     kind: Literal["note"] = "note"
     position: str = "over"  # "over", "left of", "right of"
-    targets: List[str] = Field(default_factory=list)
+    targets: list[str] = Field(default_factory=list)
     text: str
 
 
@@ -218,7 +219,7 @@ class SequenceLoop(BaseModel, defer_build=True):
 
     kind: Literal["loop"] = "loop"
     label: str
-    items: List["SequenceItem"] = Field(default_factory=list)
+    items: list["SequenceItem"] = Field(default_factory=list)
 
 
 class SequenceOpt(BaseModel, defer_build=True):
@@ -226,31 +227,31 @@ class SequenceOpt(BaseModel, defer_build=True):
 
     kind: Literal["opt"] = "opt"
     label: str
-    items: List["SequenceItem"] = Field(default_factory=list)
+    items: list["SequenceItem"] = Field(default_factory=list)
 
 
 class SequenceAltBranch(BaseModel, defer_build=True):
     """Branch section in an alt/else block."""
 
     label: str
-    items: List["SequenceItem"] = Field(default_factory=list)
+    items: list["SequenceItem"] = Field(default_factory=list)
 
 
 class SequenceAlt(BaseModel, defer_build=True):
     """Alternative/Else block in a sequence diagram."""
 
     kind: Literal["alt"] = "alt"
-    branches: List[SequenceAltBranch] = Field(default_factory=list)
+    branches: list[SequenceAltBranch] = Field(default_factory=list)
 
 
-SequenceItem = Union[
-    SequenceMessage,
-    SequenceActivation,
-    SequenceNote,
-    SequenceLoop,
-    SequenceOpt,
-    SequenceAlt,
-]
+SequenceItem = (
+    SequenceMessage
+    | SequenceActivation
+    | SequenceNote
+    | SequenceLoop
+    | SequenceOpt
+    | SequenceAlt
+)
 
 # deferred model rebuilds
 
@@ -261,8 +262,8 @@ class SequenceDiagramSpec(BaseModel, defer_build=True):
     id: str
     title: str
     autonumber: bool = False
-    participants: List[SequenceParticipant] = Field(default_factory=list)
-    items: List[SequenceItem] = Field(default_factory=list)
+    participants: list[SequenceParticipant] = Field(default_factory=list)
+    items: list[SequenceItem] = Field(default_factory=list)
 
     def to_mermaid(self) -> str:
         """Compile sequence diagram specification object into standard Mermaid markup string."""
@@ -277,7 +278,7 @@ class SequenceDiagramSpec(BaseModel, defer_build=True):
             else:
                 lines.append(f"    {kw} {p.id}")
 
-        def compile_items(item_list: List[SequenceItem], indent_level: int = 1) -> None:
+        def compile_items(item_list: list[SequenceItem], indent_level: int = 1) -> None:
             indent = "    " * indent_level
             for item in item_list:
                 if isinstance(item, SequenceMessage):
@@ -334,8 +335,8 @@ class StateComposite(BaseModel, defer_build=True):
 
     id: str
     label: Optional[str] = None
-    states: List[StateNode] = Field(default_factory=list)
-    transitions: List[StateTransition] = Field(default_factory=list)
+    states: list[StateNode] = Field(default_factory=list)
+    transitions: list[StateTransition] = Field(default_factory=list)
 
 
 class StateNote(BaseModel, defer_build=True):
@@ -353,10 +354,10 @@ class StateDiagramSpec(BaseModel, defer_build=True):
     title: str
     diagram_type: str = "stateDiagram-v2"
     direction: Optional[Literal["TB", "LR", "BT", "RL"]] = None
-    states: List[StateNode] = Field(default_factory=list)
-    transitions: List[StateTransition] = Field(default_factory=list)
-    composite_states: List[StateComposite] = Field(default_factory=list)
-    notes: List[StateNote] = Field(default_factory=list)
+    states: list[StateNode] = Field(default_factory=list)
+    transitions: list[StateTransition] = Field(default_factory=list)
+    composite_states: list[StateComposite] = Field(default_factory=list)
+    notes: list[StateNote] = Field(default_factory=list)
 
     def to_mermaid(self) -> str:
         """Compile state diagram specification object into standard Mermaid markup string."""
@@ -427,11 +428,11 @@ class DataFlowDiagramSpec(BaseModel):
     title: str
     diagram_type: str = "flowchart"
     direction: Literal["TD", "LR", "BT", "RL"] = "TD"
-    nodes: List[Union[DataStoreNode, ProcessNode, ExternalEntityNode, DiagramNode]] = (
-        Field(default_factory=list)
+    nodes: list[DataStoreNode | ProcessNode | ExternalEntityNode | DiagramNode] = Field(
+        default_factory=list
     )
-    edges: List[Union[DataStreamEdge, DiagramEdge]] = Field(default_factory=list)
-    subgraphs: List[DiagramSubgraph] = Field(default_factory=list)
+    edges: list[DataStreamEdge | DiagramEdge] = Field(default_factory=list)
+    subgraphs: list[DiagramSubgraph] = Field(default_factory=list)
 
     def to_mermaid(self) -> str:
         """Compile DFD specification object into standard Mermaid flowchart markup string."""
@@ -439,9 +440,7 @@ class DataFlowDiagramSpec(BaseModel):
             lines = [f"{self.diagram_type} {self.direction}"]
 
             def format_node(
-                node: Union[
-                    DataStoreNode, ProcessNode, ExternalEntityNode, DiagramNode
-                ],
+                node: DataStoreNode | ProcessNode | ExternalEntityNode | DiagramNode,
             ) -> str:
                 s = node.shape or "rectangle"
                 if isinstance(node, DataStoreNode) and not node.shape:
@@ -538,9 +537,9 @@ class DataFlowDiagramSpec(BaseModel):
         return f"{self.diagram_type}\n"
 
 
-BaseDiagramSpec = Union[
-    ComponentDiagramSpec, SequenceDiagramSpec, StateDiagramSpec, DataFlowDiagramSpec
-]
+BaseDiagramSpec = (
+    ComponentDiagramSpec | SequenceDiagramSpec | StateDiagramSpec | DataFlowDiagramSpec
+)
 
 
 # System Default Diagram Specifications
@@ -4361,7 +4360,7 @@ def _create_core_scanner_spec() -> ComponentDiagramSpec:
     )
 
 
-_SPEC_FACTORIES: Dict[str, Callable[[], BaseDiagramSpec]] = {
+_SPEC_FACTORIES: dict[str, Callable[[], BaseDiagramSpec]] = {
     "core_architecture": _create_core_architecture_spec,
     "architecture_dataflow": _create_architecture_dataflow_spec,
     "cro_multi_study_pipeline": _create_cro_multi_study_pipeline_spec,
@@ -4408,7 +4407,7 @@ _SPEC_FACTORIES: Dict[str, Callable[[], BaseDiagramSpec]] = {
     "core_scanner": _create_core_scanner_spec,
 }
 
-CONSTANT_TO_KEY_MAP: Dict[str, str] = {
+CONSTANT_TO_KEY_MAP: dict[str, str] = {
     "CORE_ARCHITECTURE_SPEC": "core_architecture",
     "ARCHITECTURE_DATAFLOW_SPEC": "architecture_dataflow",
     "CRO_MULTI_STUDY_PIPELINE_SPEC": "cro_multi_study_pipeline",
@@ -4456,7 +4455,7 @@ CONSTANT_TO_KEY_MAP: Dict[str, str] = {
 }
 
 _SPEC_LOCK = threading.RLock()
-_INSTANTIATED_SPECS: Dict[str, BaseDiagramSpec] = {}
+_INSTANTIATED_SPECS: dict[str, BaseDiagramSpec] = {}
 
 
 def get_diagram_spec(key: str) -> BaseDiagramSpec:
@@ -4517,7 +4516,7 @@ class LazyDiagramSpecsDict(dict):
         """Return lazily instantiated key-spec item pairs."""
         return [(k, get_diagram_spec(k)) for k in _SPEC_FACTORIES]
 
-    def copy(self) -> Dict[str, BaseDiagramSpec]:
+    def copy(self) -> dict[str, BaseDiagramSpec]:
         """Return dictionary copy with all specs instantiated."""
         return {k: get_diagram_spec(k) for k in _SPEC_FACTORIES}
 
@@ -4529,7 +4528,7 @@ class LazyDiagramSpecsDict(dict):
 _LAZY_SYSTEM_DIAGRAM_SPECS = LazyDiagramSpecsDict()
 
 
-def get_all_diagram_specs() -> Dict[str, BaseDiagramSpec]:
+def get_all_diagram_specs() -> dict[str, BaseDiagramSpec]:
     """Return dictionary of all registered system diagram specifications."""
     return dict(_LAZY_SYSTEM_DIAGRAM_SPECS)
 
@@ -4543,7 +4542,7 @@ def __getattr__(name: str) -> Any:
     raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
 
 
-def __dir__() -> List[str]:
+def __dir__() -> list[str]:
     """Return list of module attribute names including lazy spec constants."""
     return (
         list(globals().keys())

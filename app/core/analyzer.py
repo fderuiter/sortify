@@ -6,7 +6,7 @@ This module provides topic modeling functionality.
 import hashlib
 import logging
 import os
-from typing import Any, Dict, Optional, cast
+from typing import Any, Optional, cast
 
 from pydantic import BaseModel
 
@@ -42,11 +42,11 @@ class SortingPlanNode(dict):
             return res
         raise ValueError(f"Cannot validate {type(obj)} as SortingPlanNode")
 
-    def model_dump(self, *args, **kwargs) -> Dict[str, Any]:
+    def model_dump(self, *args, **kwargs) -> dict[str, Any]:
         """Dump the node data as a standard dictionary."""
         return dict(self)
 
-    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+    def dict(self, *args, **kwargs) -> dict[str, Any]:
         """Backward compatibility method for legacy callers."""
         return self.model_dump(*args, **kwargs)
 
@@ -78,7 +78,7 @@ class SortingPlanNode(dict):
 class SortingPlan(dict):
     """Pydantic-validated dict representing a complete hierarchical sorting plan."""
 
-    def __init__(self, plan: Optional[Dict[str, Any]] = None, **kwargs):
+    def __init__(self, plan: Optional[dict[str, Any]] = None, **kwargs):
         self.model_status = kwargs.pop(
             "model_status", getattr(plan, "model_status", "HEALTHY")
         )
@@ -173,18 +173,18 @@ class SortingPlan(dict):
         raise ValueError(f"Cannot validate {type(obj)} as SortingPlan")
 
     @property
-    def plan(self) -> Dict[str, Any]:
+    def plan(self) -> dict[str, Any]:
         """Backward compatibility property returning the plan dictionary."""
         return self
 
     @plan.setter
-    def plan(self, value: Dict[str, Any]) -> None:
+    def plan(self, value: dict[str, Any]) -> None:
         """Backward compatibility setter for setting plan dictionary content."""
         self.clear()
         if isinstance(value, dict):
             self.update(value)
 
-    def model_dump(self, *args, **kwargs) -> Dict[str, Any]:
+    def model_dump(self, *args, **kwargs) -> dict[str, Any]:
         """Dump the complete plan as a standard dictionary."""
         res = {}
         for k, v in self.items():
@@ -196,7 +196,7 @@ class SortingPlan(dict):
                 res[k] = v
         return res
 
-    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+    def dict(self, *args, **kwargs) -> dict[str, Any]:
         """Backward compatibility method for legacy callers."""
         return self.model_dump(*args, **kwargs)
 
@@ -209,7 +209,7 @@ def _dump_node_recursive(node: Any, *args, **kwargs) -> Any:
     return node
 
 
-def _validate_sorting_plan_nodes(node: Dict[str, Any]) -> Dict[str, Any]:
+def _validate_sorting_plan_nodes(node: dict[str, Any]) -> dict[str, Any]:
     """Recursively validate all file dictionary nodes in the plan using SortingPlanNode."""
     validated = {}
     for k, v in node.items():
@@ -639,7 +639,7 @@ class IncrementalAnalyzer:
     def _build_sorting_plan(
         self,
         validated_plan: dict,
-        invalid_locks: Optional[Dict[str, str]] = None,
+        invalid_locks: Optional[dict[str, str]] = None,
     ) -> SortingPlan:
         """Construct a SortingPlan object and attach model health telemetry metadata."""
         from app.core.shared_registry import SharedModelRegistry
@@ -701,7 +701,7 @@ class IncrementalAnalyzer:
         cancel_check=None,
         fast_path_only: bool = False,
         target_paths: Optional[list[str]] = None,
-        jev_results: Optional[Dict[str, Any]] = None,
+        jev_results: Optional[dict[str, Any]] = None,
         source_dirs: Optional[list[str]] = None,
     ) -> SortingPlan:
         """Generate a sorting plan mapping file paths to destination paths based on current model state.
@@ -722,8 +722,8 @@ class IncrementalAnalyzer:
         -------
             SortingPlan mapping relative file paths to target folder categories or absolute paths.
         """
-        invalid_locks: Dict[str, str] = {}
-        valid_locked_files: Dict[str, str] = {}
+        invalid_locks: dict[str, str] = {}
+        valid_locked_files: dict[str, str] = {}
         if locked_files:
             from app.core.policy_engine import PolicyEngine
 

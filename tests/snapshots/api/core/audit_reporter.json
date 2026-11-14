@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "a28a2152581112e501c744320a7fd1c04836b3c0fa565d4903c5f733401c3571"
+    "checksum": "c23c2bda98fbee94008fc1b40bcf93d725a24d0206b2611e9ac50ccd563f3452"
   },
   "classes": [],
   "functions": [
@@ -10,7 +10,7 @@
       "name": "export_audit_report",
       "parameters": [
         {
-          "annotation": "Dict[str, Any]",
+          "annotation": "dict[str, Any]",
           "default": null,
           "name": "report_data"
         },
@@ -38,7 +38,7 @@
       "name": "export_audit_report_csv",
       "parameters": [
         {
-          "annotation": "Dict[str, Any]",
+          "annotation": "dict[str, Any]",
           "default": null,
           "name": "report_data"
         },
@@ -61,7 +61,7 @@
       "name": "export_audit_report_json",
       "parameters": [
         {
-          "annotation": "Dict[str, Any]",
+          "annotation": "dict[str, Any]",
           "default": null,
           "name": "report_data"
         },
@@ -89,12 +89,12 @@
           "name": "base_dir"
         },
         {
-          "annotation": "List[Dict[str, Any]]",
+          "annotation": "list[dict[str, Any]]",
           "default": null,
           "name": "move_records"
         }
       ],
-      "returns": "Dict[str, Any]"
+      "returns": "dict[str, Any]"
     }
   ]
 }

@@ -7,8 +7,8 @@ after a release; a schema change is a new migration at the end of the list.
 """
 
 import logging
+from collections.abc import Callable, Sequence
 from dataclasses import dataclass
-from typing import Callable, Sequence
 
 
 class StoreTooNewError(RuntimeError):

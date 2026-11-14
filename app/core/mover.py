@@ -13,7 +13,7 @@ import threading
 import unicodedata
 import uuid
 from pathlib import Path
-from typing import Any, Dict, List
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -1777,13 +1777,13 @@ class AsyncMoveEngine:
     def retry_failed_moves(
         self,
         base_dir: str,
-        failed_items: List[Dict[str, Any]],
+        failed_items: list[dict[str, Any]],
         db=None,
         history_manager=None,
         runtime_settings=None,
         progress_callback=None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Re-attempt file move operations for selected or all failed items in mover engine."""
         return retry_failed_moves(
             base_dir,
@@ -1911,13 +1911,13 @@ async def execute_moves_async(
 
 def retry_failed_moves(
     base_dir: str,
-    failed_items: List[Dict[str, Any]],
+    failed_items: list[dict[str, Any]],
     db=None,
     history_manager=None,
     runtime_settings=None,
     progress_callback=None,
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Re-attempt file move operations for selected or all failed items in mover engine.
 
     Args:
@@ -1935,7 +1935,7 @@ def retry_failed_moves(
     from app.core.audit_reporter import generate_audit_report
 
     base_dir = os.path.normpath(base_dir) if base_dir else ""
-    retried_records: List[Dict[str, Any]] = []
+    retried_records: list[dict[str, Any]] = []
     total = len(failed_items)
 
     for idx, item in enumerate(failed_items):

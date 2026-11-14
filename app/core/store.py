@@ -9,9 +9,9 @@ import json
 import logging
 import time
 import uuid
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable
 
 from app.core.cache import CacheManager, _cache_db_baseline
 from app.core.db import Database, _main_db_baseline

@@ -9,8 +9,8 @@ import concurrent.futures
 import logging
 import os
 import threading
+from collections.abc import Callable
 from contextlib import contextmanager
-from typing import Callable
 
 from app.core.concurrency import ContextPropagatingThreadPoolExecutor
 from app.core.network_guard import _thread_local

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "0cc278e8ca41f7156c7ff14a513609adcbb24040d603efdc865173c252b39349"
+    "checksum": "4b96ef7bd5af8888f0fb3760d5b418a3f2a07e040aa5cdbba3b5c2dc2741a4c1"
   },
   "classes": [
     {
@@ -122,7 +122,7 @@
               "name": "target_paths"
             },
             {
-              "annotation": "Optional[Dict[str, Any]]",
+              "annotation": "Optional[dict[str, Any]]",
               "default": "None",
               "name": "jev_results"
             }
@@ -236,12 +236,12 @@
       "name": "split_plan_phases",
       "parameters": [
         {
-          "annotation": "Dict[str, Any]",
+          "annotation": "dict[str, Any]",
           "default": null,
           "name": "plan"
         }
       ],
-      "returns": "Tuple[Dict[str, Any], Dict[str, Any]]"
+      "returns": "tuple[dict[str, Any], dict[str, Any]]"
     }
   ]
 }

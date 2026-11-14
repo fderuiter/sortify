@@ -1,7 +1,7 @@
 """Policy Engine module for evaluating compliance policies and validating lock paths."""
 
 import os
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -20,7 +20,7 @@ class PolicyEvaluationResult(BaseModel):
 
     model_config = ConfigDict(extra="allow")
 
-    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+    def dict(self, *args, **kwargs) -> dict[str, Any]:
         """Backward compatibility method for legacy Pydantic v1 callers."""
         return self.model_dump(*args, **kwargs)
 
@@ -174,7 +174,7 @@ class PolicyEngine:
     @staticmethod
     def validate_lock_path_safe(
         lock_path: Any, file_path: Optional[str] = None
-    ) -> Tuple[bool, Optional[str]]:
+    ) -> tuple[bool, Optional[str]]:
         """Validate a folder lock path safely without raising exceptions.
 
         Returns

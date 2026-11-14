@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "30abdc32eff10216964912af2765282ce7db0e1417dfb77e741e3c28f72d2509"
+    "checksum": "c773d55539bb08d4a593a9daf15864b8be4aeda02e6c84f06b7ac4894b01e442"
   },
   "classes": [
     {
@@ -56,7 +56,7 @@
               "name": "session_id"
             }
           ],
-          "returns": "List[str]"
+          "returns": "list[str]"
         },
         {
           "async": false,
@@ -125,7 +125,7 @@
               "name": "base_dir"
             }
           ],
-          "returns": "Dict[str, Any]"
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -143,7 +143,7 @@
               "name": "session_id"
             }
           ],
-          "returns": "List[Dict[str, Any]]"
+          "returns": "list[dict[str, Any]]"
         },
         {
           "async": false,
@@ -156,7 +156,7 @@
               "name": "self"
             }
           ],
-          "returns": "List[Dict[str, Any]]"
+          "returns": "list[dict[str, Any]]"
         },
         {
           "async": false,
@@ -174,7 +174,7 @@
               "name": "session_id"
             }
           ],
-          "returns": "List[Dict[str, Any]]"
+          "returns": "list[dict[str, Any]]"
         },
         {
           "async": false,
@@ -245,7 +245,7 @@
               "name": "session_id"
             },
             {
-              "annotation": "Optional[Collection[Union[int, str]]]",
+              "annotation": "Optional[Collection[int | str]]",
               "default": "None",
               "name": "selected_step_ids"
             },
@@ -255,7 +255,7 @@
               "name": "ignore_missing"
             }
           ],
-          "returns": "Dict[str, Any]"
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -278,7 +278,7 @@
               "name": "ignore_missing"
             },
             {
-              "annotation": "Optional[Collection[Union[int, str]]]",
+              "annotation": "Optional[Collection[int | str]]",
               "default": "None",
               "name": "selected_step_ids"
             }
@@ -306,7 +306,7 @@
               "name": "db"
             },
             {
-              "annotation": "Optional[Collection[Union[int, str]]]",
+              "annotation": "Optional[Collection[int | str]]",
               "default": "None",
               "name": "selected_step_ids"
             }

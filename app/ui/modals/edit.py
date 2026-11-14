@@ -3,7 +3,7 @@
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 
 from textual import on, work
 from textual.app import ComposeResult
@@ -24,14 +24,14 @@ class RenameResult(str):
     """String subclass representing rename outcome with optional destination override."""
 
     destination_override: Optional[str] = None
-    batch_items: Optional[List[Dict[str, Any]]] = None
+    batch_items: Optional[list[dict[str, Any]]] = None
     is_batch: bool = False
 
     def __new__(
         cls,
         value: str,
         destination_override: Optional[str] = None,
-        batch_items: Optional[List[Dict[str, Any]]] = None,
+        batch_items: Optional[list[dict[str, Any]]] = None,
         is_batch: bool = False,
     ):
         """Instantiate string value with optional destination path override."""
@@ -52,7 +52,7 @@ class RenameResult(str):
 
 
 class RenameModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Union[str, RenameResult]]]
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str | RenameResult]]
 ):
     """Modal dialog for renaming a file or folder node with pattern token formatting and destination path override support."""
 
@@ -126,10 +126,10 @@ class RenameModal(
         seq: int = 1,
         destination_override: str = "",
         is_folder: bool = False,
-        plan: Optional[Dict[str, Any]] = None,
+        plan: Optional[dict[str, Any]] = None,
         base_dir: Optional[str] = None,
         source_path: Optional[str] = None,
-        files: Optional[List[Any]] = None,
+        files: Optional[list[Any]] = None,
     ):
         super().__init__()
         self.modal_title = title
@@ -148,7 +148,7 @@ class RenameModal(
 
     def _extract_file_metadata(
         self, f: Any, seq: int
-    ) -> tuple[Dict[str, Any], str, str, str, Optional[Dict[str, Any]]]:
+    ) -> tuple[dict[str, Any], str, str, str, Optional[dict[str, Any]]]:
         """Extract metadata dict, fallback filename, key, folder, and info dict from a file item."""
         if isinstance(f, str):
             key = f
@@ -227,7 +227,7 @@ class RenameModal(
         }
         return meta, key_str, key_str, self.category, None
 
-    def get_batch_previews(self, pattern_str: str) -> List[str]:
+    def get_batch_previews(self, pattern_str: str) -> list[str]:
         """Calculate sequential seq numbering and preview token substitution for each checked file."""
         if not self.files:
             return []
@@ -783,11 +783,11 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
 
     def __init__(
         self,
-        existing_folders: List[str],
+        existing_folders: list[str],
         count: int = 1,
-        plan: Optional[Dict[str, Any]] = None,
+        plan: Optional[dict[str, Any]] = None,
         base_dir: Optional[str] = None,
-        target_files: Optional[List[Dict[str, Any]]] = None,
+        target_files: Optional[list[dict[str, Any]]] = None,
     ):
         super().__init__()
         self.existing_folders = [f for f in existing_folders if f]
@@ -993,7 +993,7 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
 
 
 class DirectorySelectModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Union[str, List[str]]]]
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str | list[str]]]
 ):
     """Modal dialog for choosing target base directory or presets."""
 
@@ -1054,7 +1054,7 @@ class DirectorySelectModal(
     }
     """
 
-    def __init__(self, current_dir: str = "", source_dirs: Optional[List[str]] = None):
+    def __init__(self, current_dir: str = "", source_dirs: Optional[list[str]] = None):
         super().__init__()
         self.current_dir = current_dir
         self.added_via_btn = False
@@ -1453,7 +1453,7 @@ def _format_file_size(size_bytes: int) -> str:
 
 
 class InteractiveCollisionResolverModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Dict[str, str]]]
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict[str, str]]]
 ):
     """Interactive per-file collision resolution modal before execution."""
 
@@ -1548,11 +1548,11 @@ class InteractiveCollisionResolverModal(
 
     def __init__(
         self,
-        duplicate_groups: Optional[List[Dict[str, Any]]] = None,
+        duplicate_groups: Optional[list[dict[str, Any]]] = None,
     ):
         super().__init__()
         self.duplicate_groups = duplicate_groups or []
-        self.user_selections: Dict[str, str] = {
+        self.user_selections: dict[str, str] = {
             g["group_id"]: g.get("default_action", "rename")
             for g in self.duplicate_groups
         }

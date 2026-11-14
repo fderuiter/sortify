@@ -1,7 +1,7 @@
 """Rule template gallery and rule import dialogs."""
 
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 
 from textual import on
 from textual.app import ComposeResult
@@ -286,8 +286,8 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
         super().__init__()
         self.settings = settings
         self.current_result: Optional[Any] = None
-        self.conflicts: List[Any] = []
-        self.conflict_resolutions: Dict[str, str] = {}
+        self.conflicts: list[Any] = []
+        self.conflict_resolutions: dict[str, str] = {}
 
     def compose(self) -> ComposeResult:
         """Compose rule import modal children."""
@@ -533,7 +533,7 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
     @on(DataTable.RowSelected, "#dt-rule-conflicts")
     @on(DataTable.CellSelected, "#dt-rule-conflicts")
     def _on_conflict_selected(
-        self, event: Union[DataTable.RowSelected, DataTable.CellSelected]
+        self, event: DataTable.RowSelected | DataTable.CellSelected
     ) -> None:
         """Cycle resolution strategy for the selected conflict row."""
         row_key = None

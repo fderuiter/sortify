@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "ea4f1d5794f2dbfecedf70cfec45295593bbc01223ae169010028934eb88eac0"
+    "checksum": "e219caed35067a8972d3aee6b291e5c320a62a2e35a02358bc69e46bc62d62e1"
   },
   "classes": [
     {
@@ -76,7 +76,7 @@
               "name": "limit"
             }
           ],
-          "returns": "List[Dict[str, Any]]"
+          "returns": "list[dict[str, Any]]"
         },
         {
           "async": false,
@@ -109,7 +109,7 @@
               "name": "include_failed"
             }
           ],
-          "returns": "List[Dict]"
+          "returns": "list[dict]"
         },
         {
           "async": false,
@@ -200,7 +200,7 @@
               "name": "status"
             },
             {
-              "annotation": "Optional[Dict[str, Any]]",
+              "annotation": "Optional[dict[str, Any]]",
               "default": "None",
               "name": "metadata"
             },
@@ -310,7 +310,7 @@
               "name": "entry_id"
             },
             {
-              "annotation": "Union[LedgerStatus, str]",
+              "annotation": "LedgerStatus | str",
               "default": null,
               "name": "status"
             }
@@ -339,7 +339,7 @@
           "name": "metadata"
         }
       ],
-      "returns": "Dict[str, Any]"
+      "returns": "dict[str, Any]"
     }
   ]
 }

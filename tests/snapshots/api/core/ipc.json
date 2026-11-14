@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "ae25699bb613b4074278b0df7ef5e4a44a572c5441e94320ad3ad3bb37a9be03"
+    "checksum": "63f581adb0fd76e33e7a42b6e60f1e08b3019f3c5d602b5b6659236f304184ed"
   },
   "classes": [
     {
@@ -51,7 +51,7 @@
               "name": "timeout"
             }
           ],
-          "returns": "Dict[str, Any]"
+          "returns": "dict[str, Any]"
         }
       ]
     },
@@ -131,7 +131,7 @@
           "name": "base_dir"
         }
       ],
-      "returns": "Optional[Dict[str, Any]]"
+      "returns": "Optional[dict[str, Any]]"
     }
   ]
 }

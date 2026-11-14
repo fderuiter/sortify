@@ -9,7 +9,7 @@ import secrets
 import sys
 import tempfile
 import time
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 logger = logging.getLogger("app.ipc")
 
@@ -52,7 +52,7 @@ def is_process_alive(pid: int) -> bool:
             return False
 
 
-def read_pid_file(base_dir: str) -> Optional[Dict[str, Any]]:
+def read_pid_file(base_dir: str) -> Optional[dict[str, Any]]:
     """Read and parse the daemon PID file from base_dir."""
     pid_path = os.path.join(base_dir, PID_FILE_NAME)
     if not os.path.exists(pid_path):
@@ -205,7 +205,7 @@ class DaemonIPCServer:
         except Exception:
             logger.debug("Failed to close IPC client connection", exc_info=True)
 
-    async def _process_rpc_line(self, line_str: str) -> Dict[str, Any]:
+    async def _process_rpc_line(self, line_str: str) -> dict[str, Any]:
         """Parse line string as JSON-RPC 2.0 and return response dictionary."""
         try:
             data = json.loads(line_str)
@@ -265,7 +265,7 @@ class DaemonIPCServer:
                 "error": {"code": -32603, "message": f"Internal error: {str(e)}"},
             }
 
-    async def _dispatch_method(self, method: str, params: dict) -> Dict[str, Any]:
+    async def _dispatch_method(self, method: str, params: dict) -> dict[str, Any]:
         """Dispatch JSON-RPC method to corresponding daemon telemetry/control handler."""
         if method == "status":
             return self.daemon.get_status_telemetry()
@@ -289,7 +289,7 @@ class DaemonIPCServer:
         else:
             raise ValueError(f"Method '{method}' not found")
 
-    async def _handle_drop_rpc(self, params: dict) -> Dict[str, Any]:
+    async def _handle_drop_rpc(self, params: dict) -> dict[str, Any]:
         """Handle 'drop' JSON-RPC method request forwarding payloads to active triage pipeline."""
         if not isinstance(params, dict):
             raise ValueError("Invalid parameters: params must be a JSON object")
@@ -416,7 +416,7 @@ class DaemonIPCClient:
 
     async def send_command(
         self, method: str, params: Optional[dict] = None, timeout: float = 15.0
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Send a JSON-RPC method request to the daemon IPC server and return result dict."""
         pid_info = read_pid_file(self.base_dir)
         if not pid_info:

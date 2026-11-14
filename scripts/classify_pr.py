@@ -11,7 +11,7 @@ import json
 import re
 import sys
 from dataclasses import dataclass, field
-from typing import Any, Dict, List
+from typing import Any
 
 # Paths that are never auto-merged and need the owner's approval (ADR 0009).
 # Written in CODEOWNERS syntax: each entry must also appear in
@@ -110,15 +110,15 @@ class PRMetadata:
     title: str = ""
     author: str = ""
     is_draft: bool = False
-    labels: List[str] = field(default_factory=list)
-    changed_files: List[str] = field(default_factory=list)
+    labels: list[str] = field(default_factory=list)
+    changed_files: list[str] = field(default_factory=list)
     additions: int = 0
     deletions: int = 0
     is_dependabot: bool = False
     is_security_patch: bool = False
     dependency_update_type: str = "minor"  # 'major', 'minor', 'patch'
     all_commits_verified: bool = True
-    unverified_commit_shas: List[str] = field(default_factory=list)
+    unverified_commit_shas: list[str] = field(default_factory=list)
 
 
 @dataclass
@@ -127,11 +127,11 @@ class ClassificationResult:
 
     eligible: bool
     risk_level: str  # 'low', 'medium', 'high', 'sensitive', 'baseline-change'
-    labels_to_add: List[str]
-    blocking_reasons: List[str]
+    labels_to_add: list[str]
+    blocking_reasons: list[str]
     summary_markdown: str
 
-    def to_dict(self) -> Dict[str, Any]:
+    def to_dict(self) -> dict[str, Any]:
         """Convert classification result to a dictionary."""
         return {
             "eligible": self.eligible,
@@ -144,9 +144,9 @@ class ClassificationResult:
 
 def classify_pr(meta: PRMetadata) -> ClassificationResult:
     """Classify a PR based on metadata and determine auto-merge eligibility."""
-    blocking_reasons: List[str] = []
+    blocking_reasons: list[str] = []
     risk_level = "low"
-    labels_to_add: List[str] = []
+    labels_to_add: list[str] = []
 
     is_automated_security_patch = meta.is_security_patch or (
         (meta.author in BOT_AUTHORS or meta.author.endswith("[bot]"))

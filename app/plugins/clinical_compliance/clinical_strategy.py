@@ -7,7 +7,7 @@ and ICH-GCP Investigator Site File (ISF) regulatory binder structures with compl
 import logging
 import os
 import re
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from app.core.analyzer import SortingPlan, _validate_sorting_plan_nodes
 from app.core.analyzer_strategies import IsolatedStrategyMixin
@@ -45,7 +45,7 @@ class ClinicalTMFStrategy(IsolatedStrategyMixin):
         filename: str,
         text: str,
         confidence_threshold: float = 3.0,
-    ) -> Tuple[Optional[ClinicalArtifactDefinition], float]:
+    ) -> tuple[Optional[ClinicalArtifactDefinition], float]:
         """Match document against clinical artifact signatures and keyword weights."""
         best_artifact: Optional[ClinicalArtifactDefinition] = None
         best_score = 0.0
@@ -82,20 +82,20 @@ class ClinicalTMFStrategy(IsolatedStrategyMixin):
 
     def generate_plan(
         self,
-        filenames: List[str],
-        documents: List[str],
+        filenames: list[str],
+        documents: list[str],
         max_folders: int = 15,
         stop_words: Optional[set] = None,
         max_depth: int = 5,
         max_features: int = 3,
-        pre_fetched_vectors: Optional[List[list]] = None,
+        pre_fetched_vectors: Optional[list[list]] = None,
         cancel_check=None,
         pre_fetched_corpus: Optional[Any] = None,
-    ) -> Tuple[dict, float]:
+    ) -> tuple[dict, float]:
         """Generate a structured clinical regulatory sorting plan and compliance audit."""
         self._error = 0.0
         plan: dict = {}
-        classified_map: Dict[str, str] = {}  # filename -> artifact_id
+        classified_map: dict[str, str] = {}  # filename -> artifact_id
 
         doc_map = dict(zip(filenames, documents))
 
@@ -183,7 +183,7 @@ class ClinicalTMFStrategy(IsolatedStrategyMixin):
     def _insert_into_plan(
         self,
         plan: dict,
-        folder_path: List[str],
+        folder_path: list[str],
         filename: str,
         leaf_node: Any,
     ) -> None:

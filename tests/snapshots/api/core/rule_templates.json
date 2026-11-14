@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "191fc81aba5c61e939ad31bb3c23fb7a2e4b188656923032ff3aa3d9302d2448"
+    "checksum": "31864bc14c897f0d59dbb237ace5bce31c0eb9e3ab1919fed55f3f766242ac9c"
   },
   "classes": [
     {
@@ -23,12 +23,12 @@
           "name": "settings"
         },
         {
-          "annotation": "List[str]",
+          "annotation": "list[str]",
           "default": null,
           "name": "pack_ids"
         }
       ],
-      "returns": "tuple[Dict[str, str], List[Dict[str, Any]]]"
+      "returns": "tuple[dict[str, str], list[dict[str, Any]]]"
     },
     {
       "async": false,
@@ -48,7 +48,7 @@
       "decorators": [],
       "name": "get_starter_templates",
       "parameters": [],
-      "returns": "List[StarterTemplatePack]"
+      "returns": "list[StarterTemplatePack]"
     }
   ]
 }

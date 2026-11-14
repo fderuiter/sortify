@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "37d18fba6ef17200fe79be36649acc4bbdc95d05cb393c492ecb23f23716ef9f"
+    "checksum": "a9b9a1013d994bfddc402fe727461020eda2d2b2a875b162e981f9187ca2257d"
   },
   "classes": [
     {
@@ -46,7 +46,7 @@
               "name": "**kwargs"
             }
           ],
-          "returns": "Dict[str, Any]"
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -98,7 +98,7 @@
               "name": "**kwargs"
             }
           ],
-          "returns": "Dict[str, Any]"
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -155,7 +155,7 @@
               "name": "**kwargs"
             }
           ],
-          "returns": "Dict[str, Any]"
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,

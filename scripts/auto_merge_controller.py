@@ -18,7 +18,7 @@ import os
 import sys
 from dataclasses import dataclass
 from enum import Enum
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 import requests
 
@@ -76,29 +76,29 @@ class GitHubClient:
             "Accept": "application/vnd.github.v3+json",
         }
 
-    def _get(self, endpoint: str, params: Optional[Dict[str, Any]] = None) -> Any:
+    def _get(self, endpoint: str, params: Optional[dict[str, Any]] = None) -> Any:
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         resp = requests.get(url, headers=self.headers, params=params, timeout=30)
         resp.raise_for_status()
         return resp.json()
 
-    def _post(self, endpoint: str, json_data: Dict[str, Any]) -> Any:
+    def _post(self, endpoint: str, json_data: dict[str, Any]) -> Any:
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         resp = requests.post(url, headers=self.headers, json=json_data, timeout=30)
         resp.raise_for_status()
         return resp.json() if resp.content else {}
 
-    def _put(self, endpoint: str, json_data: Dict[str, Any]) -> Any:
+    def _put(self, endpoint: str, json_data: dict[str, Any]) -> Any:
         url = f"{self.base_url}/{endpoint.lstrip('/')}"
         resp = requests.put(url, headers=self.headers, json=json_data, timeout=30)
         resp.raise_for_status()
         return resp.json() if resp.content else {}
 
-    def list_open_pull_requests(self) -> List[Dict[str, Any]]:
+    def list_open_pull_requests(self) -> list[dict[str, Any]]:
         """Fetch list of open pull requests."""
         return self._get("pulls", params={"state": "open", "per_page": 50})
 
-    def get_pull_request(self, pr_number: int) -> Dict[str, Any]:
+    def get_pull_request(self, pr_number: int) -> dict[str, Any]:
         """Get detailed information for a specific pull request."""
         return self._get(f"pulls/{pr_number}")
 
@@ -122,9 +122,9 @@ class GitHubClient:
             raise
 
     def _get_paginated(
-        self, endpoint: str, params: Optional[Dict[str, Any]] = None
-    ) -> List[Any]:
-        items: List[Any] = []
+        self, endpoint: str, params: Optional[dict[str, Any]] = None
+    ) -> list[Any]:
+        items: list[Any] = []
         page = 1
         while True:
             batch = self._get(
@@ -135,11 +135,11 @@ class GitHubClient:
                 return items
             page += 1
 
-    def list_pull_request_files(self, pr_number: int) -> List[Dict[str, Any]]:
+    def list_pull_request_files(self, pr_number: int) -> list[dict[str, Any]]:
         """List the files changed by a pull request."""
         return self._get_paginated(f"pulls/{pr_number}/files")
 
-    def list_pull_request_commits(self, pr_number: int) -> List[Dict[str, Any]]:
+    def list_pull_request_commits(self, pr_number: int) -> list[dict[str, Any]]:
         """List the commits of a pull request."""
         return self._get_paginated(f"pulls/{pr_number}/commits")
 
@@ -165,7 +165,7 @@ class GitHubClient:
         latest = max(runs, key=lambda run: run.get("id", 0))
         return latest.get("conclusion") or latest.get("status")
 
-    def list_issue_events(self, pr_number: int) -> List[Dict[str, Any]]:
+    def list_issue_events(self, pr_number: int) -> list[dict[str, Any]]:
         """List the issue events (labelled, unlabelled, ...) of a PR."""
         return self._get_paginated(f"issues/{pr_number}/events")
 
@@ -174,7 +174,7 @@ class GitHubClient:
         data = self._get(f"collaborators/{login}/permission")
         return str(data.get("permission") or "none")
 
-    def get_commit_verification(self, sha: str) -> Dict[str, Any]:
+    def get_commit_verification(self, sha: str) -> dict[str, Any]:
         """Fetch signature verification metadata for a given commit SHA."""
         data = self._get(f"commits/{sha}")
         if isinstance(data, dict):
@@ -204,12 +204,12 @@ class GitHubClient:
             logger.error(f"Failed to merge PR #{pr_number}: {e}")
             return False
 
-    def add_labels(self, pr_number: int, labels: List[str]) -> None:
+    def add_labels(self, pr_number: int, labels: list[str]) -> None:
         """Add labels to a PR."""
         self._post(f"issues/{pr_number}/labels", {"labels": labels})
 
 
-def is_pr_eligible_for_automerge(pr: Dict[str, Any]) -> bool:
+def is_pr_eligible_for_automerge(pr: dict[str, Any]) -> bool:
     """Check if PR has automerge eligibility labels."""
     labels = [lbl["name"] for lbl in pr.get("labels", [])]
     if (
@@ -250,7 +250,7 @@ def automerge_label_applied_by_maintainer(client: GitHubClient, pr_number: int) 
         return False
 
 
-def build_pr_metadata(client: GitHubClient, full_pr: Dict[str, Any]) -> PRMetadata:
+def build_pr_metadata(client: GitHubClient, full_pr: dict[str, Any]) -> PRMetadata:
     """Collect classifier input for a PR from the GitHub API rather than from labels."""
     pr_number = full_pr["number"]
     files = client.list_pull_request_files(pr_number)
@@ -298,7 +298,7 @@ def build_pr_metadata(client: GitHubClient, full_pr: Dict[str, Any]) -> PRMetada
 
 
 def reclassify_pr(
-    client: GitHubClient, full_pr: Dict[str, Any]
+    client: GitHubClient, full_pr: dict[str, Any]
 ) -> ClassificationResult:
     """Re-run the risk classifier with trusted code on API-sourced metadata."""
     return classify_pr(build_pr_metadata(client, full_pr))

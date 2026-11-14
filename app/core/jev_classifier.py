@@ -9,7 +9,7 @@ import json
 import logging
 import os
 import time
-from typing import Any, Dict, Optional, Tuple
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -33,16 +33,16 @@ class JevClassificationResult(BaseModel):
     archival_priority_score: float = Field(default=0.0)
     confidence: float = Field(default=0.0)
     is_classified: bool = Field(default=False)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow", populate_by_name=True)
 
-    def model_dump(self, *args, **kwargs) -> Dict[str, Any]:
+    def model_dump(self, *args, **kwargs) -> dict[str, Any]:
         """Dump the result as a standard dictionary."""
         d = super().model_dump(*args, **kwargs)
         return d
 
-    def dict(self, *args, **kwargs) -> Dict[str, Any]:
+    def dict(self, *args, **kwargs) -> dict[str, Any]:
         """Backward compatibility method for dict serialization."""
         return self.model_dump(*args, **kwargs)
 
@@ -212,7 +212,7 @@ def _extract_pptx_snippet(file_path: str) -> str:
 class JevClassifierEngine:
     """Thread-safe, non-generative document classification engine."""
 
-    CATEGORY_RULES: Dict[str, Dict[str, Any]] = {
+    CATEGORY_RULES: dict[str, dict[str, Any]] = {
         "Financial": {
             "keywords": [
                 "invoice",
@@ -384,7 +384,7 @@ class JevClassifierEngine:
         self.db_path = db_path
         self.worker = worker
         self.memory_cache = BoundedMemoryCache[
-            Tuple[str, float, int], JevClassificationResult
+            tuple[str, float, int], JevClassificationResult
         ](max_size=max_cache_size)
         if self.db_path:
             self._init_db()
@@ -430,7 +430,7 @@ class JevClassifierEngine:
                 exc_info=True,
             )
 
-    def _get_file_stat_key(self, file_path: str) -> Optional[Tuple[str, float, int]]:
+    def _get_file_stat_key(self, file_path: str) -> Optional[tuple[str, float, int]]:
         """Calculate a fast file stat key (abs_path, mtime, size) before inspecting file contents."""
         try:
             if (
@@ -502,7 +502,7 @@ class JevClassifierEngine:
             )
 
     def _get_from_db(
-        self, stat_key: Tuple[str, float, int]
+        self, stat_key: tuple[str, float, int]
     ) -> Optional[JevClassificationResult]:
         """Query persistent SQLite database table for a cached result matching file path, mtime, and size."""
         if not self.db_path:
@@ -562,7 +562,7 @@ class JevClassifierEngine:
         return None
 
     def _save_to_db(
-        self, stat_key: Tuple[str, float, int], result: JevClassificationResult
+        self, stat_key: tuple[str, float, int], result: JevClassificationResult
     ) -> None:
         """Persist a classification result into SQLite database via DBWorker."""
         db_path = self.db_path

@@ -1,7 +1,7 @@
 """Plan tree selection, include/exclude, reassign, rename, lock and rating actions."""
 
 import os
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 
 from textual.widgets.tree import TreeNode
 
@@ -58,7 +58,7 @@ class SelectionActionsMixin:
             self.announce("Select a tree node to toggle checkbox [Space].")
             return
 
-        file_infos_to_toggle: List[Dict[str, Any]] = []
+        file_infos_to_toggle: list[dict[str, Any]] = []
         for n in nodes_to_toggle:
             data = getattr(n, "data", None)
             if not data or not isinstance(data, dict):
@@ -92,7 +92,7 @@ class SelectionActionsMixin:
             f"Toggled {len(file_infos_to_toggle)} document item(s) to {status_str}."
         )
 
-    def _get_target_file_infos(self) -> List[Dict[str, Any]]:
+    def _get_target_file_infos(self) -> list[dict[str, Any]]:
         """Return checked file info dicts, or active/focused node file infos if none checked."""
         all_files = self._collect_file_nodes_from_dict(self.plan)
         checked_files = [
@@ -284,13 +284,13 @@ class SelectionActionsMixin:
             self.announce(f"{status_str} {len(all_files)} file item(s).")
 
     def _get_executable_plan(
-        self, plan_dict: Optional[Dict[str, Any]] = None
-    ) -> Dict[str, Any]:
+        self, plan_dict: Optional[dict[str, Any]] = None
+    ) -> dict[str, Any]:
         """Return filtered plan dictionary containing only checked, non-excluded file nodes."""
         if plan_dict is None:
             plan_dict = self.plan
 
-        result: Dict[str, Any] = {}
+        result: dict[str, Any] = {}
         for k, v in plan_dict.items():
             if isinstance(v, dict) and v.get("__type__") == "file":
                 is_checked = v.get("is_checked", True)
@@ -340,14 +340,14 @@ class SelectionActionsMixin:
         self.announce(msg)
         self.rebuild_tree()
 
-    def _get_checked_file_keys(self) -> List[str]:
+    def _get_checked_file_keys(self) -> list[str]:
         """Collect keys of checked, non-excluded file nodes."""
         entries = self._get_checked_file_entries()
         return [e["key"] for e in entries if e.get("key")]
 
-    def _get_checked_file_entries(self) -> List[Dict[str, Any]]:
+    def _get_checked_file_entries(self) -> list[dict[str, Any]]:
         """Collect full metadata entries for checked, non-excluded file nodes."""
-        entries: List[Dict[str, Any]] = []
+        entries: list[dict[str, Any]] = []
 
         # 1. First attempt to gather from tree widget to preserve visual display order
         try:
@@ -397,7 +397,7 @@ class SelectionActionsMixin:
 
         seen_plan_ids = set()
 
-        def _walk_plan(d: Dict[str, Any], current_folder: str = "") -> None:
+        def _walk_plan(d: dict[str, Any], current_folder: str = "") -> None:
             for k, v in d.items():
                 if isinstance(v, dict):
                     if v.get("__type__") == "file":
@@ -444,7 +444,7 @@ class SelectionActionsMixin:
                 base_dir=self.base_dir,
             )
 
-            def on_folder_renamed(new_name: Optional[Union[str, Any]]) -> None:
+            def on_folder_renamed(new_name: Optional[str | Any]) -> None:
                 if not new_name:
                     return
 
@@ -509,7 +509,7 @@ class SelectionActionsMixin:
                 files=checked_entries,
             )
 
-            def on_batch_renamed(result: Optional[Union[str, RenameResult]]) -> None:
+            def on_batch_renamed(result: Optional[str | RenameResult]) -> None:
                 if not result:
                     return
 
@@ -642,7 +642,7 @@ class SelectionActionsMixin:
                 source_path=filepath,
             )
 
-            def on_renamed(new_formatted: Optional[Union[str, Any]]) -> None:
+            def on_renamed(new_formatted: Optional[str | Any]) -> None:
                 if not new_formatted:
                     return
 

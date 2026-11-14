@@ -1,7 +1,7 @@
 """Command palette overlay modal screen."""
 
 from dataclasses import dataclass
-from typing import List, Optional
+from typing import Optional
 
 from textual import on
 from textual.app import ComposeResult
@@ -28,7 +28,7 @@ class PaletteCommand:
     action_name: str = ""
 
 
-DEFAULT_COMMAND_CATALOG: List[PaletteCommand] = [
+DEFAULT_COMMAND_CATALOG: list[PaletteCommand] = [
     PaletteCommand(
         id="scan_dir",
         title="Scan Active Directory",
@@ -229,14 +229,14 @@ class CommandPaletteModal(
 
     def __init__(
         self,
-        catalog: Optional[List[PaletteCommand]] = None,
+        catalog: Optional[list[PaletteCommand]] = None,
         name: Optional[str] = None,
         id: Optional[str] = None,
         classes: Optional[str] = None,
     ) -> None:
         super().__init__(name=name, id=id, classes=classes)
-        self.commands: List[PaletteCommand] = catalog or list(DEFAULT_COMMAND_CATALOG)
-        self._filtered_commands: List[PaletteCommand] = list(self.commands)
+        self.commands: list[PaletteCommand] = catalog or list(DEFAULT_COMMAND_CATALOG)
+        self._filtered_commands: list[PaletteCommand] = list(self.commands)
 
     def compose(self) -> ComposeResult:
         """Compose modal layout widgets."""

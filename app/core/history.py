@@ -4,9 +4,10 @@ import logging
 import os
 import time
 import uuid
+from collections.abc import Collection, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, Collection, Dict, Iterator, List, Optional, Union
+from typing import Any, Optional
 
 from app.core.db_conn import get_db_connection
 from app.core.migrations import Migration, add_missing_columns, migrate
@@ -532,7 +533,7 @@ class HistoryManager:
             conn.execute("DELETE FROM sessions WHERE session_id = ?", (sid,))
             _purge_overwrite_backups(base_dir, sid)
 
-    def get_sessions(self) -> List[Dict[str, Any]]:
+    def get_sessions(self) -> list[dict[str, Any]]:
         """Retrieve a list of all historical sessions, ordered by time."""
         conn = get_db_connection(self.db_path)
         with conn:
@@ -574,7 +575,7 @@ class HistoryManager:
                 )
             return sessions
 
-    def check_missing_files(self, session_id: str) -> List[str]:
+    def check_missing_files(self, session_id: str) -> list[str]:
         """Check if any files from the snapshot are missing from the disk."""
         conn = get_db_connection(self.db_path)
         with conn:
@@ -1021,7 +1022,7 @@ class HistoryManager:
             )
             return cursor.lastrowid
 
-    def get_step_ledger(self, session_id: str) -> List[Dict[str, Any]]:
+    def get_step_ledger(self, session_id: str) -> list[dict[str, Any]]:
         """Retrieve all recorded relocation steps for a session in chronological order."""
         conn = get_db_connection(self.db_path)
         with conn:
@@ -1054,7 +1055,7 @@ class HistoryManager:
                 for r in rows
             ]
 
-    def get_session_moves(self, session_id: str) -> List[Dict[str, Any]]:
+    def get_session_moves(self, session_id: str) -> list[dict[str, Any]]:
         """Retrieve itemized recorded file moves for a session."""
         moves = self.moves.list_moves(session_id)
         if moves:
@@ -1142,13 +1143,13 @@ class HistoryManager:
         session_id: Any = None,
         format: Any = None,
         base_dir: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Export session history records into standard CSV or JSON audit log formats."""
         import csv
         import json
         from datetime import datetime, timezone
 
-        db_paths: List[str] = []
+        db_paths: list[str] = []
         if self.db_path:
             p_abs = str(Path(self.db_path).resolve())
             if os.path.exists(p_abs):
@@ -1157,8 +1158,8 @@ class HistoryManager:
         if not db_paths and self.db_path:
             db_paths.append(str(Path(self.db_path).resolve()))
 
-        sessions_map: Dict[str, Dict[str, Any]] = {}
-        steps: List[Dict[str, Any]] = []
+        sessions_map: dict[str, dict[str, Any]] = {}
+        steps: list[dict[str, Any]] = []
         seen_step_keys = set()
 
         for db_p in db_paths:
@@ -1359,7 +1360,7 @@ class HistoryManager:
         self,
         session_id: str,
         db=None,
-        selected_step_ids: Optional[Collection[Union[int, str]]] = None,
+        selected_step_ids: Optional[Collection[int | str]] = None,
     ) -> int:
         """Unwind completed relocation steps in exact reverse chronological order using step ledger."""
         return self._unwind_session_internal(
@@ -1370,7 +1371,7 @@ class HistoryManager:
         self,
         session_id: str,
         db=None,
-        selected_step_ids: Optional[Collection[Union[int, str]]] = None,
+        selected_step_ids: Optional[Collection[int | str]] = None,
     ) -> int:
         if db:
             db.invalidate_cache()
@@ -2390,7 +2391,7 @@ class HistoryManager:
         self,
         session_id: str,
         ignore_missing: bool = False,
-        selected_step_ids: Optional[Collection[Union[int, str]]] = None,
+        selected_step_ids: Optional[Collection[int | str]] = None,
     ):
         """Revert directory and metadata state using recorded transaction ledger steps or snapshot."""
         self.db.invalidate_cache()
@@ -2457,9 +2458,9 @@ class HistoryManager:
     def preview_rollback(
         self,
         session_id: str,
-        selected_step_ids: Optional[Collection[Union[int, str]]] = None,
+        selected_step_ids: Optional[Collection[int | str]] = None,
         ignore_missing: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Simulate pre-flight session rollback without making any disk modifications.
 
         Analyzes selected steps and categorizes status into:

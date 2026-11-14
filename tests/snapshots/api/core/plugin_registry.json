@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "9e982101beb6d3835a398248a59d76805b2cee5fa2ae7b24dbf48da8ccf5965d"
+    "checksum": "87cf97cc023d6bfcdc1646b76de0c0c052fb9ada074e8d44f2471d1582746cea"
   },
   "classes": [
     {
@@ -64,7 +64,7 @@
               "name": "self"
             }
           ],
-          "returns": "List[Tuple[str, str]]"
+          "returns": "list[tuple[str, str]]"
         },
         {
           "async": false,
@@ -77,7 +77,7 @@
               "name": "self"
             }
           ],
-          "returns": "List[Dict[str, Any]]"
+          "returns": "list[dict[str, Any]]"
         },
         {
           "async": false,
@@ -185,7 +185,7 @@
               "name": "self"
             },
             {
-              "annotation": "List[Tuple[str, str]]",
+              "annotation": "list[tuple[str, str]]",
               "default": null,
               "name": "options"
             }
@@ -203,7 +203,7 @@
               "name": "self"
             },
             {
-              "annotation": "Dict[str, Any]",
+              "annotation": "dict[str, Any]",
               "default": null,
               "name": "switch_config"
             }

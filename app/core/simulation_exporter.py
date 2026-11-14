@@ -7,7 +7,7 @@ import os
 import re
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 
 from app.core.domain_contracts import _get_val, _make_json_serializable
 from app.core.path_utils import scrub_user_home_paths
@@ -22,7 +22,7 @@ class SimulationExporter:
         self,
         plan: Any,
         base_dir: str = "",
-        simulation_results: Optional[Dict[str, Any]] = None,
+        simulation_results: Optional[dict[str, Any]] = None,
     ):
         self.plan = plan
         self.base_dir = os.path.normpath(base_dir) if base_dir else ""
@@ -33,8 +33,8 @@ class SimulationExporter:
                 self.base_dir, self.plan
             )
 
-        self._cached_report_data: Optional[Dict[str, Any]] = None
-        self._scrub_cache: Dict[str, str] = {}
+        self._cached_report_data: Optional[dict[str, Any]] = None
+        self._scrub_cache: dict[str, str] = {}
 
         # Build compiled regex for user home paths and secret triggers
         home_dirs = []
@@ -104,9 +104,9 @@ class SimulationExporter:
             return [self._scrub_structure(item) for item in data]
         return data
 
-    def _extract_move_mappings(self) -> List[Dict[str, Any]]:
+    def _extract_move_mappings(self) -> list[dict[str, Any]]:
         """Extract flat move mappings with metadata, sensitivity ratings, collision flags, and confirmation status."""
-        moves: List[Dict[str, Any]] = []
+        moves: list[dict[str, Any]] = []
 
         raw_plan = (
             self.plan.plan
@@ -232,7 +232,7 @@ class SimulationExporter:
         _traverse(raw_plan)
         return moves
 
-    def generate_report_data(self) -> Dict[str, Any]:
+    def generate_report_data(self) -> dict[str, Any]:
         """Generate structured simulation report dictionary with caching."""
         if self._cached_report_data is not None:
             return self._cached_report_data
@@ -313,7 +313,7 @@ class SimulationExporter:
         self._cached_report_data = res
         return res
 
-    def export_json(self, output_path: Optional[Union[str, Path]] = None) -> str:
+    def export_json(self, output_path: Optional[str | Path] = None) -> str:
         """Serialize simulation report into JSON format and write to output_path if specified."""
         data = self.generate_report_data()
         json_content = json.dumps(data, indent=2)
@@ -326,7 +326,7 @@ class SimulationExporter:
 
         return json_content
 
-    def export_html(self, output_path: Optional[Union[str, Path]] = None) -> str:
+    def export_html(self, output_path: Optional[str | Path] = None) -> str:
         """Serialize simulation report into standalone HTML format and write to output_path if specified."""
         data = self.generate_report_data()
         summary = data["summary"]

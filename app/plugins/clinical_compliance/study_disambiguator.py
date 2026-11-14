@@ -8,7 +8,7 @@ import logging
 import re
 from collections import defaultdict
 from dataclasses import dataclass, field
-from typing import Dict, List, Optional, Set
+from typing import Optional
 
 from app.core.forensic_scanner import DiscoveredDocument
 from app.plugins.clinical_compliance.clinical_renamer import ClinicalRenamer
@@ -22,20 +22,20 @@ class StudyEntity:
 
     protocol_id: str
     protocol_name: str
-    investigators: Set[str] = field(default_factory=set)
-    site_numbers: Set[str] = field(default_factory=set)
-    associated_documents: List[DiscoveredDocument] = field(default_factory=list)
+    investigators: set[str] = field(default_factory=set)
+    site_numbers: set[str] = field(default_factory=set)
+    associated_documents: list[DiscoveredDocument] = field(default_factory=list)
 
 
 class StudyDisambiguator:
     """Resolves study associations across documents using direct matches, co-occurrence graphs, and path heuristics."""
 
     def __init__(self):
-        self.studies: Dict[str, StudyEntity] = {}
-        self.investigator_to_studies: Dict[str, Set[str]] = defaultdict(set)
-        self.site_to_studies: Dict[str, Set[str]] = defaultdict(set)
-        self.cross_study_shared_docs: List[DiscoveredDocument] = []
-        self.unassigned_docs: List[DiscoveredDocument] = []
+        self.studies: dict[str, StudyEntity] = {}
+        self.investigator_to_studies: dict[str, set[str]] = defaultdict(set)
+        self.site_to_studies: dict[str, set[str]] = defaultdict(set)
+        self.cross_study_shared_docs: list[DiscoveredDocument] = []
+        self.unassigned_docs: list[DiscoveredDocument] = []
 
     def extract_site_number(self, text: str, path: str) -> Optional[str]:
         """Extract clinical trial site number from text or file path."""
@@ -51,8 +51,8 @@ class StudyDisambiguator:
         return None
 
     def discover_and_partition_studies(
-        self, documents: List[DiscoveredDocument]
-    ) -> Dict[str, List[DiscoveredDocument]]:
+        self, documents: list[DiscoveredDocument]
+    ) -> dict[str, list[DiscoveredDocument]]:
         """Analyze all documents, discover study entities, and partition documents by study."""
         self.studies.clear()
         self.investigator_to_studies.clear()
@@ -88,7 +88,7 @@ class StudyDisambiguator:
                     self.site_to_studies[site_num].add(proto_id)
 
         # PASS 2: Assign documents based on direct match, PI co-occurrence, or path proximity
-        partitioned: Dict[str, List[DiscoveredDocument]] = defaultdict(list)
+        partitioned: dict[str, list[DiscoveredDocument]] = defaultdict(list)
 
         for doc in documents:
             assigned_study = None

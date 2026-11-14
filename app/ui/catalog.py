@@ -9,7 +9,7 @@ import argparse
 import asyncio
 import contextlib
 import sys
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from app.config import AppSettings
 from app.ui.a11y import A11yViolation, inspect_tui_component
@@ -56,7 +56,7 @@ def _build_default_settings() -> AppSettings:
 
 
 # Registry mapping component IDs to metadata and factory functions.
-CATALOG_REGISTRY: List[Dict[str, Any]] = [
+CATALOG_REGISTRY: list[dict[str, Any]] = [
     {
         "id": "autosorter_tui",
         "name": "AutoSorter TUI Main App Screen",
@@ -291,16 +291,16 @@ CATALOG_REGISTRY: List[Dict[str, Any]] = [
 ]
 
 
-def get_catalog_registry() -> List[Dict[str, Any]]:
+def get_catalog_registry() -> list[dict[str, Any]]:
     """Return list of registered catalog component definitions."""
     return CATALOG_REGISTRY
 
 
 async def _audit_components_async(
-    target_components: List[Dict[str, Any]], settings: AppSettings
-) -> Tuple[int, List[A11yViolation]]:
+    target_components: list[dict[str, Any]], settings: AppSettings
+) -> tuple[int, list[A11yViolation]]:
     """Run accessibility scans against target components inside a headless Textual test pilot."""
-    all_violations: List[A11yViolation] = []
+    all_violations: list[A11yViolation] = []
     scanned_count = 0
 
     app = AutoSorterTUI(settings=settings)
@@ -331,7 +331,7 @@ async def _audit_components_async(
 
 def run_catalog_audit(
     component_id: Optional[str] = None, settings: Optional[AppSettings] = None
-) -> Tuple[int, List[A11yViolation]]:
+) -> tuple[int, list[A11yViolation]]:
     """Execute headless accessibility audit against all or specified component(s)."""
     settings_obj = settings or _build_default_settings()
     registry = get_catalog_registry()
@@ -352,7 +352,7 @@ def run_catalog_audit(
     return asyncio.run(_audit_components_async(target_components, settings_obj))
 
 
-def main(argv: Optional[List[str]] = None) -> int:
+def main(argv: Optional[list[str]] = None) -> int:
     """CLI launcher and accessibility gate handler for Component Catalog."""
     parser = argparse.ArgumentParser(
         description="Standalone Textual TUI Component Catalog & Accessibility Gate"

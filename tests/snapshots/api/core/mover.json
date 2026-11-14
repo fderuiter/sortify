@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "29fc081f8dc3bfc16f09f7fbf12c212cc5e04482c01718ffaa986bf84a127780"
+    "checksum": "3715606c90d606bbbd35ad2f661a9d4f9cee0142d104ae4c94eb3c00578ae71b"
   },
   "classes": [
     {
@@ -119,7 +119,7 @@
               "name": "base_dir"
             },
             {
-              "annotation": "List[Dict[str, Any]]",
+              "annotation": "list[dict[str, Any]]",
               "default": null,
               "name": "failed_items"
             },
@@ -149,7 +149,7 @@
               "name": "**kwargs"
             }
           ],
-          "returns": "Dict[str, Any]"
+          "returns": "dict[str, Any]"
         }
       ]
     }
@@ -404,7 +404,7 @@
           "name": "base_dir"
         },
         {
-          "annotation": "List[Dict[str, Any]]",
+          "annotation": "list[dict[str, Any]]",
           "default": null,
           "name": "failed_items"
         },
@@ -434,7 +434,7 @@
           "name": "**kwargs"
         }
       ],
-      "returns": "Dict[str, Any]"
+      "returns": "dict[str, Any]"
     }
   ]
 }

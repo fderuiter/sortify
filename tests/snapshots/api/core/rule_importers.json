@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "c9e46c1bb110c479867232a7bed2669406aa0529b6c4a1409d31ab3417db5d43"
+    "checksum": "ea043f8fb0c1e698b7b0b23b96203b41628f77662d6e68cb44bc44346804baf3"
   },
   "classes": [
     {
@@ -20,7 +20,7 @@
               "name": "self"
             },
             {
-              "annotation": "Union[str, Path]",
+              "annotation": "str | Path",
               "default": null,
               "name": "file_path"
             }
@@ -40,7 +40,7 @@
               "name": "self"
             },
             {
-              "annotation": "Union[str, Path]",
+              "annotation": "str | Path",
               "default": null,
               "name": "file_path"
             }
@@ -64,7 +64,7 @@
               "name": "self"
             },
             {
-              "annotation": "Union[str, Path]",
+              "annotation": "str | Path",
               "default": null,
               "name": "file_path"
             }
@@ -82,7 +82,7 @@
               "name": "self"
             },
             {
-              "annotation": "Union[str, Path]",
+              "annotation": "str | Path",
               "default": null,
               "name": "file_path"
             }
@@ -106,7 +106,7 @@
               "name": "self"
             },
             {
-              "annotation": "Union[str, Path]",
+              "annotation": "str | Path",
               "default": null,
               "name": "file_path"
             }
@@ -124,7 +124,7 @@
               "name": "self"
             },
             {
-              "annotation": "Union[str, Path]",
+              "annotation": "str | Path",
               "default": null,
               "name": "file_path"
             }
@@ -155,7 +155,7 @@
               "name": "settings"
             },
             {
-              "annotation": "Optional[Dict[str, str]]",
+              "annotation": "Optional[dict[str, str]]",
               "default": "None",
               "name": "resolutions"
             },
@@ -165,7 +165,7 @@
               "name": "default_strategy"
             }
           ],
-          "returns": "Tuple[Dict[str, str], List[Dict[str, Any]]]"
+          "returns": "tuple[dict[str, str], list[dict[str, Any]]]"
         }
       ]
     },
@@ -198,7 +198,7 @@
               "name": "settings"
             }
           ],
-          "returns": "List[RuleConflict]"
+          "returns": "list[RuleConflict]"
         }
       ]
     },
@@ -217,7 +217,7 @@
               "name": "self"
             },
             {
-              "annotation": "Union[str, Path]",
+              "annotation": "str | Path",
               "default": null,
               "name": "file_path"
             }
@@ -235,7 +235,7 @@
               "name": "self"
             },
             {
-              "annotation": "Union[str, Path]",
+              "annotation": "str | Path",
               "default": null,
               "name": "file_path"
             }
@@ -252,7 +252,7 @@
       "name": "get_rule_importer",
       "parameters": [
         {
-          "annotation": "Union[str, Path]",
+          "annotation": "str | Path",
           "default": null,
           "name": "file_path"
         }

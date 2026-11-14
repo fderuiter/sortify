@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "90781f6287bb1c31524933b2042b8ee8dfe0037ff5ff1e63f59f7acb39d42cb6"
+    "checksum": "ec6b25bf42e2049cd4667cd351069c73c271ca46a4ec0d33f07f7923e966e998"
   },
   "classes": [
     {
@@ -322,7 +322,7 @@
               "name": "base_dir"
             }
           ],
-          "returns": "Optional[List[Tuple[str, str, float]]]"
+          "returns": "Optional[list[tuple[str, str, float]]]"
         },
         {
           "async": false,
@@ -358,7 +358,7 @@
               "name": "base_dir"
             },
             {
-              "annotation": "List[Tuple[str, str, float]]",
+              "annotation": "list[tuple[str, str, float]]",
               "default": null,
               "name": "rows"
             }

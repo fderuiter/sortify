@@ -9,7 +9,7 @@ import logging
 import os
 import time
 from enum import Enum
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 
 from app.config import get_app_dir
 from app.core.db_conn import get_db_connection
@@ -60,7 +60,7 @@ TERMINAL_STATUSES: frozenset[LedgerStatus] = frozenset(
     }
 )
 
-ALLOWED_TRANSITIONS: Dict[LedgerStatus, frozenset[LedgerStatus]] = {
+ALLOWED_TRANSITIONS: dict[LedgerStatus, frozenset[LedgerStatus]] = {
     LedgerStatus.PENDING: frozenset(
         {
             LedgerStatus.MOVED_PHYSICAL,
@@ -100,7 +100,7 @@ FAILURE_REASONS = {
 }
 
 
-def sanitize_audit_metadata(metadata: Any) -> Dict[str, Any]:
+def sanitize_audit_metadata(metadata: Any) -> dict[str, Any]:
     """Recursively sanitize metadata dictionary to exclude sensitive raw keys and secrets."""
     if not isinstance(metadata, dict):
         if isinstance(metadata, str):
@@ -109,7 +109,7 @@ def sanitize_audit_metadata(metadata: Any) -> Dict[str, Any]:
             }
         return {}
 
-    sanitized: Dict[str, Any] = {}
+    sanitized: dict[str, Any] = {}
     for k, v in metadata.items():
         k_str = str(k)
         lower_k = k_str.lower()
@@ -291,7 +291,7 @@ class TransactionLedger:
                 )
         return entry_id
 
-    def update_status(self, entry_id: str, status: Union[LedgerStatus, str]) -> None:
+    def update_status(self, entry_id: str, status: LedgerStatus | str) -> None:
         """Update transaction state (e.g. MOVED_PHYSICAL, COMPLETED)."""
         if isinstance(status, LedgerStatus):
             target_status = status
@@ -353,7 +353,7 @@ class TransactionLedger:
         failed_only: bool = False,
         aborted_only: bool = False,
         include_failed: bool = False,
-    ) -> List[Dict]:
+    ) -> list[dict]:
         """Retrieve transaction entries filtered by status and session."""
         conn = get_db_connection(self.db_path)
         conditions = []
@@ -441,7 +441,7 @@ class TransactionLedger:
 
     def _log_reconciliation_failure_audit(
         self,
-        entry: Dict[str, Any],
+        entry: dict[str, Any],
         status: str,
         reason: str,
         db: Any = None,
@@ -629,7 +629,7 @@ class TransactionLedger:
         db_path_hash: str,
         session_id: str = "system",
         status: str = "SUCCESS",
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
         event_id: Optional[str] = None,
         created_at: Optional[float] = None,
     ) -> str:
@@ -681,7 +681,7 @@ class TransactionLedger:
         start_time: Optional[float] = None,
         end_time: Optional[float] = None,
         limit: Optional[int] = None,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Query historical key management events from key_audit_ledger."""
         if not db_path_hash and db_path:
             from app.core.crypto import CryptoManager
@@ -693,7 +693,7 @@ class TransactionLedger:
             "FROM key_audit_ledger",
         ]
         conditions = []
-        params: List[Any] = []
+        params: list[Any] = []
 
         if session_id:
             conditions.append("session_id = ?")
@@ -728,7 +728,7 @@ class TransactionLedger:
             results = []
             for r in rows:
                 meta_json = r[6]
-                parsed_meta: Dict[str, Any] = {}
+                parsed_meta: dict[str, Any] = {}
                 if meta_json:
                     try:
                         parsed_meta = json.loads(meta_json)
