@@ -1,0 +1,75 @@
+{
+  "_metadata": {
+    "checksum": "415495422b8db4c2eab7a739e0b05ef60bd9a3288c894b228faf7d930b18fd2b"
+  },
+  "classes": [
+    {
+      "class_name": "StudyDisambiguator",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "discover_and_partition_studies",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "List[DiscoveredDocument]",
+              "default": null,
+              "name": "documents"
+            }
+          ],
+          "returns": "Dict[str, List[DiscoveredDocument]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "extract_site_number",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "text"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "path"
+            }
+          ],
+          "returns": "Optional[str]"
+        }
+      ]
+    },
+    {
+      "class_name": "StudyEntity",
+      "decorators": [
+        "@dataclass"
+      ],
+      "methods": []
+    }
+  ],
+  "functions": []
+}

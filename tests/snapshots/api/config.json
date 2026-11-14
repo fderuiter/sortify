@@ -1,0 +1,476 @@
+{
+  "_metadata": {
+    "checksum": "54491e64dd3fce181d5d7bb80ae4c4f781d8ac15a0ee7106ad85d9c7950f44ed"
+  },
+  "classes": [
+    {
+      "class_name": "AppSettings",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "filepath"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "add_observer",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key"
+            },
+            {
+              "annotation": "Callable",
+              "default": null,
+              "name": "callback"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "clear_observers",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": "None",
+              "name": "key"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "flush",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "load",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "override",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "name"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "value"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "remove_observer",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key"
+            },
+            {
+              "annotation": "Callable",
+              "default": null,
+              "name": "callback"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "revalidate",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "bool"
+        }
+      ]
+    },
+    {
+      "class_name": "Settings",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "MAX_AUDIO_WORKERS",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@MAX_AUDIO_WORKERS.setter"
+          ],
+          "name": "MAX_AUDIO_WORKERS",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "val"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "MAX_SPREADSHEET_CHARACTERS",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "MAX_SPREADSHEET_ROWS",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "MAX_SPREADSHEET_SHEETS",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('SECURITY_ADVISORY_FALLBACK_POLICY')",
+            "@classmethod"
+          ],
+          "name": "validate_advisory_fallback_policy",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('CONFLICT_POLICY')",
+            "@classmethod"
+          ],
+          "name": "validate_conflict_policy",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@model_validator(mode='after')"
+          ],
+          "name": "validate_debounce_delays",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "'Settings'"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('IGNORED_EXTENSIONS', mode='before')",
+            "@classmethod"
+          ],
+          "name": "validate_ignored_extensions",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "list[str]",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "list[str]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('KEYWORD_RULES', 'LEARNED_RULES')",
+            "@classmethod"
+          ],
+          "name": "validate_keyword_rules",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "dict",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "dict"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('OCR_LANGUAGES')",
+            "@classmethod"
+          ],
+          "name": "validate_ocr_languages",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('PLUGINS', mode='before')",
+            "@classmethod"
+          ],
+          "name": "validate_plugins",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "list[str]",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "list[str]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('POLICIES')",
+            "@classmethod"
+          ],
+          "name": "validate_policies",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "list[dict]",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "list[dict]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('PROTECTED_PATHS')",
+            "@classmethod"
+          ],
+          "name": "validate_protected_paths",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "list[str]",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "list[str]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('VISION_ENGINE', mode='before')",
+            "@classmethod"
+          ],
+          "name": "validate_vision_engine",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "app_env_file",
+      "parameters": [],
+      "returns": "Path"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_app_dir",
+      "parameters": [],
+      "returns": "Path"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_debug_log_dir",
+      "parameters": [],
+      "returns": "Path"
+    }
+  ]
+}

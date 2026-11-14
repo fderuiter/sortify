@@ -2,13 +2,14 @@
 
 import logging
 import os
+from typing import Optional
 
 from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
-from textual.widgets import Button, Checkbox, Label, Switch
+from textual.widgets import Button, Checkbox, Input, Label, Static, Switch
 
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
@@ -86,6 +87,20 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         color: $text;
         text-style: bold;
     }
+    .error-banner {
+        color: $error;
+        text-style: bold;
+    }
+    .preset-label {
+        margin-top: 1;
+        color: $text-muted;
+    }
+    .preset-row {
+        margin-top: 1;
+        margin-bottom: 1;
+        height: auto;
+        min-height: 3;
+    }
     .switch-row {
         margin-top: 1;
         margin-bottom: 1;
@@ -97,7 +112,7 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         height: 3;
         align: right middle;
     }
-    Button:focus, Checkbox:focus, Switch:focus, .privacy-card:focus {
+    Button:focus, Checkbox:focus, Switch:focus, Input:focus, .privacy-card:focus {
         border: heavy $accent;
         text-style: bold;
     }
@@ -108,9 +123,10 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     }
     """
 
-    def __init__(self, settings):
+    def __init__(self, settings, current_dir: Optional[str] = None):
         super().__init__()
         self.settings = settings
+        self.current_dir = current_dir
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
@@ -171,6 +187,33 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 ),
             )
 
+            yield Heading("Workspace Directory:", level=2, classes="field-label")
+            initial_dir = (
+                self.current_dir
+                if getattr(self, "current_dir", None) is not None
+                else (getattr(getattr(self, "app", None), "base_dir", "") or "")
+            )
+            inp = Input(
+                value=initial_dir,
+                placeholder="Enter absolute workspace directory path...",
+                id="input-dir",
+            )
+            inp.tooltip = "Enter target directory path to scan and organize"
+            yield inp
+            yield Static("", id="lbl-error", classes="error-banner")
+
+            yield Label("Quick Presets:", classes="preset-label")
+            with Horizontal(classes="preset-row"):
+                p_demo = Button("Demo Workspace", id="preset-demo", variant="default")
+                p_demo.tooltip = "Select sandbox demo workspace quick preset"
+                yield p_demo
+                p_dl = Button("Downloads", id="preset-downloads", variant="default")
+                p_dl.tooltip = "Select user Downloads folder quick preset"
+                yield p_dl
+                p_docs = Button("Documents", id="preset-documents", variant="default")
+                p_docs.tooltip = "Select user Documents folder quick preset"
+                yield p_docs
+
             btn_pg = Button(
                 "Try Interactive Sample Playground",
                 id="btn-open-playground",
@@ -219,6 +262,70 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 )
                 yield btn_finish
 
+    def _show_error(self, message: str) -> None:
+        """Display inline error banner, announce message, and focus input."""
+        banner = self.query("#lbl-error")
+        if banner:
+            banner.first(Static).update(message)
+        self.announce(message, priority="assertive")
+        inp = self.query("#input-dir")
+        if inp:
+            inp.first(Input).focus()
+
+    @on(Input.Changed, "#input-dir")
+    def on_input_changed(self, event: Input.Changed) -> None:
+        """Clear error banner when user changes directory path."""
+        banner = self.query("#lbl-error")
+        if banner:
+            banner.first(Static).update("")
+
+    @on(Input.Submitted, "#input-dir")
+    def on_input_submitted(self, event: Input.Submitted) -> None:
+        """Finish wizard when Enter is pressed inside directory input."""
+        self.action_finish()
+
+    @on(Button.Pressed, "#preset-demo")
+    def action_preset_demo(self) -> None:
+        """Select sandbox demo workspace quick preset."""
+        path = os.path.abspath("sandbox/demo_workspace")
+        if not os.path.exists(path):
+            try:
+                os.makedirs(path, exist_ok=True)
+            except Exception as exc:
+                self._show_error(f"Failed to create directory '{path}': {exc}")
+                return
+        self._set_directory_input(path, "demo workspace")
+
+    @on(Button.Pressed, "#preset-downloads")
+    def action_preset_downloads(self) -> None:
+        """Select user Downloads folder quick preset."""
+        path = os.path.expanduser("~/Downloads")
+        self._set_directory_input(path, "Downloads")
+
+    @on(Button.Pressed, "#preset-documents")
+    def action_preset_documents(self) -> None:
+        """Select user Documents folder quick preset."""
+        path = os.path.expanduser("~/Documents")
+        self._set_directory_input(path, "Documents")
+
+    def _set_directory_input(self, path: str, preset_name: str) -> None:
+        try:
+            inp = self.query_one("#input-dir", Input)
+            inp.value = path
+        except Exception:
+            pass
+        self.announce(f"Selected {preset_name} preset: {path}")
+        from app.ui.modals.edit import DirectorySelectModal
+
+        err = DirectorySelectModal._validate_directory_path(path)
+        if err:
+            self._show_error(err)
+        else:
+            try:
+                self.query_one("#lbl-error", Static).update("")
+            except Exception:
+                pass
+
     def on_mount(self) -> None:
         """Focus switch on mount and emit screen reader announcement."""
         self._update_layout(self.size.width)
@@ -239,6 +346,10 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         elif widget_id == "privacy-card":
             self.announce(
                 f"Privacy disclosure card focused. {PRIVACY_GUARANTEE_ANNOUNCEMENT}"
+            )
+        elif widget_id == "input-dir":
+            self.announce(
+                "Workspace directory input focused. Enter path or choose a quick preset."
             )
 
     @on(Switch.Changed)
@@ -294,14 +405,40 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         """Open interactive sample playground modal screen."""
         from app.ui.modals.sample_playground import SamplePlaygroundModal
 
-        target_dir = getattr(self.app, "base_dir", "") or os.getcwd()
+        target_dir = ""
+        try:
+            val = self.query_one("#input-dir", Input).value.strip()
+            if val and os.path.exists(os.path.expanduser(val)):
+                target_dir = os.path.abspath(os.path.expanduser(val))
+        except Exception:
+            pass
+        if not target_dir:
+            target_dir = getattr(self.app, "base_dir", "") or os.getcwd()
+
         self.app.push_screen(
             SamplePlaygroundModal(self.settings, target_dir=target_dir)
         )
 
     @on(Button.Pressed, "#btn-finish")
     def action_finish(self) -> None:
-        """Finish wizard, save consent settings, and apply selected starter rule templates."""
+        """Finish wizard, validate directory, save consent settings, apply templates, and scan."""
+        raw_dir = ""
+        try:
+            raw_dir = self.query_one("#input-dir", Input).value.strip()
+        except Exception:
+            pass
+
+        if raw_dir:
+            from app.ui.modals.edit import DirectorySelectModal
+
+            err = DirectorySelectModal._validate_directory_path(raw_dir)
+            if err:
+                self._show_error(err)
+                return
+            chosen_dir = os.path.abspath(os.path.expanduser(raw_dir))
+        else:
+            chosen_dir = os.path.abspath(os.getcwd())
+
         try:
             consent = self.query_one("#switch-consent", Switch).value
         except Exception:
@@ -346,19 +483,60 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             except Exception:
                 pass
 
+        target_dir = chosen_dir
         if gen_sample:
             from app.core.sample_corpus import generate_sample_corpus
 
-            target_dir = getattr(self.app, "base_dir", "") or os.getcwd()
-            if hasattr(self.app, "base_dir"):
-                self.app.base_dir = target_dir
+            sample_fn = getattr(self.app, "_sample_dataset_dir", None)
+            if callable(sample_fn):
+                sample_target = sample_fn(chosen_dir)
+            else:
+                if (
+                    os.path.basename(os.path.normpath(chosen_dir))
+                    == "sortify-sample-dataset"
+                ):
+                    sample_target = chosen_dir
+                else:
+                    try:
+                        with os.scandir(chosen_dir) as entries:
+                            is_empty = not any(entries)
+                    except FileNotFoundError:
+                        is_empty = True
+                    sample_target = (
+                        chosen_dir
+                        if is_empty
+                        else os.path.join(chosen_dir, "sortify-sample-dataset")
+                    )
+
+            target_dir = sample_target
             try:
-                generate_sample_corpus(target_dir, overwrite=True)
+                generate_sample_corpus(target_dir, overwrite=False)
                 self.announce(f"Generated sample document corpus in '{target_dir}'.")
-                if hasattr(self.app, "action_scan_directory"):
-                    self.app.action_scan_directory()
+            except FileExistsError:
+                self.announce(f"Using the existing sample dataset in '{target_dir}'.")
             except Exception as exc:
                 logger.error(f"Failed to generate sample corpus: {exc}")
+
+        if hasattr(self.app, "base_dir"):
+            setattr(self.app, "base_dir", target_dir)
+        if hasattr(self.app, "source_dirs"):
+            setattr(self.app, "source_dirs", [target_dir])
+
+        update_cta = getattr(self.app, "_update_onboarding_cta_visibility", None)
+        if callable(update_cta):
+            try:
+                update_cta()
+            except Exception:
+                pass
+        try:
+            ws_state = self.app.query_one("#onboarding-workspace-state", Static)
+            ws_state.update(f"Active Workspace: {target_dir}")
+        except Exception:
+            pass
+
+        scan_fn = getattr(self.app, "action_scan_directory", None)
+        if callable(scan_fn):
+            scan_fn()
 
         self.announce(
             "Finished model onboarding wizard, saved consent settings, and applied selected starter rule templates."

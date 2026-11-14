@@ -641,6 +641,7 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
 
         if dest_dir:
             plan = _reroot_plan(plan, dest_dir)
+            session.base_dir = str(Path(dest_dir).resolve())
 
         serializable_plan = _make_json_serializable(plan)
 
