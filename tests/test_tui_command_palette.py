@@ -1,6 +1,5 @@
 """Unit tests for CommandPaletteModal overlay and Ctrl+K keybinding re-assignment."""
 
-
 import pytest
 from textual.widgets import Input, OptionList
 
@@ -181,4 +180,7 @@ async def test_shortcut_cheat_sheet_displays_command_palette_label():
 
         rendered_labels = " ".join([str(lbl.render()) for lbl in sheet.query("Label")])
         assert "Ctrl+K" in rendered_labels
-        assert "command palette" in rendered_labels.lower() or "palette" in rendered_labels.lower()
+        assert (
+            "command palette" in rendered_labels.lower()
+            or "palette" in rendered_labels.lower()
+        )

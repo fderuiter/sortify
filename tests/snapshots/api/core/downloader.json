@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "7be8d76bc7b9905595d6fe82730ffeb207d8944707588ef7e5f0aa712dbdcbaa"
+    "checksum": "8f09e46c727f79522f69d7f45f51a1cf6add35b494accf42ef49e391081cf1d5"
   },
   "classes": [
     {
@@ -52,6 +52,21 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "current_state",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "DownloadState"
         },
         {
           "async": false,
@@ -154,6 +169,39 @@
         },
         {
           "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "status",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "DownloadState"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "transition_to",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "DownloadState",
+              "default": null,
+              "name": "new_state"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
           "decorators": [],
           "name": "update_proxy",
           "parameters": [
@@ -171,6 +219,16 @@
           "returns": null
         }
       ]
+    },
+    {
+      "class_name": "DownloadState",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "InvalidStateTransitionError",
+      "decorators": [],
+      "methods": []
     },
     {
       "class_name": "NetworkError",

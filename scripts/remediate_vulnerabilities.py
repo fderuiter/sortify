@@ -254,7 +254,9 @@ class PackageVulnerability:
     @property
     def cvss_score(self) -> Optional[float]:
         """Return highest CVSS score among all vulnerabilities in this package."""
-        scores = [v.cvss_score for v in self.vulnerabilities if v.cvss_score is not None]
+        scores = [
+            v.cvss_score for v in self.vulnerabilities if v.cvss_score is not None
+        ]
         return max(scores) if scores else None
 
 
@@ -669,7 +671,9 @@ def remediate_vulnerabilities(
             )
             # Revert uv.lock change
             subprocess.run(["git", "checkout", "uv.lock"], cwd=repo_root, check=False)
-            subprocess.run(["git", "checkout", "pyproject.toml"], cwd=repo_root, check=False)
+            subprocess.run(
+                ["git", "checkout", "pyproject.toml"], cwd=repo_root, check=False
+            )
             continue
 
         # Execute local test suite to verify patch doesn't break existing behavior
@@ -685,7 +689,9 @@ def remediate_vulnerabilities(
             )
             # Revert uv.lock change
             subprocess.run(["git", "checkout", "uv.lock"], cwd=repo_root, check=False)
-            subprocess.run(["git", "checkout", "pyproject.toml"], cwd=repo_root, check=False)
+            subprocess.run(
+                ["git", "checkout", "pyproject.toml"], cwd=repo_root, check=False
+            )
             continue
 
         patched_any = True
@@ -793,16 +799,12 @@ def remediate_vulnerabilities(
                     f"severity:{highest_unfixable_sev.lower()}",
                     "priority:urgent",
                 ]
-                maintainer_mention = (
-                    "\n\n**Attention Maintainers:** @fderuiter/security-team @fderuiter/maintainers\n"
-                )
+                maintainer_mention = "\n\n**Attention Maintainers:** @fderuiter/security-team @fderuiter/maintainers\n"
             else:
                 issue_labels = ["security", f"severity:{highest_unfixable_sev.lower()}"]
                 maintainer_mention = "\n"
 
-            issue_title = (
-                f"[Security] Automated Dependency Audit Alert: Unfixable {highest_unfixable_sev} Vulnerabilities"
-            )
+            issue_title = f"[Security] Automated Dependency Audit Alert: Unfixable {highest_unfixable_sev} Vulnerabilities"
             issue_body = (
                 f"## ⚠️ Unfixable Security Vulnerabilities Detected ({highest_unfixable_sev})\n\n"
                 "The daily automated vulnerability audit identified security vulnerabilities that could not be automatically remediated:\n\n"

@@ -329,7 +329,7 @@ def test_preview_rollback_snapshot_fallback(selective_env, tmp_path):
     history_mgr = selective_env["history_mgr"]
     snap_dir = tmp_path / "snap_workspace"
     snap_dir.mkdir()
-    
+
     # Create files for a snapshot session
     snap_file1 = snap_dir / "snap1.txt"
     snap_file2 = snap_dir / "snap2.txt"

@@ -792,10 +792,12 @@ class VirtualFilesystemTracker:
         base_dir_abs = os.path.abspath(base_dir) if base_dir else ""
 
         dest_to_srcs: dict[Any, Any] = {}
+        moving_sources: set[str] = set()
         for rel_path, src, dst in moves_list:
             abs_src = os.path.abspath(src)
             abs_dst = os.path.abspath(dst)
             dest_to_srcs.setdefault(abs_dst, []).append(abs_src)
+            moving_sources.add(abs_src)
 
         # 1. Duplicate target collision (exempt if dynamic rename policy is active)
         if conflict_policy in ("skip", "overwrite"):
@@ -853,9 +855,7 @@ class VirtualFilesystemTracker:
                         }
                     )
                 else:
-                    is_dst_moving = any(
-                        os.path.abspath(s) == abs_dst for _, s, _ in moves_list
-                    )
+                    is_dst_moving = abs_dst in moving_sources
                     if not is_dst_moving and abs_src != abs_dst:
                         collisions.append(
                             {

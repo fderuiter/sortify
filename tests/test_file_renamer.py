@@ -90,9 +90,7 @@ def test_keyword_extraction_benchmark_latency():
     import sys
     import time
 
-    sample_doc = (
-        "Annual Financial Statement and Tax Audit Report for Acme Corporation."
-    )
+    sample_doc = "Annual Financial Statement and Tax Audit Report for Acme Corporation."
 
     # Warm up JIT and caches
     for _ in range(50):

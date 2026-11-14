@@ -9,8 +9,9 @@ import time
 from dataclasses import dataclass
 from typing import Any, Dict, List, Optional
 
+from textual.app import App
 from textual.binding import Binding
-from textual.screen import ModalScreen
+from textual.screen import ModalScreen, Screen
 from textual.widgets import Button
 
 from app.core.path_utils import scrub_user_home_paths
@@ -290,6 +291,15 @@ class A11yMixin:
                             {
                                 "rule": "A11Y_MISSING_MODAL_H1_HEADING",
                                 "message": f"Modal screen '{type(self).__name__}' lacks a top-level semantic h1 heading.",
+                            }
+                        )
+                elif isinstance(self, (App, Screen)):
+                    has_h1 = any(getattr(h, "level", None) == 1 for h in headings)
+                    if not has_h1:
+                        violations.append(
+                            {
+                                "rule": "A11Y_MISSING_ROOT_H1_HEADING",
+                                "message": f"Root screen '{type(self).__name__}' lacks a top-level semantic h1 heading.",
                             }
                         )
                 levels = [

@@ -214,7 +214,7 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     def _poll_download_status(self) -> None:
         """Periodic non-blocking timer callback to poll download status."""
-        from app.core.downloader import DownloadManager
+        from app.core.downloader import DownloadManager, DownloadState
 
         dm = DownloadManager.get_instance()
 
@@ -223,12 +223,24 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         status_text = str(dm.state["status_text"] or "")
         err = dm.state["error"]
         succ = dm.state["success"]
+        status = dm.state.get("status")
 
         pb = self.query_one("#progress-bar", ProgressBar)
         pb.progress = min(100.0, max(0.0, prog * 100.0))
 
+        is_cancelled = (
+            status == DownloadState.CANCELLED
+            or "cancelled" in status_text.lower()
+            or (
+                getattr(dm, "cancel_event", None) is not None
+                and dm.cancel_event.is_set()
+            )
+        )
+
         lbl_prog = self.query_one("#lbl-progress-status", Label)
-        if err:
+        if is_cancelled:
+            lbl_prog.update("Download cancelled.")
+        elif err:
             lbl_prog.update(f"Error: {err}")
         elif succ:
             lbl_prog.update("Download complete!")
@@ -238,14 +250,14 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             )
 
         if self._prev_is_downloading and not is_dl:
-            if succ:
+            if is_cancelled:
+                self.announce("Model download cancelled.", priority="polite")
+            elif succ:
                 self.announce(
                     "Model download completed successfully.", priority="polite"
                 )
             elif err:
                 self.announce(f"Model download failed: {err}", priority="assertive")
-            elif "cancelled" in status_text.lower():
-                self.announce("Model download cancelled.", priority="polite")
 
         self._prev_is_downloading = is_dl
         self._prev_status_text = status_text
