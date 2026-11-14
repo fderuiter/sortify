@@ -59,6 +59,7 @@ from app.ui.modals.reports import (
     ExportReportModal,
     ExtractionPreviewModal,
 )
+from app.ui.modals.rules import ExportRulesModal as ExportRulesModal
 from app.ui.modals.rules import RuleImportModal as RuleImportModal
 from app.ui.modals.rules import TemplateGalleryModal as TemplateGalleryModal
 from app.ui.modals.session import (

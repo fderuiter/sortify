@@ -30,7 +30,7 @@ from app.ui.modals.reports import (
     ExportReportModal,
     ExtractionPreviewModal,
 )
-from app.ui.modals.rules import RuleImportModal, TemplateGalleryModal
+from app.ui.modals.rules import ExportRulesModal, RuleImportModal, TemplateGalleryModal
 from app.ui.modals.session import (
     HistoryModal,
     MultiSessionRecoveryModal,
@@ -166,6 +166,15 @@ CATALOG_REGISTRY: List[Dict[str, Any]] = [
         "category": "modal",
         "description": "Modal gallery for selecting pre-packaged organization rule templates.",
         "factory": lambda settings=None: TemplateGalleryModal(
+            settings=settings or _build_default_settings()
+        ),
+    },
+    {
+        "id": "export_rules_modal",
+        "name": "Export Rules Modal",
+        "category": "modal",
+        "description": "Modal dialog for exporting active rules to Sortify JSON, Hazel, or DropIt formats.",
+        "factory": lambda settings=None: ExportRulesModal(
             settings=settings or _build_default_settings()
         ),
     },
