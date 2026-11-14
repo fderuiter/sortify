@@ -301,10 +301,7 @@ class ForensicScanner:
                         continue
 
                     try:
-                        att_path_obj = safe_extract_path(
-                            destination_dir, safe_filename
-                        )
-                        att_path = str(att_path_obj)
+                        safe_extract_path(destination_dir, safe_filename)
                     except ValueError as err:
                         logger.warning(
                             f"Skipping email attachment extraction: path '{att_path}' is outside destination '{dest_abs}': {err}"
