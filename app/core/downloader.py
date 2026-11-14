@@ -8,6 +8,7 @@ import shutil
 import threading
 import urllib.error
 import urllib.request
+from enum import Enum
 
 from app.core.exceptions import DownloaderError, ModelVerificationError
 from app.core.progress import ProgressUpdate, emit_progress
@@ -19,6 +20,12 @@ DEFAULT_MODEL_URL = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-
 
 class DownloadError(DownloaderError):
     """Base class for download exceptions."""
+
+    pass
+
+
+class InvalidStateTransitionError(DownloadError, ValueError):
+    """Raised when an invalid lifecycle state transition is attempted."""
 
     pass
 
@@ -39,6 +46,33 @@ class DownloadCancelledError(DownloadError):
     """Raised when the download is cancelled by the user."""
 
     pass
+
+
+class DownloadState(str, Enum):
+    """Lifecycle states for model downloads."""
+
+    IDLE = "IDLE"
+    DOWNLOADING = "DOWNLOADING"
+    CANCELLED = "CANCELLED"
+    COMPLETED = "COMPLETED"
+    FAILED = "FAILED"
+
+
+_VALID_TRANSITIONS: dict[DownloadState, set[DownloadState]] = {
+    DownloadState.IDLE: {DownloadState.DOWNLOADING, DownloadState.IDLE},
+    DownloadState.DOWNLOADING: {
+        DownloadState.COMPLETED,
+        DownloadState.FAILED,
+        DownloadState.CANCELLED,
+    },
+    DownloadState.COMPLETED: {DownloadState.DOWNLOADING, DownloadState.IDLE},
+    DownloadState.FAILED: {DownloadState.DOWNLOADING, DownloadState.IDLE},
+    DownloadState.CANCELLED: {
+        DownloadState.DOWNLOADING,
+        DownloadState.IDLE,
+        DownloadState.CANCELLED,
+    },
+}
 
 
 class ThreadSafeState:
@@ -69,6 +103,9 @@ class ThreadSafeState:
 
 class DownloadManager:
     """Centralized manager coordinating model downloads and progress sharing."""
+
+    DownloadState = DownloadState
+    InvalidStateTransitionError = InvalidStateTransitionError
 
     _instance = None
     _lock = threading.Lock()
@@ -104,12 +141,15 @@ class DownloadManager:
                 cls._instance = None
 
     def __init__(self, settings=None):
+        self._status = DownloadState.IDLE
         self.state = ThreadSafeState(
             progress=0.0,
             status_text="Idle",
             error=None,
             success=False,
             is_downloading=False,
+            status=DownloadState.IDLE,
+            download_state=DownloadState.IDLE,
         )
         self.cancel_event = threading.Event()
         self.current_thread = None
@@ -123,6 +163,48 @@ class DownloadManager:
         self._opener = None
 
         self._initialize_proxy_observer()
+
+    @property
+    def current_state(self) -> DownloadState:
+        """Retrieve current lifecycle state thread-safely."""
+        with self._manager_lock:
+            return self._status
+
+    @property
+    def status(self) -> DownloadState:
+        """Alias for current lifecycle state."""
+        with self._manager_lock:
+            return self._status
+
+    def _transition_to_locked(self, new_state: DownloadState) -> None:
+        """Validate and apply lifecycle state transition under lock."""
+        current = self._status
+        valid_targets = _VALID_TRANSITIONS.get(current, set())
+        if new_state not in valid_targets:
+            raise InvalidStateTransitionError(
+                f"Invalid state transition from {current} to {new_state}."
+            )
+        self._status = new_state
+        self.state["status"] = new_state
+        self.state["download_state"] = new_state
+        if new_state == DownloadState.DOWNLOADING:
+            self.state["is_downloading"] = True
+            self.state["success"] = False
+        elif new_state == DownloadState.COMPLETED:
+            self.state["is_downloading"] = False
+            self.state["success"] = True
+        elif new_state in (
+            DownloadState.CANCELLED,
+            DownloadState.FAILED,
+            DownloadState.IDLE,
+        ):
+            self.state["is_downloading"] = False
+            self.state["success"] = False
+
+    def transition_to(self, new_state: DownloadState) -> None:
+        """Atomically transition manager to a new lifecycle state."""
+        with self._manager_lock:
+            self._transition_to_locked(new_state)
 
     @property
     def _current_proxy(self):
@@ -218,15 +300,19 @@ class DownloadManager:
     def start_download(self, url: str, model_dir: str, proxy: str = ""):
         """Initiate model download thread-safely if not already downloading."""
         with self._manager_lock:
-            if self.state["is_downloading"]:
+            if (
+                self._status == DownloadState.DOWNLOADING
+                or self.state["is_downloading"]
+            ):
                 raise DownloadError("An installation is already underway.")
 
+            self.cancel_event.clear()
+            self._transition_to_locked(DownloadState.DOWNLOADING)
             self.state["progress"] = 0.0
             self.state["status_text"] = "Starting background download..."
             self.state["error"] = None
             self.state["success"] = False
             self.state["is_downloading"] = True
-            self.cancel_event.clear()
 
             # Sync proxy parameter if explicitly provided and different
             if proxy and proxy.strip() and proxy != self._proxy:
@@ -236,23 +322,61 @@ class DownloadManager:
 
             def on_success_wrapper():
                 with self._manager_lock:
-                    self.state["success"] = True
-                    self.state["is_downloading"] = False
+                    if (
+                        self._status == DownloadState.CANCELLED
+                        or self.cancel_event.is_set()
+                    ):
+                        logger.debug(
+                            "Download completed callback ignored because download was cancelled."
+                        )
+                        return
+                    if self._status != DownloadState.DOWNLOADING:
+                        logger.warning(
+                            f"Download completed callback ignored due to unexpected state: {self._status}"
+                        )
+                        return
+                    self._transition_to_locked(DownloadState.COMPLETED)
+                    self.state["status_text"] = "Download complete!"
                     self.current_thread = None
 
             def on_failure_wrapper(err):
                 with self._manager_lock:
+                    if (
+                        self._status == DownloadState.CANCELLED
+                        or self.cancel_event.is_set()
+                        or isinstance(err, DownloadCancelledError)
+                    ):
+                        logger.debug("Download failure callback received cancellation.")
+                        if self._status != DownloadState.CANCELLED:
+                            self._transition_to_locked(DownloadState.CANCELLED)
+                        self.state["status_text"] = "Download cancelled."
+                        self.current_thread = None
+                        return
+                    if self._status != DownloadState.DOWNLOADING:
+                        logger.warning(
+                            f"Download failure callback ignored due to unexpected state: {self._status}"
+                        )
+                        return
+                    self._transition_to_locked(DownloadState.FAILED)
                     self.state["error"] = err
-                    self.state["is_downloading"] = False
+                    self.state["status_text"] = f"Download failed: {err}"
                     self.current_thread = None
 
             def progress_callback_wrapper(update: ProgressUpdate):
-                self.state["progress"] = update.progress
-                if update.stage:
-                    self.state["status_text"] = update.stage
-                else:
-                    dl_mb = (update.unit_count or 0) / (1024 * 1024)
-                    self.state["status_text"] = f"Downloaded {dl_mb:.2f}MB..."
+                with self._manager_lock:
+                    if (
+                        self._status == DownloadState.CANCELLED
+                        or self.cancel_event.is_set()
+                    ):
+                        return
+                    if self._status != DownloadState.DOWNLOADING:
+                        return
+                    self.state["progress"] = update.progress
+                    if update.stage:
+                        self.state["status_text"] = update.stage
+                    else:
+                        dl_mb = (update.unit_count or 0) / (1024 * 1024)
+                        self.state["status_text"] = f"Downloaded {dl_mb:.2f}MB..."
 
             self.current_thread = run_background_download(
                 url=url,
@@ -269,9 +393,14 @@ class DownloadManager:
     def cancel_download(self):
         """Cancel the active background download process."""
         with self._manager_lock:
-            if self.state["is_downloading"]:
+            if (
+                self._status == DownloadState.DOWNLOADING
+                or self.state["is_downloading"]
+            ):
                 self.cancel_event.set()
-                self.state["is_downloading"] = False
+                if self._status != DownloadState.DOWNLOADING:
+                    self._status = DownloadState.DOWNLOADING
+                self._transition_to_locked(DownloadState.CANCELLED)
                 self.state["status_text"] = "Download cancelled."
                 self.current_thread = None
 
@@ -301,6 +430,8 @@ class DownloadManager:
                         resilient_rmtree(model_dir, ignore_errors=True)
 
                     with self._manager_lock:
+                        self.cancel_event.clear()
+                        self._transition_to_locked(DownloadState.IDLE)
                         self.state["progress"] = 0.0
                         self.state["status_text"] = "Model deleted."
                         self.state["success"] = False
@@ -614,6 +745,9 @@ def run_background_download(
                         "Integrity verification failed for the downloaded model."
                     )
 
+                if cancel_event and cancel_event.is_set():
+                    raise DownloadCancelledError("Download was cancelled by the user.")
+
                 if on_success:
                     on_success()
 
@@ -623,6 +757,10 @@ def run_background_download(
             if os.path.exists(temp_path):
                 with contextlib.suppress(OSError):
                     os.remove(temp_path)
+            target_path = os.path.join(model_dir, "model.onnx")
+            if os.path.exists(target_path):
+                with contextlib.suppress(OSError):
+                    os.remove(target_path)
             if on_failure:
                 on_failure(e)
 

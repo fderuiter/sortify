@@ -332,4 +332,3 @@ def test_refactored_domain_models_inherit_dict_compat_mixin():
     ]
     for model_cls in refactored_models:
         assert issubclass(model_cls, DictCompatMixin)
-

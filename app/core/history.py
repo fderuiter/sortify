@@ -2506,11 +2506,7 @@ class HistoryManager:
                 snapshot_files = [r[0] for r in cur.fetchall()]
 
             for idx, rel_path in enumerate(snapshot_files, 1):
-                abs_path = (
-                    os.path.join(base_dir, rel_path)
-                    if base_dir
-                    else rel_path
-                )
+                abs_path = os.path.join(base_dir, rel_path) if base_dir else rel_path
                 target_exists = os.path.lexists(abs_path)
                 if target_exists:
                     st = "CLEAN"

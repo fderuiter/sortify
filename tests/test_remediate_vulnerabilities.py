@@ -71,9 +71,15 @@ def test_fetch_advisory_severity_and_cvss_fallback_on_error(mock_get):
 
 
 def test_package_vulnerability_severity_and_cvss_score():
-    v1 = VulnerabilityDetail(vuln_id="GHSA-1", summary="Low vuln", severity="LOW", cvss_score=3.1)
-    v2 = VulnerabilityDetail(vuln_id="GHSA-2", summary="Critical vuln", severity="CRITICAL", cvss_score=9.8)
-    v3 = VulnerabilityDetail(vuln_id="GHSA-3", summary="High vuln", severity="HIGH", cvss_score=7.5)
+    v1 = VulnerabilityDetail(
+        vuln_id="GHSA-1", summary="Low vuln", severity="LOW", cvss_score=3.1
+    )
+    v2 = VulnerabilityDetail(
+        vuln_id="GHSA-2", summary="Critical vuln", severity="CRITICAL", cvss_score=9.8
+    )
+    v3 = VulnerabilityDetail(
+        vuln_id="GHSA-3", summary="High vuln", severity="HIGH", cvss_score=7.5
+    )
 
     pkg = PackageVulnerability(
         package_name="test-pkg",
@@ -115,7 +121,9 @@ certifi 2026.7.22 has 2 known vulnerabilities:
 @patch("scripts.remediate_vulnerabilities.run_uv_audit")
 @patch("scripts.remediate_vulnerabilities.run_lock_upgrade")
 @patch("scripts.remediate_vulnerabilities.get_locked_package_version")
-def test_remediate_vulnerabilities_critical_pr_labels(mock_get_ver, mock_upgrade, mock_audit, tmp_path: Path):
+def test_remediate_vulnerabilities_critical_pr_labels(
+    mock_get_ver, mock_upgrade, mock_audit, tmp_path: Path
+):
     sample_output = """
 certifi 2026.7.22 has 1 known vulnerability:
 
@@ -127,16 +135,27 @@ certifi 2026.7.22 has 1 known vulnerability:
     mock_upgrade.return_value = True
     mock_get_ver.side_effect = ["2026.7.22", "2026.10.19"]
 
-    (tmp_path / "SECURITY.md").write_text("## Vulnerability Exemptions\n", encoding="utf-8")
-    (tmp_path / "uv.lock").write_text('[[package]]\nname = "certifi"\nversion = "2026.7.22"\n', encoding="utf-8")
+    (tmp_path / "SECURITY.md").write_text(
+        "## Vulnerability Exemptions\n", encoding="utf-8"
+    )
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "certifi"\nversion = "2026.7.22"\n', encoding="utf-8"
+    )
 
     mock_gh_client = MagicMock()
     mock_gh_client.has_open_pr_for_package.return_value = False
 
-    with patch("scripts.remediate_vulnerabilities.GitHubRemediationClient", return_value=mock_gh_client), \
-         patch("subprocess.run") as mock_sub:
+    with (
+        patch(
+            "scripts.remediate_vulnerabilities.GitHubRemediationClient",
+            return_value=mock_gh_client,
+        ),
+        patch("subprocess.run") as mock_sub,
+    ):
         mock_sub.return_value = MagicMock(returncode=0, stdout="6 passed", stderr="")
-        remediate_vulnerabilities(repo_root=tmp_path, token="fake_tok", repo_full="owner/repo")
+        remediate_vulnerabilities(
+            repo_root=tmp_path, token="fake_tok", repo_full="owner/repo"
+        )
 
     mock_gh_client.create_pull_request.assert_called_once()
     kwargs = mock_gh_client.create_pull_request.call_args.kwargs
@@ -146,7 +165,9 @@ certifi 2026.7.22 has 1 known vulnerability:
 
 
 @patch("scripts.remediate_vulnerabilities.run_uv_audit")
-def test_remediate_vulnerabilities_unfixable_critical_issue_escalation(mock_audit, tmp_path: Path):
+def test_remediate_vulnerabilities_unfixable_critical_issue_escalation(
+    mock_audit, tmp_path: Path
+):
     sample_output = """
 unfixable-pkg 1.0.0 has 1 known vulnerability:
 
@@ -156,13 +177,22 @@ unfixable-pkg 1.0.0 has 1 known vulnerability:
     """
     mock_audit.return_value = (1, sample_output)
 
-    (tmp_path / "SECURITY.md").write_text("## Vulnerability Exemptions\n", encoding="utf-8")
-    (tmp_path / "uv.lock").write_text('[[package]]\nname = "unfixable-pkg"\nversion = "1.0.0"\n', encoding="utf-8")
+    (tmp_path / "SECURITY.md").write_text(
+        "## Vulnerability Exemptions\n", encoding="utf-8"
+    )
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "unfixable-pkg"\nversion = "1.0.0"\n', encoding="utf-8"
+    )
 
     mock_gh_client = MagicMock()
 
-    with patch("scripts.remediate_vulnerabilities.GitHubRemediationClient", return_value=mock_gh_client):
-        remediate_vulnerabilities(repo_root=tmp_path, token="fake_tok", repo_full="owner/repo")
+    with patch(
+        "scripts.remediate_vulnerabilities.GitHubRemediationClient",
+        return_value=mock_gh_client,
+    ):
+        remediate_vulnerabilities(
+            repo_root=tmp_path, token="fake_tok", repo_full="owner/repo"
+        )
 
     mock_gh_client.report_security_issue.assert_called_once()
     kwargs = mock_gh_client.report_security_issue.call_args.kwargs
@@ -343,7 +373,9 @@ certifi 2026.7.22 has 1 known vulnerability:
     test_failure_log = f"FAILED tests/test_core.py - AssertionError: Token={fake_token}"
     mock_run_tests.return_value = (1, test_failure_log)
 
-    (tmp_path / "SECURITY.md").write_text("## Vulnerability Exemptions\n", encoding="utf-8")
+    (tmp_path / "SECURITY.md").write_text(
+        "## Vulnerability Exemptions\n", encoding="utf-8"
+    )
     (tmp_path / "uv.lock").write_text(
         '[[package]]\nname = "certifi"\nversion = "2026.7.22"\n', encoding="utf-8"
     )
@@ -401,7 +433,9 @@ certifi 2026.7.22 has 1 known vulnerability:
     mock_client.has_open_pr_for_package.return_value = False
     mock_gh_client_cls.return_value = mock_client
 
-    (tmp_path / "SECURITY.md").write_text("## Vulnerability Exemptions\n", encoding="utf-8")
+    (tmp_path / "SECURITY.md").write_text(
+        "## Vulnerability Exemptions\n", encoding="utf-8"
+    )
     (tmp_path / "uv.lock").write_text(
         '[[package]]\nname = "certifi"\nversion = "2026.7.22"\n', encoding="utf-8"
     )
@@ -472,7 +506,9 @@ certifi 2026.7.22 has 1 known vulnerability:
     mock_client.has_open_pr_for_package.return_value = False
     mock_gh_client_cls.return_value = mock_client
 
-    (tmp_path / "SECURITY.md").write_text("## Vulnerability Exemptions\n", encoding="utf-8")
+    (tmp_path / "SECURITY.md").write_text(
+        "## Vulnerability Exemptions\n", encoding="utf-8"
+    )
     (tmp_path / "uv.lock").write_text(
         '[[package]]\nname = "certifi"\nversion = "2026.7.22"\n', encoding="utf-8"
     )
@@ -535,7 +571,9 @@ certifi 2026.7.22 has 1 known vulnerability:
     mock_client.has_open_pr_for_package.return_value = False
     mock_gh_client_cls.return_value = mock_client
 
-    (tmp_path / "SECURITY.md").write_text("## Vulnerability Exemptions\n", encoding="utf-8")
+    (tmp_path / "SECURITY.md").write_text(
+        "## Vulnerability Exemptions\n", encoding="utf-8"
+    )
     (tmp_path / "uv.lock").write_text(
         '[[package]]\nname = "certifi"\nversion = "2026.7.22"\n', encoding="utf-8"
     )
@@ -561,5 +599,3 @@ certifi 2026.7.22 has 1 known vulnerability:
     assert len(push_calls) == 1
     push_cmd = push_calls[0][0][0]
     assert secret_token not in " ".join(push_cmd)
-
-

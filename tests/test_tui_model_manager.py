@@ -163,6 +163,48 @@ def test_model_manager_start_download_and_progress(temp_workspace):
     asyncio.run(_test())
 
 
+def test_model_manager_cancelled_download_never_announces_success(temp_workspace):
+    """Verify that cancelled downloads never announce success even if success flag is set."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            app.action_open_model_manager()
+            await pilot.pause(0.1)
+
+            modal = app.screen
+            assert isinstance(modal, ModelManagerModal)
+
+            dm = DownloadManager.get_instance()
+            dm.state["is_downloading"] = True
+            modal._poll_download_status()
+            await pilot.pause(0.1)
+
+            # Cancel the download
+            dm.cancel_download()
+
+            # Stale / race condition sets success flag
+            dm.state["success"] = True
+
+            modal._poll_download_status()
+            await pilot.pause(0.1)
+
+            # Announcement must be cancelled, NEVER success
+            assert modal.get_last_announcement() == "Model download cancelled."
+            assert (
+                modal.get_last_announcement()
+                != "Model download completed successfully."
+            )
+
+            lbl_prog = modal.query_one("#lbl-progress-status", Label)
+            assert "cancelled" in str(lbl_prog.content).lower()
+
+    asyncio.run(_test())
+
+
 def test_model_manager_cancel_download(temp_workspace):
     """Verify clicking Cancel button stops background download."""
 
