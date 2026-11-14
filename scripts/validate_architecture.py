@@ -54,6 +54,11 @@ REDUNDANT_DICT_MODELS = {
     "SortingPlanNodeModel",
     "CorpusExampleModel",
     "VectorBatchPayloadModel",
+    "FoundEssentialDocument",
+    "MissingEssentialDocument",
+    "ClinicalComplianceResult",
+    "StudyIngestSummary",
+    "MasterPipelineResult",
 }
 
 # Python builtins and special identifiers preserved during AST variable normalization
@@ -274,11 +279,15 @@ class UtilityAntiDuplicationVisitor(ast.NodeVisitor):
 
         # Requirement 3b: Flag redundant dictionary adapter methods on domain contract models
         if (
-            self.filepath == "app/core/domain_contracts.py"
+            (
+                self.filepath == "app/core/domain_contracts.py"
+                or self.filepath.startswith("app/plugins/clinical_compliance/")
+            )
             and (
                 self.current_class in REDUNDANT_DICT_MODELS
                 or (
-                    self.current_class
+                    self.filepath == "app/core/domain_contracts.py"
+                    and self.current_class
                     and self.current_class
                     not in (
                         "DictCompatMixin",
