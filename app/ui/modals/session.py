@@ -361,16 +361,22 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
 
                 with Horizontal(classes="summary-bar", id="dryrun-summary-bar"):
                     yield Label(
-                        "Total Operations: 0", id="lbl-summary-total", classes="summary-stat"
+                        "Total Operations: 0",
+                        id="lbl-summary-total",
+                        classes="summary-stat",
                     )
                     yield Label(
                         "Clean: 0", id="lbl-summary-clean", classes="summary-stat clean"
                     )
                     yield Label(
-                        "Collisions: 0", id="lbl-summary-collisions", classes="summary-stat collision"
+                        "Collisions: 0",
+                        id="lbl-summary-collisions",
+                        classes="summary-stat collision",
                     )
                     yield Label(
-                        "Missing Targets: 0", id="lbl-summary-missing", classes="summary-stat missing"
+                        "Missing Targets: 0",
+                        id="lbl-summary-missing",
+                        classes="summary-stat missing",
                     )
 
                 yield DataTable(id="dryrun-diff-table")
@@ -387,7 +393,9 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
                         id="btn-back-to-selection",
                         variant="default",
                     )
-                    yield Button("Cancel", id="btn-cancel-rollback-2", variant="default")
+                    yield Button(
+                        "Cancel", id="btn-cancel-rollback-2", variant="default"
+                    )
                     yield Button(
                         "Execute Rollback",
                         id="btn-execute-rollback",
@@ -443,7 +451,11 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         dt2 = self.query_one("#dryrun-diff-table", DataTable)
         dt2.cursor_type = "row"
         dt2.add_columns(
-            "ID", "Original Source Path", "Target Sorted Path", "Restoration Target Path", "Status"
+            "ID",
+            "Original Source Path",
+            "Target Sorted Path",
+            "Restoration Target Path",
+            "Status",
         )
 
         self._refresh_table()
@@ -625,9 +637,7 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         self.query_one("#lbl-summary-total", Label).update(
             f"Total Operations: {summ['total']}"
         )
-        self.query_one("#lbl-summary-clean", Label).update(
-            f"Clean: {summ['clean']}"
-        )
+        self.query_one("#lbl-summary-clean", Label).update(f"Clean: {summ['clean']}")
         self.query_one("#lbl-summary-collisions", Label).update(
             f"Collisions: {summ['collision']}"
         )
