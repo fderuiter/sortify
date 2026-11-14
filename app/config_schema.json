@@ -54,6 +54,11 @@
       "title": "Speak Announcements",
       "type": "boolean"
     },
+    "ENABLE_CHARACTER_KEY_SHORTCUTS": {
+      "default": true,
+      "title": "Enable Character Key Shortcuts",
+      "type": "boolean"
+    },
     "KEYWORD_RULES": {
       "additionalProperties": true,
       "title": "Keyword Rules",

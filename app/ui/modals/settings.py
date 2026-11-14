@@ -309,6 +309,15 @@ class SettingsModal(
         self.settings = settings
         self.help_url = f"{TROUBLESHOOTING_URL}#settings-configuration"
 
+    def query_one(self, selector: Any, expect_type: Any = None) -> Any:
+        """Query one widget, aliasing alternative character shortcut switch IDs."""
+        if selector in (
+            "#switch-enable-character-key-shortcuts",
+            "#switch-character-shortcuts",
+        ):
+            selector = "#switch-character-key-shortcuts"
+        return super().query_one(selector, expect_type=expect_type)
+
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
@@ -454,6 +463,19 @@ class SettingsModal(
                         tooltip="Read each status message aloud with the system speech command (say / spd-say)",
                     )
 
+                    yield LabeledSwitch(
+                        label="Single-Character Shortcuts",
+                        value=bool(
+                            getattr(
+                                self.settings,
+                                "ENABLE_CHARACTER_KEY_SHORTCUTS",
+                                True,
+                            )
+                        ),
+                        switch_id="switch-character-key-shortcuts",
+                        tooltip="Enable single-character keyboard shortcuts in the plan tree (WCAG 2.1.4)",
+                    )
+
                     btn_scrub = Button(
                         "Scrub AI Artifacts",
                         id="btn-scrub-artifacts",
@@ -597,6 +619,13 @@ class SettingsModal(
                     _on_revoke_modal_result,
                 )
 
+    @on(Switch.Changed, "#switch-character-key-shortcuts")
+    def on_character_shortcuts_changed(self, event: Switch.Changed) -> None:
+        """Announce shortcut status update when single-character shortcuts switch is toggled."""
+        state_str = "enabled" if event.value else "disabled"
+        if hasattr(self, "announce"):
+            self.announce(f"Character key shortcuts {state_str}.", priority="polite")
+
     def _execute_scrub_and_purge(self) -> None:
         """Execute memory model unload, database vector clearing, and background model cache purging."""
         try:
@@ -728,6 +757,14 @@ class SettingsModal(
         except Exception:
             speak = bool(getattr(self.settings, "SPEAK_ANNOUNCEMENTS", False))
         try:
+            char_shortcuts = self.query_one(
+                "#switch-character-key-shortcuts", Switch
+            ).value
+        except Exception:
+            char_shortcuts = bool(
+                getattr(self.settings, "ENABLE_CHARACTER_KEY_SHORTCUTS", True)
+            )
+        try:
             ai_consent = self.query_one("#switch-ai-consent", Switch).value
         except Exception:
             ai_consent = bool(getattr(self.settings, "AI_CONSENT_GRANTED", False))
@@ -757,6 +794,7 @@ class SettingsModal(
             "CONTEXTUAL_RENAMING": ctx_renaming,
             "AI_CONSENT_GRANTED": ai_consent,
             "SPEAK_ANNOUNCEMENTS": speak,
+            "ENABLE_CHARACTER_KEY_SHORTCUTS": char_shortcuts,
         }
         self.announce("Saved application settings.")
         self.dismiss(res)

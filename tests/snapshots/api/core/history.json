@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "111376762ba144f3ccd3ef2de475679adeb23d8b868af3c74efd1444fec07ec5"
+    "checksum": "5f23e83ad4783a7247e4828b12020bc1396d0da4ce42e789dd4064a8b6d50f71"
   },
   "classes": [
     {
@@ -312,6 +312,146 @@
             }
           ],
           "returns": "int"
+        }
+      ]
+    },
+    {
+      "class_name": "RollbackBatchTransaction",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "conn"
+            },
+            {
+              "annotation": "int",
+              "default": "50",
+              "name": "batch_size"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "begin_batch",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "commit_batch",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "execute",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "query"
+            },
+            {
+              "annotation": "tuple | list",
+              "default": "()",
+              "name": "params"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "executemany",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "query"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "seq_of_params"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "flush",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "rollback_batch",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "step",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
         }
       ]
     },
