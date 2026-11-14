@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "0cc278e8ca41f7156c7ff14a513609adcbb24040d603efdc865173c252b39349"
+    "checksum": "c38065a731e20b85e5f810eb8eb0a76716fa25ca41a137f8388f813f6f55e00e"
   },
   "classes": [
     {
@@ -92,6 +92,11 @@
               "annotation": null,
               "default": "None",
               "name": "progress_callback"
+            },
+            {
+              "annotation": null,
+              "default": "None",
+              "name": "pipeline"
             },
             {
               "annotation": null,

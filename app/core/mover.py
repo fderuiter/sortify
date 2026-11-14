@@ -20,6 +20,7 @@ from pydantic import BaseModel
 from app.core.domain_contracts import _get_val
 from app.core.link_manager import LinkManager
 from app.core.path_utils import is_junction_path, safe_relpath
+from app.core.pipeline import PipelineLifecycleState
 from app.core.progress import emit_progress
 from app.core.verifier import VerificationEngine
 
@@ -1402,6 +1403,8 @@ class AsyncMoveEngine:
         cancellation_token=None,
         priority: str = None,
         progress_callback=None,
+        pipeline: Any = None,
+        **kwargs: Any,
     ) -> dict:
         """Partition relocation plan into bounded worker chunks and execute file moves off-thread.
 
@@ -1543,6 +1546,8 @@ class AsyncMoveEngine:
             "deleted_folders": 0,
             "protected_folders": 0,
             "cancelled": False,
+            "lifecycle_state": PipelineLifecycleState.COMPLETED,
+            "rollback_completed": None,
         }
 
         try:
@@ -1555,6 +1560,13 @@ class AsyncMoveEngine:
                         f"Cancellation requested before scheduling chunk {chunk_idx}. Halting worker scheduling."
                     )
                     summary["cancelled"] = True
+                    summary["lifecycle_state"] = PipelineLifecycleState.CANCELLED
+                    if pipeline and hasattr(pipeline, "transition_to"):
+                        try:
+                            if pipeline.state != PipelineLifecycleState.CANCELLED:
+                                pipeline.transition_to(PipelineLifecycleState.CANCELLED)
+                        except Exception:
+                            pass
                     break
 
                 futures = [
@@ -1742,6 +1754,8 @@ class AsyncMoveEngine:
 
             from app.core.audit_reporter import generate_audit_report
 
+            if summary.get("cancelled"):
+                summary["lifecycle_state"] = PipelineLifecycleState.CANCELLED
             summary["audit_report"] = generate_audit_report(base_dir, audit_records)
             return summary
 
@@ -1754,6 +1768,7 @@ class AsyncMoveEngine:
                     except Exception:
                         pass
 
+            rollback_succeeded = False
             if (
                 session_id
                 and history_manager
@@ -1762,8 +1777,15 @@ class AsyncMoveEngine:
                 logging.error(
                     f"Error during background sorting: {e}. Initiating automatic rollback for session {session_id}"
                 )
+                if pipeline and hasattr(pipeline, "transition_to"):
+                    try:
+                        if pipeline.state != PipelineLifecycleState.ROLLING_BACK:
+                            pipeline.transition_to(PipelineLifecycleState.ROLLING_BACK)
+                    except Exception:
+                        pass
                 try:
                     history_manager.unwind_session(session_id, db=db)
+                    rollback_succeeded = True
                     logging.info(
                         f"Automatic rollback completed successfully for session {session_id}"
                     )
@@ -1772,6 +1794,15 @@ class AsyncMoveEngine:
                         f"Automatic rollback failed for session {session_id}: {rollback_err}",
                         exc_info=True,
                     )
+            summary["lifecycle_state"] = PipelineLifecycleState.FAILED
+            summary["rollback_completed"] = rollback_succeeded
+            if pipeline and hasattr(pipeline, "transition_to"):
+                try:
+                    setattr(pipeline, "_rollback_completed", rollback_succeeded)
+                    if pipeline.state != PipelineLifecycleState.FAILED:
+                        pipeline.transition_to(PipelineLifecycleState.FAILED)
+                except Exception:
+                    pass
             raise e
 
     def retry_failed_moves(
@@ -1812,6 +1843,8 @@ def execute_moves(
     priority: str = None,
     progress_callback=None,
     source_dirs: list[str] | None = None,
+    pipeline: Any = None,
+    **kwargs: Any,
 ) -> dict:
     """Create directories and safely move files using chunked asynchronous execution.
 
@@ -1849,6 +1882,8 @@ def execute_moves(
         cancellation_token=cancellation_token,
         priority=priority,
         progress_callback=progress_callback,
+        pipeline=pipeline,
+        **kwargs,
     )
 
 

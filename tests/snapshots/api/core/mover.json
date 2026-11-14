@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "29fc081f8dc3bfc16f09f7fbf12c212cc5e04482c01718ffaa986bf84a127780"
+    "checksum": "689f405d08556b05349a71c0e9233ee228d39629d2677addeb18b388c045135e"
   },
   "classes": [
     {
@@ -99,6 +99,16 @@
               "annotation": null,
               "default": "None",
               "name": "progress_callback"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "pipeline"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "**kwargs"
             }
           ],
           "returns": "dict"
@@ -234,6 +244,16 @@
           "annotation": "list[str] | None",
           "default": "None",
           "name": "source_dirs"
+        },
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "pipeline"
+        },
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "**kwargs"
         }
       ],
       "returns": "dict"
