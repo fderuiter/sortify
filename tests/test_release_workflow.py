@@ -64,6 +64,16 @@ def test_release_workflow_attestations_and_sbom():
     prov_with = provenance_steps[0].get("with", {})
     assert "${{ matrix.artifact_name }}" in prov_with.get("subject-path", "")
 
+    model_prov_steps = [
+        s
+        for s in provenance_steps
+        if "smart-autosorter-models.zip" in s.get("with", {}).get("subject-path", "")
+    ]
+    assert len(model_prov_steps) == 1, (
+        "Missing actions/attest-build-provenance step for model weights in release.yml"
+    )
+    assert model_prov_steps[0].get("if") == "matrix.os_name == 'Linux'"
+
     # 4. SBOM attestation step check
     attest_sbom_steps = _steps_using(publish_steps, "actions/attest-sbom")
     assert len(attest_sbom_steps) > 0, "Missing actions/attest-sbom step in release.yml"
@@ -117,3 +127,4 @@ def test_release_builds_and_publishes_once():
     models = [s for s in uploads if "smart-autosorter-models.zip" in s["with"]["files"]]
     assert len(models) == 1
     assert models[0].get("if") == "matrix.os_name == 'Linux'"
+    assert "smart-autosorter-models.zip.sha256" in models[0]["with"]["files"]

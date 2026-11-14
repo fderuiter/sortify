@@ -95,12 +95,19 @@ jobs:
         run: |
           $hash = Get-FileHash -Path dist\${{ matrix.artifact_name }} -Algorithm SHA256
           $hash.Hash + "  ${{ matrix.artifact_name }}" | Out-File -FilePath dist\${{ matrix.artifact_name }}.sha256 -Encoding ascii
+          if (Test-Path dist\smart-autosorter-models.zip) {
+            $mhash = Get-FileHash -Path dist\smart-autosorter-models.zip -Algorithm SHA256
+            $mhash.Hash + "  smart-autosorter-models.zip" | Out-File -FilePath dist\smart-autosorter-models.zip.sha256 -Encoding ascii
+          }
 
       - name: Generate Checksum (Unix)
         if: runner.os != 'Windows'
         run: |
           cd dist
           shasum -a 256 ${{ matrix.artifact_name }} > ${{ matrix.artifact_name }}.sha256
+          if [ -f smart-autosorter-models.zip ]; then
+            shasum -a 256 smart-autosorter-models.zip > smart-autosorter-models.zip.sha256
+          fi
           cd ..
 
       - name: Generate CycloneDX SBOM with Syft
@@ -121,6 +128,7 @@ jobs:
             dist/${{ matrix.artifact_name }}.sha256
             dist/${{ matrix.artifact_name }}.sbom.json
             dist/smart-autosorter-models.zip
+            dist/smart-autosorter-models.zip.sha256
           if-no-files-found: error
           retention-days: 7
 
@@ -157,6 +165,12 @@ jobs:
         with:
           subject-path: dist/${{ matrix.artifact_name }}
 
+      - name: Attest Model Build Provenance
+        if: matrix.os_name == 'Linux'
+        uses: actions/attest-build-provenance@4d101475d8b20a2381f78447822ac1eab6504dd8 # v4.2.2
+        with:
+          subject-path: dist/smart-autosorter-models.zip
+
       - name: Attest SBOM
         uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
         with:
@@ -179,6 +193,8 @@ jobs:
         if: matrix.os_name == 'Linux'
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
-          files: dist/smart-autosorter-models.zip
+          files: |
+            dist/smart-autosorter-models.zip
+            dist/smart-autosorter-models.zip.sha256
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
