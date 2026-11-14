@@ -340,7 +340,6 @@ class Database:
             filepath = rel_p
 
         filepath = filepath.replace("\\", "/")
-        self._populate_cache_if_needed(base_dir)
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
                 if hasattr(self._cached_documents, "get") and not isinstance(
@@ -352,7 +351,6 @@ class Database:
                             "file_hash": row[2],
                             "extracted_text": row[1],
                         }
-                    return None
                 else:
                     for row in self._cached_documents:
                         if row[0] == filepath:
@@ -360,22 +358,44 @@ class Database:
                                 "file_hash": row[2],
                                 "extracted_text": row[1],
                             }
-                    return None
 
         # Fallback to DB
         conn = get_db_connection(self.db_path)
         with conn:
             cursor = conn.execute(
-                "SELECT file_hash, extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                "SELECT file_hash, extracted_text, user_verified_target_path FROM documents WHERE base_dir = ? AND filepath = ?",
                 (base_dir, filepath),
             )
             row = cursor.fetchone()
             if row:
+                file_hash, raw_text, user_verified_target = row[0], row[1], row[2]
                 decrypted_text = (
-                    self.crypto.decrypt_text(row[1]) if row[1] is not None else None
+                    self.crypto.decrypt_text(raw_text) if raw_text is not None else None
                 )
+                with self._cache_lock:
+                    if (
+                        self._cached_base_dir == base_dir
+                        and self._cached_documents is not None
+                    ):
+                        doc_tuple = (
+                            filepath,
+                            decrypted_text,
+                            file_hash,
+                            user_verified_target,
+                        )
+                        if hasattr(
+                            self._cached_documents, "__setitem__"
+                        ) and not isinstance(self._cached_documents, list):
+                            self._cached_documents[filepath] = doc_tuple
+                        elif isinstance(self._cached_documents, list):
+                            for i, r in enumerate(self._cached_documents):
+                                if r[0] == filepath:
+                                    self._cached_documents[i] = doc_tuple
+                                    break
+                            else:
+                                self._cached_documents.append(doc_tuple)
                 return {
-                    "file_hash": row[0],
+                    "file_hash": file_hash,
                     "extracted_text": decrypted_text,
                 }
             return None
@@ -777,6 +797,7 @@ class Database:
         new_filepath = new_filepath.replace("\\", "/")
         new_dir = os.path.dirname(new_filepath).replace("\\", "/")
 
+        ext_text = None
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
                 if (
@@ -786,6 +807,7 @@ class Database:
                 ):
                     row = self._cached_documents.pop(old_filepath, None)
                     if row is not None:
+                        ext_text = row[1]
                         self._cached_documents[new_filepath] = (
                             new_filepath,
                             row[1],
@@ -796,6 +818,7 @@ class Database:
                     new_docs = []
                     for row in self._cached_documents:
                         if row[0] == old_filepath:
+                            ext_text = row[1]
                             new_docs.append((new_filepath, row[1], row[2], new_dir))
                         else:
                             new_docs.append(row)
@@ -804,11 +827,12 @@ class Database:
         precomputed_counts = None
         if new_dir:
             try:
-                doc = self.get_document(base_dir, old_filepath)
-                if doc and doc.get("extracted_text"):
-                    ext_text = doc["extracted_text"]
-                    if self._is_tfidf_eligible(new_filepath, ext_text):
-                        precomputed_counts = self.compute_term_frequencies(ext_text)
+                if not ext_text:
+                    doc = self.get_document(base_dir, old_filepath)
+                    if doc and doc.get("extracted_text"):
+                        ext_text = doc["extracted_text"]
+                if ext_text and self._is_tfidf_eligible(new_filepath, ext_text):
+                    precomputed_counts = self.compute_term_frequencies(ext_text)
             except Exception:
                 pass
 
