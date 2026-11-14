@@ -1073,27 +1073,24 @@ class Database:
                     "DELETE FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? AND term = ?",
                     [(base_dir, filepath, t) for t in terms_to_delete],
                 )
-                for t in terms_to_delete:
-                    conn.execute(
-                        "UPDATE tfidf_vocab SET df = df - 1 WHERE base_dir = ? AND term = ?",
-                        (base_dir, t),
-                    )
+                conn.executemany(
+                    "UPDATE tfidf_vocab SET df = df - 1 WHERE base_dir = ? AND term = ?",
+                    [(base_dir, t) for t in terms_to_delete],
+                )
 
             if terms_to_insert:
                 conn.executemany(
                     "INSERT INTO tfidf_doc_terms (base_dir, filepath, term, tf) VALUES (?, ?, ?, ?)",
                     terms_to_insert,
                 )
-                for doc_row in terms_to_insert:
-                    t = doc_row[2]
-                    conn.execute(
-                        """
-                        INSERT INTO tfidf_vocab (base_dir, term, df)
-                        VALUES (?, ?, 1)
-                        ON CONFLICT(base_dir, term) DO UPDATE SET df = df + 1
-                        """,
-                        (base_dir, t),
-                    )
+                conn.executemany(
+                    """
+                    INSERT INTO tfidf_vocab (base_dir, term, df)
+                    VALUES (?, ?, 1)
+                    ON CONFLICT(base_dir, term) DO UPDATE SET df = df + 1
+                    """,
+                    [(base_dir, doc_row[2]) for doc_row in terms_to_insert],
+                )
 
             if terms_to_update:
                 conn.executemany(
@@ -1114,11 +1111,10 @@ class Database:
                     "DELETE FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ?",
                     (base_dir, filepath),
                 )
-                for t in existing_terms:
-                    conn.execute(
-                        "UPDATE tfidf_vocab SET df = df - 1 WHERE base_dir = ? AND term = ?",
-                        (base_dir, t),
-                    )
+                conn.executemany(
+                    "UPDATE tfidf_vocab SET df = df - 1 WHERE base_dir = ? AND term = ?",
+                    [(base_dir, t) for t in existing_terms],
+                )
                 conn.executemany(
                     "DELETE FROM tfidf_vocab WHERE base_dir = ? AND term = ? AND df <= 0",
                     [(base_dir, t) for t in existing_terms],
