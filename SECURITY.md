@@ -13,7 +13,7 @@ Report a vulnerability by opening an issue on [the GitHub repository](https://gi
 The application has no telemetry, usage tracking or analytics, and never sends document contents, file names or folder structure anywhere. At runtime it makes network requests only for:
 
 - **Model downloads** from Hugging Face, after you consent on first run. Declining keeps the app offline and uses TF-IDF clustering only.
-- **Model security advisories.** Before a downloaded or side-loaded model is loaded, `app/core/security_advisory.py` queries `https://security.huggingface.co/api/advisories` with the model's repository id and the SHA-256 hash of the model file. This is on by default. Point `SECURITY_ADVISORY_ENDPOINT` at a mirror to change where it goes, and `SECURITY_ADVISORY_FALLBACK_POLICY` (`strict` or `permissive`) decides what happens when the endpoint is unreachable: the default, `permissive`, loads the model anyway, and `strict` refuses it.
+- **Model security advisories.** Before a downloaded or side-loaded model is loaded, `app/core/security_advisory.py` queries `https://security.huggingface.co/api/advisories` with the model's repository id and the SHA-256 hash of the model file. This is on by default. Point `SECURITY_ADVISORY_ENDPOINT` at a mirror to change where it goes, and `SECURITY_ADVISORY_FALLBACK_POLICY` (`strict` or `permissive`) decides what happens when the endpoint is unreachable: the default, `strict`, refuses it, and opt-in `permissive` loads the model anyway.
 
 Build, packaging and CI scripts under `scripts/` and `.github/` reach package indexes and advisory databases; the generated list below names them.
 
