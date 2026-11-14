@@ -86,7 +86,7 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
             yield Heading(
-                "Interactive Model Management [Ctrl+K]",
+                "Interactive Model Management",
                 level=1,
                 classes="modal-title",
                 id="modal-title",

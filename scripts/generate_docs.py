@@ -59,8 +59,9 @@ def generate_api_docs():
 
 def compile_diagram_assets():
     """Compile diagram specifications into SVG/PNG visual assets and Mermaid files."""
-    from scripts.diagram_toolchain import build_diagrams
+    from scripts.diagram_toolchain import build_diagrams, reset_markdown_anchors_cache
 
+    reset_markdown_anchors_cache()
     if not build_diagrams(force=False, verify_only=False):
         raise RuntimeError(
             "One or more diagrams failed schema validation or rendering; "
@@ -836,13 +837,13 @@ def main():
 
     # 2. Run documentation generation
     tasks = [
-        ("compile_diagram_assets", compile_diagram_assets),
         ("generate_tutorial_docs", generate_tutorial_docs),
         ("generate_api_docs", generate_api_docs),
         ("generate_ui_docs", generate_ui_docs),
         ("generate_admin_guide", generate_admin_guide),
         ("generate_keyboard_docs", generate_keyboard_docs),
         ("update_security_md", update_security_md),
+        ("compile_diagram_assets", compile_diagram_assets),
     ]
 
     errors = []
