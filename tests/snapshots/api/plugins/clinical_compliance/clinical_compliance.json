@@ -1,0 +1,257 @@
+{
+  "_metadata": {
+    "checksum": "fdc58c3614bd1dfc59a7ee0a901339daddd43c80c532853ae2932225cdd259f1"
+  },
+  "classes": [
+    {
+      "class_name": "ClinicalComplianceEngine",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "evaluate_compliance",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Dict[str, str]",
+              "default": null,
+              "name": "classified_artifacts"
+            },
+            {
+              "annotation": "List[str]",
+              "default": null,
+              "name": "all_filenames"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "base_dir"
+            }
+          ],
+          "returns": "ClinicalComplianceResult"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "export_json_report",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Union[ClinicalComplianceResult, Dict[str, Any]]",
+              "default": null,
+              "name": "compliance_data"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "output_path"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "generate_html_report",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Union[ClinicalComplianceResult, Dict[str, Any]]",
+              "default": null,
+              "name": "compliance_data"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "output_path"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
+    },
+    {
+      "class_name": "ClinicalComplianceResult",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "dict",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "item"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "default"
+            }
+          ],
+          "returns": "Any"
+        }
+      ]
+    },
+    {
+      "class_name": "FoundEssentialDocument",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "dict",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "item"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "default"
+            }
+          ],
+          "returns": "Any"
+        }
+      ]
+    },
+    {
+      "class_name": "MissingEssentialDocument",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "dict",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": null,
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "Dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "item"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "default"
+            }
+          ],
+          "returns": "Any"
+        }
+      ]
+    }
+  ],
+  "functions": []
+}

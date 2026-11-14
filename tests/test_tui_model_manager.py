@@ -58,6 +58,11 @@ def test_model_manager_open_via_hotkey(temp_workspace):
             modal = app.screen
             assert isinstance(modal, ModelManagerModal)
 
+            title = modal.query_one("#modal-title")
+            title_text = str(title.render())
+            assert title_text == "Interactive Model Management"
+            assert "[" not in title_text and "]" not in title_text
+
             # Close via Escape
             await pilot.press("escape")
             await pilot.pause(0.1)

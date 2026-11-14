@@ -994,7 +994,7 @@ class AutoSorterTUI(
             return
         if isinstance(self.screen, WizardModal):
             return
-        self.push_screen(WizardModal(self.settings))
+        self.push_screen(WizardModal(self.settings, current_dir=self.base_dir))
 
     def action_open_cro_forensic(self) -> None:
         """Open CRO multi-study forensic ingestion modal screen."""

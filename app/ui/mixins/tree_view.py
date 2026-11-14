@@ -2,6 +2,7 @@
 
 import logging
 import os
+import re
 from pathlib import Path
 from typing import Any, Dict, List, Optional, Set
 
@@ -469,13 +470,28 @@ class TreeViewMixin:
 
                 target_filename = file_info.get("target_filename") or file_key
                 target_path = None
-                if self.base_dir:
+                from app.core.path_utils import _is_absolute_path
+
+                override_dir = file_info.get("destination_override")
+                eff_folder = override_dir if override_dir else current_folder
+
+                if eff_folder and _is_absolute_path(eff_folder):
+                    if re.match(r"^[a-zA-Z]:[/\\]", eff_folder):
+                        sep = "\\" if "\\" in eff_folder else "/"
+                        target_path = (
+                            f"{eff_folder.rstrip('/\\')}{sep}{target_filename}"
+                        )
+                    else:
+                        target_path = os.path.normpath(
+                            os.path.join(eff_folder, target_filename)
+                        )
+                elif self.base_dir:
                     target_path = os.path.normpath(
-                        os.path.join(self.base_dir, current_folder, target_filename)
+                        os.path.join(self.base_dir, eff_folder, target_filename)
                     )
-                elif current_folder:
+                elif eff_folder:
                     target_path = os.path.normpath(
-                        os.path.join(current_folder, target_filename)
+                        os.path.join(eff_folder, target_filename)
                     )
 
                 is_collision = (
