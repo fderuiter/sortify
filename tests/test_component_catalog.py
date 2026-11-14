@@ -14,6 +14,9 @@ def test_catalog_registry_structure():
     assert "rename_modal" in comp_ids
     assert "settings_modal" in comp_ids
     assert "wizard_modal" in comp_ids
+    assert "command_palette_modal" in comp_ids
+    assert "sample_playground_modal" in comp_ids
+    assert "cro_forensic_modal" in comp_ids
 
     for entry in registry:
         assert "id" in entry
@@ -76,3 +79,112 @@ def test_catalog_audit_detects_accessibility_violations(monkeypatch):
 
     code = main(["--audit-only", "--component", "rename_modal"])
     assert code == 1
+
+
+def test_unlabeled_input_triggers_missing_label_violation():
+    """Verify Input controls with value but no label/tooltip/placeholder trigger A11Y001_MISSING_LABEL."""
+    from textual.app import App
+    from textual.screen import ModalScreen
+    from textual.widgets import Input
+
+    from app.ui.a11y import A11yMixin
+
+    class UnlabeledInputModal(A11yMixin, ModalScreen[None]):
+        def compose(self):
+            yield Input(value="sample_val", id="unlabeled-inp")
+
+    app = App()
+
+    async def _run():
+        async with app.run_test() as pilot:
+            modal = UnlabeledInputModal()
+            app.push_screen(modal)
+            await pilot.pause(0.01)
+            result = modal.audit_a11y_compliance()
+            missing_labels = [
+                v
+                for v in result.get("violations", [])
+                if v.get("rule") == "A11Y001_MISSING_LABEL"
+                and v.get("widget_id") == "unlabeled-inp"
+            ]
+            assert len(missing_labels) == 1
+            assert (
+                "lacks explicit tooltip or accessible text label"
+                in missing_labels[0]["message"]
+            )
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
+def test_select_prompt_satisfies_accessible_label():
+    """Verify Select controls with prompt attribute satisfy accessible label validation."""
+    from textual.app import App
+    from textual.screen import ModalScreen
+    from textual.widgets import Select
+
+    from app.ui.a11y import A11yMixin
+
+    class PromptSelectModal(A11yMixin, ModalScreen[None]):
+        def compose(self):
+            yield Select(
+                [("Opt 1", "1")], prompt="Choose an option...", id="prompt-select"
+            )
+
+    app = App()
+
+    async def _run():
+        async with app.run_test() as pilot:
+            modal = PromptSelectModal()
+            app.push_screen(modal)
+            await pilot.pause(0.01)
+            result = modal.audit_a11y_compliance()
+            missing_labels = [
+                v
+                for v in result.get("violations", [])
+                if v.get("rule") == "A11Y001_MISSING_LABEL"
+                and v.get("widget_id") == "prompt-select"
+            ]
+            assert len(missing_labels) == 0
+
+    import asyncio
+
+    asyncio.run(_run())
+
+
+def test_extraction_preview_input_threshold_accessible_attributes():
+    """Verify preview-input-threshold widget in ExtractionPreviewModal has explicit tooltip and label."""
+    from textual.app import App
+    from textual.widgets import Input
+
+    from app.config import AppSettings
+    from app.ui.modals.reports import ExtractionPreviewModal
+
+    app = App()
+
+    async def _run():
+        async with app.run_test() as pilot:
+            modal = ExtractionPreviewModal(
+                "/tmp/nonexistent.pdf", settings=AppSettings()
+            )
+            app.push_screen(modal)
+            await pilot.pause(0.01)
+            inp = modal.query_one("#preview-input-threshold", Input)
+            assert bool(getattr(inp, "tooltip", None)) is True
+            assert (
+                bool(getattr(inp, "label", None) or getattr(inp, "placeholder", None))
+                is True
+            )
+            result = modal.audit_a11y_compliance()
+            threshold_violations = [
+                v
+                for v in result.get("violations", [])
+                if v.get("rule") == "A11Y001_MISSING_LABEL"
+                and v.get("widget_id") == "preview-input-threshold"
+            ]
+            assert len(threshold_violations) == 0
+
+    import asyncio
+
+    asyncio.run(_run())
