@@ -388,6 +388,82 @@ def _purge_overwrite_backups(base_dir: str, session_id: str) -> None:
         logging.warning(f"Could not purge overwrite backups in {backup_dir}: {err}")
 
 
+class RollbackBatchTransaction:
+    """Manages chunked transaction commits with savepoints during rollback."""
+
+    def __init__(self, conn: Any, batch_size: int = 50) -> None:
+        self.conn = conn
+        self.batch_size = batch_size
+        self.op_count = 0
+        self.total_committed = 0
+        self._sp_counter = 0
+        self.current_savepoint: Optional[str] = None
+
+    def begin_batch(self) -> None:
+        """Create a savepoint before a batch of operations if none active."""
+        if self.current_savepoint is None:
+            self.current_savepoint = f"rollback_batch_{self._sp_counter}"
+            self._sp_counter += 1
+            self.conn.execute(f"SAVEPOINT {self.current_savepoint}")
+            self.op_count = 0
+
+    def execute(self, query: str, params: Union[tuple, list] = ()):
+        """Execute a query within the current batch savepoint."""
+        self.begin_batch()
+        return self.conn.execute(query, params)
+
+    def executemany(self, query: str, seq_of_params):
+        """Execute multiple queries within the current batch savepoint."""
+        self.begin_batch()
+        return self.conn.executemany(query, seq_of_params)
+
+    def step(self) -> None:
+        """Mark completion of an operation/move and commit if batch_size reached."""
+        self.op_count += 1
+        if self.op_count >= self.batch_size:
+            self.commit_batch()
+
+    def commit_batch(self) -> None:
+        """Commit the current batch and release the savepoint."""
+        if self.current_savepoint is not None:
+            self.conn.execute(f"RELEASE SAVEPOINT {self.current_savepoint}")
+            self.conn.commit()
+            self.total_committed += self.op_count
+            self.current_savepoint = None
+            self.op_count = 0
+
+    def rollback_batch(self) -> None:
+        """Rollback to the current savepoint and release it."""
+        if self.current_savepoint is not None:
+            try:
+                self.conn.execute(f"ROLLBACK TO SAVEPOINT {self.current_savepoint}")
+                self.conn.execute(f"RELEASE SAVEPOINT {self.current_savepoint}")
+                self.conn.commit()
+            except Exception as e:
+                logging.warning(
+                    f"Error rolling back savepoint {self.current_savepoint}: {e}"
+                )
+            finally:
+                self.current_savepoint = None
+                self.op_count = 0
+
+    def flush(self) -> None:
+        """Flush and commit any remaining operations."""
+        if self.op_count > 0 or self.current_savepoint is not None:
+            self.commit_batch()
+
+    def __enter__(self) -> "RollbackBatchTransaction":
+        """Enter the context manager."""
+        return self
+
+    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
+        """Exit the context manager, rolling back on error or flushing on success."""
+        if exc_type is not None:
+            self.rollback_batch()
+        else:
+            self.flush()
+
+
 def _move_aside_blocking_parents(path: str, base_dir: str, db_conn) -> None:
     """Move any file standing where a parent folder of ``path`` must go.
 
@@ -408,11 +484,24 @@ def _move_aside_blocking_parents(path: str, base_dir: str, db_conn) -> None:
         _robust_move(current, safe_current)
         rel_current = safe_relpath(current, base_dir).replace("\\", "/")
         rel_safe = safe_relpath(safe_current, base_dir).replace("\\", "/")
-        with db_conn:
+        if isinstance(db_conn, RollbackBatchTransaction):
             db_conn.execute(
                 "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
                 (rel_safe, base_dir, rel_current, rel_current),
             )
+        elif getattr(db_conn, "in_transaction", False) or not hasattr(
+            db_conn, "__enter__"
+        ):
+            db_conn.execute(
+                "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                (rel_safe, base_dir, rel_current, rel_current),
+            )
+        else:
+            with db_conn:
+                db_conn.execute(
+                    "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                    (rel_safe, base_dir, rel_current, rel_current),
+                )
 
 
 def _is_same_restored_path(actual: str, expected: str) -> bool:
@@ -2400,15 +2489,15 @@ class HistoryManager:
                         )
 
                 # Execute moves safely to avoid overwriting during cyclic renames
+                db_conn = get_db_connection(self.db.db_path)
+                batch = RollbackBatchTransaction(db_conn, batch_size=50)
                 try:
                     failed_moves = []
                     for src, dst in moves:
                         try:
                             from app.core.mover import get_safe_path
 
-                            db_conn = get_db_connection(self.db.db_path)
-
-                            _move_aside_blocking_parents(dst, base_dir, db_conn)
+                            _move_aside_blocking_parents(dst, base_dir, batch)
 
                             os.makedirs(os.path.dirname(dst), exist_ok=True)
                             if os.path.islink(dst):
@@ -2442,16 +2531,15 @@ class HistoryManager:
                                     )
                                     _robust_move(dst, temp_dst)
 
-                                    with db_conn:
-                                        db_conn.execute(
-                                            "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                            (
-                                                branch_rel_temp,
-                                                base_dir,
-                                                rel_dst,
-                                                rel_dst,
-                                            ),
-                                        )
+                                    batch.execute(
+                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                        (
+                                            branch_rel_temp,
+                                            base_dir,
+                                            rel_dst,
+                                            rel_dst,
+                                        ),
+                                    )
 
                                     for i, (m_src, m_dst) in enumerate(moves):
                                         if _is_same_restored_path(m_src, dst):
@@ -2466,63 +2554,58 @@ class HistoryManager:
                                     safe_rel = safe_relpath(safe_dst, base_dir).replace(
                                         "\\", "/"
                                     )
-                                    with db_conn:
-                                        db_conn.execute(
-                                            "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                            (safe_rel, base_dir, rel_dst, rel_dst),
-                                        )
-                                        db_conn.execute(
-                                            "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
-                                            (
-                                                safe_rel,
-                                                len(rel_dst) + 1,
-                                                base_dir,
-                                                rel_dst + "/%",
-                                                rel_dst + "/%",
-                                            ),
-                                        )
+                                    batch.execute(
+                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                        (safe_rel, base_dir, rel_dst, rel_dst),
+                                    )
+                                    batch.execute(
+                                        "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
+                                        (
+                                            safe_rel,
+                                            len(rel_dst) + 1,
+                                            base_dir,
+                                            rel_dst + "/%",
+                                            rel_dst + "/%",
+                                        ),
+                                    )
 
                                 _robust_move(src, dst)
                             else:
                                 if not os.path.exists(dst):
                                     _robust_move(src, dst)
 
-                            with db_conn:
-                                db_conn.execute(
-                                    "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                    (base_dir, rel_src, rel_src),
+                            batch.execute(
+                                "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                (base_dir, rel_src, rel_src),
+                            )
+                            rel_dst_norm = rel_dst.replace("\\", "/")
+                            snapshot_doc = (
+                                snapshot_docs_dict.get(rel_dst_norm)
+                                or snapshot_docs_dict.get(rel_dst)
+                                or snapshot_docs_dict.get(rel_dst.replace("/", "\\"))
+                            )
+                            if snapshot_doc:
+                                verified_target = (
+                                    snapshot_doc[3] if len(snapshot_doc) > 3 else None
                                 )
-                                rel_dst_norm = rel_dst.replace("\\", "/")
-                                snapshot_doc = (
-                                    snapshot_docs_dict.get(rel_dst_norm)
-                                    or snapshot_docs_dict.get(rel_dst)
-                                    or snapshot_docs_dict.get(
-                                        rel_dst.replace("/", "\\")
-                                    )
+                                batch.execute(
+                                    """
+                                    INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, user_verified_target_path)
+                        VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(base_dir, filepath) DO UPDATE SET
+                            file_hash=excluded.file_hash,
+                            extracted_text=excluded.extracted_text,
+                            user_verified_target_path=excluded.user_verified_target_path
+                                    """,
+                                    (
+                                        base_dir,
+                                        rel_dst,
+                                        snapshot_doc[1],
+                                        snapshot_doc[2],
+                                        verified_target,
+                                    ),
                                 )
-                                if snapshot_doc:
-                                    verified_target = (
-                                        snapshot_doc[3]
-                                        if len(snapshot_doc) > 3
-                                        else None
-                                    )
-                                    db_conn.execute(
-                                        """
-                                        INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, user_verified_target_path)
-                            VALUES (?, ?, ?, ?, ?)
-                            ON CONFLICT(base_dir, filepath) DO UPDATE SET
-                                file_hash=excluded.file_hash,
-                                extracted_text=excluded.extracted_text,
-                                user_verified_target_path=excluded.user_verified_target_path
-                                        """,
-                                        (
-                                            base_dir,
-                                            rel_dst,
-                                            snapshot_doc[1],
-                                            snapshot_doc[2],
-                                            verified_target,
-                                        ),
-                                    )
+                            batch.step()
                         except Exception as move_err:
                             import logging
 
@@ -2530,6 +2613,8 @@ class HistoryManager:
                                 f"Failed to move {src} to {dst} during recovery: {move_err}"
                             )
                             failed_moves.append((src, dst, move_err))
+
+                    batch.flush()
 
                     if failed_moves:
                         first_err = failed_moves[0][2]
@@ -2570,22 +2655,21 @@ class HistoryManager:
                                 rel_safe = safe_relpath(safe_path, base_dir).replace(
                                     "\\", "/"
                                 )
-                                db_conn = get_db_connection(self.db.db_path)
-                                with db_conn:
-                                    db_conn.execute(
-                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                        (rel_safe, base_dir, rel_target, rel_target),
-                                    )
-                                    db_conn.execute(
-                                        "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
-                                        (
-                                            rel_safe,
-                                            len(rel_target) + 1,
-                                            base_dir,
-                                            rel_target + "/%",
-                                            rel_target + "/%",
-                                        ),
-                                    )
+                                batch.execute(
+                                    "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                    (rel_safe, base_dir, rel_target, rel_target),
+                                )
+                                batch.execute(
+                                    "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
+                                    (
+                                        rel_safe,
+                                        len(rel_target) + 1,
+                                        base_dir,
+                                        rel_target + "/%",
+                                        rel_target + "/%",
+                                    ),
+                                )
+                                batch.step()
                         try:
                             os.makedirs(os.path.dirname(target_abs), exist_ok=True)
                             if l_type == "junction":
@@ -2600,6 +2684,8 @@ class HistoryManager:
                             logging.warning(
                                 f"Failed to recreate link at {target_abs}: {e}"
                             )
+
+                    batch.flush()
 
                     # Restore Windows shortcuts after standard files and symlinks
                     for (
@@ -2639,22 +2725,21 @@ class HistoryManager:
                                 rel_safe = safe_relpath(safe_path, base_dir).replace(
                                     "\\", "/"
                                 )
-                                db_conn = get_db_connection(self.db.db_path)
-                                with db_conn:
-                                    db_conn.execute(
-                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                        (rel_safe, base_dir, rel_target, rel_target),
-                                    )
-                                    db_conn.execute(
-                                        "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
-                                        (
-                                            rel_safe,
-                                            len(rel_target) + 1,
-                                            base_dir,
-                                            rel_target + "/%",
-                                            rel_target + "/%",
-                                        ),
-                                    )
+                                batch.execute(
+                                    "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                    (rel_safe, base_dir, rel_target, rel_target),
+                                )
+                                batch.execute(
+                                    "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
+                                    (
+                                        rel_safe,
+                                        len(rel_target) + 1,
+                                        base_dir,
+                                        rel_target + "/%",
+                                        rel_target + "/%",
+                                    ),
+                                )
+                                batch.step()
                         try:
                             if pylnk3 and lnk_target:
                                 os.makedirs(os.path.dirname(target_abs), exist_ok=True)
@@ -2680,7 +2765,10 @@ class HistoryManager:
                                 f"Failed to recreate Windows shortcut at {target_abs}: {e}"
                             )
 
+                    batch.flush()
+
                 except Exception as e:
+                    batch.rollback_batch()
                     try:
                         self._transition_session_status(
                             session_id, "failed", conn=conn, error_details=str(e)
