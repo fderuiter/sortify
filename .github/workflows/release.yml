@@ -78,6 +78,11 @@ jobs:
         run: |
           uv run python scripts/build.py
 
+      - name: Verify PE binary dependencies
+        if: runner.os == 'Windows'
+        run: |
+          uv run python scripts/verify_pe_dependencies.py
+
       - name: Package as Archive (Windows)
         if: runner.os == 'Windows'
         shell: pwsh
