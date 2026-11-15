@@ -28,6 +28,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.layout
 
+## `app.ui.mixins.history`
+
+::: app.ui.mixins.history
+
 ## `app.ui.mixins.pipeline`
 
 ::: app.ui.mixins.pipeline
@@ -39,6 +43,10 @@ This document is automatically generated. Do not edit manually.
 ## `app.ui.mixins.tree_view`
 
 ::: app.ui.mixins.tree_view
+
+## `app.ui.modals.collisions`
+
+::: app.ui.modals.collisions
 
 ## `app.ui.modals.command_palette`
 
@@ -63,6 +71,10 @@ This document is automatically generated. Do not edit manually.
 ## `app.ui.modals.quarantine`
 
 ::: app.ui.modals.quarantine
+
+## `app.ui.modals.recovery`
+
+::: app.ui.modals.recovery
 
 ## `app.ui.modals.reports`
 
