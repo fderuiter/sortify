@@ -165,6 +165,51 @@ certifi 2026.7.22 has 1 known vulnerability:
 
 
 @patch("scripts.remediate_vulnerabilities.run_uv_audit")
+@patch("scripts.remediate_vulnerabilities.run_lock_upgrade")
+@patch("scripts.remediate_vulnerabilities.get_locked_package_version")
+def test_remediate_vulnerabilities_low_and_medium_pr_omits_automerge_label(
+    mock_get_ver, mock_upgrade, mock_audit, tmp_path: Path
+):
+    sample_output = """
+certifi 2026.7.22 has 1 known vulnerability:
+
+- GHSA-low-1: Low certifi vuln
+  Severity: Low (CVSS: 3.1)
+  Fixed in: 2026.10.19
+    """
+    mock_audit.side_effect = [(1, sample_output), (0, "")]
+    mock_upgrade.return_value = True
+    mock_get_ver.side_effect = ["2026.7.22", "2026.10.19"]
+
+    (tmp_path / "SECURITY.md").write_text(
+        "## Vulnerability Exemptions\n", encoding="utf-8"
+    )
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "certifi"\nversion = "2026.7.22"\n', encoding="utf-8"
+    )
+
+    mock_gh_client = MagicMock()
+    mock_gh_client.has_open_pr_for_package.return_value = False
+
+    with (
+        patch(
+            "scripts.remediate_vulnerabilities.GitHubRemediationClient",
+            return_value=mock_gh_client,
+        ),
+        patch("subprocess.run") as mock_sub,
+    ):
+        mock_sub.return_value = MagicMock(returncode=0, stdout="6 passed", stderr="")
+        remediate_vulnerabilities(
+            repo_root=tmp_path, token="fake_tok", repo_full="owner/repo"
+        )
+
+    mock_gh_client.create_pull_request.assert_called_once()
+    kwargs = mock_gh_client.create_pull_request.call_args.kwargs
+    assert "severity:low" in kwargs["labels"]
+    assert "automerge" not in kwargs["labels"]
+
+
+@patch("scripts.remediate_vulnerabilities.run_uv_audit")
 def test_remediate_vulnerabilities_unfixable_critical_issue_escalation(
     mock_audit, tmp_path: Path
 ):

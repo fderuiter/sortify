@@ -415,3 +415,51 @@ def test_automated_security_patch_sensitive_path_is_blocked():
     assert res.risk_level == "sensitive"
     assert "risk:sensitive" in res.labels_to_add
     assert "automerge:blocked" in res.labels_to_add
+
+
+def test_automated_security_patch_without_automerge_is_blocked_as_sensitive():
+    meta = PRMetadata(
+        pr_number=204,
+        title="[Security] Patch certifi from 2026.7.22 to 2026.10.19",
+        author="github-actions[bot]",
+        is_security_patch=True,
+        labels=["security", "dependencies"],
+        changed_files=["uv.lock"],
+        additions=10,
+        deletions=10,
+        dependency_update_type="minor",
+    )
+    res = classify_pr(meta)
+    assert res.eligible is False
+    assert res.risk_level == "sensitive"
+    assert "automerge:blocked" in res.labels_to_add
+    assert "risk:sensitive" in res.labels_to_add
+    assert any(
+        "PR modifies protected/sensitive path(s): uv.lock" in r
+        for r in res.blocking_reasons
+    )
+    assert any(
+        "Production code changes require an explicit 'automerge' label" in r
+        for r in res.blocking_reasons
+    )
+
+
+def test_agent_pyproject_toml_without_automerge_triggers_sensitive_path():
+    meta = PRMetadata(
+        pr_number=205,
+        title="fix(deps): update dependency in pyproject.toml",
+        author="stitch",
+        labels=["dependencies"],
+        changed_files=["pyproject.toml"],
+        additions=2,
+        deletions=2,
+        dependency_update_type="minor",
+    )
+    res = classify_pr(meta)
+    assert res.eligible is False
+    assert res.risk_level == "sensitive"
+    assert "automerge:blocked" in res.labels_to_add
+    assert any(
+        "PR modifies protected/sensitive path(s): pyproject.toml" in r
+        for r in res.blocking_reasons
+    )

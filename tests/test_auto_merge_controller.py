@@ -567,9 +567,95 @@ def test_process_queue_merges_automated_security_patch_pr():
         "reason": "valid",
     }
     _stub_pr_contents(client, ["uv.lock"])
+    client.list_issue_events.return_value = [_label_event("fderuiter")]
+    client.get_collaborator_permission.return_value = "admin"
     client.get_required_ci_conclusion.return_value = "success"
     client.merge_pull_request.return_value = True
 
     res = process_auto_merge_queue(client)
     assert res.action == AutoMergeAction.MERGED
     assert res.pr_id == 500
+
+
+def test_process_queue_blocks_automated_security_patch_labelled_by_bot():
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {
+            "number": 501,
+            "labels": [
+                {"name": "automerge:eligible"},
+                {"name": "security"},
+                {"name": "dependencies"},
+            ],
+            "draft": False,
+        }
+    ]
+    client.get_pull_request.return_value = {
+        "number": 501,
+        "title": "[Security] Patch certifi from 2026.7.22 to 2026.10.19",
+        "draft": False,
+        "state": "open",
+        "head": {"sha": "sha_sec_123", "ref": "security/patch-certifi-2026-10-19"},
+        "mergeable": True,
+        "mergeable_state": "clean",
+        "user": {"login": "github-actions[bot]"},
+        "labels": [
+            {"name": "security"},
+            {"name": "dependencies"},
+            {"name": "automerge"},
+            {"name": "automerge:eligible"},
+        ],
+    }
+    client.get_commit_verification.return_value = {
+        "verified": True,
+        "reason": "valid",
+    }
+    _stub_pr_contents(client, ["uv.lock"])
+    client.list_issue_events.return_value = [
+        _label_event("google-labs-stitch[bot]", actor_type="Bot")
+    ]
+    client.get_required_ci_conclusion.return_value = "success"
+
+    res = process_auto_merge_queue(client)
+    assert res.action == AutoMergeAction.NONE
+    client.merge_pull_request.assert_not_called()
+
+
+def test_process_queue_blocks_security_patch_without_automerge():
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {
+            "number": 502,
+            "labels": [
+                {"name": "automerge:eligible"},
+                {"name": "security"},
+                {"name": "dependencies"},
+            ],
+            "draft": False,
+        }
+    ]
+    client.get_pull_request.return_value = {
+        "number": 502,
+        "title": "[Security] Patch certifi from 2026.7.22 to 2026.10.19",
+        "draft": False,
+        "state": "open",
+        "head": {"sha": "sha_sec_123", "ref": "security/patch-certifi-2026-10-19"},
+        "mergeable": True,
+        "mergeable_state": "clean",
+        "user": {"login": "github-actions[bot]"},
+        "labels": [
+            {"name": "security"},
+            {"name": "dependencies"},
+            {"name": "automerge:eligible"},
+        ],
+    }
+    client.get_commit_verification.return_value = {
+        "verified": True,
+        "reason": "valid",
+    }
+    _stub_pr_contents(client, ["uv.lock"])
+    client.get_required_ci_conclusion.return_value = "success"
+
+    res = process_auto_merge_queue(client)
+    assert res.action == AutoMergeAction.NONE
+    client.merge_pull_request.assert_not_called()

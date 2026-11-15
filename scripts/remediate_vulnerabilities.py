@@ -622,9 +622,9 @@ def remediate_vulnerabilities(
                 "priority:urgent",
             ]
         elif pkg_sev == "LOW":
-            pr_labels = ["security", "dependencies", "severity:low", "automerge"]
+            pr_labels = ["security", "dependencies", "severity:low"]
         else:
-            pr_labels = ["security", "dependencies", "severity:medium", "automerge"]
+            pr_labels = ["security", "dependencies", "severity:medium"]
 
         if dry_run:
             logger.info(

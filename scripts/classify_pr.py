@@ -148,11 +148,14 @@ def classify_pr(meta: PRMetadata) -> ClassificationResult:
     risk_level = "low"
     labels_to_add: list[str] = []
 
-    is_automated_security_patch = meta.is_security_patch or (
-        (meta.author in BOT_AUTHORS or meta.author.endswith("[bot]"))
-        and "security" in meta.labels
-        and "dependencies" in meta.labels
-    )
+    is_automated_security_patch = (
+        meta.is_security_patch
+        or (
+            (meta.author in BOT_AUTHORS or meta.author.endswith("[bot]"))
+            and "security" in meta.labels
+            and "dependencies" in meta.labels
+        )
+    ) and "automerge" in meta.labels
 
     # 0. Commit signature check
     if not meta.all_commits_verified:
@@ -242,11 +245,7 @@ def classify_pr(meta: PRMetadata) -> ClassificationResult:
     # 7. Production code opt-in requirement
     is_docs_only = len(meta.changed_files) > 0 and len(non_docs_files) == 0
     is_safe_dependabot = meta.is_dependabot and meta.dependency_update_type != "major"
-    is_safe_security_patch = (
-        is_automated_security_patch and meta.dependency_update_type != "major"
-    )
-
-    if not is_docs_only and not is_safe_dependabot and not is_safe_security_patch:
+    if not is_docs_only and not is_safe_dependabot:
         if "automerge" not in meta.labels:
             blocking_reasons.append(
                 "Production code changes require an explicit 'automerge' label to opt into automated evaluation."
