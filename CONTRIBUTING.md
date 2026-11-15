@@ -87,3 +87,14 @@ Publish a GitHub release (Releases → Draft a new release, with a new `v*` tag)
 ## Reporting bugs and vulnerabilities
 
 Open a GitHub issue for bugs. For security problems follow the reporting steps in [SECURITY.md](SECURITY.md).
+
+## Shrinking exception debt
+
+`uv run python scripts/quality_ratchet.py exceptions` measures BLE001, S110 and
+SIM105 with file exemptions disabled. Existing justified line suppressions
+still apply. Every file/rule has a budget; clean and new files start at zero.
+After fixing findings, run the same command with `--update` to shrink it.
+Updates refuse increases, and CI also compares committed budgets against the
+PR base so editing the JSON cannot hide new debt. Catch specific failures,
+propagate them, or deliberately continue with sanitized diagnostic context.
+Do not move handlers to a new file to evade the budget.
