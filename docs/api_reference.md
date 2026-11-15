@@ -220,6 +220,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.core.semantic_embeddings
 
+## `app.core.services`
+
+::: app.core.services
+
 ## `app.core.session`
 
 ::: app.core.session
