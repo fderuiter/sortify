@@ -36,9 +36,15 @@ repos:
         entry: uv run ruff check --force-exclude
         language: system
         types: [python]
+      - id: exception-ratchet
+        name: Reject new exception-handling debt
+        entry: uv run python scripts/quality_ratchet.py exceptions
+        language: system
+        pass_filenames: false
+        files: '^(app/.*\.py|scripts/quality_ratchet\.py|scripts/baselines/.*\.json|pyproject\.toml)$'
       - id: ty-check
         name: Ty Type Check
-        entry: uv run ty check
+        entry: uv run python scripts/quality_ratchet.py types
         language: system
         pass_filenames: false
         files: '^(app/.*\.py|pyproject\.toml)$'
