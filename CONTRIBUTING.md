@@ -98,3 +98,10 @@ Updates refuse increases, and CI also compares committed budgets against the
 PR base so editing the JSON cannot hide new debt. Catch specific failures,
 propagate them, or deliberately continue with sanitized diagnostic context.
 Do not move handlers to a new file to evade the budget.
+
+The same gate applies to ty warnings: `uv run python scripts/quality_ratchet.py
+types`. Errors are always fatal and cannot be baselined. The type warning
+budget is keyed by source path/rule, so already-warning UI and CLI modules
+cannot accumulate additional findings. After fixing warnings, use `types
+--update`; promote clean module/rule groups to errors in `pyproject.toml`.
+Intentional nullable-default and optional-ML import allowances remain separate.

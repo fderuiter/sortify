@@ -6,8 +6,50 @@ import subprocess
 import sys
 from collections import defaultdict
 from pathlib import Path
+from urllib.parse import unquote, urlparse
+from urllib.request import url2pathname
 
 ROOT = Path(__file__).resolve().parent.parent
+
+
+def type_counts(root: Path) -> dict[str, dict[str, int]]:
+    """Budget warnings from ty SARIF while keeping every error fatal."""
+    result = subprocess.run(
+        [sys.executable, "-m", "ty", "check", "--output-format", "sarif"],
+        cwd=root,
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    if result.returncode not in (0, 1):
+        raise ValueError(f"ty could not run: {result.stderr}")
+    data = json.loads(result.stdout)
+    counts: dict[str, dict[str, int]] = defaultdict(lambda: defaultdict(int))
+    errors = []
+    for run in data["runs"]:
+        for diagnostic in run.get("results", []):
+            uri = diagnostic["locations"][0]["physicalLocation"]["artifactLocation"][
+                "uri"
+            ]
+            parsed = urlparse(uri)
+            filename = (
+                url2pathname(parsed.path) if parsed.scheme == "file" else unquote(uri)
+            )
+            path = Path(filename)
+            if not path.is_absolute():
+                path = root / path
+            source = path.resolve().relative_to(root.resolve()).as_posix()
+            rule = diagnostic["ruleId"]
+            level = diagnostic.get("level", "warning")
+            if level == "error":
+                errors.append(f"{source}: {rule}: {diagnostic['message']['text']}")
+            elif level == "warning":
+                counts[source][rule] += 1
+    if errors:
+        raise ValueError("Type errors cannot be baselined:\n" + "\n".join(errors))
+    if result.returncode:
+        raise ValueError("ty failed; refusing to accept incomplete diagnostic output")
+    return {path: dict(rules) for path, rules in sorted(counts.items())}
 
 
 def exception_counts(root: Path) -> dict[str, dict[str, int]]:
@@ -91,7 +133,7 @@ def baseline_at_ref(root: Path, ref: str, path: Path, tool: str) -> dict | None:
 def main(argv: list[str] | None = None) -> int:
     """Check or shrink budgets; initialization is explicit and never overwrites one."""
     parser = argparse.ArgumentParser(description=__doc__)
-    parser.add_argument("tool", choices=["exceptions"])
+    parser.add_argument("tool", choices=["exceptions", "types"])
     parser.add_argument("--root", type=Path, default=ROOT)
     parser.add_argument(
         "--base-ref", help="Git ref whose committed budgets must not increase"
@@ -107,7 +149,9 @@ def main(argv: list[str] | None = None) -> int:
     root = args.root.resolve()
     path = root / "scripts" / "baselines" / f"{args.tool}.json"
     try:
-        current = exception_counts(root)
+        current = (
+            exception_counts(root) if args.tool == "exceptions" else type_counts(root)
+        )
         if args.initialize:
             if path.exists():
                 raise ValueError("Baseline already exists; use --update to shrink it")

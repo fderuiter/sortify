@@ -85,6 +85,7 @@ jobs:
     - name: Run ty Type Check
       run: |
         uv run ty check --output-format github
+        uv run python scripts/quality_ratchet.py types
 
   static-checks:
     name: Static Checks
@@ -120,6 +121,7 @@ jobs:
         RATCHET_BASE_REF: ${{ github.event.pull_request.base.sha || github.event.before || 'HEAD^' }}
       run: |
         uv run python scripts/quality_ratchet.py exceptions --base-ref "$RATCHET_BASE_REF"
+        uv run python scripts/quality_ratchet.py types --base-ref "$RATCHET_BASE_REF"
 
     - name: Format with Ruff
       run: |
