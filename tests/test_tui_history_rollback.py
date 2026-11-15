@@ -362,14 +362,16 @@ async def test_rollback_uses_the_app_store(tui_rollback_env, monkeypatch):
     sessions = tui_rollback_env["sessions"]
     session_id = tui_rollback_env["session_id"]
     settings = tui_rollback_env["settings"]
-    store_path = os.path.abspath(tui_rollback_env["history_db_path"])
+    store_path = os.path.normcase(os.path.abspath(tui_rollback_env["history_db_path"]))
 
     used_paths = {}
     real_rollback = HistoryManager.rollback
 
     def spy_rollback(self, sid, ignore_missing=False):
-        used_paths["db"] = os.path.abspath(self.db.db_path)
-        used_paths["cache"] = os.path.abspath(self.cache_manager.db_path)
+        used_paths["db"] = os.path.normcase(os.path.abspath(self.db.db_path))
+        used_paths["cache"] = os.path.normcase(
+            os.path.abspath(self.cache_manager.db_path)
+        )
         return real_rollback(self, sid, ignore_missing=ignore_missing)
 
     monkeypatch.setattr("app.core.history.HistoryManager.rollback", spy_rollback)

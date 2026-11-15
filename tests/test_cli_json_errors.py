@@ -41,6 +41,12 @@ def run_cli(args, env=None, prog="main.py"):
             stderr_cap.write(str(e))
             code = 1
         finally:
+            try:
+                from app.core.db_conn import clear_connection_cache
+
+                clear_connection_cache(only_current_and_inactive=False)
+            except Exception:
+                pass
             os.environ.clear()
             os.environ.update(old_env)
 
@@ -81,39 +87,49 @@ class TestCliJsonErrors:
     def test_quarantine_inspect_missing_job_json(self):
         """Verify 'quarantine inspect invalid_job --json' outputs structured JSON with job_id."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = str(Path(tmpdir) / "test.db")
-            code, stdout, stderr = run_cli(
-                [
-                    "quarantine",
-                    "inspect",
-                    "invalid_job_999",
-                    "--db-path",
-                    db_path,
-                    "--json",
-                ]
-            )
-            assert code == 1
-            data = json.loads(stdout)
-            assert data["status"] == "error"
-            assert (
-                "Quarantine record not found for job ID 'invalid_job_999'"
-                in data["message"]
-            )
-            assert data.get("job_id") == "invalid_job_999"
+            try:
+                db_path = str(Path(tmpdir) / "test.db")
+                code, stdout, stderr = run_cli(
+                    [
+                        "quarantine",
+                        "inspect",
+                        "invalid_job_999",
+                        "--db-path",
+                        db_path,
+                        "--json",
+                    ]
+                )
+                assert code == 1
+                data = json.loads(stdout)
+                assert data["status"] == "error"
+                assert (
+                    "Quarantine record not found for job ID 'invalid_job_999'"
+                    in data["message"]
+                )
+                assert data.get("job_id") == "invalid_job_999"
+            finally:
+                from app.core.db_conn import clear_connection_cache
+
+                clear_connection_cache(only_current_and_inactive=False)
 
     def test_quarantine_inspect_missing_job_plain_text(self):
         """Verify non-JSON quarantine inspect error outputs plain text to stderr."""
         with tempfile.TemporaryDirectory() as tmpdir:
-            db_path = str(Path(tmpdir) / "test.db")
-            code, stdout, stderr = run_cli(
-                ["quarantine", "inspect", "invalid_job_999", "--db-path", db_path]
-            )
-            assert code == 1
-            assert stdout.strip() == ""
-            assert (
-                "Error: Quarantine record not found for job ID 'invalid_job_999'."
-                in stderr
-            )
+            try:
+                db_path = str(Path(tmpdir) / "test.db")
+                code, stdout, stderr = run_cli(
+                    ["quarantine", "inspect", "invalid_job_999", "--db-path", db_path]
+                )
+                assert code == 1
+                assert stdout.strip() == ""
+                assert (
+                    "Error: Quarantine record not found for job ID 'invalid_job_999'."
+                    in stderr
+                )
+            finally:
+                from app.core.db_conn import clear_connection_cache
+
+                clear_connection_cache(only_current_and_inactive=False)
 
     def test_quarantine_missing_subcommand_json(self):
         """Verify 'quarantine --json' outputs structured JSON error with exit code 2."""
