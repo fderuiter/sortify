@@ -98,3 +98,23 @@ databases use the same ownership rule and retain their standalone schema.
 Store bootstrap runs on the writer. Session close does not unload global models
 or shut down shared pools; those resources belong to application shutdown.
 Legacy query/schema ownership remains tracked separately in #712.
+
+## UI extraction inventory (2026-11-15)
+
+The application dispatches history/recovery actions through
+`ui/mixins/history.py`. It delegates persistence to managed core services.
+Collision dialogs live in `ui/modals/collisions.py`; multi-session recovery
+and its result object live in `ui/modals/recovery.py`. The former modal
+modules retain compatibility re-exports. Widget IDs, bindings and focus
+behavior remain unchanged.
+
+| Module | Lines after extraction | Remaining responsibility |
+| --- | ---: | --- |
+| `ui/tui.py` | 1,446 | Application layout and dispatch |
+| `ui/modals/edit.py` | 1,446 | Rename, folder, reassignment and picker dialogs |
+| `ui/modals/session.py` | 1,282 | Single-session history and rollback dialogs |
+| `ui/mixins/history.py` | 298 | History/recovery presentation and callbacks |
+
+Every UI module is below the existing approximate 1,500-line target. Further
+extractions should group a coherent responsibility and preserve the existing
+public import surface for the compatibility window.
