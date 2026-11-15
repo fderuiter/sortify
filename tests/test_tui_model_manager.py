@@ -21,6 +21,15 @@ from app.ui.tui import (
 pytestmark = pytest.mark.xdist_group(name="tui")
 
 
+@pytest.fixture(autouse=True)
+def mock_find_abandoned_sessions(monkeypatch):
+    import app.core.session_catalog
+
+    monkeypatch.setattr(
+        app.core.session_catalog, "find_abandoned_sessions", lambda *a, **k: []
+    )
+
+
 @pytest.fixture
 def temp_workspace():
     tmp = tempfile.mkdtemp()
