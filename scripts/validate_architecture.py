@@ -84,7 +84,7 @@ ALLOWED_FOR_CHARS = {"app/core/path_utils.py"}
 _TOOLING = ("scripts", "sandbox_cli", "pytest")
 IMPORT_LAYER_RULES = {
     "app.core": ("app.ui", "app.cli", "app.main", "app.plugins") + _TOOLING,
-    "app.plugins": ("app.cli", "app.main") + _TOOLING,
+    "app.plugins": ("app.cli", "app.main", "app.ui.tui") + _TOOLING,
     "app.ui": ("app.cli", "app.main") + _TOOLING,
     "app.cli": ("app.ui", "app.main") + _TOOLING,
     "app.main": _TOOLING,
@@ -463,16 +463,33 @@ def validate_import_layers(errors: list, filepath: str, tree: ast.AST) -> None:
     for node in ast.walk(tree):
         if isinstance(node, ast.Import):
             names = [alias.name for alias in node.names]
-        elif isinstance(node, ast.ImportFrom) and node.level == 0 and node.module:
-            names = [node.module]
+        elif isinstance(node, ast.ImportFrom):
+            imported = node.module or ""
+            if node.level:
+                package = (
+                    module
+                    if Path(filepath).stem == "__init__"
+                    else module.rpartition(".")[0]
+                )
+                parts = package.split(".")
+                if node.level > len(parts):
+                    continue  # Python itself rejects imports above the package root.
+                imported = ".".join(
+                    parts[: len(parts) - node.level + 1]
+                    + ([imported] if imported else [])
+                )
+            names = [
+                imported if alias.name == "*" else f"{imported}.{alias.name}"
+                for alias in node.names
+            ]
         else:
             continue
         for name in names:
             for banned in forbidden:
                 if _matches(name, banned):
-                    errors.append(
-                        f"{filepath}:{node.lineno}: Layer violation: '{module}' imports '{name}' ('{banned}' is off-limits here)"
-                    )
+                    message = f"{filepath}:{node.lineno}: Layer violation: '{module}' imports '{name}' ('{banned}' is off-limits here)"
+                    if message not in errors:
+                        errors.append(message)
 
 
 SETTINGS_SOURCE = "app/config.py"
