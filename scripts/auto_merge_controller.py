@@ -275,7 +275,7 @@ def build_pr_metadata(client: GitHubClient, full_pr: dict[str, Any]) -> PRMetada
     )
     if (
         AUTOMERGE_OPT_IN_LABEL in labels
-        and not (is_dependabot or is_security_patch)
+        and not is_dependabot
         and not automerge_label_applied_by_maintainer(client, pr_number)
     ):
         labels = [name for name in labels if name != AUTOMERGE_OPT_IN_LABEL]

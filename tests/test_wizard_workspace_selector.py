@@ -14,6 +14,15 @@ from app.ui.tui import AutoSorterTUI
 pytestmark = pytest.mark.xdist_group(name="tui")
 
 
+@pytest.fixture(autouse=True)
+def mock_find_abandoned_sessions(monkeypatch):
+    import app.core.session_catalog
+
+    monkeypatch.setattr(
+        app.core.session_catalog, "find_abandoned_sessions", lambda *a, **k: []
+    )
+
+
 def test_wizard_modal_workspace_selector_components_and_a11y(tmp_path):
     """Verify WizardModal renders workspace directory input, quick preset buttons, and passes a11y audit."""
 

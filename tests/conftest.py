@@ -128,18 +128,34 @@ def cleanup_db_connections():
 @pytest.fixture(autouse=True)
 def reset_shared_registry():
     """Reset singletons (SharedModelRegistry, SharedWorkerPool, DownloadManager) and AppSettings observers before and after each test to prevent test pollution."""
+    import shutil
+
     from app.config import AppSettings, get_app_dir
+    from app.core.db_conn import clear_connection_cache
     from app.core.downloader import DownloadManager
     from app.core.network_guard import _thread_local
     from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
 
-    try:
-        settings_file = get_app_dir() / "settings.json"
-        if settings_file.exists():
-            settings_file.unlink()
-    except Exception:
-        pass
+    def _cleanup_test_app_dir():
+        clear_connection_cache(only_current_and_inactive=False)
+        try:
+            app_dir = get_app_dir()
+            for filename in (
+                "settings.json",
+                "sortify.db",
+                "rollback_journal.json",
+                "transaction_ledger.db",
+            ):
+                target = app_dir / filename
+                if target.exists():
+                    target.unlink()
+            sessions_dir = app_dir / "sessions"
+            if sessions_dir.exists():
+                shutil.rmtree(sessions_dir, ignore_errors=True)
+        except Exception:
+            pass
 
+    _cleanup_test_app_dir()
     AppSettings.clear_observers()
     DownloadManager.reset_instance()
     SharedModelRegistry._instance = None
@@ -152,12 +168,7 @@ def reset_shared_registry():
             pass
         SharedWorkerPool._instance = None
     yield
-    try:
-        settings_file = get_app_dir() / "settings.json"
-        if settings_file.exists():
-            settings_file.unlink()
-    except Exception:
-        pass
+    _cleanup_test_app_dir()
     AppSettings.clear_observers()
     DownloadManager.reset_instance()
     SharedModelRegistry._instance = None

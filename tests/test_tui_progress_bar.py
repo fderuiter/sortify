@@ -4,11 +4,23 @@ import asyncio
 import os
 from unittest.mock import MagicMock, patch
 
+import pytest
 from textual.widgets import ProgressBar
 
 from app.config import AppSettings
 from app.core.progress import ProgressUpdate
 from app.ui.tui import AutoSorterTUI
+
+pytestmark = pytest.mark.xdist_group(name="tui")
+
+
+@pytest.fixture(autouse=True)
+def mock_find_abandoned_sessions(monkeypatch):
+    import app.core.session_catalog
+
+    monkeypatch.setattr(
+        app.core.session_catalog, "find_abandoned_sessions", lambda *a, **k: []
+    )
 
 
 def test_autosorter_tui_compose_contains_progress_bar(tmp_path):

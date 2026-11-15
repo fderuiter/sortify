@@ -14,6 +14,15 @@ from app.ui.tui import AutoSorterTUI
 pytestmark = pytest.mark.xdist_group(name="tui")
 
 
+@pytest.fixture(autouse=True)
+def mock_find_abandoned_sessions(monkeypatch):
+    import app.core.session_catalog
+
+    monkeypatch.setattr(
+        app.core.session_catalog, "find_abandoned_sessions", lambda *a, **k: []
+    )
+
+
 def test_wizard_modal_privacy_card_structure_and_guarantees(tmp_path):
     """Verify WizardModal renders the inline privacy card directly above AI consent switch with all offline guarantees."""
 
