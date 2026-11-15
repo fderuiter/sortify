@@ -697,6 +697,8 @@ class AppSettings:
             if proxy_val == "<DECRYPTION_FAILED>":
                 if self._raw_encrypted_proxy:
                     data["PROXY"] = self._raw_encrypted_proxy
+                else:
+                    data.pop("PROXY", None)
             elif proxy_val:
                 from app.core.crypto import CryptoManager
 
@@ -708,10 +710,14 @@ class AppSettings:
                         data["PROXY"] = CryptoManager.encrypt_proxy_setting(
                             proxy_val, crypto=crypto
                         )
-                    except Exception as e:
-                        logging.error(
-                            f"Failed to encrypt proxy string during save: {e}",
-                            exc_info=True,
+                    except Exception:  # noqa: BLE001 - any key/encryption failure must keep credentials off disk and out of logs
+                        if self._raw_encrypted_proxy:
+                            data["PROXY"] = self._raw_encrypted_proxy
+                        else:
+                            data.pop("PROXY", None)
+                        logging.warning(
+                            "Proxy encryption failed; the current proxy was not "
+                            "persisted. It remains available for this session."
                         )
 
             parent_dir = os.path.dirname(self._filepath)
@@ -720,6 +726,12 @@ class AppSettings:
 
             with open(self._filepath, "w", encoding="utf-8") as f:
                 json.dump(data, f, indent=4)
+            # Keep the last persisted ciphertext even when an edited proxy
+            # cannot be encrypted. Clearing the proxy also clears this fallback.
+            persisted_proxy = data.get("PROXY", "")
+            self._raw_encrypted_proxy = (
+                persisted_proxy if persisted_proxy.startswith("enc:") else None
+            )
         except Exception as e:
             logging.error(f"Failed to save settings: {e}", exc_info=True)
             raise
@@ -906,8 +918,6 @@ class AppSettings:
                 name = "AUDIO_MAX_WORKERS"
             self._transient_values.pop(name, None)
             self._env_sourced_keys.discard(name)
-            if name == "PROXY" and value != "<DECRYPTION_FAILED>":
-                super().__setattr__("_raw_encrypted_proxy", None)
             setattr(self._settings_model, name, value)
             self.revalidate()
             new_val = getattr(self._settings_model, name, value)
