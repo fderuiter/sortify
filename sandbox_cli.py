@@ -46,6 +46,9 @@ def reset_sandbox():
         if os.path.exists(sidecar):
             with contextlib.suppress(OSError):
                 os.remove(sidecar)
+    state_dir = os.path.join(os.path.dirname(SANDBOX_DB_PATH), "pipeline-state")
+    if os.path.isdir(state_dir):
+        shutil.rmtree(state_dir)
     shutil.copytree(GOLDEN_DIR, SANDBOX_DIR)
     print("Sandbox dataset has been reset to its original state.", file=sys.stderr)
 
@@ -68,29 +71,29 @@ def analyze_all(json_output=False):
         print("Sandbox dataset not found. Run reset first.", file=sys.stderr)
         sys.exit(1)
 
-    class MockSettings:
-        AI_CONSENT_GRANTED = False
-        MAX_FOLDERS = 5
-        STOP_WORDS = {"the", "and", "a", "an", "is"}
+    from app.config import Settings
+    from app.core.pipeline import SortPipeline
+    from app.core.session import AppSession
+    from app.core.store import open_store
 
-    from app.core.analyzer import IncrementalAnalyzer
-    from app.core.db import Database
-    from app.core.db_worker import DBWorker
-    from app.core.extractor import build_corpus_generator
+    settings = Settings(
+        _env_file=None,
+        AI_CONSENT_GRANTED=False,
+        AI_ASSISTED_NAMING=False,
+        SORTING_STRATEGY="default",
+        MAX_WORKERS=1,
+        MAX_FOLDERS=5,
+        STOP_WORDS={"the", "and", "a", "an", "is"},
+    )
+    # Development analysis must never import sessions from the user's store.
+    from pathlib import Path
 
-    analyzer = None
+    state_dir = Path(SANDBOX_DB_PATH).parent / "pipeline-state"
+    store = open_store(state_dir, legacy_session_root=state_dir / "no-legacy-sessions")
+    session = AppSession(settings, base_dir=SANDBOX_DIR, store=store)
     try:
-        db_worker = DBWorker()
-        db_path = SANDBOX_DB_PATH
-        db = Database(db_path, db_worker)
 
-        analyzer = IncrementalAnalyzer(
-            max_folders=MockSettings.MAX_FOLDERS,
-            stop_words=MockSettings.STOP_WORDS,
-            db=db,
-        )
-
-        def progress_callback():
+        def progress_callback(*args, **kwargs):
             print("Progress update: File extraction complete.", file=sys.stderr)
 
         items = [
@@ -100,38 +103,11 @@ def analyze_all(json_output=False):
             and not f.endswith((".db", ".db-wal", ".db-shm", ".key", ".log"))
             and f != "secret.key"
         ]
-
-        generator = build_corpus_generator(
-            base_dir=SANDBOX_DIR,
-            items_to_sort=items,
-            progress_callback=progress_callback,
-            max_workers=1,
-            db=db,
-            chunk_size=50,
+        plan = SortPipeline(session).plan(
+            items, progress_callback=progress_callback, chunk_size=50
         )
-
-        for chunk in generator:
-            analyzer.partial_fit(SANDBOX_DIR, chunk, MockSettings())
-
-        plan = analyzer.generate_sorting_plan(SANDBOX_DIR, MockSettings())
     finally:
-        if analyzer is not None:
-            analyzer.terminate()
-        if "db_worker" in locals() and db_worker:
-            db_worker.stop()
-        try:
-            from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
-
-            SharedWorkerPool.shutdown_instance(wait=False)
-            SharedModelRegistry.get_instance().unload_all_models()
-        except Exception:
-            logger.debug("Could not shut down shared worker pool", exc_info=True)
-        try:
-            from app.core.db_conn import clear_connection_cache
-
-            clear_connection_cache(only_current_and_inactive=False)
-        except Exception:
-            logger.debug("Could not clear DB connection cache", exc_info=True)
+        session.close()
 
     import json
 
