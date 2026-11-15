@@ -8,6 +8,7 @@ import time
 import uuid
 from collections.abc import Callable, Collection, Iterator
 from contextlib import contextmanager
+from functools import partial
 from pathlib import Path
 from typing import Any, Optional
 
@@ -16,6 +17,7 @@ from app.core.exceptions import InvalidStateTransitionError
 from app.core.migrations import Migration, add_missing_columns, migrate
 from app.core.moves import FAILED, INTENT, Move, MoveLedger, migrate_add_moves
 from app.core.path_utils import is_junction_path, safe_relpath
+from app.core.resilient_file_ops import verify_file_hash
 
 try:
     import pylnk3
@@ -1067,38 +1069,7 @@ class HistoryManager:
                 active_files_by_sig[sig] = []
             active_files_by_sig[sig].append(abs_path)
 
-        def verify_hash(abs_path, expected_hash, expected_size=0):
-            if not expected_hash:
-                return True
-
-            import gc
-            import sys
-            import time
-
-            from app.core.extractor import get_file_hash
-            from app.core.resilient_file_ops import MAX_ATTEMPTS, RETRY_DELAY
-
-            for attempt in range(MAX_ATTEMPTS):
-                try:
-                    h = get_file_hash(abs_path)
-                    if h == expected_hash:
-                        return True
-
-                    # On Windows, always retry if the hash doesn't match yet
-                    if sys.platform != "win32":
-                        return False
-                except Exception:
-                    if sys.platform != "win32":
-                        return False
-
-                if attempt == MAX_ATTEMPTS - 1:
-                    break
-
-                gc.collect()
-                if RETRY_DELAY > 0:
-                    time.sleep(RETRY_DELAY)
-
-            return False
+        verify_hash = partial(verify_file_hash, recovery=False)
 
         missing = []
         for (
@@ -1181,49 +1152,11 @@ class HistoryManager:
         """Replay recorded transaction ledger step entries in reverse order."""
         import json
         import logging
-        import sys
         from pathlib import Path
 
-        from app.core.extractor import get_file_hash
         from app.core.resilient_file_ops import resilient_remove
 
-        def verify_hash(abs_path, expected_hash, expected_size=0):
-            if not expected_hash:
-                return True
-            EMPTY_SHA256 = (
-                "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-            )
-            max_attempts = 30 if sys.platform == "win32" else 10
-            sleep_time = 0.1 if sys.platform == "win32" else 0.05
-
-            for attempt in range(max_attempts):
-                try:
-                    h = get_file_hash(abs_path)
-                    if h == expected_hash:
-                        return True
-                    if sys.platform == "win32":
-                        import gc
-
-                        gc.collect()
-                        time.sleep(sleep_time)
-                        continue
-                    if (
-                        h == EMPTY_SHA256
-                        and expected_hash != EMPTY_SHA256
-                        and expected_size > 0
-                    ):
-                        import gc
-
-                        gc.collect()
-                        time.sleep(sleep_time)
-                        continue
-                    return False
-                except Exception:
-                    import gc
-
-                    gc.collect()
-                    time.sleep(sleep_time)
-            return False
+        verify_hash = verify_file_hash
 
         reverse_steps = sorted(steps, key=lambda s: s["step_number"], reverse=True)
 
@@ -2218,50 +2151,7 @@ class HistoryManager:
                 # First compute all intended moves
                 moves = []
 
-                def verify_hash(abs_path, expected_hash, expected_size=0):
-                    if not expected_hash:
-                        return True
-                    EMPTY_SHA256 = "e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"
-                    import sys
-
-                    # On Windows, we allow up to 30 attempts (with 0.1s sleep, up to 3 seconds total)
-                    # to let NTFS flushes, sharing violations, and anti-virus locks settle.
-                    max_attempts = 30 if sys.platform == "win32" else 10
-                    sleep_time = 0.1 if sys.platform == "win32" else 0.05
-
-                    for attempt in range(max_attempts):
-                        try:
-                            from app.core.extractor import get_file_hash
-
-                            h = get_file_hash(abs_path)
-                            if h == expected_hash:
-                                return True
-
-                            # On Windows, always retry if the hash doesn't match yet
-                            if sys.platform == "win32":
-                                import gc
-
-                                gc.collect()
-                                time.sleep(sleep_time)
-                                continue
-
-                            if (
-                                h == EMPTY_SHA256
-                                and expected_hash != EMPTY_SHA256
-                                and expected_size > 0
-                            ):
-                                import gc
-
-                                gc.collect()
-                                time.sleep(sleep_time)
-                                continue
-                            return False
-                        except Exception:
-                            import gc
-
-                            gc.collect()
-                            time.sleep(sleep_time)
-                    return False
+                verify_hash = verify_file_hash
 
                 symlinks_to_restore = []
                 shortcuts_to_restore = []
