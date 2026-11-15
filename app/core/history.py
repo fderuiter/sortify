@@ -3,7 +3,6 @@
 import json
 import logging
 import os
-import sqlite3
 import time
 import uuid
 from collections.abc import Callable, Collection, Iterator
@@ -12,7 +11,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Optional
 
-from app.core.db_conn import get_db_connection
+from app.core.db_conn import DB_ERRORS, get_db_connection
 from app.core.exceptions import InvalidStateTransitionError
 from app.core.migrations import Migration, add_missing_columns, migrate
 from app.core.moves import FAILED, INTENT, Move, MoveLedger, migrate_add_moves
@@ -245,7 +244,7 @@ class SessionStateMachine:
                     meta_json,
                 ),
             )
-        except sqlite3.Error as audit_exc:
+        except DB_ERRORS as audit_exc:
             logging.warning(
                 "Failed to write session lifecycle audit ledger: %s", audit_exc
             )
@@ -331,7 +330,7 @@ class SessionStateMachine:
                     }
                 )
             return events
-        except sqlite3.Error as e:
+        except DB_ERRORS as e:
             logging.warning("Failed to query session lifecycle audit events: %s", e)
             return []
         finally:
