@@ -4,7 +4,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Set
+from typing import Any, Optional
 
 from rich.text import Text
 from textual.widgets import Input, Static, Tree
@@ -21,7 +21,7 @@ logger = logging.getLogger(__name__)
 class TreeViewMixin:
     """Render the plan tree, filter it by search query and fill the inspector."""
 
-    _tree_expansion_memory: Dict[str, bool] = {}
+    _tree_expansion_memory: dict[str, bool] = {}
     _last_cursor_key: Optional[str] = None
 
     def _capture_tree_state(self, tree: Tree, search_query: str = "") -> None:
@@ -266,7 +266,7 @@ class TreeViewMixin:
         except Exception as e:
             logger.debug(f"Error applying tree node styles: {e}")
 
-    def _has_file_nodes(self, plan_dict: Dict[str, Any]) -> bool:
+    def _has_file_nodes(self, plan_dict: dict[str, Any]) -> bool:
         """Check if plan structure contains any document file nodes."""
         if not plan_dict or not isinstance(plan_dict, dict):
             return False
@@ -291,14 +291,14 @@ class TreeViewMixin:
             return ""
 
     def _build_matching_node_ids(
-        self, plan_dict: Dict[str, Any], query: str, current_folder: str = ""
-    ) -> Set[int]:
+        self, plan_dict: dict[str, Any], query: str, current_folder: str = ""
+    ) -> set[int]:
         """Perform a single O(N) bottom-up pass returning a set of dictionary object IDs matching the query."""
-        matching_ids: Set[int] = set()
+        matching_ids: set[int] = set()
         if not query or not isinstance(plan_dict, dict):
             return matching_ids
 
-        def _walk(d: Dict[str, Any], folder: str) -> bool:
+        def _walk(d: dict[str, Any], folder: str) -> bool:
             has_match = False
             for k, v in d.items():
                 if isinstance(v, dict):
@@ -402,7 +402,7 @@ class TreeViewMixin:
         if run_validation:
             self.run_validation_worker()
 
-    def _collect_file_nodes_from_dict(self, d: Dict[str, Any]) -> List[Dict[str, Any]]:
+    def _collect_file_nodes_from_dict(self, d: dict[str, Any]) -> list[dict[str, Any]]:
         """Collect all file info dicts nested within a plan directory subtree."""
         files = []
         if not isinstance(d, dict):
@@ -417,12 +417,12 @@ class TreeViewMixin:
 
     def _collect_visible_file_nodes_from_dict(
         self,
-        node_dict: Dict[str, Any],
+        node_dict: dict[str, Any],
         current_folder: str = "",
         query: str = "",
         parent_folder_matches: bool = False,
-        matching_ids: Optional[Set[int]] = None,
-    ) -> List[Dict[str, Any]]:
+        matching_ids: Optional[set[int]] = None,
+    ) -> list[dict[str, Any]]:
         """Collect file info dicts for nodes visible under the active search query filter."""
         files = []
         if not isinstance(node_dict, dict):
@@ -465,7 +465,7 @@ class TreeViewMixin:
         return files
 
     def _node_matches_query(
-        self, key: str, val: Dict[str, Any], current_folder: str, query: str
+        self, key: str, val: dict[str, Any], current_folder: str, query: str
     ) -> bool:
         """Check if a node (file or directory) or any of its descendants match the search query."""
         if not query:
@@ -477,12 +477,12 @@ class TreeViewMixin:
 
     def _build_tree_nodes(
         self,
-        node_dict: Dict[str, Any],
+        node_dict: dict[str, Any],
         parent_item: TreeNode,
         current_folder: str,
         query: str = "",
         parent_folder_matches: bool = False,
-        matching_ids: Optional[Set[int]] = None,
+        matching_ids: Optional[set[int]] = None,
     ) -> int:
         """Recursively build tree nodes, filtering by search query if specified. Returns count of nodes added."""
         added_count = 0

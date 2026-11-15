@@ -9,7 +9,7 @@ import logging
 import os
 import re
 from datetime import datetime
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from app.core.path_utils import sanitize_name
 
@@ -18,7 +18,7 @@ logger = logging.getLogger(__name__)
 # Standard recognized tokens
 SUPPORTED_TOKENS = {"date", "category", "original", "extension", "seq"}
 
-DEFAULT_TOKEN_FALLBACKS: Dict[str, Any] = {
+DEFAULT_TOKEN_FALLBACKS: dict[str, Any] = {
     "date": lambda: datetime.now().strftime("%Y-%m-%d"),
     "category": "uncategorized",
     "original": "file",
@@ -31,7 +31,7 @@ class PatternTokenFormatter:
     """Parses and formats filename pattern templates using metadata tokens."""
 
     @classmethod
-    def parse_tokens(cls, pattern: str) -> List[str]:
+    def parse_tokens(cls, pattern: str) -> list[str]:
         """Extract token placeholder names enclosed in braces from pattern string.
 
         Args:
@@ -49,7 +49,7 @@ class PatternTokenFormatter:
     def format_pattern(
         cls,
         pattern: str,
-        metadata: Optional[Dict[str, Any]] = None,
+        metadata: Optional[dict[str, Any]] = None,
         seq: int = 1,
         fallback_original: str = "",
     ) -> str:
@@ -191,7 +191,7 @@ class PatternTokenFormatter:
 
 def format_pattern(
     pattern: str,
-    metadata: Optional[Dict[str, Any]] = None,
+    metadata: Optional[dict[str, Any]] = None,
     seq: int = 1,
     fallback_original: str = "",
 ) -> str:

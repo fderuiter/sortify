@@ -17,7 +17,7 @@ import subprocess
 import sys
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 import requests
 
@@ -40,7 +40,7 @@ def sanitize_sensitive_info(text: Any, token: Optional[str] = None) -> str:
     return text
 
 
-def run_local_tests(repo_root: Path) -> Tuple[int, str]:
+def run_local_tests(repo_root: Path) -> tuple[int, str]:
     """Execute local fast test suite via `uv run pytest -m "not slow"`."""
     cmd = ["uv", "run", "pytest", "-m", "not slow"]
     logger.info(f"Executing local test suite: {' '.join(cmd)}")
@@ -112,12 +112,12 @@ def normalize_severity(sev: Optional[str]) -> str:
     return "MEDIUM"
 
 
-_ADVISORY_CACHE: Dict[str, Tuple[str, Optional[float]]] = {}
+_ADVISORY_CACHE: dict[str, tuple[str, Optional[float]]] = {}
 
 
 def fetch_advisory_severity_and_cvss(
     vuln_id: str, timeout: float = 5.0
-) -> Tuple[str, Optional[float]]:
+) -> tuple[str, Optional[float]]:
     """Query remote vulnerability advisory endpoints (OSV / GitHub Advisory API) to retrieve severity and CVSS score.
 
     Returns (severity_str, cvss_score_float).
@@ -218,7 +218,7 @@ def _finalize_vulnerability_detail(vuln: VulnerabilityDetail) -> None:
 class PackageVulnerability:
     package_name: str
     current_version: str
-    vulnerabilities: List[VulnerabilityDetail] = field(default_factory=list)
+    vulnerabilities: list[VulnerabilityDetail] = field(default_factory=list)
 
     @property
     def target_fix_version(self) -> Optional[str]:
@@ -261,13 +261,13 @@ class PackageVulnerability:
         return max(scores) if scores else None
 
 
-def extract_exemptions_from_security_md(security_md_path: Path) -> List[str]:
+def extract_exemptions_from_security_md(security_md_path: Path) -> list[str]:
     """Parse SECURITY.md for exempted vulnerability IDs under Vulnerability Exemptions."""
     if not security_md_path.is_file():
         return []
 
     text = security_md_path.read_text(encoding="utf-8")
-    exemptions: List[str] = []
+    exemptions: list[str] = []
 
     # Locate Vulnerability Exemptions section
     match = re.search(
@@ -288,7 +288,7 @@ def extract_exemptions_from_security_md(security_md_path: Path) -> List[str]:
     return exemptions
 
 
-def run_uv_audit(exemptions: List[str], repo_root: Path) -> Tuple[int, str]:
+def run_uv_audit(exemptions: list[str], repo_root: Path) -> tuple[int, str]:
     """Execute uv audit ignoring exempted vulnerability IDs and return (exit_code, output)."""
     cmd = ["uv", "audit", "--color", "never"]
     for ex in exemptions:
@@ -309,7 +309,7 @@ def run_uv_audit(exemptions: List[str], repo_root: Path) -> Tuple[int, str]:
         return 1, str(e)
 
 
-def parse_audit_output(output: str) -> List[PackageVulnerability]:
+def parse_audit_output(output: str) -> list[PackageVulnerability]:
     """Parse uv audit text output into a list of PackageVulnerability objects.
 
     Sample uv audit output format:
@@ -320,7 +320,7 @@ def parse_audit_output(output: str) -> List[PackageVulnerability]:
       Fixed in: 2026.10.19
       Advisory information: https://github.com/certifi/python-certifi/security/advisories/GHSA-6q48-6c7w-9gw2
     """
-    packages: List[PackageVulnerability] = []
+    packages: list[PackageVulnerability] = []
     lines = output.splitlines()
 
     current_pkg: Optional[PackageVulnerability] = None
@@ -444,7 +444,7 @@ class GitHubRemediationClient:
             "Accept": "application/vnd.github.v3+json",
         }
 
-    def list_open_prs(self) -> List[Dict[str, Any]]:
+    def list_open_prs(self) -> list[dict[str, Any]]:
         url = f"{self.base_url}/pulls?state=open&per_page=100"
         resp = requests.get(url, headers=self.headers, timeout=30)
         resp.raise_for_status()
@@ -476,8 +476,8 @@ class GitHubRemediationClient:
         head_branch: str,
         base_branch: str,
         body: str,
-        labels: List[str],
-    ) -> Optional[Dict[str, Any]]:
+        labels: list[str],
+    ) -> Optional[dict[str, Any]]:
         url = f"{self.base_url}/pulls"
         data = {
             "title": title,
@@ -501,7 +501,7 @@ class GitHubRemediationClient:
         return pr_data
 
     def report_security_issue(
-        self, title: str, body: str, labels: Optional[List[str]] = None
+        self, title: str, body: str, labels: Optional[list[str]] = None
     ) -> None:
         """Create or update a maintainer issue when unfixable vulnerabilities occur."""
         if labels is None:
@@ -577,8 +577,8 @@ def remediate_vulnerabilities(
         if len(parts) == 2:
             gh_client = GitHubRemediationClient(token, parts[0], parts[1])
 
-    unfixable_reports: List[str] = []
-    unfixable_pkgs: List[PackageVulnerability] = []
+    unfixable_reports: list[str] = []
+    unfixable_pkgs: list[PackageVulnerability] = []
     patched_any = False
 
     for pkg in vuln_packages:

@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from rich.text import Text
 from textual import events, on
@@ -253,7 +253,7 @@ class ExtractionPreviewModal(A11yMixin, ModalScreen[Optional[int]]):
 
 
 class ExportReportModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Tuple[str, str]]]
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[tuple[str, str]]]
 ):
     """Modal dialog for exporting dry-run simulation reports."""
 
@@ -471,7 +471,7 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
     }
     """
 
-    def __init__(self, report_data: Dict[str, Any]):
+    def __init__(self, report_data: dict[str, Any]):
         super().__init__()
         self.report_data = report_data or {}
 
@@ -665,7 +665,7 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
             dst = rec.get("relative_destination") or rec.get("destination_path", "")
             table.add_row(fn, st, err, src, dst)
 
-    def _get_failed_records(self) -> List[Dict[str, Any]]:
+    def _get_failed_records(self) -> list[dict[str, Any]]:
         """Get list of failed item records from report data."""
         failed = self.report_data.get("failed_items", [])
         if not failed:
@@ -729,7 +729,7 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
 
         self._execute_retry(failed_records)
 
-    def _execute_retry(self, items_to_retry: List[Dict[str, Any]]) -> None:
+    def _execute_retry(self, items_to_retry: list[dict[str, Any]]) -> None:
         """Execute mover retry for selected failed items and refresh UI."""
         from app.core.mover import retry_failed_moves
 

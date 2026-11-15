@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "51386b4afda3cde3a6d08beafdd88c410495853ec2b81d4ca889adbc81d55c6e"
+    "checksum": "ff8cb6b3022a5bbcd1209890624fc80ccaa577623536df2fe8b8f97bc68a2e6d"
   },
   "classes": [
     {
@@ -28,7 +28,7 @@
               "name": "**kwargs"
             }
           ],
-          "returns": "Dict[str, Any]"
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -324,7 +324,7 @@
           "name": "settings"
         }
       ],
-      "returns": "Tuple[str, str, str]"
+      "returns": "tuple[str, str, str]"
     }
   ]
 }

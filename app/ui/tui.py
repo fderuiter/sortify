@@ -4,7 +4,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional
 
 from textual import events, on, work
 from textual.app import App, ComposeResult
@@ -290,7 +290,7 @@ class AutoSorterTUI(
         self,
         settings,
         base_dir: Optional[str] = None,
-        source_dirs: Optional[List[str]] = None,
+        source_dirs: Optional[list[str]] = None,
         skip_wizard: bool = False,
         non_interactive: bool = False,
         db: Optional[Any] = None,
@@ -316,15 +316,15 @@ class AutoSorterTUI(
             self.source_dirs = []
         self.skip_wizard = skip_wizard
         self.non_interactive = non_interactive
-        self.plan: Dict[str, Any] = {}
-        self.locked_files: Dict[str, str] = {}
-        self._ratings_cache: Dict[str, str] = {}
+        self.plan: dict[str, Any] = {}
+        self.locked_files: dict[str, str] = {}
+        self._ratings_cache: dict[str, str] = {}
         self.app_session = None
         self.active_tree_node = None
         self.visual_select_active: bool = False
         self.visual_selected_nodes: list = []
         self._wizard_dismissed_this_session: bool = False
-        self.verification_result: Dict[str, Any] = {}
+        self.verification_result: dict[str, Any] = {}
         self.has_critical_errors: bool = False
         self.critical_error_paths: set = set()
         self.warning_paths: set = set()
@@ -696,7 +696,7 @@ class AutoSorterTUI(
         except Exception as e:
             logger.error(f"Error checking abandoned sessions: {e}")
 
-    def _do_recovery_resume(self, session_info: Dict[str, Any]) -> None:
+    def _do_recovery_resume(self, session_info: dict[str, Any]) -> None:
         """Resume interrupted sorting operation."""
         import json
 
@@ -726,7 +726,7 @@ class AutoSorterTUI(
         )
         self.action_execute_sort()
 
-    def _do_recovery_rollback(self, session_info: Dict[str, Any]) -> None:
+    def _do_recovery_rollback(self, session_info: dict[str, Any]) -> None:
         """Rollback interrupted sorting operation."""
         from app.core.session_catalog import roll_back_abandoned_session
 
@@ -745,7 +745,7 @@ class AutoSorterTUI(
         if self.base_dir:
             self.action_scan_directory()
 
-    def _do_recovery_clean(self, session_info: Dict[str, Any]) -> None:
+    def _do_recovery_clean(self, session_info: dict[str, Any]) -> None:
         """Leave an abandoned session as it is and stop offering to recover it."""
         from app.core.session_catalog import forget_abandoned_session
 
@@ -976,7 +976,7 @@ class AutoSorterTUI(
         if self._is_text_control_focused(allow_tree_search=True):
             return
 
-        def on_selected(path: Optional[Union[str, List[str]]]) -> None:
+        def on_selected(path: Optional[str | list[str]]) -> None:
             if not path:
                 return
             paths = [path] if isinstance(path, str) else list(path)
@@ -1123,7 +1123,7 @@ class AutoSorterTUI(
         if self._is_text_control_focused(allow_tree_search=True):
             return
 
-        def on_saved(res: Optional[Dict[str, Any]]) -> None:
+        def on_saved(res: Optional[dict[str, Any]]) -> None:
             if res:
                 if "PROTECTED_PATHS" in res:
                     try:
@@ -1290,7 +1290,7 @@ class AutoSorterTUI(
         if self._is_text_control_focused(allow_tree_search=True):
             return
 
-        def on_drop_done(res: Optional[Dict[str, Any]]) -> None:
+        def on_drop_done(res: Optional[dict[str, Any]]) -> None:
             if res:
                 cnt = res.get("processed_count", 0)
                 self.announce(f"DropZone triage finished: {cnt} item(s) organized.")
@@ -1312,7 +1312,7 @@ class AutoSorterTUI(
 
         default_out = str(Path(self.base_dir) / "simulation_report.html")
 
-        def handle_export_modal_result(result: Optional[Tuple[str, str]]) -> None:
+        def handle_export_modal_result(result: Optional[tuple[str, str]]) -> None:
             if not result:
                 return
             export_path, report_format = result
@@ -1347,7 +1347,7 @@ class AutoSorterTUI(
 
         sessions = list_sessions()
 
-        def handle_history_modal_result(result: Optional[Dict[str, Any]]) -> None:
+        def handle_history_modal_result(result: Optional[dict[str, Any]]) -> None:
             if not result:
                 return
             session_id = result["session_id"]
@@ -1409,7 +1409,7 @@ class AutoSorterTUI(
             self.announce("No completed sorting session available to undo.")
             return
 
-        def handle_confirm_result(result: Optional[Dict[str, Any]]) -> None:
+        def handle_confirm_result(result: Optional[dict[str, Any]]) -> None:
             if not result or not result.get("confirmed"):
                 return
             sid = result["session_id"]
@@ -1427,13 +1427,13 @@ class AutoSorterTUI(
         self,
         session_id: str,
         ignore_missing: bool = False,
-        selected_step_ids: Optional[List[Any]] = None,
+        selected_step_ids: Optional[list[Any]] = None,
     ) -> None:
         """Execute session rollback restoration asynchronously in background worker thread."""
         try:
             from app.core.history import open_session_history
 
-            kwargs: Dict[str, Any] = {"ignore_missing": ignore_missing}
+            kwargs: dict[str, Any] = {"ignore_missing": ignore_missing}
             if selected_step_ids is not None:
                 kwargs["selected_step_ids"] = selected_step_ids
 
@@ -1483,7 +1483,7 @@ class AutoSorterTUI(
         self.action_execute_sort()
 
     def action_open_audit_report(
-        self, audit_report: Optional[Dict[str, Any]] = None
+        self, audit_report: Optional[dict[str, Any]] = None
     ) -> None:
         """Open the Audit Report Modal Screen."""
         if not audit_report and self.app_session and self.plan:
@@ -1536,9 +1536,7 @@ class AutoSorterTUI(
 
     @on(Tree.NodeHighlighted, "#plan-tree")
     @on(Tree.NodeSelected, "#plan-tree")
-    def on_node_selected(
-        self, event: Union[Tree.NodeSelected, Tree.NodeHighlighted]
-    ) -> None:
+    def on_node_selected(self, event: Tree.NodeSelected | Tree.NodeHighlighted) -> None:
         """Handle tree node selection or highlight to update metadata pane and screen reader announcement."""
         self.active_tree_node = event.node
         if event.node and getattr(event.node, "data", None):
@@ -1560,7 +1558,7 @@ class AutoSorterTUI(
     @on(Tree.NodeExpanded, "#plan-tree")
     @on(Tree.NodeCollapsed, "#plan-tree")
     def on_tree_node_expansion_changed(
-        self, event: Union[Tree.NodeExpanded, Tree.NodeCollapsed]
+        self, event: Tree.NodeExpanded | Tree.NodeCollapsed
     ) -> None:
         """Handle tree node expand/collapse to keep expansion state memory synchronized."""
         search_query = self._get_current_search_query()

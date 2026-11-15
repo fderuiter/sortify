@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "f4411e7f1219499f13e0ecab51fa955dd119b7a519b4cb9e225153b9aace6138"
+    "checksum": "a0c153124c1b1a8ec8b00a6ef1181f02ac06c1c157d58ce120a346c8a43a7a22"
   },
   "classes": [
     {
@@ -56,12 +56,12 @@
               "name": "text"
             },
             {
-              "annotation": "Tuple[int, int]",
+              "annotation": "tuple[int, int]",
               "default": null,
               "name": "image_size"
             }
           ],
-          "returns": "Dict[str, Any]"
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -84,12 +84,12 @@
               "name": "task_prompt"
             },
             {
-              "annotation": "Optional[Tuple[int, int]]",
+              "annotation": "Optional[tuple[int, int]]",
               "default": "None",
               "name": "image_size"
             }
           ],
-          "returns": "Dict[str, Any]"
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -193,7 +193,7 @@
               "name": "model_id"
             },
             {
-              "annotation": "Optional[List[str]]",
+              "annotation": "Optional[list[str]]",
               "default": "None",
               "name": "expected_files"
             }

@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any, Optional
 
 from textual import on
 from textual.app import ComposeResult
@@ -239,7 +239,7 @@ class ConsentRevocationModal(A11yMixin, ModalScreen[bool]):
 
 
 class SettingsModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Dict[str, Any]]]
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict[str, Any]]]
 ):
     """Modal dialog for modifying application settings."""
 

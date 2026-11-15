@@ -12,7 +12,8 @@ import os
 import re
 import socket
 import sys
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any, Optional
 
 from app.core.exceptions import (
     ArchiveCorruptionError,
@@ -39,11 +40,11 @@ class OfflineModelLoader:
     a sandboxed network context.
     """
 
-    _registered_models: Dict[str, Dict[str, Any]] = {}
+    _registered_models: dict[str, dict[str, Any]] = {}
 
     @classmethod
     def register_model(
-        cls, model_id: str, expected_files: Optional[List[str]] = None
+        cls, model_id: str, expected_files: Optional[list[str]] = None
     ) -> None:
         """Register a model's expected files to enable automatic resolution and integrity verification.
 
@@ -90,7 +91,7 @@ class OfflineModelLoader:
         return True
 
     @classmethod
-    def _find_sidecar_zip_candidates(cls) -> List[str]:
+    def _find_sidecar_zip_candidates(cls) -> list[str]:
         """Find potential filesystem paths where smart-autosorter-models.zip may reside."""
         candidates = []
 
@@ -356,7 +357,7 @@ class OfflineModelLoader:
         searched_paths.append(home_path)
 
         # Helper to test path existence
-        def check_paths(paths: List[str]) -> Optional[str]:
+        def check_paths(paths: list[str]) -> Optional[str]:
             unique_paths = []
             for p in paths:
                 normalized_p = os.path.abspath(p)
@@ -671,8 +672,8 @@ class Florence2VisualProcessor:
         self,
         image_path: Any,
         task_prompt: str = "<OD>",
-        image_size: Optional[Tuple[int, int]] = None,
-    ) -> Dict[str, Any]:
+        image_size: Optional[tuple[int, int]] = None,
+    ) -> dict[str, Any]:
         """Perform visual analysis task on local image and return parsed results.
 
         Parameters
@@ -738,8 +739,8 @@ class Florence2VisualProcessor:
 
     @classmethod
     def parse_and_sanitize(
-        cls, text: str, image_size: Tuple[int, int]
-    ) -> Dict[str, Any]:
+        cls, text: str, image_size: tuple[int, int]
+    ) -> dict[str, Any]:
         """Parse coordinate coordinates, strip markup tags, normalize, and sanitize text.
 
         Parameters

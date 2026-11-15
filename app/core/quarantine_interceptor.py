@@ -8,7 +8,7 @@ import shutil
 import time
 import unicodedata
 import uuid
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from app.core.analyzer_strategies import redact_sensitive_text
 from app.core.crypto import zero_vector_buffer
@@ -73,17 +73,17 @@ class QuarantineInterceptorService:
     def __init__(
         self,
         db: Database,
-        policies: Optional[List[Dict[str, Any]]] = None,
+        policies: Optional[list[dict[str, Any]]] = None,
         worker_timeout: float = 300.0,
         jev_classifier: Optional[Any] = None,
-        auto_quarantine_ratings: Optional[List[str]] = None,
+        auto_quarantine_ratings: Optional[list[str]] = None,
         runtime_settings: Optional[Any] = None,
     ):
         self.db = db
         self.policies = PolicyEngine.sort_policies(policies)
         self.worker_timeout = worker_timeout
         self.forensic_scanner = ForensicScanner()
-        self.dlq_records: List[Dict[str, Any]] = []
+        self.dlq_records: list[dict[str, Any]] = []
         if jev_classifier is not None:
             self.jev_classifier = jev_classifier
         else:
@@ -188,7 +188,7 @@ class QuarantineInterceptorService:
         base_dir: str,
         original_relative_path: Optional[str] = None,
         policy_action: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Immediately place incoming unverified file into temporary _Quarantine_Staging prior to compliance evaluation."""
         if not os.path.exists(source_path):
             raise FileNotFoundError(f"Source file not found for staging: {source_path}")
@@ -824,8 +824,8 @@ class QuarantineInterceptorService:
             return validate_quarantine_record(fallback)
 
     def process_quarantine_batch(
-        self, job_ids: List[str], timeout_override: Optional[float] = None
-    ) -> List[Any]:
+        self, job_ids: list[str], timeout_override: Optional[float] = None
+    ) -> list[Any]:
         """Execute forensic scanning and policy evaluation for a batch of quarantine job IDs.
 
         Guarantees isolated record execution so individual job failures do not halt
@@ -854,12 +854,12 @@ class QuarantineInterceptorService:
 
     def release_quarantine_batch(
         self,
-        job_ids: List[str],
+        job_ids: list[str],
         dest_dir: Optional[str] = None,
         conflict_policy: str = "rename",
         allow_external: bool = False,
         **kwargs: Any,
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Release a batch of quarantined items to target destination directories.
 
         Guarantees isolated atomic file relocations and individual audit logging.
@@ -1049,7 +1049,7 @@ class QuarantineInterceptorService:
                 )
         return results
 
-    def dismiss_quarantine_batch(self, job_ids: List[str]) -> List[Dict[str, Any]]:
+    def dismiss_quarantine_batch(self, job_ids: list[str]) -> list[dict[str, Any]]:
         """Mark a batch of quarantine records as DISMISSED in database with audit logs."""
         results = []
         unique_ids = list(dict.fromkeys(job_ids))

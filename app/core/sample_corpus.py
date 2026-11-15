@@ -1,9 +1,9 @@
 """Shared sample data generation engine for Smart AutoSorter AI Pro."""
 
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
-SAMPLE_CORPUS_ITEMS: Dict[str, str] = {
+SAMPLE_CORPUS_ITEMS: dict[str, str] = {
     "demo_finance.txt": (
         "This is a detailed report on finance, money, investment, and banking strategies. "
         "The economy is growing."
@@ -19,7 +19,7 @@ SAMPLE_CORPUS_ITEMS: Dict[str, str] = {
 }
 
 
-def get_sample_corpus_items() -> Dict[str, str]:
+def get_sample_corpus_items() -> dict[str, str]:
     """Return dictionary of sample corpus file names mapped to their text content.
 
     Returns
@@ -30,9 +30,9 @@ def get_sample_corpus_items() -> Dict[str, str]:
 
 
 def simulate_corpus_classification(
-    selected_packs: Optional[List[str]] = None,
+    selected_packs: Optional[list[str]] = None,
     settings: Optional[Any] = None,
-) -> Dict[str, Dict[str, Any]]:
+) -> dict[str, dict[str, Any]]:
     """Run an in-memory classification dry-run against the sample document corpus.
 
     Evaluates keyword rules and compliance policies from selected starter template
@@ -56,8 +56,8 @@ def simulate_corpus_classification(
     from app.core.policy_engine import PolicyEngine
     from app.core.rule_templates import get_starter_template_by_id
 
-    keyword_rules: Dict[str, str] = {}
-    policies: List[Dict[str, Any]] = []
+    keyword_rules: dict[str, str] = {}
+    policies: list[dict[str, Any]] = []
 
     # Load base rules from settings if provided
     if settings is not None:
@@ -80,7 +80,7 @@ def simulate_corpus_classification(
 
     sorted_policies = PolicyEngine.sort_policies(policies)
     sample_items = get_sample_corpus_items()
-    results: Dict[str, Dict[str, Any]] = {}
+    results: dict[str, dict[str, Any]] = {}
 
     for filename, content in sample_items.items():
         matched_rule = "None"
@@ -177,7 +177,7 @@ def simulate_corpus_classification(
     return results
 
 
-def generate_sample_corpus(base_dir: str, overwrite: bool = False) -> List[str]:
+def generate_sample_corpus(base_dir: str, overwrite: bool = False) -> list[str]:
     """Generate a sample corpus with categorized text documents (finance, tech, health, empty).
 
     Args:

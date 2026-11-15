@@ -1,7 +1,8 @@
 """Keyboard slider for choosing the layout density."""
 
 import time
-from typing import Callable, Optional
+from collections.abc import Callable
+from typing import Optional
 
 from textual import events
 from textual.message import Message

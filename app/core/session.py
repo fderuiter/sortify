@@ -3,7 +3,7 @@
 import contextlib
 import json
 import os
-from typing import Any, Dict, Optional, Tuple
+from typing import Any
 
 from app.config import get_app_dir
 from app.core.analyzer import IncrementalAnalyzer
@@ -189,8 +189,8 @@ class AppSession:
     def generate_sorting_plan(
         self,
         fast_path_only: bool = False,
-        target_paths: Optional[list[str]] = None,
-        jev_results: Optional[Dict[str, Any]] = None,
+        target_paths: list[str] | None = None,
+        jev_results: dict[str, Any] | None = None,
     ):
         """Generate sorting plan from analyzer."""
         if hasattr(self, "lifecycle_state"):
@@ -417,10 +417,10 @@ class AppSession:
             resilient_rmtree(self.session_dir, ignore_errors=True)
 
 
-def split_plan_phases(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, Any]]:
+def split_plan_phases(plan: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:
     """Split plan items into Phase 1 (deterministic/fast path) and Phase 2 (AI/clustering/slow path)."""
-    fast_plan: Dict[str, Any] = {}
-    slow_plan: Dict[str, Any] = {}
+    fast_plan: dict[str, Any] = {}
+    slow_plan: dict[str, Any] = {}
 
     FAST_ROUTES = {
         "keyword",
@@ -432,7 +432,7 @@ def split_plan_phases(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, A
     }
 
     def process_node(
-        node: Any, fast_target: Dict[str, Any], slow_target: Dict[str, Any]
+        node: Any, fast_target: dict[str, Any], slow_target: dict[str, Any]
     ):
         if not isinstance(node, dict):
             return
@@ -448,8 +448,8 @@ def split_plan_phases(plan: Dict[str, Any]) -> Tuple[Dict[str, Any], Dict[str, A
                 else:
                     slow_target[key] = val
             elif isinstance(val, dict):
-                sub_fast: Dict[str, Any] = {}
-                sub_slow: Dict[str, Any] = {}
+                sub_fast: dict[str, Any] = {}
+                sub_slow: dict[str, Any] = {}
                 process_node(val, sub_fast, sub_slow)
                 if sub_fast:
                     fast_target[key] = sub_fast

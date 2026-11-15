@@ -12,7 +12,7 @@ Key accessibility capabilities:
 """
 
 import html
-from typing import Dict, List, Optional, Tuple
+from typing import Optional
 
 # Contrast-safe color tokens complying with WCAG 2.2 SC 1.4.3 (>= 4.5:1 against light backgrounds)
 # #b45309 delivers 5.02:1 contrast against white (#ffffff)
@@ -50,7 +50,7 @@ SR_ONLY_CSS: str = """
 """
 
 
-def _parse_hex_color(hex_str: str) -> Tuple[float, float, float]:
+def _parse_hex_color(hex_str: str) -> tuple[float, float, float]:
     """Parse a hex color string to normalized RGB float components."""
     clean_hex = hex_str.strip().lstrip("#")
     if len(clean_hex) == 3:
@@ -91,7 +91,7 @@ def render_accessible_input(
     input_type: str = "text",
     placeholder: str = "",
     input_class: str = "",
-    extra_attrs: Optional[Dict[str, str]] = None,
+    extra_attrs: Optional[dict[str, str]] = None,
     sr_only_label: bool = True,
     aria_label: Optional[str] = None,
 ) -> str:
@@ -132,10 +132,10 @@ def render_accessible_input(
 def render_accessible_select(
     select_id: str,
     label_text: str,
-    options: Optional[List[Tuple[str, str]]] = None,
+    options: Optional[list[tuple[str, str]]] = None,
     select_class: str = "",
     options_html: Optional[str] = None,
-    extra_attrs: Optional[Dict[str, str]] = None,
+    extra_attrs: Optional[dict[str, str]] = None,
     sr_only_label: bool = True,
     aria_label: Optional[str] = None,
 ) -> str:
@@ -180,7 +180,7 @@ def render_accessible_select(
     return f"{label_tag}\n        {select_tag}"
 
 
-def render_table_header(columns: List[str]) -> str:
+def render_table_header(columns: list[str]) -> str:
     """Render an accessible table thead element where every header declares scope='col'.
 
     Complies with WCAG 2.2 SC 1.3.1 (Info and Relationships).
@@ -190,7 +190,7 @@ def render_table_header(columns: List[str]) -> str:
 
 
 def render_table(
-    columns: List[str],
+    columns: list[str],
     rows_html: str,
     table_id: Optional[str] = None,
     table_class: Optional[str] = None,
@@ -218,7 +218,7 @@ def render_table(
 
 
 def render_warning_banner(
-    warnings: List[str],
+    warnings: list[str],
     heading_level: int = 2,
     title: Optional[str] = None,
     banner_class: str = "warning-banner",

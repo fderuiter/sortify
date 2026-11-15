@@ -6,20 +6,10 @@ import os
 import sqlite3
 import time
 import uuid
+from collections.abc import Callable, Collection, Iterator
 from contextlib import contextmanager
 from pathlib import Path
-from typing import (
-    Any,
-    Callable,
-    Collection,
-    Dict,
-    Iterator,
-    List,
-    Optional,
-    Set,
-    Tuple,
-    Union,
-)
+from typing import Any, Optional
 
 from app.core.db_conn import get_db_connection
 from app.core.exceptions import InvalidStateTransitionError
@@ -42,7 +32,7 @@ UNDO_SNAPSHOT = "undo_snapshot"
 ABANDONED = "abandoned"
 UNCOMMITTED = "uncommitted"
 
-ALL_SESSION_STATUSES: Set[str] = {
+ALL_SESSION_STATUSES: set[str] = {
     ACTIVE,
     COMPLETED,
     ROLLED_BACK,
@@ -54,7 +44,7 @@ ALL_SESSION_STATUSES: Set[str] = {
 }
 
 # Explicit transition matrix: current_status -> set of allowed target statuses
-TRANSITION_MATRIX: Dict[str, Set[str]] = {
+TRANSITION_MATRIX: dict[str, set[str]] = {
     ACTIVE: {
         ACTIVE,
         COMPLETED,
@@ -135,16 +125,16 @@ class SessionStateMachine:
 
     def __init__(self, db_path: Optional[str] = None):
         self.db_path = db_path
-        self._listeners: List[Callable[[Dict[str, Any]], None]] = []
+        self._listeners: list[Callable[[dict[str, Any]], None]] = []
 
     def add_transition_listener(
-        self, callback: Callable[[Dict[str, Any]], None]
+        self, callback: Callable[[dict[str, Any]], None]
     ) -> None:
         """Register a callback to receive structured telemetry events on status change."""
         self._listeners.append(callback)
 
     def remove_transition_listener(
-        self, callback: Callable[[Dict[str, Any]], None]
+        self, callback: Callable[[dict[str, Any]], None]
     ) -> None:
         """Unregister a telemetry event callback."""
         if callback in self._listeners:
@@ -174,8 +164,8 @@ class SessionStateMachine:
         conn=None,
         *,
         error_details: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[str, str]:
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> tuple[str, str]:
         """Atomically validate and execute a session status transition in the database.
 
         Records audit logs and structured telemetry events.
@@ -211,8 +201,8 @@ class SessionStateMachine:
         new_status: str,
         *,
         error_details: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[str, str]:
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> tuple[str, str]:
         cur = conn.execute(
             "SELECT status FROM sessions WHERE session_id = ?",
             (session_id,),
@@ -291,7 +281,7 @@ class SessionStateMachine:
 
     def get_audit_events(
         self, session_id: Optional[str] = None, conn=None
-    ) -> List[Dict[str, Any]]:
+    ) -> list[dict[str, Any]]:
         """Retrieve historical lifecycle audit events for a session."""
         close_conn = False
         if conn is None:
@@ -397,7 +387,7 @@ class RollbackBatchTransaction:
         self.op_count = 0
         self.total_committed = 0
         self._sp_counter = 0
-        self.current_savepoint: Optional[str] = None
+        self.current_savepoint: str | None = None
 
     def begin_batch(self) -> None:
         """Create a savepoint before a batch of operations if none active."""
@@ -407,7 +397,7 @@ class RollbackBatchTransaction:
             self.conn.execute(f"SAVEPOINT {self.current_savepoint}")
             self.op_count = 0
 
-    def execute(self, query: str, params: Union[tuple, list] = ()):
+    def execute(self, query: str, params: tuple | list = ()):
         """Execute a query within the current batch savepoint."""
         self.begin_batch()
         return self.conn.execute(query, params)
@@ -685,8 +675,8 @@ class HistoryManager:
         conn=None,
         *,
         error_details: Optional[str] = None,
-        metadata: Optional[Dict[str, Any]] = None,
-    ) -> Tuple[str, str]:
+        metadata: Optional[dict[str, Any]] = None,
+    ) -> tuple[str, str]:
         """Atomically validate and execute a session status transition."""
         return self.state_machine.transition(
             session_id,
@@ -968,7 +958,7 @@ class HistoryManager:
             conn.execute("DELETE FROM sessions WHERE session_id = ?", (sid,))
             _purge_overwrite_backups(base_dir, sid)
 
-    def get_sessions(self) -> List[Dict[str, Any]]:
+    def get_sessions(self) -> list[dict[str, Any]]:
         """Retrieve a list of all historical sessions, ordered by time."""
         conn = get_db_connection(self.db_path)
         with conn:
@@ -1010,7 +1000,7 @@ class HistoryManager:
                 )
             return sessions
 
-    def check_missing_files(self, session_id: str) -> List[str]:
+    def check_missing_files(self, session_id: str) -> list[str]:
         """Check if any files from the snapshot are missing from the disk."""
         conn = get_db_connection(self.db_path)
         with conn:
@@ -1458,7 +1448,7 @@ class HistoryManager:
             )
             return cursor.lastrowid
 
-    def get_step_ledger(self, session_id: str) -> List[Dict[str, Any]]:
+    def get_step_ledger(self, session_id: str) -> list[dict[str, Any]]:
         """Retrieve all recorded relocation steps for a session in chronological order."""
         conn = get_db_connection(self.db_path)
         with conn:
@@ -1491,7 +1481,7 @@ class HistoryManager:
                 for r in rows
             ]
 
-    def get_session_moves(self, session_id: str) -> List[Dict[str, Any]]:
+    def get_session_moves(self, session_id: str) -> list[dict[str, Any]]:
         """Retrieve itemized recorded file moves for a session."""
         moves = self.moves.list_moves(session_id)
         if moves:
@@ -1576,13 +1566,13 @@ class HistoryManager:
         session_id: Any = None,
         format: Any = None,
         base_dir: Optional[str] = None,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Export session history records into standard CSV or JSON audit log formats."""
         import csv
         import json
         from datetime import datetime, timezone
 
-        db_paths: List[str] = []
+        db_paths: list[str] = []
         if self.db_path:
             p_abs = str(Path(self.db_path).resolve())
             if os.path.exists(p_abs):
@@ -1591,8 +1581,8 @@ class HistoryManager:
         if not db_paths and self.db_path:
             db_paths.append(str(Path(self.db_path).resolve()))
 
-        sessions_map: Dict[str, Dict[str, Any]] = {}
-        steps: List[Dict[str, Any]] = []
+        sessions_map: dict[str, dict[str, Any]] = {}
+        steps: list[dict[str, Any]] = []
         seen_step_keys = set()
 
         for db_p in db_paths:
@@ -1793,7 +1783,7 @@ class HistoryManager:
         self,
         session_id: str,
         db=None,
-        selected_step_ids: Optional[Collection[Union[int, str]]] = None,
+        selected_step_ids: Optional[Collection[int | str]] = None,
     ) -> int:
         """Unwind completed relocation steps in exact reverse chronological order using step ledger."""
         return self._unwind_session_internal(
@@ -1804,7 +1794,7 @@ class HistoryManager:
         self,
         session_id: str,
         db=None,
-        selected_step_ids: Optional[Collection[Union[int, str]]] = None,
+        selected_step_ids: Optional[Collection[int | str]] = None,
     ) -> int:
         if db:
             db.invalidate_cache()
@@ -2860,7 +2850,7 @@ class HistoryManager:
         self,
         session_id: str,
         ignore_missing: bool = False,
-        selected_step_ids: Optional[Collection[Union[int, str]]] = None,
+        selected_step_ids: Optional[Collection[int | str]] = None,
     ):
         """Revert directory and metadata state using recorded transaction ledger steps or snapshot."""
         self.db.invalidate_cache()
@@ -2937,9 +2927,9 @@ class HistoryManager:
     def preview_rollback(
         self,
         session_id: str,
-        selected_step_ids: Optional[Collection[Union[int, str]]] = None,
+        selected_step_ids: Optional[Collection[int | str]] = None,
         ignore_missing: bool = False,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Simulate pre-flight session rollback without making any disk modifications.
 
         Analyzes selected steps and categorizes status into:

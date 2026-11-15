@@ -3,15 +3,16 @@
 import importlib
 import logging
 import threading
-from typing import Any, Callable, Dict, List, Optional, Tuple
+from collections.abc import Callable
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
 
-ALLOWED_PLUGIN_PREFIXES: Tuple[str, ...] = ("app.plugins.", "sortify_plugin_")
+ALLOWED_PLUGIN_PREFIXES: tuple[str, ...] = ("app.plugins.", "sortify_plugin_")
 
 
-def _get_plugin_candidates(plugin_name_or_module: str) -> List[str]:
+def _get_plugin_candidates(plugin_name_or_module: str) -> list[str]:
     """Resolve candidate module import paths for a plugin in order of priority.
 
     Evaluates scoped namespaces (app.plugins.<name>) before raw paths, and enforces
@@ -21,7 +22,7 @@ def _get_plugin_candidates(plugin_name_or_module: str) -> List[str]:
     if not raw_name:
         return []
 
-    raw_candidates: List[str] = []
+    raw_candidates: list[str] = []
 
     if raw_name.startswith("app.plugins."):
         raw_candidates.append(raw_name)
@@ -39,7 +40,7 @@ def _get_plugin_candidates(plugin_name_or_module: str) -> List[str]:
         if not raw_name.endswith(".plugin"):
             raw_candidates.append(f"app.plugins.{raw_name}.plugin")
 
-    valid_candidates: List[str] = []
+    valid_candidates: list[str] = []
     for cand in raw_candidates:
         if cand.startswith(ALLOWED_PLUGIN_PREFIXES) and cand not in valid_candidates:
             valid_candidates.append(cand)
@@ -54,11 +55,11 @@ class PluginRegistry:
     _lock = threading.Lock()
 
     def __init__(self):
-        self._quarantine_scan_hooks: List[Callable] = []
-        self._clustering_strategies: Dict[str, Any] = {}
-        self._tui_strategy_options: List[Tuple[str, str]] = []
-        self._tui_views: Dict[str, Any] = {}
-        self._tui_switches: List[Dict[str, Any]] = []
+        self._quarantine_scan_hooks: list[Callable] = []
+        self._clustering_strategies: dict[str, Any] = {}
+        self._tui_strategy_options: list[tuple[str, str]] = []
+        self._tui_views: dict[str, Any] = {}
+        self._tui_switches: list[dict[str, Any]] = []
         self._loaded_plugins: set[str] = set()
 
     @classmethod
@@ -115,13 +116,13 @@ class PluginRegistry:
             self.load_plugin("clinical_compliance")
         return self._clustering_strategies.get(name)
 
-    def register_tui_strategy_options(self, options: List[Tuple[str, str]]) -> None:
+    def register_tui_strategy_options(self, options: list[tuple[str, str]]) -> None:
         """Register dropdown strategy options for TUI Settings modal."""
         for opt in options:
             if opt not in self._tui_strategy_options:
                 self._tui_strategy_options.append(opt)
 
-    def get_tui_strategy_options(self) -> List[Tuple[str, str]]:
+    def get_tui_strategy_options(self) -> list[tuple[str, str]]:
         """Retrieve all plugin-registered TUI strategy options."""
         return list(self._tui_strategy_options)
 
@@ -133,12 +134,12 @@ class PluginRegistry:
         """Retrieve registered TUI view component by name."""
         return self._tui_views.get(view_name)
 
-    def register_tui_switch(self, switch_config: Dict[str, Any]) -> None:
+    def register_tui_switch(self, switch_config: dict[str, Any]) -> None:
         """Register a settings switch configuration for TUI Settings modal."""
         if switch_config not in self._tui_switches:
             self._tui_switches.append(switch_config)
 
-    def get_tui_switches(self) -> List[Dict[str, Any]]:
+    def get_tui_switches(self) -> list[dict[str, Any]]:
         """Retrieve all plugin-registered TUI setting switches."""
         return list(self._tui_switches)
 

@@ -1,7 +1,7 @@
 """Pydantic v2 domain schema contract models and boundary validation functions."""
 
 import logging
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
@@ -70,7 +70,7 @@ class DictCompatMixin:
         extra = getattr(self, "__pydantic_extra__", None)
         return extra is not None and item in extra
 
-    def dict(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+    def dict(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         """Provide dict conversion method for backward compatibility."""
         if "by_alias" not in kwargs:
             kwargs["by_alias"] = True
@@ -87,7 +87,7 @@ class QuarantineRecordModel(DictCompatMixin, BaseModel):
     file_hash: Optional[str] = None
     status: str = "STAGED"
     policy_action: Optional[str] = None
-    audit_log: List[Any] = Field(default_factory=list)
+    audit_log: list[Any] = Field(default_factory=list)
     created_at: Optional[float] = None
     updated_at: Optional[float] = None
     error_message: Optional[str] = None
@@ -105,7 +105,7 @@ class SortingPlanNodeModel(DictCompatMixin, BaseModel):
     keyword: Optional[str] = None
     match: Optional[str] = None
     status: Optional[str] = None
-    extraction_status: Optional[Union[str, Any]] = None
+    extraction_status: Optional[str | Any] = None
     is_corrected: Optional[bool] = None
     corrected: Optional[bool] = None
     is_overridden: Optional[bool] = None
@@ -122,7 +122,7 @@ class SortingPlanNodeModel(DictCompatMixin, BaseModel):
     category: Optional[str] = None
     sensitivity_rating: Optional[str] = None
     sensitivity_score: Optional[float] = None
-    archival_priority: Optional[Union[int, float]] = None
+    archival_priority: Optional[int | float] = None
     archival_priority_score: Optional[float] = None
     confidence: Optional[float] = None
     target_filename: Optional[str] = None
@@ -159,13 +159,13 @@ class SortingPlanNodeModel(DictCompatMixin, BaseModel):
 class SortingPlanModel(BaseModel):
     """Pydantic v2 contract model for complete sorting plans."""
 
-    nodes: Dict[str, Any] = Field(default_factory=dict)
+    nodes: dict[str, Any] = Field(default_factory=dict)
     model_status: str = "HEALTHY"
     degradation_reason: Optional[str] = None
     recovery_action: Optional[str] = None
     suggested_recovery_action: Optional[str] = None
     failure_reason: Optional[str] = None
-    invalid_locks: Dict[str, str] = Field(default_factory=dict)
+    invalid_locks: dict[str, str] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow")
 
@@ -202,7 +202,7 @@ class SortingPlanModel(BaseModel):
         """Return plan dictionary values."""
         return self.nodes.values()
 
-    def dict(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+    def dict(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         """Provide dict conversion method for backward compatibility."""
         return self.model_dump(*args, **kwargs)
 
@@ -212,7 +212,7 @@ class CorpusExampleModel(DictCompatMixin, BaseModel):
 
     filepath: str
     user_verified_target_path: Optional[str] = None
-    vector: Optional[List[float]] = None
+    vector: Optional[list[float]] = None
     text: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
@@ -221,8 +221,8 @@ class CorpusExampleModel(DictCompatMixin, BaseModel):
 class CorpusPreFetchBatchModel(BaseModel):
     """Pydantic v2 contract model for pre-fetched historical corpus batches."""
 
-    model_metadata: Dict[str, Any] = Field(default_factory=dict)
-    examples: List[CorpusExampleModel] = Field(default_factory=list)
+    model_metadata: dict[str, Any] = Field(default_factory=dict)
+    examples: list[CorpusExampleModel] = Field(default_factory=list)
 
     model_config = ConfigDict(extra="allow")
 
@@ -258,7 +258,7 @@ class CorpusPreFetchBatchModel(BaseModel):
             self.__pydantic_extra__ is not None and item in self.__pydantic_extra__
         )
 
-    def dict(self, *args: Any, **kwargs: Any) -> Dict[str, Any]:
+    def dict(self, *args: Any, **kwargs: Any) -> dict[str, Any]:
         """Provide dict conversion method for backward compatibility."""
         return self.model_dump(*args, **kwargs)
 
@@ -267,8 +267,8 @@ class VectorBatchPayloadModel(DictCompatMixin, BaseModel):
     """Pydantic v2 contract model for vector batch payloads."""
 
     base_dir: Optional[str] = None
-    vectors: Dict[str, Optional[List[float]]] = Field(default_factory=dict)
-    metadata: Dict[str, Any] = Field(default_factory=dict)
+    vectors: dict[str, Optional[list[float]]] = Field(default_factory=dict)
+    metadata: dict[str, Any] = Field(default_factory=dict)
 
     model_config = ConfigDict(extra="allow")
 

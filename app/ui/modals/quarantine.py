@@ -3,7 +3,7 @@
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from textual import on, work
 from textual.app import ComposeResult
@@ -146,14 +146,14 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         self,
         db: Optional[Any] = None,
         base_dir: str = "",
-        policies: Optional[List[Dict[str, Any]]] = None,
+        policies: Optional[list[dict[str, Any]]] = None,
     ):
         super().__init__()
         self.db = db
         self.base_dir = base_dir
         self.policies = policies or []
-        self.records: List[Dict[str, Any]] = []
-        self.filtered_records: List[Dict[str, Any]] = []
+        self.records: list[dict[str, Any]] = []
+        self.filtered_records: list[dict[str, Any]] = []
         self.selected_job_ids: set[str] = set()
         self.selected_job_id: Optional[str] = None
         self._updating_select_all: bool = False
@@ -325,7 +325,7 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             self._call_ui(self._on_records_loaded, [])
             self._call_ui(self.announce, f"Error loading quarantine records: {e}")
 
-    def _on_records_loaded(self, records: List[Dict[str, Any]]) -> None:
+    def _on_records_loaded(self, records: list[dict[str, Any]]) -> None:
         self.records = records
         self._apply_filters()
         self.announce(f"Loaded {len(records)} quarantine record(s).")
@@ -469,7 +469,7 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             except Exception:
                 pass
 
-    def _get_selected_record(self, job_id: Optional[str]) -> Optional[Dict[str, Any]]:
+    def _get_selected_record(self, job_id: Optional[str]) -> Optional[dict[str, Any]]:
         if not job_id:
             return None
         for r in self.records:
@@ -477,7 +477,7 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 return r
         return None
 
-    def _get_target_job_ids(self) -> List[str]:
+    def _get_target_job_ids(self) -> list[str]:
         if self.selected_job_ids:
             return list(self.selected_job_ids)
         if self.selected_job_id:
@@ -595,7 +595,7 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             [job_id], dest_dir, allow_external=allow_external
         )
 
-    def _on_batch_release_complete(self, results: List[Dict[str, Any]]) -> None:
+    def _on_batch_release_complete(self, results: list[dict[str, Any]]) -> None:
         success_count = sum(1 for r in results if r.get("status") == "RELEASED")
         fail_count = len(results) - success_count
         msg = f"Batch Release Complete: {success_count} succeeded, {fail_count} failed."
@@ -647,7 +647,7 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         """Compatibility helper for single item dismissal."""
         self.execute_batch_dismiss_async([job_id])
 
-    def _on_batch_dismiss_complete(self, results: List[Dict[str, Any]]) -> None:
+    def _on_batch_dismiss_complete(self, results: list[dict[str, Any]]) -> None:
         success_count = sum(1 for r in results if r.get("status") == "DISMISSED")
         fail_count = len(results) - success_count
         msg = f"Batch Dismiss Complete: {success_count} succeeded, {fail_count} failed."
@@ -701,7 +701,7 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         """Compatibility helper for single item re-inspection."""
         self.execute_batch_reinspect_async([job_id])
 
-    def _on_batch_reinspect_complete(self, results: List[Any]) -> None:
+    def _on_batch_reinspect_complete(self, results: list[Any]) -> None:
         success_count = sum(
             1
             for r in results

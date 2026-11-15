@@ -2,8 +2,9 @@
 
 import inspect
 import logging
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Any, Callable, Optional, Union
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -38,7 +39,7 @@ class ProgressUpdate:
 
 def emit_progress(
     callback: Optional[Callable[..., Any]],
-    progress_or_update: Union[ProgressUpdate, float, int, str, None] = 0.0,
+    progress_or_update: ProgressUpdate | float | int | str | None = 0.0,
     stage: Optional[str] = None,
     unit_count: Optional[int] = None,
     unit_type: Optional[str] = None,

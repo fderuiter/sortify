@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "8eec77cf864a5a21c78b6d3912fc9a2c616eb5076a3e9ec4ba52b284dff53d9e"
+    "checksum": "77dc6a754dba62441ed6affca251e4b3af112efad6e9adcc8f64b1885ce34a43"
   },
   "classes": [
     {
@@ -51,12 +51,12 @@
               "name": "target_root"
             },
             {
-              "annotation": "Optional[Callable[[int, str], None]]",
+              "annotation": "Callable[[int, str], None] | None",
               "default": "None",
               "name": "progress_callback"
             },
             {
-              "annotation": "Optional[Callable[[], bool]]",
+              "annotation": "Callable[[], bool] | None",
               "default": "None",
               "name": "cancel_check"
             }

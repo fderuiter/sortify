@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "5ec8a2aa91163e3e338f6178c736f6570142f1e965d8af162cda874fd25eac5a"
+    "checksum": "bba0f958724b478ca3e0b67b59bfe8d7b1474789e8989cae460ac6f5304e84d0"
   },
   "classes": [
     {
@@ -23,7 +23,7 @@
           "name": "callback"
         },
         {
-          "annotation": "Union[ProgressUpdate, float, int, str, None]",
+          "annotation": "ProgressUpdate | float | int | str | None",
           "default": "0.0",
           "name": "progress_or_update"
         },

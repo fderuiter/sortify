@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "7bd3f587fa9b130a4c22051f84c7ceeedb3c0596a0735ed9d1c15dd4114ee248"
+    "checksum": "2aa96d746faea80a3a430e24ab9ce2daca38587ca439143f065d388b00114b63"
   },
   "classes": [
     {
@@ -142,7 +142,7 @@
               "name": "base_dir"
             },
             {
-              "annotation": "List[Dict[str, Any]]",
+              "annotation": "list[dict[str, Any]]",
               "default": null,
               "name": "failed_items"
             },
@@ -172,7 +172,7 @@
               "name": "**kwargs"
             }
           ],
-          "returns": "Dict[str, Any]"
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,
@@ -244,7 +244,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "session_id"
             },
@@ -264,12 +264,12 @@
               "name": "cancelled"
             },
             {
-              "annotation": "Optional[dict[str, Any]]",
+              "annotation": "dict[str, Any] | None",
               "default": "None",
               "name": "audit_report"
             },
             {
-              "annotation": "Optional[MoveEngineState]",
+              "annotation": "MoveEngineState | None",
               "default": "None",
               "name": "state"
             },
@@ -294,7 +294,7 @@
               "name": "self"
             }
           ],
-          "returns": "Optional[dict[str, Any]]"
+          "returns": "dict[str, Any] | None"
         },
         {
           "async": false,
@@ -309,7 +309,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[dict[str, Any]]",
+              "annotation": "dict[str, Any] | None",
               "default": null,
               "name": "val"
             }
@@ -449,7 +449,7 @@
               "name": "self"
             }
           ],
-          "returns": "Optional[str]"
+          "returns": "str | None"
         },
         {
           "async": false,
@@ -464,7 +464,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": null,
               "name": "val"
             }
@@ -484,7 +484,7 @@
               "name": "self"
             }
           ],
-          "returns": "Optional[MoveEngineState]"
+          "returns": "MoveEngineState | None"
         },
         {
           "async": false,
@@ -499,7 +499,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[MoveEngineState]",
+              "annotation": "MoveEngineState | None",
               "default": null,
               "name": "val"
             }
@@ -774,7 +774,7 @@
           "name": "base_dir"
         },
         {
-          "annotation": "List[Dict[str, Any]]",
+          "annotation": "list[dict[str, Any]]",
           "default": null,
           "name": "failed_items"
         },
@@ -804,7 +804,7 @@
           "name": "**kwargs"
         }
       ],
-      "returns": "Dict[str, Any]"
+      "returns": "dict[str, Any]"
     }
   ]
 }

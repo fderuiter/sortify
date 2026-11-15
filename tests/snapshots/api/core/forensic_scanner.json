@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "b7706dc6c0f5c37b7995011bb843b02c15778f2b8209112b0bf2b46362321dd0"
+    "checksum": "5be8eca4df04c5b0ccba4cccb03960b90cc6a1a38c74443dc1a5eab06d090e18"
   },
   "classes": [
     {
@@ -101,7 +101,7 @@
               "name": "destination_dir"
             }
           ],
-          "returns": "tuple[str, List[str]]"
+          "returns": "tuple[str, list[str]]"
         },
         {
           "async": false,
@@ -129,7 +129,7 @@
               "name": "cancel_check"
             }
           ],
-          "returns": "List[DiscoveredDocument]"
+          "returns": "list[DiscoveredDocument]"
         },
         {
           "async": false,
@@ -172,7 +172,7 @@
               "name": "max_ratio"
             }
           ],
-          "returns": "List[str]"
+          "returns": "list[str]"
         }
       ]
     }

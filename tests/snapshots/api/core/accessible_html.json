@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "9fc9ae6b8cd0b20a742a4ae36df134b5ca2d52c7e4f8e00de4c99a21dfebbc47"
+    "checksum": "6f04baa28c9840d2eec139911e2fb53ea2dd3cad09be0132c669d633102ef4e4"
   },
   "classes": [
     {
@@ -277,7 +277,7 @@
           "name": "input_class"
         },
         {
-          "annotation": "Optional[Dict[str, str]]",
+          "annotation": "Optional[dict[str, str]]",
           "default": "None",
           "name": "extra_attrs"
         },
@@ -310,7 +310,7 @@
           "name": "label_text"
         },
         {
-          "annotation": "Optional[List[Tuple[str, str]]]",
+          "annotation": "Optional[list[tuple[str, str]]]",
           "default": "None",
           "name": "options"
         },
@@ -325,7 +325,7 @@
           "name": "options_html"
         },
         {
-          "annotation": "Optional[Dict[str, str]]",
+          "annotation": "Optional[dict[str, str]]",
           "default": "None",
           "name": "extra_attrs"
         },
@@ -348,7 +348,7 @@
       "name": "render_table",
       "parameters": [
         {
-          "annotation": "List[str]",
+          "annotation": "list[str]",
           "default": null,
           "name": "columns"
         },
@@ -376,7 +376,7 @@
       "name": "render_table_header",
       "parameters": [
         {
-          "annotation": "List[str]",
+          "annotation": "list[str]",
           "default": null,
           "name": "columns"
         }
@@ -389,7 +389,7 @@
       "name": "render_warning_banner",
       "parameters": [
         {
-          "annotation": "List[str]",
+          "annotation": "list[str]",
           "default": null,
           "name": "warnings"
         },

@@ -9,9 +9,10 @@ import inspect
 import logging
 import os
 import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from enum import Enum
-from typing import Any, Callable, Optional
+from typing import Any
 
 logger = logging.getLogger(__name__)
 
@@ -101,7 +102,7 @@ _ALLOWED_TRANSITIONS: dict[PipelineLifecycleState, set[PipelineLifecycleState]] 
 }
 
 
-def drop_scope(path: str) -> tuple[str, Optional[list]]:
+def drop_scope(path: str) -> tuple[str, list | None]:
     """Return the folder to sort and the items to sort for one dropped path.
 
     A dropped folder is sorted whole (``None`` means discover every file in it).
@@ -126,7 +127,7 @@ class SortResult:
     JSON output and the audit report.
     """
 
-    session_id: Optional[str] = None
+    session_id: str | None = None
     moved: list[str] = field(default_factory=list)
     skipped: list[str] = field(default_factory=list)
     quarantined: list[str] = field(default_factory=list)
@@ -134,7 +135,7 @@ class SortResult:
     cancelled: bool = False
     summary: dict = field(default_factory=dict)
     state: PipelineLifecycleState = PipelineLifecycleState.COMPLETED
-    rollback_completed: Optional[bool] = None
+    rollback_completed: bool | None = None
 
     def __post_init__(self):
         """Synchronize terminal lifecycle state and cancelled flags."""
@@ -147,7 +148,7 @@ class SortResult:
             self.state = PipelineLifecycleState.FAILED
 
     @classmethod
-    def from_summary(cls, summary: Optional[dict], quarantine_dir: str):
+    def from_summary(cls, summary: dict | None, quarantine_dir: str):
         """Build a result from ``execute_moves``'s summary and its audit report."""
         summary = summary or {}
         cancelled = bool(summary.get("cancelled"))
@@ -237,7 +238,7 @@ class SortPipeline:
         self._lock = threading.RLock()
         self._state_hooks: list[Callable] = []
         self._telemetry_hooks: list[Callable] = []
-        self._rollback_completed: Optional[bool] = None
+        self._rollback_completed: bool | None = None
 
     @property
     def state(self) -> PipelineLifecycleState:
@@ -276,7 +277,7 @@ class SortPipeline:
     def transition_to(
         self,
         target_state: PipelineLifecycleState,
-        context: Optional[dict] = None,
+        context: dict | None = None,
     ) -> None:
         """Validate and synchronously transition to a new lifecycle state."""
         with self._lock:
@@ -294,7 +295,7 @@ class SortPipeline:
         self,
         old_state: PipelineLifecycleState,
         new_state: PipelineLifecycleState,
-        context: Optional[dict] = None,
+        context: dict | None = None,
     ) -> None:
         hooks = list(self._state_hooks)
         for hook in hooks:
@@ -321,7 +322,7 @@ class SortPipeline:
                 logger.warning(f"Error in state change hook {hook}: {e}", exc_info=True)
 
     def emit_telemetry(
-        self, event: str, data: Optional[dict] = None, **kwargs: Any
+        self, event: str, data: dict | None = None, **kwargs: Any
     ) -> None:
         """Safely broadcast telemetry event to registered subscribers."""
         payload = dict(data or {})
@@ -336,10 +337,10 @@ class SortPipeline:
 
     def plan(
         self,
-        items: Optional[list] = None,
+        items: list | None = None,
         *,
-        progress_callback: Optional[Callable] = None,
-        cancel_check: Optional[Callable] = None,
+        progress_callback: Callable | None = None,
+        cancel_check: Callable | None = None,
         chunk_size: int = 50,
     ) -> Any:
         """Extract text, fit the analyzer and return the plan. Nothing moves.
@@ -472,7 +473,7 @@ class SortPipeline:
         session_id: str,
         *,
         ignore_missing: bool = False,
-        selected_step_ids: Optional[Any] = None,
+        selected_step_ids: Any | None = None,
     ) -> SortResult:
         """Move a past sort's files back and return what happened (ADR 0006).
 
@@ -552,7 +553,7 @@ class SortPipeline:
         self.emit_telemetry("undo_finish", result=result)
         return result
 
-    def run(self, items: Optional[list] = None, *, dry_run: bool = False, **kwargs):
+    def run(self, items: list | None = None, *, dry_run: bool = False, **kwargs):
         """Plan, then execute unless ``dry_run``. Returns ``(plan, result)``.
 
         A dry run's result is ``None``.

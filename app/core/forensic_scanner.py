@@ -11,9 +11,10 @@ import os
 import tarfile
 import tempfile
 import zipfile
+from collections.abc import Callable
 from dataclasses import dataclass
 from pathlib import Path
-from typing import Callable, Dict, List, Optional
+from typing import Optional
 
 from app.core.exceptions import ArchiveSafetyError
 from app.core.extractor import extract_file_text
@@ -81,9 +82,9 @@ class ForensicScanner:
         self.max_total_size_bytes = max_total_size_bytes
         self.max_file_size_bytes = max_file_size_bytes
         self.max_ratio = max_ratio
-        self.discovered_documents: List[DiscoveredDocument] = []
-        self.seen_hashes: Dict[str, str] = {}  # sha256 -> source_path
-        self.seen_texts: Dict[str, str] = {}  # sha256 -> extracted text
+        self.discovered_documents: list[DiscoveredDocument] = []
+        self.seen_hashes: dict[str, str] = {}  # sha256 -> source_path
+        self.seen_texts: dict[str, str] = {}  # sha256 -> extracted text
         self._is_owned_staging_dir = temp_staging_dir is None
 
     @staticmethod
@@ -101,7 +102,7 @@ class ForensicScanner:
         max_total_size_bytes: Optional[int] = None,
         max_file_size_bytes: Optional[int] = None,
         max_ratio: Optional[float] = None,
-    ) -> List[str]:
+    ) -> list[str]:
         """Safely unpack compressed archives (.zip, .tar, .tgz) into staging destination with streaming limits."""
         eff_max_files = max_files if max_files is not None else self.max_files
         eff_max_total_size = (
@@ -267,7 +268,7 @@ class ForensicScanner:
 
     def parse_eml_file(
         self, eml_path: str, destination_dir: str
-    ) -> tuple[str, List[str]]:
+    ) -> tuple[str, list[str]]:
         """Extract body text and attachments from an .eml email file."""
         extracted_attachments = []
         body_text = ""
@@ -339,7 +340,7 @@ class ForensicScanner:
         source_root: str,
         progress_callback: Optional[Callable[..., None]] = None,
         cancel_check: Optional[Callable[[], bool]] = None,
-    ) -> List[DiscoveredDocument]:
+    ) -> list[DiscoveredDocument]:
         """Perform comprehensive forensic scan of a source drive or directory."""
         self.discovered_documents.clear()
         self.seen_hashes.clear()

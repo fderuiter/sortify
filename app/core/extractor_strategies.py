@@ -4,7 +4,7 @@ import contextlib
 import csv
 import io
 import logging
-from typing import Any, Dict, Optional, Protocol, cast
+from typing import Any, Optional, Protocol, cast
 
 import pypdf
 
@@ -146,7 +146,7 @@ class CsvExtractor:
 
     truncated: bool = False
     truncation_reason: Optional[str] = None
-    truncated_bounds: Optional[Dict[str, Any]] = None
+    truncated_bounds: Optional[dict[str, Any]] = None
 
     def extract(self, file_path: str, settings=None) -> str:
         """Extract text from a .csv file using row-by-row streaming up to row and character limits."""
@@ -219,7 +219,7 @@ class XlsxExtractor:
 
     truncated: bool = False
     truncation_reason: Optional[str] = None
-    truncated_bounds: Optional[Dict[str, Any]] = None
+    truncated_bounds: Optional[dict[str, Any]] = None
 
     def extract(self, file_path: str, settings=None) -> str:
         """Extract text from an Excel file using read-only streaming mode across sheets."""

@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from textual import on
 from textual.app import ComposeResult
@@ -114,7 +114,7 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
         self.target_dir = target_dir or getattr(self.app, "base_dir", "") or os.getcwd()
         self.sample_items = get_sample_corpus_items()
         self.selected_file: str = "demo_finance.txt"
-        self._predictions: Dict[str, Dict[str, Any]] = {}
+        self._predictions: dict[str, dict[str, Any]] = {}
 
     def compose(self) -> ComposeResult:
         """Compose playground modal dialog UI widgets."""
@@ -191,7 +191,7 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
 
         self.announce("Opened interactive sample playground modal.")
 
-    def _get_selected_pack_ids(self) -> List[str]:
+    def _get_selected_pack_ids(self) -> list[str]:
         """Return list of pack IDs currently checked in the playground."""
         selected_packs = []
         for pack in get_starter_templates():

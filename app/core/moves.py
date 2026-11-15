@@ -9,8 +9,9 @@ the source's, or ``failed``. Writes go through the database's single writer
 """
 
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
-from typing import Callable, Protocol
+from typing import Protocol
 
 from app.core.db_conn import get_db_connection
 

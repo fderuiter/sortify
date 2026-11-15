@@ -11,7 +11,7 @@ import plistlib
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Tuple, Union
+from typing import Any, Optional
 
 import defusedxml.ElementTree as ET
 from defusedxml.common import DefusedXmlException
@@ -47,7 +47,7 @@ class RuleConflictAnalyzer:
     """Evaluates incoming keyword rules and policy patterns against existing settings to detect collisions and overlaps."""
 
     @staticmethod
-    def analyze(import_result: Any, settings: Any) -> List[RuleConflict]:
+    def analyze(import_result: Any, settings: Any) -> list[RuleConflict]:
         """Analyze imported rules against active settings to discover destination path collisions and policy overlaps.
 
         Args:
@@ -58,7 +58,7 @@ class RuleConflictAnalyzer:
         -------
             List of detected RuleConflict instances.
         """
-        conflicts: List[RuleConflict] = []
+        conflicts: list[RuleConflict] = []
         if not import_result or not settings:
             return conflicts
 
@@ -136,18 +136,18 @@ class RuleConflictAnalyzer:
 class ImportResult:
     """Data container holding extracted keyword rules, policies, and warnings."""
 
-    keyword_rules: Dict[str, str] = field(default_factory=dict)
-    policies: List[Dict[str, Any]] = field(default_factory=list)
-    warnings: List[str] = field(default_factory=list)
-    unsupported: List[Dict[str, Any]] = field(default_factory=list)
+    keyword_rules: dict[str, str] = field(default_factory=dict)
+    policies: list[dict[str, Any]] = field(default_factory=list)
+    warnings: list[str] = field(default_factory=list)
+    unsupported: list[dict[str, Any]] = field(default_factory=list)
     source_format: str = "Unknown"
 
     def merge_into_settings(
         self,
         settings: Any,
-        resolutions: Optional[Dict[str, str]] = None,
+        resolutions: Optional[dict[str, str]] = None,
         default_strategy: str = "keep_existing",
-    ) -> Tuple[Dict[str, str], List[Dict[str, Any]]]:
+    ) -> tuple[dict[str, str], list[dict[str, Any]]]:
         """Safely merge extracted rules into settings according to resolution choices.
 
         Args:
@@ -244,12 +244,12 @@ class BaseRuleImporter(abc.ABC):
     """Abstract base class for rule strategy importers."""
 
     @abc.abstractmethod
-    def parse_file(self, file_path: Union[str, Path]) -> ImportResult:
+    def parse_file(self, file_path: str | Path) -> ImportResult:
         """Parse rule package file and return extracted ImportResult."""
         pass
 
     @abc.abstractmethod
-    def can_import(self, file_path: Union[str, Path]) -> bool:
+    def can_import(self, file_path: str | Path) -> bool:
         """Check if this importer handles the specified file path or content."""
         pass
 
@@ -303,7 +303,7 @@ class BaseRuleImporter(abc.ABC):
 class HazelRuleImporter(BaseRuleImporter):
     """Importer strategy for Hazel .hazelrules XML/plist packages."""
 
-    def can_import(self, file_path: Union[str, Path]) -> bool:
+    def can_import(self, file_path: str | Path) -> bool:
         """Return True if file extension is .hazelrules/.plist or header resembles plist."""
         p = Path(file_path)
         if p.suffix.lower() in (".hazelrules", ".plist"):
@@ -315,7 +315,7 @@ class HazelRuleImporter(BaseRuleImporter):
         except OSError:
             return False
 
-    def parse_file(self, file_path: Union[str, Path]) -> ImportResult:
+    def parse_file(self, file_path: str | Path) -> ImportResult:
         """Parse Hazel .hazelrules plist file into Sortify rules."""
         result = ImportResult(source_format="Hazel (.hazelrules)")
         p = Path(file_path)
@@ -341,7 +341,7 @@ class HazelRuleImporter(BaseRuleImporter):
             result.warnings.append(f"Hazel rule package '{p.name}' is empty.")
             return result
 
-        rules_list: List[Any] = []
+        rules_list: list[Any] = []
         if isinstance(plist_data, dict):
             rules_list = (
                 plist_data.get("Rules")
@@ -524,7 +524,7 @@ class HazelRuleImporter(BaseRuleImporter):
 class DropItRuleImporter(BaseRuleImporter):
     """Importer strategy for DropIt XML, JSON, and INI profile export packages."""
 
-    def can_import(self, file_path: Union[str, Path]) -> bool:
+    def can_import(self, file_path: str | Path) -> bool:
         """Return True if file extension or content matches DropIt export formats."""
         p = Path(file_path)
         ext = p.suffix.lower()
@@ -532,7 +532,7 @@ class DropItRuleImporter(BaseRuleImporter):
             return True
         return False
 
-    def parse_file(self, file_path: Union[str, Path]) -> ImportResult:
+    def parse_file(self, file_path: str | Path) -> ImportResult:
         """Parse DropIt XML, JSON, or INI profile export file into Sortify rules."""
         result = ImportResult(source_format="DropIt Export")
         p = Path(file_path)
@@ -903,7 +903,7 @@ class DropItRuleImporter(BaseRuleImporter):
 class TagSpacesRuleImporter(BaseRuleImporter):
     """Importer strategy for TagSpaces taggroup.json taxonomy files and smart rules."""
 
-    def can_import(self, file_path: Union[str, Path]) -> bool:
+    def can_import(self, file_path: str | Path) -> bool:
         """Return True if file is a valid TagSpaces taggroup.json export or tag taxonomy JSON file."""
         p = Path(file_path)
         name_lower = p.name.lower()
@@ -981,7 +981,7 @@ class TagSpacesRuleImporter(BaseRuleImporter):
 
         return False
 
-    def parse_file(self, file_path: Union[str, Path]) -> ImportResult:
+    def parse_file(self, file_path: str | Path) -> ImportResult:
         """Parse TagSpaces taggroup.json or smart rule JSON file into Sortify rules."""
         result = ImportResult(source_format="TagSpaces (taggroup.json)")
         p = Path(file_path)
@@ -1008,7 +1008,7 @@ class TagSpacesRuleImporter(BaseRuleImporter):
             return result
 
         # 1. Process Tag Groups / Taxonomy Hierarchy
-        tag_groups: List[Any] = []
+        tag_groups: list[Any] = []
         if isinstance(data, dict):
             tag_groups = (
                 data.get("tagGroups")
@@ -1052,7 +1052,7 @@ class TagSpacesRuleImporter(BaseRuleImporter):
                 self._traverse_tag_group(group, [], result)
 
         # 2. Process Smart Rules
-        smart_rules: List[Any] = []
+        smart_rules: list[Any] = []
         if isinstance(data, dict):
             smart_rules = (
                 data.get("smartRules")
@@ -1087,8 +1087,8 @@ class TagSpacesRuleImporter(BaseRuleImporter):
 
     def _traverse_tag_group(
         self,
-        node: Dict[str, Any],
-        parent_path: List[str],
+        node: dict[str, Any],
+        parent_path: list[str],
         result: ImportResult,
     ) -> None:
         """Recursively traverse nested tag group node and map tags to path hierarchies."""
@@ -1210,7 +1210,7 @@ class TagSpacesRuleImporter(BaseRuleImporter):
                 )
 
     def _process_smart_rule(
-        self, rule: Dict[str, Any], idx: int, result: ImportResult
+        self, rule: dict[str, Any], idx: int, result: ImportResult
     ) -> None:
         """Process a TagSpaces smart rule entry, detecting condition matchers and filtering script actions."""
         rule_name = (
@@ -1361,7 +1361,7 @@ class TagSpacesRuleImporter(BaseRuleImporter):
 class SortifyRuleImporter(BaseRuleImporter):
     """Importer strategy for native Sortify JSON rule backup packages."""
 
-    def can_import(self, file_path: Union[str, Path]) -> bool:
+    def can_import(self, file_path: str | Path) -> bool:
         """Return True if file is a Sortify JSON rule backup file."""
         p = Path(file_path)
         if p.suffix.lower() != ".json":
@@ -1386,7 +1386,7 @@ class SortifyRuleImporter(BaseRuleImporter):
             return False
         return False
 
-    def parse_file(self, file_path: Union[str, Path]) -> ImportResult:
+    def parse_file(self, file_path: str | Path) -> ImportResult:
         """Parse Sortify JSON backup file into Sortify rules."""
         result = ImportResult(source_format="Sortify JSON")
         p = Path(file_path)
@@ -1448,7 +1448,7 @@ class SortifyRuleImporter(BaseRuleImporter):
         return result
 
 
-def get_rule_importer(file_path: Union[str, Path]) -> BaseRuleImporter:
+def get_rule_importer(file_path: str | Path) -> BaseRuleImporter:
     """Return auto-detected rule importer strategy for the given file path.
 
     Args:

@@ -7,7 +7,7 @@ import sys
 import threading
 import time
 from dataclasses import dataclass
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from textual.app import App
 from textual.binding import Binding
@@ -26,7 +26,7 @@ class A11yMixin:
 
     def __init__(self, *args, **kwargs):
         super().__init__(*args, **kwargs)
-        self.announcements: List[Dict[str, Any]] = []
+        self.announcements: list[dict[str, Any]] = []
         self.last_announcement: Optional[str] = None
         self._speech_thread: Optional[threading.Thread] = None
 
@@ -154,7 +154,7 @@ class A11yMixin:
 
                         def _speak():
                             try:
-                                kwargs: Dict[str, Any] = {
+                                kwargs: dict[str, Any] = {
                                     "timeout": 1.0,
                                     "stdin": subprocess.DEVNULL,
                                     "stdout": subprocess.DEVNULL,
@@ -199,7 +199,7 @@ class A11yMixin:
         """Get the most recent screen reader announcement text."""
         return self.last_announcement
 
-    def audit_a11y_compliance(self) -> Dict[str, Any]:
+    def audit_a11y_compliance(self) -> dict[str, Any]:
         """Audit WCAG 2.1 accessibility compliance for this TUI component.
 
         Verifies:
@@ -366,13 +366,13 @@ class A11yViolation:
     message: str
 
 
-def inspect_tui_component(component: Any) -> List[A11yViolation]:
+def inspect_tui_component(component: Any) -> list[A11yViolation]:
     """Inspect a TUI App or Modal component for WCAG 2.1 accessibility compliance.
 
     Leverages the component's internal audit hook method 'audit_a11y_compliance'
     to perform programmatic verification.
     """
-    violations: List[A11yViolation] = []
+    violations: list[A11yViolation] = []
     comp_name = type(component).__name__
 
     if hasattr(component, "audit_a11y_compliance") and callable(

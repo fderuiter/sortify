@@ -14,7 +14,7 @@ import unicodedata
 import uuid
 from enum import Enum
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel
 
@@ -160,12 +160,12 @@ class MoveResult(dict):
 
     def __init__(
         self,
-        session_id: Optional[str] = None,
+        session_id: str | None = None,
         deleted_folders: int = 0,
         protected_folders: int = 0,
         cancelled: bool = False,
-        audit_report: Optional[dict[str, Any]] = None,
-        state: Optional[MoveEngineState] = None,
+        audit_report: dict[str, Any] | None = None,
+        state: MoveEngineState | None = None,
         **kwargs: Any,
     ):
         data: dict[str, Any] = {
@@ -181,12 +181,12 @@ class MoveResult(dict):
         super().__init__(data)
 
     @property
-    def session_id(self) -> Optional[str]:
+    def session_id(self) -> str | None:
         """Return the unique relocation session identifier."""
         return self.get("session_id")
 
     @session_id.setter
-    def session_id(self, val: Optional[str]) -> None:
+    def session_id(self, val: str | None) -> None:
         """Set the unique relocation session identifier."""
         self["session_id"] = val
 
@@ -221,22 +221,22 @@ class MoveResult(dict):
         self["cancelled"] = bool(val)
 
     @property
-    def audit_report(self) -> Optional[dict[str, Any]]:
+    def audit_report(self) -> dict[str, Any] | None:
         """Return structured audit report for file operations."""
         return self.get("audit_report")
 
     @audit_report.setter
-    def audit_report(self, val: Optional[dict[str, Any]]) -> None:
+    def audit_report(self, val: dict[str, Any] | None) -> None:
         """Set structured audit report for file operations."""
         self["audit_report"] = val
 
     @property
-    def state(self) -> Optional[MoveEngineState]:
+    def state(self) -> MoveEngineState | None:
         """Return terminal lifecycle state of the move engine."""
         return self.get("state")
 
     @state.setter
-    def state(self, val: Optional[MoveEngineState]) -> None:
+    def state(self, val: MoveEngineState | None) -> None:
         """Set terminal lifecycle state of the move engine."""
         self["state"] = val
 
@@ -1737,7 +1737,7 @@ class AsyncMoveEngine:
         pending_links: list = []
         step_counter = [1]
         has_flushed_db = False
-        summary: Optional[MoveResult] = None
+        summary: MoveResult | None = None
 
         try:
             effective_progress_cb = progress_callback or getattr(
@@ -2133,13 +2133,13 @@ class AsyncMoveEngine:
     def retry_failed_moves(
         self,
         base_dir: str,
-        failed_items: List[Dict[str, Any]],
+        failed_items: list[dict[str, Any]],
         db=None,
         history_manager=None,
         runtime_settings=None,
         progress_callback=None,
         **kwargs,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Re-attempt file move operations for selected or all failed items in mover engine."""
         return retry_failed_moves(
             base_dir,
@@ -2274,13 +2274,13 @@ async def execute_moves_async(
 
 def retry_failed_moves(
     base_dir: str,
-    failed_items: List[Dict[str, Any]],
+    failed_items: list[dict[str, Any]],
     db=None,
     history_manager=None,
     runtime_settings=None,
     progress_callback=None,
     **kwargs,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Re-attempt file move operations for selected or all failed items in mover engine.
 
     Args:
@@ -2298,7 +2298,7 @@ def retry_failed_moves(
     from app.core.audit_reporter import generate_audit_report
 
     base_dir = os.path.normpath(base_dir) if base_dir else ""
-    retried_records: List[Dict[str, Any]] = []
+    retried_records: list[dict[str, Any]] = []
     total = len(failed_items)
 
     for idx, item in enumerate(failed_items):

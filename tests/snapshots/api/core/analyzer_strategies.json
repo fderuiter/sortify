@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "1d43b58070a341342b1f261acdfd0ebf45e0cd29882617a4b183abad3648af4d"
+    "checksum": "ec855d3b39fce20201f691ab7510a895ace958c950d7494f91977928418d865f"
   },
   "classes": [
     {
@@ -78,12 +78,12 @@
               "name": "self"
             },
             {
-              "annotation": "List[str]",
+              "annotation": "list[str]",
               "default": null,
               "name": "filenames"
             },
             {
-              "annotation": "List[str]",
+              "annotation": "list[str]",
               "default": null,
               "name": "documents"
             },
@@ -108,7 +108,7 @@
               "name": "max_features"
             },
             {
-              "annotation": "List[list[float] | None] | None",
+              "annotation": "list[list[float] | None] | None",
               "default": "None",
               "name": "pre_fetched_vectors"
             },
@@ -162,12 +162,12 @@
               "name": "self"
             },
             {
-              "annotation": "List[str]",
+              "annotation": "list[str]",
               "default": null,
               "name": "filenames"
             },
             {
-              "annotation": "List[str]",
+              "annotation": "list[str]",
               "default": null,
               "name": "documents"
             },
@@ -192,7 +192,7 @@
               "name": "max_features"
             },
             {
-              "annotation": "List[list[float] | None] | None",
+              "annotation": "list[list[float] | None] | None",
               "default": "None",
               "name": "pre_fetched_vectors"
             },
@@ -430,12 +430,12 @@
               "name": "self"
             },
             {
-              "annotation": "List[str]",
+              "annotation": "list[str]",
               "default": null,
               "name": "filenames"
             },
             {
-              "annotation": "List[str]",
+              "annotation": "list[str]",
               "default": null,
               "name": "documents"
             },
@@ -460,7 +460,7 @@
               "name": "max_features"
             },
             {
-              "annotation": "List[list[float] | None] | None",
+              "annotation": "list[list[float] | None] | None",
               "default": "None",
               "name": "pre_fetched_vectors"
             },

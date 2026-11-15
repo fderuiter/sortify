@@ -11,7 +11,7 @@ import threading
 from collections import defaultdict
 from contextlib import contextmanager
 from pathlib import Path
-from typing import Any, List, Optional, Protocol, Union, cast
+from typing import Any, Optional, Protocol, cast
 
 from app.core.crypto import (
     EphemeralSessionCrypto,
@@ -673,13 +673,13 @@ class ClusteringStrategy(Protocol):
 
     def generate_plan(
         self,
-        filenames: List[str],
-        documents: List[str],
+        filenames: list[str],
+        documents: list[str],
         max_folders: int,
         stop_words: set,
         max_depth: int = 5,
         max_features: int = 3,
-        pre_fetched_vectors: List[list[float] | None] | None = None,
+        pre_fetched_vectors: list[list[float] | None] | None = None,
         cancel_check=None,
         pre_fetched_corpus: CorpusPreFetchBatchModel | None = None,
     ) -> tuple[dict, float]:
@@ -696,13 +696,13 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
 
     def _generate_plan_inline(
         self,
-        filenames: List[str],
-        documents: List[str],
+        filenames: list[str],
+        documents: list[str],
         max_folders: int,
         stop_words: set,
         max_depth: int = 5,
         max_features: int = 3,
-        pre_fetched_vectors: List[list[float] | None] | None = None,
+        pre_fetched_vectors: list[list[float] | None] | None = None,
     ) -> tuple[dict, float]:
         """Original inline implementation of clustering."""
         self.stop_words = stop_words
@@ -735,13 +735,13 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
     @thread_isolated_execution
     def generate_plan(
         self,
-        filenames: List[str],
-        documents: List[str],
+        filenames: list[str],
+        documents: list[str],
         max_folders: int,
         stop_words: set,
         max_depth: int = 5,
         max_features: int = 3,
-        pre_fetched_vectors: List[list[float] | None] | None = None,
+        pre_fetched_vectors: list[list[float] | None] | None = None,
         cancel_check=None,
         pre_fetched_corpus: CorpusPreFetchBatchModel | None = None,
     ) -> tuple[dict, float]:
@@ -1482,13 +1482,13 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
     @thread_isolated_execution
     def generate_plan(
         self,
-        filenames: List[str],
-        documents: List[str],
+        filenames: list[str],
+        documents: list[str],
         max_folders: int,
         stop_words: set,
         max_depth: int = 5,
         max_features: int = 3,
-        pre_fetched_vectors: List[list[float] | None] | None = None,
+        pre_fetched_vectors: list[list[float] | None] | None = None,
         cancel_check=None,
         pre_fetched_corpus: CorpusPreFetchBatchModel | None = None,
     ) -> tuple[dict, float]:
@@ -1982,8 +1982,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         prompt: str,
         max_tokens: int,
         grammar: str = None,
-        stop: Optional[Union[List[str], str]] = None,
-        stop_sequences: Optional[Union[List[str], str]] = None,
+        stop: Optional[list[str] | str] = None,
+        stop_sequences: Optional[list[str] | str] = None,
     ) -> str:
         stop_seqs = stop if stop is not None else stop_sequences
 

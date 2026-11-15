@@ -9,12 +9,11 @@ and native components is either a standard Windows system DLL or present in the 
 import argparse
 import sys
 from pathlib import Path
-from typing import List, Set, Tuple
 
 import pefile
 
 # Whitelist of standard Windows OS system DLLs present on clean Windows installations
-STANDARD_SYSTEM_DLLS: Set[str] = {
+STANDARD_SYSTEM_DLLS: set[str] = {
     "kernel32.dll",
     "kernelbase.dll",
     "user32.dll",
@@ -100,7 +99,7 @@ def is_system_dll(dll_name: str) -> bool:
     return False
 
 
-def extract_pe_imports(pe_path: Path) -> List[str]:
+def extract_pe_imports(pe_path: Path) -> list[str]:
     """Parse PE header and return list of imported DLL names."""
     try:
         with open(pe_path, "rb") as f:
@@ -131,7 +130,7 @@ def extract_pe_imports(pe_path: Path) -> List[str]:
 
 def verify_pe_dependencies(
     bundle_dir: Path, allow_empty: bool = False, verbose: bool = False
-) -> Tuple[bool, List[Tuple[str, str]]]:
+) -> tuple[bool, list[tuple[str, str]]]:
     """Scan all PE binaries in bundle_dir and verify dependencies against whitelist and bundled files."""
     if not bundle_dir.exists():
         if allow_empty:
@@ -141,7 +140,7 @@ def verify_pe_dependencies(
         return False, [("BUNDLE_DIR", f"Directory not found: {bundle_dir}")]
 
     # Gather all bundled filenames (lowercased)
-    bundled_files: Set[str] = {
+    bundled_files: set[str] = {
         f.name.lower() for f in bundle_dir.rglob("*") if f.is_file()
     }
 
@@ -161,7 +160,7 @@ def verify_pe_dependencies(
         print(f"Error: No PE binaries found in {bundle_dir}", file=sys.stderr)
         return False, [("BUNDLE_DIR", f"No PE binaries found in {bundle_dir}")]
 
-    missing_deps: List[Tuple[str, str]] = []
+    missing_deps: list[tuple[str, str]] = []
     total_checks = 0
 
     for pe_file in pe_candidates:

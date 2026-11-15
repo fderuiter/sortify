@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "987c8ab2c35ad45284bf5884b01d73c3160b60f48d59a232b3dc43bc05f84f38"
+    "checksum": "e23eab18d3a490bea3497f72c2e6c9ab02808a1cdf1b50173e85622852f83f4b"
   },
   "classes": [
     {
@@ -23,7 +23,7 @@
               "name": "db"
             },
             {
-              "annotation": "Optional[List[Dict[str, Any]]]",
+              "annotation": "Optional[list[dict[str, Any]]]",
               "default": "None",
               "name": "policies"
             },
@@ -38,7 +38,7 @@
               "name": "jev_classifier"
             },
             {
-              "annotation": "Optional[List[str]]",
+              "annotation": "Optional[list[str]]",
               "default": "None",
               "name": "auto_quarantine_ratings"
             },
@@ -61,12 +61,12 @@
               "name": "self"
             },
             {
-              "annotation": "List[str]",
+              "annotation": "list[str]",
               "default": null,
               "name": "job_ids"
             }
           ],
-          "returns": "List[Dict[str, Any]]"
+          "returns": "list[dict[str, Any]]"
         },
         {
           "async": false,
@@ -79,7 +79,7 @@
               "name": "self"
             },
             {
-              "annotation": "List[str]",
+              "annotation": "list[str]",
               "default": null,
               "name": "job_ids"
             },
@@ -89,7 +89,7 @@
               "name": "timeout_override"
             }
           ],
-          "returns": "List[Any]"
+          "returns": "list[Any]"
         },
         {
           "async": false,
@@ -125,7 +125,7 @@
               "name": "self"
             },
             {
-              "annotation": "List[str]",
+              "annotation": "list[str]",
               "default": null,
               "name": "job_ids"
             },
@@ -150,7 +150,7 @@
               "name": "**kwargs"
             }
           ],
-          "returns": "List[Dict[str, Any]]"
+          "returns": "list[dict[str, Any]]"
         },
         {
           "async": false,
@@ -211,7 +211,7 @@
               "name": "policy_action"
             }
           ],
-          "returns": "Dict[str, Any]"
+          "returns": "dict[str, Any]"
         }
       ]
     }

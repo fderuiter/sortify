@@ -3,7 +3,7 @@
 import html
 import json
 import os
-from typing import Any, Dict, List, Set, Union
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
@@ -26,7 +26,7 @@ class FoundEssentialDocument(DictCompatMixin, BaseModel):
     artifact_id: str
     importance: str
     gcp_ref: str
-    files: List[str]
+    files: list[str]
     count: int
 
     model_config = ConfigDict(extra="allow")
@@ -53,10 +53,10 @@ class ClinicalComplianceResult(DictCompatMixin, BaseModel):
     total_essential_missing: int
     compliance_score_percent: float
     audit_readiness_status: str
-    found_essential_documents: List[FoundEssentialDocument]
-    missing_essential_documents: List[MissingEssentialDocument]
-    ancillary_documents: List[str]
-    unclassified_documents: List[str]
+    found_essential_documents: list[FoundEssentialDocument]
+    missing_essential_documents: list[MissingEssentialDocument]
+    ancillary_documents: list[str]
+    unclassified_documents: list[str]
     base_dir: str = ""
 
     model_config = ConfigDict(extra="allow")
@@ -70,15 +70,15 @@ class ClinicalComplianceEngine:
 
     def evaluate_compliance(
         self,
-        classified_artifacts: Dict[str, str],  # filename -> artifact_id
-        all_filenames: List[str],
+        classified_artifacts: dict[str, str],  # filename -> artifact_id
+        all_filenames: list[str],
         base_dir: str = "",
     ) -> ClinicalComplianceResult:
         """Perform gap analysis and compute regulatory compliance metrics."""
-        found_artifact_ids: Set[str] = set(classified_artifacts.values())
+        found_artifact_ids: set[str] = set(classified_artifacts.values())
 
         # Map artifact_id -> list of filenames
-        artifact_to_files: Dict[str, List[str]] = {}
+        artifact_to_files: dict[str, list[str]] = {}
         for fn, art_id in classified_artifacts.items():
             artifact_to_files.setdefault(art_id, []).append(fn)
 
@@ -150,7 +150,7 @@ class ClinicalComplianceEngine:
 
     def export_json_report(
         self,
-        compliance_data: Union[ClinicalComplianceResult, Dict[str, Any]],
+        compliance_data: ClinicalComplianceResult | dict[str, Any],
         output_path: str,
     ) -> str:
         """Export compliance audit analysis as a JSON report."""
@@ -166,7 +166,7 @@ class ClinicalComplianceEngine:
 
     def generate_html_report(
         self,
-        compliance_data: Union[ClinicalComplianceResult, Dict[str, Any]],
+        compliance_data: ClinicalComplianceResult | dict[str, Any],
         output_path: str,
     ) -> str:
         """Generate a standalone HTML compliance audit dossier."""

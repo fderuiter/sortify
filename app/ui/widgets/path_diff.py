@@ -2,13 +2,13 @@
 
 import difflib
 import os
-from typing import Any, Dict, List, Optional, Tuple
+from typing import Any, Optional
 
 from rich.table import Table
 from rich.text import Text
 
 
-def _diff_highlight_paths(src_path: str, tgt_path: str) -> Tuple[Text, Text]:
+def _diff_highlight_paths(src_path: str, tgt_path: str) -> tuple[Text, Text]:
     """Compute contrasting color diff highlighting for two path strings."""
     if not src_path and not tgt_path:
         return Text("(None)", style="dim"), Text("(None)", style="dim")
@@ -82,7 +82,7 @@ def format_side_by_side_path_comparison(
 
 
 def format_folder_path_comparison(
-    files_info: List[Dict[str, Any]],
+    files_info: list[dict[str, Any]],
     base_dir: Optional[str] = None,
     max_items: int = 8,
 ) -> Table:

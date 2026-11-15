@@ -10,8 +10,9 @@ import os
 import sys
 import threading
 from collections import defaultdict
+from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, Any, Callable, Literal
+from typing import Annotated, Any, Literal
 
 from pydantic import Field, ValidationError, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict

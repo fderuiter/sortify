@@ -9,7 +9,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from dataclasses import dataclass, field
-from typing import Optional, Tuple
+from typing import Optional
 
 from app.core.exceptions import ModelVerificationError
 
@@ -67,7 +67,7 @@ class SecurityAdvisoryClient:
     ):
         """Initialize SecurityAdvisoryClient with configurable endpoint, TTL, and fallback policy."""
         self._cache: dict[
-            Tuple[Optional[str], Optional[str]], Tuple[SecurityAdvisoryResult, float]
+            tuple[Optional[str], Optional[str]], tuple[SecurityAdvisoryResult, float]
         ] = {}
         self._cache_lock = threading.RLock()
         self._settings = settings

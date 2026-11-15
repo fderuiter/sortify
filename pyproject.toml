@@ -74,7 +74,19 @@ line-length = 88
 
 [tool.ruff.lint]
 # BLE001/S110/SIM105: no blind or silently swallowed exceptions (#783).
-select = ["E", "F", "I", "D", "D417", "BLE001", "S110", "SIM105"]
+select = [
+    "E",
+    "F",
+    "I",
+    "D",
+    "D417",
+    "BLE001",
+    "S110",
+    "SIM105",
+    "UP006",
+    "UP007",
+    "UP035",
+]
 ignore = ["E501"]
 
 [tool.ruff.lint.pydocstyle]

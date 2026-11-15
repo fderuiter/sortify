@@ -2,7 +2,7 @@
 
 import logging
 import os
-from typing import Any, Dict, Optional
+from typing import Any
 
 from textual import work
 from textual.widgets import Button, Static
@@ -39,7 +39,7 @@ class SortPipelineMixin:
         self.announce(f"Scanning directories: {', '.join(self.source_dirs)} ...")
         self.run_scan_worker()
 
-    def _running_pipeline_worker(self) -> Optional[str]:
+    def _running_pipeline_worker(self) -> str | None:
         """Return the name of a running scan or execute worker, if any."""
         pipeline = getattr(self, "pipeline", None)
         if pipeline is not None and hasattr(pipeline, "state"):
@@ -101,7 +101,7 @@ class SortPipelineMixin:
         return False
 
     def _handle_pipeline_state_transition(
-        self, old_state: Any, new_state: Any, context: Optional[dict] = None
+        self, old_state: Any, new_state: Any, context: dict | None = None
     ) -> None:
         """Track pipeline state transitions via registered event hook."""
         logger.debug(f"UI observed pipeline state change: {old_state} -> {new_state}")
@@ -145,7 +145,7 @@ class SortPipelineMixin:
             from app.core.metadata import MetadataPass
 
             def scan_progress_cb(
-                update_or_prog: Any, stage: Optional[str] = None, **kwargs: Any
+                update_or_prog: Any, stage: str | None = None, **kwargs: Any
             ) -> None:
                 self.call_from_thread(
                     self._handle_progress_update, update_or_prog, stage, **kwargs
@@ -283,7 +283,7 @@ class SortPipelineMixin:
         if duplicate_groups:
 
             def handle_duplicate_modal_result(
-                selections: Optional[Dict[str, str]],
+                selections: dict[str, str] | None,
             ) -> None:
                 if selections is None:
                     self.announce("Move execution cancelled during duplicate review.")
@@ -306,12 +306,12 @@ class SortPipelineMixin:
             self.run_execute_worker()
 
     def _normalize_plan_for_verification(
-        self, plan_dict: Dict[str, Any], base_dir: str
-    ) -> Dict[str, Any]:
+        self, plan_dict: dict[str, Any], base_dir: str
+    ) -> dict[str, Any]:
         """Ensure file nodes in plan dictionary have source_path and relative_source populated."""
         if not isinstance(plan_dict, dict):
             return plan_dict
-        normalized: Dict[str, Any] = {}
+        normalized: dict[str, Any] = {}
         for k, v in plan_dict.items():
             if isinstance(v, dict):
                 if v.get("__type__") == "file":
@@ -359,7 +359,7 @@ class SortPipelineMixin:
         except Exception as e:
             logger.error(f"Error running validation worker: {e}")
 
-    def _update_validation_state(self, result: Dict[str, Any]) -> None:
+    def _update_validation_state(self, result: dict[str, Any]) -> None:
         """Update UI controls, alert banner, and tree highlights based on validation result."""
         self.verification_result = result or {}
 
@@ -541,7 +541,7 @@ class SortPipelineMixin:
         try:
 
             def move_progress_cb(
-                update_or_prog: Any, stage: Optional[str] = None, **kwargs: Any
+                update_or_prog: Any, stage: str | None = None, **kwargs: Any
             ) -> None:
                 self.call_from_thread(
                     self._handle_progress_update, update_or_prog, stage, **kwargs

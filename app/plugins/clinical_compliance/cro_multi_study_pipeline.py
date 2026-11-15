@@ -9,9 +9,10 @@ import logging
 import os
 import shutil
 import threading
+from collections.abc import Callable
 from datetime import datetime, timezone
 from enum import Enum
-from typing import Any, Callable, Dict, List, Optional
+from typing import Any
 
 from pydantic import BaseModel, Field
 
@@ -42,7 +43,7 @@ class CROPipelineState(str, Enum):
     FAILED = "FAILED"
 
 
-_VALID_CRO_TRANSITIONS: Dict[CROPipelineState, set[CROPipelineState]] = {
+_VALID_CRO_TRANSITIONS: dict[CROPipelineState, set[CROPipelineState]] = {
     CROPipelineState.IDLE: {
         CROPipelineState.SCANNING,
         CROPipelineState.CANCELLED,
@@ -103,8 +104,8 @@ class MasterPipelineResult(DictCompatMixin, BaseModel):
     total_duplicates_detected: int
     discovered_studies_count: int
     status: CROPipelineState = CROPipelineState.COMPLETED
-    error_message: Optional[str] = None
-    studies_summary: List[StudyIngestSummary] = Field(default_factory=list)
+    error_message: str | None = None
+    studies_summary: list[StudyIngestSummary] = Field(default_factory=list)
     chain_of_custody_manifest_path: str = ""
 
 
@@ -121,7 +122,7 @@ class CROMultiStudyPipeline:
         self.compliance_engine = ClinicalComplianceEngine()
         self._state_lock = threading.Lock()
         self._state: CROPipelineState = CROPipelineState.IDLE
-        self.error_message: Optional[str] = None
+        self.error_message: str | None = None
 
     @property
     def state(self) -> CROPipelineState:
@@ -154,8 +155,8 @@ class CROMultiStudyPipeline:
         self,
         source_root: str,
         target_root: str,
-        progress_callback: Optional[Callable[[int, str], None]] = None,
-        cancel_check: Optional[Callable[[], bool]] = None,
+        progress_callback: Callable[[int, str], None] | None = None,
+        cancel_check: Callable[[], bool] | None = None,
     ) -> MasterPipelineResult:
         """Run the full CRO forensic discovery, multi-study partition, and safe copying workflow."""
         source_root = os.path.abspath(source_root)
@@ -265,8 +266,8 @@ class CROMultiStudyPipeline:
 
             # 3. Process each Study Partition
             self._transition_to(CROPipelineState.PARTITIONING)
-            studies_summary: List[StudyIngestSummary] = []
-            manifest_records: List[Dict[str, Any]] = []
+            studies_summary: list[StudyIngestSummary] = []
+            manifest_records: list[dict[str, Any]] = []
 
             total_partitions = len(study_partitions)
             is_cancelled = False

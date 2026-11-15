@@ -3,8 +3,9 @@
 import logging
 import sys
 import threading
+from collections.abc import Callable
 from enum import Enum
-from typing import Any, Callable, Dict, Optional
+from typing import Any, Optional
 
 from app.core.path_utils import scrub_user_home_paths
 from app.core.text_utils import sanitize_secret_patterns
@@ -131,7 +132,7 @@ class NotificationManager:
         timeout: Optional[int] = None,
         help_url: Optional[str] = None,
         **kwargs: Any,
-    ) -> Dict[str, Any]:
+    ) -> dict[str, Any]:
         """Dispatch a notification based on the active runtime environment mode.
 
         Args:
@@ -298,7 +299,7 @@ def notify(
     timeout: Optional[int] = None,
     help_url: Optional[str] = None,
     **kwargs: Any,
-) -> Dict[str, Any]:
+) -> dict[str, Any]:
     """Top-level convenience function for sending notifications."""
     return NotificationManager.get_instance().notify(
         message,

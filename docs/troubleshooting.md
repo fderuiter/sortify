@@ -55,6 +55,17 @@ If Sortify was closed while it was moving files, the next start shows **Interrup
 
 From the command line, `smart-autosorter undo --list` shows recent sessions and `smart-autosorter undo --session-id ID` rolls one back.
 
+### Multi-session recovery
+
+When multiple interrupted sessions are detected on startup, Sortify displays the **Multi-Session Recovery** dialog showing all abandoned sessions with their session IDs, target directories, step counts, and statuses.
+
+You can manage all sessions at once or take action on individual sessions:
+- **Rollback All** (`#btn-rollback-all`): Reverts uncommitted operations across all detected sessions and updates the file tree.
+- **Clean All** (`#btn-clean-all`): Cleans up working files and journal ledgers for all abandoned sessions.
+- **Resume** (`#btn-resume`): Continues sorting for the selected session while retaining remaining sessions for subsequent recovery.
+- **Rollback** (`#btn-rollback`): Rolls back only the selected session.
+- **Clean** (`#btn-clean`): Cleans working files for the selected session only, allowing selective recovery of remaining sessions.
+
 ## DropZone errors
 
 The DropZone (`[Ctrl+D]`) sorts files you paste or drop into its queue. **Sort Items** reports an error when nothing in the queue can be sorted:

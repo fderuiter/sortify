@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "e35c7ac505bcae24e72f05550e9af0300482815fe5329f246cff5608ecd2f5ab"
+    "checksum": "0c13fce4b3fbd6dd0518093a186917d8951f97f1b864df406946ade85e84653c"
   },
   "classes": [
     {
@@ -133,7 +133,7 @@
               "name": "event"
             },
             {
-              "annotation": "Optional[dict]",
+              "annotation": "dict | None",
               "default": "None",
               "name": "data"
             },
@@ -179,17 +179,17 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[list]",
+              "annotation": "list | None",
               "default": "None",
               "name": "items"
             },
             {
-              "annotation": "Optional[Callable]",
+              "annotation": "Callable | None",
               "default": "None",
               "name": "progress_callback"
             },
             {
-              "annotation": "Optional[Callable]",
+              "annotation": "Callable | None",
               "default": "None",
               "name": "cancel_check"
             },
@@ -212,7 +212,7 @@
               "name": "self"
             },
             {
-              "annotation": "Optional[list]",
+              "annotation": "list | None",
               "default": "None",
               "name": "items"
             },
@@ -275,7 +275,7 @@
               "name": "target_state"
             },
             {
-              "annotation": "Optional[dict]",
+              "annotation": "dict | None",
               "default": "None",
               "name": "context"
             }
@@ -303,7 +303,7 @@
               "name": "ignore_missing"
             },
             {
-              "annotation": "Optional[Any]",
+              "annotation": "Any | None",
               "default": "None",
               "name": "selected_step_ids"
             }
@@ -344,7 +344,7 @@
               "name": "cls"
             },
             {
-              "annotation": "Optional[dict]",
+              "annotation": "dict | None",
               "default": null,
               "name": "summary"
             },
@@ -386,7 +386,7 @@
           "name": "path"
         }
       ],
-      "returns": "tuple[str, Optional[list]]"
+      "returns": "tuple[str, list | None]"
     }
   ]
 }

@@ -7,7 +7,7 @@ import logging
 import os
 from datetime import datetime, timezone
 from pathlib import Path
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from app.core.exceptions import AuditExportError
 from app.core.path_utils import safe_relpath
@@ -30,8 +30,8 @@ STATUS_BADGES = {
 
 
 def generate_audit_report(
-    base_dir: str, move_records: List[Dict[str, Any]]
-) -> Dict[str, Any]:
+    base_dir: str, move_records: list[dict[str, Any]]
+) -> dict[str, Any]:
     """Generate a structured audit report from a collection of move records.
 
     Args:
@@ -50,8 +50,8 @@ def generate_audit_report(
         Dict[str, Any]: Complete audit report containing metrics, detailed records, and failed items.
     """
     base_dir = os.path.normpath(base_dir) if base_dir else ""
-    processed_records: List[Dict[str, Any]] = []
-    failed_items: List[Dict[str, Any]] = []
+    processed_records: list[dict[str, Any]] = []
+    failed_items: list[dict[str, Any]] = []
 
     pass_count = 0
     fail_count = 0
@@ -149,7 +149,7 @@ def generate_audit_report(
 def _validate_and_resolve_export_path(
     output_path: str,
     base_dir: Optional[str] = None,
-    report_data: Optional[Dict[str, Any]] = None,
+    report_data: Optional[dict[str, Any]] = None,
 ) -> str:
     """Validate export output path against allowed base directory boundary.
 
@@ -271,7 +271,7 @@ def _open_secure_export_file(
 
 
 def export_audit_report_json(
-    report_data: Dict[str, Any],
+    report_data: dict[str, Any],
     output_path: str,
     base_dir: Optional[str] = None,
 ) -> str:
@@ -307,7 +307,7 @@ def export_audit_report_json(
 
 
 def export_audit_report_csv(
-    report_data: Dict[str, Any],
+    report_data: dict[str, Any],
     output_path: str,
     base_dir: Optional[str] = None,
 ) -> str:
@@ -370,7 +370,7 @@ def export_audit_report_csv(
 
 
 def export_audit_report(
-    report_data: Dict[str, Any],
+    report_data: dict[str, Any],
     output_path: str,
     format_type: str = "json",
     base_dir: Optional[str] = None,

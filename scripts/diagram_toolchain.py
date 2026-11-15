@@ -13,7 +13,7 @@ import shutil
 import subprocess
 import sys
 from pathlib import Path
-from typing import TYPE_CHECKING, Dict, List, Optional, Set
+from typing import TYPE_CHECKING, Optional
 
 if TYPE_CHECKING:
     from scripts.diagram_schema import BaseDiagramSpec
@@ -41,7 +41,7 @@ def reset_browser_cache() -> None:
 
 
 def is_browser_available(
-    mmdc_cmd: Optional[List[str]] = None, force_check: bool = False
+    mmdc_cmd: Optional[list[str]] = None, force_check: bool = False
 ) -> bool:
     """Probe whether mmdc is present and capable of launching a browser engine."""
     global _BROWSER_AVAILABLE_CACHE
@@ -111,13 +111,13 @@ def svg_source_hash(svg_file: Path) -> Optional[str]:
     return match.group(1) if match else None
 
 
-def find_mmdc_executable(verify_browser: bool = True) -> Optional[List[str]]:
+def find_mmdc_executable(verify_browser: bool = True) -> Optional[list[str]]:
     """Determine the command prefix required to run mmdc (mermaid-cli).
 
     If verify_browser is True, probes whether the browser engine can launch successfully.
     """
     mmdc_path = shutil.which("mmdc")
-    candidate: Optional[List[str]] = None
+    candidate: Optional[list[str]] = None
     if mmdc_path:
         candidate = [mmdc_path]
     else:
@@ -164,7 +164,7 @@ def find_mmdc_executable(verify_browser: bool = True) -> Optional[List[str]]:
     return candidate
 
 
-def validate_mermaid_syntax(mmd_content: str) -> List[str]:
+def validate_mermaid_syntax(mmd_content: str) -> list[str]:
     """Validate Mermaid diagram syntax using pure Python rules.
 
     Returns a list of error detail strings with line numbers. An empty list indicates valid syntax.
@@ -343,14 +343,14 @@ def check_no_raw_mermaid_in_docs(docs_dir: Optional[Path] = None) -> bool:
     return not found_raw_mermaid
 
 
-def collect_all_specs() -> Dict[str, "BaseDiagramSpec"]:
+def collect_all_specs() -> dict[str, "BaseDiagramSpec"]:
     """Collect all registered system diagram specifications."""
     from scripts.diagram_schema import (
         BaseDiagramSpec,
         get_all_diagram_specs,
     )
 
-    specs: Dict[str, BaseDiagramSpec] = {}
+    specs: dict[str, BaseDiagramSpec] = {}
 
     for key, spec in get_all_diagram_specs().items():
         specs[spec.id] = spec
@@ -432,7 +432,7 @@ def generate_fallback_svg(title: str, mmd_content: str) -> str:
 """
 
 
-_MARKDOWN_ANCHORS_CACHE: Dict[Path, Set[str]] = {}
+_MARKDOWN_ANCHORS_CACHE: dict[Path, set[str]] = {}
 
 
 def reset_markdown_anchors_cache() -> None:
@@ -441,13 +441,13 @@ def reset_markdown_anchors_cache() -> None:
     _MARKDOWN_ANCHORS_CACHE = {}
 
 
-def extract_markdown_anchors(file_path: Path) -> Set[str]:
+def extract_markdown_anchors(file_path: Path) -> set[str]:
     """Parse a target markdown file to discover valid heading slugs and HTML anchor identifiers."""
     resolved_path = file_path.resolve()
     if resolved_path in _MARKDOWN_ANCHORS_CACHE:
         return _MARKDOWN_ANCHORS_CACHE[resolved_path]
 
-    anchors: Set[str] = set()
+    anchors: set[str] = set()
     try:
         content = resolved_path.read_text(encoding="utf-8")
     except Exception:
@@ -499,7 +499,7 @@ def extract_markdown_anchors(file_path: Path) -> Set[str]:
     return anchors
 
 
-def parse_and_validate_click_directives(mmd_content: str) -> List[str]:
+def parse_and_validate_click_directives(mmd_content: str) -> list[str]:
     """Parse and validate Mermaid click directives within diagram markup."""
     errors = []
     lines = mmd_content.splitlines()
@@ -581,7 +581,7 @@ def parse_and_validate_click_directives(mmd_content: str) -> List[str]:
 
 
 def render_diagram_artifact(
-    mmdc_cmd: List[str],
+    mmdc_cmd: list[str],
     mmd_path: Path,
     out_path: Path,
     output_format: str = "svg",

@@ -5,17 +5,13 @@ import json
 import logging
 import threading
 import time
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import (
     TYPE_CHECKING,
     Any,
-    Callable,
-    Dict,
     Generic,
-    Iterator,
-    List,
     Optional,
-    Tuple,
     TypeVar,
     cast,
 )
@@ -227,12 +223,12 @@ class SparseMatrixLRUCache:
 
     def __init__(self, max_documents: int = 500):
         self.max_documents = max_documents
-        self._cache: Dict[str, List[Tuple[str, str, float]]] = {}
-        self._doc_counts: Dict[str, int] = {}
-        self._access_order: List[str] = []
+        self._cache: dict[str, list[tuple[str, str, float]]] = {}
+        self._doc_counts: dict[str, int] = {}
+        self._access_order: list[str] = []
         self._lock = threading.Lock()
 
-    def get(self, base_dir: str) -> Optional[List[Tuple[str, str, float]]]:
+    def get(self, base_dir: str) -> Optional[list[tuple[str, str, float]]]:
         """Serve precomputed matrix rows from in-memory cache in under 5ms."""
         with self._lock:
             if base_dir in self._cache:
@@ -242,7 +238,7 @@ class SparseMatrixLRUCache:
                 return self._cache[base_dir]
             return None
 
-    def put(self, base_dir: str, rows: List[Tuple[str, str, float]]):
+    def put(self, base_dir: str, rows: list[tuple[str, str, float]]):
         """Store matrix rows in LRU cache if document capacity allows, evicting LRU items as needed."""
         with self._lock:
             distinct_docs = len({r[0] for r in rows}) if rows else 0

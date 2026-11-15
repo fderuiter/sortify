@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "08c16498c49e2796455ee8b8f7887bd063860d8ab5dcb9775c8a3baff789b5f9"
+    "checksum": "47f1d62e182faa60ac61fb2a2be090da43d3e19d663a2af48bbabb97bfa205b4"
   },
   "classes": [
     {
@@ -20,7 +20,7 @@
               "name": "text"
             },
             {
-              "annotation": "Optional[Set[str]]",
+              "annotation": "Optional[set[str]]",
               "default": "None",
               "name": "stop_words"
             },
@@ -30,7 +30,7 @@
               "name": "max_keywords"
             }
           ],
-          "returns": "List[str]"
+          "returns": "list[str]"
         }
       ]
     },
@@ -125,7 +125,7 @@
               "name": "text"
             },
             {
-              "annotation": "Optional[Set[str]]",
+              "annotation": "Optional[set[str]]",
               "default": "None",
               "name": "stop_words"
             }
@@ -148,7 +148,7 @@
               "name": "plan"
             },
             {
-              "annotation": "Dict[str, str]",
+              "annotation": "dict[str, str]",
               "default": null,
               "name": "documents_map"
             },
@@ -163,7 +163,7 @@
               "name": "locked_files"
             },
             {
-              "annotation": "Optional[Set[str]]",
+              "annotation": "Optional[set[str]]",
               "default": "None",
               "name": "stop_words"
             }

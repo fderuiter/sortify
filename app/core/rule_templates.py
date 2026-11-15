@@ -11,7 +11,7 @@ import os
 import plistlib
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Any, Dict, List, Optional, Union
+from typing import Any, Optional
 
 logger = logging.getLogger(__name__)
 
@@ -23,12 +23,12 @@ class StarterTemplatePack:
     id: str
     title: str
     description: str
-    keyword_rules: Dict[str, str] = field(default_factory=dict)
-    policies: List[Dict[str, Any]] = field(default_factory=list)
+    keyword_rules: dict[str, str] = field(default_factory=dict)
+    policies: list[dict[str, Any]] = field(default_factory=list)
     icon: str = "📂"
 
 
-BUILTIN_STARTER_TEMPLATES: List[StarterTemplatePack] = [
+BUILTIN_STARTER_TEMPLATES: list[StarterTemplatePack] = [
     StarterTemplatePack(
         id="financial_tax",
         title="Financial & Tax Documents",
@@ -160,7 +160,7 @@ BUILTIN_STARTER_TEMPLATES: List[StarterTemplatePack] = [
 ]
 
 
-def get_starter_templates() -> List[StarterTemplatePack]:
+def get_starter_templates() -> list[StarterTemplatePack]:
     """Return list of built-in starter rule template packs."""
     return list(BUILTIN_STARTER_TEMPLATES)
 
@@ -174,8 +174,8 @@ def get_starter_template_by_id(pack_id: str) -> Optional[StarterTemplatePack]:
 
 
 def apply_starter_templates(
-    settings: Any, pack_ids: List[str]
-) -> tuple[Dict[str, str], List[Dict[str, Any]]]:
+    settings: Any, pack_ids: list[str]
+) -> tuple[dict[str, str], list[dict[str, Any]]]:
     """Merge selected starter template packs into settings without overwriting existing custom rules.
 
     Args:
@@ -235,7 +235,7 @@ def apply_starter_templates(
 def export_active_rules(
     settings: Any,
     target_format: str,
-    destination_path: Union[str, Path],
+    destination_path: str | Path,
 ) -> Path:
     """Serialize rules from active settings into the selected target format and save to disk.
 
@@ -304,7 +304,7 @@ def export_active_rules(
         return dest_path
 
     elif "hazel" in fmt_clean or fmt_clean in ("hazelrules",):
-        rules_list: List[Dict[str, Any]] = []
+        rules_list: list[dict[str, Any]] = []
         for kw, target_dir in keyword_rules.items():
             kw_clean = str(kw).strip()
             target_clean = str(target_dir).strip()

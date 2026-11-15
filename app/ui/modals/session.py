@@ -3,7 +3,7 @@
 import logging
 import os
 import time
-from typing import Any, Dict, List, Optional
+from typing import Any, Optional
 
 from textual import on, work
 from textual.app import ComposeResult
@@ -67,7 +67,7 @@ class SessionRecoveryModal(
     }
     """
 
-    def __init__(self, session_info: Dict[str, Any]):
+    def __init__(self, session_info: dict[str, Any]):
         super().__init__()
         self.session_info = session_info
 
@@ -150,14 +150,14 @@ class RecoveryResult(str):
     """Result returned when session recovery modal dismisses with an action."""
 
     action: str
-    session: Optional[Dict[str, Any]]
-    sessions: List[Dict[str, Any]]
+    session: Optional[dict[str, Any]]
+    sessions: list[dict[str, Any]]
 
     def __new__(
         cls,
         action: str,
-        session: Optional[Dict[str, Any]] = None,
-        sessions: Optional[List[Dict[str, Any]]] = None,
+        session: Optional[dict[str, Any]] = None,
+        sessions: Optional[list[dict[str, Any]]] = None,
     ):
         """Instantiate recovery result string with action and session context."""
         obj = super().__new__(cls, action)
@@ -233,7 +233,7 @@ class MultiSessionRecoveryModal(
 
     def __init__(
         self,
-        sessions: Optional[List[Dict[str, Any]]] = None,
+        sessions: Optional[list[dict[str, Any]]] = None,
         settings: Optional[Any] = None,
     ):
         super().__init__()
@@ -241,7 +241,7 @@ class MultiSessionRecoveryModal(
             sessions = []
         elif isinstance(sessions, dict):
             sessions = [sessions]
-        self.sessions: List[Dict[str, Any]] = list(sessions)
+        self.sessions: list[dict[str, Any]] = list(sessions)
         self.settings = settings
         self.selected_index: int = 0
 
@@ -347,7 +347,7 @@ class MultiSessionRecoveryModal(
                 pass
         self._update_selected_session_display()
 
-    def get_selected_session(self) -> Optional[Dict[str, Any]]:
+    def get_selected_session(self) -> Optional[dict[str, Any]]:
         """Return the currently selected session dictionary."""
         if not self.sessions:
             return None
@@ -483,7 +483,7 @@ class MultiSessionRecoveryModal(
         self.dismiss(None)
 
 
-class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
+class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[dict[str, Any]]]):
     """Two-stage interactive confirmation modal dialog before executing session rollback."""
 
     BINDINGS = [
@@ -593,15 +593,15 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
     }
     """
 
-    def __init__(self, session_info: Dict[str, Any]):
+    def __init__(self, session_info: dict[str, Any]):
         super().__init__()
         self.session_info = session_info
-        self.all_items: List[Dict[str, Any]] = list(session_info.get("items") or [])
+        self.all_items: list[dict[str, Any]] = list(session_info.get("items") or [])
         self.selected_step_ids: set = set()
-        self.filtered_items: List[Dict[str, Any]] = []
+        self.filtered_items: list[dict[str, Any]] = []
         self.history_error: Optional[str] = None
         self.current_stage: int = 1
-        self.preview_data: Optional[Dict[str, Any]] = None
+        self.preview_data: Optional[dict[str, Any]] = None
 
     def compose(self) -> ComposeResult:
         """Compose confirmation modal widgets across Stage 1 and Stage 2."""
@@ -865,7 +865,7 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[Dict[str, Any]]]):
         except Exception:
             pass
 
-    def _compute_dryrun_preview(self) -> Dict[str, Any]:
+    def _compute_dryrun_preview(self) -> dict[str, Any]:
         """Compute dry-run simulation preview using HistoryManager or local simulation."""
         sid = self.session_info.get("session_id")
         chk = self.query("#chk-ignore-missing").results(Checkbox)
@@ -1213,7 +1213,7 @@ class RollbackErrorModal(A11yMixin, ModalScreen[None]):
 
 
 class HistoryModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Dict[str, Any]]]
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict[str, Any]]]
 ):
     """Modal dialog for viewing session history records, exporting audit logs, and rolling back sessions."""
 
@@ -1271,7 +1271,7 @@ class HistoryModal(
 
     def __init__(
         self,
-        sessions: Optional[List[Dict[str, Any]]] = None,
+        sessions: Optional[list[dict[str, Any]]] = None,
         base_dir: str = "",
     ):
         super().__init__()
@@ -1481,7 +1481,7 @@ class HistoryModal(
             self.announce("Selected session cannot be rolled back.")
             return
 
-        def handle_confirm_result(result: Optional[Dict[str, Any]]) -> None:
+        def handle_confirm_result(result: Optional[dict[str, Any]]) -> None:
             if not result or not result.get("confirmed"):
                 return
 
@@ -1510,13 +1510,13 @@ class HistoryModal(
         self,
         session_id: str,
         ignore_missing: bool,
-        selected_step_ids: Optional[List[Any]] = None,
+        selected_step_ids: Optional[list[Any]] = None,
     ) -> None:
         """Execute session rollback asynchronously in background worker thread."""
         try:
             from app.core.history import open_session_history
 
-            kwargs: Dict[str, Any] = {"ignore_missing": ignore_missing}
+            kwargs: dict[str, Any] = {"ignore_missing": ignore_missing}
             if selected_step_ids is not None:
                 kwargs["selected_step_ids"] = selected_step_ids
 
