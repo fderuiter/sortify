@@ -3,6 +3,7 @@
 import logging
 import os
 import time
+from contextlib import contextmanager
 from typing import Any, Optional
 
 from textual import on, work
@@ -279,13 +280,15 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         """Close quarantine vault modal via close button."""
         self.dismiss(None)
 
-    def _get_db(self) -> Any:
+    @contextmanager
+    def _open_db(self):
         if self.db is not None:
-            return self.db
-        from app.core.db_worker import DBWorker
-        from app.core.store import open_store
+            yield self.db
+        else:
+            from app.core.services import acquire_services
 
-        return open_store().database(DBWorker())
+            with acquire_services() as services:
+                yield services.db
 
     def _call_ui(self, func, *args, **kwargs) -> None:
         try:
@@ -313,13 +316,12 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     def fetch_records_async(self) -> None:
         """Fetch quarantine records asynchronously on background worker thread."""
         try:
-            db_inst = self._get_db()
-
-            if self.base_dir:
-                recs = db_inst.get_quarantine_records_by_base_dir(self.base_dir)
-            else:
-                recs = db_inst.get_all_quarantine_records()
-            self._call_ui(self._on_records_loaded, recs)
+            with self._open_db() as db_inst:
+                if self.base_dir:
+                    recs = db_inst.get_quarantine_records_by_base_dir(self.base_dir)
+                else:
+                    recs = db_inst.get_all_quarantine_records()
+                self._call_ui(self._on_records_loaded, recs)
         except Exception as e:
             logger.exception(f"Failed to fetch quarantine records: {e}")
             self._call_ui(self._on_records_loaded, [])
@@ -575,14 +577,14 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 for j in raw_list
                 if j
             ]
-            db_inst = self._get_db()
-            from app.core.quarantine_interceptor import QuarantineInterceptorService
+            with self._open_db() as db_inst:
+                from app.core.quarantine_interceptor import QuarantineInterceptorService
 
-            service = QuarantineInterceptorService(db=db_inst)
-            results = service.release_quarantine_batch(
-                clean_job_ids, dest_dir=target_dir, allow_external=allow_external
-            )
-            self._call_ui(self._on_batch_release_complete, results)
+                service = QuarantineInterceptorService(db=db_inst)
+                results = service.release_quarantine_batch(
+                    clean_job_ids, dest_dir=target_dir, allow_external=allow_external
+                )
+                self._call_ui(self._on_batch_release_complete, results)
         except Exception as e:
             logger.error(f"Failed batch quarantine release: {e}", exc_info=True)
             self._call_ui(self.announce, f"Batch release failed: {e}")
@@ -633,12 +635,12 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 for j in raw_list
                 if j
             ]
-            db_inst = self._get_db()
-            from app.core.quarantine_interceptor import QuarantineInterceptorService
+            with self._open_db() as db_inst:
+                from app.core.quarantine_interceptor import QuarantineInterceptorService
 
-            service = QuarantineInterceptorService(db=db_inst)
-            results = service.dismiss_quarantine_batch(clean_job_ids)
-            self._call_ui(self._on_batch_dismiss_complete, results)
+                service = QuarantineInterceptorService(db=db_inst)
+                results = service.dismiss_quarantine_batch(clean_job_ids)
+                self._call_ui(self._on_batch_dismiss_complete, results)
         except Exception as e:
             logger.error(f"Failed batch quarantine dismiss: {e}", exc_info=True)
             self._call_ui(self.announce, f"Batch dismiss failed: {e}")
@@ -687,12 +689,14 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 for j in raw_list
                 if j
             ]
-            db_inst = self._get_db()
-            from app.core.quarantine_interceptor import QuarantineInterceptorService
+            with self._open_db() as db_inst:
+                from app.core.quarantine_interceptor import QuarantineInterceptorService
 
-            service = QuarantineInterceptorService(db=db_inst, policies=self.policies)
-            results = service.process_quarantine_batch(clean_job_ids)
-            self._call_ui(self._on_batch_reinspect_complete, results)
+                service = QuarantineInterceptorService(
+                    db=db_inst, policies=self.policies
+                )
+                results = service.process_quarantine_batch(clean_job_ids)
+                self._call_ui(self._on_batch_reinspect_complete, results)
         except Exception as e:
             logger.error(f"Failed batch re-inspection: {e}", exc_info=True)
             self._call_ui(self.announce, f"Batch re-inspection failed: {e}")

@@ -3078,17 +3078,8 @@ class HistoryManager:
 
 @contextmanager
 def open_session_history(store=None) -> Iterator[HistoryManager]:
-    """Yield a HistoryManager on the app store, with its own DBWorker.
+    """Yield shared history services without taking ownership of their writer."""
+    from app.core.services import acquire_services
 
-    The DBWorker opened here is stopped on exit.
-    """
-    from app.core.db_worker import DBWorker
-    from app.core.store import open_store
-
-    store = store or open_store()
-    db_worker = DBWorker()
-    try:
-        db = store.database(db_worker)
-        yield store.history(db, store.cache(db_worker))
-    finally:
-        db_worker.stop(stop_embeddings=False)
+    with acquire_services(store) as services:
+        yield services.history

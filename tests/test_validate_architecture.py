@@ -432,3 +432,24 @@ def test_validate_architecture_incremental_ml_violation(monkeypatch, tmp_path):
     with pytest.raises(SystemExit) as exc_info:
         main()
     assert exc_info.value.code == 1
+
+
+@pytest.mark.parametrize(
+    "source",
+    [
+        "DBWorker()",
+        "def f():\n    db_worker.DBWorker()",
+        "from app.core.db_worker import DBWorker as Writer\nWriter()",
+    ],
+)
+def test_writer_construction_requires_composition_root(source):
+    import ast
+
+    from scripts.validate_architecture import validate_service_ownership
+
+    errors = []
+    validate_service_ownership(errors, "app/ui/example.py", ast.parse(source))
+    assert errors
+    errors = []
+    validate_service_ownership(errors, "app/core/services.py", ast.parse(source))
+    assert not errors

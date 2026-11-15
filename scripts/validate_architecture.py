@@ -495,6 +495,30 @@ def validate_import_layers(errors: list, filepath: str, tree: ast.AST) -> None:
 SETTINGS_SOURCE = "app/config.py"
 
 
+def validate_service_ownership(errors: list, filepath: str, tree: ast.AST) -> None:
+    """Keep runtime writer construction in the managed composition root."""
+    if filepath == "app/core/services.py":
+        return
+    names = {"DBWorker"}
+    for node in ast.walk(tree):
+        if isinstance(node, ast.ImportFrom) and node.module == "app.core.db_worker":
+            names.update(
+                alias.asname or alias.name
+                for alias in node.names
+                if alias.name == "DBWorker"
+            )
+    for node in ast.walk(tree):
+        if isinstance(node, ast.Call) and (
+            isinstance(node.func, ast.Name)
+            and node.func.id in names
+            or isinstance(node.func, ast.Attribute)
+            and node.func.attr == "DBWorker"
+        ):
+            errors.append(
+                f"{filepath}:{node.lineno}: Acquire managed services instead of constructing DBWorker"
+            )
+
+
 def declared_settings_keys(
     config_path: str = os.path.join(os.path.dirname(__file__), "..", SETTINGS_SOURCE),
 ) -> set[str]:
@@ -781,6 +805,7 @@ def main():
                 continue
 
             validate_import_layers(errors, filepath, tree)
+            validate_service_ownership(errors, filepath, tree)
             validate_settings_keys(errors, filepath, tree, declared_settings)
             validate_lazy_ml_imports(errors, filepath, tree)
 

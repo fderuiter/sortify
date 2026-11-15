@@ -4,13 +4,11 @@ import argparse
 import json
 import logging
 import sys
-from pathlib import Path
 
 from app.cli.error_emitter import emit_cli_error
 from app.config import AppSettings
-from app.core.db import Database
-from app.core.db_worker import DBWorker
 from app.core.quarantine_interceptor import QuarantineInterceptorService
+from app.core.services import acquire_services
 
 logger = logging.getLogger(__name__)
 
@@ -211,13 +209,8 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
             exit_code=2,
         )
 
-    db_path = getattr(args, "db_path", None)
-    if db_path:
-        db = Database(Path(db_path).resolve(), DBWorker())
-    else:
-        from app.core.store import open_store
-
-        db = open_store().database(DBWorker())
+    lease = acquire_services(db_path=getattr(args, "db_path", None))
+    db = lease.db
 
     from app.cli import json_default
 
@@ -509,10 +502,6 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
                 )
 
     finally:
-        if db and hasattr(db, "worker") and db.worker:
-            db.worker.stop()
-        from app.core.db_conn import clear_connection_cache
-
-        clear_connection_cache(only_current_and_inactive=False)
+        lease.close()
 
     return True

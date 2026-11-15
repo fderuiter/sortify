@@ -137,6 +137,13 @@ def reset_shared_registry():
     from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
 
     def _cleanup_test_app_dir():
+        # Some older UI tests do not close their AppSession. Drain managed
+        # services before deleting their stores, just as other singletons reset.
+        from app.core import services
+
+        for graph in list(services._services.values()):
+            graph.worker.stop(stop_embeddings=False)
+        services._services.clear()
         clear_connection_cache(only_current_and_inactive=False)
         try:
             app_dir = get_app_dir()
