@@ -7,9 +7,9 @@ import re
 import pytest
 
 from app.config import AppSettings
+from app.plugins.clinical_compliance.tui_views import CROForensicModal
 from app.ui.tui import (
     AutoSorterTUI,
-    CROForensicModal,
     DirectorySelectModal,
     ExtractionPreviewModal,
     NewFolderModal,

@@ -12,10 +12,10 @@ import pytest
 from textual.widgets import Button, Input, Select, Static, Switch, Tree
 
 from app.config import AppSettings
+from app.plugins.clinical_compliance.tui_views import CROForensicModal
 from app.ui.notifications import TROUBLESHOOTING_URL
 from app.ui.tui import (
     AutoSorterTUI,
-    CROForensicModal,
     DropZoneModal,
     NewFolderModal,
     RenameModal,

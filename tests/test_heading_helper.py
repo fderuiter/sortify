@@ -5,10 +5,10 @@ import asyncio
 import pytest
 
 from app.config import AppSettings
+from app.plugins.clinical_compliance.tui_views import CROForensicModal
 from app.ui.heading import Heading, SemanticHeading, create_heading
 from app.ui.tui import (
     AutoSorterTUI,
-    CROForensicModal,
     DirectorySelectModal,
     DropZoneModal,
     ExportReportModal,

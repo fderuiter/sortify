@@ -117,6 +117,29 @@ def test_import_layers_have_no_docs_generator_exemption():
     assert _layer_errors("app/cli/generate_docs.py", "import sandbox_cli\n")
 
 
+@pytest.mark.parametrize(
+    "source",
+    [
+        "import app.ui.tui",
+        "from app.ui.tui import AutoSorterTUI",
+        "from app.ui import tui",
+        "def f():\n    from ...ui import tui",
+        "def f():\n    from ...ui.tui import AutoSorterTUI",
+    ],
+)
+def test_plugin_cannot_import_full_tui(source):
+    assert _layer_errors("app/plugins/example/views.py", source)
+
+
+def test_relative_imports_resolve_from_package_initializers():
+    assert _layer_errors("app/plugins/example/__init__.py", "from ...ui import tui")
+    assert _layer_errors("app/core/example.py", "from ..ui import notifications")
+    assert not _layer_errors("app/plugins/example/views.py", "from ...ui import a11y")
+    assert not _layer_errors(
+        "app/plugins/example/views.py", "from ...ui.a11y import A11yMixin"
+    )
+
+
 def _settings_key_errors(
     source, declared=frozenset({"MAX_WORKERS", "MAX_SPREADSHEET_ROWS"})
 ):

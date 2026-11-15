@@ -1691,12 +1691,3 @@ def _start_multiprocessing_resource_tracker() -> None:
         resource_tracker.ensure_running()
     except Exception as e:
         logger.warning(f"Could not start multiprocessing resource tracker: {e}")
-
-
-def __getattr__(name: str) -> Any:
-    """Lazy module attribute getter for dynamic extension component resolution."""
-    if name == "CROForensicModal":
-        from app.plugins.clinical_compliance.tui_views import CROForensicModal
-
-        return CROForensicModal
-    raise AttributeError(f"module '{__name__}' has no attribute '{name}'")
