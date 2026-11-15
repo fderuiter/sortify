@@ -164,6 +164,7 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
     quiet = getattr(args, "quiet", False)
 
     db = None
+    lease = None
     try:
         if ledger_cmd == "status":
             session_id = getattr(args, "session_id", None)
@@ -211,10 +212,10 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
 
         elif ledger_cmd == "reconcile":
             try:
-                from app.core.db_worker import DBWorker
-                from app.core.store import open_store
+                from app.core.services import acquire_services
 
-                db = open_store().database(DBWorker())
+                lease = acquire_services()
+                db = lease.db
             except Exception:
                 pass
 
@@ -311,14 +312,12 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
                 ext = ".csv" if fmt == "csv" else ".json"
                 output_path = f"audit_log_{session_id or 'all'}{ext}"
 
-            from app.core.db_worker import DBWorker
-            from app.core.store import open_store
+            from app.core.services import acquire_services
 
-            store = open_store()
-            worker = DBWorker()
+            lease = acquire_services()
             try:
-                db = store.database(worker)
-                history_mgr = store.history(db, store.cache(worker))
+                db = lease.db
+                history_mgr = lease.history
                 export_res = history_mgr.export_audit_log(
                     output_path=output_path,
                     session_id=session_id,
@@ -343,10 +342,7 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
                 )
 
     finally:
-        if db and hasattr(db, "worker") and db.worker:
-            db.worker.stop()
-        from app.core.db_conn import clear_connection_cache
-
-        clear_connection_cache(only_current_and_inactive=False)
+        if lease is not None:
+            lease.close()
 
     return True

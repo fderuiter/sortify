@@ -1352,22 +1352,17 @@ class AutoSorterTUI(
             fmt = result["format"]
 
             try:
-                from app.core.db_worker import DBWorker
-                from app.core.store import open_store
+                from app.core.services import acquire_services
 
-                store = open_store()
-                worker = DBWorker()
-                db = store.database(worker)
-                history_mgr = store.history(db, store.cache(worker))
-
-                export_res = history_mgr.export_audit_log(
-                    output_path=output_path,
-                    session_id=session_id
-                    if session_id not in ("none", "all")
-                    else None,
-                    format=fmt,
-                    base_dir=self.base_dir,
-                )
+                with acquire_services() as services:
+                    export_res = services.history.export_audit_log(
+                        output_path=output_path,
+                        session_id=session_id
+                        if session_id not in ("none", "all")
+                        else None,
+                        format=fmt,
+                        base_dir=self.base_dir,
+                    )
                 cnt = export_res.get("count", 0)
                 out_p = export_res.get("output_path", output_path)
                 msg = (

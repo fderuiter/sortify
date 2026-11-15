@@ -28,10 +28,10 @@ def _get_vector_count(db=None) -> int:
     try:
         if db is not None and hasattr(db, "get_document_vectors_count"):
             return db.get_document_vectors_count()
-        from app.core.db_worker import DBWorker
-        from app.core.store import open_store
+        from app.core.services import acquire_services
 
-        return open_store().database(DBWorker()).get_document_vectors_count()
+        with acquire_services() as services:
+            return services.db.get_document_vectors_count()
     except Exception:
         pass
     return 0

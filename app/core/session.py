@@ -43,92 +43,99 @@ class AppSession:
             str(session_id) if session_id else ""
         )
 
-        from app.core.db_worker import DBWorker
         from app.core.pipeline import PipelineLifecycleState
-        from app.core.store import open_store
+        from app.core.services import acquire_services
 
         self.lifecycle_state = PipelineLifecycleState.CREATED
         self.pipeline = None
 
         # Every session reads and writes the one app store (ADR 0008).
-        self.store = store or open_store()
-        self.db_worker = DBWorker()
-        self.db = self.store.database(self.db_worker)
-        self.cache_manager = self.store.cache(self.db_worker)
-        self.history_manager = self.store.history(self.db, self.cache_manager)
+        self._service_lease = acquire_services(store)
+        self.store = self._service_lease.store
+        self.db_worker = self._service_lease.worker
+        self.db = self._service_lease.db
+        self.cache_manager = self._service_lease.cache
+        self.history_manager = self._service_lease.history
+        self._closed = False
 
-        if getattr(self.settings, "AI_CONSENT_GRANTED", None):
+        try:
+            if getattr(self.settings, "AI_CONSENT_GRANTED", None):
+                try:
+                    from app.core.shared_registry import SharedModelRegistry
+
+                    jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
+                    jev_engine.set_database(str(self.store.path), self.db_worker)
+                except Exception:
+                    pass
+
             try:
-                from app.core.shared_registry import SharedModelRegistry
+                from app.core.ledger import TransactionLedger
 
-                jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
-                jev_engine.set_database(str(self.store.path), self.db_worker)
+                ledger = TransactionLedger()
+                ledger.reconcile_incomplete_transactions(db=self.db)
             except Exception:
                 pass
 
-        try:
-            from app.core.ledger import TransactionLedger
+            base_path = get_base_path(__file__)
 
-            ledger = TransactionLedger()
-            ledger.reconcile_incomplete_transactions(db=self.db)
-        except Exception:
-            pass
+            local_model_path = os.path.join(base_path, "offline_bundle", "model")
+            user_model_path = str(get_app_dir() / "model")
 
-        base_path = get_base_path(__file__)
+            active_model_path = None
+            from app.core.path_utils import get_meipass_dir
 
-        local_model_path = os.path.join(base_path, "offline_bundle", "model")
-        user_model_path = str(get_app_dir() / "model")
+            mei_dir = get_meipass_dir()
+            if mei_dir:
+                mei_bundle_path = os.path.join(mei_dir, "offline_bundle", "model")
+                if os.path.exists(mei_bundle_path):
+                    active_model_path = mei_bundle_path
 
-        active_model_path = None
-        from app.core.path_utils import get_meipass_dir
+            if not active_model_path:
+                if os.path.exists(local_model_path):
+                    active_model_path = local_model_path
+                elif os.path.exists(user_model_path):
+                    active_model_path = user_model_path
 
-        mei_dir = get_meipass_dir()
-        if mei_dir:
-            mei_bundle_path = os.path.join(mei_dir, "offline_bundle", "model")
-            if os.path.exists(mei_bundle_path):
-                active_model_path = mei_bundle_path
+            model_path = active_model_path if self.settings.AI_CONSENT_GRANTED else None
+            configured_strat = getattr(self.settings, "SORTING_STRATEGY", "default")
+            if configured_strat in ("clinical_tmf", "clinical_isf"):
+                strategy_name = configured_strat
+                from app.core.analyzer_strategies import clustering_registry
 
-        if not active_model_path:
-            if os.path.exists(local_model_path):
-                active_model_path = local_model_path
-            elif os.path.exists(user_model_path):
-                active_model_path = user_model_path
-
-        model_path = active_model_path if self.settings.AI_CONSENT_GRANTED else None
-        configured_strat = getattr(self.settings, "SORTING_STRATEGY", "default")
-        if configured_strat in ("clinical_tmf", "clinical_isf"):
-            strategy_name = configured_strat
-            from app.core.analyzer_strategies import clustering_registry
-
-            strat = clustering_registry.get_strategy(strategy_name)
-            if strat and hasattr(strat, "smart_renaming"):
-                setattr(
-                    strat,
-                    "smart_renaming",
-                    bool(getattr(self.settings, "CLINICAL_SMART_RENAMING", False)),
+                strat = clustering_registry.get_strategy(strategy_name)
+                if strat and hasattr(strat, "smart_renaming"):
+                    setattr(
+                        strat,
+                        "smart_renaming",
+                        bool(getattr(self.settings, "CLINICAL_SMART_RENAMING", False)),
+                    )
+                    setattr(
+                        strat,
+                        "generate_audit_report",
+                        bool(
+                            getattr(
+                                self.settings, "CLINICAL_GENERATE_AUDIT_REPORT", True
+                            )
+                        ),
+                    )
+                    setattr(strat, "base_dir", self.base_dir)
+            else:
+                strategy_name = (
+                    "generative"
+                    if getattr(self.settings, "AI_ASSISTED_NAMING", False)
+                    else "default"
                 )
-                setattr(
-                    strat,
-                    "generate_audit_report",
-                    bool(
-                        getattr(self.settings, "CLINICAL_GENERATE_AUDIT_REPORT", True)
-                    ),
-                )
-                setattr(strat, "base_dir", self.base_dir)
-        else:
-            strategy_name = (
-                "generative"
-                if getattr(self.settings, "AI_ASSISTED_NAMING", False)
-                else "default"
+
+            self.analyzer = IncrementalAnalyzer(
+                self.settings.MAX_FOLDERS,
+                self.settings.STOP_WORDS,
+                self.db,
+                strategy_name=strategy_name,
+                model_path=model_path,
             )
-
-        self.analyzer = IncrementalAnalyzer(
-            self.settings.MAX_FOLDERS,
-            self.settings.STOP_WORDS,
-            self.db,
-            strategy_name=strategy_name,
-            model_path=model_path,
-        )
+        except BaseException:
+            self._service_lease.close()
+            raise
 
     async def process_items_async(
         self, items_to_sort, cancel_check, progress_callback=None
@@ -393,28 +400,20 @@ class AppSession:
         return stack
 
     def close(self):
-        """Cleanup session directory."""
-        if hasattr(self, "analyzer") and self.analyzer:
-            self.analyzer.terminate()
-        if hasattr(self, "db_worker") and self.db_worker:
-            self.db_worker.stop()
+        """Release session services without stopping another active consumer."""
+        if getattr(self, "_closed", False):
+            return
+        self._closed = True
         try:
-            from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
+            if hasattr(self, "analyzer") and self.analyzer:
+                self.analyzer.terminate()
+        finally:
+            if hasattr(self, "_service_lease"):
+                self._service_lease.close()
+            if self.session_dir and os.path.exists(self.session_dir):
+                from app.core.resilient_file_ops import resilient_rmtree
 
-            SharedWorkerPool.shutdown_instance(wait=False)
-            SharedModelRegistry.get_instance().unload_all_models()
-        except Exception:
-            pass
-        try:
-            from app.core.db_conn import clear_connection_cache
-
-            clear_connection_cache(only_current_and_inactive=False)
-        except Exception:
-            pass
-        if self.session_dir and os.path.exists(self.session_dir):
-            from app.core.resilient_file_ops import resilient_rmtree
-
-            resilient_rmtree(self.session_dir, ignore_errors=True)
+                resilient_rmtree(self.session_dir, ignore_errors=True)
 
 
 def split_plan_phases(plan: dict[str, Any]) -> tuple[dict[str, Any], dict[str, Any]]:

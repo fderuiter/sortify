@@ -2040,11 +2040,16 @@ class Database:
                 )
 
         try:
-            from app.core.store import open_store
+            from app.config import get_app_dir
+            from app.core.services import acquire_services
+            from app.core.store import STORE_FILENAME
 
-            store = open_store()
-            if os.path.abspath(str(store.path)) not in scrubbed_paths:
-                store.database(DBWorker()).clear_all_document_vectors()
+            if (
+                os.path.abspath(str(get_app_dir() / STORE_FILENAME))
+                not in scrubbed_paths
+            ):
+                with acquire_services() as services:
+                    services.db.clear_all_document_vectors()
         except Exception as e:
             logging.debug(f"Failed to scrub default database vectors: {e}")
 

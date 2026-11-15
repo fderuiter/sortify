@@ -7,6 +7,7 @@ flowchart TD
         core_pipeline["app.core.pipeline"]
         core_folder_lock["app.core.folder_lock"]
         core_session["app.core.session"]
+        core_services["app.core.services"]
         core_daemon["app.core.daemon"]
         core_ipc["app.core.ipc"]
         core_domain_contracts["app.core.domain_contracts"]
@@ -85,7 +86,9 @@ flowchart TD
     core_daemon --> core_pipeline
     core_pipeline --> core_session
     core_session --> core_folder_lock
-    core_session --> core_store
+    core_session --> core_services
+    core_services --> core_store
+    core_services --> core_db_worker
     core_pipeline --> core_extractor
     app_main --> core_session
     app_tui --> core_session

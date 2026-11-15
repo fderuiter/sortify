@@ -84,3 +84,17 @@ The `QuarantineInterceptorService` integrates with `JevClassifierEngine` during 
 During plan move execution in `AsyncMoveEngine`, plan node sensitivity metadata (`sensitivity_rating`, `sensitivity_score`) recorded by `FileAnalyzer` is evaluated prior to physical move execution. If a plan node contains a sensitive rating matching `AUTO_QUARANTINE_RATINGS`, standard folder movement is blocked and the file is safely redirected to the compliance quarantine directory (`_Compliance_Quarantine` or configured `QUARANTINE_DIR_NAME`) with audit logging recorded in `quarantine_records`.
 
 
+
+## Managed store services
+
+`app.core.services.acquire_services()` is the composition root for database,
+cache and history access. Hold its context-managed lease for the whole command
+or background operation. Canonical store paths share one writer and service
+graph in a process. Closing an export, dialog or session releases its lease;
+only the final consumer drains and stops the writer. Consumers never call
+`worker.stop()` or clear other consumers' connections. Custom quarantine
+databases use the same ownership rule and retain their standalone schema.
+
+Store bootstrap runs on the writer. Session close does not unload global models
+or shut down shared pools; those resources belong to application shutdown.
+Legacy query/schema ownership remains tracked separately in #712.
