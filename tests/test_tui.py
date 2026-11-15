@@ -1856,7 +1856,7 @@ def test_directory_select_modal_preset_creation_error_graceful_handling(
     orig_exists = os.path.exists
 
     def mock_exists(p):
-        if "sandbox/demo_workspace" in p:
+        if "sandbox/demo_workspace" in str(p).replace("\\", "/"):
             return False
         return orig_exists(p)
 
