@@ -1,0 +1,77 @@
+{
+  "counts": {
+    "app/core/history.py": {
+      "deprecated": 1
+    },
+    "app/frozen_runtime.py": {
+      "renamed-rule-in-ignore-comment": 2
+    },
+    "app/ui/a11y.py": {
+      "call-non-callable": 2,
+      "missing-attribute": 4
+    },
+    "app/ui/layout.py": {
+      "missing-attribute": 2
+    },
+    "app/ui/mixins/history.py": {
+      "invalid-argument-type": 1
+    },
+    "app/ui/mixins/pipeline.py": {
+      "invalid-argument-type": 6,
+      "missing-attribute": 67
+    },
+    "app/ui/mixins/selection.py": {
+      "invalid-argument-type": 1,
+      "invalid-assignment": 3,
+      "missing-attribute": 153
+    },
+    "app/ui/mixins/tree_view.py": {
+      "call-non-callable": 1,
+      "invalid-argument-type": 1,
+      "missing-attribute": 54
+    },
+    "app/ui/modals/collisions.py": {
+      "missing-attribute": 3
+    },
+    "app/ui/modals/drop_zone.py": {
+      "no-matching-overload": 2
+    },
+    "app/ui/modals/quarantine.py": {
+      "missing-attribute": 1,
+      "no-matching-overload": 1,
+      "redundant-condition": 1
+    },
+    "app/ui/modals/reports.py": {
+      "missing-attribute": 6
+    },
+    "app/ui/modals/rules.py": {
+      "call-non-callable": 1,
+      "invalid-argument-type": 1,
+      "missing-attribute": 2
+    },
+    "app/ui/modals/sample_playground.py": {
+      "call-non-callable": 1,
+      "invalid-assignment": 2
+    },
+    "app/ui/modals/session.py": {
+      "invalid-argument-type": 1
+    },
+    "app/ui/modals/settings.py": {
+      "invalid-assignment": 1,
+      "missing-attribute": 1,
+      "no-matching-overload": 2
+    },
+    "app/ui/modals/wizard.py": {
+      "invalid-assignment": 1
+    },
+    "app/ui/tui.py": {
+      "invalid-argument-type": 4,
+      "missing-union-attribute": 1
+    },
+    "app/ui/widgets/vim_tree.py": {
+      "missing-attribute": 2
+    }
+  },
+  "schema": 1,
+  "tool": "types"
+}

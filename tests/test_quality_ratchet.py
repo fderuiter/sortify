@@ -70,3 +70,75 @@ def test_baseline_increases_cannot_be_hidden_by_editing_json(tmp_path, monkeypat
         ratchet, "baseline_at_ref", lambda *args: {"app/a.py": {"S110": 1}}
     )
     assert main(["exceptions", "--root", str(tmp_path), "--base-ref", "main"]) == 1
+
+
+def _sarif(path, level="warning", rule="missing-attribute"):
+    return {
+        "runs": [
+            {
+                "results": [
+                    {
+                        "level": level,
+                        "ruleId": rule,
+                        "message": {"text": "example diagnostic"},
+                        "locations": [
+                            {
+                                "physicalLocation": {
+                                    "artifactLocation": {"uri": path.as_uri()}
+                                }
+                            }
+                        ],
+                    }
+                ]
+            }
+        ]
+    }
+
+
+def test_ty_warnings_are_counted_per_source_and_rule(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import scripts.quality_ratchet as ratchet
+
+    source = tmp_path / "app" / "view with space.py"
+    monkeypatch.setattr(
+        ratchet.subprocess,
+        "run",
+        lambda *a, **k: SimpleNamespace(
+            returncode=0, stdout=json.dumps(_sarif(source)), stderr=""
+        ),
+    )
+    assert ratchet.type_counts(tmp_path) == {
+        "app/view with space.py": {"missing-attribute": 1}
+    }
+
+
+def test_ty_errors_cannot_be_accepted_as_baseline_debt(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import scripts.quality_ratchet as ratchet
+
+    source = tmp_path / "app" / "view.py"
+    monkeypatch.setattr(
+        ratchet.subprocess,
+        "run",
+        lambda *a, **k: SimpleNamespace(
+            returncode=1, stdout=json.dumps(_sarif(source, "error")), stderr=""
+        ),
+    )
+    assert main(["types", "--root", str(tmp_path), "--initialize"]) == 1
+    assert not (tmp_path / "scripts/baselines/types.json").exists()
+
+
+def test_unrecognized_ty_failure_never_looks_like_a_clean_run(tmp_path, monkeypatch):
+    from types import SimpleNamespace
+
+    import scripts.quality_ratchet as ratchet
+
+    monkeypatch.setattr(
+        ratchet.subprocess,
+        "run",
+        lambda *a, **k: SimpleNamespace(returncode=2, stdout="", stderr="tool failed"),
+    )
+    with pytest.raises(ValueError, match="could not run"):
+        ratchet.type_counts(tmp_path)
