@@ -11,6 +11,7 @@ from scripts.generate_docs import (
     _format_key,
     audit_auto_merge_policy,
     audit_handwritten_docs,
+    audit_model_hosts,
     get_handwritten_docs,
     main,
     update_security_md,
@@ -144,6 +145,130 @@ def test_audit_auto_merge_policy_detects_missing_bot(tmp_path):
     assert any("stitch" in e for e in errors)
     assert any("jules" in e for e in errors)
     assert any("github-actions[bot]" in e for e in errors)
+
+
+def test_audit_model_hosts_clean():
+    """Verify that audit_model_hosts succeeds on the repository documentation."""
+    errors = audit_model_hosts()
+    assert errors == []
+
+
+def test_architecture_doc_model_hosts_and_egress_rules():
+    """Verify that docs/architecture.md contains all ALLOWED_MODEL_HOSTS and egress rules."""
+    from app.core.downloader import ALLOWED_MODEL_HOSTS
+
+    arch_file = Path("docs/architecture.md")
+    assert arch_file.exists(), f"{arch_file} does not exist"
+
+    content = arch_file.read_text(encoding="utf-8")
+    assert "### Model Downloader Lifecycle" in content
+    section = content.split("### Model Downloader Lifecycle")[1].split("## ")[0]
+
+    for host in ALLOWED_MODEL_HOSTS:
+        assert host in section, (
+            f"Allowed model host '{host}' is missing from {arch_file}"
+        )
+
+    assert "https" in section.lower(), (
+        f"HTTPS scheme requirement missing from {arch_file}"
+    )
+    assert "ip address literal" in section.lower() or "ip literal" in section.lower(), (
+        f"IP literal blocking missing from {arch_file}"
+    )
+    assert "ssrf" in section.lower(), f"SSRF prevention missing from {arch_file}"
+
+
+def test_security_policy_model_hosts_and_ssrf_rules():
+    """Verify that SECURITY.md contains all ALLOWED_MODEL_HOSTS and SSRF protection boundaries."""
+    from app.core.downloader import ALLOWED_MODEL_HOSTS
+
+    sec_file = Path("SECURITY.md")
+    assert sec_file.exists(), f"{sec_file} does not exist"
+
+    content = sec_file.read_text(encoding="utf-8")
+    assert "## Telemetry and Network Access" in content
+    section = content.split("## Telemetry and Network Access")[1].split("## ")[0]
+
+    for host in ALLOWED_MODEL_HOSTS:
+        assert host in section, (
+            f"Allowed model host '{host}' is missing from {sec_file}"
+        )
+
+    assert "https" in section.lower(), (
+        f"HTTPS scheme requirement missing from {sec_file}"
+    )
+    assert "ssrf" in section.lower(), (
+        f"SSRF protection boundary missing from {sec_file}"
+    )
+    assert "ip literal" in section.lower(), (
+        f"IP literal blocking missing from {sec_file}"
+    )
+
+
+def test_audit_model_hosts_detects_missing_architecture_host(tmp_path):
+    """Verify audit_model_hosts detects when an allowed host is missing from docs/architecture.md."""
+    bad_arch = tmp_path / "architecture.md"
+    bad_arch.write_text(
+        "### Model Downloader Lifecycle\n\n"
+        "Model downloads only support https and huggingface.co with IP literal blocks and SSRF protection.\n"
+    )
+    errors = audit_model_hosts(
+        architecture_path=str(bad_arch),
+        security_path=None,
+    )
+    assert errors
+    assert any("hf.co" in e for e in errors)
+
+
+def test_audit_model_hosts_detects_missing_security_host(tmp_path):
+    """Verify audit_model_hosts detects when an allowed host is missing from SECURITY.md."""
+    bad_sec = tmp_path / "SECURITY.md"
+    bad_sec.write_text(
+        "# Security Policy\n\n"
+        "## Telemetry and Network Access\n\n"
+        "- **Model downloads** Approved hosts are hf.co over HTTPS with SSRF and IP literal blocks.\n"
+    )
+    errors = audit_model_hosts(
+        architecture_path=None,
+        security_path=str(bad_sec),
+    )
+    assert errors
+    assert any("huggingface.co" in e for e in errors)
+
+
+def test_audit_model_hosts_detects_missing_ssrf_rules(tmp_path):
+    """Verify audit_model_hosts detects when SSRF or IP literal rules are omitted."""
+    bad_arch = tmp_path / "architecture.md"
+    bad_arch.write_text(
+        "### Model Downloader Lifecycle\n\n"
+        "Allowed hosts are huggingface.co and hf.co over https without any restrictions.\n"
+    )
+    bad_sec = tmp_path / "SECURITY.md"
+    bad_sec.write_text(
+        "## Telemetry and Network Access\n\n"
+        "Approved hosts are huggingface.co and hf.co over HTTPS.\n"
+    )
+    errors = audit_model_hosts(
+        architecture_path=str(bad_arch),
+        security_path=str(bad_sec),
+    )
+    assert errors
+    assert any("literal" in e.lower() for e in errors)
+    assert any("ssrf" in e.lower() for e in errors)
+
+
+def test_audit_model_hosts_detects_new_allowed_host(monkeypatch):
+    """Verify audit_model_hosts reports an error if a new host is added to ALLOWED_MODEL_HOSTS without docs."""
+    import app.core.downloader
+
+    new_hosts = frozenset(
+        app.core.downloader.ALLOWED_MODEL_HOSTS | {"models.example.org"}
+    )
+    monkeypatch.setattr(app.core.downloader, "ALLOWED_MODEL_HOSTS", new_hosts)
+
+    errors = audit_model_hosts()
+    assert errors
+    assert any("models.example.org" in e for e in errors)
 
 
 def test_audit_handwritten_docs_detects_invalid_path(tmp_path):
