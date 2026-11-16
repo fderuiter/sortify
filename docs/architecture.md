@@ -153,7 +153,7 @@ Sortify's audit ledger and history service (`app/core/history.py`) maintains ACI
 
 ### Model Downloader Lifecycle (`DownloadState`)
 
-The [ModelDownloader][app.core.downloader.ModelDownloader] (`app/core/downloader.py`) manages model downloads for OCR and neural embedding models. Its operational phases are tracked by [DownloadState](api_reference.md#appcoredownloader) and validated against `_VALID_TRANSITIONS`.
+The [DownloadManager][app.core.downloader.DownloadManager] (`app/core/downloader.py`) manages model downloads for OCR and neural embedding models. Its operational phases are tracked by [DownloadState](api_reference.md#appcoredownloader) and validated against `_VALID_TRANSITIONS`.
 
 ![Model Downloader Lifecycle State Machine](assets/diagrams/architecture_download_state.svg)
 

@@ -54,6 +54,8 @@ def set_low_priority():
 class ModelProperties(tuple):
     """Subclass of tuple to hold signature, dimensions, and version while tracking validity."""
 
+    is_valid: bool
+
     def __new__(
         cls, signature: str, dimensions: int, version: str, is_valid: bool = True
     ):
