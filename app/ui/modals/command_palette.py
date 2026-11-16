@@ -97,7 +97,7 @@ DEFAULT_COMMAND_CATALOG: list[PaletteCommand] = [
         id="open_cro_forensic",
         title="Open CRO Forensic Ingestion",
         category="Compliance",
-        shortcut="Ctrl+C",
+        shortcut="",
         description="Multi-study clinical compliance ingestion workflow",
         action_name="action_open_cro_forensic",
     ),

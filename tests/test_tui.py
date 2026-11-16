@@ -424,6 +424,10 @@ def test_tui_cro_forensic_modal(temp_workspace):
         settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
+        assert not any(
+            getattr(b, "key", None) == "ctrl+c" for b in AutoSorterTUI.BINDINGS
+        )
+
         async with app.run_test() as pilot:
             app.action_open_cro_forensic()
             await pilot.pause(0.1)
