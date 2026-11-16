@@ -72,7 +72,7 @@ Useful options for `sort` and `scan`:
 Each file goes through these steps in order, and the first one that matches decides where it goes:
 1. Locked paths you pinned in the TUI.
 2. Compliance policies and the sensitivity classifier. Highly sensitive files go to a quarantine folder for review.
-3. Keyword rules and rules learned from your past corrections.
+3. Keyword rules, imported rules, and policies (see [Rule Migration and Export](#rule-migration-and-export)), alongside rules learned from your past corrections.
 4. Extension categories for files whose text isn't extracted (for example `Images`, `Archives`, `Executables`).
 5. The folder a file with the same content went to before.
 6. Content clustering for everything else.
@@ -114,6 +114,81 @@ smart-autosorter config --set CLEANUP_EMPTY_FOLDERS true
 ```bash
 smart-autosorter config --set AI_CONSENT_GRANTED true
 ```
+
+## Rule Migration and Export
+<a id="rule-migration-and-export"></a>
+
+Sortify allows you to import existing rules from competitor automation tools—such as macOS Hazel, DropIt for Windows, and TagSpaces—as well as export active rules for backup or cross-tool compatibility.
+
+### Accessing the Template Gallery and Rule Migration Tools
+
+In the terminal interface (TUI):
+1. Press `[Ctrl+O]` to open the **Application Settings** dialog.
+2. Select the **AI & Privacy Settings** tab.
+3. Choose **Starter Rule Template Gallery** (`#btn-open-templates`) to view built-in template packs (such as Developer Workspace and Media & Downloads).
+4. Use the bottom action buttons to manage external rules:
+   - **Import External Rules** (`#btn-import-rules`): opens the rule import dialog to migrate rules from Hazel, DropIt, or TagSpaces.
+   - **Export Rules** (`#btn-export-rules`): opens the rule export dialog to save active keyword rules and policies to disk.
+   - **Apply Selected Templates** (`#btn-apply-templates`): merges checked starter template packs into your configuration.
+   - **Close** (`#btn-close-gallery`) or `[Esc]`: returns to the settings dialog.
+
+### Importing External Rules
+
+The **Import External Rules** modal lets you import rules from third-party tools into Sortify:
+
+#### Supported Importers
+- **Hazel (`.hazelrules`, `.plist`)**: Parses Apple property list rule packages (`HazelRuleImporter`). Extracted conditions (e.g. filename contains or extension matches) and move actions are converted into Sortify keyword rules and pattern policies.
+- **DropIt (`.xml`, `.json`, `.dropit`, `.ini`)**: Parses DropIt profiles and association packages (`DropItRuleImporter`), translating associations into keyword rules and matching policies.
+- **TagSpaces (`taggroup.json`, `taggroups.json`)**: Parses TagSpaces tag taxonomy exports (`TagSpacesRuleImporter`), converting tag groupings into keyword-to-folder sorting rules.
+
+#### Import Workflow
+1. Enter the full path to your rule file in the input field (for example, `/path/to/rules.hazelrules` or `taggroup.json`).
+2. Select **Parse File** (`#btn-parse-rule-file`) or press `[Enter]`.
+3. Inspect the parsed preview:
+   - **Imported Keywords**: Displays extracted keyword mappings and their designated destination folders.
+   - **Imported Policies**: Displays rule types, expressions or patterns, target paths, and rule priorities.
+   - **Warnings Banner**: Highlights unmapped operators or syntax anomalies.
+4. Resolve any detected conflicts (see [Conflict Resolution](#conflict-resolution) below).
+5. Select **Merge Rules into Settings** (`#btn-merge-imported-rules`) to commit the imported rules into your active settings.
+
+#### Fallback Behaviors and Parsing Error Handling
+- **Syntax Errors and Malformed Files**: If a file cannot be parsed or contains syntax errors, the importer captures the error in the warning banner without aborting or corrupting existing settings.
+- **Unmapped Condition Operators**: Unrecognized condition operators or actions are flagged as non-blocking warnings, and unsupported clauses are skipped while extracting all valid conditions.
+- **TagSpaces Asymmetry**: TagSpaces taxonomy imports generate keyword rules, but Sortify does not export back to native TagSpaces files (see [Exporting Active Rules](#exporting-active-rules)).
+
+### Conflict Resolution
+<a id="conflict-resolution"></a>
+
+When an imported rule targets a keyword or pattern that already exists in your settings with a different target path, Sortify flags it under **Detected Rule Conflicts**:
+
+- **Bulk Resolution Strategy**: Use the dropdown selector to apply a uniform policy across all conflicts:
+  - **Keep Existing (Skip Conflicts)** (`keep_existing`): Retains your existing settings rule and ignores the incoming conflicting rule.
+  - **Overwrite Existing Rules** (`overwrite`): Replaces your existing destination path with the imported rule's destination path.
+  - **Skip Conflicting Rules** (`skip_conflicting`): Omits conflicting rules while merging non-conflicting rules.
+- **Interactive Per-Rule Override**: In the **Rule Conflicts** table (`#dt-rule-conflicts`), click or press `[Space]` or `[Enter]` on any row to cycle that rule's resolution individually between *Keep Existing*, *Overwrite*, and *Skip Conflicting*.
+
+### Exporting Active Rules
+<a id="exporting-active-rules"></a>
+
+The **Export Active Rules** modal serializes your active keyword rules and compliance policies to disk for backups or migration into other workflow tools.
+
+#### Supported Export Formats
+- **Sortify JSON (`*.json`)**: Native Sortify JSON format (`format: "sortify"`, version 1) preserving full rule structure, keyword mappings, and policy configurations.
+- **Hazel Rules (`*.hazelrules`)**: Apple property list format mapping keyword rules and policies to Hazel-compatible move rules (`NSRuleActionMove`).
+- **DropIt Configuration (`*.ini`)**: Standard DropIt configuration file with `[DropIt]` header and `[Association_N]` sections.
+
+*Note: While TagSpaces tag groups can be imported into keyword rules, exporting back to native TagSpaces taxonomy files is not supported.*
+
+#### Export Workflow
+1. Select your target format from the **Export Format** dropdown (`sortify_json`, `hazel`, or `dropit_ini`). The destination filename automatically updates its extension (`.json`, `.hazelrules`, or `.ini`).
+2. Enter the target file path in the **Destination File Path** field (`#input-export-path`).
+3. Select **Export Rules** (`#btn-do-export`) or press `[Enter]`.
+
+#### Path Validation and Safety Guards
+Destination paths are validated before writing:
+- Directory traversal segments (`..`) and null characters (`\0`) are rejected.
+- Destination paths pointing to existing directory paths rather than file paths are blocked.
+- Parent directories are automatically created if they do not yet exist, provided write permissions are available.
 
 ## Background Folder Monitoring
 
