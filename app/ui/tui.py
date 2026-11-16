@@ -1161,6 +1161,18 @@ class AutoSorterTUI(
                     ]
                 if "CONFLICT_POLICY" in res:
                     self.settings.CONFLICT_POLICY = res["CONFLICT_POLICY"]
+                if "CLEANUP_EMPTY_FOLDERS" in res:
+                    try:
+                        self.settings.CLEANUP_EMPTY_FOLDERS = res[
+                            "CLEANUP_EMPTY_FOLDERS"
+                        ]
+                    except Exception:
+                        pass
+                if "PRESERVE_HIERARCHY" in res:
+                    try:
+                        self.settings.PRESERVE_HIERARCHY = res["PRESERVE_HIERARCHY"]
+                    except Exception:
+                        pass
                 if hasattr(self.settings, "_save"):
                     self.settings._save()
                 self.update_status()

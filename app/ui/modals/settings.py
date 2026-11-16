@@ -310,12 +310,28 @@ class SettingsModal(
         self.help_url = f"{TROUBLESHOOTING_URL}#settings-configuration"
 
     def query_one(self, selector: Any, expect_type: Any = None) -> Any:
-        """Query one widget, aliasing alternative character shortcut switch IDs."""
+        """Query one widget, aliasing alternative switch IDs."""
         if selector in (
             "#switch-enable-character-key-shortcuts",
             "#switch-character-shortcuts",
         ):
             selector = "#switch-character-key-shortcuts"
+        elif selector in (
+            "#switch-cleanup",
+            "#switch-cleanup-folders",
+            "#switch-cleanup-empty-directories",
+            "#switch-empty-directory-cleanup",
+            "#switch-clean-up-empty-folders",
+        ):
+            selector = "#switch-cleanup-empty-folders"
+        elif selector in (
+            "#switch-preserve",
+            "#switch-preserve-folder-hierarchy",
+            "#switch-folder-hierarchy-preservation",
+            "#switch-preserve-directory-hierarchy",
+            "#switch-hierarchy",
+        ):
+            selector = "#switch-preserve-hierarchy"
         return super().query_one(selector, expect_type=expect_type)
 
     def compose(self) -> ComposeResult:
@@ -399,6 +415,22 @@ class SettingsModal(
                     )
                     sel_conflict.tooltip = "Select collision handling strategy for conflicting target files"
                     yield sel_conflict
+
+                    yield LabeledSwitch(
+                        label="Cleanup Empty Folders",
+                        value=bool(
+                            getattr(self.settings, "CLEANUP_EMPTY_FOLDERS", True)
+                        ),
+                        switch_id="switch-cleanup-empty-folders",
+                        tooltip="Automatically prune empty source directories after moving organized files",
+                    )
+
+                    yield LabeledSwitch(
+                        label="Preserve Folder Hierarchy",
+                        value=bool(getattr(self.settings, "PRESERVE_HIERARCHY", False)),
+                        switch_id="switch-preserve-hierarchy",
+                        tooltip="Maintain source directory levels and folder structure during classification",
+                    )
 
                 with TabPane("AI & Privacy Settings", id="tab-ai-privacy"):
                     yield Heading("Sorting Strategy:", level=2, classes="field-label")
@@ -782,6 +814,17 @@ class SettingsModal(
         except Exception:
             conflict_pol = getattr(self.settings, "CONFLICT_POLICY", "rename")
 
+        try:
+            cleanup_empty = self.query_one(
+                "#switch-cleanup-empty-folders", Switch
+            ).value
+        except Exception:
+            cleanup_empty = bool(getattr(self.settings, "CLEANUP_EMPTY_FOLDERS", True))
+        try:
+            preserve_hier = self.query_one("#switch-preserve-hierarchy", Switch).value
+        except Exception:
+            preserve_hier = bool(getattr(self.settings, "PRESERVE_HIERARCHY", False))
+
         res = {
             "PROTECTED_PATHS": p_list,
             "IGNORED_EXTENSIONS": i_list,
@@ -795,6 +838,8 @@ class SettingsModal(
             "AI_CONSENT_GRANTED": ai_consent,
             "SPEAK_ANNOUNCEMENTS": speak,
             "ENABLE_CHARACTER_KEY_SHORTCUTS": char_shortcuts,
+            "CLEANUP_EMPTY_FOLDERS": cleanup_empty,
+            "PRESERVE_HIERARCHY": preserve_hier,
         }
         self.announce("Saved application settings.")
         self.dismiss(res)
