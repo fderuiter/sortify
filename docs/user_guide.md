@@ -45,10 +45,10 @@ Reopen the wizard any time with `[Ctrl+W]`.
 ### In the terminal interface
 1. Start the app with `smart-autosorter` (or `smart-autosorter --tui`).
 2. Press `[Ctrl+B]` to choose a folder, then `[Ctrl+S]` to scan it. The proposed folder tree appears; nothing has moved yet.
-3. Review the plan. `[Ctrl+F]` searches the tree, `[Space]` checks items, `[Ctrl+L]` locks a file in place, `[Ctrl+R]` renames a folder and `[Ctrl+N]` creates one. Press `[R]` to reassign checked files or the active item to a target folder (if the search box is focused, defocus it first before pressing `[R]`; see [Keyboard Shortcuts](keyboard_shortcuts.md)).
+3. Review the plan. `[Ctrl+F]` searches the tree, `[Space]` checks items, `[Ctrl+L]` locks a file in place, `[Ctrl+R]` renames a folder and `[Ctrl+N]` creates one. Press `[R]` to reassign checked files or the active item to a target folder (if the search box is focused, defocus it first before pressing `[R]`; see [Keyboard Shortcuts](keyboard_shortcuts.md)). You can also press `[Ctrl+K]` to open the [Command Palette](#command-palette) for command discovery and to trigger all system actions without memorizing keybindings.
 4. Press `[Ctrl+E]` to execute. You can review duplicates first, and an audit report is shown when the moves finish.
 
-Press `[?]` or `[F1]` for the full list of shortcuts and `[Ctrl+Q]` to quit. Every shortcut is also listed in [Keyboard Shortcuts](keyboard_shortcuts.md).
+Press `[Ctrl+K]` for the command palette, `[?]` or `[F1]` for the full list of shortcuts, and `[Ctrl+Q]` to quit. Every shortcut is also listed in [Keyboard Shortcuts](keyboard_shortcuts.md).
 
 ### From the command line
 ```bash
@@ -66,6 +66,30 @@ Useful options for `sort` and `scan`:
 - `--export-report FILE --report-format html|json`: save an audit report of the run.
 - `--preset demo|downloads|documents`: use a standard folder instead of naming one.
 - `-q` / `--quiet` and `--no-color`: less output, and plain text for logs or terminals without color.
+
+## Command Palette
+<a id="command-palette"></a>
+
+The Command Palette is a global searchable overlay providing quick access to every action and workflow in the terminal interface. Press `[Ctrl+K]` from anywhere in the application to summon the palette.
+
+### Navigation and Search Filtering
+
+When the palette opens, focus is placed in the command search input field (`#palette-input`):
+- **Real-Time Search Filtering**: As you type, the palette filters commands in real time across command titles, categories, descriptions, and keyboard shortcuts.
+- **Arrow Navigation**: Press the `[Up]` and `[Down]` arrow keys to navigate through the filtered list of commands (`#palette-list`) while retaining focus in the input field.
+- **Selection**: Press `[Enter]` while in the input field or click a highlighted command in the list to execute the action immediately.
+- **Cancellation**: Press `[Esc]` to dismiss the command palette overlay without executing an action.
+
+### Workflows Without Dedicated Shortcuts
+
+While primary actions (such as scanning or executing plans) have direct keybindings, several workflows do not have dedicated shortcuts and are executed directly through the command palette:
+
+- **Model Manager** (`Open Model Manager`): Manage ONNX embedding model downloads (`all-MiniLM-L6-v2`) and local embeddings. Download the sentence transformer model, retry failed downloads, or configure corporate proxy endpoints.
+- **CRO Forensic Ingestion** (`Open CRO Forensic Ingestion`): Multi-study clinical compliance ingestion workflow to scan clinical study folders and organize documents into Trial Master File (TMF/ISF) folder structures.
+- **Export Active Rules** (`Export Active Rules`): Open the rule export dialog to serialize active keyword rules and compliance policies to disk in Sortify JSON (`*.json`), Hazel (`*.hazelrules`), or DropIt (`*.ini`) formats.
+- **Import External Rules** (`Import External Rules`): Open the rule migration dialog to import external rule sets and taxonomy definitions from Hazel, DropIt, or TagSpaces configurations.
+- **Export Simulation Report** (`Export Simulation Report`): Export dry-run simulation audit reports to HTML or JSON formats for verification before executing file moves.
+- **Starter Rule Templates** (`Browse Starter Rule Templates`): Open the starter rule template gallery to browse and apply curated rule packs (such as Developer Workspace or Media & Downloads).
 
 ## How Files Are Placed
 
