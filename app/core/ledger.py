@@ -7,6 +7,7 @@ reconciliation for file relocation operations.
 import json
 import logging
 import os
+import threading
 import time
 from enum import Enum
 from typing import Any, Optional
@@ -14,6 +15,7 @@ from typing import Any, Optional
 from app.config import get_app_dir
 from app.core.db_conn import get_db_connection
 from app.core.exceptions import EntryNotFoundError, InvalidStateTransitionError
+from app.core.lifecycle import LifecycleTelemetryMixin
 from app.core.migrations import Migration, migrate
 from app.core.text_utils import sanitize_secret_patterns
 
@@ -199,10 +201,11 @@ def _ledger_db_baseline(conn) -> None:
 LEDGER_DB_MIGRATIONS = (Migration(1, "baseline", _ledger_db_baseline),)
 
 
-class TransactionLedger:
+class TransactionLedger(LifecycleTelemetryMixin):
     """Persistent sidecar SQLite transaction ledger for tracking file moves and reconciliation."""
 
     def __init__(self, db_path: Optional[str] = None):
+        self._lock = threading.RLock()
         self.db_path = db_path or get_default_ledger_path()
         self._init_db()
 
@@ -347,6 +350,14 @@ class TransactionLedger:
                 (target_status.value, now, entry_id),
             )
 
+        self._notify_lifecycle_listeners(
+            curr_status.value,
+            target_status.value,
+            context={"entry_id": entry_id},
+            event_type="LEDGER_STATUS_CHANGED",
+            entry_id=entry_id,
+        )
+
     def get_pending_entries(
         self,
         session_id: Optional[str] = None,
@@ -480,6 +491,11 @@ class TransactionLedger:
         incomplete = self.get_pending_entries()
         if not incomplete:
             return 0
+
+        self.emit_telemetry(
+            "reconciliation_start",
+            {"total_incomplete": len(incomplete), "timestamp": time.time()},
+        )
 
         logger.info(
             f"Automated headless reconciliation scanning {len(incomplete)} incomplete transactions..."
@@ -617,7 +633,25 @@ class TransactionLedger:
                 )
                 reconciled_count += 1
 
+            self.emit_telemetry(
+                "reconciliation_progress",
+                {
+                    "entry_id": entry_id,
+                    "reconciled_count": reconciled_count,
+                    "total_incomplete": len(incomplete),
+                    "timestamp": time.time(),
+                },
+            )
+
         self.purge_completed()
+        self.emit_telemetry(
+            "reconciliation_finish",
+            {
+                "reconciled_count": reconciled_count,
+                "total_incomplete": len(incomplete),
+                "timestamp": time.time(),
+            },
+        )
         logger.info(
             f"Headless reconciliation complete. {reconciled_count} entries reconciled."
         )

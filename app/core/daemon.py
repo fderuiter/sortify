@@ -22,6 +22,7 @@ from app.core.domain_contracts import (
     _make_json_serializable,
     validate_quarantine_record,
 )
+from app.core.lifecycle import LifecycleTelemetryMixin
 from app.core.metadata import MetadataPass
 from app.core.mover import is_subpath_or_equal
 from app.core.path_utils import safe_relpath
@@ -207,7 +208,7 @@ _VALID_TRANSITIONS: dict[DaemonState, set[DaemonState]] = {
 }
 
 
-class ContinuousWatchdogDaemon:
+class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
     """Daemon that continuously monitors a folder using an async queue pipeline."""
 
     def __init__(self, settings: AppSettings, base_dir: str):
@@ -295,6 +296,9 @@ class ContinuousWatchdogDaemon:
         old_state = self._state
         self._state = new_state
         logger.info(f"Daemon state transitioned: {old_state.name} -> {new_state.name}")
+        self._notify_lifecycle_listeners(
+            old_state, new_state, event_type="DAEMON_STATE_CHANGED"
+        )
 
     @property
     def is_running(self) -> bool:
@@ -313,9 +317,10 @@ class ContinuousWatchdogDaemon:
         with self._lock:
             if value:
                 if self._state == DaemonState.STOPPED:
-                    self._state = DaemonState.RUNNING
+                    self._transition_to(DaemonState.RUNNING)
             else:
-                self._state = DaemonState.STOPPED
+                if self._state != DaemonState.STOPPED:
+                    self._transition_to(DaemonState.STOPPED)
 
     @property
     def is_paused(self) -> bool:

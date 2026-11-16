@@ -5,6 +5,7 @@ flowchart TD
     end
     subgraph session_orchestration ["Session Orchestration & Lifecycle (app.core)"]
         core_pipeline["app.core.pipeline"]
+        core_lifecycle["app.core.lifecycle"]
         core_folder_lock["app.core.folder_lock"]
         core_session["app.core.session"]
         core_services["app.core.services"]
@@ -83,6 +84,7 @@ flowchart TD
     core_pattern_formatter["app.core.pattern_formatter"]
     app_main --> app_tui
     app_main --> core_pipeline
+    core_pipeline --> core_lifecycle
     core_daemon --> core_pipeline
     core_pipeline --> core_session
     core_session --> core_folder_lock
