@@ -1365,3 +1365,71 @@ def test_config_reference_describes_types_defaults_and_bounds():
     # default_factory fields used to render as "PydanticUndefined".
     assert _describe_default(fields["KEYWORD_RULES"]) == "`{}`"
     assert "built-in entries" in _describe_default(fields["STOP_WORDS"])
+
+
+def test_user_guide_rule_migration_and_export_section():
+    """Verify that docs/user_guide.md contains rule migration, importer, conflict resolution, and export documentation."""
+    guide_path = Path("docs/user_guide.md")
+    assert guide_path.exists(), "docs/user_guide.md must exist"
+
+    content = guide_path.read_text(encoding="utf-8")
+
+    # Section heading and anchor
+    assert "## Rule Migration and Export" in content
+    assert '<a id="rule-migration-and-export"></a>' in content
+
+    # Template gallery navigation from settings
+    assert "[Ctrl+O]" in content
+    assert "Starter Rule Template Gallery" in content
+    assert "#btn-open-templates" in content
+    assert "#btn-import-rules" in content
+    assert "#btn-export-rules" in content
+
+    # Importer strategies and supported competitor formats
+    assert "Hazel" in content
+    assert ".hazelrules" in content
+    assert "HazelRuleImporter" in content
+    assert "DropIt" in content
+    assert "DropItRuleImporter" in content
+    assert "TagSpaces" in content
+    assert "taggroup.json" in content
+    assert "TagSpacesRuleImporter" in content
+
+    # Conflict resolution
+    assert "keep_existing" in content
+    assert "overwrite" in content
+    assert "skip_conflicting" in content
+    assert "#dt-rule-conflicts" in content
+
+    # Export formats and workflow
+    assert "Sortify JSON" in content
+    assert "sortify_json" in content
+    assert "hazel" in content
+    assert "dropit_ini" in content
+    assert "#btn-do-export" in content
+
+    # Edge cases: fallback behaviors and TagSpaces non-export asymmetry
+    assert "unmapped" in content.lower() or "unrecognized" in content.lower()
+    assert "syntax error" in content.lower()
+    assert (
+        "exporting back to native tagspaces" in content.lower()
+        or "not export back to native tagspaces" in content.lower()
+    )
+
+
+def test_user_guide_rule_placement_cross_reference():
+    """Verify that How Files Are Placed in docs/user_guide.md references imported rules and links to rule migration."""
+    guide_path = Path("docs/user_guide.md")
+    assert guide_path.exists(), "docs/user_guide.md must exist"
+
+    content = guide_path.read_text(encoding="utf-8")
+    assert "## How Files Are Placed" in content
+
+    section = content.split("## How Files Are Placed")[1].split("## ")[0]
+    step3_line = next(
+        (line for line in section.splitlines() if line.startswith("3.")), None
+    )
+    assert step3_line is not None, "Missing numbered step 3 in How Files Are Placed"
+    assert "imported" in step3_line.lower()
+    assert "policies" in step3_line.lower()
+    assert "[Rule Migration and Export](#rule-migration-and-export)" in step3_line
