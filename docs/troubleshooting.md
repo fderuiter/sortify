@@ -76,7 +76,7 @@ The DropZone (`[Ctrl+D]`) sorts files you paste or drop into its queue. **Sort I
 
 ## CRO forensic ingestion
 
-The CRO Multi-Study Forensic Ingestion dialog (`[Ctrl+C]`) scans a source folder of clinical study files and files them into a TMF-style structure under the target folder.
+The CRO Multi-Study Forensic Ingestion dialog (accessible via Command Palette `[Ctrl+K]`) scans a source folder of clinical study files and files them into a TMF-style structure under the target folder.
 
 - **"Source directory does not exist."** Check the source path. It must be an existing folder on this machine.
 - **"Forensic scan error: …"** The pipeline stopped part-way. The log in the dialog shows the last step it reached; fix the cause it names (often a permission error on the target folder) and run it again.

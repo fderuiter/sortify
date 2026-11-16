@@ -123,7 +123,6 @@ class AutoSorterTUI(
         Binding("ctrl+o", "open_settings", "Settings", show=False),
         Binding("ctrl+k", "open_command_palette", "Command Palette", show=False),
         Binding("ctrl+w", "open_wizard", "Wizard", show=False),
-        Binding("ctrl+c", "open_cro_forensic", "CRO Ingest", show=False),
         Binding("ctrl+d", "open_dropzone", "DropZone", show=False),
         Binding("ctrl+t", "toggle_daemon(False)", "Toggle Daemon", show=False),
         Binding("p", "toggle_daemon(True)", "Toggle Daemon", show=False),

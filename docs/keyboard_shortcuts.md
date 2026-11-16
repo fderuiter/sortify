@@ -22,7 +22,6 @@ Press `?` or `F1` in the app to see these shortcuts.
 | `Ctrl+O` | Settings |
 | `Ctrl+K` | Command Palette |
 | `Ctrl+W` | Wizard |
-| `Ctrl+C` | CRO Ingest |
 | `Ctrl+D` | DropZone |
 | `Ctrl+T` / `p` | Toggle Daemon |
 | `Ctrl+S` | Scan |

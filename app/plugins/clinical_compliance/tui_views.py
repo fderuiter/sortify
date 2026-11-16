@@ -83,7 +83,7 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
         """Compose modal dialog children."""
         with Vertical(classes="modal-box"):
             yield Heading(
-                "CRO Multi-Study Forensic Ingestion [Ctrl+C]",
+                "CRO Multi-Study Forensic Ingestion",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
