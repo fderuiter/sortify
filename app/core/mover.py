@@ -21,6 +21,7 @@ from pydantic import BaseModel
 from app.core.domain_contracts import _get_val
 from app.core.exceptions import SortifyBaseError
 from app.core.ledger import LedgerStatus
+from app.core.lifecycle import LifecycleTelemetryMixin
 from app.core.link_manager import LinkManager
 from app.core.path_utils import is_junction_path, safe_relpath
 from app.core.pipeline import PipelineLifecycleState
@@ -1641,7 +1642,7 @@ def _process_move_item(
     return True
 
 
-class AsyncMoveEngine:
+class AsyncMoveEngine(LifecycleTelemetryMixin):
     """Asynchronous Chunked Thread Pool Execution Engine for file relocation."""
 
     def __init__(self, max_workers: int = None, chunk_size: int = None):
@@ -1656,7 +1657,9 @@ class AsyncMoveEngine:
         with self._state_lock:
             return self._state
 
-    def transition_to(self, target: MoveEngineState | str) -> MoveEngineState:
+    def transition_to(
+        self, target: MoveEngineState | str, context: dict | None = None
+    ) -> MoveEngineState:
         """Safely transition engine state protected by re-entrant thread lock."""
         with self._state_lock:
             try:
@@ -1675,8 +1678,16 @@ class AsyncMoveEngine:
                 raise InvalidMoveStateError(
                     f"Illegal move engine transition from {self._state.value} to {target_state.value}"
                 )
+            old_state = self._state
             self._state = target_state
-            return self._state
+
+        self._notify_lifecycle_listeners(
+            old_state,
+            target_state,
+            context=context,
+            event_type="MOVE_ENGINE_STATE_CHANGED",
+        )
+        return self._state
 
     def reset(self) -> MoveEngineState:
         """Reset the engine back to IDLE state."""
@@ -1845,6 +1856,15 @@ class AsyncMoveEngine:
                     unit_type="files",
                 )
 
+            self.emit_telemetry(
+                "move_start",
+                {
+                    "session_id": session_id,
+                    "total_chunks": total_chunks,
+                    "total_items": total_items,
+                },
+            )
+
             summary = MoveResult(
                 session_id=session_id,
                 deleted_folders=0,
@@ -1864,6 +1884,13 @@ class AsyncMoveEngine:
                         f"Cancellation requested before scheduling chunk {chunk_idx}. Halting worker scheduling."
                     )
                     self.transition_to(MoveEngineState.CANCELLING)
+                    self.emit_telemetry(
+                        "move_cancelled",
+                        {
+                            "session_id": session_id,
+                            "chunk_index": chunk_idx,
+                        },
+                    )
                     summary.cancelled = True
                     summary["lifecycle_state"] = PipelineLifecycleState.CANCELLED
                     if pipeline and hasattr(pipeline, "transition_to"):
@@ -1874,7 +1901,19 @@ class AsyncMoveEngine:
                             pass
                     break
 
-                self.transition_to(MoveEngineState.MOVING_CHUNK)
+                self.transition_to(
+                    MoveEngineState.MOVING_CHUNK,
+                    context={"chunk_index": chunk_idx, "total_chunks": total_chunks},
+                )
+                self.emit_telemetry(
+                    "move_progress",
+                    {
+                        "session_id": session_id,
+                        "chunk_index": chunk_idx,
+                        "total_chunks": total_chunks,
+                        "chunk_size": len(chunk),
+                    },
+                )
                 summary.state = self.state
 
                 futures = [
@@ -2078,9 +2117,24 @@ class AsyncMoveEngine:
             if summary.get("cancelled"):
                 summary["lifecycle_state"] = PipelineLifecycleState.CANCELLED
             summary["audit_report"] = generate_audit_report(base_dir, audit_records)
+            self.emit_telemetry(
+                "move_finish",
+                {
+                    "session_id": session_id,
+                    "total_items": total_items,
+                    "cancelled": bool(summary.get("cancelled")),
+                },
+            )
             return summary
 
         except Exception as e:
+            self.emit_telemetry(
+                "move_failed",
+                {
+                    "session_id": session_id,
+                    "error": str(e),
+                },
+            )
             with db_lock:
                 if db_updates_batch and hasattr(db, "execute_batch_updates"):
                     try:

@@ -425,7 +425,7 @@ class SelectionActionsMixin:
         return entries
 
     def action_rename_node(self) -> None:
-        """Rename file or folder category node [Ctrl+R]."""
+        """Rename file or folder category node [F2]."""
         if self._is_text_control_focused(allow_tree_search=True):
             return
 
@@ -616,7 +616,7 @@ class SelectionActionsMixin:
 
         # Single file rename workflow
         if not node or not node.data:
-            self.announce("Select a file or folder node to rename [Ctrl+R].")
+            self.announce("Select a file or folder node to rename [F2].")
             return
 
         data = node.data

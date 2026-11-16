@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from app.core.lifecycle import LifecycleTelemetryMixin
+
 logger = logging.getLogger(__name__)
 
 
@@ -221,7 +223,7 @@ class SortResult:
         return f"Cancelled: {line}" if self.cancelled else line
 
 
-class SortPipeline:
+class SortPipeline(LifecycleTelemetryMixin):
     """Runs a sort over one ``AppSession``.
 
     The caller owns the session and closes it; the pipeline only drives it.

@@ -272,6 +272,28 @@ def test_tui_rename_node(temp_workspace):
     asyncio.run(_test())
 
 
+def test_tui_rename_node_announcement(temp_workspace):
+    """Verify action_rename_node announces [F2] guidance when no valid node is selected."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test() as pilot:
+            await pilot.pause(0.1)
+            app.active_tree_node = None
+            announcements = []
+            app.announce = lambda msg: announcements.append(msg)
+            app.action_rename_node()
+            assert any("[F2]" in a for a in announcements)
+            assert any(
+                "Select a file or folder node to rename" in a for a in announcements
+            )
+
+    asyncio.run(_test())
+
+
 def test_tui_settings_modal(temp_workspace):
     """Verify settings modal displays and updates application settings."""
 
