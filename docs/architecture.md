@@ -153,7 +153,7 @@ Sortify's audit ledger and history service (`app/core/history.py`) maintains ACI
 
 ### Model Downloader Lifecycle (`DownloadState`)
 
-The [ModelDownloader][app.core.downloader.ModelDownloader] (`app/core/downloader.py`) manages model downloads for OCR and neural embedding models. Its operational phases are tracked by [DownloadState](api_reference.md#appcoredownloader) and validated against `_VALID_TRANSITIONS`.
+The [DownloadManager][app.core.downloader.DownloadManager] (`app/core/downloader.py`) manages model downloads for OCR and neural embedding models. Its operational phases are tracked by [DownloadState](api_reference.md#appcoredownloader) and validated against `_VALID_TRANSITIONS`.
 
 Before downloading, the model downloader validates the download URL against strict security invariants. All model download requests require the HTTPS scheme. Plain HTTP and other schemes are rejected. Allowed download hosts are restricted to `ALLOWED_MODEL_HOSTS`: `huggingface.co` and `hf.co` (including trusted subdomains). The downloader blocks all IP address literals, including private, loopback, link-local, and public addresses, to prevent SSRF attacks. Local hostnames such as `localhost` and `.local` are also blocked.
 
