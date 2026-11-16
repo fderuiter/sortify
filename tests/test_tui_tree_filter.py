@@ -589,3 +589,264 @@ def test_tui_tree_filter_rendering_executes_zero_stat_calls(temp_workspace):
             assert "[COLLISION:" in str(report_node.label)
 
     asyncio.run(_test())
+
+
+def test_build_path_lookup_index_edge_cases(temp_workspace):
+    """Verify _build_path_lookup_index normalizes Windows/POSIX separators, ignores empty strings, and extracts basenames."""
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+    # Test None and empty
+    empty_idx = app._build_path_lookup_index(None)
+    assert empty_idx.paths == set()
+    assert empty_idx.basenames == set()
+
+    empty_idx2 = app._build_path_lookup_index([])
+    assert empty_idx2.paths == set()
+    assert empty_idx2.basenames == set()
+
+    # Test collection with empty strings, whitespace, and mixed separators
+    input_paths = [
+        "",
+        "   ",
+        None,
+        "C:\\Users\\test\\folder\\doc_win.pdf",
+        "/var/data/folder/doc_posix.txt",
+        "relative/sub\\mixed_sep.csv",
+        "lone_file.docx",
+    ]
+    idx = app._build_path_lookup_index(input_paths)
+
+    # Empty strings and None must not be indexed
+    assert "" not in idx.paths
+    assert "   " not in idx.paths
+    assert None not in idx.paths
+    assert "" not in idx.basenames
+
+    # Basenames must contain filenames
+    assert "doc_win.pdf" in idx.basenames
+    assert "doc_posix.txt" in idx.basenames
+    assert "mixed_sep.csv" in idx.basenames
+    assert "lone_file.docx" in idx.basenames
+
+    # Normalized paths must be present
+    assert "lone_file.docx" in idx.paths
+    assert os.path.normpath("/var/data/folder/doc_posix.txt") in idx.paths
+    assert (
+        "relative/sub/mixed_sep.csv" in idx.paths
+        or "relative/sub\\mixed_sep.csv" in idx.paths
+    )
+
+    # Test __contains__ operator
+    assert "doc_win.pdf" in idx
+    assert "doc_posix.txt" in idx
+    assert "nonexistent_file.pdf" not in idx
+
+
+def test_tui_tree_filter_collision_tag_lookups(temp_workspace):
+    """Verify pre-indexed collision lookup correctly decorates tree nodes with collision badges."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            file_a = os.path.join(temp_workspace, "Alpha", "collision_a.pdf")
+            file_b = os.path.join(temp_workspace, "Alpha", "normal_b.pdf")
+            file_c = os.path.join(temp_workspace, "Beta", "collision_c.pdf")
+
+            app.plan = {
+                "Alpha": {
+                    "collision_a.pdf": {
+                        "__type__": "file",
+                        "filepath": file_a,
+                        "target_filename": "collision_a.pdf",
+                    },
+                    "normal_b.pdf": {
+                        "__type__": "file",
+                        "filepath": file_b,
+                        "target_filename": "normal_b.pdf",
+                    },
+                },
+                "Beta": {
+                    "collision_c.pdf": {
+                        "__type__": "file",
+                        "filepath": file_c,
+                        "target_filename": "collision_c.pdf",
+                    },
+                },
+            }
+
+            # Set collision paths: one via full path, one via basename
+            app.collision_paths = {
+                os.path.normpath(file_a),
+                "collision_c.pdf",
+            }
+
+            app.rebuild_tree(run_validation=False)
+            await pilot.pause(0.05)
+
+            tree = app.query_one("#plan-tree", Tree)
+            alpha_node = next(n for n in tree.root.children if "Alpha" in str(n.label))
+            beta_node = next(n for n in tree.root.children if "Beta" in str(n.label))
+
+            alpha_children = {
+                (c.data.get("key") if c.data else ""): str(c.label)
+                for c in alpha_node.children
+            }
+            beta_children = {
+                (c.data.get("key") if c.data else ""): str(c.label)
+                for c in beta_node.children
+            }
+
+            assert "[COLLISION:" in alpha_children["collision_a.pdf"]
+            assert "[COLLISION:" not in alpha_children["normal_b.pdf"]
+            assert "[COLLISION:" in beta_children["collision_c.pdf"]
+
+            # Filter tree to "collision_a" and verify collision badge persists
+            search_input = app.query_one("#tree-search-input", Input)
+            search_input.focus()
+            await set_filter(app, pilot, "collision_a")
+
+            alpha_node_filtered = next(
+                n for n in tree.root.children if "Alpha" in str(n.label)
+            )
+            filtered_labels = [str(c.label) for c in alpha_node_filtered.children]
+            assert any(
+                "[COLLISION:" in l and "collision_a.pdf" in l for l in filtered_labels
+            )
+
+    asyncio.run(_test())
+
+
+def test_tui_tree_filter_error_and_warning_badges(temp_workspace):
+    """Verify pre-indexed error and warning lookups render [ERR] and [WARN] badges with correct precedence."""
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            file_err = os.path.join(temp_workspace, "Reports", "critical_err.pdf")
+            file_warn = os.path.join(temp_workspace, "Reports", "warning_item.pdf")
+            file_ok = os.path.join(temp_workspace, "Reports", "clean_item.pdf")
+
+            app.plan = {
+                "Reports": {
+                    "critical_err.pdf": {
+                        "__type__": "file",
+                        "filepath": file_err,
+                        "target_filename": "critical_err.pdf",
+                    },
+                    "warning_item.pdf": {
+                        "__type__": "file",
+                        "filepath": file_warn,
+                        "target_filename": "warning_item.pdf",
+                    },
+                    "clean_item.pdf": {
+                        "__type__": "file",
+                        "filepath": file_ok,
+                        "target_filename": "clean_item.pdf",
+                    },
+                }
+            }
+
+            app.critical_error_paths = {os.path.normpath(file_err)}
+            app.warning_paths = {os.path.normpath(file_warn)}
+
+            app.rebuild_tree(run_validation=False)
+            await pilot.pause(0.05)
+
+            tree = app.query_one("#plan-tree", Tree)
+            folder = tree.root.children[0]
+            nodes = {c.data.get("key"): c for c in folder.children if c.data}
+
+            err_label = str(nodes["critical_err.pdf"].label)
+            warn_label = str(nodes["warning_item.pdf"].label)
+            ok_label = str(nodes["clean_item.pdf"].label)
+
+            assert "[ERR]" in err_label
+            assert "[WARN]" not in err_label
+
+            assert "[WARN]" in warn_label
+            assert "[ERR]" not in warn_label
+
+            assert "[ERR]" not in ok_label
+            assert "[WARN]" not in ok_label
+
+            # Verify precedence: if a path is in both critical and warning, critical wins
+            app.critical_error_paths = {
+                os.path.normpath(file_err),
+                os.path.normpath(file_warn),
+            }
+            app.warning_paths = {os.path.normpath(file_warn)}
+            app._apply_tree_node_styles()
+            await pilot.pause(0.05)
+
+            warn_node_promoted = str(nodes["warning_item.pdf"].label)
+            assert "[ERR]" in warn_node_promoted
+            assert "[WARN]" not in warn_node_promoted
+
+    asyncio.run(_test())
+
+
+def test_tui_tree_filter_lookup_efficiency_large_collection(temp_workspace):
+    """Verify tree rendering scales with exact O(1) set lookups even when collections contain large numbers of paths."""
+    import time
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(temp_workspace))
+
+        async with app.run_test() as pilot:
+            # Build plan with 50 files
+            plan = {"Docs": {}}
+            for i in range(50):
+                fn = f"doc_{i:03d}.pdf"
+                fp = os.path.join(temp_workspace, "Docs", fn)
+                plan["Docs"][fn] = {
+                    "__type__": "file",
+                    "filepath": fp,
+                    "target_filename": fn,
+                }
+            app.plan = plan
+
+            # Populate collections with 1000 dummy non-matching paths plus 2 colliding
+            dummy_collision_paths = {
+                f"/some/other/nonexistent/path/dummy_{i:04d}.pdf" for i in range(1000)
+            }
+            colliding_file = os.path.join(temp_workspace, "Docs", "doc_025.pdf")
+            dummy_collision_paths.add(os.path.normpath(colliding_file))
+            app.collision_paths = dummy_collision_paths
+
+            dummy_error_paths = {
+                f"/error/path/unrelated_{i:04d}.pdf" for i in range(1000)
+            }
+            err_file = os.path.join(temp_workspace, "Docs", "doc_010.pdf")
+            dummy_error_paths.add(os.path.normpath(err_file))
+            app.critical_error_paths = dummy_error_paths
+
+            start_t = time.perf_counter()
+            app.rebuild_tree(run_validation=False)
+            await pilot.pause(0.05)
+            elapsed = time.perf_counter() - start_t
+
+            # Tree rebuild with 1,000 paths in collision and error collections should finish promptly
+            assert elapsed < 5.0
+
+            tree = app.query_one("#plan-tree", Tree)
+            docs_folder = tree.root.children[0]
+            nodes = {
+                c.data.get("key"): str(c.label) for c in docs_folder.children if c.data
+            }
+
+            assert "[COLLISION:" in nodes["doc_025.pdf"]
+            assert "[ERR]" in nodes["doc_010.pdf"]
+            assert "[COLLISION:" not in nodes["doc_001.pdf"]
+            assert "[ERR]" not in nodes["doc_001.pdf"]
+
+    asyncio.run(_test())
