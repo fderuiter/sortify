@@ -283,7 +283,8 @@ def generate_admin_guide():
             "configuration schema (`app.config.Settings`). Set them with "
             "`smart-autosorter config --set NAME VALUE`, in "
             "`~/.autosorter/settings.json`, or as an environment variable with "
-            "the `SORTIFY_` prefix (for example `SORTIFY_MAX_FOLDERS`).\n\n"
+            "the `SORTIFY_` prefix (for example `SORTIFY_MAX_FOLDERS`). "
+            "For recovering interrupted sorting sessions, reconciling headless transaction ledgers, or resolving stale lock files, see the [Ledger Reconciliation Runbook](runbooks/ledger_reconciliation.md).\n\n"
         )
 
         for name, field in Settings.model_fields.items():
@@ -391,7 +392,10 @@ def generate_admin_guide():
             "2. **Manually Edit Settings**: Open the local configuration file (`~/.autosorter/settings.json`) and correct the invalid values or formats.\n"
         )
         f.write(
-            "3. **Reset Configuration**: Delete the invalid `settings.json` file or click the reset button to restore default, valid configuration values, which will immediately re-enable automatic saving.\n\n"
+            "3. **Reset Configuration**: Delete the invalid `settings.json` file or click the reset button to restore default, valid configuration values, which will immediately re-enable automatic saving.\n"
+        )
+        f.write(
+            "4. **Ledger & Session Recovery**: For recovering interrupted batch sorting sessions or resolving stale transaction records, refer to the dedicated [Ledger Reconciliation Runbook](runbooks/ledger_reconciliation.md).\n\n"
         )
 
         f.write("## Maintenance Scripts and CLI Commands\n\n")
@@ -434,6 +438,10 @@ def generate_admin_guide():
                 f.write(f"##### `{sub_name}`\n```text\n")
                 f.write(sub_parser.format_help().replace("\r\n", "\n"))
                 f.write("```\n\n")
+                if sub_name == "ledger":
+                    f.write(
+                        "For comprehensive operational procedures, headless transaction reconciliation workflows, state transition handling, and stale daemon lock cleanup, refer to the dedicated [Ledger Reconciliation Runbook](runbooks/ledger_reconciliation.md).\n\n"
+                    )
 
         # sandbox_cli.py
         f.write("### `sandbox_cli.py`\n")
