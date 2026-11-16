@@ -357,7 +357,7 @@ def test_active_download_adopts_updated_proxy_on_retry(temp_settings_path):
 
         with tempfile.TemporaryDirectory() as tmp_dir:
             run_background_download(
-                url="http://example.com/model.onnx",
+                url="https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx",
                 model_dir=tmp_dir,
                 progress_callback=None,
                 on_success=lambda: success_event.set(),

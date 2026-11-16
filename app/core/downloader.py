@@ -1,12 +1,14 @@
 """Model downloader module with sandbox bypass, proxy support, and real-time tracking."""
 
 import contextlib
+import ipaddress
 import json
 import logging
 import os
 import shutil
 import threading
 import urllib.error
+import urllib.parse
 import urllib.request
 from enum import Enum
 
@@ -22,6 +24,92 @@ class DownloadError(DownloaderError):
     """Base class for download exceptions."""
 
     pass
+
+
+ALLOWED_MODEL_HOSTS: frozenset[str] = frozenset({"huggingface.co", "hf.co"})
+_ALLOWED_MODEL_HOSTS = ALLOWED_MODEL_HOSTS
+_LOCAL_HOSTNAMES: frozenset[str] = frozenset(
+    {"127.0.0.1", "localhost", "::1", "0.0.0.0", ""}
+)
+
+
+def _is_allowed_model_host(hostname: str) -> bool:
+    """Check if the given hostname matches an allowed model host or trusted subdomain."""
+    host = hostname.lower().rstrip(".")
+    if not host or host.startswith("."):
+        return False
+    return host in _ALLOWED_MODEL_HOSTS or any(
+        host.endswith(f".{allowed}") for allowed in _ALLOWED_MODEL_HOSTS
+    )
+
+
+def _validate_url(url: str) -> None:
+    """Validate that the model download URL uses HTTPS and points to an allowed model host.
+
+    Rejects non-HTTPS schemes, private/loopback/link-local IP addresses, empty hostnames,
+    and untrusted hostnames with DownloadError.
+    """
+    if not isinstance(url, str) or not url.strip():
+        raise DownloadError("Model download URL must be a non-empty string.")
+
+    cleaned_url = url.strip()
+    try:
+        parsed = urllib.parse.urlsplit(cleaned_url)
+    except Exception as e:
+        raise DownloadError(f"Malformed model download URL: {e}") from e
+
+    scheme = (parsed.scheme or "").lower()
+    if scheme != "https":
+        raise DownloadError(
+            f"Unsupported URL scheme '{parsed.scheme}'. Only HTTPS is permitted."
+        )
+
+    hostname = parsed.hostname
+    if not hostname or not hostname.strip():
+        raise DownloadError("URL hostname is missing or empty.")
+
+    host_clean = hostname.strip().lower().rstrip(".")
+    if not host_clean or host_clean.startswith("."):
+        raise DownloadError(f"Invalid URL hostname: {hostname}")
+
+    # Reject IP address literals (loopback, private, link-local, unspecified, or public)
+    try:
+        ip = ipaddress.ip_address(host_clean)
+        if (
+            ip.is_loopback
+            or ip.is_private
+            or ip.is_link_local
+            or ip.is_unspecified
+            or ip.is_reserved
+            or ip.is_multicast
+        ):
+            raise DownloadError(
+                f"Private or local IP addresses are not permitted: {hostname}"
+            )
+        raise DownloadError(
+            f"IP address literals are not permitted as model download hosts: {hostname}"
+        )
+    except ValueError:
+        pass
+
+    # Reject local hostnames and loopback names
+    if (
+        host_clean in _LOCAL_HOSTNAMES
+        or host_clean.endswith(".local")
+        or host_clean.endswith(".localhost")
+    ):
+        raise DownloadError(
+            f"Local or loopback hostnames are not permitted: {hostname}"
+        )
+
+    # Restrict to trusted model hosts
+    if not _is_allowed_model_host(host_clean):
+        raise DownloadError(
+            f"Untrusted model download host: {hostname}. Only trusted model hosts are permitted."
+        )
+
+
+_validate_model_url = _validate_url
 
 
 class InvalidStateTransitionError(DownloadError, ValueError):
@@ -306,6 +394,8 @@ class DownloadManager:
             ):
                 raise DownloadError("An installation is already underway.")
 
+            _validate_url(url)
+
             self.cancel_event.clear()
             self._transition_to_locked(DownloadState.DOWNLOADING)
             self.state["progress"] = 0.0
@@ -547,6 +637,23 @@ def run_background_download(
         cancel_event = threading.Event()
 
     def thread_target():
+        # Validate URL scheme and destination host before security advisory check and sandbox unblocking
+        try:
+            _validate_url(url)
+        except Exception as val_err:
+            logger.warning(
+                f"Model download URL validation failed: {val_err}",
+                exc_info=True,
+            )
+            err = (
+                val_err
+                if isinstance(val_err, (DownloadError, DownloaderError))
+                else DownloadError(str(val_err))
+            )
+            if on_failure:
+                on_failure(err)
+            return
+
         # Pre-download security advisory check before un-sandboxing or allocating disk space
         try:
             from app.core.security_advisory import SecurityAdvisoryClient
