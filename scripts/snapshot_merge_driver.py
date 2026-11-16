@@ -735,7 +735,7 @@ def main():
         help="Snapshot mode (json, svg, or auto-detect).",
     )
     parser.add_argument(
-        "args", nargs="*", help="Positional arguments passed by Git: %O %A %B [%P]"
+        "args", nargs="*", help="Positional arguments passed by Git: %%O %%A %%B [%%P]"
     )
 
     parsed, unknown = parser.parse_known_args()

@@ -343,3 +343,57 @@ def test_autosorter_tui_announce_tui_log_sanitization(tmp_path):
     assert secret_key not in written_line
     assert home_path not in written_line
     assert "[Help: https://docs.sortify.ai/help]" in written_line
+
+
+def test_notification_sanitization_edge_cases():
+    """Test sanitization error handling and custom handler exception resilience."""
+    mgr = NotificationManager.get_instance()
+
+    # Sanitization exception fallback
+    class BadStr:
+        def __str__(self):
+            raise ValueError("bad str")
+
+    res = notify(BadStr())
+    assert res["message"] == ""
+
+    # Custom handler throwing exception does not crash notify
+    def throwing_handler(evt):
+        raise RuntimeError("handler failed")
+
+    mgr.register_handler(throwing_handler)
+    res2 = notify("test message")
+    assert res2["message"] == "test message"
+    mgr._custom_handlers.remove(throwing_handler)
+
+
+def test_notification_tui_dispatch_fallbacks():
+    """Test TUI dispatch when app is None, on worker thread, or stream write fails."""
+    mgr = NotificationManager.get_instance()
+    stream = io.StringIO()
+    mgr.set_output_stream(stream)
+    mgr.set_mode(NotificationMode.TUI)
+
+    # When no active app, falls back to CLI dispatch
+    mgr.unregister_tui()
+    res = notify("tui message with no app")
+    assert "tui message with no app" in stream.getvalue()
+
+    # Active app with call_from_thread on a different thread
+    mock_app = MagicMock()
+    mock_app._thread = MagicMock()  # different from current_thread
+    mock_app.is_headless = False
+    mock_app.call_from_thread = MagicMock()
+
+    mgr.register_tui(mock_app)
+    notify("thread message")
+    mock_app.call_from_thread.assert_called_once()
+    mgr.unregister_tui(mock_app)
+
+    # Stream write exception is caught gracefully
+    bad_stream = MagicMock()
+    bad_stream.write.side_effect = IOError("disk full")
+    mgr.set_output_stream(bad_stream)
+    mgr.set_mode(NotificationMode.CLI)
+    res_err = notify("stream write error")
+    assert res_err["message"] == "stream write error"

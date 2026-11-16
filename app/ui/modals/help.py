@@ -90,7 +90,10 @@ class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None
             yield Label(
                 "  Ctrl+L      - Toggle file lock state", classes="shortcut-row"
             )
-            yield Label("  Ctrl+R      - Rename selected node", classes="shortcut-row")
+            yield Label(
+                "  Ctrl+R      - Open active rule manager", classes="shortcut-row"
+            )
+            yield Label("  F2          - Rename selected node", classes="shortcut-row")
             yield Label(
                 "  Ctrl+N      - Create new target folder", classes="shortcut-row"
             )
@@ -156,11 +159,6 @@ class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None
                 "  Ctrl+X      - Launch PDF extraction strategy preview",
                 classes="shortcut-row",
             )
-            yield Label(
-                "  Ctrl+C      - Open CRO multi-study forensic ingestion",
-                classes="shortcut-row",
-            )
-
             yield Label(
                 "  Ctrl+D      - Open DropZone to sort dropped files",
                 classes="shortcut-row",

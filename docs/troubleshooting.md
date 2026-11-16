@@ -53,7 +53,7 @@ If Sortify was closed while it was moving files, the next start shows **Interrup
 - **Rollback** undoes the moves that session already made, using its ledger, then rescans the folder. If the rollback fails, for example because of a permission error, the session files are kept so you can try again.
 - **Clean** deletes the session's working files and leaves your files where they are now. Clean also deletes the session's rollback journal, so the dialog can no longer undo the moves it had already made. Choose Rollback if you're not sure.
 
-From the command line, `smart-autosorter undo --list` shows recent sessions and `smart-autosorter undo --session-id ID` rolls one back.
+From the command line, `smart-autosorter undo --list` shows recent sessions and `smart-autosorter undo --session-id ID` rolls one back. For automated headless batch recovery, transaction state transitions, or CLI reconciliation without interactive prompts, see the dedicated [Ledger Reconciliation Runbook](runbooks/ledger_reconciliation.md).
 
 ### Multi-session recovery
 
@@ -66,6 +66,8 @@ You can manage all sessions at once or take action on individual sessions:
 - **Rollback** (`#btn-rollback`): Rolls back only the selected session.
 - **Clean** (`#btn-clean`): Cleans working files for the selected session only, allowing selective recovery of remaining sessions.
 
+For authoritative headless batch procedures, CLI commands (`smart-autosorter ledger status`, `reconcile`, `purge`, `export`), and resolving stale daemon locks (`.autosorter.pid` / `.autosorter.sock`), refer to the [Operational Runbook for Ledger Reconciliation](runbooks/ledger_reconciliation.md).
+
 ## DropZone errors
 
 The DropZone (`[Ctrl+D]`) sorts files you paste or drop into its queue. **Sort Items** reports an error when nothing in the queue can be sorted:
@@ -76,7 +78,7 @@ The DropZone (`[Ctrl+D]`) sorts files you paste or drop into its queue. **Sort I
 
 ## CRO forensic ingestion
 
-The CRO Multi-Study Forensic Ingestion dialog (`[Ctrl+C]`) scans a source folder of clinical study files and files them into a TMF-style structure under the target folder.
+The CRO Multi-Study Forensic Ingestion dialog (accessible via Command Palette `[Ctrl+K]`) scans a source folder of clinical study files and files them into a TMF-style structure under the target folder.
 
 - **"Source directory does not exist."** Check the source path. It must be an existing folder on this machine.
 - **"Forensic scan error: …"** The pipeline stopped part-way. The log in the dialog shows the last step it reached; fix the cause it names (often a permission error on the target folder) and run it again.

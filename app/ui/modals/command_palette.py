@@ -78,6 +78,14 @@ DEFAULT_COMMAND_CATALOG: list[PaletteCommand] = [
         action_name="action_open_settings",
     ),
     PaletteCommand(
+        id="open_active_rules",
+        title="Open Active Rule Manager",
+        category="Settings",
+        shortcut="Ctrl+R",
+        description="Inspect, add, edit, toggle, and delete sorting rules and policies",
+        action_name="action_open_active_rules",
+    ),
+    PaletteCommand(
         id="open_template_gallery",
         title="Browse Starter Rule Templates",
         category="Rules",
@@ -121,7 +129,7 @@ DEFAULT_COMMAND_CATALOG: list[PaletteCommand] = [
         id="open_cro_forensic",
         title="Open CRO Forensic Ingestion",
         category="Compliance",
-        shortcut="Ctrl+C",
+        shortcut="",
         description="Multi-study clinical compliance ingestion workflow",
         action_name="action_open_cro_forensic",
     ),

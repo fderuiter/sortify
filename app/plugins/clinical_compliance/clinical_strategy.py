@@ -39,6 +39,10 @@ class ClinicalTMFStrategy(IsolatedStrategyMixin):
         self.generate_audit_report = generate_audit_report
         self.compliance_engine = ClinicalComplianceEngine()
         self.last_compliance_result: Any = None
+        self.last_classified_artifacts: dict[
+            str, Optional[ClinicalArtifactDefinition]
+        ] = {}
+        self.last_classified_map: dict[str, str] = {}
 
     def _classify_document(
         self,
@@ -96,6 +100,8 @@ class ClinicalTMFStrategy(IsolatedStrategyMixin):
         self._error = 0.0
         plan: dict = {}
         classified_map: dict[str, str] = {}  # filename -> artifact_id
+        self.last_classified_artifacts = {}
+        self.last_classified_map = classified_map
 
         doc_map = dict(zip(filenames, documents))
 
@@ -106,6 +112,7 @@ class ClinicalTMFStrategy(IsolatedStrategyMixin):
 
             doc_text = doc_map.get(fn, "")
             artifact, score = self._classify_document(fn, doc_text)
+            self.last_classified_artifacts[fn] = artifact
 
             if artifact is not None:
                 classified_map[fn] = artifact.artifact_id

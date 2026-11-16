@@ -3,7 +3,6 @@
 import json
 import logging
 import os
-import sqlite3
 import time
 import uuid
 from collections.abc import Callable, Collection, Iterator
@@ -12,7 +11,7 @@ from functools import partial
 from pathlib import Path
 from typing import Any, Optional
 
-from app.core.db_conn import get_db_connection
+from app.core.db_conn import DB_ERRORS, get_db_connection
 from app.core.exceptions import InvalidStateTransitionError
 from app.core.migrations import Migration, add_missing_columns, migrate
 from app.core.moves import FAILED, INTENT, Move, MoveLedger, migrate_add_moves
@@ -245,7 +244,7 @@ class SessionStateMachine:
                     meta_json,
                 ),
             )
-        except sqlite3.Error as audit_exc:
+        except DB_ERRORS as audit_exc:
             logging.warning(
                 "Failed to write session lifecycle audit ledger: %s", audit_exc
             )
@@ -331,7 +330,7 @@ class SessionStateMachine:
                     }
                 )
             return events
-        except sqlite3.Error as e:
+        except DB_ERRORS as e:
             logging.warning("Failed to query session lifecycle audit events: %s", e)
             return []
         finally:
@@ -963,44 +962,70 @@ class HistoryManager:
     def get_sessions(self) -> list[dict[str, Any]]:
         """Retrieve a list of all historical sessions, ordered by time."""
         conn = get_db_connection(self.db_path)
+        query = (
+            "SELECT "
+            "s.session_id, s.timestamp, s.base_dir, s.status, "
+            "COALESCE(st.step_count, 0) AS step_count, "
+            "COALESCE(sf.file_count, 0) AS file_count "
+            "FROM sessions s "
+            "LEFT JOIN ("
+            "    SELECT session_id, COUNT(*) AS step_count FROM step_ledger GROUP BY session_id"
+            ") st ON s.session_id = st.session_id "
+            "LEFT JOIN ("
+            "    SELECT session_id, COUNT(*) AS file_count FROM snapshot_files GROUP BY session_id"
+            ") sf ON s.session_id = sf.session_id "
+            "ORDER BY s.timestamp DESC"
+        )
         with conn:
-            cur = conn.execute(
-                "SELECT session_id, timestamp, base_dir, status FROM sessions ORDER BY timestamp DESC"
-            )
-            sessions = []
-            for r in cur.fetchall():
-                sid, ts, b_dir, status = r
-                step_count = 0
-                try:
-                    c = conn.execute(
-                        "SELECT COUNT(*) FROM step_ledger WHERE session_id = ?",
-                        (sid,),
-                    )
-                    step_count = c.fetchone()[0]
-                except Exception:
-                    pass
-
-                file_count = 0
-                try:
-                    c = conn.execute(
-                        "SELECT COUNT(*) FROM snapshot_files WHERE session_id = ?",
-                        (sid,),
-                    )
-                    file_count = c.fetchone()[0]
-                except Exception:
-                    pass
-
-                sessions.append(
-                    {
-                        "session_id": sid,
-                        "timestamp": ts,
-                        "base_dir": b_dir,
-                        "status": status,
-                        "step_count": step_count,
-                        "file_count": file_count,
-                    }
+            try:
+                rows = conn.execute(query).fetchall()
+            except DB_ERRORS:
+                existing_tables = {
+                    r[0]
+                    for r in conn.execute(
+                        "SELECT name FROM sqlite_master WHERE type='table'"
+                    ).fetchall()
+                }
+                has_steps = "step_ledger" in existing_tables
+                has_files = "snapshot_files" in existing_tables
+                step_join = (
+                    "LEFT JOIN (SELECT session_id, COUNT(*) AS step_count FROM step_ledger GROUP BY session_id) st ON s.session_id = st.session_id "
+                    if has_steps
+                    else ""
                 )
-            return sessions
+                file_join = (
+                    "LEFT JOIN (SELECT session_id, COUNT(*) AS file_count FROM snapshot_files GROUP BY session_id) sf ON s.session_id = sf.session_id "
+                    if has_files
+                    else ""
+                )
+                step_col = (
+                    "COALESCE(st.step_count, 0) AS step_count"
+                    if has_steps
+                    else "0 AS step_count"
+                )
+                file_col = (
+                    "COALESCE(sf.file_count, 0) AS file_count"
+                    if has_files
+                    else "0 AS file_count"
+                )
+                fallback_query = (
+                    f"SELECT s.session_id, s.timestamp, s.base_dir, s.status, {step_col}, {file_col} "
+                    f"FROM sessions s {step_join} {file_join} "
+                    "ORDER BY s.timestamp DESC"
+                )
+                rows = conn.execute(fallback_query).fetchall()
+
+            return [
+                {
+                    "session_id": sid,
+                    "timestamp": ts,
+                    "base_dir": b_dir,
+                    "status": status,
+                    "step_count": step_count,
+                    "file_count": file_count,
+                }
+                for sid, ts, b_dir, status, step_count, file_count in rows
+            ]
 
     def check_missing_files(self, session_id: str) -> list[str]:
         """Check if any files from the snapshot are missing from the disk."""

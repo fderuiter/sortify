@@ -170,19 +170,6 @@ def test_onboarding_cta_card_sample_data_button(tmp_path):
 
             btn_sample = app.query_one("#btn-cta-sample-data", Button)
             btn_sample.press()
-            from app.ui.modals.sample_playground import SamplePlaygroundModal
-
-            for _ in range(50):
-                if isinstance(app.screen, SamplePlaygroundModal):
-                    btn_commit = app.screen.query_one("#btn-commit-playground", Button)
-                    btn_commit.press()
-                    break
-                sample_dir = os.path.join(workspace, "sortify-sample-dataset")
-                if os.path.exists(
-                    os.path.join(sample_dir, "demo_finance.txt")
-                ) or os.path.exists(os.path.join(workspace, "demo_finance.txt")):
-                    break
-                await pilot.pause(0.05)
 
             sample_dir = os.path.join(workspace, "sortify-sample-dataset")
             target_file = os.path.join(sample_dir, "demo_finance.txt")

@@ -83,6 +83,26 @@ def test_module_getattr_spec_resolution():
     assert isinstance(state_spec, StateDiagramSpec)
     assert state_spec.id == "architecture_watchdog_state"
 
+    move_spec = getattr(ds, "ARCHITECTURE_MOVE_ENGINE_STATE_SPEC")
+    assert isinstance(move_spec, StateDiagramSpec)
+    assert move_spec.id == "architecture_move_engine_state"
+    assert getattr(ds, "MOVE_ENGINE_STATE_SPEC") is move_spec
+
+    pipe_spec = getattr(ds, "ARCHITECTURE_PIPELINE_STATE_SPEC")
+    assert isinstance(pipe_spec, StateDiagramSpec)
+    assert pipe_spec.id == "architecture_pipeline_state"
+    assert getattr(ds, "PIPELINE_LIFECYCLE_STATE_SPEC") is pipe_spec
+
+    sess_spec = getattr(ds, "ARCHITECTURE_SESSION_STATE_SPEC")
+    assert isinstance(sess_spec, StateDiagramSpec)
+    assert sess_spec.id == "architecture_session_state"
+    assert getattr(ds, "SESSION_STATE_MACHINE_SPEC") is sess_spec
+
+    dl_spec = getattr(ds, "ARCHITECTURE_DOWNLOAD_STATE_SPEC")
+    assert isinstance(dl_spec, StateDiagramSpec)
+    assert dl_spec.id == "architecture_download_state"
+    assert getattr(ds, "DOWNLOAD_STATE_SPEC") is dl_spec
+
     # Verify accessing non-existent attribute raises AttributeError
     with pytest.raises(
         AttributeError, match="has no attribute 'NON_EXISTENT_CONSTANT'"
@@ -97,8 +117,12 @@ def test_lazy_dict_interface():
     assert isinstance(specs_dict, dict)
 
     # Length & Containment
-    assert len(specs_dict) == 44
+    assert len(specs_dict) == 48
     assert "core_architecture" in specs_dict
+    assert "architecture_move_engine_state" in specs_dict
+    assert "architecture_pipeline_state" in specs_dict
+    assert "architecture_session_state" in specs_dict
+    assert "architecture_download_state" in specs_dict
     assert "non_existent_key" not in specs_dict
 
     # .get() behavior
@@ -109,21 +133,21 @@ def test_lazy_dict_interface():
     # Keys, Values, Items
     all_keys = list(specs_dict.keys())
     assert "core_architecture" in all_keys
-    assert len(all_keys) == 44
+    assert len(all_keys) == 48
 
     all_items = list(specs_dict.items())
-    assert len(all_items) == 44
+    assert len(all_items) == 48
     assert any(
         k == "core_architecture" and v.id == "core_architecture" for k, v in all_items
     )
 
     all_values = list(specs_dict.values())
-    assert len(all_values) == 44
+    assert len(all_values) == 48
 
     # .copy()
     dict_copy = specs_dict.copy()
     assert isinstance(dict_copy, dict)
-    assert len(dict_copy) == 44
+    assert len(dict_copy) == 48
     assert dict_copy["core_architecture"].id == "core_architecture"
 
     # Repr string
@@ -185,3 +209,23 @@ def test_mermaid_compilation():
     state = ds.SYSTEM_DIAGRAM_SPECS["architecture_watchdog_state"]
     state_mermaid = state.to_mermaid()
     assert "stateDiagram-v2" in state_mermaid
+
+    mover_state = ds.SYSTEM_DIAGRAM_SPECS["architecture_move_engine_state"]
+    mover_mermaid = mover_state.to_mermaid()
+    assert "stateDiagram-v2" in mover_mermaid
+    assert "MOVING_CHUNK" in mover_mermaid
+
+    pipeline_state = ds.SYSTEM_DIAGRAM_SPECS["architecture_pipeline_state"]
+    pipeline_mermaid = pipeline_state.to_mermaid()
+    assert "stateDiagram-v2" in pipeline_mermaid
+    assert "ROLLING_BACK" in pipeline_mermaid
+
+    session_state = ds.SYSTEM_DIAGRAM_SPECS["architecture_session_state"]
+    session_mermaid = session_state.to_mermaid()
+    assert "stateDiagram-v2" in session_mermaid
+    assert "undo_snapshot" in session_mermaid
+
+    download_state = ds.SYSTEM_DIAGRAM_SPECS["architecture_download_state"]
+    download_mermaid = download_state.to_mermaid()
+    assert "stateDiagram-v2" in download_mermaid
+    assert "DOWNLOADING" in download_mermaid

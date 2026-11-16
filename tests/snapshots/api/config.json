@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "54491e64dd3fce181d5d7bb80ae4c4f781d8ac15a0ee7106ad85d9c7950f44ed"
+    "checksum": "189a877cef1d92048de8e2f2fca48a67ec2ca81933f97aebb9269ca1d65e2aa4"
   },
   "classes": [
     {
@@ -324,7 +324,7 @@
         {
           "async": false,
           "decorators": [
-            "@field_validator('KEYWORD_RULES', 'LEARNED_RULES')",
+            "@field_validator('KEYWORD_RULES', 'LEARNED_RULES', 'DISABLED_KEYWORD_RULES')",
             "@classmethod"
           ],
           "name": "validate_keyword_rules",

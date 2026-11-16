@@ -15,14 +15,14 @@ Press `?` or `F1` in the app to see these shortcuts.
 | `v` | Range Select |
 | `a` | Select/Deselect All |
 | `Ctrl+L` | Lock/Unlock |
-| `Ctrl+R` | Rename Node |
+| `Ctrl+R` | Rule Manager |
+| `F2` | Rename Node |
 | `Ctrl+N` | New Folder |
 | `+` | Rating (+) |
 | `-` | Rating (-) |
 | `Ctrl+O` | Settings |
 | `Ctrl+K` | Command Palette |
 | `Ctrl+W` | Wizard |
-| `Ctrl+C` | CRO Ingest |
 | `Ctrl+D` | DropZone |
 | `Ctrl+T` / `p` | Toggle Daemon |
 | `Ctrl+S` | Scan |
@@ -43,6 +43,14 @@ Press `?` or `F1` in the app to see these shortcuts.
 ## Dialogs
 
 `Esc` closes or cancels any dialog.
+
+### Active Rule Manager
+
+| Keys | Action |
+|---|---|
+| `Space` | Toggle Rule |
+| `Enter` | Edit Rule |
+| `Delete` | Delete Rule |
 
 ### Audit Report
 

@@ -1328,21 +1328,6 @@ class Database:
             row = cursor.fetchone()
             return row[0] if row else None
 
-    def begin_transaction_session(self, session_id: str, timeout: float = 300.0):
-        """Begin an explicit background database transaction session."""
-        if self.worker:
-            self.worker.begin_session(session_id, db_path=self.db_path, timeout=timeout)
-
-    def commit_transaction_session(self, session_id: str):
-        """Commit an active background database transaction session."""
-        if self.worker:
-            self.worker.commit_session(session_id)
-
-    def rollback_transaction_session(self, session_id: str):
-        """Roll back an active background database transaction session."""
-        if self.worker:
-            self.worker.rollback_session(session_id)
-
     def _apply_batch_updates_on_conn(self, conn, updates, precomputed_updates_map=None):
         if precomputed_updates_map is None:
             precomputed_updates_map = {}

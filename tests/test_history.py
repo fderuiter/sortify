@@ -330,3 +330,119 @@ def test_get_session_moves_getsize_error(test_history_env):
         moves = history_manager.get_session_moves(session_id)
         assert len(moves) == 1
         assert moves[0]["size"] is None
+
+
+def test_history_manager_get_sessions_single_query(test_history_env):
+    """Criterion 2: HistoryManager.get_sessions executes one aggregated SQL query instead of sequential count statements."""
+    base_dir, db, cache, history_manager, db_worker = test_history_env
+    conn = get_db_connection(history_manager.db_path)
+    with conn:
+        # Session 1: 3 steps, 2 files
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
+            ("sess-hist-1", 100.0, base_dir, "completed"),
+        )
+        for i in range(3):
+            conn.execute(
+                "INSERT INTO step_ledger (session_id, source_path, target_path) VALUES (?, ?, ?)",
+                ("sess-hist-1", f"{base_dir}/s{i}.txt", f"{base_dir}/d{i}.txt"),
+            )
+        for i in range(2):
+            conn.execute(
+                "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, 1, 10, 100.0)",
+                ("sess-hist-1", f"file{i}.txt"),
+            )
+
+        # Session 2: 0 steps, 0 files
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
+            ("sess-hist-2", 200.0, base_dir, "active"),
+        )
+
+    executed_queries = []
+    conn.set_trace_callback(executed_queries.append)
+    try:
+        sessions = history_manager.get_sessions()
+    finally:
+        conn.set_trace_callback(None)
+
+    # Must execute exactly ONE query
+    assert len(executed_queries) == 1
+    assert "LEFT JOIN" in executed_queries[0]
+    assert "GROUP BY" in executed_queries[0]
+
+    by_id = {s["session_id"]: s for s in sessions}
+    s2 = by_id["sess-hist-2"]
+    assert s2["timestamp"] == 200.0
+    assert s2["status"] == "active"
+    assert s2["step_count"] == 0
+    assert s2["file_count"] == 0
+    assert isinstance(s2["step_count"], int)
+    assert isinstance(s2["file_count"], int)
+
+    s1 = by_id["sess-hist-1"]
+    assert s1["timestamp"] == 100.0
+    assert s1["status"] == "completed"
+    assert s1["step_count"] == 3
+    assert s1["file_count"] == 2
+    assert isinstance(s1["step_count"], int)
+    assert isinstance(s1["file_count"], int)
+
+
+def test_history_manager_get_sessions_benchmark_500_sessions(test_history_env):
+    """Criterion 3: Benchmarks confirm that 500 session records load in under 10 ms."""
+    base_dir, db, cache, history_manager, db_worker = test_history_env
+    conn = get_db_connection(history_manager.db_path)
+    with conn:
+        for i in range(500):
+            sid = f"hist-perf-{i:04d}"
+            conn.execute(
+                "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
+                (sid, float(i), base_dir, "completed"),
+            )
+            if i % 2 == 0:
+                conn.execute(
+                    "INSERT INTO step_ledger (session_id, source_path, target_path) VALUES (?, ?, ?)",
+                    (sid, f"{base_dir}/s_{i}.txt", f"{base_dir}/d_{i}.txt"),
+                )
+                conn.execute(
+                    "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, 1, 10, 100.0)",
+                    (sid, f"f_{i}.txt"),
+                )
+
+    # Warmup
+    history_manager.get_sessions()
+
+    # Measure latency
+    t0 = time.perf_counter()
+    sessions = history_manager.get_sessions()
+    latency_ms = (time.perf_counter() - t0) * 1000.0
+
+    assert len(sessions) >= 500
+    assert latency_ms < 10.0, f"Latency {latency_ms:.2f} ms exceeded 10.0 ms limit"
+
+
+def test_history_manager_get_sessions_legacy_database_missing_tables(
+    test_history_env, tmp_path
+):
+    """Maintain backward compatibility with older database files lacking child tables."""
+    from app.core.history import HistoryManager
+
+    base_dir, db, cache, _, _ = test_history_env
+    legacy_db = tmp_path / "legacy_hist.db"
+    conn = get_db_connection(str(legacy_db))
+    with conn:
+        conn.execute(
+            "CREATE TABLE sessions (session_id TEXT PRIMARY KEY, timestamp REAL, base_dir TEXT, status TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
+            ("leg-hist-1", 50.0, "/legacy", "completed"),
+        )
+
+    hm = HistoryManager(db, cache, str(legacy_db))
+    sessions = hm.get_sessions()
+    assert len(sessions) == 1
+    assert sessions[0]["session_id"] == "leg-hist-1"
+    assert sessions[0]["step_count"] == 0
+    assert sessions[0]["file_count"] == 0

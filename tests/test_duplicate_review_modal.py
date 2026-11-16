@@ -409,8 +409,8 @@ def test_apply_deduplication_selections_overwrite_and_keep_both(tmp_path):
     assert plan_keep_both["doc2.pdf"].get("confirmed") is True
 
 
-def test_verifier_decouples_resolvable_collisions_from_critical_errors(tmp_path):
-    """Test that resolvable destination collisions do not set has_critical_errors to True."""
+def test_verifier_categorizes_destination_collisions_as_critical_errors(tmp_path):
+    """Test that destination collisions set has_critical_errors to True."""
     base_dir = str(tmp_path)
     f1 = tmp_path / "a.txt"
     f2 = tmp_path / "b.txt"
@@ -434,7 +434,7 @@ def test_verifier_decouples_resolvable_collisions_from_critical_errors(tmp_path)
 
     result = VerificationEngine.verify_plan_integrity(base_dir, plan)
     assert len(result["collisions"]) > 0
-    assert result["has_critical_errors"] is False
+    assert result["has_critical_errors"] is True
 
 
 @pytest.mark.anyio

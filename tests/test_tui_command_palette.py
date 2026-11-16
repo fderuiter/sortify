@@ -51,7 +51,7 @@ async def test_command_palette_modal_mount_and_widgets(tmp_path):
 
 @pytest.mark.anyio
 async def test_command_palette_ctrl_k_binding(tmp_path):
-    """Verify Ctrl+K keybinding triggers action_open_command_palette."""
+    """Verify Ctrl+K keybinding triggers action_open_command_palette and ctrl+c is not bound."""
     settings = AppSettings()
     settings._settings_model.AI_CONSENT_GRANTED = True
     app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
@@ -65,12 +65,52 @@ async def test_command_palette_ctrl_k_binding(tmp_path):
     assert len(ctrl_k_bindings) == 1
     assert getattr(ctrl_k_bindings[0], "action", None) == "open_command_palette"
 
+    # Verify ctrl+c is not globally bound
+    ctrl_c_bindings = [
+        b for b in AutoSorterTUI.BINDINGS if getattr(b, "key", None) == "ctrl+c"
+    ]
+    assert len(ctrl_c_bindings) == 0
+
+    # Verify open_cro_forensic shortcut is cleared in catalog
+    cro_cmd = next(c for c in DEFAULT_COMMAND_CATALOG if c.id == "open_cro_forensic")
+    assert cro_cmd.shortcut == ""
+
     async with app.run_test() as pilot:
         await pilot.pause()
         await pilot.press("ctrl+k")
         await pilot.pause()
 
         assert isinstance(app.screen, CommandPaletteModal)
+
+
+@pytest.mark.anyio
+async def test_command_palette_cro_forensic_routing(tmp_path):
+    """Verify CRO forensic ingest modal launches from command palette and not ctrl+c."""
+    from app.plugins.clinical_compliance.tui_views import CROForensicModal
+
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        # Pressing ctrl+c should not open CROForensicModal
+        await pilot.press("ctrl+c")
+        await pilot.pause()
+        assert not isinstance(app.screen, CROForensicModal)
+
+        # Open command palette and execute CRO forensic ingestion
+        app.action_open_command_palette()
+        await pilot.pause()
+        assert isinstance(app.screen, CommandPaletteModal)
+
+        await pilot.press("c", "r", "o")
+        await pilot.pause()
+        await pilot.press("enter")
+        await pilot.pause()
+
+        assert isinstance(app.screen, CROForensicModal)
 
 
 @pytest.mark.anyio

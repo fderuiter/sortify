@@ -328,3 +328,33 @@ def test_cli_resolver_command(base_dir):
     )
     assert res.returncode == 0
     assert "Interactive Snapshot Conflict & Diff Resolver" in res.stdout
+
+
+def test_cli_help_command(base_dir):
+    """Verify python scripts/snapshot_merge_driver.py --help displays literal Git argument specifiers and exits cleanly."""
+    script_path = os.path.join(base_dir, "scripts", "snapshot_merge_driver.py")
+    res = subprocess.run(
+        [sys.executable, script_path, "--help"],
+        capture_output=True,
+        text=True,
+        cwd=base_dir,
+    )
+    assert res.returncode == 0
+    assert "Git Snapshot 3-Way Merge Driver and Conflict Resolver" in res.stdout
+    assert "Positional arguments passed by Git: %O %A %B [%P]" in res.stdout
+    assert not res.stderr.strip()
+
+
+def test_cli_no_args_fallback(base_dir):
+    """Verify python scripts/snapshot_merge_driver.py without positional arguments displays help output and exits with code 0."""
+    script_path = os.path.join(base_dir, "scripts", "snapshot_merge_driver.py")
+    res = subprocess.run(
+        [sys.executable, script_path],
+        capture_output=True,
+        text=True,
+        cwd=base_dir,
+    )
+    assert res.returncode == 0
+    assert "usage:" in res.stdout.lower()
+    assert "Positional arguments passed by Git: %O %A %B [%P]" in res.stdout
+    assert not res.stderr.strip()

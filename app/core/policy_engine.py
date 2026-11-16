@@ -144,6 +144,13 @@ class PolicyEngine:
         matched_policy = None
         halt_evaluation = False
         for rule in sorted_policies:
+            is_enabled = (
+                rule.get("enabled", True)
+                if isinstance(rule, dict)
+                else getattr(rule, "enabled", True)
+            )
+            if not is_enabled:
+                continue
             if cls.match_policy(rule, file_path, doc_text, status_match):
                 matched_policy = rule
                 break

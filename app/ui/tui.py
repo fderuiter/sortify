@@ -61,6 +61,7 @@ from app.ui.modals.reports import (
     ExportReportModal,
     ExtractionPreviewModal,
 )
+from app.ui.modals.rules import ActiveRuleManagerModal as ActiveRuleManagerModal
 from app.ui.modals.rules import ExportRulesModal as ExportRulesModal
 from app.ui.modals.rules import RuleImportModal as RuleImportModal
 from app.ui.modals.rules import TemplateGalleryModal as TemplateGalleryModal
@@ -118,14 +119,14 @@ class AutoSorterTUI(
         Binding("v", "visual_range_select", "Range Select", show=False),
         Binding("a", "toggle_select_all", "Select/Deselect All", show=False),
         Binding("ctrl+l", "toggle_lock", "Lock/Unlock", show=False),
-        Binding("ctrl+r", "rename_node", "Rename Node", show=False),
+        Binding("ctrl+r", "open_active_rules", "Rule Manager", show=False),
+        Binding("f2", "rename_node", "Rename Node", show=False),
         Binding("ctrl+n", "new_folder", "New Folder", show=False),
         Binding("plus", "rate_positive", "Rating (+)", show=False),
         Binding("minus", "rate_negative", "Rating (-)", show=False),
         Binding("ctrl+o", "open_settings", "Settings", show=False),
         Binding("ctrl+k", "open_command_palette", "Command Palette", show=False),
         Binding("ctrl+w", "open_wizard", "Wizard", show=False),
-        Binding("ctrl+c", "open_cro_forensic", "CRO Ingest", show=False),
         Binding("ctrl+d", "open_dropzone", "DropZone", show=False),
         Binding("ctrl+t", "toggle_daemon(False)", "Toggle Daemon", show=False),
         Binding("p", "toggle_daemon(True)", "Toggle Daemon", show=False),
@@ -1175,6 +1176,18 @@ class AutoSorterTUI(
                     ]
                 if "CONFLICT_POLICY" in res:
                     self.settings.CONFLICT_POLICY = res["CONFLICT_POLICY"]
+                if "CLEANUP_EMPTY_FOLDERS" in res:
+                    try:
+                        self.settings.CLEANUP_EMPTY_FOLDERS = res[
+                            "CLEANUP_EMPTY_FOLDERS"
+                        ]
+                    except Exception:
+                        pass
+                if "PRESERVE_HIERARCHY" in res:
+                    try:
+                        self.settings.PRESERVE_HIERARCHY = res["PRESERVE_HIERARCHY"]
+                    except Exception:
+                        pass
                 if hasattr(self.settings, "_save"):
                     self.settings._save()
                 self.update_status()
@@ -1252,6 +1265,12 @@ class AutoSorterTUI(
                 )
 
         self.push_screen(CommandPaletteModal(), on_command_selected)
+
+    def action_open_active_rules(self) -> None:
+        """Open active rule manager modal screen [Ctrl+R]."""
+        if self._is_text_control_focused(allow_tree_search=True):
+            return
+        self.push_screen(ActiveRuleManagerModal(self.settings))
 
     def action_open_template_gallery(self) -> None:
         """Open starter rule template gallery modal screen."""

@@ -424,6 +424,10 @@ def test_tui_cro_forensic_modal(temp_workspace):
         settings._settings_model.AI_CONSENT_GRANTED = True
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
 
+        assert not any(
+            getattr(b, "key", None) == "ctrl+c" for b in AutoSorterTUI.BINDINGS
+        )
+
         async with app.run_test() as pilot:
             app.action_open_cro_forensic()
             await pilot.pause(0.1)
@@ -2421,12 +2425,6 @@ def test_sample_dataset_goes_to_subfolder_of_non_empty_folder(temp_workspace):
             with patch.object(app, "run_scan_worker") as scan_worker:
                 app.action_generate_sample_corpus()
                 await pilot.pause()
-                from app.ui.modals.sample_playground import SamplePlaygroundModal
-
-                if isinstance(app.screen, SamplePlaygroundModal):
-                    btn_commit = app.screen.query_one("#btn-commit-playground", Button)
-                    btn_commit.press()
-                    await pilot.pause()
                 sample_dir = os.path.join(temp_workspace, "sortify-sample-dataset")
                 assert sorted(os.listdir(temp_workspace)) == sorted(
                     before + ["sortify-sample-dataset"]
@@ -2441,10 +2439,6 @@ def test_sample_dataset_goes_to_subfolder_of_non_empty_folder(temp_workspace):
                     f.write("edited")
                 app.action_generate_sample_corpus()
                 await pilot.pause()
-                if isinstance(app.screen, SamplePlaygroundModal):
-                    btn_commit = app.screen.query_one("#btn-commit-playground", Button)
-                    btn_commit.press()
-                    await pilot.pause()
                 assert app.base_dir == sample_dir
                 assert not os.path.exists(
                     os.path.join(sample_dir, "sortify-sample-dataset")
@@ -2470,12 +2464,6 @@ def test_sample_dataset_fills_an_empty_folder_directly(tmp_path):
             with patch.object(app, "run_scan_worker"):
                 app.action_generate_sample_corpus()
                 await pilot.pause()
-                from app.ui.modals.sample_playground import SamplePlaygroundModal
-
-                if isinstance(app.screen, SamplePlaygroundModal):
-                    btn_commit = app.screen.query_one("#btn-commit-playground", Button)
-                    btn_commit.press()
-                    await pilot.pause()
             assert "demo_tech.txt" in os.listdir(empty)
             assert app.base_dir == str(empty)
 
