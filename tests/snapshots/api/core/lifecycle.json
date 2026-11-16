@@ -1,0 +1,164 @@
+{
+  "_metadata": {
+    "checksum": "d5366337a779a20e743548762872768a111d47246ea5339da9ddc435d23f1618"
+  },
+  "classes": [
+    {
+      "class_name": "LifecycleTelemetryMixin",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "add_state_change_hook",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable",
+              "default": null,
+              "name": "callback"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "add_telemetry_hook",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable",
+              "default": null,
+              "name": "callback"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "add_transition_listener",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable[[dict[str, Any]], None]",
+              "default": null,
+              "name": "callback"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "emit_telemetry",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "event"
+            },
+            {
+              "annotation": "dict | None",
+              "default": "None",
+              "name": "data"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "remove_state_change_hook",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable",
+              "default": null,
+              "name": "callback"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "remove_telemetry_hook",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable",
+              "default": null,
+              "name": "callback"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "remove_transition_listener",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable[[dict[str, Any]], None]",
+              "default": null,
+              "name": "callback"
+            }
+          ],
+          "returns": "None"
+        }
+      ]
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "sanitize_telemetry_payload",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "data"
+        }
+      ],
+      "returns": "Any"
+    }
+  ]
+}

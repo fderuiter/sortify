@@ -14,6 +14,8 @@ from dataclasses import dataclass, field
 from enum import Enum
 from typing import Any
 
+from app.core.lifecycle import LifecycleTelemetryMixin
+
 logger = logging.getLogger(__name__)
 
 
@@ -85,18 +87,22 @@ _ALLOWED_TRANSITIONS: dict[PipelineLifecycleState, set[PipelineLifecycleState]] 
     },
     PipelineLifecycleState.COMPLETED: {
         PipelineLifecycleState.PLANNING,
+        PipelineLifecycleState.PLANNED,
         PipelineLifecycleState.ROLLING_BACK,
     },
     PipelineLifecycleState.FAILED: {
         PipelineLifecycleState.PLANNING,
+        PipelineLifecycleState.PLANNED,
         PipelineLifecycleState.ROLLING_BACK,
     },
     PipelineLifecycleState.CANCELLED: {
         PipelineLifecycleState.PLANNING,
+        PipelineLifecycleState.PLANNED,
         PipelineLifecycleState.ROLLING_BACK,
     },
     PipelineLifecycleState.ROLLED_BACK: {
         PipelineLifecycleState.PLANNING,
+        PipelineLifecycleState.PLANNED,
         PipelineLifecycleState.ROLLING_BACK,
     },
 }
@@ -217,7 +223,7 @@ class SortResult:
         return f"Cancelled: {line}" if self.cancelled else line
 
 
-class SortPipeline:
+class SortPipeline(LifecycleTelemetryMixin):
     """Runs a sort over one ``AppSession``.
 
     The caller owns the session and closes it; the pipeline only drives it.

@@ -13,6 +13,7 @@ import urllib.request
 from enum import Enum
 
 from app.core.exceptions import DownloaderError, ModelVerificationError
+from app.core.lifecycle import LifecycleTelemetryMixin
 from app.core.progress import ProgressUpdate, emit_progress
 
 logger = logging.getLogger(__name__)
@@ -189,7 +190,7 @@ class ThreadSafeState:
             return self._state.get(key, default)
 
 
-class DownloadManager:
+class DownloadManager(LifecycleTelemetryMixin):
     """Centralized manager coordinating model downloads and progress sharing."""
 
     DownloadState = DownloadState
@@ -272,6 +273,7 @@ class DownloadManager:
             raise InvalidStateTransitionError(
                 f"Invalid state transition from {current} to {new_state}."
             )
+        old_state = current
         self._status = new_state
         self.state["status"] = new_state
         self.state["download_state"] = new_state
@@ -288,6 +290,10 @@ class DownloadManager:
         ):
             self.state["is_downloading"] = False
             self.state["success"] = False
+
+        self._notify_lifecycle_listeners(
+            old_state, new_state, event_type="DOWNLOAD_STATE_CHANGED"
+        )
 
     def transition_to(self, new_state: DownloadState) -> None:
         """Atomically transition manager to a new lifecycle state."""
@@ -488,9 +494,10 @@ class DownloadManager:
                 or self.state["is_downloading"]
             ):
                 self.cancel_event.set()
-                if self._status != DownloadState.DOWNLOADING:
-                    self._status = DownloadState.DOWNLOADING
-                self._transition_to_locked(DownloadState.CANCELLED)
+                if self._status == DownloadState.DOWNLOADING:
+                    self._transition_to_locked(DownloadState.CANCELLED)
+                else:
+                    self.state["is_downloading"] = False
                 self.state["status_text"] = "Download cancelled."
                 self.current_thread = None
 

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "a9b9a1013d994bfddc402fe727461020eda2d2b2a875b162e981f9187ca2257d"
+    "checksum": "34c366fbe690c6352ce98aca87d9bce4006c11261ede3c15e74149e30221f576"
   },
   "classes": [
     {
@@ -128,7 +128,29 @@
     {
       "class_name": "QuarantineRecordModel",
       "decorators": [],
-      "methods": []
+      "methods": [
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('status')",
+            "@classmethod"
+          ],
+          "name": "validate_status",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "str"
+        }
+      ]
     },
     {
       "class_name": "SortingPlanModel",
@@ -314,6 +336,29 @@
         }
       ],
       "returns": "QuarantineRecordModel"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "validate_quarantine_transition",
+      "parameters": [
+        {
+          "annotation": "Optional[str]",
+          "default": null,
+          "name": "current_status"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "target_status"
+        },
+        {
+          "annotation": "Optional[str]",
+          "default": "None",
+          "name": "job_id"
+        }
+      ],
+      "returns": "None"
     },
     {
       "async": false,

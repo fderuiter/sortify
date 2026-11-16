@@ -787,6 +787,89 @@ def audit_auto_merge_policy(content=None, doc_path="docs/auto_merge_policy.md"):
     return errors
 
 
+def audit_model_hosts(
+    architecture_path="docs/architecture.md",
+    security_path="SECURITY.md",
+    architecture_content=None,
+    security_content=None,
+    allowed_hosts=None,
+):
+    """Audit documentation consistency for allowed model download hosts and network controls."""
+    if allowed_hosts is None:
+        try:
+            from app.core.downloader import ALLOWED_MODEL_HOSTS
+
+            allowed_hosts = ALLOWED_MODEL_HOSTS
+        except Exception:
+            allowed_hosts = frozenset({"huggingface.co", "hf.co"})
+
+    errors = []
+
+    # 1. Audit architecture documentation
+    if architecture_content is None and architecture_path is not None:
+        p = Path(architecture_path)
+        if not p.exists():
+            errors.append(f"Missing architecture document: {architecture_path}")
+        else:
+            try:
+                architecture_content = p.read_text(encoding="utf-8")
+            except Exception as e:
+                errors.append(
+                    f"Could not read architecture document {architecture_path}: {e}"
+                )
+
+    if architecture_content is not None:
+        for host in sorted(allowed_hosts):
+            if host not in architecture_content:
+                errors.append(
+                    f"Architecture doc ({architecture_path or 'provided content'}) is missing allowed model host: '{host}'"
+                )
+        if "https" not in architecture_content.lower():
+            errors.append(
+                f"Architecture doc ({architecture_path or 'provided content'}) does not document HTTPS scheme requirement for model downloads."
+            )
+        if (
+            "ip" not in architecture_content.lower()
+            or "literal" not in architecture_content.lower()
+        ):
+            errors.append(
+                f"Architecture doc ({architecture_path or 'provided content'}) does not document IP literal restrictions for model downloads."
+            )
+
+    # 2. Audit security policy documentation
+    if security_content is None and security_path is not None:
+        p = Path(security_path)
+        if not p.exists():
+            errors.append(f"Missing security policy document: {security_path}")
+        else:
+            try:
+                security_content = p.read_text(encoding="utf-8")
+            except Exception as e:
+                errors.append(
+                    f"Could not read security policy document {security_path}: {e}"
+                )
+
+    if security_content is not None:
+        for host in sorted(allowed_hosts):
+            if host not in security_content:
+                errors.append(
+                    f"Security policy ({security_path or 'provided content'}) is missing allowed model host: '{host}'"
+                )
+        if (
+            "ssrf" not in security_content.lower()
+            and "ip literal" not in security_content.lower()
+        ):
+            errors.append(
+                f"Security policy ({security_path or 'provided content'}) does not document SSRF prevention rules for model downloads."
+            )
+
+    return errors
+
+
+audit_model_host_docs = audit_model_hosts
+validate_model_hosts = audit_model_hosts
+
+
 def audit_handwritten_docs():
     """Audit external links and relative codebase path references in handwritten docs."""
     import re
@@ -847,6 +930,16 @@ def audit_handwritten_docs():
         # 3. Auto-merge policy consistency check
         if doc_path.endswith("auto_merge_policy.md"):
             errors.extend(audit_auto_merge_policy(content=content, doc_path=doc_path))
+
+        # 4. Architecture model download host consistency check
+        if doc_path.endswith("architecture.md"):
+            errors.extend(
+                audit_model_hosts(
+                    architecture_path=doc_path,
+                    security_path=None,
+                    architecture_content=content,
+                )
+            )
 
     return errors
 
@@ -1004,11 +1097,13 @@ def main():
                 changed_files.append(filepath)
 
         doc_audit_errors = audit_handwritten_docs()
-        if doc_audit_errors:
+        host_audit_errors = audit_model_hosts()
+        all_audit_errors = list(dict.fromkeys(doc_audit_errors + host_audit_errors))
+        if all_audit_errors:
             sys.stderr.write(
-                "\nError: Handwritten documentation audit failed with the following issues:\n"
+                "\nError: Documentation audit failed with the following issues:\n"
             )
-            for err in doc_audit_errors:
+            for err in all_audit_errors:
                 sys.stderr.write(f"  - {err}\n")
             sys.exit(1)
             return

@@ -45,7 +45,7 @@ Reopen the wizard any time with `[Ctrl+W]`.
 ### In the terminal interface
 1. Start the app with `smart-autosorter` (or `smart-autosorter --tui`).
 2. Press `[Ctrl+B]` to choose a folder, then `[Ctrl+S]` to scan it. The proposed folder tree appears; nothing has moved yet.
-3. Review the plan. `[Ctrl+F]` searches the tree, `[Space]` checks items, `[Ctrl+L]` locks a file in place, `[Ctrl+R]` renames a folder and `[Ctrl+N]` creates one. Press `[R]` to reassign checked files or the active item to a target folder (if the search box is focused, defocus it first before pressing `[R]`; see [Keyboard Shortcuts](keyboard_shortcuts.md)). You can also press `[Ctrl+K]` to open the [Command Palette](#command-palette) for command discovery and to trigger all system actions without memorizing keybindings.
+3. Review the plan. `[Ctrl+F]` searches the tree, `[Space]` checks items, `[Ctrl+L]` locks a file in place, `[F2]` renames a file or folder category node, `[Ctrl+N]` creates a folder, and `[Ctrl+R]` opens the active rule manager modal. Press `[R]` to reassign checked files or the active item to a target folder (if a text input field such as the search box is focused, defocus it first before pressing `[F2]`, `[Ctrl+R]`, or `[R]`; see [Keyboard Shortcuts](keyboard_shortcuts.md)). You can also press `[Ctrl+K]` to open the [Command Palette](#command-palette) for command discovery and to trigger all system actions without memorizing keybindings.
 4. Press `[Ctrl+E]` to execute. You can review duplicates first, and an audit report is shown when the moves finish.
 
 Press `[Ctrl+K]` for the command palette, `[?]` or `[F1]` for the full list of shortcuts, and `[Ctrl+Q]` to quit. Every shortcut is also listed in [Keyboard Shortcuts](keyboard_shortcuts.md).
@@ -155,6 +155,29 @@ In the terminal interface (TUI):
    - **Export Rules** (`#btn-export-rules`): opens the rule export dialog to save active keyword rules and policies to disk.
    - **Apply Selected Templates** (`#btn-apply-templates`): merges checked starter template packs into your configuration.
    - **Close** (`#btn-close-gallery`) or `[Esc]`: returns to the settings dialog.
+
+### Active Rule Manager
+<a id="active-rule-manager"></a>
+
+Sortify provides a dedicated **Active Rule Manager** modal to inspect, add, edit, toggle, and delete active keyword rules and compliance policies.
+
+#### Launching the Rule Manager
+You can open the active rule manager using either of the following methods:
+- **Direct Shortcut**: Press `[Ctrl+R]` from the main plan tree review screen.
+- **Settings Dialog**: Press `[Ctrl+O]` to open Settings, switch to the **AI & Privacy Settings** tab, and select **Active Rule Manager** (`#btn-open-rules`).
+- **Command Palette**: Press `[Ctrl+K]` and select **Open Active Rule Manager**.
+
+*Note on focus*: When focus is inside a text input field (such as the tree search box or modal input fields), `[Ctrl+R]` and `[F2]` do not trigger modal actions. Defocus the text input or press `[Esc]` before using these shortcuts.
+
+#### Managing Rules and Controls
+The active rule manager displays all configured rules in the interactive **Rules Table** (`#rules-table`) with columns for `Status` (Active or Disabled), `Type` (e.g. `keyword`, `compliance`, `pattern`), `Pattern`, `Target Folder`, and `Priority`.
+
+Use the following shortcuts and button controls:
+- **Toggle Rule Status** (`[Space]` or `#btn-toggle-rule`): Toggles the selected rule between *Active* and *Disabled*. Toggling a keyword rule moves it between `KEYWORD_RULES` and `DISABLED_KEYWORD_RULES` without deleting its destination path, preserving row cursor focus on the table.
+- **Add Rule** (`#btn-add-rule`): Opens the rule editor modal (`RuleEditModal`) to define a new keyword rule. Enter a matching pattern and target folder. Target paths are validated to ensure they are relative paths and do not contain directory traversal (`..`) or invalid characters.
+- **Edit Rule** (`[Enter]` or `#btn-edit-rule`): Opens the rule editor modal for the highlighted rule, allowing you to update its pattern expression or target folder.
+- **Delete Rule** (`[Delete]` or `#btn-delete-rule`): Prompts a confirmation dialog (`DeleteRuleConfirmModal`) before permanently deleting the selected rule or policy from settings.
+- **Close Dialog** (`[Esc]` or `#btn-close-rules`): Closes the active rule manager and returns to the previous view.
 
 ### Importing External Rules
 
