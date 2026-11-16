@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import base64
+import json
 import subprocess
 from pathlib import Path
 from unittest.mock import MagicMock, patch
@@ -15,9 +16,11 @@ from scripts.remediate_vulnerabilities import (
     extract_exemptions_from_security_md,
     fetch_advisory_severity_and_cvss,
     get_locked_package_version,
+    is_license_compatible,
     normalize_severity,
     parse_audit_output,
     remediate_vulnerabilities,
+    run_license_audit,
     run_local_tests,
     sanitize_sensitive_info,
 )
@@ -644,3 +647,294 @@ certifi 2026.7.22 has 1 known vulnerability:
     assert len(push_calls) == 1
     push_cmd = push_calls[0][0][0]
     assert secret_token not in " ".join(push_cmd)
+
+
+# --- Unit Tests for License Verification and Enforcement ---
+
+
+def test_is_license_compatible_approved():
+    approved_licenses = [
+        "MIT",
+        "MIT License",
+        "MIT-0",
+        "MIT-CMU",
+        "Apache-2.0",
+        "Apache Software License",
+        "Apache License 2.0",
+        "BSD",
+        "BSD License",
+        "BSD-2-Clause",
+        "BSD-3-Clause",
+        "0BSD",
+        "GPL-3.0",
+        "GPL-3.0-only",
+        "GPL-3.0-or-later",
+        "GNU General Public License v3 (GPLv3)",
+        "AGPL-3.0",
+        "LGPL-3.0",
+        "LGPL-2.1",
+        "GNU Library or Lesser General Public License (LGPL)",
+        "Python Software Foundation License",
+        "PSF-2.0",
+        "MPL-2.0",
+        "Mozilla Public License 2.0 (MPL 2.0)",
+        "zlib/libpng",
+        "ISC",
+        "CC0-1.0",
+        "Unlicense",
+    ]
+    for lic in approved_licenses:
+        ok, msg = is_license_compatible(lic)
+        assert ok is True, f"Expected {lic!r} to be approved, got failure: {msg}"
+
+
+def test_is_license_compatible_multi_license_expressions():
+    # Disjunctive / dual licensing (approved if at least one branch is compatible)
+    disjunctive_cases = [
+        "Apache-2.0 OR BSD-3-Clause",
+        "dual Apache and BSD",
+        "Dual-license: Apache-2.0 or BSD-2-Clause",
+        "dual Apache and Proprietary",
+        "MIT / Apache-2.0",
+    ]
+    for expr in disjunctive_cases:
+        ok, msg = is_license_compatible(expr)
+        assert ok is True, (
+            f"Expected disjunctive {expr!r} to be approved, got failure: {msg}"
+        )
+
+    # Conjunctive licensing (approved if all components are compatible)
+    conjunctive_cases = [
+        "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+        "DFSG approved; MIT License",
+        "BSD-3-Clause, Apache-2.0, dependency licenses",
+    ]
+    for expr in conjunctive_cases:
+        ok, msg = is_license_compatible(expr)
+        assert ok is True, (
+            f"Expected conjunctive {expr!r} to be approved, got failure: {msg}"
+        )
+
+    # Incompatible conjunctive expressions
+    incompatible_expressions = [
+        "Proprietary AND MIT",
+        "dual Proprietary and Commercial",
+    ]
+    for expr in incompatible_expressions:
+        ok, msg = is_license_compatible(expr)
+        assert ok is False, (
+            f"Expected incompatible {expr!r} to fail, got success: {msg}"
+        )
+
+
+def test_is_license_compatible_prohibited():
+    prohibited_licenses = [
+        "Proprietary",
+        "Commercial",
+        "Closed Source",
+        "GPL-2.0-only",
+        "GPL-2.0",
+        "SSPL",
+        "BUSL-1.1",
+        "All Rights Reserved",
+    ]
+    for lic in prohibited_licenses:
+        ok, msg = is_license_compatible(lic)
+        assert ok is False, f"Expected prohibited {lic!r} to fail, got success: {msg}"
+
+
+def test_is_license_compatible_unknown_and_missing():
+    unknown_licenses = [
+        "",
+        None,
+        "   ",
+        "UNKNOWN",
+        "Unknown",
+        "None",
+        "UNDEFINED",
+        "NOT_FOUND",
+        "N/A",
+    ]
+    for lic in unknown_licenses:
+        ok, msg = is_license_compatible(lic)
+        assert ok is False, (
+            f"Expected unknown/missing {lic!r} to fail, got success: {msg}"
+        )
+
+
+@patch("scripts.remediate_vulnerabilities.subprocess.run")
+def test_run_license_audit_approved(mock_sub_run, tmp_path: Path):
+    mock_payload = [
+        {"Name": "requests", "Version": "2.34.2", "License": "Apache Software License"},
+        {"Name": "certifi", "Version": "2026.10.19", "License": "MPL-2.0"},
+    ]
+    mock_sub_run.return_value = MagicMock(
+        returncode=0, stdout=json.dumps(mock_payload), stderr=""
+    )
+
+    ok, msg = run_license_audit(tmp_path, package_name="certifi")
+    assert ok is True
+    assert "compatible" in msg.lower()
+
+
+@patch("scripts.remediate_vulnerabilities.subprocess.run")
+def test_run_license_audit_prohibited(mock_sub_run, tmp_path: Path):
+    mock_payload = [
+        {"Name": "bad-lib", "Version": "1.0.0", "License": "Proprietary"},
+    ]
+    mock_sub_run.return_value = MagicMock(
+        returncode=0, stdout=json.dumps(mock_payload), stderr=""
+    )
+
+    ok, msg = run_license_audit(tmp_path, package_name="bad-lib")
+    assert ok is False
+    assert "incompatible" in msg.lower() or "proprietary" in msg.lower()
+
+
+@patch("scripts.remediate_vulnerabilities.subprocess.run")
+def test_run_license_audit_unknown(mock_sub_run, tmp_path: Path):
+    mock_payload = [
+        {"Name": "mystery-lib", "Version": "1.0.0", "License": "UNKNOWN"},
+    ]
+    mock_sub_run.return_value = MagicMock(
+        returncode=0, stdout=json.dumps(mock_payload), stderr=""
+    )
+
+    ok, msg = run_license_audit(tmp_path, package_name="mystery-lib")
+    assert ok is False
+    assert "missing" in msg.lower() or "unknown" in msg.lower()
+
+
+@patch("scripts.remediate_vulnerabilities.subprocess.run")
+def test_run_license_audit_missing_package_metadata(mock_sub_run, tmp_path: Path):
+    mock_payload = [
+        {"Name": "other-pkg", "Version": "1.0.0", "License": "MIT"},
+    ]
+    mock_sub_run.return_value = MagicMock(
+        returncode=0, stdout=json.dumps(mock_payload), stderr=""
+    )
+
+    ok, msg = run_license_audit(tmp_path, package_name="uninstalled-pkg")
+    assert ok is False
+    assert "missing license metadata" in msg.lower()
+
+
+@patch("scripts.remediate_vulnerabilities.GitHubRemediationClient")
+@patch("scripts.remediate_vulnerabilities.subprocess.run")
+@patch("scripts.remediate_vulnerabilities.run_license_audit")
+@patch("scripts.remediate_vulnerabilities.run_local_tests")
+@patch("scripts.remediate_vulnerabilities.get_locked_package_version")
+@patch("scripts.remediate_vulnerabilities.run_lock_upgrade")
+@patch("scripts.remediate_vulnerabilities.run_uv_audit")
+def test_remediate_vulnerabilities_incompatible_license_aborts_pr(
+    mock_audit,
+    mock_lock_upgrade,
+    mock_get_version,
+    mock_run_tests,
+    mock_license_audit,
+    mock_sub_run,
+    mock_gh_client_cls,
+    tmp_path: Path,
+):
+    sample_audit = """
+certifi 2026.7.22 has 1 known vulnerability:
+
+- GHSA-6q48-6c7w-9gw2: certifi vulnerability
+  Severity: Critical (CVSS: 9.8)
+  Fixed in: 2026.10.19
+    """
+    mock_audit.side_effect = [(1, sample_audit), (0, "Audit passed")]
+    mock_lock_upgrade.return_value = True
+    mock_get_version.side_effect = ["2026.7.22", "2026.10.19"]
+    mock_run_tests.return_value = (0, "All tests passed")
+    # Simulate license audit failure due to incompatible license
+    mock_license_audit.return_value = (
+        False,
+        "Incompatible license 'Proprietary' detected for package 'certifi'",
+    )
+
+    mock_client = MagicMock()
+    mock_client.has_open_pr_for_package.return_value = False
+    mock_gh_client_cls.return_value = mock_client
+
+    (tmp_path / "SECURITY.md").write_text(
+        "## Vulnerability Exemptions\n", encoding="utf-8"
+    )
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "certifi"\nversion = "2026.7.22"\n', encoding="utf-8"
+    )
+
+    res = remediate_vulnerabilities(
+        repo_root=tmp_path, dry_run=False, token="tok", repo_full="owner/repo"
+    )
+
+    # Remediation should report failure
+    assert res is False
+    # PR should NOT be created
+    mock_client.create_pull_request.assert_not_called()
+    # Maintainer issue should be reported
+    mock_client.report_security_issue.assert_called_once()
+    issue_args = mock_client.report_security_issue.call_args.kwargs
+    assert "Incompatible license" in issue_args["body"]
+    # Lockfile changes should have been reverted
+    revert_calls = [
+        c
+        for c in mock_sub_run.call_args_list
+        if len(c[0]) > 0 and c[0][0] == ["git", "checkout", "uv.lock"]
+    ]
+    assert len(revert_calls) >= 1
+
+
+@patch("scripts.remediate_vulnerabilities.GitHubRemediationClient")
+@patch("scripts.remediate_vulnerabilities.subprocess.run")
+@patch("scripts.remediate_vulnerabilities.run_license_audit")
+@patch("scripts.remediate_vulnerabilities.run_local_tests")
+@patch("scripts.remediate_vulnerabilities.get_locked_package_version")
+@patch("scripts.remediate_vulnerabilities.run_lock_upgrade")
+@patch("scripts.remediate_vulnerabilities.run_uv_audit")
+def test_remediate_vulnerabilities_compliant_license_generates_pr(
+    mock_audit,
+    mock_lock_upgrade,
+    mock_get_version,
+    mock_run_tests,
+    mock_license_audit,
+    mock_sub_run,
+    mock_gh_client_cls,
+    tmp_path: Path,
+):
+    sample_audit = """
+certifi 2026.7.22 has 1 known vulnerability:
+
+- GHSA-6q48-6c7w-9gw2: certifi vulnerability
+  Severity: Critical (CVSS: 9.8)
+  Fixed in: 2026.10.19
+    """
+    mock_audit.side_effect = [(1, sample_audit), (0, "Audit passed")]
+    mock_lock_upgrade.return_value = True
+    mock_get_version.side_effect = ["2026.7.22", "2026.10.19"]
+    mock_run_tests.return_value = (0, "All tests passed")
+    # License audit passes
+    mock_license_audit.return_value = (
+        True,
+        "All package licenses compatible with GPL-3.0.",
+    )
+
+    mock_client = MagicMock()
+    mock_client.has_open_pr_for_package.return_value = False
+    mock_gh_client_cls.return_value = mock_client
+
+    (tmp_path / "SECURITY.md").write_text(
+        "## Vulnerability Exemptions\n", encoding="utf-8"
+    )
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "certifi"\nversion = "2026.7.22"\n', encoding="utf-8"
+    )
+
+    res = remediate_vulnerabilities(
+        repo_root=tmp_path, dry_run=False, token="tok", repo_full="owner/repo"
+    )
+
+    # Remediation should report success
+    assert res is True
+    # PR should be created
+    mock_client.create_pull_request.assert_called_once()

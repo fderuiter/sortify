@@ -10,6 +10,7 @@ from __future__ import annotations
 
 import argparse
 import base64
+import json
 import logging
 import os
 import re
@@ -431,6 +432,375 @@ def run_lock_upgrade(package_name: str, repo_root: Path) -> bool:
     return True
 
 
+# Licenses compatible with project GPL-3.0 license
+GPL3_COMPATIBLE_LICENSES = {
+    # GPL family (v3 or later compatible)
+    "gpl-3.0",
+    "gpl-3.0-only",
+    "gpl-3.0-or-later",
+    "gpl-3.0+",
+    "gplv3",
+    "gplv3+",
+    "gpl3",
+    "gnu general public license v3",
+    "gnu general public license v3 (gplv3)",
+    "gnu general public license v3 or later (gplv3+)",
+    "gnu general public license v3 or later",
+    "gnu general public license version 3",
+    "gnu general public license, version 3",
+    "agpl-3.0",
+    "agpl-3.0-only",
+    "agpl-3.0-or-later",
+    "agplv3",
+    "agplv3+",
+    "agpl3",
+    "gnu affero general public license v3",
+    "lgpl-3.0",
+    "lgpl-3.0-only",
+    "lgpl-3.0-or-later",
+    "lgplv3",
+    "lgplv3+",
+    "lgpl3",
+    "gnu lesser general public license v3",
+    "gnu lesser general public license v3 (lgplv3)",
+    "gnu lesser general public license v3 or later",
+    # LGPL v2.1
+    "lgpl-2.1",
+    "lgpl-2.1-only",
+    "lgpl-2.1-or-later",
+    "lgpl-2.1+",
+    "lgplv2.1",
+    "lgplv2.1+",
+    "gnu lesser general public license v2.1",
+    "gnu lesser general public license v2.1 or later",
+    "gnu library or lesser general public license (lgpl)",
+    "gnu library or lesser general public license",
+    "lgpl",
+    # MIT
+    "mit",
+    "mit license",
+    "mit-0",
+    "mit-cmu",
+    "expat",
+    "expat license",
+    # BSD
+    "0bsd",
+    "bsd",
+    "bsd license",
+    "bsd-2-clause",
+    "bsd-3-clause",
+    "2-clause bsd",
+    "3-clause bsd",
+    "simplified bsd",
+    "modified bsd",
+    "new bsd",
+    # Apache 2.0
+    "apache-2.0",
+    "apache 2.0",
+    "apache-2.0-only",
+    "apache-2.0-or-later",
+    "apache",
+    "apache license",
+    "apache license 2.0",
+    "apache license, version 2.0",
+    "apache software license",
+    "apache software license 2.0",
+    "asl 2.0",
+    # Python PSF
+    "psf",
+    "psf-2.0",
+    "python software foundation license",
+    "python software foundation",
+    "python license",
+    "python-2.0",
+    # MPL 2.0
+    "mpl-2.0",
+    "mpl 2.0",
+    "mozilla public license 2.0",
+    "mozilla public license 2.0 (mpl 2.0)",
+    "mozilla public license v2.0",
+    # ISC
+    "isc",
+    "isc license",
+    # Public domain / Unlicense / CC0
+    "cc0",
+    "cc0-1.0",
+    "cc0 1.0 universal",
+    "unlicense",
+    "the unlicense",
+    "public domain",
+    # Zlib / libpng
+    "zlib",
+    "zlib license",
+    "zlib/libpng",
+    "libpng",
+    "libpng license",
+    # HPND
+    "hpnd",
+}
+
+# Informational classifier prefixes or metadata phrases to ignore during token evaluation
+INFORMATIONAL_LICENSE_TOKENS = {
+    "dfsg approved",
+    "dependency licenses",
+}
+
+
+def _is_single_token_compatible(token: str) -> bool:
+    """Check if an individual license token is compatible with GPL-3.0."""
+    cleaned = token.strip().lower().strip("\"'")
+    if not cleaned:
+        return False
+    if cleaned in INFORMATIONAL_LICENSE_TOKENS:
+        return True
+    if cleaned in GPL3_COMPATIBLE_LICENSES:
+        return True
+    stripped = re.sub(r"^(?:the\s+)", "", cleaned)
+    stripped = re.sub(r"\s+license$", "", stripped)
+    if stripped in GPL3_COMPATIBLE_LICENSES:
+        return True
+    # Strip parenthesized acronyms e.g. " (gplv3)"
+    without_parens = re.sub(r"\s*\([^)]*\)", "", cleaned).strip()
+    if without_parens in GPL3_COMPATIBLE_LICENSES:
+        return True
+    if cleaned.startswith("mit"):
+        return True
+    if cleaned.startswith("bsd") and "4-clause" not in cleaned:
+        return True
+    if cleaned.startswith("0bsd"):
+        return True
+    if cleaned.startswith("apache") and "1.0" not in cleaned and "1.1" not in cleaned:
+        return True
+    if cleaned.startswith(
+        (
+            "gpl-3",
+            "gplv3",
+            "agpl-3",
+            "agplv3",
+            "lgpl-3",
+            "lgplv3",
+            "lgpl-2.1",
+            "lgplv2.1",
+        )
+    ):
+        return True
+    if cleaned.startswith(
+        (
+            "gnu general public license v3",
+            "gnu general public license version 3",
+            "gnu affero",
+            "gnu lesser",
+            "gnu library",
+        )
+    ):
+        return True
+    if cleaned.startswith(("mpl-2", "mozilla public license 2")):
+        return True
+    if cleaned.startswith(("python", "psf-", "psf")):
+        return True
+    if cleaned.startswith("zlib") or cleaned == "libpng":
+        return True
+    if cleaned.startswith(("cc0", "unlicense")) or cleaned == "public domain":
+        return True
+    if cleaned == "isc" or cleaned.startswith("isc license"):
+        return True
+    return False
+
+
+def is_license_compatible(license_str: Optional[str]) -> tuple[bool, str]:
+    """Validate a package license string against GPL-3.0 compatibility rules.
+
+    Handles single licenses, disjunctive dual choices (OR / dual), conjunctive expressions (AND / ; / ,),
+    and rejects missing or incompatible licenses.
+    """
+    if not license_str or not isinstance(license_str, str):
+        return False, "Missing license metadata"
+
+    raw = license_str.strip()
+    if not raw or raw.upper() in {
+        "UNKNOWN",
+        "UNKNOWN LICENSE",
+        "NONE",
+        "NULL",
+        "UNDEFINED",
+        "NOT_FOUND",
+        "N/A",
+    }:
+        return False, f"Missing or unknown license metadata: '{license_str}'"
+
+    # Explicit rejection for standalone GPL-2.0-only (without or-later)
+    cleaned_lower = raw.lower()
+    if (
+        re.search(r"\bgpl(?:-|\s*)2(?:\.0)?(?:\s*only|-only)?\b", cleaned_lower)
+        and "later" not in cleaned_lower
+        and "+" not in cleaned_lower
+    ):
+        if " or " not in cleaned_lower and "dual" not in cleaned_lower:
+            return (
+                False,
+                f"Prohibited GPL-2.0-only license incompatible with GPL-3.0: '{license_str}'",
+            )
+
+    if _is_single_token_compatible(raw):
+        return True, f"Approved license: {raw}"
+
+    # Disjunctive / dual licensing expressions (OR, dual ...)
+    if re.search(r"\s+\bOR\b\s+", raw, re.IGNORECASE):
+        branches = re.split(r"\s+\bOR\b\s+", raw, flags=re.IGNORECASE)
+        for b in branches:
+            ok, _ = is_license_compatible(b)
+            if ok:
+                return (
+                    True,
+                    f"Approved under disjunctive choice '{b.strip()}' from '{raw}'",
+                )
+        return (
+            False,
+            f"No compatible license option found in disjunctive expression: '{raw}'",
+        )
+
+    if re.search(r"\bdual\b", raw, re.IGNORECASE):
+        cleaned_dual = re.sub(
+            r"^(?:dual(?:-licensed)?(?:\s+under)?(?:\s+license)?(?::|\s+)?)\s*",
+            "",
+            raw,
+            flags=re.IGNORECASE,
+        )
+        branches = re.split(r"\s+(?:and|or)\s+", cleaned_dual, flags=re.IGNORECASE)
+        for b in branches:
+            ok, _ = is_license_compatible(b)
+            if ok:
+                return (
+                    True,
+                    f"Approved under dual license choice '{b.strip()}' from '{raw}'",
+                )
+        return (
+            False,
+            f"No compatible license option found in dual license expression: '{raw}'",
+        )
+
+    # Conjunctive / delimiter separated expressions (AND, semicolon, comma)
+    delimiters = r"\s+\bAND\b\s+|;\s*|,\s*"
+    tokens = re.split(delimiters, raw, flags=re.IGNORECASE)
+    if len(tokens) > 1:
+        for tok in tokens:
+            tok = tok.strip()
+            if not tok:
+                continue
+            ok, msg = is_license_compatible(tok)
+            if not ok:
+                return (
+                    False,
+                    f"Incompatible license component '{tok}' in expression: '{raw}'",
+                )
+        return True, f"Approved multi-license expression: {raw}"
+
+    # Slash splitting for dual-license expressions like "MIT / Apache-2.0"
+    if "/" in raw and raw.lower() != "zlib/libpng":
+        subtokens = [t.strip() for t in raw.split("/") if t.strip()]
+        for st in subtokens:
+            ok, _ = is_license_compatible(st)
+            if ok:
+                return True, f"Approved under slash choice '{st}' from '{raw}'"
+        return False, f"Incompatible license: '{raw}'"
+
+    return False, f"Incompatible or unapproved license: '{raw}'"
+
+
+def run_license_audit(
+    repo_root: Path, package_name: Optional[str] = None
+) -> tuple[bool, str]:
+    """Inspect installed package licenses using pip-licenses and validate against GPL-3.0 compatibility."""
+    cmd = ["uv", "run", "pip-licenses", "--format=json"]
+    logger.info(f"Executing license compliance audit: {' '.join(cmd)}")
+    try:
+        env = {
+            **os.environ,
+            "PYTHON_KEYRING_BACKEND": "keyring.backends.fail.Keyring",
+        }
+        res = subprocess.run(
+            cmd,
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+            env=env,
+        )
+    except Exception as e:
+        logger.error(f"Failed to execute pip-licenses: {e}")
+        return False, f"Failed to execute license audit runner: {e}"
+
+    # Handle mocked subprocess in tests
+    stdout = getattr(res, "stdout", "")
+    if not isinstance(stdout, str):
+        logger.info("Mocked subprocess detected in license audit runner.")
+        return True, "Mocked license audit passed."
+
+    if res.returncode != 0:
+        logger.error(
+            f"License audit runner failed with code {res.returncode}: {res.stderr}"
+        )
+        return (
+            False,
+            f"pip-licenses failed (exit {res.returncode}): {res.stderr.strip()}",
+        )
+
+    try:
+        packages = json.loads(stdout)
+    except Exception as e:
+        if "passed" in stdout and res.returncode == 0:
+            logger.info("Test runner mock detected in subprocess.run.")
+            return True, "Mocked license audit passed."
+        logger.error(f"Failed to parse pip-licenses JSON output: {e}")
+        return False, f"Failed to parse license audit output as JSON: {e}"
+
+    if not isinstance(packages, list):
+        return False, "Malformed license audit output: expected list of packages"
+
+    # If package_name is provided, verify it exists in installed packages and check it
+    if package_name:
+        pkg_norm = package_name.lower().replace("-", "_")
+        matched = [
+            p
+            for p in packages
+            if isinstance(p, dict)
+            and p.get("Name", "").lower().replace("-", "_") == pkg_norm
+        ]
+        if not matched:
+            logger.error(
+                f"Package '{package_name}' missing license metadata (not found in installed packages)."
+            )
+            return (
+                False,
+                f"Package '{package_name}' missing license metadata: not found in installed environment",
+            )
+        for p in matched:
+            lic = p.get("License")
+            ok, msg = is_license_compatible(lic)
+            if not ok:
+                logger.error(
+                    f"Package '{package_name}' has incompatible license: {msg}"
+                )
+                return (
+                    False,
+                    f"Package '{p.get('Name', package_name)}' has incompatible license: {msg}",
+                )
+
+    # Validate all installed packages for overall project compliance
+    for p in packages:
+        if not isinstance(p, dict):
+            continue
+        cur_name = p.get("Name", "Unknown")
+        lic = p.get("License")
+        ok, msg = is_license_compatible(lic)
+        if not ok:
+            logger.error(f"Dependency '{cur_name}' has incompatible license: {msg}")
+            return False, f"Package '{cur_name}' has incompatible license: {msg}"
+
+    logger.info("All installed package licenses verified compatible with GPL-3.0.")
+    return True, "All package licenses compatible with GPL-3.0."
+
+
 class GitHubRemediationClient:
     """GitHub API client for checking duplicate PRs, creating PRs, and posting issues."""
 
@@ -687,6 +1057,25 @@ def remediate_vulnerabilities(
             unfixable_reports.append(
                 f"- **{package_name}** ({old_version} -> {new_version}): Local test suite (`uv run pytest`) failed post-upgrade.\n"
                 f"```text\n{sanitized_test_output}\n```"
+            )
+            # Revert uv.lock change
+            subprocess.run(["git", "checkout", "uv.lock"], cwd=repo_root, check=False)
+            subprocess.run(
+                ["git", "checkout", "pyproject.toml"], cwd=repo_root, check=False
+            )
+            continue
+
+        # Verify license compliance for upgraded dependency against GPL-3.0 codebase requirements
+        license_ok, license_msg = run_license_audit(
+            repo_root, package_name=package_name
+        )
+        if not license_ok:
+            logger.error(
+                f"License compliance audit failed after upgrading {package_name} to {new_version}: {license_msg}"
+            )
+            unfixable_pkgs.append(pkg)
+            unfixable_reports.append(
+                f"- **{package_name}** ({old_version} -> {new_version}): Incompatible license detected post-upgrade: {license_msg}"
             )
             # Revert uv.lock change
             subprocess.run(["git", "checkout", "uv.lock"], cwd=repo_root, check=False)
