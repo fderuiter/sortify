@@ -1558,3 +1558,44 @@ def test_user_guide_rule_placement_cross_reference():
     assert "imported" in step3_line.lower()
     assert "policies" in step3_line.lower()
     assert "[Rule Migration and Export](#rule-migration-and-export)" in step3_line
+
+
+def test_user_guide_active_rule_manager_section():
+    """Verify that docs/user_guide.md documents Active Rule Manager modal, shortcuts, and launch workflows."""
+    guide_path = Path("docs/user_guide.md")
+    assert guide_path.exists(), "docs/user_guide.md must exist"
+
+    content = guide_path.read_text(encoding="utf-8")
+
+    # Verify review step mentions F2 for rename and Ctrl+R for active rule manager
+    review_section = content.split("## Sorting a Folder")[1].split("\n## ")[0]
+    step3_line = next(
+        (line for line in review_section.splitlines() if line.startswith("3.")), None
+    )
+    assert step3_line is not None, "Missing review step 3 in Sorting a Folder"
+    assert "[F2]" in step3_line
+    assert "[Ctrl+R]" in step3_line
+    assert "active rule manager" in step3_line.lower()
+
+    # Active Rule Manager subsection & anchor
+    assert "### Active Rule Manager" in content
+    assert '<a id="active-rule-manager"></a>' in content
+
+    # Launch methods
+    assert "[Ctrl+R]" in content
+    assert "#btn-open-rules" in content
+
+    # Shortcuts and controls
+    assert "#rules-table" in content
+    assert "#btn-toggle-rule" in content
+    assert "#btn-add-rule" in content
+    assert "#btn-edit-rule" in content
+    assert "#btn-delete-rule" in content
+    assert "#btn-close-rules" in content
+    assert "[Space]" in content
+    assert "[Enter]" in content
+    assert "[Delete]" in content
+    assert "[Esc]" in content
+
+    # Focus prerequisite / edge cases
+    assert "text input" in content.lower()

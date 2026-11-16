@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 from app.core.domain_contracts import DictCompatMixin
 from app.core.exceptions import InvalidStateTransitionError
 from app.core.forensic_scanner import ForensicScanner
+from app.core.lifecycle import LifecycleTelemetryMixin
 from app.core.mover import get_safe_path
 from app.core.path_utils import safe_relpath, sanitize_name
 from app.core.progress import ProgressUpdate, emit_progress
@@ -47,6 +48,7 @@ _VALID_CRO_TRANSITIONS: dict[CROPipelineState, set[CROPipelineState]] = {
     CROPipelineState.IDLE: {
         CROPipelineState.SCANNING,
         CROPipelineState.CANCELLED,
+        CROPipelineState.FAILED,
     },
     CROPipelineState.SCANNING: {
         CROPipelineState.DISAMBIGUATING,
@@ -109,7 +111,7 @@ class MasterPipelineResult(DictCompatMixin, BaseModel):
     chain_of_custody_manifest_path: str = ""
 
 
-class CROMultiStudyPipeline:
+class CROMultiStudyPipeline(LifecycleTelemetryMixin):
     """Executes end-to-end multi-study forensic ingestion and organization."""
 
     _VALID_CRO_TRANSITIONS = _VALID_CRO_TRANSITIONS
@@ -120,7 +122,7 @@ class CROMultiStudyPipeline:
         self.scanner = ForensicScanner()
         self.disambiguator = StudyDisambiguator()
         self.compliance_engine = ClinicalComplianceEngine()
-        self._state_lock = threading.Lock()
+        self._state_lock = threading.RLock()
         self._state: CROPipelineState = CROPipelineState.IDLE
         self.error_message: str | None = None
 
@@ -141,7 +143,11 @@ class CROMultiStudyPipeline:
             raise InvalidStateTransitionError(
                 f"Invalid state transition from {self._state} to {new_state}."
             )
+        old_state = self._state
         self._state = new_state
+        self._notify_lifecycle_listeners(
+            old_state, new_state, event_type="CRO_PIPELINE_STATE_CHANGED"
+        )
 
     def _transition_to(self, new_state: CROPipelineState | str) -> None:
         with self._state_lock:
@@ -508,10 +514,7 @@ class CROMultiStudyPipeline:
                     CROPipelineState.COMPLETED,
                     CROPipelineState.FAILED,
                 ):
-                    try:
-                        self._transition_to_locked(CROPipelineState.FAILED)
-                    except Exception:  # noqa: BLE001
-                        self._state = CROPipelineState.FAILED
+                    self._transition_to_locked(CROPipelineState.FAILED)
             self.error_message = str(e)
             raise
         finally:
