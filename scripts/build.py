@@ -3,6 +3,31 @@
 import os
 import sys
 
+from app.core.resilient_file_ops import resilient_file_hash
+
+PINNED_HASHES = {
+    "generative_naming": {
+        "tokenizer_config.json": "9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3",
+        "vocab.txt": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
+        "config.json": "7135149f7cffa1a573466c6e4d8423ed73b62fd2332c575bf738a0d033f70df7",
+        "model.onnx": "759c3cd2b7fe7e93933ad23c4c9181b7396442a2ed746ec7c1d46192c469c46e",
+        "version.txt": "92521fc3cbd964bdc9f584a991b89fddaa5754ed1cc96d6d42445338669c1305",
+        "special_tokens_map.json": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
+        "tokenizer.json": "da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0",
+    },
+    "model_download": {
+        "model.onnx": "759c3cd2b7fe7e93933ad23c4c9181b7396442a2ed746ec7c1d46192c469c46e",
+    },
+    "easyocr": {
+        "english_g2.pth": "e2272681d9d67a04e2dff396b6e95077bc19001f8f6d3593c307b9852e1c29e8",
+        "craft_mlt_25k.pth": "4a5efbfb48b4081100544e75e1e2b57f8de3d84f213004b14b85fd4b3748db17",
+    },
+    "florence-2": {
+        "config.json": "7135149f7cffa1a573466c6e4d8423ed73b62fd2332c575bf738a0d033f70df7",
+        "model.safetensors": "759c3cd2b7fe7e93933ad23c4c9181b7396442a2ed746ec7c1d46192c469c46e",
+    },
+}
+
 
 def download_file(
     url,
@@ -10,16 +35,22 @@ def download_file(
     timeout=30.0,
     max_retries=3,
     backoff_factor=1.0,
+    expected_sha256=None,
 ):
-    """Download a file from url to dest_path with explicit socket timeouts, automatic retry logic, and cleanup on failure.
+    """Download a file from url to dest_path with explicit socket timeouts, automatic retry logic, cryptographic hash verification, and cleanup on failure.
 
     Uses Python standard library utilities alone.
     """
+    import hashlib
     import shutil
     import time
     import urllib.error
     import urllib.request
     from pathlib import Path
+
+    if isinstance(timeout, str) and expected_sha256 is None:
+        expected_sha256 = timeout
+        timeout = 30.0
 
     dest_path = Path(dest_path)
     dest_path.parent.mkdir(parents=True, exist_ok=True)
@@ -40,6 +71,17 @@ def download_file(
                 open(dest_path, "wb") as out_file,
             ):
                 shutil.copyfileobj(response, out_file)
+
+            if expected_sha256:
+                hasher = hashlib.sha256()
+                with open(dest_path, "rb") as f:
+                    while chunk := f.read(65536):
+                        hasher.update(chunk)
+                actual_hash = hasher.hexdigest()
+                if actual_hash.lower() != expected_sha256.lower():
+                    raise ValueError(
+                        f"Hash mismatch for {dest_path}: expected {expected_sha256}, got {actual_hash}"
+                    )
             return
         except BaseException as err:
             last_exception = err if isinstance(err, Exception) else Exception(str(err))
@@ -64,10 +106,35 @@ def download_file(
         raise RuntimeError(err_desc)
 
 
-def download_and_prepare_weights():
-    """Ensure that the build process downloads and bundles all necessary model weights."""
-    import shutil
+def safe_extract_archive(zip_path, extract_to):
+    """Safely extract a ZIP archive while enforcing path traversal guards using safe_extract_path."""
     import zipfile
+    from pathlib import Path
+
+    from app.core.path_utils import safe_extract_path
+
+    extract_to_path = Path(extract_to).resolve()
+    extract_to_path.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(zip_path, "r") as zip_ref:
+        # Pre-validate all members before writing any files to disk
+        for member in zip_ref.infolist():
+            member_path = member.filename
+            safe_extract_path(extract_to_path, member_path, allow_same_dir=True)
+            normalized_parts = Path(member_path.replace("\\", "/")).parts
+            if ".." in normalized_parts:
+                raise ValueError(
+                    f"Directory traversal detected in archive member: '{member_path}'"
+                )
+
+        # Extract members once all paths are verified safe
+        for member in zip_ref.infolist():
+            zip_ref.extract(member, extract_to_path)
+
+
+def download_and_prepare_weights():
+    """Ensure that the build process downloads, verifies, and bundles all necessary model weights."""
+    import shutil
     from pathlib import Path
 
     print("Preparing and downloading model weights for offline execution...")
@@ -93,12 +160,26 @@ def download_and_prepare_weights():
 
     for name, url in files_to_download.items():
         dest = model_dir / name
-        if not dest.exists():
-            download_file(url, dest)
+        expected_hash = PINNED_HASHES["generative_naming"][name]
+        if dest.exists():
+            current_hash = resilient_file_hash(dest)
+            if current_hash == expected_hash:
+                continue
+            print(
+                f"Existing model file {dest} hash mismatch ({current_hash} != {expected_hash}). Re-downloading..."
+            )
+            dest.unlink()
+        download_file(url, dest, expected_sha256=expected_hash)
 
     version_txt = model_dir / "version.txt"
     if not version_txt.exists():
         version_txt.write_text("1.0.0", encoding="utf-8")
+    expected_version_hash = PINNED_HASHES["generative_naming"]["version.txt"]
+    actual_version_hash = resilient_file_hash(version_txt)
+    if actual_version_hash != expected_version_hash:
+        raise ValueError(
+            f"Hash mismatch for version.txt: expected {expected_version_hash}, got {actual_version_hash}"
+        )
 
     # 2. Download/prepare EasyOCR weights
     easyocr_sources = {
@@ -109,32 +190,73 @@ def download_and_prepare_weights():
     home_easyocr_dir = Path.home() / ".EasyOCR" / "model"
     for name, url in easyocr_sources.items():
         dest = easyocr_dir / name
+        expected_hash = PINNED_HASHES["easyocr"][name]
         if dest.exists():
-            continue
+            current_hash = resilient_file_hash(dest)
+            if current_hash == expected_hash:
+                continue
+            print(
+                f"Existing easyocr file {dest} hash mismatch ({current_hash} != {expected_hash}). Re-fetching..."
+            )
+            dest.unlink()
+
         # Try local cache copy first
         cache_src = home_easyocr_dir / name
         if cache_src.exists():
-            print(f"Copying cached easyocr model {name} from {cache_src}...")
+            print(f"Validating cached easyocr model {name} from {cache_src}...")
+            cache_hash = resilient_file_hash(cache_src)
+            if cache_hash != expected_hash:
+                raise ValueError(
+                    f"Cached asset hash mismatch for {cache_src}: expected {expected_hash}, got {cache_hash}"
+                )
+            print(f"Copying verified cached easyocr model {name} from {cache_src}...")
             shutil.copy2(cache_src, dest)
         else:
             zip_dest = easyocr_dir / f"{name}.zip"
-            download_file(url, zip_dest)
-            print(f"Extracting {zip_dest}...")
-            with zipfile.ZipFile(zip_dest, "r") as zip_ref:
-                zip_ref.extractall(easyocr_dir)
-            zip_dest.unlink()
+            try:
+                download_file(url, zip_dest)
+                print(f"Extracting {zip_dest}...")
+                safe_extract_archive(zip_dest, easyocr_dir)
+                if not dest.exists():
+                    raise FileNotFoundError(
+                        f"Expected model file {dest} not found after extracting {zip_dest}"
+                    )
+                extracted_hash = resilient_file_hash(dest)
+                if extracted_hash != expected_hash:
+                    dest.unlink()
+                    raise ValueError(
+                        f"Extracted archive hash mismatch for {name}: expected {expected_hash}, got {extracted_hash}"
+                    )
+            finally:
+                if zip_dest.exists():
+                    zip_dest.unlink()
 
-    # 3. Compute SHA-256 hashes and write to app/core/hashes_registry.py
-    from app.core.resilient_file_ops import resilient_file_hash
-
+    # 3. Validate all downloaded weights against pinned hashes before writing registry
     hashes = {"generative_naming": {}, "easyocr": {}}
-    for item in model_dir.glob("*"):
-        if item.is_file():
-            hashes["generative_naming"][item.name] = resilient_file_hash(item)
+    for category, file_dir in [
+        ("generative_naming", model_dir),
+        ("easyocr", easyocr_dir),
+    ]:
+        for item in file_dir.glob("*"):
+            if item.is_file():
+                actual_hash = resilient_file_hash(item)
+                expected_hash = PINNED_HASHES.get(category, {}).get(item.name)
+                if expected_hash is None or actual_hash != expected_hash:
+                    raise ValueError(
+                        f"Computed file hash does not match pinned registry hash for {category}/{item.name}: "
+                        f"expected {expected_hash}, got {actual_hash}"
+                    )
+                hashes[category][item.name] = actual_hash
 
-    for item in easyocr_dir.glob("*"):
-        if item.is_file():
-            hashes["easyocr"][item.name] = resilient_file_hash(item)
+        for expected_file, expected_hash in PINNED_HASHES[category].items():
+            if expected_file not in hashes[category]:
+                raise ValueError(
+                    f"Missing required model weight in {category}: {expected_file}"
+                )
+
+    registry_data = dict(PINNED_HASHES)
+    registry_data["generative_naming"] = dict(hashes["generative_naming"])
+    registry_data["easyocr"] = dict(hashes["easyocr"])
 
     hashes_registry_path = Path("app/core/hashes_registry.py")
     hashes_registry_path.parent.mkdir(parents=True, exist_ok=True)
@@ -143,9 +265,9 @@ def download_and_prepare_weights():
             '"""Registry containing expected hashes of the embedded model weights."""\n\n'
         )
         f.write("# This file is generated during the build process.\n")
-        f.write(f"HASHES = {repr(hashes)}\n")
+        f.write(f"HASHES = {repr(registry_data)}\n")
     print(
-        f"Successfully prepared weights and wrote model hashes to {hashes_registry_path}"
+        f"Successfully prepared weights and verified model hashes against pinned registry: {hashes_registry_path}"
     )
     package_sidecar_models()
 
