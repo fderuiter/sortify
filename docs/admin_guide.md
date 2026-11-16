@@ -4,7 +4,7 @@ This document is automatically generated. Do not edit manually.
 
 ## Configuration Parameters
 
-The following parameters are extracted directly from the application's configuration schema (`app.config.Settings`). Set them with `smart-autosorter config --set NAME VALUE`, in `~/.autosorter/settings.json`, or as an environment variable with the `SORTIFY_` prefix (for example `SORTIFY_MAX_FOLDERS`).
+The following parameters are extracted directly from the application's configuration schema (`app.config.Settings`). Set them with `smart-autosorter config --set NAME VALUE`, in `~/.autosorter/settings.json`, or as an environment variable with the `SORTIFY_` prefix (for example `SORTIFY_MAX_FOLDERS`). For recovering interrupted sorting sessions, reconciling headless transaction ledgers, or resolving stale lock files, see the [Ledger Reconciliation Runbook](runbooks/ledger_reconciliation.md).
 
 ### `CONTEXTUAL_RENAMING`
 - **Type**: `bool`
@@ -292,6 +292,7 @@ To resolve a blocked-save state, follow these recovery options:
 1. **Check Warning Banners**: Review the detailed list of validation errors displayed under the warning banner in the application settings dialog.
 2. **Manually Edit Settings**: Open the local configuration file (`~/.autosorter/settings.json`) and correct the invalid values or formats.
 3. **Reset Configuration**: Delete the invalid `settings.json` file or click the reset button to restore default, valid configuration values, which will immediately re-enable automatic saving.
+4. **Ledger & Session Recovery**: For recovering interrupted batch sorting sessions or resolving stale transaction records, refer to the dedicated [Ledger Reconciliation Runbook](runbooks/ledger_reconciliation.md).
 
 ## Maintenance Scripts and CLI Commands
 
@@ -698,6 +699,8 @@ options:
   -h, --help            show this help message and exit
   --json                Output response in structured JSON format
 ```
+
+For comprehensive operational procedures, headless transaction reconciliation workflows, state transition handling, and stale daemon lock cleanup, refer to the dedicated [Ledger Reconciliation Runbook](runbooks/ledger_reconciliation.md).
 
 ##### `quarantine`
 ```text

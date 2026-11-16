@@ -53,7 +53,7 @@ If Sortify was closed while it was moving files, the next start shows **Interrup
 - **Rollback** undoes the moves that session already made, using its ledger, then rescans the folder. If the rollback fails, for example because of a permission error, the session files are kept so you can try again.
 - **Clean** deletes the session's working files and leaves your files where they are now. Clean also deletes the session's rollback journal, so the dialog can no longer undo the moves it had already made. Choose Rollback if you're not sure.
 
-From the command line, `smart-autosorter undo --list` shows recent sessions and `smart-autosorter undo --session-id ID` rolls one back.
+From the command line, `smart-autosorter undo --list` shows recent sessions and `smart-autosorter undo --session-id ID` rolls one back. For automated headless batch recovery, transaction state transitions, or CLI reconciliation without interactive prompts, see the dedicated [Ledger Reconciliation Runbook](runbooks/ledger_reconciliation.md).
 
 ### Multi-session recovery
 
@@ -65,6 +65,8 @@ You can manage all sessions at once or take action on individual sessions:
 - **Resume** (`#btn-resume`): Continues sorting for the selected session while retaining remaining sessions for subsequent recovery.
 - **Rollback** (`#btn-rollback`): Rolls back only the selected session.
 - **Clean** (`#btn-clean`): Cleans working files for the selected session only, allowing selective recovery of remaining sessions.
+
+For authoritative headless batch procedures, CLI commands (`smart-autosorter ledger status`, `reconcile`, `purge`, `export`), and resolving stale daemon locks (`.autosorter.pid` / `.autosorter.sock`), refer to the [Operational Runbook for Ledger Reconciliation](runbooks/ledger_reconciliation.md).
 
 ## DropZone errors
 

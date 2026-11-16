@@ -32,6 +32,8 @@ nav:
     - Multi-Format Text Extraction: tutorials/02_multi_format_text_extraction.md
     - Virtual Sorting Verification: tutorials/03_virtual_sorting_verification.md
   - Troubleshooting: troubleshooting.md
+  - Operational Runbooks:
+    - Ledger Reconciliation: runbooks/ledger_reconciliation.md
   - Developer Reference:
     - API Reference: api_reference.md
     - Architecture & Internals: architecture.md
