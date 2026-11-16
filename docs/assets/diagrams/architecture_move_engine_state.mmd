@@ -1,0 +1,42 @@
+stateDiagram-v2
+    [*] --> IDLE: Engine Initialized
+    IDLE --> PREPARING: Start Move Operations
+    PREPARING --> MOVING_CHUNK: Begin Chunk Transfers
+    PREPARING --> RESOLVING_LINKS: No File Chunks - Link Phase
+    PREPARING --> CLEANING_DIRS: No Moves - Directory Cleanup
+    PREPARING --> COMPLETED: Zero-Op Plan Execution
+    PREPARING --> CANCELLING: Cancel Requested
+    PREPARING --> CANCELLED: Direct Cancellation
+    PREPARING --> FAILED: Pre-flight Validation Error
+    MOVING_CHUNK --> MOVING_CHUNK: Transfer Next Batch
+    MOVING_CHUNK --> RESOLVING_LINKS: All Chunks Moved
+    MOVING_CHUNK --> CLEANING_DIRS: No Links to Resolve
+    MOVING_CHUNK --> COMPLETED: Moves Finished - Skip Cleanup
+    MOVING_CHUNK --> CANCELLING: Cancel Requested
+    MOVING_CHUNK --> CANCELLED: Direct Cancellation
+    MOVING_CHUNK --> FAILED: IO or Permission Error
+    RESOLVING_LINKS --> CLEANING_DIRS: Links Resolved
+    RESOLVING_LINKS --> COMPLETED: Resolution Complete - No Cleanup
+    RESOLVING_LINKS --> CANCELLING: Cancel Requested
+    RESOLVING_LINKS --> CANCELLED: Direct Cancellation
+    RESOLVING_LINKS --> FAILED: Broken Link Error
+    CLEANING_DIRS --> COMPLETED: Empty Directories Pruned
+    CLEANING_DIRS --> CANCELLING: Cancel Requested
+    CLEANING_DIRS --> CANCELLED: Direct Cancellation
+    CLEANING_DIRS --> FAILED: Prune Directory Error
+    CANCELLING --> CANCELLED: Cleanup Completed on Cancel
+    CANCELLING --> FAILED: Error During Cancellation
+    CANCELLED --> IDLE: Reset Engine State
+    CANCELLED --> PREPARING: Restart Execution
+    CANCELLED --> [*]: Engine Shutdown
+    COMPLETED --> IDLE: Reset Engine State
+    COMPLETED --> PREPARING: New Move Operation
+    COMPLETED --> [*]: Engine Shutdown
+    FAILED --> ROLLING_BACK: Automatic or Manual Rollback
+    FAILED --> IDLE: Reset Engine State
+    FAILED --> PREPARING: Retry Failed Move
+    ROLLING_BACK --> ROLLED_BACK: Rollback Completed Successfully
+    ROLLING_BACK --> FAILED: Rollback Operation Fault
+    ROLLED_BACK --> IDLE: Reset Engine State
+    ROLLED_BACK --> PREPARING: New Move Operation
+    ROLLED_BACK --> [*]: Engine Shutdown

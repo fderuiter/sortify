@@ -2599,6 +2599,476 @@ def _create_architecture_watchdog_state_spec() -> StateDiagramSpec:
     )
 
 
+def _create_architecture_move_engine_state_spec() -> StateDiagramSpec:
+    """Build architecture_move_engine_state diagram specification for MoveEngineState."""
+    return StateDiagramSpec(
+        id="architecture_move_engine_state",
+        title="Async Move Engine Lifecycle State Machine",
+        diagram_type="stateDiagram-v2",
+        transitions=[
+            StateTransition(source="[*]", target="IDLE", label="Engine Initialized"),
+            StateTransition(
+                source="IDLE", target="PREPARING", label="Start Move Operations"
+            ),
+            StateTransition(
+                source="PREPARING", target="MOVING_CHUNK", label="Begin Chunk Transfers"
+            ),
+            StateTransition(
+                source="PREPARING",
+                target="RESOLVING_LINKS",
+                label="No File Chunks - Link Phase",
+            ),
+            StateTransition(
+                source="PREPARING",
+                target="CLEANING_DIRS",
+                label="No Moves - Directory Cleanup",
+            ),
+            StateTransition(
+                source="PREPARING", target="COMPLETED", label="Zero-Op Plan Execution"
+            ),
+            StateTransition(
+                source="PREPARING", target="CANCELLING", label="Cancel Requested"
+            ),
+            StateTransition(
+                source="PREPARING", target="CANCELLED", label="Direct Cancellation"
+            ),
+            StateTransition(
+                source="PREPARING", target="FAILED", label="Pre-flight Validation Error"
+            ),
+            StateTransition(
+                source="MOVING_CHUNK",
+                target="MOVING_CHUNK",
+                label="Transfer Next Batch",
+            ),
+            StateTransition(
+                source="MOVING_CHUNK",
+                target="RESOLVING_LINKS",
+                label="All Chunks Moved",
+            ),
+            StateTransition(
+                source="MOVING_CHUNK",
+                target="CLEANING_DIRS",
+                label="No Links to Resolve",
+            ),
+            StateTransition(
+                source="MOVING_CHUNK",
+                target="COMPLETED",
+                label="Moves Finished - Skip Cleanup",
+            ),
+            StateTransition(
+                source="MOVING_CHUNK", target="CANCELLING", label="Cancel Requested"
+            ),
+            StateTransition(
+                source="MOVING_CHUNK", target="CANCELLED", label="Direct Cancellation"
+            ),
+            StateTransition(
+                source="MOVING_CHUNK", target="FAILED", label="IO or Permission Error"
+            ),
+            StateTransition(
+                source="RESOLVING_LINKS", target="CLEANING_DIRS", label="Links Resolved"
+            ),
+            StateTransition(
+                source="RESOLVING_LINKS",
+                target="COMPLETED",
+                label="Resolution Complete - No Cleanup",
+            ),
+            StateTransition(
+                source="RESOLVING_LINKS", target="CANCELLING", label="Cancel Requested"
+            ),
+            StateTransition(
+                source="RESOLVING_LINKS",
+                target="CANCELLED",
+                label="Direct Cancellation",
+            ),
+            StateTransition(
+                source="RESOLVING_LINKS", target="FAILED", label="Broken Link Error"
+            ),
+            StateTransition(
+                source="CLEANING_DIRS",
+                target="COMPLETED",
+                label="Empty Directories Pruned",
+            ),
+            StateTransition(
+                source="CLEANING_DIRS", target="CANCELLING", label="Cancel Requested"
+            ),
+            StateTransition(
+                source="CLEANING_DIRS", target="CANCELLED", label="Direct Cancellation"
+            ),
+            StateTransition(
+                source="CLEANING_DIRS", target="FAILED", label="Prune Directory Error"
+            ),
+            StateTransition(
+                source="CANCELLING",
+                target="CANCELLED",
+                label="Cleanup Completed on Cancel",
+            ),
+            StateTransition(
+                source="CANCELLING", target="FAILED", label="Error During Cancellation"
+            ),
+            StateTransition(
+                source="CANCELLED", target="IDLE", label="Reset Engine State"
+            ),
+            StateTransition(
+                source="CANCELLED", target="PREPARING", label="Restart Execution"
+            ),
+            StateTransition(source="CANCELLED", target="[*]", label="Engine Shutdown"),
+            StateTransition(
+                source="COMPLETED", target="IDLE", label="Reset Engine State"
+            ),
+            StateTransition(
+                source="COMPLETED", target="PREPARING", label="New Move Operation"
+            ),
+            StateTransition(source="COMPLETED", target="[*]", label="Engine Shutdown"),
+            StateTransition(
+                source="FAILED",
+                target="ROLLING_BACK",
+                label="Automatic or Manual Rollback",
+            ),
+            StateTransition(source="FAILED", target="IDLE", label="Reset Engine State"),
+            StateTransition(
+                source="FAILED", target="PREPARING", label="Retry Failed Move"
+            ),
+            StateTransition(
+                source="ROLLING_BACK",
+                target="ROLLED_BACK",
+                label="Rollback Completed Successfully",
+            ),
+            StateTransition(
+                source="ROLLING_BACK", target="FAILED", label="Rollback Operation Fault"
+            ),
+            StateTransition(
+                source="ROLLED_BACK", target="IDLE", label="Reset Engine State"
+            ),
+            StateTransition(
+                source="ROLLED_BACK", target="PREPARING", label="New Move Operation"
+            ),
+            StateTransition(
+                source="ROLLED_BACK", target="[*]", label="Engine Shutdown"
+            ),
+        ],
+    )
+
+
+_create_move_engine_state_spec = _create_architecture_move_engine_state_spec
+
+
+def _create_architecture_pipeline_state_spec() -> StateDiagramSpec:
+    """Build architecture_pipeline_state diagram specification for PipelineLifecycleState."""
+    return StateDiagramSpec(
+        id="architecture_pipeline_state",
+        title="Sort Pipeline Operational Lifecycle State Machine",
+        diagram_type="stateDiagram-v2",
+        transitions=[
+            StateTransition(
+                source="[*]", target="CREATED", label="Instantiate SortPipeline"
+            ),
+            StateTransition(
+                source="CREATED", target="PLANNING", label="Start Plan Generation"
+            ),
+            StateTransition(
+                source="CREATED", target="PLANNED", label="Direct Plan Injection"
+            ),
+            StateTransition(
+                source="CREATED", target="ROLLING_BACK", label="Abort and Rollback"
+            ),
+            StateTransition(
+                source="PLANNING",
+                target="PLANNED",
+                label="Clustering and Planning Succeeded",
+            ),
+            StateTransition(
+                source="PLANNING",
+                target="FAILED",
+                label="Analysis or Planning Exception",
+            ),
+            StateTransition(
+                source="PLANNING", target="CANCELLED", label="User Cancellation"
+            ),
+            StateTransition(
+                source="PLANNED", target="EXECUTING", label="Execute Sorting Plan"
+            ),
+            StateTransition(
+                source="PLANNED", target="PLANNING", label="Recalculate or Re-plan"
+            ),
+            StateTransition(
+                source="PLANNED", target="CANCELLED", label="Cancel Plan Execution"
+            ),
+            StateTransition(
+                source="PLANNED",
+                target="ROLLING_BACK",
+                label="Rollback Planned Session",
+            ),
+            StateTransition(
+                source="EXECUTING", target="COMPLETED", label="Execution Succeeded"
+            ),
+            StateTransition(
+                source="EXECUTING",
+                target="CANCELLED",
+                label="Cancel During Move Operations",
+            ),
+            StateTransition(
+                source="EXECUTING",
+                target="ROLLING_BACK",
+                label="Automatic Rollback on Move Failure",
+            ),
+            StateTransition(
+                source="EXECUTING",
+                target="FAILED",
+                label="Unrecoverable Execution Fault",
+            ),
+            StateTransition(
+                source="ROLLING_BACK",
+                target="ROLLED_BACK",
+                label="Rollback Completed Successfully",
+            ),
+            StateTransition(
+                source="ROLLING_BACK",
+                target="FAILED",
+                label="Error During Rollback Steps",
+            ),
+            StateTransition(
+                source="COMPLETED", target="PLANNING", label="Re-plan Pipeline"
+            ),
+            StateTransition(
+                source="COMPLETED",
+                target="ROLLING_BACK",
+                label="Undo Completed Session",
+            ),
+            StateTransition(
+                source="COMPLETED", target="[*]", label="Pipeline Finished"
+            ),
+            StateTransition(
+                source="FAILED", target="PLANNING", label="Retry Pipeline Planning"
+            ),
+            StateTransition(
+                source="FAILED", target="ROLLING_BACK", label="Revert Failed State"
+            ),
+            StateTransition(source="FAILED", target="[*]", label="Pipeline Terminated"),
+            StateTransition(
+                source="CANCELLED", target="PLANNING", label="Re-run Pipeline Planning"
+            ),
+            StateTransition(
+                source="CANCELLED",
+                target="ROLLING_BACK",
+                label="Cleanup Cancelled State",
+            ),
+            StateTransition(
+                source="CANCELLED", target="[*]", label="Pipeline Terminated"
+            ),
+            StateTransition(
+                source="ROLLED_BACK", target="PLANNING", label="Re-plan After Rollback"
+            ),
+            StateTransition(
+                source="ROLLED_BACK", target="ROLLING_BACK", label="Re-attempt Rollback"
+            ),
+            StateTransition(
+                source="ROLLED_BACK", target="[*]", label="Pipeline Terminated"
+            ),
+        ],
+    )
+
+
+_create_pipeline_state_spec = _create_architecture_pipeline_state_spec
+
+
+def _create_architecture_session_state_spec() -> StateDiagramSpec:
+    """Build architecture_session_state diagram specification for SessionStateMachine."""
+    return StateDiagramSpec(
+        id="architecture_session_state",
+        title="Session History Transaction State Machine",
+        diagram_type="stateDiagram-v2",
+        transitions=[
+            StateTransition(
+                source="[*]", target="active", label="Begin Session Transaction"
+            ),
+            StateTransition(
+                source="[*]", target="uncommitted", label="Stage Uncommitted Session"
+            ),
+            StateTransition(
+                source="uncommitted", target="completed", label="Commit Staged Session"
+            ),
+            StateTransition(
+                source="uncommitted",
+                target="rolled_back",
+                label="Discard Staged Session",
+            ),
+            StateTransition(
+                source="uncommitted",
+                target="partially_rolled_back",
+                label="Partial Staging Discard",
+            ),
+            StateTransition(
+                source="uncommitted", target="failed", label="Staging Commit Fault"
+            ),
+            StateTransition(
+                source="uncommitted", target="abandoned", label="Staging Orphaned"
+            ),
+            StateTransition(
+                source="active", target="completed", label="Execution Succeeded"
+            ),
+            StateTransition(source="active", target="failed", label="Execution Error"),
+            StateTransition(
+                source="active", target="rolled_back", label="Full Immediate Rollback"
+            ),
+            StateTransition(
+                source="active",
+                target="partially_rolled_back",
+                label="Partial Immediate Rollback",
+            ),
+            StateTransition(
+                source="active", target="undo_snapshot", label="Capture Undo Snapshot"
+            ),
+            StateTransition(
+                source="active",
+                target="abandoned",
+                label="Heartbeat Lost or Process Killed",
+            ),
+            StateTransition(
+                source="completed", target="rolled_back", label="Full Session Rollback"
+            ),
+            StateTransition(
+                source="completed",
+                target="partially_rolled_back",
+                label="Partial Session Rollback",
+            ),
+            StateTransition(
+                source="completed", target="failed", label="Rollback Exception"
+            ),
+            StateTransition(
+                source="completed", target="abandoned", label="Session Tombstoned"
+            ),
+            StateTransition(
+                source="partially_rolled_back",
+                target="rolled_back",
+                label="Resume and Complete Undo",
+            ),
+            StateTransition(
+                source="partially_rolled_back",
+                target="failed",
+                label="Undo Continuation Failed",
+            ),
+            StateTransition(
+                source="partially_rolled_back",
+                target="abandoned",
+                label="Partial Undo Abandoned",
+            ),
+            StateTransition(
+                source="undo_snapshot",
+                target="rolled_back",
+                label="Restore Undo Snapshot",
+            ),
+            StateTransition(
+                source="undo_snapshot", target="failed", label="Snapshot Restore Failed"
+            ),
+            StateTransition(
+                source="undo_snapshot",
+                target="abandoned",
+                label="Snapshot Expired or Discarded",
+            ),
+            StateTransition(
+                source="failed", target="active", label="Retry Session Execution"
+            ),
+            StateTransition(
+                source="failed",
+                target="completed",
+                label="Manual Reconciliation Override",
+            ),
+            StateTransition(
+                source="failed",
+                target="rolled_back",
+                label="Revert Incomplete Operations",
+            ),
+            StateTransition(
+                source="failed",
+                target="partially_rolled_back",
+                label="Partial Incomplete Revert",
+            ),
+            StateTransition(
+                source="failed", target="abandoned", label="Mark Unrecoverable Session"
+            ),
+            StateTransition(
+                source="abandoned",
+                target="rolled_back",
+                label="Reconcile and Revert Orphan",
+            ),
+            StateTransition(
+                source="abandoned",
+                target="partially_rolled_back",
+                label="Partial Orphan Cleanup",
+            ),
+            StateTransition(
+                source="abandoned", target="failed", label="Reconciliation Error"
+            ),
+            StateTransition(source="rolled_back", target="[*]", label="Terminal State"),
+        ],
+    )
+
+
+_create_session_history_state_spec = _create_architecture_session_state_spec
+
+
+def _create_architecture_download_state_spec() -> StateDiagramSpec:
+    """Build architecture_download_state diagram specification for DownloadState."""
+    return StateDiagramSpec(
+        id="architecture_download_state",
+        title="Model Downloader Lifecycle State Machine",
+        diagram_type="stateDiagram-v2",
+        transitions=[
+            StateTransition(
+                source="[*]", target="IDLE", label="Downloader Initialized"
+            ),
+            StateTransition(
+                source="IDLE", target="DOWNLOADING", label="Start Model Download"
+            ),
+            StateTransition(
+                source="DOWNLOADING",
+                target="COMPLETED",
+                label="Download and Checksum Verified",
+            ),
+            StateTransition(
+                source="DOWNLOADING",
+                target="FAILED",
+                label="Network Timeout or Checksum Mismatch",
+            ),
+            StateTransition(
+                source="DOWNLOADING",
+                target="CANCELLED",
+                label="User Cancellation Token",
+            ),
+            StateTransition(
+                source="COMPLETED",
+                target="DOWNLOADING",
+                label="Re-verify or Redownload",
+            ),
+            StateTransition(
+                source="COMPLETED", target="IDLE", label="Reset Downloader State"
+            ),
+            StateTransition(
+                source="COMPLETED", target="[*]", label="Model Ready in Cache"
+            ),
+            StateTransition(
+                source="FAILED", target="DOWNLOADING", label="Retry Failed Download"
+            ),
+            StateTransition(
+                source="FAILED", target="IDLE", label="Clear Error and Reset"
+            ),
+            StateTransition(source="FAILED", target="[*]", label="Download Terminated"),
+            StateTransition(
+                source="CANCELLED",
+                target="DOWNLOADING",
+                label="Resume or Restart Download",
+            ),
+            StateTransition(
+                source="CANCELLED", target="IDLE", label="Reset Downloader State"
+            ),
+            StateTransition(source="CANCELLED", target="[*]", label="Download Aborted"),
+        ],
+    )
+
+
+_create_download_state_spec = _create_architecture_download_state_spec
+
+
 def _create_catalog_workflow_spec() -> ComponentDiagramSpec:
     """Build catalog_workflow diagram specification."""
     return ComponentDiagramSpec(
@@ -4414,6 +4884,10 @@ _SPEC_FACTORIES: dict[str, Callable[[], BaseDiagramSpec]] = {
     "core_extractor": _create_core_extractor_spec,
     "core_file_renamer": _create_core_file_renamer_spec,
     "core_scanner": _create_core_scanner_spec,
+    "architecture_move_engine_state": _create_architecture_move_engine_state_spec,
+    "architecture_pipeline_state": _create_architecture_pipeline_state_spec,
+    "architecture_session_state": _create_architecture_session_state_spec,
+    "architecture_download_state": _create_architecture_download_state_spec,
 }
 
 CONSTANT_TO_KEY_MAP: dict[str, str] = {
@@ -4426,6 +4900,14 @@ CONSTANT_TO_KEY_MAP: dict[str, str] = {
     "SETUP_WIZARD_FLOW_SPEC": "setup_wizard_flow",
     "ARCHITECTURE_ASYNC_PROCESSING_SPEC": "architecture_async_processing",
     "ARCHITECTURE_WATCHDOG_STATE_SPEC": "architecture_watchdog_state",
+    "ARCHITECTURE_MOVE_ENGINE_STATE_SPEC": "architecture_move_engine_state",
+    "MOVE_ENGINE_STATE_SPEC": "architecture_move_engine_state",
+    "ARCHITECTURE_PIPELINE_STATE_SPEC": "architecture_pipeline_state",
+    "PIPELINE_LIFECYCLE_STATE_SPEC": "architecture_pipeline_state",
+    "ARCHITECTURE_SESSION_STATE_SPEC": "architecture_session_state",
+    "SESSION_STATE_MACHINE_SPEC": "architecture_session_state",
+    "ARCHITECTURE_DOWNLOAD_STATE_SPEC": "architecture_download_state",
+    "DOWNLOAD_STATE_SPEC": "architecture_download_state",
     "CATALOG_WORKFLOW_SPEC": "catalog_workflow",
     "UI_COMPONENT_HIERARCHY_SPEC": "ui_component_hierarchy",
     "CORE_TEXT_EXTRACTION_SPEC": "core_text_extraction",

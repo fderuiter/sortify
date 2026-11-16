@@ -1,0 +1,15 @@
+stateDiagram-v2
+    [*] --> IDLE: Downloader Initialized
+    IDLE --> DOWNLOADING: Start Model Download
+    DOWNLOADING --> COMPLETED: Download and Checksum Verified
+    DOWNLOADING --> FAILED: Network Timeout or Checksum Mismatch
+    DOWNLOADING --> CANCELLED: User Cancellation Token
+    COMPLETED --> DOWNLOADING: Re-verify or Redownload
+    COMPLETED --> IDLE: Reset Downloader State
+    COMPLETED --> [*]: Model Ready in Cache
+    FAILED --> DOWNLOADING: Retry Failed Download
+    FAILED --> IDLE: Clear Error and Reset
+    FAILED --> [*]: Download Terminated
+    CANCELLED --> DOWNLOADING: Resume or Restart Download
+    CANCELLED --> IDLE: Reset Downloader State
+    CANCELLED --> [*]: Download Aborted
