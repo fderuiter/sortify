@@ -51,6 +51,9 @@ Press `?` or `F1` in the app to see these shortcuts.
 | `Space` | Toggle Rule |
 | `Enter` | Edit Rule |
 | `Delete` | Delete Rule |
+| `Ctrl+I` / `i` | Import Rules |
+| `Ctrl+E` / `e` | Export Rules |
+| `Ctrl+B` / `b` | Browse Templates |
 
 ### Audit Report
 

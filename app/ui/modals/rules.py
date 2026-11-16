@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any, Optional
 
-from textual import on
+from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -1128,6 +1128,12 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
         Binding("space", "toggle_rule", "Toggle Rule", show=False),
         Binding("enter", "edit_rule", "Edit Rule", show=False),
         Binding("delete", "delete_rule", "Delete Rule", show=False),
+        Binding("ctrl+i", "import_rules", "Import Rules", show=True),
+        Binding("i", "import_rules", "Import Rules", show=False),
+        Binding("ctrl+e", "export_rules", "Export Rules", show=True),
+        Binding("e", "export_rules", "Export Rules", show=False),
+        Binding("ctrl+b", "browse_templates", "Browse Templates", show=True),
+        Binding("b", "browse_templates", "Browse Templates", show=False),
     ]
 
     CSS = """
@@ -1164,8 +1170,18 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
     }
     .button-row {
         margin-top: 1;
-        height: 3;
+        height: auto;
         align: right middle;
+    }
+    .button-row Button {
+        min-width: 8;
+        padding: 0 1;
+        margin-left: 1;
+    }
+    .narrow .button-row Button {
+        min-width: 4;
+        padding: 0 0;
+        margin-left: 1;
     }
     Button:focus, DataTable:focus {
         border: heavy $accent;
@@ -1193,9 +1209,6 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
             )
             yield DataTable(id="rules-table")
             with Horizontal(classes="button-row"):
-                btn_close = Button("Close", id="btn-close-rules", variant="default")
-                btn_close.tooltip = "Close active rule manager"
-                yield btn_close
                 btn_toggle = Button(
                     "Toggle Status", id="btn-toggle-rule", variant="default"
                 )
@@ -1212,6 +1225,30 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
                 btn_add = Button("Add Rule", id="btn-add-rule", variant="primary")
                 btn_add.tooltip = "Add a new keyword rule"
                 yield btn_add
+
+            with Horizontal(classes="button-row"):
+                btn_close = Button("Close", id="btn-close-rules", variant="default")
+                btn_close.tooltip = "Close active rule manager"
+                yield btn_close
+                btn_import = Button(
+                    "Import Rules", id="btn-import-rules", variant="default"
+                )
+                btn_import.tooltip = "Import rules from Hazel, DropIt, or TagSpaces"
+                yield btn_import
+                btn_export = Button(
+                    "Export Rules", id="btn-export-rules", variant="default"
+                )
+                btn_export.tooltip = (
+                    "Export active rules to Sortify JSON, Hazel, or DropIt"
+                )
+                yield btn_export
+                btn_browse = Button(
+                    "Browse Templates",
+                    id="btn-browse-templates",
+                    variant="primary",
+                )
+                btn_browse.tooltip = "Browse and apply starter rule templates"
+                yield btn_browse
 
     def on_mount(self) -> None:
         """Set up columns and load rules on mount."""
@@ -1506,3 +1543,69 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
         """Cancel on Escape key."""
         self.announce("Closed active rule manager.")
         self.dismiss(None)
+
+    @on(events.DescendantFocus)
+    def on_descendant_focus(self, event: events.DescendantFocus) -> None:
+        """Announce focused controls for screen reader accessibility."""
+        widget_id = getattr(event.widget, "id", None)
+        if not widget_id:
+            return
+
+        focus_announcements = {
+            "btn-import-rules": "Import Rules button focused. Import rules from Hazel, DropIt, or TagSpaces.",
+            "btn-export-rules": "Export Rules button focused. Export active rules to Sortify JSON, Hazel, or DropIt.",
+            "btn-browse-templates": "Browse Templates button focused. Browse and apply starter rule templates.",
+            "btn-toggle-rule": "Toggle Status button focused. Toggle active or disabled status of selected rule.",
+            "btn-delete-rule": "Delete Rule button focused. Delete selected rule after confirmation.",
+            "btn-edit-rule": "Edit Rule button focused. Edit pattern or destination folder of selected rule.",
+            "btn-add-rule": "Add Rule button focused. Add a new keyword rule.",
+            "btn-close-rules": "Close button focused. Close active rule manager.",
+            "rules-table": "Rules table focused. Select a rule to edit, toggle, or delete.",
+        }
+        msg = focus_announcements.get(widget_id)
+        if msg:
+            self.announce(msg)
+
+    @on(Button.Pressed, "#btn-import-rules")
+    def action_import_rules(self) -> None:
+        """Open external rule importer modal."""
+        self.announce("Opening external rule importer modal.")
+
+        def on_import_closed(result: Optional[Any] = None) -> None:
+            if result is not None:
+                self._refresh_table(preserve_focus=True)
+                msg = f"Imported rules merged into settings. Active rules count: {len(self._rules_data)}."
+                self.announce(msg)
+                if hasattr(self.app, "notify"):
+                    self.app.notify(msg)
+            else:
+                self.announce("Returned to active rule manager.")
+
+        self.app.push_screen(RuleImportModal(self.settings), on_import_closed)
+
+    @on(Button.Pressed, "#btn-export-rules")
+    def action_export_rules(self) -> None:
+        """Open export rules modal."""
+        self.announce("Opening export rules modal.")
+
+        def on_export_closed(result: Optional[Path] = None) -> None:
+            self.announce("Returned to active rule manager.")
+
+        self.app.push_screen(ExportRulesModal(self.settings), on_export_closed)
+
+    @on(Button.Pressed, "#btn-browse-templates")
+    def action_browse_templates(self) -> None:
+        """Open starter rule template gallery modal."""
+        self.announce("Opening starter rule template gallery modal.")
+
+        def on_gallery_closed(result: Any = None) -> None:
+            self._refresh_table(preserve_focus=True)
+            msg = f"Updated rules table from settings. Total rules: {len(self._rules_data)}."
+            self.announce(msg)
+
+        self.app.push_screen(TemplateGalleryModal(self.settings), on_gallery_closed)
+
+    action_browse_rule_templates = action_browse_templates
+    action_open_templates = action_browse_templates
+    action_open_export_rules = action_export_rules
+    action_open_rule_import = action_import_rules
