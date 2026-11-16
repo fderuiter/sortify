@@ -888,3 +888,621 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
         """Cancel on Escape key."""
         self.announce("Closed external rule importer modal.")
         self.dismiss(None)
+
+
+class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]]):
+    """Modal screen for adding or editing a keyword rule with path validation."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel dialog", show=True),
+    ]
+
+    CSS = """
+    RuleEditModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .rule-edit-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 80%;
+        max-width: 65;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .field-label {
+        margin-top: 1;
+        color: $text;
+        text-style: bold;
+    }
+    .error-label {
+        color: $error;
+        text-style: bold;
+        margin-top: 1;
+        display: none;
+    }
+    .error-label.visible {
+        display: block;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, Input:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(
+        self,
+        title: str = "Add Keyword Rule",
+        pattern: str = "",
+        target_folder: str = "",
+    ):
+        super().__init__()
+        self.title_text = title
+        self.initial_pattern = pattern
+        self.initial_target = target_folder
+
+    def compose(self) -> ComposeResult:
+        """Compose rule editor inputs and action buttons."""
+        with Vertical(classes="rule-edit-box"):
+            yield Heading(
+                self.title_text, level=1, classes="modal-title", id="modal-title"
+            )
+            yield Label("Pattern / Keyword:", classes="field-label")
+            yield Input(
+                value=self.initial_pattern,
+                placeholder="e.g. invoice or receipt",
+                id="input-rule-pattern",
+            )
+            yield Label("Target Folder:", classes="field-label")
+            yield Input(
+                value=self.initial_target,
+                placeholder="e.g. Finances/Invoices",
+                id="input-rule-target",
+            )
+            yield Label("", classes="error-label", id="lbl-rule-error")
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button(
+                    "Cancel", id="btn-cancel-edit-rule", variant="default"
+                )
+                btn_cancel.tooltip = "Cancel and discard rule changes"
+                yield btn_cancel
+                btn_save = Button("Save Rule", id="btn-save-rule", variant="primary")
+                btn_save.tooltip = "Validate target path and save rule"
+                yield btn_save
+
+    def on_mount(self) -> None:
+        """Focus initial input on mount."""
+        self._update_layout(self.size.width)
+        self.query_one("#input-rule-pattern", Input).focus()
+
+    @on(Button.Pressed, "#btn-save-rule")
+    def action_save(self) -> None:
+        """Validate inputs and dismiss modal with rule definition."""
+        from app.core.path_utils import validate_target_path
+
+        pattern = self.query_one("#input-rule-pattern", Input).value.strip()
+        target = self.query_one("#input-rule-target", Input).value.strip()
+        err_lbl = self.query_one("#lbl-rule-error", Label)
+
+        if not pattern:
+            err_lbl.update("Rule pattern/keyword cannot be empty.")
+            err_lbl.add_class("visible")
+            self.announce("Rule pattern/keyword cannot be empty.", priority="assertive")
+            return
+
+        if not target:
+            err_lbl.update("Target folder cannot be empty.")
+            err_lbl.add_class("visible")
+            self.announce("Target folder cannot be empty.", priority="assertive")
+            return
+
+        try:
+            validate_target_path(target, keyword=pattern)
+        except (ValueError, Exception) as exc:
+            err_lbl.update(f"Invalid path: {exc}")
+            err_lbl.add_class("visible")
+            self.announce(f"Invalid target path: {exc}", priority="assertive")
+            if hasattr(self.app, "notify"):
+                self.app.notify(str(exc), severity="error")
+            return
+
+        self.dismiss({"pattern": pattern, "target": target})
+
+    @on(Button.Pressed, "#btn-cancel-edit-rule")
+    def action_cancel_button(self) -> None:
+        """Cancel on Cancel button."""
+        self.announce("Cancelled rule editing.")
+        self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        """Cancel on Escape."""
+        self.announce("Cancelled rule editing dialog.")
+        self.dismiss(None)
+
+
+class DeleteRuleConfirmModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[bool]):
+    """Confirmation modal screen for deleting a rule."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Cancel deletion", show=True),
+    ]
+
+    CSS = """
+    DeleteRuleConfirmModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .delete-confirm-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 80%;
+        max-width: 60;
+        min-width: 30;
+        height: auto;
+        max-height: 90%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(self, rule_pattern: str):
+        super().__init__()
+        self.rule_pattern = rule_pattern
+
+    def compose(self) -> ComposeResult:
+        """Compose confirmation dialog children."""
+        with Vertical(classes="delete-confirm-box"):
+            yield Heading(
+                "Confirm Delete Rule",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
+            yield Label(
+                f"Are you sure you want to delete rule '{self.rule_pattern}'?\n"
+                "This action cannot be undone.",
+                id="lbl-delete-confirm-text",
+            )
+            with Horizontal(classes="button-row"):
+                btn_cancel = Button("Cancel", id="btn-cancel-delete", variant="default")
+                btn_cancel.tooltip = "Cancel and keep this rule"
+                yield btn_cancel
+                btn_delete = Button("Delete", id="btn-confirm-delete", variant="error")
+                btn_delete.tooltip = "Permanently remove this rule"
+                yield btn_delete
+
+    def on_mount(self) -> None:
+        """Focus cancel button by default to avoid accidental deletion."""
+        self._update_layout(self.size.width)
+        self.query_one("#btn-cancel-delete", Button).focus()
+
+    @on(Button.Pressed, "#btn-confirm-delete")
+    def action_confirm_delete(self) -> None:
+        """Confirm deletion."""
+        self.announce(f"Confirmed deletion of rule '{self.rule_pattern}'.")
+        self.dismiss(True)
+
+    @on(Button.Pressed, "#btn-cancel-delete")
+    def action_cancel_button(self) -> None:
+        """Cancel deletion."""
+        self.announce(f"Cancelled deletion of rule '{self.rule_pattern}'.")
+        self.dismiss(False)
+
+    def action_cancel(self) -> None:
+        """Cancel on Escape."""
+        self.announce("Cancelled delete rule dialog.")
+        self.dismiss(False)
+
+
+class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
+    """Dedicated modal screen for viewing, adding, editing, toggling, and deleting rules."""
+
+    BINDINGS = [
+        Binding("escape", "cancel", "Close manager", show=True),
+        Binding("space", "toggle_rule", "Toggle Rule", show=False),
+        Binding("enter", "edit_rule", "Edit Rule", show=False),
+        Binding("delete", "delete_rule", "Delete Rule", show=False),
+    ]
+
+    CSS = """
+    ActiveRuleManagerModal {
+        align: center middle;
+        background: rgba(0, 0, 0, 0.6);
+    }
+    .rule-manager-box {
+        padding: 1 2;
+        background: $panel;
+        border: thick $primary;
+        width: 90%;
+        max-width: 80;
+        min-width: 35;
+        height: auto;
+        max-height: 90%;
+        overflow-y: auto;
+    }
+    .narrow .rule-manager-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-title {
+        text-style: bold;
+        color: $accent;
+        margin-bottom: 1;
+    }
+    #rules-table {
+        height: auto;
+        max-height: 15;
+        min-height: 6;
+        margin-top: 1;
+        margin-bottom: 1;
+    }
+    .button-row {
+        margin-top: 1;
+        height: 3;
+        align: right middle;
+    }
+    Button:focus, DataTable:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
+    """
+
+    def __init__(self, settings):
+        super().__init__()
+        self.settings = settings
+        self._rules_data: list[dict] = []
+
+    def compose(self) -> ComposeResult:
+        """Compose active rule manager children."""
+        with Vertical(classes="rule-manager-box"):
+            yield Heading(
+                "Active Rule Manager",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
+            yield Label(
+                "Manage keyword rules and policies. Select a rule to edit, toggle, or delete:",
+                id="lbl-rules-desc",
+            )
+            yield DataTable(id="rules-table")
+            with Horizontal(classes="button-row"):
+                btn_close = Button("Close", id="btn-close-rules", variant="default")
+                btn_close.tooltip = "Close active rule manager"
+                yield btn_close
+                btn_toggle = Button(
+                    "Toggle Status", id="btn-toggle-rule", variant="default"
+                )
+                btn_toggle.tooltip = "Toggle active/disabled status of selected rule"
+                yield btn_toggle
+                btn_delete = Button(
+                    "Delete Rule", id="btn-delete-rule", variant="error"
+                )
+                btn_delete.tooltip = "Delete selected rule after confirmation"
+                yield btn_delete
+                btn_edit = Button("Edit Rule", id="btn-edit-rule", variant="default")
+                btn_edit.tooltip = "Edit pattern or destination folder of selected rule"
+                yield btn_edit
+                btn_add = Button("Add Rule", id="btn-add-rule", variant="primary")
+                btn_add.tooltip = "Add a new keyword rule"
+                yield btn_add
+
+    def on_mount(self) -> None:
+        """Set up columns and load rules on mount."""
+        self._update_layout(self.size.width)
+        table = self.query_one("#rules-table", DataTable)
+        table.cursor_type = "row"
+        table.add_columns("Status", "Type", "Pattern", "Target Folder", "Priority")
+        self._refresh_table()
+        table.focus()
+        self.announce("Opened active rule manager.")
+
+    def _load_rules_data(self) -> list[dict]:
+        """Aggregate active keyword rules, disabled keyword rules, and policies."""
+        rules = []
+        kw_rules = getattr(self.settings, "KEYWORD_RULES", {}) or {}
+        for kw, target in sorted(kw_rules.items()):
+            rules.append(
+                {
+                    "kind": "keyword",
+                    "status": "Active",
+                    "type": "keyword",
+                    "pattern": str(kw),
+                    "target_folder": str(target),
+                    "priority": 0,
+                    "original_key": kw,
+                }
+            )
+
+        dis_rules = getattr(self.settings, "DISABLED_KEYWORD_RULES", {}) or {}
+        for kw, target in sorted(dis_rules.items()):
+            rules.append(
+                {
+                    "kind": "keyword",
+                    "status": "Disabled",
+                    "type": "keyword",
+                    "pattern": str(kw),
+                    "target_folder": str(target),
+                    "priority": 0,
+                    "original_key": kw,
+                }
+            )
+
+        policies = getattr(self.settings, "POLICIES", []) or []
+        for idx, pol in enumerate(policies):
+            if isinstance(pol, dict):
+                is_enabled = pol.get("enabled", True)
+                rules.append(
+                    {
+                        "kind": "policy",
+                        "status": "Active" if is_enabled else "Disabled",
+                        "type": str(pol.get("type", "policy")),
+                        "pattern": str(pol.get("expression", "")),
+                        "target_folder": str(pol.get("target_path", "")),
+                        "priority": pol.get("priority", 0),
+                        "policy_idx": idx,
+                        "original": pol,
+                    }
+                )
+        return rules
+
+    def _refresh_table(self, preserve_focus: bool = True) -> None:
+        """Re-populate rules table from settings while preserving cursor and focus."""
+        table = self.query_one("#rules-table", DataTable)
+        focused = self.focused
+        had_table_focus = focused is table
+        prev_cursor = table.cursor_row if table.row_count > 0 else 0
+
+        self._rules_data = self._load_rules_data()
+        table.clear()
+        for idx, r in enumerate(self._rules_data):
+            table.add_row(
+                r["status"],
+                r["type"],
+                r["pattern"],
+                r["target_folder"],
+                str(r["priority"]),
+                key=f"rule_row_{idx}",
+            )
+
+        if self._rules_data:
+            target_row = max(0, min(prev_cursor, len(self._rules_data) - 1))
+            table.move_cursor(row=target_row)
+
+        if preserve_focus:
+            if had_table_focus:
+                table.focus()
+            elif focused and getattr(focused, "id", None):
+                try:
+                    self.query_one(f"#{focused.id}").focus()
+                except Exception:
+                    table.focus()
+
+    def _get_selected_rule(self) -> Optional[dict]:
+        """Return the currently highlighted rule dictionary."""
+        table = self.query_one("#rules-table", DataTable)
+        if not self._rules_data or table.row_count == 0:
+            return None
+        row_idx = table.cursor_row
+        if 0 <= row_idx < len(self._rules_data):
+            return self._rules_data[row_idx]
+        return None
+
+    @on(DataTable.RowSelected, "#rules-table")
+    def on_row_selected(self, event: DataTable.RowSelected) -> None:
+        """Trigger editing when pressing Enter on a rule row."""
+        self.action_edit_rule()
+
+    @on(Button.Pressed, "#btn-toggle-rule")
+    def action_toggle_rule(self) -> None:
+        """Toggle active/disabled status of selected rule."""
+        rule = self._get_selected_rule()
+        if not rule:
+            self.announce("No rule selected to toggle.")
+            return
+
+        if rule["kind"] == "keyword":
+            kw = rule["original_key"]
+            kw_rules = dict(getattr(self.settings, "KEYWORD_RULES", {}) or {})
+            dis_rules = dict(getattr(self.settings, "DISABLED_KEYWORD_RULES", {}) or {})
+
+            if rule["status"] == "Active":
+                target = kw_rules.pop(kw, rule["target_folder"])
+                dis_rules[kw] = target
+                new_status = "Disabled"
+            else:
+                target = dis_rules.pop(kw, rule["target_folder"])
+                kw_rules[kw] = target
+                new_status = "Active"
+
+            self.settings.KEYWORD_RULES = kw_rules
+            self.settings.DISABLED_KEYWORD_RULES = dis_rules
+            if hasattr(self.settings, "flush"):
+                self.settings.flush()
+            msg = f"Toggled keyword rule '{kw}' to {new_status}."
+        elif rule["kind"] == "policy":
+            policies = [dict(p) for p in getattr(self.settings, "POLICIES", []) or []]
+            idx = rule["policy_idx"]
+            if 0 <= idx < len(policies):
+                curr = policies[idx].get("enabled", True)
+                policies[idx]["enabled"] = not curr
+                new_status = "Active" if not curr else "Disabled"
+                self.settings.POLICIES = policies
+                if hasattr(self.settings, "flush"):
+                    self.settings.flush()
+                msg = f"Toggled policy '{rule['pattern']}' to {new_status}."
+            else:
+                return
+        else:
+            return
+
+        self._refresh_table(preserve_focus=True)
+        self.announce(msg)
+        if hasattr(self.app, "notify"):
+            self.app.notify(msg)
+
+    @on(Button.Pressed, "#btn-add-rule")
+    def action_add_rule(self) -> None:
+        """Open editor modal to add a new keyword rule."""
+
+        def on_rule_added(result: Optional[dict]) -> None:
+            if not result:
+                return
+            pattern = result["pattern"]
+            target = result["target"]
+            kw_rules = dict(getattr(self.settings, "KEYWORD_RULES", {}) or {})
+            kw_rules[pattern] = target
+            self.settings.KEYWORD_RULES = kw_rules
+            if hasattr(self.settings, "flush"):
+                self.settings.flush()
+            self._refresh_table(preserve_focus=False)
+            msg = f"Added rule '{pattern}' routing to '{target}'."
+            self.announce(msg)
+            if hasattr(self.app, "notify"):
+                self.app.notify(msg)
+
+        self.app.push_screen(RuleEditModal(title="Add Keyword Rule"), on_rule_added)
+
+    @on(Button.Pressed, "#btn-edit-rule")
+    def action_edit_rule(self) -> None:
+        """Open editor modal to edit the selected rule."""
+        rule = self._get_selected_rule()
+        if not rule:
+            self.announce("No rule selected to edit.")
+            return
+
+        def on_rule_edited(result: Optional[dict]) -> None:
+            if not result:
+                return
+            new_pattern = result["pattern"]
+            new_target = result["target"]
+
+            if rule["kind"] == "keyword":
+                old_key = rule["original_key"]
+                is_active = rule["status"] == "Active"
+                dict_name = "KEYWORD_RULES" if is_active else "DISABLED_KEYWORD_RULES"
+                rules_dict = dict(getattr(self.settings, dict_name, {}) or {})
+                if old_key in rules_dict and old_key != new_pattern:
+                    del rules_dict[old_key]
+                rules_dict[new_pattern] = new_target
+                setattr(self.settings, dict_name, rules_dict)
+                if hasattr(self.settings, "flush"):
+                    self.settings.flush()
+                msg = f"Updated rule '{new_pattern}' target folder to '{new_target}'."
+            elif rule["kind"] == "policy":
+                policies = [
+                    dict(p) for p in getattr(self.settings, "POLICIES", []) or []
+                ]
+                idx = rule["policy_idx"]
+                if 0 <= idx < len(policies):
+                    policies[idx]["expression"] = new_pattern
+                    policies[idx]["target_path"] = new_target
+                    self.settings.POLICIES = policies
+                    if hasattr(self.settings, "flush"):
+                        self.settings.flush()
+                    msg = f"Updated policy '{new_pattern}' target folder to '{new_target}'."
+                else:
+                    return
+            else:
+                return
+
+            self._refresh_table(preserve_focus=True)
+            self.announce(msg)
+            if hasattr(self.app, "notify"):
+                self.app.notify(msg)
+
+        self.app.push_screen(
+            RuleEditModal(
+                title=f"Edit Rule: {rule['pattern']}",
+                pattern=rule["pattern"],
+                target_folder=rule["target_folder"],
+            ),
+            on_rule_edited,
+        )
+
+    @on(Button.Pressed, "#btn-delete-rule")
+    def action_delete_rule(self) -> None:
+        """Delete selected rule after user confirmation."""
+        rule = self._get_selected_rule()
+        if not rule:
+            self.announce("No rule selected to delete.")
+            return
+
+        pattern = rule["pattern"]
+
+        def on_confirmed(confirmed: Optional[bool]) -> None:
+            if not confirmed:
+                return
+
+            if rule["kind"] == "keyword":
+                key = rule["original_key"]
+                is_active = rule["status"] == "Active"
+                dict_name = "KEYWORD_RULES" if is_active else "DISABLED_KEYWORD_RULES"
+                rules_dict = dict(getattr(self.settings, dict_name, {}) or {})
+                rules_dict.pop(key, None)
+                setattr(self.settings, dict_name, rules_dict)
+                if hasattr(self.settings, "flush"):
+                    self.settings.flush()
+                msg = f"Deleted rule '{pattern}' from settings."
+            elif rule["kind"] == "policy":
+                policies = [
+                    dict(p) for p in getattr(self.settings, "POLICIES", []) or []
+                ]
+                idx = rule["policy_idx"]
+                if 0 <= idx < len(policies):
+                    policies.pop(idx)
+                    self.settings.POLICIES = policies
+                    if hasattr(self.settings, "flush"):
+                        self.settings.flush()
+                    msg = f"Deleted policy '{pattern}' from settings."
+                else:
+                    return
+            else:
+                return
+
+            self._refresh_table(preserve_focus=True)
+            self.announce(msg)
+            if hasattr(self.app, "notify"):
+                self.app.notify(msg)
+
+        self.app.push_screen(
+            DeleteRuleConfirmModal(rule_pattern=pattern),
+            on_confirmed,
+        )
+
+    @on(Button.Pressed, "#btn-close-rules")
+    def action_close_rules(self) -> None:
+        """Close active rule manager dialog."""
+        self.announce("Closed active rule manager.")
+        self.dismiss(None)
+
+    def action_cancel(self) -> None:
+        """Cancel on Escape key."""
+        self.announce("Closed active rule manager.")
+        self.dismiss(None)

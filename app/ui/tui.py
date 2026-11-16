@@ -59,6 +59,7 @@ from app.ui.modals.reports import (
     ExportReportModal,
     ExtractionPreviewModal,
 )
+from app.ui.modals.rules import ActiveRuleManagerModal as ActiveRuleManagerModal
 from app.ui.modals.rules import ExportRulesModal as ExportRulesModal
 from app.ui.modals.rules import RuleImportModal as RuleImportModal
 from app.ui.modals.rules import TemplateGalleryModal as TemplateGalleryModal
@@ -116,7 +117,8 @@ class AutoSorterTUI(
         Binding("v", "visual_range_select", "Range Select", show=False),
         Binding("a", "toggle_select_all", "Select/Deselect All", show=False),
         Binding("ctrl+l", "toggle_lock", "Lock/Unlock", show=False),
-        Binding("ctrl+r", "rename_node", "Rename Node", show=False),
+        Binding("ctrl+r", "open_active_rules", "Rule Manager", show=False),
+        Binding("f2", "rename_node", "Rename Node", show=False),
         Binding("ctrl+n", "new_folder", "New Folder", show=False),
         Binding("plus", "rate_positive", "Rating (+)", show=False),
         Binding("minus", "rate_negative", "Rating (-)", show=False),
@@ -1229,6 +1231,12 @@ class AutoSorterTUI(
                 )
 
         self.push_screen(CommandPaletteModal(), on_command_selected)
+
+    def action_open_active_rules(self) -> None:
+        """Open active rule manager modal screen [Ctrl+R]."""
+        if self._is_text_control_focused(allow_tree_search=True):
+            return
+        self.push_screen(ActiveRuleManagerModal(self.settings))
 
     def action_open_model_manager(self) -> None:
         """Open model manager modal screen."""

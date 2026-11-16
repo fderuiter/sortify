@@ -64,6 +64,11 @@
       "title": "Keyword Rules",
       "type": "object"
     },
+    "DISABLED_KEYWORD_RULES": {
+      "additionalProperties": true,
+      "title": "Disabled Keyword Rules",
+      "type": "object"
+    },
     "LEARNED_RULES": {
       "additionalProperties": true,
       "title": "Learned Rules",

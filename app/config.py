@@ -102,6 +102,7 @@ class Settings(BaseSettings):
     SPEAK_ANNOUNCEMENTS: bool = Field(default=False)
     ENABLE_CHARACTER_KEY_SHORTCUTS: bool = Field(default=True)
     KEYWORD_RULES: dict = Field(default_factory=dict)
+    DISABLED_KEYWORD_RULES: dict = Field(default_factory=dict)
     LEARNED_RULES: dict = Field(default_factory=dict)
     EXTENSION_CATEGORIES: dict = Field(default_factory=dict)
     POLICIES: list[dict] = Field(default_factory=list)
@@ -335,7 +336,7 @@ class Settings(BaseSettings):
                 )
         return v
 
-    @field_validator("KEYWORD_RULES", "LEARNED_RULES")
+    @field_validator("KEYWORD_RULES", "LEARNED_RULES", "DISABLED_KEYWORD_RULES")
     @classmethod
     def validate_keyword_rules(cls, v: dict) -> dict:
         """Validate that keyword routing rules and learned rules have valid target paths."""

@@ -172,6 +172,8 @@ class MetadataPass:
                 halt_evaluation = False
 
                 for policy in sorted_policies:
+                    if not policy.get("enabled", True):
+                        continue
                     p_type = policy.get("type", "").lower()
                     expression = policy.get("expression", "")
                     target_path = policy.get("target_path")
