@@ -567,3 +567,286 @@ def test_verify_documentation_assets_empty_diagrams_graceful(tmp_path, monkeypat
 
     monkeypatch.chdir(tmp_path)
     assert verify_documentation_assets(str(bundle)) is True
+
+
+def test_download_file_hash_verification_success(tmp_path):
+    """Verify download_file succeeds when downloaded content matches expected_sha256."""
+    import hashlib
+    import io
+
+    from scripts.build import download_file
+
+    payload = b"trusted content payload"
+    expected_hash = hashlib.sha256(payload).hexdigest()
+    dest_path = tmp_path / "model" / "verified.bin"
+
+    mock_response = MagicMock()
+    mock_response.__enter__.return_value = io.BytesIO(payload)
+    mock_response.__exit__.return_value = False
+
+    with patch("urllib.request.urlopen", return_value=mock_response):
+        download_file(
+            "https://example.com/verified.bin",
+            dest_path,
+            expected_sha256=expected_hash,
+        )
+
+    assert dest_path.exists()
+    assert dest_path.read_bytes() == payload
+
+
+def test_download_file_hash_mismatch_cleans_up_and_raises(tmp_path):
+    """Verify download_file removes partial/downloaded file and raises ValueError on hash mismatch."""
+    import io
+
+    from scripts.build import download_file
+
+    payload = b"corrupted or tampered content"
+    dest_path = tmp_path / "model" / "tampered.bin"
+
+    mock_response = MagicMock()
+    mock_response.__enter__.return_value = io.BytesIO(payload)
+    mock_response.__exit__.return_value = False
+
+    with patch("urllib.request.urlopen", return_value=mock_response):
+        with patch("time.sleep"):
+            with pytest.raises(ValueError, match="Hash mismatch"):
+                download_file(
+                    "https://example.com/tampered.bin",
+                    dest_path,
+                    max_retries=2,
+                    expected_sha256="0000000000000000000000000000000000000000000000000000000000000000",
+                )
+
+    # Ensure the file was cleaned up and does not remain on disk
+    assert not dest_path.exists()
+
+
+def test_safe_extract_archive_success(tmp_path):
+    """Verify safe_extract_archive correctly extracts safe archive members."""
+    import zipfile
+
+    from scripts.build import safe_extract_archive
+
+    zip_path = tmp_path / "safe.zip"
+    extract_dir = tmp_path / "extracted"
+
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("model.pth", b"safe model weights")
+        zf.writestr("subdir/subfile.txt", b"sub content")
+
+    safe_extract_archive(zip_path, extract_dir)
+
+    assert (extract_dir / "model.pth").is_file()
+    assert (extract_dir / "model.pth").read_bytes() == b"safe model weights"
+    assert (extract_dir / "subdir" / "subfile.txt").is_file()
+
+
+def test_safe_extract_archive_rejects_relative_traversal(tmp_path):
+    """Verify safe_extract_archive rejects archives containing relative path traversal before extracting."""
+    import zipfile
+
+    from scripts.build import safe_extract_archive
+
+    zip_path = tmp_path / "traversal.zip"
+    extract_dir = tmp_path / "extracted"
+    extract_dir.mkdir(parents=True, exist_ok=True)
+    outside_file = tmp_path / "escaped.txt"
+
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("../escaped.txt", b"malicious content")
+
+    with pytest.raises(ValueError, match="traversal|escapes"):
+        safe_extract_archive(zip_path, extract_dir)
+
+    assert not outside_file.exists()
+    assert not list(extract_dir.iterdir())
+
+
+def test_safe_extract_archive_rejects_subpath_traversal(tmp_path):
+    """Verify safe_extract_archive rejects archives with parent navigation inside subpath."""
+    import zipfile
+
+    from scripts.build import safe_extract_archive
+
+    zip_path = tmp_path / "sub_traversal.zip"
+    extract_dir = tmp_path / "extracted"
+    extract_dir.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("sub/../../escaped.txt", b"malicious content")
+
+    with pytest.raises(ValueError, match="traversal|escapes"):
+        safe_extract_archive(zip_path, extract_dir)
+
+    assert not (tmp_path / "escaped.txt").exists()
+
+
+def test_safe_extract_archive_rejects_absolute_path(tmp_path):
+    """Verify safe_extract_archive rejects absolute path archive entries."""
+    import zipfile
+
+    from scripts.build import safe_extract_archive
+
+    zip_path = tmp_path / "abs_path.zip"
+    extract_dir = tmp_path / "extracted"
+    extract_dir.mkdir(parents=True, exist_ok=True)
+
+    with zipfile.ZipFile(zip_path, "w") as zf:
+        zf.writestr("/evil_root.txt", b"malicious root content")
+
+    with pytest.raises(ValueError, match="absolute|traversal"):
+        safe_extract_archive(zip_path, extract_dir)
+
+
+def test_download_and_prepare_weights_pinned_hashes_success(tmp_path, monkeypatch):
+    """Verify download_and_prepare_weights succeeds and writes registry when all weights match pinned hashes."""
+    from scripts.build import PINNED_HASHES, download_and_prepare_weights
+
+    monkeypatch.chdir(tmp_path)
+
+    model_dir = tmp_path / "offline_bundle" / "model"
+    easyocr_dir = tmp_path / "offline_bundle" / "easyocr"
+    model_dir.mkdir(parents=True)
+    easyocr_dir.mkdir(parents=True)
+
+    with patch("scripts.build.package_sidecar_models") as mock_package:
+        with patch("scripts.build.resilient_file_hash") as mock_hash:
+
+            def fake_hash(path):
+                name = path.name
+                if name in PINNED_HASHES["generative_naming"]:
+                    return PINNED_HASHES["generative_naming"][name]
+                if name in PINNED_HASHES["easyocr"]:
+                    return PINNED_HASHES["easyocr"][name]
+                return "unknown"
+
+            mock_hash.side_effect = fake_hash
+
+            for fname in PINNED_HASHES["generative_naming"]:
+                (model_dir / fname).write_text("data")
+            for fname in PINNED_HASHES["easyocr"]:
+                (easyocr_dir / fname).write_text("data")
+
+            download_and_prepare_weights()
+
+            mock_package.assert_called_once()
+            hashes_registry_path = tmp_path / "app" / "core" / "hashes_registry.py"
+            assert hashes_registry_path.exists()
+            content = hashes_registry_path.read_text(encoding="utf-8")
+            assert "HASHES =" in content
+            assert "florence-2" in content
+            assert "model_download" in content
+
+
+def test_download_and_prepare_weights_aborts_on_tampered_model(tmp_path, monkeypatch):
+    """Verify download_and_prepare_weights raises ValueError and aborts if a file hash does not match pinned hash."""
+    from scripts.build import PINNED_HASHES, download_and_prepare_weights
+
+    monkeypatch.chdir(tmp_path)
+    model_dir = tmp_path / "offline_bundle" / "model"
+    easyocr_dir = tmp_path / "offline_bundle" / "easyocr"
+    model_dir.mkdir(parents=True)
+    easyocr_dir.mkdir(parents=True)
+
+    for fname in PINNED_HASHES["generative_naming"]:
+        (model_dir / fname).write_text("data")
+    for fname in PINNED_HASHES["easyocr"]:
+        (easyocr_dir / fname).write_text("data")
+
+    with patch("scripts.build.package_sidecar_models"):
+        with patch("scripts.build.resilient_file_hash") as mock_hash:
+
+            def fake_hash(path):
+                if path.name == "model.onnx":
+                    return "corrupted_onnx_hash"
+                name = path.name
+                if name in PINNED_HASHES["generative_naming"]:
+                    return PINNED_HASHES["generative_naming"][name]
+                if name in PINNED_HASHES["easyocr"]:
+                    return PINNED_HASHES["easyocr"][name]
+                return "unknown"
+
+            mock_hash.side_effect = fake_hash
+            with pytest.raises(
+                ValueError,
+                match="Computed file hash does not match pinned registry hash",
+            ):
+                download_and_prepare_weights()
+
+
+def test_download_and_prepare_weights_rejects_tampered_cached_easyocr(
+    tmp_path, monkeypatch
+):
+    """Verify download_and_prepare_weights rejects a tampered cache copy of easyocr weights."""
+    from scripts.build import PINNED_HASHES, download_and_prepare_weights
+
+    monkeypatch.chdir(tmp_path)
+    home_cache = tmp_path / ".EasyOCR" / "model"
+    home_cache.mkdir(parents=True)
+    corrupted_cached = home_cache / "craft_mlt_25k.pth"
+    corrupted_cached.write_text("tampered cached weights")
+
+    model_dir = tmp_path / "offline_bundle" / "model"
+    model_dir.mkdir(parents=True)
+    for fname in PINNED_HASHES["generative_naming"]:
+        (model_dir / fname).write_text("data")
+
+    with patch("pathlib.Path.home", return_value=tmp_path):
+        with patch("scripts.build.resilient_file_hash") as mock_hash:
+
+            def fake_hash(path):
+                if path == corrupted_cached:
+                    return "bad_cache_hash"
+                name = path.name
+                if name in PINNED_HASHES["generative_naming"]:
+                    return PINNED_HASHES["generative_naming"][name]
+                if name in PINNED_HASHES["easyocr"]:
+                    return PINNED_HASHES["easyocr"][name]
+                return "unknown"
+
+            mock_hash.side_effect = fake_hash
+            with pytest.raises(ValueError, match="Cached asset hash mismatch"):
+                download_and_prepare_weights()
+
+
+def test_download_and_prepare_weights_cleans_up_on_corrupted_extracted_archive(
+    tmp_path, monkeypatch
+):
+    """Verify that if an extracted archive produces a weight with mismatched hash, it cleans up and raises."""
+    import zipfile
+
+    from scripts.build import PINNED_HASHES, download_and_prepare_weights
+
+    monkeypatch.chdir(tmp_path)
+    model_dir = tmp_path / "offline_bundle" / "model"
+    easyocr_dir = tmp_path / "offline_bundle" / "easyocr"
+    model_dir.mkdir(parents=True)
+    easyocr_dir.mkdir(parents=True)
+
+    for fname in PINNED_HASHES["generative_naming"]:
+        (model_dir / fname).write_text("data")
+
+    def fake_download_file(url, dest_path, **kwargs):
+        with zipfile.ZipFile(dest_path, "w") as zf:
+            zf.writestr("craft_mlt_25k.pth", b"corrupted extracted data")
+
+    with patch("scripts.build.download_file", side_effect=fake_download_file):
+        with patch("scripts.build.resilient_file_hash") as mock_hash:
+
+            def fake_hash(path):
+                if path.name == "craft_mlt_25k.pth":
+                    return "bad_extracted_hash"
+                name = path.name
+                if name in PINNED_HASHES["generative_naming"]:
+                    return PINNED_HASHES["generative_naming"][name]
+                if name in PINNED_HASHES["easyocr"]:
+                    return PINNED_HASHES["easyocr"][name]
+                return "unknown"
+
+            mock_hash.side_effect = fake_hash
+            with pytest.raises(ValueError, match="Extracted archive hash mismatch"):
+                download_and_prepare_weights()
+
+            assert not (easyocr_dir / "craft_mlt_25k.pth").exists()
+            assert not (easyocr_dir / "craft_mlt_25k.pth.zip").exists()
