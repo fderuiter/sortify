@@ -306,9 +306,15 @@ class CROMultiStudyPipeline:
                         is_cancelled = True
                         break
 
-                    artifact, _ = strategy._classify_document(
-                        doc.file_name, doc.extracted_text
-                    )
+                    if (
+                        hasattr(strategy, "last_classified_artifacts")
+                        and doc.file_name in strategy.last_classified_artifacts
+                    ):
+                        artifact = strategy.last_classified_artifacts[doc.file_name]
+                    else:
+                        artifact, _ = strategy._classify_document(
+                            doc.file_name, doc.extracted_text
+                        )
                     art_id = artifact.artifact_id if artifact else "unclassified"
                     art_name = artifact.name if artifact else "Unclassified"
                     classified_map[doc.file_name] = art_id
@@ -384,9 +390,12 @@ class CROMultiStudyPipeline:
                     break
 
                 # Compliance evaluation & report generation for this study
-                comp_eval = self.compliance_engine.evaluate_compliance(
-                    classified_map, filenames, base_dir=study_target_dir
-                )
+                if getattr(strategy, "last_compliance_result", None) is not None:
+                    comp_eval = strategy.last_compliance_result
+                else:
+                    comp_eval = self.compliance_engine.evaluate_compliance(
+                        classified_map, filenames, base_dir=study_target_dir
+                    )
                 html_report_path = os.path.join(
                     study_target_dir, "compliance_audit_report.html"
                 )

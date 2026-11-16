@@ -8,6 +8,10 @@ import zipfile
 import pytest
 
 from app.core.exceptions import InvalidStateTransitionError
+from app.plugins.clinical_compliance.clinical_compliance import (
+    ClinicalComplianceEngine,
+)
+from app.plugins.clinical_compliance.clinical_strategy import ClinicalTMFStrategy
 from app.plugins.clinical_compliance.cro_multi_study_pipeline import (
     _VALID_CRO_TRANSITIONS,
     CROMultiStudyPipeline,
@@ -510,3 +514,128 @@ def test_cro_pipeline_no_completion_progress_on_cancellation():
         for prog, msg in emitted_progress:
             assert prog < 1.0
             assert "complete" not in str(msg).lower()
+
+
+def test_cro_pipeline_does_not_reclassify_documents(mocker):
+    """Verify that run_pipeline reuses cached artifacts and does not re-invoke _classify_document."""
+    with (
+        tempfile.TemporaryDirectory() as source_dir,
+        tempfile.TemporaryDirectory() as target_dir,
+    ):
+        with open(os.path.join(source_dir, "form1572.txt"), "w") as f:
+            f.write(
+                "DEPARTMENT OF HEALTH AND HUMAN SERVICES FOOD AND DRUG ADMINISTRATION STATEMENT OF INVESTIGATOR Form FDA 1572 Protocol ID: PROTO-101"
+            )
+        with open(os.path.join(source_dir, "protocol.txt"), "w") as f:
+            f.write(
+                "Clinical Study Protocol Version 1.0 Protocol ID: PROTO-101 Schedule of assessments"
+            )
+        with open(os.path.join(source_dir, "unrelated.txt"), "w") as f:
+            f.write(
+                "Arbitrary notes without regulatory significance Protocol ID: PROTO-101"
+            )
+
+        classify_spy = mocker.spy(ClinicalTMFStrategy, "_classify_document")
+
+        pipeline = CROMultiStudyPipeline(mode="tmf")
+        result = pipeline.run_pipeline(
+            source_root=source_dir,
+            target_root=target_dir,
+        )
+
+        assert result.status == CROPipelineState.COMPLETED
+        assert result.total_scanned_files == 3
+
+        # Exactly 3 calls during generate_plan (one per document), and ZERO calls during the copy loop
+        assert classify_spy.call_count == 3
+
+
+def test_cro_pipeline_fallback_to_classify_document_on_cache_miss(mocker):
+    """Verify that run_pipeline safely falls back to _classify_document if a document key is missing from cache."""
+    with (
+        tempfile.TemporaryDirectory() as source_dir,
+        tempfile.TemporaryDirectory() as target_dir,
+    ):
+        with open(os.path.join(source_dir, "form1572.txt"), "w") as f:
+            f.write(
+                "DEPARTMENT OF HEALTH AND HUMAN SERVICES FOOD AND DRUG ADMINISTRATION STATEMENT OF INVESTIGATOR Form FDA 1572 Protocol ID: PROTO-101"
+            )
+        with open(os.path.join(source_dir, "protocol.txt"), "w") as f:
+            f.write(
+                "Clinical Study Protocol Version 1.0 Protocol ID: PROTO-101 Schedule of assessments"
+            )
+
+        orig_generate_plan = ClinicalTMFStrategy.generate_plan
+
+        def patched_generate_plan(self, filenames, documents, **kwargs):
+            res = orig_generate_plan(self, filenames, documents, **kwargs)
+            # Simulate a missing cache key for protocol.txt
+            if "protocol.txt" in self.last_classified_artifacts:
+                del self.last_classified_artifacts["protocol.txt"]
+            return res
+
+        mocker.patch.object(ClinicalTMFStrategy, "generate_plan", patched_generate_plan)
+        classify_spy = mocker.spy(ClinicalTMFStrategy, "_classify_document")
+
+        pipeline = CROMultiStudyPipeline(mode="tmf")
+        result = pipeline.run_pipeline(
+            source_root=source_dir,
+            target_root=target_dir,
+        )
+
+        assert result.status == CROPipelineState.COMPLETED
+        assert result.total_scanned_files == 2
+        # 2 calls during generate_plan + 1 fallback call for protocol.txt during copy loop = 3 calls
+        assert classify_spy.call_count == 3
+
+
+def test_cro_pipeline_reuses_precomputed_compliance_result(mocker):
+    """Verify that run_pipeline reuses strategy.last_compliance_result without re-evaluating compliance."""
+    with (
+        tempfile.TemporaryDirectory() as source_dir,
+        tempfile.TemporaryDirectory() as target_dir,
+    ):
+        with open(os.path.join(source_dir, "form1572.txt"), "w") as f:
+            f.write(
+                "DEPARTMENT OF HEALTH AND HUMAN SERVICES FOOD AND DRUG ADMINISTRATION STATEMENT OF INVESTIGATOR Form FDA 1572 Protocol ID: PROTO-101"
+            )
+
+        eval_spy = mocker.spy(ClinicalComplianceEngine, "evaluate_compliance")
+
+        pipeline = CROMultiStudyPipeline(mode="tmf")
+        result = pipeline.run_pipeline(
+            source_root=source_dir,
+            target_root=target_dir,
+        )
+
+        assert result.status == CROPipelineState.COMPLETED
+        # Exactly 1 evaluate_compliance call inside strategy.generate_plan, 0 calls in pipeline's loop
+        assert eval_spy.call_count == 1
+
+
+def test_clinical_strategy_partial_cache_on_cancel():
+    """Verify that ClinicalTMFStrategy preserves processed documents in last_classified_artifacts when cancelled."""
+    strategy = ClinicalTMFStrategy(mode="tmf", generate_audit_report=False)
+    filenames = ["doc1.txt", "doc2.txt", "doc3.txt"]
+    documents = [
+        "DEPARTMENT OF HEALTH AND HUMAN SERVICES FOOD AND DRUG ADMINISTRATION STATEMENT OF INVESTIGATOR Form FDA 1572 Protocol ID: PROTO-101",
+        "Clinical Study Protocol Version 1.0 Protocol ID: PROTO-101",
+        "Advarra Institutional Review Board IRB Approval Letter Protocol ID: PROTO-101",
+    ]
+
+    call_count = 0
+
+    def cancel_after_first():
+        nonlocal call_count
+        call_count += 1
+        return call_count > 1
+
+    strategy.generate_plan(filenames, documents, cancel_check=cancel_after_first)
+
+    # First document was processed before cancellation
+    assert "doc1.txt" in strategy.last_classified_artifacts
+    assert strategy.last_classified_artifacts["doc1.txt"] is not None
+    assert "doc1.txt" in strategy.last_classified_map
+    # Subsequent documents were not processed due to cancellation
+    assert "doc2.txt" not in strategy.last_classified_artifacts
+    assert "doc3.txt" not in strategy.last_classified_artifacts
