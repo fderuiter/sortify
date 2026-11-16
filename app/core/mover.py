@@ -1316,6 +1316,15 @@ def _process_move_item(
 
                     db.update_quarantine_status(
                         job_id=job_id,
+                        status="IN_INSPECTION",
+                        audit_entry={
+                            "timestamp": time.time(),
+                            "status": "IN_INSPECTION",
+                            "details": "Downstream AsyncMoveEngine compliance inspection",
+                        },
+                    )
+                    db.update_quarantine_status(
+                        job_id=job_id,
                         status="QUARANTINED",
                         policy_action="sensitivity_hold",
                         audit_entry={
