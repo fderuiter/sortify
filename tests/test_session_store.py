@@ -1,11 +1,13 @@
 """Sessions read and write the one app store (ADR 0008)."""
 
 import json
+import time
 from pathlib import Path
 
 import pytest
 
 from app.config import AppSettings
+from app.core.db_conn import get_db_connection
 from app.core.history import open_session_history
 from app.core.pipeline import SortPipeline
 from app.core.session import AppSession
@@ -14,7 +16,7 @@ from app.core.session_catalog import (
     list_sessions,
     mark_session_abandoned,
 )
-from app.core.store import open_store
+from app.core.store import Store, open_store
 
 
 @pytest.fixture
@@ -117,3 +119,129 @@ def test_an_interrupted_rollback_is_found_by_its_journal(store):
     assert entry["journal_path"] == str(journal)
     # The journal sits in the app directory, which recovery must never delete.
     assert "session_dir" not in entry
+
+
+def test_list_sessions_executes_single_query(store):
+    """Criterion 1: list_sessions executes one SQL statement with LEFT JOIN and GROUP BY."""
+    conn = get_db_connection(str(store.path))
+    with conn:
+        # Session 1: 2 steps, 3 files
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
+            ("sess-1", 100.0, "/base1", "completed"),
+        )
+        conn.execute(
+            "INSERT INTO step_ledger (session_id, source_path, target_path) VALUES (?, ?, ?)",
+            ("sess-1", "/base1/a.txt", "/base1/dest/a.txt"),
+        )
+        conn.execute(
+            "INSERT INTO step_ledger (session_id, source_path, target_path) VALUES (?, ?, ?)",
+            ("sess-1", "/base1/b.txt", "/base1/dest/b.txt"),
+        )
+        conn.execute(
+            "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, 1, 10, 100.0)",
+            ("sess-1", "a.txt"),
+        )
+        conn.execute(
+            "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, 2, 20, 100.0)",
+            ("sess-1", "b.txt"),
+        )
+        conn.execute(
+            "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, 3, 30, 100.0)",
+            ("sess-1", "c.txt"),
+        )
+
+        # Session 2: 0 steps, 0 files (empty child records)
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
+            ("sess-2", 200.0, "/base2", "active"),
+        )
+
+    # Trace queries on the connection
+    executed_queries = []
+    conn.set_trace_callback(executed_queries.append)
+    try:
+        sessions = list_sessions(store)
+    finally:
+        conn.set_trace_callback(None)
+
+    # Verify exactly ONE query was executed (Criterion 1 & Success metric)
+    assert len(executed_queries) == 1
+    assert "LEFT JOIN" in executed_queries[0]
+    assert "GROUP BY" in executed_queries[0]
+
+    # Verify ordering (newest timestamp first)
+    assert len(sessions) == 2
+    assert sessions[0]["session_id"] == "sess-2"
+    assert sessions[0]["timestamp"] == 200.0
+    assert sessions[0]["base_dir"] == "/base2"
+    assert sessions[0]["status"] == "active"
+    assert sessions[0]["step_count"] == 0
+    assert sessions[0]["file_count"] == 0
+    assert isinstance(sessions[0]["step_count"], int)
+    assert isinstance(sessions[0]["file_count"], int)
+    assert sessions[0]["history_db_path"] == str(store.path)
+
+    assert sessions[1]["session_id"] == "sess-1"
+    assert sessions[1]["timestamp"] == 100.0
+    assert sessions[1]["base_dir"] == "/base1"
+    assert sessions[1]["status"] == "completed"
+    assert sessions[1]["step_count"] == 2
+    assert sessions[1]["file_count"] == 3
+    assert isinstance(sessions[1]["step_count"], int)
+    assert isinstance(sessions[1]["file_count"], int)
+    assert sessions[1]["history_db_path"] == str(store.path)
+
+
+def test_list_sessions_benchmark_500_sessions(store):
+    """Criterion 3: Benchmarks confirm that 500 session records load in under 10 ms."""
+    conn = get_db_connection(str(store.path))
+    with conn:
+        for i in range(500):
+            sid = f"perf-sess-{i:04d}"
+            conn.execute(
+                "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
+                (sid, float(i), f"/dir/{i}", "completed"),
+            )
+            # Add steps and files to every other session
+            if i % 2 == 0:
+                conn.execute(
+                    "INSERT INTO step_ledger (session_id, source_path, target_path) VALUES (?, ?, ?)",
+                    (sid, f"/dir/{i}/src.txt", f"/dir/{i}/dst.txt"),
+                )
+                conn.execute(
+                    "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, 1, 10, 100.0)",
+                    (sid, "src.txt"),
+                )
+
+    # Warmup
+    list_sessions(store)
+
+    # Measure latency
+    t0 = time.perf_counter()
+    sessions = list_sessions(store)
+    latency_ms = (time.perf_counter() - t0) * 1000.0
+
+    assert len(sessions) == 500
+    assert latency_ms < 10.0, f"Latency {latency_ms:.2f} ms exceeded 10.0 ms limit"
+
+
+def test_list_sessions_legacy_database_missing_tables(tmp_path):
+    """Maintain backward compatibility with older database files lacking child tables."""
+    legacy_db_path = tmp_path / "legacy_app.db"
+    conn = get_db_connection(str(legacy_db_path))
+    with conn:
+        conn.execute(
+            "CREATE TABLE sessions (session_id TEXT PRIMARY KEY, timestamp REAL, base_dir TEXT, status TEXT)"
+        )
+        conn.execute(
+            "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
+            ("leg-1", 50.0, "/legacy", "completed"),
+        )
+
+    store = Store(app_dir=tmp_path, path=legacy_db_path)
+    sessions = list_sessions(store)
+    assert len(sessions) == 1
+    assert sessions[0]["session_id"] == "leg-1"
+    assert sessions[0]["step_count"] == 0
+    assert sessions[0]["file_count"] == 0
