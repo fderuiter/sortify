@@ -309,12 +309,12 @@ class QuarantineInterceptorService:
                         )
                         dlq_item = self.db.get_quarantine_record(job_id)
                         if dlq_item:
-                            dlq_item["status"] = "DEAD_LETTER_QUEUE"
                             self.dlq_records.append(dlq_item)
                             return validate_quarantine_record(dlq_item)
                         fallback = {
                             "job_id": job_id,
-                            "status": "DEAD_LETTER_QUEUE",
+                            "status": "MANUAL_REVIEW_REQUIRED",
+                            "error_message": err_msg,
                             "error": err_msg,
                         }
                         return validate_quarantine_record(fallback)
@@ -618,12 +618,12 @@ class QuarantineInterceptorService:
                     )
                     dlq_item = self.db.get_quarantine_record(job_id)
                     if dlq_item:
-                        dlq_item["status"] = "DEAD_LETTER_QUEUE"
                         self.dlq_records.append(dlq_item)
                         return validate_quarantine_record(dlq_item)
                     fallback = {
                         "job_id": job_id,
-                        "status": "DEAD_LETTER_QUEUE",
+                        "status": "MANUAL_REVIEW_REQUIRED",
+                        "error_message": err_msg,
                         "error": err_msg,
                     }
                     return validate_quarantine_record(fallback)
@@ -783,15 +783,15 @@ class QuarantineInterceptorService:
                     "details": f"Worker timeout exceeded: {err_msg}. Routed to Dead-Letter Queue.",
                 },
             )
-            # Move job to dead-letter queue
+            # Record failed job in dead-letter tracking
             dlq_item = self.db.get_quarantine_record(job_id)
             if dlq_item:
-                dlq_item["status"] = "DEAD_LETTER_QUEUE"
                 self.dlq_records.append(dlq_item)
                 return validate_quarantine_record(dlq_item)
             fallback = {
                 "job_id": job_id,
-                "status": "DEAD_LETTER_QUEUE",
+                "status": "MANUAL_REVIEW_REQUIRED",
+                "error_message": err_msg,
                 "error": err_msg,
             }
             return validate_quarantine_record(fallback)
@@ -813,12 +813,12 @@ class QuarantineInterceptorService:
             )
             dlq_item = self.db.get_quarantine_record(job_id)
             if dlq_item:
-                dlq_item["status"] = "DEAD_LETTER_QUEUE"
                 self.dlq_records.append(dlq_item)
                 return validate_quarantine_record(dlq_item)
             fallback = {
                 "job_id": job_id,
-                "status": "DEAD_LETTER_QUEUE",
+                "status": "MANUAL_REVIEW_REQUIRED",
+                "error_message": err_msg,
                 "error": err_msg,
             }
             return validate_quarantine_record(fallback)
@@ -898,6 +898,16 @@ class QuarantineInterceptorService:
                             "job_id": job_id,
                             "status": "RELEASED",
                             "details": f"Quarantine job '{job_id}' is already released",
+                        }
+                    )
+                    continue
+
+                if record.get("status") == "DISMISSED":
+                    results.append(
+                        {
+                            "job_id": job_id,
+                            "status": "FAILED",
+                            "error": f"Cannot release dismissed quarantine job '{job_id}'",
                         }
                     )
                     continue
@@ -1076,6 +1086,16 @@ class QuarantineInterceptorService:
                     )
                     continue
 
+                if record.get("status") == "RELEASED":
+                    results.append(
+                        {
+                            "job_id": job_id,
+                            "status": "FAILED",
+                            "error": f"Cannot dismiss already released quarantine job '{job_id}'",
+                        }
+                    )
+                    continue
+
                 self.db.update_quarantine_status(
                     job_id=job_id,
                     status="DISMISSED",
@@ -1103,3 +1123,14 @@ class QuarantineInterceptorService:
                     }
                 )
         return results
+
+    def recover_orphaned_jobs(
+        self, timeout_seconds: Optional[float] = None
+    ) -> list[str]:
+        """Detect and reset orphaned inspection jobs exceeding configured timeouts back to STAGED."""
+        effective_timeout = (
+            timeout_seconds if timeout_seconds is not None else self.worker_timeout
+        )
+        return self.db.recover_orphaned_quarantine_jobs(
+            timeout_seconds=effective_timeout
+        )

@@ -289,7 +289,7 @@ def test_redaction_write_failure_is_not_released():
     ):
         result = service.process_quarantine_job(job_id)
 
-    assert result["status"] == "DEAD_LETTER_QUEUE"
+    assert result["status"] == "MANUAL_REVIEW_REQUIRED"
     stored = db.get_quarantine_record(job_id)
     assert stored["status"] == "MANUAL_REVIEW_REQUIRED"
     audit_statuses = [entry["status"] for entry in stored["audit_log"]]
