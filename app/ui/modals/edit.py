@@ -51,6 +51,27 @@ class RenameResult(str):
         return (str(self), self.destination_override)
 
 
+def _set_collision_warning_helper(
+    modal: ModalScreen[Any], msg: str, is_error: bool = False
+) -> None:
+    """Update collision warning label widget text and styles on a modal screen."""
+    try:
+        lbl = modal.query_one("#warning-collision", Label)
+        lbl.update(msg)
+        if is_error:
+            lbl.remove_class("modal-warning")
+            lbl.add_class("modal-error")
+        else:
+            lbl.remove_class("modal-error")
+            lbl.add_class("modal-warning")
+    except Exception:
+        pass
+
+
+_set_collision_warning = _set_collision_warning_helper
+_update_collision_warning = _set_collision_warning_helper
+
+
 class RenameModal(
     ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str | RenameResult]]
 ):
@@ -358,17 +379,7 @@ class RenameModal(
 
     def _set_collision_warning(self, msg: str, is_error: bool = False) -> None:
         """Update warning label widget text and styles."""
-        try:
-            lbl = self.query_one("#warning-collision", Label)
-            lbl.update(msg)
-            if is_error:
-                lbl.remove_class("modal-warning")
-                lbl.add_class("modal-error")
-            else:
-                lbl.remove_class("modal-error")
-                lbl.add_class("modal-warning")
-        except Exception:
-            pass
+        _set_collision_warning_helper(self, msg, is_error=is_error)
 
     def _check_collision_and_update_ui(self) -> tuple[bool, Optional[str]]:
         """Run live collision check and path validation across plan and filesystem.
@@ -839,17 +850,7 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
 
     def _set_collision_warning(self, msg: str, is_error: bool = False) -> None:
         """Update collision warning label."""
-        try:
-            lbl = self.query_one("#warning-collision", Label)
-            lbl.update(msg)
-            if is_error:
-                lbl.remove_class("modal-warning")
-                lbl.add_class("modal-error")
-            else:
-                lbl.remove_class("modal-error")
-                lbl.add_class("modal-warning")
-        except Exception:
-            pass
+        _set_collision_warning_helper(self, msg, is_error=is_error)
 
     def _check_collision_and_update_ui(self) -> tuple[bool, Optional[str]]:
         """Run live collision check and path validation across plan and filesystem."""
