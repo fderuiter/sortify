@@ -131,7 +131,7 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
                 ),
             ):
                 thread = run_background_download(
-                    "http://example.com/external-model.onnx",
+                    "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx",
                     str(tmp_path / "model_dir"),
                     on_success=on_success,
                     on_failure=on_failure,

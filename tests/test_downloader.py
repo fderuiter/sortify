@@ -8,6 +8,7 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.core.downloader import (
+    DEFAULT_MODEL_URL,
     DiskSpaceError,
     DownloadCancelledError,
     DownloadError,
@@ -15,6 +16,7 @@ from app.core.downloader import (
     DownloadState,
     InvalidStateTransitionError,
     ModelVerificationError,
+    _validate_url,
     run_background_download,
     verify_downloaded_model,
     verify_temp_file_hash,
@@ -66,6 +68,186 @@ def test_verify_downloaded_model(temp_model_dir):
     assert verify_downloaded_model(temp_model_dir)
 
 
+@pytest.mark.parametrize(
+    "invalid_url, expected_match",
+    [
+        ("file:///etc/passwd", "Unsupported URL scheme 'file'"),
+        ("file:///model.onnx", "Unsupported URL scheme 'file'"),
+        (
+            "http://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx",
+            "Unsupported URL scheme 'http'",
+        ),
+        ("http://example.com/model.onnx", "Unsupported URL scheme 'http'"),
+        ("ftp://huggingface.co/model.onnx", "Unsupported URL scheme 'ftp'"),
+    ],
+)
+def test_downloader_rejects_non_https_schemes(invalid_url, expected_match):
+    """Verify that file, http, and other non-HTTPS schemes are rejected."""
+    with pytest.raises(DownloadError, match=expected_match):
+        _validate_url(invalid_url)
+
+
+@pytest.mark.parametrize(
+    "invalid_url, expected_match",
+    [
+        (
+            "https://127.0.0.1/model.onnx",
+            "Private or local IP addresses are not permitted",
+        ),
+        (
+            "https://127.0.0.2/model.onnx",
+            "Private or local IP addresses are not permitted",
+        ),
+        ("https://[::1]/model.onnx", "Private or local IP addresses are not permitted"),
+        (
+            "https://169.254.169.254/latest/meta-data",
+            "Private or local IP addresses are not permitted",
+        ),
+        (
+            "https://10.0.0.1/model.onnx",
+            "Private or local IP addresses are not permitted",
+        ),
+        (
+            "https://192.168.1.1/model.onnx",
+            "Private or local IP addresses are not permitted",
+        ),
+        (
+            "https://172.16.0.1/model.onnx",
+            "Private or local IP addresses are not permitted",
+        ),
+        (
+            "https://0.0.0.0/model.onnx",
+            "Private or local IP addresses are not permitted",
+        ),
+        (
+            "https://localhost/model.onnx",
+            "Local or loopback hostnames are not permitted",
+        ),
+        (
+            "https://myhost.local/model.onnx",
+            "Local or loopback hostnames are not permitted",
+        ),
+        (
+            "https://app.localhost/model.onnx",
+            "Local or loopback hostnames are not permitted",
+        ),
+    ],
+)
+def test_downloader_rejects_loopback_and_private_ips(invalid_url, expected_match):
+    """Verify that loopback, link-local metadata, and private IP addresses are rejected."""
+    with pytest.raises(DownloadError, match=expected_match):
+        _validate_url(invalid_url)
+
+
+@pytest.mark.parametrize(
+    "invalid_url",
+    [
+        "https://example.com/model.onnx",
+        "https://evil-huggingface.co/model.onnx",
+        "https://huggingface.co.attacker.com/model.onnx",
+        "https://malicious.org/model.onnx",
+        "https://github.com/model.onnx",
+    ],
+)
+def test_downloader_rejects_untrusted_hostnames(invalid_url):
+    """Verify that untrusted domains outside the model host allowlist are rejected."""
+    with pytest.raises(DownloadError, match="Untrusted model download host"):
+        _validate_url(invalid_url)
+
+
+@pytest.mark.parametrize(
+    "invalid_url, expected_match",
+    [
+        ("", "must be a non-empty string"),
+        ("   ", "must be a non-empty string"),
+        ("not-a-valid-url", "Unsupported URL scheme"),
+        ("https" + ":///model.onnx", "URL hostname is missing or empty"),
+        ("huggingface.co/model.onnx", "Unsupported URL scheme"),
+    ],
+)
+def test_downloader_rejects_malformed_urls(invalid_url, expected_match):
+    """Verify that empty, missing scheme, or malformed URLs are rejected."""
+    with pytest.raises(DownloadError, match=expected_match):
+        _validate_url(invalid_url)
+
+
+def test_start_download_validation_prevents_downloading_state(temp_model_dir):
+    """Verify that start_download rejects invalid URLs without mutating state to DOWNLOADING."""
+    dm = DownloadManager()
+    dm.state["is_downloading"] = False
+    dm.transition_to(DownloadState.IDLE)
+
+    invalid_urls = [
+        "file:///etc/passwd",
+        "http://huggingface.co/model.onnx",
+        "https://127.0.0.1/model.onnx",
+        "https://169.254.169.254/latest/meta-data",
+        "https://example.com/model.onnx",
+    ]
+
+    for url in invalid_urls:
+        with pytest.raises(DownloadError):
+            dm.start_download(url, temp_model_dir)
+
+        assert dm.current_state == DownloadState.IDLE
+        assert dm.state["is_downloading"] is False
+        assert dm.current_thread is None
+
+
+def test_run_background_download_validation_prevents_network_unblock(temp_model_dir):
+    """Verify that run_background_download rejects invalid URLs before network unblocking."""
+    from app.core.shared_registry import _thread_local
+
+    was_sandboxed = getattr(_thread_local, "sandboxed", False)
+    _thread_local.sandboxed = True
+
+    try:
+        invalid_urls = [
+            "file:///etc/passwd",
+            "http://huggingface.co/model.onnx",
+            "https://127.0.0.1/model.onnx",
+            "https://169.254.169.254/latest/meta-data",
+            "https://example.com/model.onnx",
+        ]
+
+        for url in invalid_urls:
+            failure_called = threading.Event()
+            success_called = threading.Event()
+            captured = []
+
+            thread = run_background_download(
+                url,
+                temp_model_dir,
+                on_success=lambda: success_called.set(),
+                on_failure=lambda err: (captured.append(err), failure_called.set()),
+            )
+            assert failure_called.wait(timeout=5)
+            assert not success_called.is_set()
+            assert len(captured) == 1
+            assert isinstance(captured[0], DownloadError)
+            thread.join(timeout=5)
+
+            # Ensure no temporary or destination files were created
+            assert not os.path.exists(os.path.join(temp_model_dir, "model.onnx"))
+            assert not os.path.exists(os.path.join(temp_model_dir, "model.onnx.tmp"))
+    finally:
+        _thread_local.sandboxed = was_sandboxed
+
+
+@pytest.mark.parametrize(
+    "valid_url",
+    [
+        DEFAULT_MODEL_URL,
+        "https://hf.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx",
+        "https://cdn-lfs.huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx",
+        "https://www.huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx",
+    ],
+)
+def test_downloader_allowed_urls_pass_validation(valid_url):
+    """Verify that trusted Hugging Face HTTPS endpoints pass validation."""
+    _validate_url(valid_url)
+
+
 def test_downloader_sandboxing_bypass(temp_model_dir):
     # Set thread local sandboxed to True globally to simulate sandbox mode
     from app.core.shared_registry import _thread_local
@@ -105,7 +287,7 @@ def test_downloader_sandboxing_bypass(temp_model_dir):
             patch("shutil.disk_usage", return_value=(10000, 5000, 5000)),
         ):
             run_background_download(
-                "http://example.com/model.onnx",
+                DEFAULT_MODEL_URL,
                 temp_model_dir,
                 progress_callback=None,
                 on_success=on_success,
@@ -145,7 +327,7 @@ def test_downloader_cancellation(temp_model_dir):
         patch("shutil.disk_usage", return_value=(10000, 5000, 5000)),
     ):
         run_background_download(
-            "http://example.com/model.onnx",
+            DEFAULT_MODEL_URL,
             temp_model_dir,
             progress_callback=None,
             on_success=on_success,
@@ -186,7 +368,7 @@ def test_downloader_insufficient_disk_space(temp_model_dir):
         patch("shutil.disk_usage", return_value=(10000000, 1000000, 1000000)),
     ):
         run_background_download(
-            "http://example.com/model.onnx",
+            DEFAULT_MODEL_URL,
             temp_model_dir,
             progress_callback=None,
             on_success=on_success,
@@ -343,7 +525,7 @@ def test_downloader_fails_on_hash_mismatch(temp_model_dir):
         patch("shutil.disk_usage", return_value=(10000, 5000, 5000)),
     ):
         run_background_download(
-            "http://example.com/model.onnx",
+            DEFAULT_MODEL_URL,
             temp_model_dir,
             progress_callback=None,
             on_success=on_success,
@@ -374,7 +556,7 @@ def test_downloader_aborts_on_placeholder_proxy(temp_model_dir):
     from app.core.downloader import NetworkError
 
     run_background_download(
-        "http://example.com/model.onnx",
+        DEFAULT_MODEL_URL,
         temp_model_dir,
         proxy="<DECRYPTION_FAILED>",
         progress_callback=None,
@@ -431,7 +613,7 @@ def test_downloader_exponential_backoff_retry_success(temp_model_dir):
         patch("shutil.disk_usage", return_value=(10000, 5000, 5000)),
     ):
         run_background_download(
-            "http://example.com/model.onnx",
+            DEFAULT_MODEL_URL,
             temp_model_dir,
             progress_callback=None,
             on_success=on_success,
@@ -474,7 +656,7 @@ def test_downloader_exponential_backoff_retry_exhausted(temp_model_dir):
 
     with patch("urllib.request.build_opener", return_value=mock_opener):
         run_background_download(
-            "http://example.com/model.onnx",
+            DEFAULT_MODEL_URL,
             temp_model_dir,
             progress_callback=None,
             on_success=on_success,
@@ -512,7 +694,7 @@ def test_downloader_cancellation_during_backoff_wait(temp_model_dir):
 
     with patch("urllib.request.build_opener", return_value=mock_opener):
         run_background_download(
-            "http://example.com/model.onnx",
+            DEFAULT_MODEL_URL,
             temp_model_dir,
             progress_callback=None,
             on_success=on_success,
@@ -572,7 +754,7 @@ def test_downloader_proxy_maintained_across_retries(temp_model_dir):
 
     with patch("shutil.disk_usage", return_value=(10000, 5000, 5000)):
         run_background_download(
-            "http://example.com/model.onnx",
+            DEFAULT_MODEL_URL,
             temp_model_dir,
             proxy="http://proxy.test:8080",
             progress_callback=None,
@@ -683,7 +865,7 @@ def test_download_manager_concurrent_cancellation_guards(temp_model_dir):
         "app.core.downloader.run_background_download",
         side_effect=mock_run_background_download,
     ):
-        dm.start_download("http://example.com/model.onnx", temp_model_dir)
+        dm.start_download(DEFAULT_MODEL_URL, temp_model_dir)
 
         assert dm.current_state == DownloadState.DOWNLOADING
         assert dm.state["is_downloading"] is True
@@ -767,7 +949,7 @@ def test_run_background_download_cancellation_before_completion(temp_model_dir):
         ),
     ):
         run_background_download(
-            "http://example.com/model.onnx",
+            DEFAULT_MODEL_URL,
             temp_model_dir,
             progress_callback=None,
             on_success=on_success,
