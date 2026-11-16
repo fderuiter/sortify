@@ -1,0 +1,33 @@
+stateDiagram-v2
+    [*] --> active: Begin Session Transaction
+    [*] --> uncommitted: Stage Uncommitted Session
+    uncommitted --> completed: Commit Staged Session
+    uncommitted --> rolled_back: Discard Staged Session
+    uncommitted --> partially_rolled_back: Partial Staging Discard
+    uncommitted --> failed: Staging Commit Fault
+    uncommitted --> abandoned: Staging Orphaned
+    active --> completed: Execution Succeeded
+    active --> failed: Execution Error
+    active --> rolled_back: Full Immediate Rollback
+    active --> partially_rolled_back: Partial Immediate Rollback
+    active --> undo_snapshot: Capture Undo Snapshot
+    active --> abandoned: Heartbeat Lost or Process Killed
+    completed --> rolled_back: Full Session Rollback
+    completed --> partially_rolled_back: Partial Session Rollback
+    completed --> failed: Rollback Exception
+    completed --> abandoned: Session Tombstoned
+    partially_rolled_back --> rolled_back: Resume and Complete Undo
+    partially_rolled_back --> failed: Undo Continuation Failed
+    partially_rolled_back --> abandoned: Partial Undo Abandoned
+    undo_snapshot --> rolled_back: Restore Undo Snapshot
+    undo_snapshot --> failed: Snapshot Restore Failed
+    undo_snapshot --> abandoned: Snapshot Expired or Discarded
+    failed --> active: Retry Session Execution
+    failed --> completed: Manual Reconciliation Override
+    failed --> rolled_back: Revert Incomplete Operations
+    failed --> partially_rolled_back: Partial Incomplete Revert
+    failed --> abandoned: Mark Unrecoverable Session
+    abandoned --> rolled_back: Reconcile and Revert Orphan
+    abandoned --> partially_rolled_back: Partial Orphan Cleanup
+    abandoned --> failed: Reconciliation Error
+    rolled_back --> [*]: Terminal State

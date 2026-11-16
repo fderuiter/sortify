@@ -37,6 +37,139 @@ The terminal UI keeps the interface responsive by running every slow step in a T
 
 ![Watchdog File Event State Machine](assets/diagrams/architecture_watchdog_state.svg)
 
+## Core Execution Lifecycle State Machines
+
+Sortify's platform runtime relies on formal finite state machines across file movement, pipeline orchestration, transactional history, and remote asset retrieval. Each state machine enforces strict transition rules, pre-flight guardrails, and error recovery hooks to eliminate invalid state transitions and ensure safe transactional recovery.
+
+### Move Engine Lifecycle (`MoveEngineState`)
+
+The [AsyncMoveEngine][app.core.mover.AsyncMoveEngine] (`app/core/mover.py`) coordinates chunked asynchronous physical file moves, path collision avoidance, and folder pruning. Its lifecycle is governed by [MoveEngineState](api_reference.md#appcoremover), which validates all transitions against `_VALID_MOVE_ENGINE_TRANSITIONS`. Invalid transition attempts raise `InvalidMoveStateError`.
+
+![Async Move Engine Lifecycle State Machine](assets/diagrams/architecture_move_engine_state.svg)
+
+| Current State | Target State | Trigger / Event | Error Recovery / Safety Hook |
+|---|---|---|---|
+| `IDLE` | `PREPARING` | `start_moves()` invoked | Pre-flight validation checks source/destination paths and write permissions |
+| `PREPARING` | `MOVING_CHUNK` | File batch ready | Chunk boundary verification; transaction records initialized |
+| `PREPARING` | `RESOLVING_LINKS` | Shortcuts or symlinks only | Bypasses file copy phase; validates link targets directly |
+| `PREPARING` | `CLEANING_DIRS` | Empty folder cleanup only | Bypasses move phase; targets directory structure pruning |
+| `PREPARING` | `COMPLETED` | Zero-operation plan | Finalizes session cleanly without modifying filesystem |
+| `PREPARING` | `CANCELLING` / `CANCELLED` | Cancellation requested | Halts initialization; releases resources and cancellation tokens |
+| `PREPARING` | `FAILED` | Pre-flight check failure | Halts startup; records exception in ledger; enables rollback |
+| `MOVING_CHUNK` | `MOVING_CHUNK` | Batch complete; more chunks remain | Emits chunk progress event; flushes completed ops to ledger |
+| `MOVING_CHUNK` | `RESOLVING_LINKS` | All chunks moved; links pending | Transitions to symlink and Windows shortcut target resolution |
+| `MOVING_CHUNK` | `CLEANING_DIRS` | All chunks moved; no links to resolve | Proceeds to remove now-empty source directories |
+| `MOVING_CHUNK` | `COMPLETED` | All chunks moved; cleanup skipped | Commits transaction ledger as successfully completed |
+| `MOVING_CHUNK` | `CANCELLING` / `CANCELLED` | User or worker cancellation | Suspends active chunk transfers; drains in-flight file operations |
+| `MOVING_CHUNK` | `FAILED` | File move IO or permission error | Enters failure handling; initiates automatic rollback if configured |
+| `RESOLVING_LINKS` | `CLEANING_DIRS` | Links resolved | Enters source folder pruning phase |
+| `RESOLVING_LINKS` | `COMPLETED` | Links resolved; cleanup skipped | Commits transaction ledger as completed |
+| `RESOLVING_LINKS` | `CANCELLING` / `CANCELLED` | Cancellation during link phase | Aborts remaining link updates; preserves files moved so far |
+| `RESOLVING_LINKS` | `FAILED` | Link creation or resolution error | Captures failure details in transaction record |
+| `CLEANING_DIRS` | `COMPLETED` | Source folder pruning finished | Finalizes file moves; records session summary and telemetry |
+| `CLEANING_DIRS` | `CANCELLING` / `CANCELLED` | Cancellation during cleanup | Leaves remaining empty directories intact; terminates run |
+| `CLEANING_DIRS` | `FAILED` | Directory deletion permission error | Records non-fatal cleanup error; preserves moved files |
+| `CANCELLING` | `CANCELLED` | Cancellation drain completed | Confirms all workers stopped and temporary locks released |
+| `CANCELLING` | `FAILED` | Unrecoverable cancellation error | Logs critical cancellation exception for debugging |
+| `CANCELLED` | `IDLE` / `PREPARING` | Engine reset or retry | Reinitializes cancellation tokens for next run |
+| `FAILED` | `ROLLING_BACK` | Rollback triggered or requested | Executes reverse operations recorded in transaction ledger |
+| `FAILED` | `IDLE` / `PREPARING` | Engine reset or retry | Clears error status and prepares engine for reuse |
+| `ROLLING_BACK` | `ROLLED_BACK` | Inverse moves complete and verified | Restores files to original paths; marks transaction rolled back |
+| `ROLLING_BACK` | `FAILED` | Secondary failure during rollback | Preserves partial undo ledger for manual administrator recovery |
+| `ROLLED_BACK` | `IDLE` / `PREPARING` | Engine reset or new move | Clears rollback context; resets engine for subsequent runs |
+| `COMPLETED` | `IDLE` / `PREPARING` | Engine reset or new move | Resets engine state for subsequent sort operations |
+
+### Pipeline Execution Lifecycle (`PipelineLifecycleState`)
+
+The [SortPipeline][app.core.pipeline.SortPipeline] (`app/core/pipeline.py`) coordinates document scanning, ML clustering, sorting plan synthesis, execution, and rollback. Pipeline states are defined by [PipelineLifecycleState](api_reference.md#appcorepipeline) and validated against `_ALLOWED_TRANSITIONS`. Invalid transitions raise `IllegalStateTransitionError`.
+
+![Sort Pipeline Operational Lifecycle State Machine](assets/diagrams/architecture_pipeline_state.svg)
+
+| Current State | Target State | Trigger / Event | Error Recovery / Safety Hook |
+|---|---|---|---|
+| `CREATED` | `PLANNING` | `plan()` invoked | Initiates background scanning, feature extraction, and clustering |
+| `CREATED` | `PLANNED` | Direct plan injection | Pre-computed plan supplied; skips scanning and analysis phases |
+| `CREATED` | `ROLLING_BACK` | Immediate rollback called | Enters rollback flow directly on initialized pipeline instance |
+| `PLANNING` | `PLANNED` | Plan generation succeeds | Emits planned event; sorting plan verified by verifier |
+| `PLANNING` | `FAILED` | Extraction or clustering failure | Captures exception stack trace; halts pipeline execution |
+| `PLANNING` | `CANCELLED` | Cancellation token signalled | Cancels worker pool extraction tasks; cleans up temp artifacts |
+| `PLANNED` | `EXECUTING` | `execute()` invoked | Passes verified sorting plan to `AsyncMoveEngine` |
+| `PLANNED` | `PLANNING` | Re-plan or parameter adjustment | Clears existing plan; re-runs clustering with updated settings |
+| `PLANNED` | `CANCELLED` | Cancellation before execution | Discards plan safely without mutating any target files |
+| `PLANNED` | `ROLLING_BACK` | Rollback requested on plan | Aborts planned session; triggers cleanup hooks |
+| `EXECUTING` | `COMPLETED` | All file operations completed | Records completed execution metrics; releases session locks |
+| `EXECUTING` | `CANCELLED` | Cancellation during move execution | Signals `AsyncMoveEngine` cancel; preserves partial state |
+| `EXECUTING` | `ROLLING_BACK` | Auto-rollback on move failure | Automatically triggers inverse operations to revert displaced files |
+| `EXECUTING` | `FAILED` | Unhandled execution exception | Records error details in pipeline result; preserves state |
+| `ROLLING_BACK` | `ROLLED_BACK` | Rollback steps complete | Reverts all displaced files; updates session ledger to rolled back |
+| `ROLLING_BACK` | `FAILED` | Rollback step failure | Flags partial rollback; saves audit log for manual recovery |
+| `COMPLETED` | `PLANNING` | Pipeline re-run requested | Re-arms pipeline instance for subsequent planning pass |
+| `COMPLETED` | `ROLLING_BACK` | Session rollback requested (`undo`) | Initiates reversal of completed operations from session history |
+| `FAILED` | `PLANNING` | Planning retry | Clears error flag; restarts planning workflow |
+| `FAILED` | `ROLLING_BACK` | Revert failed operations | Rolls back any files moved prior to the failure |
+| `CANCELLED` | `PLANNING` | Planning restart | Reinitializes pipeline state for fresh run |
+| `CANCELLED` | `ROLLING_BACK` | Cleanup cancelled operations | Reverts any files moved before cancellation signal |
+| `ROLLED_BACK` | `PLANNING` | New planning pass | Starts new planning cycle following clean rollback |
+| `ROLLED_BACK` | `ROLLING_BACK` | Resume / repeat rollback | Continues rollback from last verified checkpoint |
+
+### Session History Transaction State Machine (`SessionStateMachine`)
+
+Sortify's audit ledger and history service (`app/core/history.py`) maintains ACID guarantees and audit trails for sorting sessions. Transitions are validated by [SessionStateMachine](api_reference.md#appcorehistory) against `TRANSITION_MATRIX`. Disallowed transitions raise `InvalidStateTransitionError`. Every state transition records an entry in `session_lifecycle_audit`.
+
+![Session History Transaction State Machine](assets/diagrams/architecture_session_state.svg)
+
+| Current Status | Target Status | Trigger / Event | Audit & Recovery Hook |
+|---|---|---|---|
+| `uncommitted` | `completed` | Direct transaction commit | Atomically commits session; records audit ledger entry |
+| `uncommitted` | `rolled_back` | Discard staged session | Removes uncommitted changes without modifying historical records |
+| `uncommitted` | `partially_rolled_back` | Partial discard of uncommitted items | Retains remaining staging entries for inspection |
+| `uncommitted` | `failed` | Staging or commit error | Records error details in lifecycle audit table |
+| `uncommitted` | `abandoned` | Staged session abandoned | Marks session orphaned; eligible for reconciliation purge |
+| `active` | `completed` | File operations completed | Logs completion timestamp and telemetry event |
+| `active` | `failed` | Uncaught execution exception | Captures stack trace and error message in audit ledger |
+| `active` | `rolled_back` | Full immediate rollback | Reverts all recorded file moves in a single atomic transaction |
+| `active` | `partially_rolled_back` | Partial rollback executed | Records partially reverted status and affected file IDs |
+| `active` | `undo_snapshot` | Pre-execution snapshot captured | Persists filesystem undo points for deferred recovery |
+| `active` | `abandoned` | Process termination or lost heartbeat | Enables reconciliation recovery via `ledger reconcile` |
+| `completed` | `rolled_back` | Full rollback requested (`undo`) | Reverses all file operations; records audit ledger event |
+| `completed` | `partially_rolled_back` | Partial undo requested | Reverses subset of files; leaves remaining in completed status |
+| `completed` | `failed` | Error during undo attempt | Logs failure; preserves ledger for subsequent retry |
+| `completed` | `abandoned` | Session tombstoned or archived | Preserves session record while disabling active operations |
+| `partially_rolled_back` | `rolled_back` | Undo resumes and completes | Fully reconciles session to terminal rolled back status |
+| `partially_rolled_back` | `failed` | Error during resumed rollback | Keeps session in partially rolled back state for retry |
+| `partially_rolled_back` | `abandoned` | Incomplete undo abandoned | Marks remaining undo steps abandoned |
+| `undo_snapshot` | `rolled_back` | Snapshot restored | Reverts filesystem to captured snapshot state |
+| `undo_snapshot` | `failed` | Snapshot restoration error | Records restoration failure in lifecycle audit |
+| `undo_snapshot` | `abandoned` | Snapshot expired or dismissed | Releases snapshot storage safely |
+| `failed` | `active` | Retry session execution | Re-enables active status for reconciliation |
+| `failed` | `completed` | Manual reconciliation override | Marks session resolved after administrative verification |
+| `failed` | `rolled_back` | Revert partial operations of failed run | Undoes moves that succeeded before failure occurred |
+| `failed` | `partially_rolled_back` | Partial revert of failed session | Reverts recoverable operations |
+| `failed` | `abandoned` | Mark session irrecoverable | Abandons automated recovery; flags for audit review |
+| `abandoned` | `rolled_back` | `ledger reconcile` recovers orphan | Reverts orphan session moves to clean original state |
+| `abandoned` | `partially_rolled_back` | Partial recovery of orphan | Recovers accessible files |
+| `abandoned` | `failed` | Reconciliation error | Re-logs failure details in audit table |
+| `rolled_back` | `rolled_back` | Idempotent terminal transition | Re-validates already rolled-back state safely |
+
+### Model Downloader Lifecycle (`DownloadState`)
+
+The [ModelDownloader][app.core.downloader.ModelDownloader] (`app/core/downloader.py`) manages model downloads for OCR and neural embedding models. Its operational phases are tracked by [DownloadState](api_reference.md#appcoredownloader) and validated against `_VALID_TRANSITIONS`.
+
+![Model Downloader Lifecycle State Machine](assets/diagrams/architecture_download_state.svg)
+
+| Current State | Target State | Trigger / Event | Error Recovery / Safety Hook |
+|---|---|---|---|
+| `IDLE` | `DOWNLOADING` | Model download initiated | Pre-allocates cache directory; creates `.tmp` download file |
+| `DOWNLOADING` | `COMPLETED` | Stream complete & checksum verified | Atomically moves `.tmp` file to target model path; notifies listeners |
+| `DOWNLOADING` | `FAILED` | Network timeout or checksum mismatch | Deletes temporary file; records error; notifies error listeners |
+| `DOWNLOADING` | `CANCELLED` | User cancel requested (`cancel()`) | Aborts HTTP stream; purges incomplete `.tmp` file; raises `DownloadCancelledError` |
+| `COMPLETED` | `DOWNLOADING` | Re-download or update check | Re-initiates streaming if cache invalidated or model corrupted |
+| `COMPLETED` | `IDLE` | Downloader reset | Prepares downloader instance for subsequent model fetch |
+| `FAILED` | `DOWNLOADING` | Download retry initiated | Retries network request with exponential backoff if enabled |
+| `FAILED` | `IDLE` | Clear error / reset | Clears error message and resets downloader state |
+| `CANCELLED` | `DOWNLOADING` | Resume or restart download | Cleans up previous partial state and restarts download |
+| `CANCELLED` | `IDLE` | Downloader reset | Clears cancelled status and returns to idle readiness |
+
 ## Centralized System Utilities & Architectural Guardrails
 
 To prevent redundant patterns, platform-specific path bugs, and visual/functional defects across application scopes, we consolidate all system packaging checks, path character validations, and database directory setups / encryption key lookups.

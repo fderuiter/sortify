@@ -1,0 +1,30 @@
+stateDiagram-v2
+    [*] --> CREATED: Instantiate SortPipeline
+    CREATED --> PLANNING: Start Plan Generation
+    CREATED --> PLANNED: Direct Plan Injection
+    CREATED --> ROLLING_BACK: Abort and Rollback
+    PLANNING --> PLANNED: Clustering and Planning Succeeded
+    PLANNING --> FAILED: Analysis or Planning Exception
+    PLANNING --> CANCELLED: User Cancellation
+    PLANNED --> EXECUTING: Execute Sorting Plan
+    PLANNED --> PLANNING: Recalculate or Re-plan
+    PLANNED --> CANCELLED: Cancel Plan Execution
+    PLANNED --> ROLLING_BACK: Rollback Planned Session
+    EXECUTING --> COMPLETED: Execution Succeeded
+    EXECUTING --> CANCELLED: Cancel During Move Operations
+    EXECUTING --> ROLLING_BACK: Automatic Rollback on Move Failure
+    EXECUTING --> FAILED: Unrecoverable Execution Fault
+    ROLLING_BACK --> ROLLED_BACK: Rollback Completed Successfully
+    ROLLING_BACK --> FAILED: Error During Rollback Steps
+    COMPLETED --> PLANNING: Re-plan Pipeline
+    COMPLETED --> ROLLING_BACK: Undo Completed Session
+    COMPLETED --> [*]: Pipeline Finished
+    FAILED --> PLANNING: Retry Pipeline Planning
+    FAILED --> ROLLING_BACK: Revert Failed State
+    FAILED --> [*]: Pipeline Terminated
+    CANCELLED --> PLANNING: Re-run Pipeline Planning
+    CANCELLED --> ROLLING_BACK: Cleanup Cancelled State
+    CANCELLED --> [*]: Pipeline Terminated
+    ROLLED_BACK --> PLANNING: Re-plan After Rollback
+    ROLLED_BACK --> ROLLING_BACK: Re-attempt Rollback
+    ROLLED_BACK --> [*]: Pipeline Terminated
