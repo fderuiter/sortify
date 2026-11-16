@@ -1,5 +1,7 @@
 """Textual full-screen terminal interface with interactive tree and modal dialogs."""
 
+import asyncio
+import inspect
 import logging
 import os
 import sys
@@ -922,6 +924,8 @@ class AutoSorterTUI(
         focused = self.focused
         if focused is None or not isinstance(focused, (Input, Select)):
             return False
+        if getattr(focused, "id", None) == "palette-input":
+            return False
         if allow_tree_search and getattr(focused, "id", None) == "tree-search-input":
             return False
         return True
@@ -1013,13 +1017,11 @@ class AutoSorterTUI(
 
         base_dir = getattr(self, "base_dir", None)
         if not base_dir or not os.path.exists(base_dir):
-            self.announce(
-                "No workspace folder selected for daemon monitoring.",
-                priority="assertive",
-            )
+            msg = "No workspace folder selected for daemon monitoring."
+            self.announce(msg, priority="assertive")
+            if hasattr(self, "notify"):
+                self.notify(msg, severity="warning")
             return
-
-        import asyncio
 
         from app.core.ipc import DaemonIPCClient, is_process_alive, read_pid_file
 
@@ -1027,10 +1029,10 @@ class AutoSorterTUI(
         if not pid_info or not is_process_alive(pid_info.get("pid", 0)):
             self._daemon_state = "idle"
             self.update_status()
-            self.announce(
-                "No background watchdog daemon is running for this workspace.",
-                priority="assertive",
-            )
+            msg = "No background watchdog daemon is running for this workspace."
+            self.announce(msg, priority="assertive")
+            if hasattr(self, "notify"):
+                self.notify(msg, severity="warning")
             return
 
         client = DaemonIPCClient(base_dir)
@@ -1040,12 +1042,18 @@ class AutoSorterTUI(
                 await client.send_command("resume", timeout=2.0)
                 self._daemon_state = "active"
                 self.update_status()
-                self.announce("Watchdog daemon resumed.", priority="assertive")
+                msg = "Watchdog daemon resumed."
+                self.announce(msg, priority="assertive")
+                if hasattr(self, "notify"):
+                    self.notify(msg)
             elif current_state == "active":
                 await client.send_command("pause", timeout=2.0)
                 self._daemon_state = "paused"
                 self.update_status()
-                self.announce("Watchdog daemon paused.", priority="assertive")
+                msg = "Watchdog daemon paused."
+                self.announce(msg, priority="assertive")
+                if hasattr(self, "notify"):
+                    self.notify(msg)
             else:
                 status_res = await client.send_command("status", timeout=2.0)
                 if (
@@ -1055,18 +1063,24 @@ class AutoSorterTUI(
                     await client.send_command("resume", timeout=2.0)
                     self._daemon_state = "active"
                     self.update_status()
-                    self.announce("Watchdog daemon resumed.", priority="assertive")
+                    msg = "Watchdog daemon resumed."
+                    self.announce(msg, priority="assertive")
+                    if hasattr(self, "notify"):
+                        self.notify(msg)
                 else:
                     await client.send_command("pause", timeout=2.0)
                     self._daemon_state = "paused"
                     self.update_status()
-                    self.announce("Watchdog daemon paused.", priority="assertive")
+                    msg = "Watchdog daemon paused."
+                    self.announce(msg, priority="assertive")
+                    if hasattr(self, "notify"):
+                        self.notify(msg)
         except Exception as e:
             logger.warning(f"Failed to communicate with daemon: {e}")
-            self.announce(
-                f"Failed to communicate with daemon: {e}",
-                priority="assertive",
-            )
+            err_msg = f"Failed to communicate with daemon: {e}"
+            self.announce(err_msg, priority="assertive")
+            if hasattr(self, "notify"):
+                self.notify(err_msg, severity="error")
 
     def action_generate_sample_corpus(self, open_modal: bool = False) -> None:
         """Generate sample document corpus in active workspace directory, or launch interactive playground modal."""
@@ -1230,11 +1244,20 @@ class AutoSorterTUI(
             return
 
         def on_command_selected(cmd: Optional[PaletteCommand]) -> None:
+            try:
+                self.query_one("#plan-tree", Tree).focus()
+            except Exception:
+                pass
             if not cmd or not cmd.action_name:
                 return
             handler = getattr(self, cmd.action_name, None)
             if callable(handler):
-                handler()
+                if inspect.iscoroutinefunction(handler):
+                    self.run_worker(handler())
+                else:
+                    res = handler()
+                    if inspect.iscoroutine(res):
+                        self.run_worker(res)
             else:
                 self.announce(
                     f"Action '{cmd.action_name}' is not supported.",
@@ -1248,6 +1271,54 @@ class AutoSorterTUI(
         if self._is_text_control_focused(allow_tree_search=True):
             return
         self.push_screen(ActiveRuleManagerModal(self.settings))
+
+    def action_open_template_gallery(self) -> None:
+        """Open starter rule template gallery modal screen."""
+        if self._is_text_control_focused(allow_tree_search=True):
+            return
+
+        def on_gallery_closed(_res: Any = None) -> None:
+            try:
+                self.query_one("#plan-tree", Tree).focus()
+            except Exception:
+                pass
+
+        self.push_screen(TemplateGalleryModal(self.settings), on_gallery_closed)
+
+    def action_export_rules(self) -> None:
+        """Open active rule export modal screen."""
+        if self._is_text_control_focused(allow_tree_search=True):
+            return
+
+        def on_export_closed(_res: Any = None) -> None:
+            try:
+                self.query_one("#plan-tree", Tree).focus()
+            except Exception:
+                pass
+
+        self.push_screen(ExportRulesModal(self.settings), on_export_closed)
+
+    def action_import_rules(self) -> None:
+        """Open external rule import modal screen."""
+        if self._is_text_control_focused(allow_tree_search=True):
+            return
+
+        def on_import_closed(result: Any = None) -> None:
+            if result is not None:
+                self.update_status()
+                if self.base_dir:
+                    self.action_scan_directory()
+            try:
+                self.query_one("#plan-tree", Tree).focus()
+            except Exception:
+                pass
+
+        self.push_screen(RuleImportModal(self.settings), on_import_closed)
+
+    action_browse_rule_templates = action_open_template_gallery
+    action_open_export_rules = action_export_rules
+    action_open_rule_import = action_import_rules
+    action_open_import_rules = action_import_rules
 
     def action_open_model_manager(self) -> None:
         """Open model manager modal screen."""
