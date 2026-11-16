@@ -5,10 +5,155 @@ from typing import Any, Optional
 
 from pydantic import BaseModel, ConfigDict, Field, ValidationError, field_validator
 
-from app.core.exceptions import SchemaValidationError
+from app.core.exceptions import InvalidStateTransitionError, SchemaValidationError
 from app.core.jev_classifier import JevClassificationResult
 
 logger = logging.getLogger(__name__)
+
+VALID_QUARANTINE_STATES: frozenset[str] = frozenset(
+    {
+        "STAGED",
+        "IN_INSPECTION",
+        "QUARANTINED",
+        "REDACTED",
+        "RELEASED",
+        "ARCHIVED",
+        "UNARCHIVED",
+        "DISMISSED",
+        "MANUAL_REVIEW_REQUIRED",
+        "DEAD_LETTER_QUEUE",
+    }
+)
+
+TERMINAL_QUARANTINE_STATES: frozenset[str] = frozenset(
+    {
+        "RELEASED",
+        "DISMISSED",
+    }
+)
+
+QUARANTINE_TRANSITION_MATRIX: dict[Optional[str], frozenset[str]] = {
+    None: frozenset({"STAGED"}),
+    "STAGED": frozenset(
+        {
+            "STAGED",
+            "IN_INSPECTION",
+            "RELEASED",
+            "DISMISSED",
+            "MANUAL_REVIEW_REQUIRED",
+            "DEAD_LETTER_QUEUE",
+        }
+    ),
+    "IN_INSPECTION": frozenset(
+        {
+            "IN_INSPECTION",
+            "QUARANTINED",
+            "REDACTED",
+            "RELEASED",
+            "ARCHIVED",
+            "UNARCHIVED",
+            "MANUAL_REVIEW_REQUIRED",
+            "DEAD_LETTER_QUEUE",
+            "STAGED",
+        }
+    ),
+    "REDACTED": frozenset(
+        {
+            "REDACTED",
+            "RELEASED",
+            "MANUAL_REVIEW_REQUIRED",
+            "DEAD_LETTER_QUEUE",
+        }
+    ),
+    "QUARANTINED": frozenset(
+        {
+            "QUARANTINED",
+            "IN_INSPECTION",
+            "RELEASED",
+            "DISMISSED",
+            "MANUAL_REVIEW_REQUIRED",
+            "DEAD_LETTER_QUEUE",
+        }
+    ),
+    "ARCHIVED": frozenset(
+        {
+            "ARCHIVED",
+            "RELEASED",
+            "DISMISSED",
+            "MANUAL_REVIEW_REQUIRED",
+            "DEAD_LETTER_QUEUE",
+        }
+    ),
+    "UNARCHIVED": frozenset(
+        {
+            "UNARCHIVED",
+            "RELEASED",
+            "DISMISSED",
+            "MANUAL_REVIEW_REQUIRED",
+            "DEAD_LETTER_QUEUE",
+        }
+    ),
+    "MANUAL_REVIEW_REQUIRED": frozenset(
+        {
+            "MANUAL_REVIEW_REQUIRED",
+            "IN_INSPECTION",
+            "RELEASED",
+            "DISMISSED",
+            "STAGED",
+            "DEAD_LETTER_QUEUE",
+        }
+    ),
+    "DEAD_LETTER_QUEUE": frozenset(
+        {
+            "DEAD_LETTER_QUEUE",
+            "IN_INSPECTION",
+            "RELEASED",
+            "DISMISSED",
+            "STAGED",
+            "MANUAL_REVIEW_REQUIRED",
+        }
+    ),
+    "RELEASED": frozenset(),
+    "DISMISSED": frozenset(),
+}
+
+
+def validate_quarantine_transition(
+    current_status: Optional[str], target_status: str, job_id: Optional[str] = None
+) -> None:
+    """Validate whether a quarantine status transition is permitted by the state machine.
+
+    Raises InvalidStateTransitionError if the transition is disallowed or originates from a terminal state.
+    Executes in microseconds (<1ms latency guardrail).
+    """
+    if target_status not in VALID_QUARANTINE_STATES:
+        job_info = f" for job '{job_id}'" if job_id else ""
+        raise InvalidStateTransitionError(
+            f"Invalid target quarantine status '{target_status}'{job_info}. "
+            f"Must be one of: {sorted(VALID_QUARANTINE_STATES)}"
+        )
+
+    if current_status is not None:
+        if current_status not in VALID_QUARANTINE_STATES:
+            job_info = f" for job '{job_id}'" if job_id else ""
+            raise InvalidStateTransitionError(
+                f"Invalid source quarantine status '{current_status}'{job_info}."
+            )
+
+        if current_status in TERMINAL_QUARANTINE_STATES:
+            job_info = f" '{job_id}'" if job_id else ""
+            raise InvalidStateTransitionError(
+                f"Cannot transition terminal quarantine record{job_info} "
+                f"from '{current_status}' to '{target_status}'. Terminal states are immutable."
+            )
+
+    allowed = QUARANTINE_TRANSITION_MATRIX.get(current_status, frozenset())
+    if target_status not in allowed:
+        job_info = f" for job '{job_id}'" if job_id else ""
+        raise InvalidStateTransitionError(
+            f"Invalid quarantine lifecycle transition from '{current_status}' to '{target_status}'{job_info}. "
+            f"Allowed target states: {sorted(allowed)}"
+        )
 
 
 _SENTINEL = object()
@@ -94,6 +239,16 @@ class QuarantineRecordModel(DictCompatMixin, BaseModel):
     error: Optional[str] = None
 
     model_config = ConfigDict(extra="allow")
+
+    @field_validator("status")
+    @classmethod
+    def validate_status(cls, v: str) -> str:
+        """Validate that the status value is a known quarantine lifecycle state."""
+        if v not in VALID_QUARANTINE_STATES:
+            raise ValueError(
+                f"Invalid quarantine status: '{v}'. Must be one of {sorted(VALID_QUARANTINE_STATES)}"
+            )
+        return v
 
 
 class SortingPlanNodeModel(DictCompatMixin, BaseModel):

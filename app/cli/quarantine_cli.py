@@ -7,6 +7,7 @@ import sys
 
 from app.cli.error_emitter import emit_cli_error
 from app.config import AppSettings
+from app.core.domain_contracts import VALID_QUARANTINE_STATES
 from app.core.quarantine_interceptor import QuarantineInterceptorService
 from app.core.services import acquire_services
 
@@ -259,16 +260,30 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
         if quarantine_cmd == "list":
             base_dir = getattr(args, "base_dir", None)
             status_filter = getattr(args, "status", None)
+            status_upper = None
+
+            if status_filter:
+                status_upper = status_filter.upper()
+                if status_upper not in VALID_QUARANTINE_STATES:
+                    allowed_str = ", ".join(sorted(VALID_QUARANTINE_STATES))
+                    emit_cli_error(
+                        f"Error: Invalid quarantine status '{status_filter}'. Allowed statuses: {allowed_str}.",
+                        json_mode=is_json,
+                        exit_code=1,
+                    )
 
             if base_dir:
                 records = db.get_quarantine_records_by_base_dir(
-                    base_dir, status=status_filter
+                    base_dir, status=status_upper
                 )
             else:
                 records = db.get_all_quarantine_records()
-                if status_filter:
-                    status_upper = status_filter.upper()
-                    records = [r for r in records if r.get("status") == status_upper]
+                if status_upper:
+                    records = [
+                        r
+                        for r in records
+                        if (r.get("status") or "").upper() == status_upper
+                    ]
 
             res = {
                 "status": "success",

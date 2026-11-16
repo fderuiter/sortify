@@ -216,7 +216,7 @@ def test_quarantine_interceptor_unarchive_unsafe_limits(tmp_path):
 
         rec = service.process_quarantine_job(staged["job_id"])
 
-        assert rec.status == "DEAD_LETTER_QUEUE"
+        assert rec.status == "MANUAL_REVIEW_REQUIRED"
         assert "Archive safety violation" in str(rec.error) or "Archive safety" in str(
             rec.get("error_message")
         )

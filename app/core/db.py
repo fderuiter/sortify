@@ -2090,6 +2090,10 @@ class Database:
         import json
         import time
 
+        from app.core.domain_contracts import validate_quarantine_transition
+
+        validate_quarantine_transition(None, "STAGED", job_id=job_id)
+
         now = time.time()
         audit_log = json.dumps(
             [
@@ -2138,38 +2142,55 @@ class Database:
         import json
         import time
 
+        from app.core.domain_contracts import validate_quarantine_transition
+        from app.core.exceptions import EntryNotFoundError
+
         now = time.time()
 
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
                 cursor = conn.execute(
-                    "SELECT audit_log, policy_action FROM quarantine_records WHERE job_id = ?",
+                    "SELECT status, audit_log, policy_action FROM quarantine_records WHERE job_id = ?",
                     (job_id,),
                 )
                 row = cursor.fetchone()
+                if not row:
+                    raise EntryNotFoundError(
+                        f"Quarantine record not found for job ID '{job_id}'"
+                    )
+
+                current_status = row[0]
+                validate_quarantine_transition(current_status, status, job_id=job_id)
+
                 current_log = []
-                if row and row[0]:
+                if row[1]:
                     try:
-                        current_log = json.loads(row[0])
+                        current_log = json.loads(row[1])
                     except Exception:
                         current_log = []
 
-                existing_action = row[1] if row else None
+                existing_action = row[2]
                 act_to_save = (
                     policy_action if policy_action is not None else existing_action
                 )
 
                 if audit_entry:
                     if isinstance(audit_entry, dict):
-                        if "timestamp" not in audit_entry:
-                            audit_entry["timestamp"] = now
-                        current_log.append(audit_entry)
+                        entry = dict(audit_entry)
+                        if "timestamp" not in entry:
+                            entry["timestamp"] = now
+                        if "previous_status" not in entry and current_status:
+                            entry["previous_status"] = current_status
+                        if "status" not in entry:
+                            entry["status"] = status
+                        current_log.append(entry)
                     else:
                         current_log.append(
                             {
                                 "timestamp": now,
                                 "status": status,
+                                "previous_status": current_status,
                                 "details": str(audit_entry),
                             }
                         )
@@ -2178,7 +2199,8 @@ class Database:
                         {
                             "timestamp": now,
                             "status": status,
-                            "details": f"Transitioned quarantine state to {status}",
+                            "previous_status": current_status,
+                            "details": f"Transitioned quarantine state from {current_status} to {status}",
                         }
                     )
 
@@ -2197,6 +2219,60 @@ class Database:
                         job_id,
                     ),
                 )
+
+        return self.worker.execute_write(_write)
+
+    def recover_orphaned_quarantine_jobs(
+        self, timeout_seconds: float = 300.0
+    ) -> list[str]:
+        """Detect and reset orphaned inspection jobs exceeding configured timeouts back to STAGED."""
+        import json
+        import time
+
+        now = time.time()
+        cutoff_time = now - timeout_seconds
+
+        def _write():
+            conn = get_db_connection(self.db_path)
+            with conn:
+                cursor = conn.execute(
+                    """
+                    SELECT job_id, updated_at, audit_log, policy_action
+                    FROM quarantine_records
+                    WHERE status = 'IN_INSPECTION' AND updated_at <= ?
+                    """,
+                    (cutoff_time,),
+                )
+                orphaned_rows = cursor.fetchall()
+                recovered_ids = []
+                for j_id, upd_at, a_log, pol_act in orphaned_rows:
+                    log_entries = []
+                    if a_log:
+                        try:
+                            log_entries = json.loads(a_log)
+                        except Exception:
+                            log_entries = []
+                    log_entries.append(
+                        {
+                            "timestamp": now,
+                            "status": "STAGED",
+                            "previous_status": "IN_INSPECTION",
+                            "details": (
+                                f"Orphaned inspection job reset to STAGED after exceeding "
+                                f"timeout of {timeout_seconds}s (elapsed: {now - (upd_at or now):.1f}s)"
+                            ),
+                        }
+                    )
+                    conn.execute(
+                        """
+                        UPDATE quarantine_records
+                        SET status = 'STAGED', updated_at = ?, audit_log = ?
+                        WHERE job_id = ?
+                        """,
+                        (now, json.dumps(log_entries), j_id),
+                    )
+                    recovered_ids.append(j_id)
+                return recovered_ids
 
         return self.worker.execute_write(_write)
 
@@ -2247,7 +2323,13 @@ class Database:
         if not base_dir:
             all_recs = self.get_all_quarantine_records()
             return (
-                [r for r in all_recs if r["status"] == status] if status else all_recs
+                [
+                    r
+                    for r in all_recs
+                    if (r.get("status") or "").upper() == status.upper()
+                ]
+                if status
+                else all_recs
             )
 
         conn = get_db_connection(self.db_path)
@@ -2288,11 +2370,12 @@ class Database:
                         LOWER(base_dir) = LOWER(?) OR
                         LOWER(base_dir) = LOWER(?) OR
                         LOWER(base_dir) = LOWER(?)
-                    ) AND status = ?
+                    ) AND (status = ? OR UPPER(status) = UPPER(?))
                     ORDER BY created_at ASC
                     """,
-                    (*candidates, status),
+                    (*candidates, status, status),
                 )
+
             else:
                 cursor = conn.execute(
                     """
