@@ -1599,3 +1599,41 @@ def test_user_guide_active_rule_manager_section():
 
     # Focus prerequisite / edge cases
     assert "text input" in content.lower()
+
+
+def test_user_guide_command_palette_section():
+    """Verify that docs/user_guide.md contains the command palette section, anchor, shortcuts, navigation, and workflows."""
+    guide_path = Path("docs/user_guide.md")
+    assert guide_path.exists(), "docs/user_guide.md must exist"
+
+    content = guide_path.read_text(encoding="utf-8")
+
+    # Section heading and anchor
+    assert "## Command Palette" in content
+    assert '<a id="command-palette"></a>' in content
+
+    # Palette shortcut and controls
+    assert "[Ctrl+K]" in content
+    assert "[Up]" in content
+    assert "[Down]" in content
+    assert "[Enter]" in content
+    assert "[Esc]" in content
+    assert "#palette-input" in content
+    assert "#palette-list" in content
+
+    # Search filtering documentation
+    assert "search filtering" in content.lower() or "filter" in content.lower()
+
+    # Workflows without dedicated shortcuts
+    assert "Model Manager" in content
+    assert "CRO Forensic Ingestion" in content
+    assert "Export Active Rules" in content
+    assert "Import External Rules" in content
+    assert "Export Simulation Report" in content
+    assert "Browse Starter Rule Templates" in content
+
+    # Cross reference in sorting instructions
+    sorting_section = content.split("## Sorting a Folder")[1].split("\n## ")[0]
+    assert "[Ctrl+K]" in sorting_section
+    assert "[Command Palette](#command-palette)" in sorting_section
+    assert "without memorizing keybindings" in sorting_section

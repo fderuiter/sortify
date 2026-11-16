@@ -800,8 +800,11 @@ class Database:
 
     def set_user_verified_target(self, base_dir, file_hash, target_path):
         """Record the historical folder assignment for a specific document hash."""
+        precomputed_counts_map = {}
+        cached_hit = False
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
+                cached_hit = True
                 if hasattr(self._cached_documents, "items"):
                     for fp, row in list(self._cached_documents.items()):
                         if row[2] == file_hash:
@@ -811,17 +814,34 @@ class Database:
                                 row[2],
                                 target_path,
                             )
+                            dec_text = row[1]
+                            if (
+                                target_path
+                                and dec_text
+                                and self._is_tfidf_eligible(fp, dec_text)
+                            ):
+                                precomputed_counts_map[fp] = (
+                                    self.compute_term_frequencies(dec_text)
+                                )
                 elif isinstance(self._cached_documents, list):
                     new_docs = []
                     for row in self._cached_documents:
                         if row[2] == file_hash:
                             new_docs.append((row[0], row[1], row[2], target_path))
+                            dec_text = row[1]
+                            if (
+                                target_path
+                                and dec_text
+                                and self._is_tfidf_eligible(row[0], dec_text)
+                            ):
+                                precomputed_counts_map[row[0]] = (
+                                    self.compute_term_frequencies(dec_text)
+                                )
                         else:
                             new_docs.append(row)
                     self._cached_documents = new_docs
 
-        precomputed_counts_map = {}
-        if target_path:
+        if target_path and not cached_hit:
             try:
                 conn_read = get_db_connection(self.db_path)
                 cursor = conn_read.execute(
