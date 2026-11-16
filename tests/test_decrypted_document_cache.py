@@ -1,4 +1,5 @@
 import os
+import sys
 import threading
 import time
 from unittest.mock import patch
@@ -116,10 +117,10 @@ def test_cache_invalidation_on_other_writes(cache_test_env):
     db.get_all_documents(base_dir)
 
     # Test set_user_verified_target mutates cache directly without invalidation
-    db.set_user_verified_target(base_dir, "hash1", "target_folder")
     with patch.object(
         db.crypto, "decrypt_text", wraps=db.crypto.decrypt_text
     ) as mock_decrypt:
+        db.set_user_verified_target(base_dir, "hash1", "target_folder")
         docs = db.get_all_documents(base_dir)
         assert mock_decrypt.call_count == 0
         assert len(docs) == 1
@@ -269,17 +270,22 @@ def test_sequential_corrections_performance(cache_test_env):
     # Read to populate cache
     db.get_all_documents(base_dir)
 
-    # Perform sequential corrections and measure time
-    start_time = time.time()
-    for i in range(num_docs):
-        # Update user verified target path
-        db.set_user_verified_target(base_dir, f"hash_{i}", f"target_{i}")
-        # Update document path
-        db.update_document_path(
-            base_dir, f"doc_{i}.txt", f"target_{i}/doc_moved_{i}.txt"
-        )
+    # Suspend any active profiler/coverage tracer during microsecond/millisecond benchmarking
+    orig_trace = sys.gettrace()
+    try:
+        sys.settrace(None)
+        start_time = time.time()
+        for i in range(num_docs):
+            # Update user verified target path
+            db.set_user_verified_target(base_dir, f"hash_{i}", f"target_{i}")
+            # Update document path
+            db.update_document_path(
+                base_dir, f"doc_{i}.txt", f"target_{i}/doc_moved_{i}.txt"
+            )
 
-    end_time = time.time()
+        end_time = time.time()
+    finally:
+        sys.settrace(orig_trace)
     elapsed = end_time - start_time
     print(
         f"\nSequential corrections elapsed time for {num_docs} docs: {elapsed:.4f} seconds"
