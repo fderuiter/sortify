@@ -41,8 +41,8 @@ class SharedWorkerPool:
         )
         self.max_workers = max_workers
 
-    def submit(self, fn, *args, **kwargs):
-        """Submit a task to the pool, ensuring offline boundaries are enforced."""
+    def _wrap_offline(self, fn: Callable) -> Callable:
+        """Wrap callable to enforce offline network boundaries and restore thread-local state."""
         parent_sandboxed = getattr(_thread_local, "sandboxed", None)
         parent_reason = getattr(_thread_local, "reason", "worker execution")
 
@@ -63,6 +63,12 @@ class SharedWorkerPool:
                 _thread_local.sandboxed = was_sandboxed
                 _thread_local.reason = old_reason
                 _thread_local.in_shared_worker_pool = was_in_pool
+
+        return offline_wrapped_fn
+
+    def submit(self, fn, *args, **kwargs):
+        """Submit a task to the pool, ensuring offline boundaries are enforced."""
+        offline_wrapped_fn = self._wrap_offline(fn)
 
         if (
             getattr(_thread_local, "in_shared_worker_pool", False)
@@ -81,26 +87,7 @@ class SharedWorkerPool:
 
     def map(self, fn, *iterables, timeout=None, chunksize=1):
         """Map a function over iterables using the shared worker pool, enforcing offline boundaries."""
-        parent_sandboxed = getattr(_thread_local, "sandboxed", None)
-        parent_reason = getattr(_thread_local, "reason", "worker execution")
-
-        def offline_wrapped_fn(*a, **kw):
-            is_sandboxed = True
-            reason = parent_reason if parent_sandboxed is True else "worker execution"
-
-            was_sandboxed = getattr(_thread_local, "sandboxed", False)
-            old_reason = getattr(_thread_local, "reason", "worker execution")
-            was_in_pool = getattr(_thread_local, "in_shared_worker_pool", False)
-
-            _thread_local.sandboxed = is_sandboxed
-            _thread_local.reason = reason
-            _thread_local.in_shared_worker_pool = True
-            try:
-                return fn(*a, **kw)
-            finally:
-                _thread_local.sandboxed = was_sandboxed
-                _thread_local.reason = old_reason
-                _thread_local.in_shared_worker_pool = was_in_pool
+        offline_wrapped_fn = self._wrap_offline(fn)
 
         if (
             getattr(_thread_local, "in_shared_worker_pool", False)

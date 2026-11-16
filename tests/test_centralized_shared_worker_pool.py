@@ -162,3 +162,73 @@ def test_concurrent_high_load_thread_bound(tmp_path):
         assert len(shared_worker_threads) <= max_workers
     finally:
         db_worker.stop()
+
+
+def test_shared_worker_pool_wrap_offline():
+    """Verify _wrap_offline helper enforces sandbox context and restores thread-local state."""
+    from app.core.network_guard import _thread_local
+
+    pool = SharedWorkerPool.get_instance()
+
+    captured_states = []
+
+    def sample_task(x, y=0):
+        captured_states.append(
+            {
+                "sandboxed": getattr(_thread_local, "sandboxed", None),
+                "reason": getattr(_thread_local, "reason", None),
+                "in_pool": getattr(_thread_local, "in_shared_worker_pool", None),
+            }
+        )
+        return x + y
+
+    wrapped = pool._wrap_offline(sample_task)
+
+    # Initial state
+    assert not getattr(_thread_local, "sandboxed", False)
+    assert not getattr(_thread_local, "in_shared_worker_pool", False)
+
+    res = wrapped(10, y=20)
+    assert res == 30
+    assert len(captured_states) == 1
+    assert captured_states[0]["sandboxed"] is True
+    assert captured_states[0]["reason"] == "worker execution"
+    assert captured_states[0]["in_pool"] is True
+
+    # State restored
+    assert not getattr(_thread_local, "sandboxed", False)
+    assert not getattr(_thread_local, "in_shared_worker_pool", False)
+
+    # Custom parent context
+    _thread_local.sandboxed = True
+    _thread_local.reason = "parent custom reason"
+    _thread_local.in_shared_worker_pool = False
+    try:
+        wrapped_with_parent = pool._wrap_offline(sample_task)
+        res2 = wrapped_with_parent(5)
+        assert res2 == 5
+        assert len(captured_states) == 2
+        assert captured_states[1]["sandboxed"] is True
+        assert captured_states[1]["reason"] == "parent custom reason"
+        assert captured_states[1]["in_pool"] is True
+    finally:
+        _thread_local.sandboxed = False
+        _thread_local.reason = "worker execution"
+        _thread_local.in_shared_worker_pool = False
+
+    # Exception handling restores state
+    def failing_task():
+        captured_states.append(
+            {
+                "sandboxed": getattr(_thread_local, "sandboxed", None),
+                "in_pool": getattr(_thread_local, "in_shared_worker_pool", None),
+            }
+        )
+        raise ValueError("task failure")
+
+    wrapped_fail = pool._wrap_offline(failing_task)
+    with pytest.raises(ValueError, match="task failure"):
+        wrapped_fail()
+
+    assert not getattr(_thread_local, "sandboxed", False)
+    assert not getattr(_thread_local, "in_shared_worker_pool", False)
