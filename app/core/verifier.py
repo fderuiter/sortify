@@ -1076,14 +1076,8 @@ class VirtualFilesystemTracker:
             and len(unconfirmed_renames) == 0
         )
 
-        structural_collisions = [
-            c
-            for c in collisions
-            if c.get("type") not in ("duplicate_target", "target_collision")
-        ]
-
         has_critical_errors = (
-            len(structural_collisions) > 0
+            len(collisions) > 0
             or len(circular_renames) > 0
             or len(invalid_renames) > 0
             or len(long_paths) > 0

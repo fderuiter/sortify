@@ -371,29 +371,18 @@ class SortPipelineMixin:
         broken_links = result.get("broken_links", [])
         unconfirmed = result.get("unconfirmed_renames", [])
 
-        structural_collisions = [
-            c
-            for c in collisions
-            if c.get("type") not in ("duplicate_target", "target_collision")
-        ]
-        resolvable_collisions = [
-            c
-            for c in collisions
-            if c.get("type") in ("duplicate_target", "target_collision")
-        ]
-
         has_critical = bool(
             result.get("has_critical_errors")
             if "has_critical_errors" in result
-            else (structural_collisions or circular or invalid or long_paths)
+            else (collisions or circular or invalid or long_paths)
         )
-        has_warnings = bool(broken_links or unconfirmed or resolvable_collisions)
+        has_warnings = bool(broken_links or unconfirmed)
 
         self.has_critical_errors = has_critical
 
         # Build path sets for tree node highlighting
         crit_paths = set()
-        for c in structural_collisions:
+        for c in collisions:
             if c.get("path"):
                 crit_paths.add(os.path.normpath(c["path"]))
             if c.get("source"):
@@ -417,13 +406,6 @@ class SortPipelineMixin:
                 crit_paths.add(os.path.normpath(lp["source"]))
 
         warn_paths = set()
-        for c in resolvable_collisions:
-            if c.get("path"):
-                warn_paths.add(os.path.normpath(c["path"]))
-            if c.get("source"):
-                warn_paths.add(os.path.normpath(c["source"]))
-            for s in c.get("sources", []):
-                warn_paths.add(os.path.normpath(s))
         for bl in broken_links:
             if bl.get("path"):
                 warn_paths.add(os.path.normpath(bl["path"]))
@@ -464,12 +446,7 @@ class SortPipelineMixin:
                     )
             else:
                 btn_exec.disabled = False
-                if resolvable_collisions:
-                    btn_exec.tooltip = (
-                        "Execute plan with interactive collision resolution [Ctrl+E]"
-                    )
-                else:
-                    btn_exec.tooltip = "Execute file sorting plan [Ctrl+E]"
+                btn_exec.tooltip = "Execute file sorting plan [Ctrl+E]"
         except Exception:
             pass
 
@@ -482,11 +459,11 @@ class SortPipelineMixin:
                 alert_banner.add_class("alert-critical")
 
                 msgs = []
-                if structural_collisions:
+                if collisions:
                     msgs.append(
                         "⛔ CRITICAL FILE COLLISION(S) / STRUCTURAL DIRECTORY COLLISION(S) DETECTED:"
                     )
-                    for c in structural_collisions:
+                    for c in collisions:
                         dst_p = c.get("path", "")
                         msgs.append(
                             f"  • Destination: {dst_p} ({c.get('message', 'Collision')})"
@@ -512,13 +489,7 @@ class SortPipelineMixin:
                 alert_banner.remove_class("alert-critical")
                 alert_banner.add_class("alert-warning")
 
-                msgs = [
-                    "⚠️ NON-FATAL WARNING(S) / RESOLVABLE COLLISION(S) REPORTED (Execution unblocked):"
-                ]
-                if resolvable_collisions:
-                    msgs.append(
-                        "  • Destination path collisions exist - click 'Execute' to review & resolve interactively."
-                    )
+                msgs = ["⚠️ NON-FATAL WARNING(S) REPORTED (Execution unblocked):"]
                 for bl in broken_links:
                     msgs.append(f"  • {bl.get('message')}")
                 for unc in unconfirmed:

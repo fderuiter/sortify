@@ -34,10 +34,14 @@ def sanitize_svg(svg: str) -> str:
     comparisons across operating systems and test execution order.
     """
     svg = svg.replace("\r\n", "\n")
-    svg = re.sub(r"terminal-\d+-", "terminal-test-", svg)
+    svg = re.sub(r"terminal-[a-zA-Z0-9]+-", "terminal-test-", svg)
     svg = re.sub(r"\b\d{2}:\d{2}:\d{2}\b", "00:00:00", svg)
     # Normalize cursor blink dim fill color #495259 to standard text fill color #a0a3a6
     svg = svg.replace("fill: #495259", "fill: #a0a3a6")
+
+    # Normalize line heights across platforms
+    svg = re.sub(r"line-height:\s*[\d.]+px;?", "line-height: 24.4px;", svg)
+    svg = re.sub(r'height="24\.\d+"', 'height="24.65"', svg)
 
     # Normalize Windows drive letters, backslashes, and HTML entities in test paths
     svg = (
@@ -63,7 +67,7 @@ def sanitize_svg(svg: str) -> str:
     style_match = re.search(r"<style>(.*?)</style>", svg, re.DOTALL)
     if style_match:
         css_text = style_match.group(1)
-        rules = re.findall(r"\.(terminal-test-r\d+)\s*\{(.*?)\}", css_text)
+        rules = re.findall(r"\.(terminal-test-r\w+)\s*\{(.*?)\}", css_text)
         if rules:
             body_without_style = svg.replace(style_match.group(0), "")
             used_rules = [
@@ -166,6 +170,10 @@ def isolated_app_dir(monkeypatch, tmp_path):
         app.config.AppSettings, "_trigger_save", lambda self: self._save()
     )
     monkeypatch.setattr(app.core.session_catalog, "find_abandoned_sessions", lambda: [])
+
+    from textual.widgets import Input
+
+    monkeypatch.setattr(Input, "cursor_blink", False)
     for k in list(os.environ.keys()):
         if k.startswith("AUTOSORTER_") and k != "AUTOSORTER_APP_DIR":
             monkeypatch.delenv(k, raising=False)

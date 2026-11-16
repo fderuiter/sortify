@@ -336,7 +336,10 @@ class TreeViewMixin:
     def render_tree(self, search_query: Optional[str] = None) -> None:
         """Render Textual Tree widget from in-memory plan structure without running validation worker."""
         try:
-            tree = self.query_one("#plan-tree", Tree)
+            tree_matches = self.query("#plan-tree")
+            if not tree_matches:
+                return
+            tree = tree_matches.first(Tree)
             if search_query is None:
                 search_query = self._get_current_search_query()
 
@@ -399,6 +402,11 @@ class TreeViewMixin:
     ) -> None:
         """Rebuild Textual Tree widget from in-memory plan structure and optionally validate plan integrity."""
         self.render_tree(search_query=search_query)
+        if hasattr(self, "_update_onboarding_cta_visibility"):
+            try:
+                self._update_onboarding_cta_visibility()
+            except Exception:
+                pass
         if run_validation:
             self.run_validation_worker()
 
