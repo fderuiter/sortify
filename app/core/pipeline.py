@@ -85,18 +85,22 @@ _ALLOWED_TRANSITIONS: dict[PipelineLifecycleState, set[PipelineLifecycleState]] 
     },
     PipelineLifecycleState.COMPLETED: {
         PipelineLifecycleState.PLANNING,
+        PipelineLifecycleState.PLANNED,
         PipelineLifecycleState.ROLLING_BACK,
     },
     PipelineLifecycleState.FAILED: {
         PipelineLifecycleState.PLANNING,
+        PipelineLifecycleState.PLANNED,
         PipelineLifecycleState.ROLLING_BACK,
     },
     PipelineLifecycleState.CANCELLED: {
         PipelineLifecycleState.PLANNING,
+        PipelineLifecycleState.PLANNED,
         PipelineLifecycleState.ROLLING_BACK,
     },
     PipelineLifecycleState.ROLLED_BACK: {
         PipelineLifecycleState.PLANNING,
+        PipelineLifecycleState.PLANNED,
         PipelineLifecycleState.ROLLING_BACK,
     },
 }
