@@ -54,6 +54,10 @@ The following parameters are extracted directly from the application's configura
 - **Type**: `dict`
 - **Default**: `{}`
 
+### `DISABLED_KEYWORD_RULES`
+- **Type**: `dict`
+- **Default**: `{}`
+
 ### `LEARNED_RULES`
 - **Type**: `dict`
 - **Default**: `{}`

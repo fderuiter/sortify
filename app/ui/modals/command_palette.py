@@ -78,6 +78,14 @@ DEFAULT_COMMAND_CATALOG: list[PaletteCommand] = [
         action_name="action_open_settings",
     ),
     PaletteCommand(
+        id="open_active_rules",
+        title="Open Active Rule Manager",
+        category="Settings",
+        shortcut="Ctrl+R",
+        description="Inspect, add, edit, toggle, and delete sorting rules and policies",
+        action_name="action_open_active_rules",
+    ),
+    PaletteCommand(
         id="open_model_manager",
         title="Open Model Manager",
         category="Models",

@@ -90,7 +90,10 @@ class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None
             yield Label(
                 "  Ctrl+L      - Toggle file lock state", classes="shortcut-row"
             )
-            yield Label("  Ctrl+R      - Rename selected node", classes="shortcut-row")
+            yield Label(
+                "  Ctrl+R      - Open active rule manager", classes="shortcut-row"
+            )
+            yield Label("  F2          - Rename selected node", classes="shortcut-row")
             yield Label(
                 "  Ctrl+N      - Create new target folder", classes="shortcut-row"
             )

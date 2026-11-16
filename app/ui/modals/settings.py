@@ -526,6 +526,14 @@ class SettingsModal(
                     )
                     yield btn_templates
 
+                    btn_active_rules = Button(
+                        "Active Rule Manager",
+                        id="btn-open-rules",
+                        variant="primary",
+                    )
+                    btn_active_rules.tooltip = "Inspect, add, edit, toggle, and delete active rules and policies"
+                    yield btn_active_rules
+
                 with TabPane("Extraction & OCR", id="tab-extraction"):
                     yield Label(
                         "PDF Text Density Threshold (chars/page):",
@@ -582,6 +590,13 @@ class SettingsModal(
     def action_open_templates(self) -> None:
         """Open starter rule template gallery modal."""
         self.app.push_screen(TemplateGalleryModal(self.settings))
+
+    @on(Button.Pressed, "#btn-open-rules")
+    def action_open_active_rules(self) -> None:
+        """Open active rule manager modal."""
+        from app.ui.modals.rules import ActiveRuleManagerModal
+
+        self.app.push_screen(ActiveRuleManagerModal(self.settings))
 
     @on(DensitySlider.Changed, "#slider-pdf-density-threshold")
     def _on_density_slider_changed(self, event: DensitySlider.Changed) -> None:
