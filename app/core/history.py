@@ -13,6 +13,7 @@ from typing import Any, Optional
 
 from app.core.db_conn import DB_ERRORS, get_db_connection
 from app.core.exceptions import InvalidStateTransitionError
+from app.core.lifecycle import LifecycleTelemetryMixin
 from app.core.migrations import Migration, add_missing_columns, migrate
 from app.core.moves import FAILED, INTENT, Move, MoveLedger, migrate_add_moves
 from app.core.path_utils import is_junction_path, safe_relpath
@@ -121,7 +122,7 @@ def _ensure_lifecycle_audit_schema(conn) -> None:
     )
 
 
-class SessionStateMachine:
+class SessionStateMachine(LifecycleTelemetryMixin):
     """Enforces lifecycle transition rules and records structured audit and telemetry events."""
 
     def __init__(self, db_path: Optional[str] = None):
