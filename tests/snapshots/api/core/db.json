@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "955872f438bb74cc013bbb5d20ef52dc324c3986f2ee04aae644493f2d2dd266"
+    "checksum": "88ad072321918fe6a0260b9b19ecde972f51b3228ee7e9f2cb1876bc5d1130d1"
   },
   "classes": [
     {
@@ -31,29 +31,6 @@
               "annotation": "tuple[Migration, ...]",
               "default": "MAIN_DB_MIGRATIONS",
               "name": "migrations"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "begin_transaction_session",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
-            },
-            {
-              "annotation": "float",
-              "default": "300.0",
-              "name": "timeout"
             }
           ],
           "returns": null
@@ -108,24 +85,6 @@
               "annotation": "list[str]",
               "default": null,
               "name": "filepaths"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "commit_transaction_session",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
             }
           ],
           "returns": null
@@ -625,24 +584,6 @@
               "annotation": null,
               "default": null,
               "name": "filepath"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "rollback_transaction_session",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
             }
           ],
           "returns": null
