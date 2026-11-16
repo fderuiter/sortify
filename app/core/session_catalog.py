@@ -29,27 +29,75 @@ def list_sessions(store=None) -> list:
     Each entry carries the session's id, timestamp, base folder, status and
     how many steps and snapshot files it recorded.
     """
-    from app.core.db_conn import get_db_connection
+    from app.core.db_conn import DB_ERRORS, get_db_connection
     from app.core.store import open_store
 
     store = store or open_store()
     conn = get_db_connection(str(store.path))
+    query = (
+        "SELECT "
+        "s.session_id, s.timestamp, s.base_dir, s.status, "
+        "COALESCE(st.step_count, 0) AS step_count, "
+        "COALESCE(sf.file_count, 0) AS file_count "
+        "FROM sessions s "
+        "LEFT JOIN ("
+        "    SELECT session_id, COUNT(*) AS step_count FROM step_ledger GROUP BY session_id"
+        ") st ON s.session_id = st.session_id "
+        "LEFT JOIN ("
+        "    SELECT session_id, COUNT(*) AS file_count FROM snapshot_files GROUP BY session_id"
+        ") sf ON s.session_id = sf.session_id "
+        "ORDER BY s.timestamp DESC"
+    )
     with conn:
-        rows = conn.execute(
-            "SELECT session_id, timestamp, base_dir, status FROM sessions "
-            "ORDER BY timestamp DESC"
-        ).fetchall()
+        try:
+            rows = conn.execute(query).fetchall()
+        except DB_ERRORS:
+            existing_tables = {
+                r[0]
+                for r in conn.execute(
+                    "SELECT name FROM sqlite_master WHERE type='table'"
+                ).fetchall()
+            }
+            has_steps = "step_ledger" in existing_tables
+            has_files = "snapshot_files" in existing_tables
+            step_join = (
+                "LEFT JOIN (SELECT session_id, COUNT(*) AS step_count FROM step_ledger GROUP BY session_id) st ON s.session_id = st.session_id "
+                if has_steps
+                else ""
+            )
+            file_join = (
+                "LEFT JOIN (SELECT session_id, COUNT(*) AS file_count FROM snapshot_files GROUP BY session_id) sf ON s.session_id = sf.session_id "
+                if has_files
+                else ""
+            )
+            step_col = (
+                "COALESCE(st.step_count, 0) AS step_count"
+                if has_steps
+                else "0 AS step_count"
+            )
+            file_col = (
+                "COALESCE(sf.file_count, 0) AS file_count"
+                if has_files
+                else "0 AS file_count"
+            )
+            fallback_query = (
+                f"SELECT s.session_id, s.timestamp, s.base_dir, s.status, {step_col}, {file_col} "
+                f"FROM sessions s {step_join} {file_join} "
+                "ORDER BY s.timestamp DESC"
+            )
+            rows = conn.execute(fallback_query).fetchall()
+
         return [
             {
                 "session_id": sid,
                 "timestamp": ts,
                 "base_dir": base_dir,
                 "status": status,
-                "step_count": _count(conn, "step_ledger", sid),
-                "file_count": _count(conn, "snapshot_files", sid),
+                "step_count": step_count,
+                "file_count": file_count,
                 "history_db_path": str(store.path),
             }
-            for sid, ts, base_dir, status in rows
+            for sid, ts, base_dir, status, step_count, file_count in rows
         ]
 
 
