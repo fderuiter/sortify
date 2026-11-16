@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "3443b80c646df89e13e04a3c720e84ff4693cdd441633d6b67066ef4c3e58394"
+    "checksum": "3df08baaddfd6fb1ce5ebd72a74b44ed30b8d03fcdecc37b53e0302645f31ee8"
   },
   "classes": [
     {
@@ -230,6 +230,29 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "transition_to",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "target_state"
+            },
+            {
+              "annotation": "dict[str, Any] | None",
+              "default": "None",
+              "name": "context"
+            }
+          ],
+          "returns": "None"
         }
       ]
     }

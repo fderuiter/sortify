@@ -296,3 +296,183 @@ def test_session_lifecycle_validation_and_status(session):
     summary = session.execute_moves(plan)
     assert session.lifecycle_state == PipelineLifecycleState.COMPLETED
     assert not summary.get("cancelled")
+
+
+def test_session_execution_transitions_attached_pipeline_terminal_states(
+    session, monkeypatch
+):
+    """Session execution transitions attached pipeline and invokes state hooks for all terminal states."""
+    # 1. Terminal state: COMPLETED
+    pipeline = SortPipeline(session)
+    plan = pipeline.plan()
+    assert session.lifecycle_state == PipelineLifecycleState.PLANNED
+    assert pipeline.state == PipelineLifecycleState.PLANNED
+
+    state_transitions = []
+    pipeline.add_state_change_hook(
+        lambda old, new: state_transitions.append((old, new))
+    )
+
+    session.execute_moves(plan)
+    assert session.lifecycle_state == PipelineLifecycleState.COMPLETED
+    assert pipeline.state == PipelineLifecycleState.COMPLETED
+    assert (
+        PipelineLifecycleState.EXECUTING,
+        PipelineLifecycleState.COMPLETED,
+    ) in state_transitions
+
+
+def test_session_execution_transitions_attached_pipeline_cancelled(session):
+    """Session execution cancellation transitions attached pipeline to CANCELLED and triggers hook."""
+    pipeline = SortPipeline(session)
+    plan = pipeline.plan()
+    state_transitions = []
+
+    pipeline.add_state_change_hook(
+        lambda old, new: state_transitions.append((old, new))
+    )
+
+    cancel_summary = session.execute_moves(plan, cancel_check=lambda: True)
+    assert cancel_summary.get("cancelled")
+    assert session.lifecycle_state == PipelineLifecycleState.CANCELLED
+    assert pipeline.state == PipelineLifecycleState.CANCELLED
+    assert (
+        PipelineLifecycleState.EXECUTING,
+        PipelineLifecycleState.CANCELLED,
+    ) in state_transitions
+
+
+def test_session_execution_transitions_attached_pipeline_failed_summary(
+    session, monkeypatch
+):
+    """Session execution error summary transitions attached pipeline to FAILED and triggers hook."""
+    pipeline = SortPipeline(session)
+    plan = pipeline.plan()
+    state_transitions = []
+
+    pipeline.add_state_change_hook(
+        lambda old, new: state_transitions.append((old, new))
+    )
+
+    monkeypatch.setattr(
+        "app.core.mover.execute_moves",
+        lambda *args, **kwargs: {
+            "error": "Disk I/O error",
+            "lifecycle_state": PipelineLifecycleState.FAILED,
+        },
+    )
+    fail_summary = session.execute_moves(plan)
+    assert fail_summary.get("error")
+    assert session.lifecycle_state == PipelineLifecycleState.FAILED
+    assert pipeline.state == PipelineLifecycleState.FAILED
+    assert (
+        PipelineLifecycleState.EXECUTING,
+        PipelineLifecycleState.FAILED,
+    ) in state_transitions
+
+
+def test_session_execution_transitions_attached_pipeline_failed_exception(
+    session, monkeypatch
+):
+    """Session execution exception transitions attached pipeline to FAILED and triggers hook."""
+    pipeline = SortPipeline(session)
+    plan = pipeline.plan()
+    state_transitions = []
+
+    pipeline.add_state_change_hook(
+        lambda old, new: state_transitions.append((old, new))
+    )
+
+    def raise_move_error(*args, **kwargs):
+        raise OSError("Critical hardware failure")
+
+    monkeypatch.setattr("app.core.mover.execute_moves", raise_move_error)
+    with pytest.raises(OSError, match="Critical hardware failure"):
+        session.execute_moves(plan)
+
+    assert session.lifecycle_state == PipelineLifecycleState.FAILED
+    assert pipeline.state == PipelineLifecycleState.FAILED
+    assert (
+        PipelineLifecycleState.EXECUTING,
+        PipelineLifecycleState.FAILED,
+    ) in state_transitions
+
+
+def test_execute_moves_rejected_from_unvalidated_states(session):
+    """execute_moves rejects invocations from any unvalidated lifecycle state."""
+    plan = {"dummy": {"file.txt": {"__type__": "file"}}}
+    unvalidated_states = [
+        PipelineLifecycleState.CREATED,
+        PipelineLifecycleState.PLANNING,
+        PipelineLifecycleState.COMPLETED,
+        PipelineLifecycleState.FAILED,
+        PipelineLifecycleState.CANCELLED,
+        PipelineLifecycleState.ROLLING_BACK,
+        PipelineLifecycleState.ROLLED_BACK,
+    ]
+
+    # Test standalone session (no pipeline attached)
+    for state in unvalidated_states:
+        session.lifecycle_state = state
+        with pytest.raises(IllegalStateTransitionError) as exc_info:
+            session.execute_moves(plan)
+        assert "planned" in str(exc_info.value).lower()
+
+    # Test with attached pipeline
+    pipeline = SortPipeline(session)
+    for state in unvalidated_states:
+        session.lifecycle_state = state
+        pipeline._state = state
+        with pytest.raises(IllegalStateTransitionError) as exc_info:
+            session.execute_moves(plan)
+        assert "planned" in str(exc_info.value).lower()
+
+
+def test_session_standalone_transition_validation(session):
+    """Sessions operating without an attached SortPipeline validate transitions locally."""
+    assert session.pipeline is None
+    assert session.lifecycle_state == PipelineLifecycleState.CREATED
+
+    # Invalid move directly from CREATED to EXECUTING
+    with pytest.raises(IllegalStateTransitionError):
+        session.transition_to(PipelineLifecycleState.EXECUTING)
+
+    # Valid transition to PLANNING
+    session.transition_to(PipelineLifecycleState.PLANNING)
+    assert session.lifecycle_state == PipelineLifecycleState.PLANNING
+
+    # No-op when transitioning to current state
+    session.transition_to(PipelineLifecycleState.PLANNING)
+    assert session.lifecycle_state == PipelineLifecycleState.PLANNING
+
+    # Valid transition to PLANNED
+    session.transition_to(PipelineLifecycleState.PLANNED)
+    assert session.lifecycle_state == PipelineLifecycleState.PLANNED
+
+    # Invalid transition from PLANNED to CREATED
+    with pytest.raises(IllegalStateTransitionError):
+        session.transition_to(PipelineLifecycleState.CREATED)
+
+    # Valid transition to EXECUTING
+    session.transition_to(PipelineLifecycleState.EXECUTING)
+    assert session.lifecycle_state == PipelineLifecycleState.EXECUTING
+
+    # Valid transition to COMPLETED
+    session.transition_to(PipelineLifecycleState.COMPLETED)
+    assert session.lifecycle_state == PipelineLifecycleState.COMPLETED
+
+
+def test_session_standalone_exception_transitions_to_failed(session, monkeypatch):
+    """Standalone session execution exception transitions session to FAILED before re-raising."""
+    assert session.pipeline is None
+    plan = session.generate_sorting_plan()
+    assert session.lifecycle_state == PipelineLifecycleState.PLANNED
+
+    monkeypatch.setattr(
+        "app.core.mover.execute_moves",
+        MagicMock(side_effect=RuntimeError("Mover failure without pipeline")),
+    )
+    with pytest.raises(RuntimeError, match="Mover failure without pipeline"):
+        session.execute_moves(plan)
+
+    assert session.lifecycle_state == PipelineLifecycleState.FAILED
