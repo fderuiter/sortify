@@ -4,7 +4,7 @@ import logging
 import os
 import re
 from pathlib import Path
-from typing import Any, Optional
+from typing import Any, NamedTuple, Optional
 
 from rich.text import Text
 from textual.widgets import Input, Static, Tree
@@ -18,11 +18,104 @@ from app.ui.widgets.path_diff import (
 logger = logging.getLogger(__name__)
 
 
+class PathLookupIndex(NamedTuple):
+    """Pre-indexed lookup sets for exact O(1) file path and basename matching."""
+
+    paths: set[str]
+    basenames: set[str]
+
+    def __contains__(self, item: object) -> bool:
+        """Check if a path, basename, or separator-normalized variant exists in the index."""
+        if not isinstance(item, str) or not item:
+            return False
+        return (
+            item in self.paths
+            or item in self.basenames
+            or item.replace("\\", "/") in self.paths
+            or item.replace("/", "\\") in self.paths
+        )
+
+
 class TreeViewMixin:
     """Render the plan tree, filter it by search query and fill the inspector."""
 
     _tree_expansion_memory: dict[str, bool] = {}
     _last_cursor_key: Optional[str] = None
+
+    def _build_path_lookup_index(self, paths: Optional[Any] = None) -> PathLookupIndex:
+        """Build sets of normalized paths and filename basenames from input path collections.
+
+        Pre-indexes path variants (raw, normalized, POSIX, Windows, absolute, and base_dir-joined)
+        and filename basenames so subsequent node styling and building can perform exact O(1)
+        set membership lookups without running synchronous generator scans over collections.
+        """
+        indexed_paths: set[str] = set()
+        indexed_basenames: set[str] = set()
+
+        if not paths:
+            return PathLookupIndex(paths=indexed_paths, basenames=indexed_basenames)
+
+        if isinstance(paths, (str, bytes, os.PathLike)):
+            items = [paths]
+        elif not hasattr(paths, "__iter__"):
+            return PathLookupIndex(paths=indexed_paths, basenames=indexed_basenames)
+        else:
+            items = paths
+
+        base_dir = getattr(self, "base_dir", None)
+
+        for item in items:
+            if item is None:
+                continue
+            p_str = str(item).strip()
+            if not p_str:
+                continue
+
+            # Normalized path variants
+            norm_p = os.path.normpath(p_str)
+            posix_p = p_str.replace("\\", "/")
+            norm_posix_p = os.path.normpath(posix_p)
+            win_p = p_str.replace("/", "\\")
+            norm_win_p = os.path.normpath(win_p)
+
+            indexed_paths.add(p_str)
+            indexed_paths.add(norm_p)
+            indexed_paths.add(posix_p)
+            indexed_paths.add(norm_posix_p)
+            indexed_paths.add(win_p)
+            indexed_paths.add(norm_win_p)
+
+            try:
+                abs_p = os.path.normpath(os.path.abspath(p_str))
+                indexed_paths.add(abs_p)
+                indexed_paths.add(abs_p.replace("\\", "/"))
+                indexed_paths.add(abs_p.replace("/", "\\"))
+            except Exception:
+                pass
+
+            if base_dir:
+                try:
+                    from app.core.path_utils import _is_absolute_path
+
+                    if not _is_absolute_path(p_str):
+                        joined = os.path.normpath(os.path.join(base_dir, p_str))
+                        indexed_paths.add(joined)
+                        indexed_paths.add(joined.replace("\\", "/"))
+                        indexed_paths.add(joined.replace("/", "\\"))
+                        indexed_paths.add(os.path.normpath(os.path.abspath(joined)))
+                except Exception:
+                    pass
+
+            # Basename extraction
+            clean = p_str.rstrip("/\\")
+            if clean:
+                clean_posix = clean.replace("\\", "/")
+                basename = clean_posix.rsplit("/", 1)[-1]
+                if basename:
+                    indexed_basenames.add(basename)
+                    indexed_basenames.add(os.path.normpath(basename))
+
+        return PathLookupIndex(paths=indexed_paths, basenames=indexed_basenames)
 
     def _capture_tree_state(self, tree: Tree, search_query: str = "") -> None:
         """Record node expansion status and cursor key prior to tree rebuild."""
@@ -88,6 +181,16 @@ class TreeViewMixin:
         try:
             tree = self.query_one("#plan-tree", Tree)
 
+            crit_paths, crit_names = self._build_path_lookup_index(
+                getattr(self, "critical_error_paths", set())
+            )
+            warn_paths, warn_names = self._build_path_lookup_index(
+                getattr(self, "warning_paths", set())
+            )
+            col_paths, col_names = self._build_path_lookup_index(
+                getattr(self, "collision_paths", set())
+            )
+
             def _stylize_node(node: TreeNode) -> None:
                 data = getattr(node, "data", None)
                 if not data or not isinstance(data, dict):
@@ -101,43 +204,46 @@ class TreeViewMixin:
                 abs_fp = os.path.normpath(os.path.abspath(filepath)) if filepath else ""
                 norm_key = os.path.normpath(key) if key else ""
 
-                is_crit = False
-                is_warn = False
-
-                if norm_fp and norm_fp in self.critical_error_paths:
-                    is_crit = True
-                elif norm_key and norm_key in self.critical_error_paths:
-                    is_crit = True
-                elif any(
-                    p
-                    and (
-                        p == norm_fp
-                        or p == abs_fp
-                        or p == norm_key
-                        or p.endswith("/" + norm_key)
-                        or p.endswith("\\" + norm_key)
-                    )
-                    for p in self.critical_error_paths
-                ):
-                    is_crit = True
-
-                if not is_crit:
-                    if norm_fp and norm_fp in self.warning_paths:
-                        is_warn = True
-                    elif norm_key and norm_key in self.warning_paths:
-                        is_warn = True
-                    elif any(
-                        p
+                is_crit = bool(
+                    (
+                        norm_fp
                         and (
-                            p == norm_fp
-                            or p == abs_fp
-                            or p == norm_key
-                            or p.endswith("/" + norm_key)
-                            or p.endswith("\\" + norm_key)
+                            norm_fp in crit_paths
+                            or norm_fp.replace("\\", "/") in crit_paths
                         )
-                        for p in self.warning_paths
-                    ):
-                        is_warn = True
+                    )
+                    or (
+                        abs_fp
+                        and (
+                            abs_fp in crit_paths
+                            or abs_fp.replace("\\", "/") in crit_paths
+                        )
+                    )
+                    or (norm_key and (norm_key in crit_paths or norm_key in crit_names))
+                )
+                is_warn = bool(
+                    not is_crit
+                    and (
+                        (
+                            norm_fp
+                            and (
+                                norm_fp in warn_paths
+                                or norm_fp.replace("\\", "/") in warn_paths
+                            )
+                        )
+                        or (
+                            abs_fp
+                            and (
+                                abs_fp in warn_paths
+                                or abs_fp.replace("\\", "/") in warn_paths
+                            )
+                        )
+                        or (
+                            norm_key
+                            and (norm_key in warn_paths or norm_key in warn_names)
+                        )
+                    )
+                )
 
                 plain_txt = (
                     node.label.plain
@@ -148,7 +254,6 @@ class TreeViewMixin:
 
                 if data.get("is_file"):
                     file_info = data.get("info") or {}
-                    collision_paths = getattr(self, "collision_paths", set()) or set()
                     target_path = data.get("target_path")
                     if not target_path:
                         from app.core.path_utils import _is_absolute_path
@@ -188,23 +293,37 @@ class TreeViewMixin:
                         file_info.get("collision")
                         or file_info.get("has_collision")
                         or file_info.get("is_collision")
-                        or (norm_tp and norm_tp in collision_paths)
-                        or (abs_tp and abs_tp in collision_paths)
-                        or (norm_fp and norm_fp in collision_paths)
-                        or (abs_fp and abs_fp in collision_paths)
-                        or (norm_key and norm_key in collision_paths)
-                        or any(
-                            p
+                        or (
+                            norm_tp
                             and (
-                                p == norm_fp
-                                or p == abs_fp
-                                or p == norm_tp
-                                or p == abs_tp
-                                or p == norm_key
-                                or p.endswith("/" + norm_key)
-                                or p.endswith("\\" + norm_key)
+                                norm_tp in col_paths
+                                or norm_tp.replace("\\", "/") in col_paths
                             )
-                            for p in collision_paths
+                        )
+                        or (
+                            abs_tp
+                            and (
+                                abs_tp in col_paths
+                                or abs_tp.replace("\\", "/") in col_paths
+                            )
+                        )
+                        or (
+                            norm_fp
+                            and (
+                                norm_fp in col_paths
+                                or norm_fp.replace("\\", "/") in col_paths
+                            )
+                        )
+                        or (
+                            abs_fp
+                            and (
+                                abs_fp in col_paths
+                                or abs_fp.replace("\\", "/") in col_paths
+                            )
+                        )
+                        or (
+                            norm_key
+                            and (norm_key in col_paths or norm_key in col_names)
                         )
                     )
 
@@ -374,12 +493,24 @@ class TreeViewMixin:
                 matching_ids = (
                     self._build_matching_node_ids(self.plan, query) if query else None
                 )
+                crit_index = self._build_path_lookup_index(
+                    getattr(self, "critical_error_paths", set())
+                )
+                warn_index = self._build_path_lookup_index(
+                    getattr(self, "warning_paths", set())
+                )
+                collision_index = self._build_path_lookup_index(
+                    getattr(self, "collision_paths", set())
+                )
                 nodes_added = self._build_tree_nodes(
                     self.plan,
                     tree.root,
                     current_folder="",
                     query=query,
                     matching_ids=matching_ids,
+                    crit_index=crit_index,
+                    warn_index=warn_index,
+                    collision_index=collision_index,
                 )
                 if query and nodes_added == 0:
                     tree.root.add_leaf(
@@ -491,6 +622,9 @@ class TreeViewMixin:
         query: str = "",
         parent_folder_matches: bool = False,
         matching_ids: Optional[set[int]] = None,
+        crit_index: Optional[tuple[set[str], set[str]]] = None,
+        warn_index: Optional[tuple[set[str], set[str]]] = None,
+        collision_index: Optional[tuple[set[str], set[str]]] = None,
     ) -> int:
         """Recursively build tree nodes, filtering by search query if specified. Returns count of nodes added."""
         added_count = 0
@@ -498,6 +632,23 @@ class TreeViewMixin:
             matching_ids = self._build_matching_node_ids(
                 node_dict, query, current_folder=current_folder
             )
+
+        if crit_index is None:
+            crit_index = self._build_path_lookup_index(
+                getattr(self, "critical_error_paths", set())
+            )
+        if warn_index is None:
+            warn_index = self._build_path_lookup_index(
+                getattr(self, "warning_paths", set())
+            )
+        if collision_index is None:
+            collision_index = self._build_path_lookup_index(
+                getattr(self, "collision_paths", set())
+            )
+
+        crit_paths, crit_names = crit_index
+        warn_paths, warn_names = warn_index
+        col_paths, col_names = collision_index
 
         for k, v in sorted(
             node_dict.items(),
@@ -554,34 +705,44 @@ class TreeViewMixin:
                 abs_fp = os.path.normpath(os.path.abspath(filepath)) if filepath else ""
                 norm_key = os.path.normpath(file_key) if file_key else ""
 
-                is_crit_node = (
-                    norm_fp in self.critical_error_paths
-                    or norm_key in self.critical_error_paths
-                    or any(
-                        p
+                is_crit_node = bool(
+                    (
+                        norm_fp
                         and (
-                            p == norm_fp
-                            or p == abs_fp
-                            or p == norm_key
-                            or p.endswith("/" + norm_key)
-                            or p.endswith("\\" + norm_key)
+                            norm_fp in crit_paths
+                            or norm_fp.replace("\\", "/") in crit_paths
                         )
-                        for p in self.critical_error_paths
                     )
-                )
-                is_warn_node = not is_crit_node and (
-                    norm_fp in self.warning_paths
-                    or norm_key in self.warning_paths
-                    or any(
-                        p
+                    or (
+                        abs_fp
                         and (
-                            p == norm_fp
-                            or p == abs_fp
-                            or p == norm_key
-                            or p.endswith("/" + norm_key)
-                            or p.endswith("\\" + norm_key)
+                            abs_fp in crit_paths
+                            or abs_fp.replace("\\", "/") in crit_paths
                         )
-                        for p in self.warning_paths
+                    )
+                    or (norm_key and (norm_key in crit_paths or norm_key in crit_names))
+                )
+                is_warn_node = bool(
+                    not is_crit_node
+                    and (
+                        (
+                            norm_fp
+                            and (
+                                norm_fp in warn_paths
+                                or norm_fp.replace("\\", "/") in warn_paths
+                            )
+                        )
+                        or (
+                            abs_fp
+                            and (
+                                abs_fp in warn_paths
+                                or abs_fp.replace("\\", "/") in warn_paths
+                            )
+                        )
+                        or (
+                            norm_key
+                            and (norm_key in warn_paths or norm_key in warn_names)
+                        )
                     )
                 )
 
@@ -655,7 +816,6 @@ class TreeViewMixin:
                         os.path.join(eff_folder, target_filename)
                     )
 
-                collision_paths = getattr(self, "collision_paths", set()) or set()
                 norm_tp = os.path.normpath(target_path) if target_path else ""
                 abs_tp = (
                     os.path.normpath(os.path.abspath(target_path))
@@ -667,24 +827,35 @@ class TreeViewMixin:
                     file_info.get("collision")
                     or file_info.get("has_collision")
                     or file_info.get("is_collision")
-                    or (norm_tp and norm_tp in collision_paths)
-                    or (abs_tp and abs_tp in collision_paths)
-                    or (norm_fp and norm_fp in collision_paths)
-                    or (abs_fp and abs_fp in collision_paths)
-                    or (norm_key and norm_key in collision_paths)
-                    or any(
-                        p
+                    or (
+                        norm_tp
                         and (
-                            p == norm_fp
-                            or p == abs_fp
-                            or p == norm_tp
-                            or p == abs_tp
-                            or p == norm_key
-                            or p.endswith("/" + norm_key)
-                            or p.endswith("\\" + norm_key)
+                            norm_tp in col_paths
+                            or norm_tp.replace("\\", "/") in col_paths
                         )
-                        for p in collision_paths
                     )
+                    or (
+                        abs_tp
+                        and (
+                            abs_tp in col_paths
+                            or abs_tp.replace("\\", "/") in col_paths
+                        )
+                    )
+                    or (
+                        norm_fp
+                        and (
+                            norm_fp in col_paths
+                            or norm_fp.replace("\\", "/") in col_paths
+                        )
+                    )
+                    or (
+                        abs_fp
+                        and (
+                            abs_fp in col_paths
+                            or abs_fp.replace("\\", "/") in col_paths
+                        )
+                    )
+                    or (norm_key and (norm_key in col_paths or norm_key in col_names))
                 )
 
                 pol = str(getattr(self.settings, "CONFLICT_POLICY", "rename")).lower()
@@ -767,6 +938,9 @@ class TreeViewMixin:
                     query=query,
                     parent_folder_matches=parent_folder_matches or folder_matches,
                     matching_ids=matching_ids,
+                    crit_index=crit_index,
+                    warn_index=warn_index,
+                    collision_index=collision_index,
                 )
                 added_count += 1 + child_added
 
