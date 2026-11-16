@@ -120,11 +120,11 @@ pydantic==2.14.3
     # via pydantic-settings
 pydantic-core==2.50.4
     # via pydantic
-pydantic-settings==2.16.2
+pydantic-settings==2.16.3
     # via smart-autosorter (pyproject.toml)
 pylnk3==0.4.3
     # via smart-autosorter (pyproject.toml)
-pypdf==7.0.1
+pypdf==7.1.0
     # via smart-autosorter (pyproject.toml)
 python-bidi==0.6.12
     # via easyocr
@@ -169,7 +169,7 @@ textual==8.2.8
     # via smart-autosorter (pyproject.toml)
 threadpoolctl==3.8.0
     # via scikit-learn
-tifffile==2026.11.8
+tifffile==2026.11.12
     # via scikit-image
 torch==2.15.0
     # via
