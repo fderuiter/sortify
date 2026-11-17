@@ -3,14 +3,24 @@ from unittest.mock import MagicMock, patch
 
 import pytest
 
-# Ensure PyInstaller is mocked before importing main
+from scripts.build import main
+
 mock_pyinstaller = MagicMock()
 mock_pyinstaller_main = MagicMock()
 mock_pyinstaller.__main__ = mock_pyinstaller_main
-sys.modules["PyInstaller"] = mock_pyinstaller
-sys.modules["PyInstaller.__main__"] = mock_pyinstaller_main
 
-from scripts.build import main  # noqa: E402
+
+@pytest.fixture(autouse=True)
+def _setup_pyinstaller_mock(monkeypatch, request):
+    """Automatically mock PyInstaller for build execution tests unless disabled."""
+    if "no_pyinstaller" in request.node.name or "help" in request.node.name:
+        monkeypatch.delitem(sys.modules, "PyInstaller", raising=False)
+        monkeypatch.delitem(sys.modules, "PyInstaller.__main__", raising=False)
+        yield
+    else:
+        monkeypatch.setitem(sys.modules, "PyInstaller", mock_pyinstaller)
+        monkeypatch.setitem(sys.modules, "PyInstaller.__main__", mock_pyinstaller_main)
+        yield
 
 
 def test_build_script_lite_no_checks():
@@ -850,3 +860,102 @@ def test_download_and_prepare_weights_cleans_up_on_corrupted_extracted_archive(
 
             assert not (easyocr_dir / "craft_mlt_25k.pth").exists()
             assert not (easyocr_dir / "craft_mlt_25k.pth.zip").exists()
+
+
+def test_build_script_help_flag_displays_options_without_pyinstaller(
+    capsys, monkeypatch
+):
+    """Verify that --help displays options without importing PyInstaller."""
+    monkeypatch.delitem(sys.modules, "PyInstaller", raising=False)
+    monkeypatch.delitem(sys.modules, "PyInstaller.__main__", raising=False)
+
+    with patch("sys.argv", ["build.py", "--help"]):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+
+    captured = capsys.readouterr()
+    assert "--cpu" in captured.out
+    assert "--lite" in captured.out
+    assert "PyInstaller" not in sys.modules
+    assert "PyInstaller.__main__" not in sys.modules
+
+
+def test_build_script_short_h_flag_displays_options_without_pyinstaller(
+    capsys, monkeypatch
+):
+    """Verify that -h displays options without importing PyInstaller."""
+    monkeypatch.delitem(sys.modules, "PyInstaller", raising=False)
+    monkeypatch.delitem(sys.modules, "PyInstaller.__main__", raising=False)
+
+    with patch("sys.argv", ["build.py", "-h"]):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 0
+
+    captured = capsys.readouterr()
+    assert "--cpu" in captured.out
+    assert "--lite" in captured.out
+    assert "PyInstaller" not in sys.modules
+    assert "PyInstaller.__main__" not in sys.modules
+
+
+def test_build_script_unrecognized_argument_exits_code_2(capsys):
+    """Verify that unrecognized command arguments output standard error and exit with status code 2."""
+    with patch("sys.argv", ["build.py", "--unrecognized-flag"]):
+        with pytest.raises(SystemExit) as exc_info:
+            main()
+        assert exc_info.value.code == 2
+
+    captured = capsys.readouterr()
+    assert "unrecognized arguments: --unrecognized-flag" in captured.err
+
+
+def test_build_script_no_pyinstaller_installed_exits_with_hint(capsys, monkeypatch):
+    """Verify that running a build without PyInstaller reports an installation hint and exits cleanly."""
+    monkeypatch.delitem(sys.modules, "PyInstaller", raising=False)
+    monkeypatch.delitem(sys.modules, "PyInstaller.__main__", raising=False)
+
+    real_import = __import__
+
+    def fake_import(name, *args, **kwargs):
+        if name.startswith("PyInstaller"):
+            raise ImportError(f"No module named '{name}'")
+        return real_import(name, *args, **kwargs)
+
+    monkeypatch.setattr("builtins.__import__", fake_import)
+
+    with patch("sys.argv", ["build.py", "--lite"]):
+        with (
+            patch("importlib.util.find_spec") as mock_find_spec,
+            patch("sys.exit", side_effect=SystemExit) as mock_exit,
+            patch("builtins.print") as mock_print,
+        ):
+            mock_spec = MagicMock()
+            mock_spec.submodule_search_locations = ["/some/path"]
+            mock_find_spec.return_value = mock_spec
+
+            with pytest.raises(SystemExit):
+                main()
+
+            mock_exit.assert_called_once_with(1)
+            printed_messages = "".join(
+                [call.args[0] for call in mock_print.call_args_list if call.args]
+            )
+            assert "PyInstaller is not installed" in printed_messages
+            assert "Please install build dependencies" in printed_messages
+
+
+def test_build_script_help_subprocess():
+    """Verify that running 'build.py --help' via subprocess succeeds without build dependencies."""
+    import subprocess
+
+    res = subprocess.run(
+        [sys.executable, "scripts/build.py", "--help"],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert res.returncode == 0
+    assert "--cpu" in res.stdout
+    assert "--lite" in res.stdout
