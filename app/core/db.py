@@ -408,7 +408,7 @@ class Database:
         Queries only filepath and file_hash columns with an SQL IN filter to bypass
         AES text decryption. Missing document records map to an empty string.
         """
-        if not filepaths:
+        if not base_dir or not filepaths:
             return {}
 
         norm_map = {fp: fp.replace("\\", "/") for fp in filepaths}
@@ -1848,40 +1848,6 @@ class Database:
                     and filepath.replace("\\", "/") in filepaths_norm
                 )
             }
-
-    def get_document_hashes(
-        self, base_dir: str, filepaths: list[str]
-    ) -> dict[str, str]:
-        """Project only filepath and file_hash columns for specified documents chunked to 500 items."""
-        if not base_dir or not filepaths:
-            return {}
-
-        conn = get_db_connection(self.db_path)
-        hashes: dict[str, str] = {}
-        with conn:
-            chunk_size = 500
-            for i in range(0, len(filepaths), chunk_size):
-                chunk = filepaths[i : i + chunk_size]
-                norm_map: dict[str, list[str]] = {}
-                for fp in chunk:
-                    norm = fp.replace("\\", "/")
-                    norm_map.setdefault(norm, []).append(fp)
-
-                placeholders = ",".join(["?"] * len(norm_map))
-                cursor = conn.execute(
-                    f"""
-                    SELECT filepath, file_hash
-                    FROM documents
-                    WHERE base_dir = ? AND filepath IN ({placeholders})
-                    """,
-                    (base_dir, *norm_map.keys()),
-                )
-                for db_fp, file_hash in cursor.fetchall():
-                    if file_hash is not None:
-                        hashes[db_fp] = file_hash
-                        for orig_fp in norm_map.get(db_fp, []):
-                            hashes[orig_fp] = file_hash
-        return hashes
 
     def get_documents_by_filepaths(
         self, base_dir: str, filepaths: list[str]
