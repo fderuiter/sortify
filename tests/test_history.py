@@ -136,6 +136,134 @@ def test_rollback_cyclic_collision(test_history_env):
     assert docB["file_hash"] == "hashB"
 
 
+def test_rollback_multi_file_cyclic_collision(test_history_env):
+    base_dir, db, cache, history_manager, db_worker = test_history_env
+
+    file_a = os.path.join(base_dir, "A.txt")
+    file_b = os.path.join(base_dir, "B.txt")
+    file_c = os.path.join(base_dir, "C.txt")
+
+    with open(file_a, "w") as f:
+        f.write("A")
+    with open(file_b, "w") as f:
+        f.write("B")
+    with open(file_c, "w") as f:
+        f.write("C")
+
+    db.upsert_document(base_dir, "A.txt", "hashA", "textA")
+    db.upsert_document(base_dir, "B.txt", "hashB", "textB")
+    db.upsert_document(base_dir, "C.txt", "hashC", "textC")
+
+    session_id = history_manager.create_snapshot(base_dir)
+
+    # 3-way rotation: A -> B, B -> C, C -> A
+    temp = os.path.join(base_dir, "temp.txt")
+    shutil.move(file_c, temp)
+    shutil.move(file_b, file_c)
+    shutil.move(file_a, file_b)
+    shutil.move(temp, file_a)
+
+    def _update_docs():
+        conn = get_db_connection(db.db_path)
+        with conn:
+            conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
+
+    db.worker.execute_write(_update_docs)
+    db.upsert_document(base_dir, "A.txt", "hashC", "textC")
+    db.upsert_document(base_dir, "B.txt", "hashA", "textA")
+    db.upsert_document(base_dir, "C.txt", "hashB", "textB")
+
+    # Perform rollback
+    history_manager.rollback(session_id)
+
+    # Verify files restored to original contents
+    with open(file_a, "r") as f:
+        assert f.read() == "A"
+    with open(file_b, "r") as f:
+        assert f.read() == "B"
+    with open(file_c, "r") as f:
+        assert f.read() == "C"
+
+    # Verify db records restored
+    docA = db.get_document(base_dir, "A.txt")
+    assert docA["file_hash"] == "hashA"
+    docB = db.get_document(base_dir, "B.txt")
+    assert docB["file_hash"] == "hashB"
+    docC = db.get_document(base_dir, "C.txt")
+    assert docC["file_hash"] == "hashC"
+
+
+def test_rollback_cyclic_collision_with_non_cyclic_dest(test_history_env):
+    base_dir, db, cache, history_manager, db_worker = test_history_env
+
+    file_a = os.path.join(base_dir, "A.txt")
+    file_b = os.path.join(base_dir, "B.txt")
+    file_c = os.path.join(base_dir, "C.txt")
+
+    with open(file_a, "w") as f:
+        f.write("A")
+    with open(file_b, "w") as f:
+        f.write("B")
+    with open(file_c, "w") as f:
+        f.write("C")
+
+    db.upsert_document(base_dir, "A.txt", "hashA", "textA")
+    db.upsert_document(base_dir, "B.txt", "hashB", "textB")
+    db.upsert_document(base_dir, "C.txt", "hashC", "textC")
+
+    session_id = history_manager.create_snapshot(base_dir)
+
+    # Swap A and B (cyclic collision)
+    temp = os.path.join(base_dir, "temp.txt")
+    shutil.move(file_a, temp)
+    shutil.move(file_b, file_a)
+    shutil.move(temp, file_b)
+
+    # Move C to subfolder, and create an unmanaged file at C.txt (non-cyclic destination collision)
+    c_moved = os.path.join(base_dir, "sub", "C.txt")
+    os.makedirs(os.path.dirname(c_moved), exist_ok=True)
+    shutil.move(file_c, c_moved)
+    with open(file_c, "w") as f:
+        f.write("unmanaged")
+
+    def _update_docs():
+        conn = get_db_connection(db.db_path)
+        with conn:
+            conn.execute("DELETE FROM documents WHERE base_dir = ?", (base_dir,))
+
+    db.worker.execute_write(_update_docs)
+    db.upsert_document(base_dir, "A.txt", "hashB", "textB")
+    db.upsert_document(base_dir, "B.txt", "hashA", "textA")
+    db.upsert_document(base_dir, "sub/C.txt", "hashC", "textC")
+
+    # Perform rollback
+    history_manager.rollback(session_id)
+
+    # Verify A and B restored
+    with open(file_a, "r") as f:
+        assert f.read() == "A"
+    with open(file_b, "r") as f:
+        assert f.read() == "B"
+
+    # Verify C restored to original content
+    with open(file_c, "r") as f:
+        assert f.read() == "C"
+
+    # Verify unmanaged file renamed safely
+    safe_unmanaged = os.path.join(base_dir, "C_1.txt")
+    assert os.path.exists(safe_unmanaged)
+    with open(safe_unmanaged, "r") as f:
+        assert f.read() == "unmanaged"
+
+    # Verify db documents restored
+    docA = db.get_document(base_dir, "A.txt")
+    assert docA["file_hash"] == "hashA"
+    docB = db.get_document(base_dir, "B.txt")
+    assert docB["file_hash"] == "hashB"
+    docC = db.get_document(base_dir, "C.txt")
+    assert docC["file_hash"] == "hashC"
+
+
 def test_age_based_snapshot_pruning(test_history_env):
     base_dir, db, cache, history_manager, db_worker = test_history_env
     import time
