@@ -13,6 +13,7 @@ created by GitHub Actions, never as a plain commit status. Run it as a module
 
 from __future__ import annotations
 
+import argparse
 import logging
 import os
 import sys
@@ -404,14 +405,35 @@ def process_auto_merge_queue(client: GitHubClient) -> AutoMergeResult:
     return AutoMergeResult(action=AutoMergeAction.NONE, pr_id=None)
 
 
-def main() -> None:
+def parse_args(args: list[str] | None = None) -> argparse.Namespace:
+    """Parse command line arguments for the auto-merge controller."""
+    parser = argparse.ArgumentParser(
+        description="Serialized Auto-Merge Controller for Sortify."
+    )
+    parser.add_argument(
+        "--repo",
+        default=os.environ.get("GITHUB_REPOSITORY", "fderuiter/sortify"),
+        help="GitHub repository in 'owner/repo' format (default: $GITHUB_REPOSITORY or 'fderuiter/sortify')",
+    )
+    parser.add_argument(
+        "--token",
+        default=os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN"),
+        help="GitHub API token (default: $GITHUB_TOKEN or $GH_TOKEN)",
+    )
+    return parser.parse_args(args)
+
+
+def main(args: list[str] | None = None) -> None:
     """CLI entry point for auto-merge controller."""
     logging.basicConfig(
         level=logging.INFO, format="%(asctime)s [%(levelname)s] %(message)s"
     )
 
-    token = os.environ.get("GITHUB_TOKEN") or os.environ.get("GH_TOKEN")
-    repo_full = os.environ.get("GITHUB_REPOSITORY", "fderuiter/sortify")
+    if args is None:
+        args = []
+    parsed_args = parse_args(args)
+    token = parsed_args.token
+    repo_full = parsed_args.repo
 
     if not token:
         logger.error("GITHUB_TOKEN or GH_TOKEN is required.")
@@ -435,4 +457,4 @@ def main() -> None:
 
 
 if __name__ == "__main__":
-    main()
+    main(sys.argv[1:])

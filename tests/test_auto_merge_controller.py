@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from unittest.mock import MagicMock
 
+import pytest
+
 from scripts.auto_merge_controller import (
     AutoMergeAction,
     AutoMergeResult,
@@ -11,6 +13,8 @@ from scripts.auto_merge_controller import (
     automerge_label_applied_by_maintainer,
     build_pr_metadata,
     is_pr_eligible_for_automerge,
+    main,
+    parse_args,
     process_auto_merge_queue,
 )
 
@@ -531,6 +535,102 @@ def test_main_cli_output_none(monkeypatch, capsys):
     main()
     captured = capsys.readouterr()
     assert "No PR was auto-merged in this cycle." in captured.out
+
+
+def test_main_cli_help(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--help"])
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "--repo" in captured.out
+    assert "--token" in captured.out
+    assert "Serialized Auto-Merge Controller for Sortify." in captured.out
+
+
+def test_main_cli_help_short(capsys):
+    with pytest.raises(SystemExit) as exc_info:
+        main(["-h"])
+    assert exc_info.value.code == 0
+    captured = capsys.readouterr()
+    assert "--repo" in captured.out
+    assert "--token" in captured.out
+
+
+def test_main_cli_explicit_flags(monkeypatch, caplog):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+
+    created_clients = []
+
+    def mock_init(self, token, owner, repo):
+        created_clients.append((token, owner, repo))
+
+    monkeypatch.setattr(GitHubClient, "__init__", mock_init)
+    monkeypatch.setattr(
+        "scripts.auto_merge_controller.process_auto_merge_queue",
+        lambda client: AutoMergeResult(action=AutoMergeAction.NONE, pr_id=None),
+    )
+
+    main(["--token", "cli_token_val", "--repo", "custom_owner/custom_repo"])
+    assert len(created_clients) == 1
+    assert created_clients[0] == ("cli_token_val", "custom_owner", "custom_repo")
+
+
+def test_parse_args_explicit_flags():
+    args = parse_args(["--token", "test_tok", "--repo", "my_org/my_repo"])
+    assert args.token == "test_tok"
+    assert args.repo == "my_org/my_repo"
+
+
+def test_parse_args_env_fallbacks(monkeypatch):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+    monkeypatch.delenv("GITHUB_REPOSITORY", raising=False)
+
+    args = parse_args([])
+    assert args.token is None
+    assert args.repo == "fderuiter/sortify"
+
+    monkeypatch.setenv("GITHUB_TOKEN", "env_tok")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "env_org/env_repo")
+    args = parse_args([])
+    assert args.token == "env_tok"
+    assert args.repo == "env_org/env_repo"
+
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.setenv("GH_TOKEN", "gh_tok")
+    args = parse_args([])
+    assert args.token == "gh_tok"
+
+
+def test_parse_args_cli_token_overrides_env(monkeypatch):
+    monkeypatch.setenv("GITHUB_TOKEN", "env_token")
+    monkeypatch.setenv("GITHUB_REPOSITORY", "env_owner/env_repo")
+
+    args = parse_args(["--token", "cli_token", "--repo", "cli_owner/cli_repo"])
+    assert args.token == "cli_token"
+    assert args.repo == "cli_owner/cli_repo"
+
+
+def test_main_missing_token_error(monkeypatch, caplog):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+
+    with pytest.raises(SystemExit) as exc_info:
+        main([])
+    assert exc_info.value.code == 1
+    assert "GITHUB_TOKEN or GH_TOKEN is required." in caplog.text
+
+
+def test_main_invalid_repo_format_error(monkeypatch, caplog):
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    monkeypatch.delenv("GH_TOKEN", raising=False)
+
+    with pytest.raises(SystemExit) as exc_info:
+        main(["--token", "valid_tok", "--repo", "invalid_repo_format"])
+    assert exc_info.value.code == 1
+    assert "Invalid GITHUB_REPOSITORY format: invalid_repo_format" in caplog.text
 
 
 def test_process_queue_merges_automated_security_patch_pr():
