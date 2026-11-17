@@ -1637,3 +1637,32 @@ def test_user_guide_command_palette_section():
     assert "[Ctrl+K]" in sorting_section
     assert "[Command Palette](#command-palette)" in sorting_section
     assert "without memorizing keybindings" in sorting_section
+
+
+def test_user_guide_rename_shortcut_and_tui_bindings():
+    """Verify that docs/user_guide.md cites [F2] for renaming, does not associate [Ctrl+R] with renaming, and AutoSorterTUI bindings prevent key drift."""
+    guide_path = Path("docs/user_guide.md")
+    assert guide_path.exists(), "docs/user_guide.md must exist"
+
+    content = guide_path.read_text(encoding="utf-8")
+    review_section = content.split("## Sorting a Folder")[1].split("\n## ")[0]
+    step3_line = next(
+        (line for line in review_section.splitlines() if line.startswith("3.")), None
+    )
+    assert step3_line is not None, "Missing review step 3 in Sorting a Folder"
+    assert "[F2]" in step3_line
+    assert "rename" in step3_line.lower()
+
+    # Assert docs/user_guide.md cites [F2] for folder renaming and does not associate [Ctrl+R] with renaming
+    assert "[Ctrl+R] renames" not in content
+    assert "[Ctrl+R] rename" not in content
+
+    # Assert that AutoSorterTUI.BINDINGS retains ctrl+r for open_active_rules and f2 for rename_node
+    from app.ui.tui import AutoSorterTUI
+
+    bindings_by_key = {
+        getattr(b, "key", None): getattr(b, "action", None)
+        for b in AutoSorterTUI.BINDINGS
+    }
+    assert bindings_by_key.get("ctrl+r") == "open_active_rules"
+    assert bindings_by_key.get("f2") == "rename_node"
