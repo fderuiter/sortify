@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "55ecbe865aeec5b28f7046fdaf86243f41c821aa399d92832ed7d3719fce61b3"
+    "checksum": "2a21fcd71ad2bd79ca3c191522604c90c4790c0a598d8a38dbf70367fa10087b"
   },
   "classes": [
     {
@@ -265,26 +265,6 @@
               "annotation": null,
               "default": "True",
               "name": "cancel_futures"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [
-            "@classmethod"
-          ],
-          "name": "shutdown_instance",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "cls"
-            },
-            {
-              "annotation": null,
-              "default": "False",
-              "name": "wait"
             }
           ],
           "returns": null
