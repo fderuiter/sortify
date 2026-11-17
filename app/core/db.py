@@ -400,6 +400,64 @@ class Database:
                 }
             return None
 
+    def get_document_hashes(
+        self, base_dir: str, filepaths: list[str]
+    ) -> dict[str, str]:
+        """Retrieve a mapping of filepath to file_hash for given filepaths in a base directory.
+
+        Queries only filepath and file_hash columns with an SQL IN filter to bypass
+        AES text decryption. Missing document records map to an empty string.
+        """
+        if not filepaths:
+            return {}
+
+        norm_map = {fp: fp.replace("\\", "/") for fp in filepaths}
+        result = {orig_fp: "" for orig_fp in filepaths}
+
+        with self._cache_lock:
+            if self._cached_base_dir == base_dir and self._cached_documents is not None:
+                if hasattr(self._cached_documents, "get") and not isinstance(
+                    self._cached_documents, list
+                ):
+                    for orig_fp, norm_fp in norm_map.items():
+                        row = self._cached_documents.get(norm_fp)
+                        if row is not None and row[2]:
+                            result[orig_fp] = row[2]
+                else:
+                    for row in self._cached_documents:
+                        for orig_fp, norm_fp in norm_map.items():
+                            if row[0] == norm_fp and row[2]:
+                                result[orig_fp] = row[2]
+
+        missing_norm = {
+            norm_fp: orig_fp
+            for orig_fp, norm_fp in norm_map.items()
+            if not result[orig_fp]
+        }
+        if missing_norm:
+            conn = get_db_connection(self.db_path)
+            with conn:
+                unique_missing = list(missing_norm.keys())
+                batch_size = 500
+                for i in range(0, len(unique_missing), batch_size):
+                    batch = unique_missing[i : i + batch_size]
+                    placeholders = ",".join("?" for _ in batch)
+                    cursor = conn.execute(
+                        f"SELECT filepath, file_hash FROM documents WHERE base_dir = ? AND filepath IN ({placeholders})",
+                        [base_dir, *batch],
+                    )
+                    for row in cursor.fetchall():
+                        db_fp, db_hash = row[0], row[1]
+                        for orig_fp, norm_fp in norm_map.items():
+                            if norm_fp == db_fp:
+                                result[orig_fp] = db_hash or ""
+
+        for orig_fp, norm_fp in norm_map.items():
+            if norm_fp not in result:
+                result[norm_fp] = result[orig_fp]
+
+        return result
+
     def upsert_document(self, base_dir, filepath, file_hash, extracted_text):
         """Insert or update a document in the database."""
         if "::" in filepath:

@@ -1220,6 +1220,7 @@ def _process_move_item(
     db_updates_batch: list,
     audit_records: list = None,
     pending_links: list = None,
+    chunk_hash_map: dict = None,
 ) -> bool:
     """Execute a single physical move and SHA-256 hash calculation off-thread."""
     source_path = item["source_path"]
@@ -1346,12 +1347,15 @@ def _process_move_item(
                     f"Failed to record mover compliance audit entry: {audit_err}"
                 )
 
-    doc = None
-    if db and hasattr(db, "get_document"):
-        with db_lock:
-            doc = db.get_document(base_dir, source_rel_path)
+    if chunk_hash_map is not None:
+        file_hash = chunk_hash_map.get(source_rel_path) or ""
+    else:
+        doc = None
+        if db and hasattr(db, "get_document"):
+            with db_lock:
+                doc = db.get_document(base_dir, source_rel_path)
 
-    file_hash = doc.get("file_hash") if (doc and isinstance(doc, dict)) else ""
+        file_hash = doc.get("file_hash") if (doc and isinstance(doc, dict)) else ""
     # Hash the bytes being moved with the same function as the post-move check.
     # The DB hash can be an MD5 of extracted text, or stale (#844).
     pre_hash = ""
@@ -1426,13 +1430,13 @@ def _process_move_item(
 
     if dest_path == source_path:
         with db_lock:
-            if doc and doc.get("file_hash"):
+            if file_hash:
                 db_updates_batch.append(
                     {
                         "type": "verified_target",
                         "args": (
                             base_dir,
-                            doc["file_hash"],
+                            file_hash,
                             current_dest.replace("\\", "/"),
                         ),
                     }
@@ -1573,17 +1577,17 @@ def _process_move_item(
             f"Moved {source_path} to {dest_path}, but its hash no longer matches the source."
         )
     dest_file_hash = step_hash
-    if not step_hash and doc:
-        step_hash = doc.get("file_hash")
+    if not step_hash and file_hash:
+        step_hash = file_hash
 
     with db_lock:
-        if doc and doc.get("file_hash"):
+        if file_hash:
             db_updates_batch.append(
                 {
                     "type": "verified_target",
                     "args": (
                         base_dir,
-                        doc["file_hash"],
+                        file_hash,
                         current_dest.replace("\\", "/"),
                     ),
                 }
@@ -1925,6 +1929,33 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                 )
                 summary.state = self.state
 
+                chunk_rel_paths = [
+                    safe_relpath(item["source_path"], base_dir).replace("\\", "/")
+                    for item in chunk
+                    if "source_path" in item
+                ]
+                chunk_hash_map = None
+                if db and hasattr(db, "get_document_hashes"):
+                    try:
+                        chunk_hash_map = db.get_document_hashes(
+                            base_dir, chunk_rel_paths
+                        )
+                    except Exception as prefetch_err:
+                        logging.warning(
+                            f"Failed to batch prefetch document hashes: {prefetch_err}"
+                        )
+                        chunk_hash_map = None
+                elif db and hasattr(db, "get_document"):
+                    try:
+                        chunk_hash_map = {
+                            p: (db.get_document(base_dir, p) or {}).get("file_hash", "")
+                            for p in chunk_rel_paths
+                        }
+                    except Exception:
+                        chunk_hash_map = None
+                elif db is None:
+                    chunk_hash_map = {p: "" for p in chunk_rel_paths}
+
                 futures = [
                     pool.submit(
                         _process_move_item,
@@ -1941,6 +1972,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         db_updates_batch,
                         audit_records,
                         pending_links,
+                        chunk_hash_map,
                     )
                     for item in chunk
                 ]

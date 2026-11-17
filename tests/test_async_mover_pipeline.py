@@ -13,6 +13,7 @@ from app.core.mover import (
     MoveOpState,
     MoveResult,
     MoveVerificationStatus,
+    _process_move_item,
     execute_moves,
     execute_moves_async,
 )
@@ -23,10 +24,25 @@ class DummyDB:
         self.doc_store = {}
         self.batch_updates = []
         self.lock = threading.Lock()
+        self.get_document_calls = []
+        self.get_document_hashes_calls = []
 
     def get_document(self, base_dir, key):
         with self.lock:
+            self.get_document_calls.append(
+                (threading.current_thread().name, base_dir, key)
+            )
             return self.doc_store.get(key, {"file_hash": f"hash_{key}"})
+
+    def get_document_hashes(self, base_dir, filepaths):
+        with self.lock:
+            self.get_document_hashes_calls.append(
+                (threading.current_thread().name, base_dir, list(filepaths))
+            )
+            return {
+                fp: self.doc_store.get(fp, {}).get("file_hash", f"hash_{fp}")
+                for fp in filepaths
+            }
 
     def execute_batch_updates(self, updates):
         with self.lock:
@@ -497,3 +513,185 @@ def test_typed_status_enumerations():
     all_states = set(MoveEngineState)
     assert len(all_states) == 11
     assert set(_VALID_MOVE_ENGINE_TRANSITIONS.keys()) == all_states
+
+
+def test_batch_prefetch_file_hashes_no_worker_lock_contention(tmp_path):
+    """Verify batch prefetch happens on caller thread and worker threads do not call get_document."""
+    base_dir = str(tmp_path)
+    plan = {}
+    for i in range(12):
+        fname = f"file_{i}.txt"
+        fpath = tmp_path / fname
+        fpath.write_text(f"content {i}")
+        plan[fname] = {
+            "__type__": "file",
+            "relative_source": fname,
+            "target_filename": f"sorted_{fname}",
+            "status": "Confirmed",
+        }
+
+    db = DummyDB()
+    # Populate specific hashes for verification
+    for i in range(12):
+        fname = f"file_{i}.txt"
+        db.doc_store[fname] = {"file_hash": f"precomputed_hash_{i}"}
+
+    hm = DummyHistoryManager()
+
+    engine = AsyncMoveEngine(max_workers=4, chunk_size=4)
+    summary = engine.execute(base_dir, plan, db, hm)
+
+    assert not summary.get("cancelled")
+    # 12 items / chunk_size 4 = 3 chunks -> 3 batch hash prefetch calls
+    assert len(db.get_document_hashes_calls) == 3
+    for call_thread, b_dir, paths in db.get_document_hashes_calls:
+        assert len(paths) == 4
+        assert b_dir == base_dir
+
+    # Zero worker threads called get_document! Lock contention eliminated.
+    assert len(db.get_document_calls) == 0
+
+    # Verify all files moved
+    for i in range(12):
+        fname = f"file_{i}.txt"
+        assert not os.path.exists(tmp_path / fname)
+        assert os.path.exists(tmp_path / f"sorted_{fname}")
+
+    # Verify verified_target batch updates received the precomputed hashes
+    all_batch_args = []
+    for batch in db.batch_updates:
+        for update in batch:
+            if update.get("type") == "verified_target":
+                all_batch_args.append(update["args"])
+
+    assert len(all_batch_args) == 12
+    recorded_hashes = {args[1] for args in all_batch_args}
+    for i in range(12):
+        assert f"precomputed_hash_{i}" in recorded_hashes
+
+
+def test_batch_prefetch_missing_document_fallback(tmp_path):
+    """Verify non-existent documents fallback gracefully to empty hash strings."""
+    base_dir = str(tmp_path)
+    fname = "unindexed.txt"
+    fpath = tmp_path / fname
+    fpath.write_text("unindexed content")
+
+    plan = {
+        fname: {
+            "__type__": "file",
+            "relative_source": fname,
+            "target_filename": "moved_unindexed.txt",
+            "status": "Confirmed",
+        }
+    }
+
+    db = DummyDB()
+    # Explicitly return empty string for unindexed document
+    db.doc_store[fname] = {"file_hash": ""}
+
+    hm = DummyHistoryManager()
+    engine = AsyncMoveEngine(max_workers=2, chunk_size=2)
+    summary = engine.execute(base_dir, plan, db, hm)
+
+    assert not summary.get("cancelled")
+    assert os.path.exists(tmp_path / "moved_unindexed.txt")
+
+
+def test_process_move_item_legacy_caller_fallback(tmp_path):
+    """Verify backward compatibility: if chunk_hash_map is not provided, falls back to get_document."""
+    base_dir = str(tmp_path)
+    fname = "legacy.txt"
+    fpath = tmp_path / fname
+    fpath.write_text("legacy caller test")
+
+    item = {
+        "source_path": str(fpath),
+        "key": fname,
+        "content": {},
+        "filename": fname,
+        "current_dest": "legacy_dest.txt",
+    }
+
+    db = DummyDB()
+    db.doc_store[fname] = {"file_hash": "legacy_hash_123"}
+    hm = DummyHistoryManager()
+    db_updates = []
+    lock = threading.Lock()
+
+    # Call _process_move_item directly without chunk_hash_map argument
+    success = _process_move_item(
+        base_dir=base_dir,
+        item=item,
+        db=db,
+        path_map={},
+        runtime_settings=None,
+        session_id="test_legacy_session",
+        ledger=None,
+        history_manager=hm,
+        db_lock=lock,
+        step_counter=[0],
+        db_updates_batch=db_updates,
+    )
+
+    assert success is True
+    # Verify fallback called db.get_document
+    assert len(db.get_document_calls) == 1
+    assert db.get_document_calls[0][2] == fname
+    assert os.path.exists(tmp_path / "legacy_dest.txt")
+
+
+def test_database_get_document_hashes_sqlite(tmp_path, monkeypatch):
+    """Verify Database.get_document_hashes queries filepath and file_hash without text decryption."""
+    from app.core.db import Database
+    from app.core.db_worker import DBWorker
+
+    db_worker = DBWorker()
+    try:
+        db_path = tmp_path / "test_hashes.db"
+        db = Database(db_path, worker=db_worker)
+        base_dir = str(tmp_path / "test_base")
+        os.makedirs(base_dir, exist_ok=True)
+
+        # Insert 3 documents with extracted text
+        for i in range(3):
+            db.upsert_document(
+                base_dir=base_dir,
+                filepath=f"sub/doc_{i}.txt",
+                file_hash=f"hash_{i}",
+                extracted_text=f"Sample extracted text for doc {i}",
+            )
+
+        # Monkeypatch crypto.decrypt_text to ensure it is NOT called during get_document_hashes
+        decrypt_calls = []
+        orig_decrypt = db.crypto.decrypt_text
+
+        def mock_decrypt(text):
+            decrypt_calls.append(text)
+            return orig_decrypt(text)
+
+        monkeypatch.setattr(db.crypto, "decrypt_text", mock_decrypt)
+
+        # Call get_document_hashes for existing and missing paths
+        paths_to_query = [
+            "sub/doc_0.txt",
+            "sub\\doc_1.txt",  # Windows style path
+            "sub/doc_2.txt",
+            "nonexistent.txt",
+        ]
+
+        hashes = db.get_document_hashes(base_dir, paths_to_query)
+
+        # Decryption should NOT be called at all
+        assert len(decrypt_calls) == 0
+
+        # Existing files return correct hashes
+        assert hashes["sub/doc_0.txt"] == "hash_0"
+        assert hashes["sub\\doc_1.txt"] == "hash_1"
+        assert hashes["sub/doc_1.txt"] == "hash_1"
+        assert hashes["sub/doc_2.txt"] == "hash_2"
+
+        # Nonexistent file returns empty string
+        assert hashes["nonexistent.txt"] == ""
+    finally:
+        db_worker.stop()
