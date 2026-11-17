@@ -152,7 +152,7 @@ include = [
 ]
 
 [tool.ty.overrides.rules]
-call-non-callable = "warn"
+not-callable = "warn"
 incompatible-method-override = "warn"
 invalid-argument-type = "warn"
 invalid-assignment = "warn"
