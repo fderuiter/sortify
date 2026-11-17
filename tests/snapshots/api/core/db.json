@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "060a4244f55266dc628cb85e1dcf79827755c8c36ac9a56f01672eee2b9fa164"
+    "checksum": "8022b8de3e13bfd0f220d2a038ec683cbd647fdee545ac866f55fb0c4d9cbee0"
   },
   "classes": [
     {
@@ -206,6 +206,29 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_document_hashes",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "list[str]",
+              "default": null,
+              "name": "filepaths"
+            }
+          ],
+          "returns": "dict[str, str]"
         },
         {
           "async": false,
