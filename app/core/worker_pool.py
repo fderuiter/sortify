@@ -111,16 +111,6 @@ class SharedWorkerPool:
                 logging.debug("Shared worker pool shutdown failed", exc_info=True)
         SharedWorkerPool._instance = None
 
-    @classmethod
-    def shutdown_instance(cls, wait=False):
-        """Shutdown the global SharedWorkerPool singleton instance if it exists."""
-        if cls._instance is not None:
-            try:
-                cls._instance._executor.shutdown(wait=wait, cancel_futures=True)
-            except Exception:
-                logging.debug("Shared worker pool shutdown failed", exc_info=True)
-            cls._instance = None
-
 
 class AudioConcurrencyGuard:
     """Concurrency guard restricting active audio transcription processes across worker threads."""
