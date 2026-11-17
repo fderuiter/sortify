@@ -1,5 +1,6 @@
 """Unified build script for smart autosorter application on Windows, macOS, and Linux."""
 
+import argparse
 import os
 import sys
 
@@ -439,21 +440,32 @@ def verify_documentation_assets(dist_dir: str) -> bool:
     return True
 
 
-def main():
+def main(argv=None):
     """Build the standalone executable."""
     import importlib.util
 
-    import PyInstaller.__main__
+    parser = argparse.ArgumentParser(
+        description="Build the standalone executable for Smart AutoSorter."
+    )
+    parser.add_argument(
+        "--cpu",
+        action="store_true",
+        help="Enable CPU-only build profile (excludes GPU/CUDA dependencies).",
+    )
+    parser.add_argument(
+        "--lite",
+        action="store_true",
+        help="Enable Lite build profile (excludes heavy machine learning packages).",
+    )
+    args = parser.parse_args(argv)
 
-    is_cpu = "--cpu" in sys.argv
+    is_cpu = args.cpu
     if is_cpu:
-        sys.argv.remove("--cpu")
         os.environ["CPU_BUILD"] = "1"
         print("CPU-only build profile enabled.")
 
-    is_lite = "--lite" in sys.argv
+    is_lite = args.lite
     if is_lite:
-        sys.argv.remove("--lite")
         os.environ["LITE_BUILD"] = "1"
         print(
             "Lite profile enabled. Heavy ML packages will be excluded from the build."
@@ -527,6 +539,14 @@ def main():
         sys.exit(1)
 
     cmd = ["smart-autosorter.spec", "--noconfirm", "--clean"]
+
+    try:
+        import PyInstaller.__main__
+    except ImportError:
+        print(
+            "Error: PyInstaller is not installed. Please install build dependencies (e.g., 'pip install .[build]' or 'uv sync --group build')."
+        )
+        sys.exit(1)
 
     PyInstaller.__main__.run(cmd)
 
