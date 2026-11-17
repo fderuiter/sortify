@@ -568,18 +568,33 @@ class IncrementalAnalyzer:
             if not texts:
                 return
 
-            documents_to_upsert = []
-            for i, (filepath, text, file_hash) in enumerate(
-                zip(filepaths, texts, hashes)
-            ):
-                if not file_hash:
-                    file_hash = hashlib.md5(text.encode("utf-8")).hexdigest()
-                    hashes[i] = file_hash
+            for i in range(len(filepaths)):
+                if not hashes[i]:
+                    hashes[i] = hashlib.md5(texts[i].encode("utf-8")).hexdigest()
 
-                if self.db:
-                    doc = self.db.get_document(base_dir, filepath)
-                    if doc and doc.get("file_hash") == file_hash and file_hash:
-                        continue
+            existing_hashes: dict[str, str] = {}
+            if self.db:
+                if hasattr(self.db, "get_document_hashes"):
+                    existing_hashes = (
+                        self.db.get_document_hashes(base_dir, filepaths) or {}
+                    )
+                else:
+                    for fp in filepaths:
+                        doc = self.db.get_document(base_dir, fp)
+                        if doc and doc.get("file_hash"):
+                            existing_hashes[fp] = doc.get("file_hash")
+
+            documents_to_upsert = []
+            for filepath, text, file_hash in zip(filepaths, texts, hashes):
+                if (
+                    self.db
+                    and file_hash
+                    and (
+                        existing_hashes.get(filepath) == file_hash
+                        or existing_hashes.get(filepath.replace("\\", "/")) == file_hash
+                    )
+                ):
+                    continue
 
                 documents_to_upsert.append(
                     (
@@ -596,7 +611,8 @@ class IncrementalAnalyzer:
             # Immediately purge raw text string payloads post-extraction and DB persistence
             texts.clear()
             documents_to_upsert.clear()
-            del texts, documents_to_upsert
+            existing_hashes.clear()
+            del texts, documents_to_upsert, existing_hashes
 
         except Exception as e:
             logging.error(f"Failed during partial_fit. Error: {str(e)}", exc_info=True)
