@@ -12,8 +12,11 @@ from app.core.downloader import run_background_download
 from app.core.exceptions import ModelVerificationError
 from app.core.offline_loader import OfflineModelLoader
 from app.core.security_advisory import (
+    ALLOWED_ADVISORY_HOSTS,
     SecurityAdvisoryClient,
     SecurityAdvisoryResult,
+    _is_allowed_advisory_host,
+    _validate_advisory_url,
 )
 
 
@@ -419,3 +422,215 @@ def test_background_downloader_strict_advisory_failure_triggers_on_failure():
     assert len(captured_error) == 1
     assert isinstance(captured_error[0], ModelVerificationError)
     assert "strict security policy" in str(captured_error[0])
+
+
+def test_allowed_advisory_hosts_contains_defaults():
+    """Verify ALLOWED_ADVISORY_HOSTS constant contains expected domains."""
+    assert "huggingface.co" in ALLOWED_ADVISORY_HOSTS
+    assert "hf.co" in ALLOWED_ADVISORY_HOSTS
+
+
+@pytest.mark.parametrize(
+    "hostname, expected",
+    [
+        ("huggingface.co", True),
+        ("hf.co", True),
+        ("security.huggingface.co", True),
+        ("api.hf.co", True),
+        ("sub.domain.huggingface.co", True),
+        ("security.huggingface.co.", True),
+        ("example.com", False),
+        ("evil-huggingface.co", False),
+        ("huggingface.co.attacker.com", False),
+        ("", False),
+        (".huggingface.co", False),
+        ("127.0.0.1", False),
+    ],
+)
+def test_is_allowed_advisory_host(hostname, expected):
+    """Verify allowed advisory host checking for domains and subdomains."""
+    assert _is_allowed_advisory_host(hostname) is expected
+
+
+@pytest.mark.parametrize(
+    "invalid_url, expected_match",
+    [
+        ("file:///etc/passwd", "Unsupported URL scheme 'file'"),
+        ("file:///advisories.json", "Unsupported URL scheme 'file'"),
+        (
+            "http://security.huggingface.co/api/advisories",
+            "Unsupported URL scheme 'http'",
+        ),
+        ("http://hf.co/api/advisories", "Unsupported URL scheme 'http'"),
+        ("ftp://security.huggingface.co/api", "Unsupported URL scheme 'ftp'"),
+        ("gopher://security.huggingface.co/", "Unsupported URL scheme 'gopher'"),
+    ],
+)
+def test_advisory_rejects_non_https_schemes(invalid_url, expected_match):
+    """Verify that file, http, and other non-HTTPS schemes are rejected."""
+    with pytest.raises(ModelVerificationError, match=expected_match):
+        _validate_advisory_url(invalid_url)
+
+
+@pytest.mark.parametrize(
+    "invalid_url, expected_match",
+    [
+        (
+            "https://127.0.0.1/api/advisories",
+            "Private or local IP addresses are not permitted",
+        ),
+        (
+            "https://127.0.0.2/api/advisories",
+            "Private or local IP addresses are not permitted",
+        ),
+        (
+            "https://[::1]/api/advisories",
+            "Private or local IP addresses are not permitted",
+        ),
+        (
+            "https://169.254.169.254/latest/meta-data",
+            "Private or local IP addresses are not permitted",
+        ),
+        (
+            "https://10.0.0.1/api/advisories",
+            "Private or local IP addresses are not permitted",
+        ),
+        (
+            "https://192.168.1.1/api/advisories",
+            "Private or local IP addresses are not permitted",
+        ),
+        (
+            "https://172.16.0.1/api/advisories",
+            "Private or local IP addresses are not permitted",
+        ),
+        (
+            "https://0.0.0.0/api/advisories",
+            "Private or local IP addresses are not permitted",
+        ),
+        (
+            "https://93.184.216.34/api/advisories",
+            "IP address literals are not permitted as security advisory hosts",
+        ),
+        (
+            "https://localhost/api/advisories",
+            "Local or loopback hostnames are not permitted",
+        ),
+        (
+            "https://myhost.local/api/advisories",
+            "Local or loopback hostnames are not permitted",
+        ),
+        (
+            "https://app.localhost/api/advisories",
+            "Local or loopback hostnames are not permitted",
+        ),
+    ],
+)
+def test_advisory_rejects_loopback_and_private_ips(invalid_url, expected_match):
+    """Verify that loopback, link-local metadata, and private IP addresses are rejected."""
+    with pytest.raises(ModelVerificationError, match=expected_match):
+        _validate_advisory_url(invalid_url)
+
+
+@pytest.mark.parametrize(
+    "invalid_url",
+    [
+        "https://example.com/api/advisories",
+        "https://evil-huggingface.co/api/advisories",
+        "https://huggingface.co.attacker.com/api/advisories",
+        "https://malicious.org/api/advisories",
+        "https://github.com/api/advisories",
+    ],
+)
+def test_advisory_rejects_untrusted_hostnames(invalid_url):
+    """Verify that untrusted domains outside the advisory host allowlist are rejected."""
+    with pytest.raises(
+        ModelVerificationError, match="Untrusted security advisory host"
+    ):
+        _validate_advisory_url(invalid_url)
+
+
+@pytest.mark.parametrize(
+    "invalid_url, expected_match",
+    [
+        ("", "must be a non-empty string"),
+        ("   ", "must be a non-empty string"),
+        ("not-a-valid-url", "Unsupported URL scheme"),
+        ("https:///api/advisories", "URL hostname is missing or empty"),
+        ("security.huggingface.co/api", "Unsupported URL scheme"),
+    ],
+)
+def test_advisory_rejects_malformed_urls(invalid_url, expected_match):
+    """Verify that empty, missing scheme, or malformed advisory URLs are rejected."""
+    with pytest.raises(ModelVerificationError, match=expected_match):
+        _validate_advisory_url(invalid_url)
+
+
+@pytest.mark.parametrize(
+    "invalid_endpoint",
+    [
+        "file:///etc/passwd",
+        "http://security.huggingface.co/api",
+        "https://127.0.0.1/api",
+        "https://evil.com/advisories",
+        "",
+    ],
+)
+def test_advisory_client_init_fails_fast_on_invalid_endpoint(invalid_endpoint):
+    """Verify SecurityAdvisoryClient.__init__ fails fast with ModelVerificationError."""
+    with pytest.raises(ModelVerificationError):
+        SecurityAdvisoryClient(endpoint=invalid_endpoint)
+
+
+@pytest.mark.parametrize(
+    "invalid_endpoint",
+    [
+        "file:///etc/passwd",
+        "http://security.huggingface.co/api",
+        "https://127.0.0.1/api",
+        "https://169.254.169.254/api",
+        "https://evil.com/api",
+    ],
+)
+def test_check_advisory_rejects_before_socket_unblocking(invalid_endpoint):
+    """Verify check_advisory rejects invalid endpoints before socket sandboxing is unblocked."""
+    from app.core.shared_registry import _thread_local
+
+    was_sandboxed = getattr(_thread_local, "sandboxed", False)
+    was_reason = getattr(_thread_local, "reason", "")
+    _thread_local.sandboxed = True
+    _thread_local.reason = "sandbox safety test"
+
+    try:
+        # Construct client bypassing __init__ check to test check_advisory defense-in-depth
+        client = SecurityAdvisoryClient.get_instance()
+        client._endpoint = invalid_endpoint
+
+        with patch("app.core.network_guard.unblock_external_network") as mock_unblock:
+            with pytest.raises(ModelVerificationError):
+                client.check_advisory(repo_id="test-org/test-model")
+
+            # Crucially, unblock_external_network was NEVER invoked
+            mock_unblock.assert_not_called()
+
+        # Sandboxing state remained completely active throughout
+        assert getattr(_thread_local, "sandboxed", False) is True
+        assert getattr(_thread_local, "reason", "") == "sandbox safety test"
+    finally:
+        _thread_local.sandboxed = was_sandboxed
+        _thread_local.reason = was_reason
+
+
+def test_check_advisory_cached_result_bypasses_url_validation():
+    """Verify queries with cached results return immediately without redundant URL parsing."""
+    client = SecurityAdvisoryClient.get_instance()
+    # Set an invalid endpoint that would fail validation if parsed
+    client._endpoint = "https://invalid.untrusted.host.com/api"
+
+    repo_id = "cached-org/cached-model"
+    res = SecurityAdvisoryResult(has_advisory=False, details="Cached valid result")
+    client.cache_advisory(repo_id, None, res)
+
+    # Calling check_advisory with a cache hit returns immediately without failing
+    retrieved = client.check_advisory(repo_id=repo_id)
+    assert retrieved is res
+    assert retrieved.details == "Cached valid result"
