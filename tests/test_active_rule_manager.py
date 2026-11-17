@@ -8,7 +8,10 @@ from app.ui.modals.command_palette import DEFAULT_COMMAND_CATALOG
 from app.ui.modals.rules import (
     ActiveRuleManagerModal,
     DeleteRuleConfirmModal,
+    ExportRulesModal,
     RuleEditModal,
+    RuleImportModal,
+    TemplateGalleryModal,
 )
 from app.ui.modals.settings import SettingsModal
 from app.ui.tui import AutoSorterTUI
@@ -419,3 +422,256 @@ def test_disabled_rules_excluded_from_sorting_metadata_pass(tmp_path):
     assert res_active is not None
     assert res_active.expression == "active_pol"
     assert res_active.target_path == "ActivePolicyFolder"
+
+
+@pytest.mark.anyio
+async def test_active_rule_manager_renders_all_action_buttons(tmp_path):
+    """Criterion 1: ActiveRuleManagerModal renders buttons for Close, Toggle Status, Delete Rule, Edit Rule, Add Rule, Import Rules, Export Rules, and Browse Templates."""
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    modal = ActiveRuleManagerModal(settings)
+    app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(modal)
+        await pilot.pause()
+
+        expected_buttons = {
+            "btn-close-rules": "Close",
+            "btn-toggle-rule": "Toggle Status",
+            "btn-delete-rule": "Delete Rule",
+            "btn-edit-rule": "Edit Rule",
+            "btn-add-rule": "Add Rule",
+            "btn-import-rules": "Import Rules",
+            "btn-export-rules": "Export Rules",
+            "btn-browse-templates": "Browse Templates",
+        }
+
+        for btn_id, label in expected_buttons.items():
+            btn = modal.query_one(f"#{btn_id}", Button)
+            assert btn is not None
+            assert str(btn.label) == label
+
+
+@pytest.mark.anyio
+async def test_active_rule_manager_import_rules_workflow(tmp_path):
+    """Criterion 2: Completing an import workflow in RuleImportModal updates the rules table without closing the rule manager."""
+    from app.core.rule_importers import ImportResult
+
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    settings.KEYWORD_RULES = {"invoice": "Invoices"}
+    modal = ActiveRuleManagerModal(settings)
+    app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(modal)
+        await pilot.pause()
+
+        # Open import modal via button handler
+        modal.action_import_rules()
+        await pilot.pause()
+        assert isinstance(app.screen, RuleImportModal)
+        import_modal = app.screen
+
+        # Simulate parsing rules into import modal
+        import_modal.current_result = ImportResult(
+            keyword_rules={"statement": "Statements", "receipt": "Receipts"},
+            policies=[
+                {
+                    "type": "compliance",
+                    "expression": "confidential",
+                    "target_path": "Vault",
+                    "priority": 10,
+                    "enabled": True,
+                }
+            ],
+            source_format="hazel",
+        )
+
+        # Merge imported rules
+        import_modal.action_merge_rules()
+        await pilot.pause()
+
+        # Rule manager should remain active (not closed!)
+        assert isinstance(app.screen, ActiveRuleManagerModal)
+        table = modal.query_one("#rules-table", DataTable)
+        patterns = [r["pattern"] for r in modal._rules_data]
+        assert "invoice" in patterns
+        assert "statement" in patterns
+        assert "receipt" in patterns
+        assert "confidential" in patterns
+        assert table.row_count == 4
+
+
+@pytest.mark.anyio
+async def test_active_rule_manager_browse_templates_workflow(tmp_path):
+    """Criterion 3: Applying template packs in TemplateGalleryModal updates the rules table immediately."""
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    settings.KEYWORD_RULES = {"custom_kw": "CustomFolder"}
+    modal = ActiveRuleManagerModal(settings)
+    app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(modal)
+        await pilot.pause()
+
+        # Open template gallery
+        modal.action_browse_templates()
+        await pilot.pause()
+        assert isinstance(app.screen, TemplateGalleryModal)
+        gallery_modal = app.screen
+
+        # Select legal_contracts template and apply
+        gallery_modal.query_one("#chk-gallery-legal_contracts").value = True
+        gallery_modal.action_apply_templates()
+        await pilot.pause()
+
+        # Rule manager remains active and table reloads immediately
+        assert isinstance(app.screen, ActiveRuleManagerModal)
+        patterns = [r["pattern"] for r in modal._rules_data]
+        assert "custom_kw" in patterns
+        assert "contract" in patterns
+        assert "lease" in patterns
+
+
+@pytest.mark.anyio
+async def test_active_rule_manager_export_rules_modal_launch(tmp_path):
+    """Criterion 4: ExportRulesModal opens from the rule manager with accurate rule count and returns to manager."""
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    settings.KEYWORD_RULES = {"invoice": "Invoices", "taxes": "Taxes"}
+    settings.POLICIES = [
+        {
+            "type": "compliance",
+            "expression": "confidential",
+            "target_path": "Vault",
+            "priority": 10,
+            "enabled": True,
+        }
+    ]
+    modal = ActiveRuleManagerModal(settings)
+    app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(modal)
+        await pilot.pause()
+
+        modal.action_export_rules()
+        await pilot.pause()
+        assert isinstance(app.screen, ExportRulesModal)
+        export_modal = app.screen
+
+        # Summary label should reflect 2 keyword rules and 1 policy
+        summary_lbl = export_modal.query_one("#lbl-export-summary", Label)
+        summary_text = str(summary_lbl.render())
+        assert "2 active keyword rule(s)" in summary_text
+        assert "1 policy rule(s)" in summary_text
+
+        # Dismiss export modal
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, ActiveRuleManagerModal)
+
+
+@pytest.mark.anyio
+async def test_active_rule_manager_keyboard_shortcuts(tmp_path):
+    """Requirement 5: Keyboard shortcuts provide fast navigation to lifecycle actions."""
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    settings.KEYWORD_RULES = {"invoice": "Invoices"}
+    modal = ActiveRuleManagerModal(settings)
+    app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(modal)
+        await pilot.pause()
+
+        # Test ctrl+i opens RuleImportModal
+        await pilot.press("ctrl+i")
+        await pilot.pause()
+        assert isinstance(app.screen, RuleImportModal)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, ActiveRuleManagerModal)
+
+        # Test ctrl+e opens ExportRulesModal
+        await pilot.press("ctrl+e")
+        await pilot.pause()
+        assert isinstance(app.screen, ExportRulesModal)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, ActiveRuleManagerModal)
+
+        # Test ctrl+b opens TemplateGalleryModal
+        await pilot.press("ctrl+b")
+        await pilot.pause()
+        assert isinstance(app.screen, TemplateGalleryModal)
+        await pilot.press("escape")
+        await pilot.pause()
+        assert isinstance(app.screen, ActiveRuleManagerModal)
+
+
+@pytest.mark.anyio
+async def test_active_rule_manager_accessibility_announcements(tmp_path):
+    """Criterion 5: Screen readers announce button focus and modal transitions accurately."""
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    modal = ActiveRuleManagerModal(settings)
+    app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        app.push_screen(modal)
+        await pilot.pause()
+
+        # Focus Import Rules button
+        btn_import = modal.query_one("#btn-import-rules", Button)
+        btn_import.focus()
+        await pilot.pause()
+
+        messages = [a["message"] for a in modal.announcements]
+        assert any("Import Rules button focused" in m for m in messages)
+
+        # Focus Export Rules button
+        btn_export = modal.query_one("#btn-export-rules", Button)
+        btn_export.focus()
+        await pilot.pause()
+
+        messages = [a["message"] for a in modal.announcements]
+        assert any("Export Rules button focused" in m for m in messages)
+
+        # Focus Browse Templates button
+        btn_browse = modal.query_one("#btn-browse-templates", Button)
+        btn_browse.focus()
+        await pilot.pause()
+
+        messages = [a["message"] for a in modal.announcements]
+        assert any("Browse Templates button focused" in m for m in messages)
+
+
+@pytest.mark.anyio
+async def test_active_rule_manager_responsive_layout_no_clip(tmp_path):
+    """Requirement 6 & Constraints: Button rows do not cause horizontal wrapping or clip on 80-col terminal displays."""
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    modal = ActiveRuleManagerModal(settings)
+    app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+
+    # Test standard 80-column display
+    async with app.run_test(size=(80, 24)) as pilot:
+        await pilot.pause()
+        app.push_screen(modal)
+        await pilot.pause()
+
+        box = modal.query_one(".rule-manager-box")
+        box_right = box.region.x + box.region.width
+
+        for btn in modal.query(Button):
+            btn_right = btn.region.x + btn.region.width
+            # Each button must be positioned within the modal box
+            assert btn_right <= box_right, (
+                f"Button {btn.id} clips outside box right edge"
+            )
+            assert btn.region.x >= box.region.x, (
+                f"Button {btn.id} clips outside box left edge"
+            )

@@ -98,12 +98,25 @@ def test_daemon_toggle_hotkey_sends_pause_request(temp_workspace):
         )
 
         fake_pid_info = {"pid": 99999, "socket_path": "/fake/socket"}
-        mock_send_command = AsyncMock(
-            return_value={
-                "status": "paused",
-                "message": "Daemon triage pipeline paused",
-            }
-        )
+        daemon_status = {"status": "running", "is_running": True, "is_paused": False}
+
+        async def fake_send(cmd, **kwargs):
+            nonlocal daemon_status
+            if cmd == "status":
+                return dict(daemon_status)
+            if cmd == "pause":
+                daemon_status = {
+                    "status": "paused",
+                    "is_running": True,
+                    "is_paused": True,
+                }
+                return {
+                    "status": "paused",
+                    "message": "Daemon triage pipeline paused",
+                }
+            return {}
+
+        mock_send_command = AsyncMock(side_effect=fake_send)
 
         with (
             patch("app.core.ipc.read_pid_file", return_value=fake_pid_info),
@@ -119,7 +132,7 @@ def test_daemon_toggle_hotkey_sends_pause_request(temp_workspace):
                 await pilot.press("ctrl+t")
                 await pilot.pause()
 
-                mock_send_command.assert_awaited_with("pause", timeout=2.0)
+                mock_send_command.assert_any_await("pause", timeout=2.0)
                 assert app._daemon_state == "paused"
                 sb = app.query_one("#status-bar", Static)
                 assert "[Daemon: Paused]" in str(sb.render())
@@ -143,12 +156,25 @@ def test_daemon_toggle_hotkey_sends_resume_request(temp_workspace):
         )
 
         fake_pid_info = {"pid": 99999, "socket_path": "/fake/socket"}
-        mock_send_command = AsyncMock(
-            return_value={
-                "status": "resumed",
-                "message": "Daemon triage pipeline resumed",
-            }
-        )
+        daemon_status = {"status": "paused", "is_running": True, "is_paused": True}
+
+        async def fake_send(cmd, **kwargs):
+            nonlocal daemon_status
+            if cmd == "status":
+                return dict(daemon_status)
+            if cmd == "resume":
+                daemon_status = {
+                    "status": "running",
+                    "is_running": True,
+                    "is_paused": False,
+                }
+                return {
+                    "status": "resumed",
+                    "message": "Daemon triage pipeline resumed",
+                }
+            return {}
+
+        mock_send_command = AsyncMock(side_effect=fake_send)
 
         with (
             patch("app.core.ipc.read_pid_file", return_value=fake_pid_info),
@@ -164,7 +190,7 @@ def test_daemon_toggle_hotkey_sends_resume_request(temp_workspace):
                 await pilot.press("p")
                 await pilot.pause()
 
-                mock_send_command.assert_awaited_with("resume", timeout=2.0)
+                mock_send_command.assert_any_await("resume", timeout=2.0)
                 assert app._daemon_state == "active"
                 sb = app.query_one("#status-bar", Static)
                 assert "[Daemon: Active]" in str(sb.render())

@@ -177,6 +177,9 @@ Use the following shortcuts and button controls:
 - **Add Rule** (`#btn-add-rule`): Opens the rule editor modal (`RuleEditModal`) to define a new keyword rule. Enter a matching pattern and target folder. Target paths are validated to ensure they are relative paths and do not contain directory traversal (`..`) or invalid characters.
 - **Edit Rule** (`[Enter]` or `#btn-edit-rule`): Opens the rule editor modal for the highlighted rule, allowing you to update its pattern expression or target folder.
 - **Delete Rule** (`[Delete]` or `#btn-delete-rule`): Prompts a confirmation dialog (`DeleteRuleConfirmModal`) before permanently deleting the selected rule or policy from settings.
+- **Import Rules** (`[Ctrl+I]` / `[I]` or `#btn-import-rules`): Opens the external rule import dialog (`RuleImportModal`) to import rules from Hazel, DropIt, or TagSpaces. Completing the import workflow updates the rules table immediately without closing the active rule manager.
+- **Export Rules** (`[Ctrl+E]` / `[E]` or `#btn-export-rules`): Opens the export dialog (`ExportRulesModal`) displaying active rule counts and exports active rules to Sortify JSON, Hazel, or DropIt formats.
+- **Browse Templates** (`[Ctrl+B]` / `[B]` or `#btn-browse-templates`): Opens the template gallery modal (`TemplateGalleryModal`) to browse and apply pre-configured starter packs. When templates are applied, the rules table refreshes immediately.
 - **Close Dialog** (`[Esc]` or `#btn-close-rules`): Closes the active rule manager and returns to the previous view.
 
 ### Importing External Rules
