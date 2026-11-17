@@ -135,8 +135,19 @@ def test_audit_report_modal_search_and_filter(sample_audit_report):
     asyncio.run(_test())
 
 
+def test_audit_report_modal_bindings_no_ctrl_c():
+    """Verify ctrl+c keybinding is not present in AuditReportModal.BINDINGS."""
+    ctrl_c_bindings = [
+        b for b in AuditReportModal.BINDINGS if getattr(b, "key", None) == "ctrl+c"
+    ]
+    assert len(ctrl_c_bindings) == 0
+
+
 def test_audit_report_modal_export_actions(sample_audit_report, tmp_path):
-    """Test JSON and CSV export buttons in AuditReportModal."""
+    """Test JSON and CSV export buttons in AuditReportModal and verify ctrl+c does not export."""
+    assert not any(
+        getattr(b, "key", None) == "ctrl+c" for b in AuditReportModal.BINDINGS
+    )
 
     async def _test():
         # Set base_dir in report to tmp_path
@@ -150,6 +161,12 @@ def test_audit_report_modal_export_actions(sample_audit_report, tmp_path):
             await app.push_screen(modal)
             await pilot.pause()
 
+            # Pressing ctrl+c should not trigger report export or write CSV to disk
+            csv_export_file = tmp_path / "audit_report.csv"
+            await pilot.press("ctrl+c")
+            await pilot.pause()
+            assert not csv_export_file.exists()
+
             btn_json = modal.query_one("#btn-export-json", Button)
             btn_json.press()
             await pilot.pause()
@@ -161,7 +178,6 @@ def test_audit_report_modal_export_actions(sample_audit_report, tmp_path):
             btn_csv.press()
             await pilot.pause()
 
-            csv_export_file = tmp_path / "audit_report.csv"
             assert csv_export_file.exists()
 
     asyncio.run(_test())

@@ -59,7 +59,6 @@ Press `?` or `F1` in the app to see these shortcuts.
 | `Ctrl+R` | Retry Selected Failed Item |
 | `Ctrl+T` | Retry All Failed Items |
 | `Ctrl+J` | Export JSON Report |
-| `Ctrl+C` | Export CSV Report |
 
 ### Command Palette
 
