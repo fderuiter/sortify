@@ -334,10 +334,15 @@ def get_session_base_dir() -> Path:
     app_dir_env = os.environ.get("AUTOSORTER_APP_DIR")
     if app_dir_env:
         p = Path(app_dir_env) / "sessions"
-        p.mkdir(parents=True, exist_ok=True)
-        return p
-    p = Path(tempfile.gettempdir()) / f"autosorter_sessions_{user_str}"
-    p.mkdir(parents=True, exist_ok=True)
+    else:
+        p = Path(tempfile.gettempdir()) / f"autosorter_sessions_{user_str}"
+    p.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        os.chmod(p, 0o700)
+    except OSError as chmod_err:
+        logger.debug(
+            f"Failed to set permissions on session base directory '{p}': {chmod_err}"
+        )
     return p
 
 
@@ -348,7 +353,13 @@ def setup_session_directory(session_id: str = None) -> tuple[str, Path]:
     if not session_id:
         session_id = str(uuid.uuid4())
     session_dir = get_session_base_dir() / session_id
-    session_dir.mkdir(parents=True, exist_ok=True)
+    session_dir.mkdir(mode=0o700, parents=True, exist_ok=True)
+    try:
+        os.chmod(session_dir, 0o700)
+    except OSError as chmod_err:
+        logger.debug(
+            f"Failed to set permissions on session directory '{session_dir}': {chmod_err}"
+        )
     return session_id, session_dir
 
 
