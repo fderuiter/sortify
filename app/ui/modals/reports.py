@@ -382,7 +382,6 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
         Binding("ctrl+r", "retry_selected", "Retry Selected Failed Item", show=True),
         Binding("ctrl+t", "retry_all", "Retry All Failed Items", show=True),
         Binding("ctrl+j", "export_json", "Export JSON Report", show=True),
-        Binding("ctrl+c", "export_csv", "Export CSV Report", show=True),
     ]
 
     CSS = """
