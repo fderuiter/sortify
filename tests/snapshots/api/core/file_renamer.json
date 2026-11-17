@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "47f1d62e182faa60ac61fb2a2be090da43d3e19d663a2af48bbabb97bfa205b4"
+    "checksum": "ce595b3d1c7925635fcaf6e29e09404ba838632fe790c0df45798ff7dbf09ac1"
   },
   "classes": [
     {
@@ -65,44 +65,6 @@
             }
           ],
           "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "format_pattern_name",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "original_filename"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "pattern"
-            },
-            {
-              "annotation": "str",
-              "default": "''",
-              "name": "category"
-            },
-            {
-              "annotation": "int",
-              "default": "1",
-              "name": "seq"
-            },
-            {
-              "annotation": "Optional[str]",
-              "default": "None",
-              "name": "file_date"
-            }
-          ],
-          "returns": "str"
         },
         {
           "async": false,
