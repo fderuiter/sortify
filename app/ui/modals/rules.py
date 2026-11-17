@@ -224,8 +224,7 @@ class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     def action_cancel(self) -> None:
         """Cancel on Escape key."""
-        self.announce("Closed starter rule template gallery.")
-        self.dismiss(None)
+        self.action_close()
 
 
 class ExportRulesModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Path]]):
@@ -448,8 +447,7 @@ class ExportRulesModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Pa
 
     def action_cancel(self) -> None:
         """Cancel on Escape key."""
-        self.announce("Closed export rules modal.")
-        self.dismiss(None)
+        self.action_close()
 
 
 class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any]]):
@@ -886,8 +884,7 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
 
     def action_cancel(self) -> None:
         """Cancel on Escape key."""
-        self.announce("Closed external rule importer modal.")
-        self.dismiss(None)
+        self.action_close()
 
 
 class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]]):
@@ -1534,15 +1531,18 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
         )
 
     @on(Button.Pressed, "#btn-close-rules")
-    def action_close_rules(self) -> None:
+    def action_close(self) -> None:
         """Close active rule manager dialog."""
         self.announce("Closed active rule manager.")
         self.dismiss(None)
 
+    def action_close_rules(self) -> None:
+        """Close active rule manager dialog (legacy handler)."""
+        self.action_close()
+
     def action_cancel(self) -> None:
         """Cancel on Escape key."""
-        self.announce("Closed active rule manager.")
-        self.dismiss(None)
+        self.action_close()
 
     @on(events.DescendantFocus)
     def on_descendant_focus(self, event: events.DescendantFocus) -> None:

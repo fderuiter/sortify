@@ -5,6 +5,8 @@ import plistlib
 import tempfile
 from pathlib import Path
 
+from textual.widgets import Button
+
 from app.config import AppSettings
 from app.core.rule_importers import get_rule_importer
 from app.ui.tui import RuleImportModal
@@ -208,3 +210,51 @@ def test_rule_import_modal_save_failure_handling(mocker):
     notify_mock.assert_called_once()
     _, kwargs = notify_mock.call_args
     assert kwargs.get("type") == "error"
+
+
+def test_rule_import_modal_dismissal(tmp_path, mocker):
+    """Verify RuleImportModal dismisses on action_close and action_cancel delegates to action_close."""
+    import asyncio
+
+    from app.ui.tui import AutoSorterTUI
+
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    modal = RuleImportModal(settings)
+
+    close_spy = mocker.spy(modal, "action_close")
+    dismiss_mock = mocker.patch.object(modal, "dismiss")
+    announce_mock = mocker.patch.object(modal, "announce")
+
+    modal.action_cancel()
+
+    close_spy.assert_called_once()
+    dismiss_mock.assert_called_once_with(None)
+    announce_mock.assert_called_once_with("Closed external rule importer modal.")
+
+    # TUI test with close button and escape key
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+        async with app.run_test() as pilot:
+            await pilot.pause(0.1)
+
+            # Test close button
+            modal1 = RuleImportModal(settings)
+            app.push_screen(modal1)
+            await pilot.pause(0.1)
+            assert isinstance(app.screen, RuleImportModal)
+
+            modal1.query_one("#btn-close-importer", Button).press()
+            await pilot.pause(0.1)
+            assert not isinstance(app.screen, RuleImportModal)
+
+            # Test escape key
+            modal2 = RuleImportModal(settings)
+            app.push_screen(modal2)
+            await pilot.pause(0.1)
+            assert isinstance(app.screen, RuleImportModal)
+
+            await pilot.press("escape")
+            await pilot.pause(0.1)
+            assert not isinstance(app.screen, RuleImportModal)
+
+    asyncio.run(_test())

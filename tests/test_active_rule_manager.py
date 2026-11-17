@@ -675,3 +675,50 @@ async def test_active_rule_manager_responsive_layout_no_clip(tmp_path):
             assert btn.region.x >= box.region.x, (
                 f"Button {btn.id} clips outside box left edge"
             )
+
+
+@pytest.mark.anyio
+async def test_active_rule_manager_dismissal(tmp_path, mocker):
+    """Verify ActiveRuleManagerModal dismisses on close button, action_close_rules, and escape."""
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    modal = ActiveRuleManagerModal(settings)
+    app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+
+    # Test legacy delegation
+    close_spy = mocker.spy(modal, "action_close")
+    dismiss_mock = mocker.patch.object(modal, "dismiss")
+    announce_mock = mocker.patch.object(modal, "announce")
+
+    modal.action_close_rules()
+    assert close_spy.call_count == 1
+    assert dismiss_mock.call_count == 1
+    assert announce_mock.call_count == 1
+    assert announce_mock.call_args[0][0] == "Closed active rule manager."
+
+    modal.action_cancel()
+    assert close_spy.call_count == 2
+    assert dismiss_mock.call_count == 2
+
+    # Test TUI interactions: close button and escape key
+    async with app.run_test() as pilot:
+        await pilot.pause()
+
+        # Close button
+        manager1 = ActiveRuleManagerModal(settings)
+        app.push_screen(manager1)
+        await pilot.pause()
+        assert isinstance(app.screen, ActiveRuleManagerModal)
+
+        manager1.query_one("#btn-close-rules", Button).press()
+        await pilot.pause()
+        assert not isinstance(app.screen, ActiveRuleManagerModal)
+
+        # Escape key
+        manager2 = ActiveRuleManagerModal(settings)
+        app.push_screen(manager2)
+        await pilot.pause()
+        assert isinstance(app.screen, ActiveRuleManagerModal)
+
+        await pilot.press("escape")
+        await pilot.pause()
+        assert not isinstance(app.screen, ActiveRuleManagerModal)

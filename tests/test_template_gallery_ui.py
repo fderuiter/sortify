@@ -4,6 +4,7 @@ import asyncio
 from unittest.mock import patch
 
 import pytest
+from textual.widgets import Button
 
 from app.config import AppSettings
 from app.core.rule_templates import apply_starter_templates
@@ -325,5 +326,50 @@ def test_wizard_modal_save_error_handled(tmp_path):
                             if call[1].get("severity") == "error"
                         ]
                         assert len(error_notifications) > 0
+
+    asyncio.run(_test())
+
+
+def test_template_gallery_modal_dismissal(tmp_path, mocker):
+    """Verify TemplateGalleryModal dismisses via close button and escape key."""
+
+    async def _test():
+        settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+        settings.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+
+        # Test action_cancel delegates to action_close
+        modal = TemplateGalleryModal(settings)
+        close_spy = mocker.spy(modal, "action_close")
+        dismiss_mock = mocker.patch.object(modal, "dismiss")
+        announce_mock = mocker.patch.object(modal, "announce")
+
+        modal.action_cancel()
+        close_spy.assert_called_once()
+        dismiss_mock.assert_called_once_with(None)
+        announce_mock.assert_called_once_with("Closed starter rule template gallery.")
+
+        async with app.run_test() as pilot:
+            await pilot.pause(0.1)
+
+            # Close button
+            gallery1 = TemplateGalleryModal(settings)
+            app.push_screen(gallery1)
+            await pilot.pause(0.1)
+            assert isinstance(app.screen, TemplateGalleryModal)
+
+            gallery1.query_one("#btn-close-gallery", Button).press()
+            await pilot.pause(0.1)
+            assert not isinstance(app.screen, TemplateGalleryModal)
+
+            # Escape key
+            gallery2 = TemplateGalleryModal(settings)
+            app.push_screen(gallery2)
+            await pilot.pause(0.1)
+            assert isinstance(app.screen, TemplateGalleryModal)
+
+            await pilot.press("escape")
+            await pilot.pause(0.1)
+            assert not isinstance(app.screen, TemplateGalleryModal)
 
     asyncio.run(_test())

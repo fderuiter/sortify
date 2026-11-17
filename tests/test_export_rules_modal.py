@@ -153,13 +153,23 @@ def test_export_rules_modal_cancel_and_escape(tmp_path):
         async with app.run_test() as pilot:
             await pilot.pause(0.1)
 
-            # Test cancel button
+            # Test cancel button and action_cancel delegation
             modal1 = ExportRulesModal(settings)
             app.push_screen(modal1)
             await pilot.pause(0.1)
             assert isinstance(app.screen, ExportRulesModal)
 
             modal1.action_close()
+            await pilot.pause(0.1)
+            assert not isinstance(app.screen, ExportRulesModal)
+
+            # Test action_cancel delegates to action_close
+            modal_cancel = ExportRulesModal(settings)
+            app.push_screen(modal_cancel)
+            await pilot.pause(0.1)
+            assert isinstance(app.screen, ExportRulesModal)
+
+            modal_cancel.action_cancel()
             await pilot.pause(0.1)
             assert not isinstance(app.screen, ExportRulesModal)
 
