@@ -733,8 +733,35 @@ def test_unclassified_non_extractor_files_route_to_unsupported(mocker):
 
 
 def test_partial_fit_preserves_corpus_and_bypasses_upsert_for_cached_items(mocker):
-    """Verify partial_fit updates analyzer.corpus for all items but skips db.upsert_documents for unchanged cached files."""
+    """Verify partial_fit updates analyzer.corpus for all items but skips db.upsert_documents for unchanged cached files using batched hash lookups."""
     mock_db = mocker.MagicMock()
+    mock_db.get_document_hashes.return_value = {
+        "doc.txt": "hash_cached",
+    }
+
+    analyzer = IncrementalAnalyzer(
+        max_folders=3, stop_words={"the"}, db=mock_db, strategy_name="default"
+    )
+
+    chunk = {
+        "doc.txt": {
+            "text": "doc.txt cached content",
+            "hash": "hash_cached",
+        }
+    }
+
+    analyzer.partial_fit("test_base", chunk)
+
+    assert "doc.txt" in analyzer.corpus
+    mock_db.get_document_hashes.assert_called_once_with("test_base", ["doc.txt"])
+    mock_db.get_document.assert_not_called()
+    mock_db.upsert_documents.assert_not_called()
+
+
+def test_partial_fit_fallback_when_db_lacks_get_document_hashes(mocker):
+    """Verify partial_fit safely falls back to get_document when db lacks get_document_hashes."""
+    mock_db = mocker.MagicMock()
+    del mock_db.get_document_hashes
     mock_db.get_document.return_value = {
         "file_hash": "hash_cached",
         "extracted_text": "doc.txt cached content",
@@ -754,4 +781,84 @@ def test_partial_fit_preserves_corpus_and_bypasses_upsert_for_cached_items(mocke
     analyzer.partial_fit("test_base", chunk)
 
     assert "doc.txt" in analyzer.corpus
+    mock_db.get_document.assert_called_once_with("test_base", "doc.txt")
     mock_db.upsert_documents.assert_not_called()
+
+
+def test_get_document_hashes_chunking_beyond_500_documents():
+    """Verify get_document_hashes correctly queries in chunks of 500 when querying >500 items."""
+    base_dir = "test_chunking_base"
+    db.clear(base_dir)
+
+    total_docs = 1200
+    filepaths = [f"bulk_{i}.txt" for i in range(total_docs)]
+    doc_tuples = [
+        (base_dir, fp, f"hash_{i}", f"Text payload for document {i}")
+        for i, fp in enumerate(filepaths)
+    ]
+    db.upsert_documents(doc_tuples)
+
+    from app.core.db_conn import get_db_connection
+
+    conn = get_db_connection(db.db_path)
+    traced_queries = []
+
+    def trace_callback(query):
+        if "SELECT filepath, file_hash" in query and "FROM documents" in query:
+            traced_queries.append(query)
+
+    conn.set_trace_callback(trace_callback)
+    try:
+        results = db.get_document_hashes(base_dir, filepaths)
+    finally:
+        conn.set_trace_callback(None)
+
+    assert len(results) == total_docs
+    for i, fp in enumerate(filepaths):
+        assert results[fp] == f"hash_{i}"
+
+    # 1200 documents with chunk_size=500 should result in ceil(1200/500) = 3 queries
+    assert len(traced_queries) == 3
+
+
+def test_get_document_hashes_zero_text_decryption(mocker):
+    """Verify zero text decryption calls during get_document_hashes and cached partial_fit."""
+    base_dir = "test_zero_decrypt_base"
+    db.clear(base_dir)
+
+    doc_tuples = [
+        (base_dir, f"file_{i}.txt", f"hash_val_{i}", f"Encrypted text payload {i}")
+        for i in range(10)
+    ]
+    db.upsert_documents(doc_tuples)
+
+    spy_decrypt = mocker.spy(db.crypto, "decrypt_text")
+
+    filepaths = [f"file_{i}.txt" for i in range(10)]
+    hashes = db.get_document_hashes(base_dir, filepaths)
+    assert len(hashes) == 10
+    assert spy_decrypt.call_count == 0
+
+    analyzer = IncrementalAnalyzer(
+        max_folders=3, stop_words={"the"}, db=db, strategy_name="default"
+    )
+    chunk = {
+        f"file_{i}.txt": {
+            "text": f"Encrypted text payload {i}",
+            "hash": f"hash_val_{i}",
+        }
+        for i in range(10)
+    }
+
+    spy_upsert = mocker.spy(db, "upsert_documents")
+    analyzer.partial_fit(base_dir, chunk)
+
+    assert spy_decrypt.call_count == 0
+    spy_upsert.assert_not_called()
+    assert len(analyzer.corpus) == 10
+
+
+def test_get_document_hashes_empty_edge_cases():
+    """Verify get_document_hashes returns empty dict immediately for empty inputs."""
+    assert db.get_document_hashes("", ["doc.txt"]) == {}
+    assert db.get_document_hashes("base_dir", []) == {}
