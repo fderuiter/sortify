@@ -3,6 +3,7 @@ import stat
 import subprocess
 import sys
 import zipfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
@@ -109,6 +110,43 @@ def test_extract_and_install_offline_requires_hashes(mock_isdir, mock_exists, mo
     assert "--require-hashes" in cmd
     assert "-r" in cmd
     assert "offline_bundle/requirements.txt" in cmd
+
+
+def test_offline_requirements_manifest_specifies_hashes():
+    """Verify that all packages in offline_bundle/requirements.txt specify at least one cryptographic hash."""
+    repo_root = Path(__file__).resolve().parent.parent
+    req_file = repo_root / "offline_bundle" / "requirements.txt"
+    assert req_file.is_file(), f"Requirements file not found at {req_file}"
+
+    lines = req_file.read_text(encoding="utf-8").splitlines()
+    entries = []
+    current_entry = []
+
+    for raw_line in lines:
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        current_entry.append(stripped.rstrip("\\").strip())
+        if not raw_line.rstrip().endswith("\\"):
+            entries.append(" ".join(current_entry))
+            current_entry = []
+
+    if current_entry:
+        entries.append(" ".join(current_entry))
+
+    assert len(entries) > 0, "offline_bundle/requirements.txt must not be empty"
+
+    for entry in entries:
+        parts = entry.split()
+        package_spec = parts[0]
+        hashes = [p for p in parts if p.startswith("--hash=")]
+        assert len(hashes) >= 1, (
+            f"Package '{package_spec}' does not specify at least one cryptographic hash: {entry}"
+        )
+        for h in hashes:
+            assert h.startswith("--hash=sha256:"), (
+                f"Expected sha256 hash for package '{package_spec}', found: {h}"
+            )
 
 
 @patch("scripts.install_offline.safe_extract_zip")

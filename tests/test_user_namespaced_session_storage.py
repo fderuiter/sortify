@@ -2,6 +2,7 @@
 
 import json
 import os
+import stat
 from unittest import mock
 
 import pytest
@@ -114,6 +115,9 @@ def test_multi_user_isolation_startup_no_crash(monkeypatch, tmp_path):
         test_db.write_text("dummy database content")
         assert test_db.exists()
 
+        if os.name == "posix":
+            assert stat.S_IMODE(session_dir.stat().st_mode) == 0o700
+
 
 @pytest.mark.anyio
 async def test_session_recovery_scans_only_active_user_root(monkeypatch, tmp_path):
@@ -175,3 +179,82 @@ async def test_session_recovery_scans_only_active_user_root(monkeypatch, tmp_pat
                 os.chmod(user_a_base, 0o700)
             except Exception:
                 pass
+
+
+def test_get_session_base_dir_posix_permissions(monkeypatch, tmp_path):
+    """Verify get_session_base_dir creates directories with 0o700 and tightens permissive directories."""
+    monkeypatch.delenv("AUTOSORTER_APP_DIR", raising=False)
+    monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
+
+    with mock.patch(
+        "app.core.path_utils.get_sanitized_username", return_value="posix_user"
+    ):
+        base_dir = get_session_base_dir()
+        assert base_dir.is_dir()
+        if os.name == "posix":
+            assert stat.S_IMODE(base_dir.stat().st_mode) == 0o700
+
+            # Intentionally loosen permissions to simulate legacy/permissive creation
+            os.chmod(base_dir, 0o777)
+            assert stat.S_IMODE(base_dir.stat().st_mode) == 0o777
+
+            # Calling get_session_base_dir again should tighten permissions to 0o700
+            base_dir2 = get_session_base_dir()
+            assert base_dir2 == base_dir
+            assert stat.S_IMODE(base_dir2.stat().st_mode) == 0o700
+
+    # Also verify with AUTOSORTER_APP_DIR set
+    app_dir = tmp_path / "custom_app_dir"
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+    app_base_dir = get_session_base_dir()
+    assert app_base_dir == app_dir / "sessions"
+    assert app_base_dir.is_dir()
+    if os.name == "posix":
+        assert stat.S_IMODE(app_base_dir.stat().st_mode) == 0o700
+
+        os.chmod(app_base_dir, 0o755)
+        assert stat.S_IMODE(app_base_dir.stat().st_mode) == 0o755
+
+        app_base_dir2 = get_session_base_dir()
+        assert stat.S_IMODE(app_base_dir2.stat().st_mode) == 0o700
+
+
+def test_setup_session_directory_posix_permissions(monkeypatch, tmp_path):
+    """Verify setup_session_directory creates session directories with 0o700 and tightens existing directories."""
+    monkeypatch.delenv("AUTOSORTER_APP_DIR", raising=False)
+    monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
+
+    with mock.patch(
+        "app.core.path_utils.get_sanitized_username", return_value="posix_user"
+    ):
+        sid, sdir = setup_session_directory("session_test_perm")
+        assert sid == "session_test_perm"
+        assert sdir.is_dir()
+        if os.name == "posix":
+            assert stat.S_IMODE(sdir.stat().st_mode) == 0o700
+
+            # Intentionally loosen permissions
+            os.chmod(sdir, 0o777)
+            assert stat.S_IMODE(sdir.stat().st_mode) == 0o777
+
+            # Calling setup_session_directory with same session ID tightens permissions
+            sid2, sdir2 = setup_session_directory("session_test_perm")
+            assert sid2 == sid
+            assert stat.S_IMODE(sdir2.stat().st_mode) == 0o700
+
+
+def test_session_directory_chmod_failure_handled_gracefully(monkeypatch, tmp_path):
+    """Verify chmod OSError does not cause get_session_base_dir or setup_session_directory to fail."""
+    monkeypatch.delenv("AUTOSORTER_APP_DIR", raising=False)
+    monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
+
+    with mock.patch("os.chmod", side_effect=OSError("Permission denied on chmod")):
+        with mock.patch(
+            "app.core.path_utils.get_sanitized_username", return_value="fallback_user"
+        ):
+            base_dir = get_session_base_dir()
+            assert base_dir.exists()
+
+            sid, sdir = setup_session_directory("session_chmod_fail")
+            assert sid == "session_chmod_fail"
+            assert sdir.exists()
