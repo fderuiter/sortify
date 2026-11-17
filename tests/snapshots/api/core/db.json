@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "748d1df752d52cb8cf7dd0aa9d3e0bce3c64185c85d3f67f2a93765fd2e8ecd8"
+    "checksum": "8022b8de3e13bfd0f220d2a038ec683cbd647fdee545ac866f55fb0c4d9cbee0"
   },
   "classes": [
     {
@@ -531,59 +531,6 @@
               "annotation": "Optional[str]",
               "default": "None",
               "name": "base_dir"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "record_transaction_step",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
-            },
-            {
-              "annotation": "int",
-              "default": null,
-              "name": "step_number"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "base_dir"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "source_path"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "destination_path"
-            },
-            {
-              "annotation": "str",
-              "default": "None",
-              "name": "file_hash"
-            },
-            {
-              "annotation": "str",
-              "default": "'file'",
-              "name": "item_type"
-            },
-            {
-              "annotation": "str",
-              "default": "None",
-              "name": "metadata"
             }
           ],
           "returns": null

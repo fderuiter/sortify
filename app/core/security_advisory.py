@@ -1,5 +1,6 @@
 """Pre-download security advisory client with thread-safe in-memory caching."""
 
+import ipaddress
 import json
 import logging
 import re
@@ -18,6 +19,92 @@ logger = logging.getLogger(__name__)
 DEFAULT_ADVISORY_ENDPOINT = "https://security.huggingface.co/api/advisories"
 DEFAULT_CACHE_TTL = 3600  # 1 hour in seconds
 MAX_API_TIMEOUT = 5.0  # Max 5 seconds timeout constraint
+
+ALLOWED_ADVISORY_HOSTS: frozenset[str] = frozenset({"huggingface.co", "hf.co"})
+_ALLOWED_ADVISORY_HOSTS = ALLOWED_ADVISORY_HOSTS
+_LOCAL_HOSTNAMES: frozenset[str] = frozenset(
+    {"127.0.0.1", "localhost", "::1", "0.0.0.0", ""}
+)
+
+
+def _is_allowed_advisory_host(hostname: str) -> bool:
+    """Check if the given hostname matches an allowed advisory host or trusted subdomain."""
+    host = hostname.lower().rstrip(".")
+    if not host or host.startswith("."):
+        return False
+    return host in _ALLOWED_ADVISORY_HOSTS or any(
+        host.endswith(f".{allowed}") for allowed in _ALLOWED_ADVISORY_HOSTS
+    )
+
+
+def _validate_advisory_url(url: str) -> None:
+    """Validate that the security advisory URL uses HTTPS and points to an allowed host.
+
+    Rejects non-HTTPS schemes, private/loopback/link-local IP addresses, empty hostnames,
+    and untrusted hostnames with ModelVerificationError.
+    """
+    if not isinstance(url, str) or not url.strip():
+        raise ModelVerificationError(
+            "Security advisory URL must be a non-empty string."
+        )
+
+    cleaned_url = url.strip()
+    try:
+        parsed = urllib.parse.urlsplit(cleaned_url)
+    except Exception as e:
+        raise ModelVerificationError(f"Malformed security advisory URL: {e}") from e
+
+    scheme = (parsed.scheme or "").lower()
+    if scheme != "https":
+        raise ModelVerificationError(
+            f"Unsupported URL scheme '{parsed.scheme}'. Only HTTPS is permitted."
+        )
+
+    hostname = parsed.hostname
+    if not hostname or not hostname.strip():
+        raise ModelVerificationError("URL hostname is missing or empty.")
+
+    host_clean = hostname.strip().lower().rstrip(".")
+    if not host_clean or host_clean.startswith("."):
+        raise ModelVerificationError(f"Invalid URL hostname: {hostname}")
+
+    # Reject IP address literals (loopback, private, link-local, unspecified, or public)
+    try:
+        ip = ipaddress.ip_address(host_clean)
+    except ValueError:
+        pass
+    else:
+        if (
+            ip.is_loopback
+            or ip.is_private
+            or ip.is_link_local
+            or ip.is_unspecified
+            or ip.is_reserved
+            or ip.is_multicast
+        ):
+            raise ModelVerificationError(
+                f"Private or local IP addresses are not permitted: {hostname}"
+            )
+        raise ModelVerificationError(
+            f"IP address literals are not permitted as security advisory hosts: {hostname}"
+        )
+
+    # Reject local hostnames and loopback names
+    if (
+        host_clean in _LOCAL_HOSTNAMES
+        or host_clean.endswith(".local")
+        or host_clean.endswith(".localhost")
+    ):
+        raise ModelVerificationError(
+            f"Local or loopback hostnames are not permitted: {hostname}"
+        )
+
+    # Restrict to trusted advisory hosts
+    if not _is_allowed_advisory_host(host_clean):
+        raise ModelVerificationError(
+            f"Untrusted security advisory host: {hostname}. Only trusted advisory hosts are permitted."
+        )
+
 
 _HF_URL_PATTERN = re.compile(
     r"^https?://(?:www\.)?(?:huggingface\.co|hf\.co)/([^/]+/[^/]+)(?:/.*)?$",
@@ -74,6 +161,12 @@ class SecurityAdvisoryClient:
         self._endpoint = endpoint
         self._ttl = ttl
         self._fallback_policy = fallback_policy
+        if self._endpoint is not None:
+            _validate_advisory_url(self._endpoint)
+        elif self._settings is not None and hasattr(
+            self._settings, "SECURITY_ADVISORY_ENDPOINT"
+        ):
+            _validate_advisory_url(self._settings.SECURITY_ADVISORY_ENDPOINT)
 
     @property
     def endpoint(self) -> str:
@@ -305,23 +398,24 @@ class SecurityAdvisoryClient:
             fallback_policy.strip().lower() if fallback_policy else self.fallback_policy
         )
 
+        _validate_advisory_url(self.endpoint)
+
+        params = {}
+        if norm_repo:
+            params["repo_id"] = norm_repo
+        if norm_hash:
+            params["file_hash"] = norm_hash
+
+        query_str = urllib.parse.urlencode(params)
+        endpoint_url = f"{self.endpoint}?{query_str}" if query_str else self.endpoint
+        _validate_advisory_url(endpoint_url)
+
         # 2. Remote Security Advisory API Query
         # Bypassing thread-local socket sandboxing safely during advisory lookup
         from app.core.network_guard import unblock_external_network
 
         with unblock_external_network(reason="security advisory query execution"):
             try:
-                params = {}
-                if norm_repo:
-                    params["repo_id"] = norm_repo
-                if norm_hash:
-                    params["file_hash"] = norm_hash
-
-                query_str = urllib.parse.urlencode(params)
-                endpoint_url = (
-                    f"{self.endpoint}?{query_str}" if query_str else self.endpoint
-                )
-
                 req = urllib.request.Request(
                     endpoint_url,
                     headers={

@@ -54,9 +54,6 @@ class DummyDB:
     def update_document_path(self, base_dir, src, dst):
         pass
 
-    def record_transaction_step(self, *args):
-        pass
-
 
 class DummyHistoryManager:
     def __init__(self):
