@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "ec4fba9e947b1d2ad51bc666952780cbc1d5282e4453adacfd40b1ba2cf8e89a"
+    "checksum": "fcfd68d2d7eddb6bee1d343bb469a949229336e78164c0d04b7f5eee3d120653"
   },
   "classes": [
     {
@@ -119,29 +119,6 @@
           "async": false,
           "decorators": [],
           "name": "classify",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "file_path"
-            },
-            {
-              "annotation": "Optional[str]",
-              "default": "None",
-              "name": "text_content"
-            }
-          ],
-          "returns": "JevClassificationResult"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "classify_file",
           "parameters": [
             {
               "annotation": null,

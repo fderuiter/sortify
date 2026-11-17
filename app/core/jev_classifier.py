@@ -773,9 +773,3 @@ class JevClassifierEngine:
                 is_classified=False,
                 metadata={"error": str(e)},
             )
-
-    def classify_file(
-        self, file_path: str, text_content: Optional[str] = None
-    ) -> JevClassificationResult:
-        """Alias for classify method for API consistency."""
-        return self.classify(file_path, text_content=text_content)
