@@ -496,10 +496,12 @@ def _move_aside_blocking_parents(path: str, base_dir: str, db_conn) -> None:
                 )
 
 
+def _normalize_restored_path(path: str) -> str:
+    return os.path.normcase(os.path.abspath(path))
+
+
 def _is_same_restored_path(actual: str, expected: str) -> bool:
-    return os.path.normcase(os.path.abspath(actual)) == os.path.normcase(
-        os.path.abspath(expected)
-    )
+    return _normalize_restored_path(actual) == _normalize_restored_path(expected)
 
 
 def _holds_bytes(path: str, sha256: str | None) -> bool:
@@ -2398,8 +2400,14 @@ class HistoryManager:
                 db_conn = get_db_connection(self.db.db_path)
                 batch = RollbackBatchTransaction(db_conn, batch_size=50)
                 try:
+                    source_paths_map: dict[str, list[int]] = {}
+                    for idx, (m_src, _) in enumerate(moves):
+                        source_paths_map.setdefault(
+                            _normalize_restored_path(m_src), []
+                        ).append(idx)
+
                     failed_moves = []
-                    for src, dst in moves:
+                    for move_idx, (src, dst) in enumerate(moves):
                         try:
                             from app.core.mover import get_safe_path
 
@@ -2420,14 +2428,16 @@ class HistoryManager:
                             rel_dst = safe_relpath(dst, base_dir).replace("\\", "/")
 
                             if os.path.exists(dst) and not os.path.samefile(src, dst):
-                                is_cyclic = False
-                                for m_src, m_dst in moves:
-                                    if _is_same_restored_path(m_src, dst):
-                                        is_cyclic = True
-                                        break
+                                norm_dst = _normalize_restored_path(dst)
+                                matching_indices = source_paths_map.get(norm_dst, [])
+                                pending_indices = [
+                                    i for i in matching_indices if i > move_idx
+                                ]
+                                is_cyclic = bool(pending_indices)
 
                                 if is_cyclic:
                                     # Cyclic rename conflict -> isolate to safe transient path
+                                    source_paths_map.pop(norm_dst, None)
                                     branch_rel_temp = os.path.join(
                                         ".branches", safety_session_id, rel_dst
                                     ).replace("\\", "/")
@@ -2447,9 +2457,13 @@ class HistoryManager:
                                         ),
                                     )
 
-                                    for i, (m_src, m_dst) in enumerate(moves):
-                                        if _is_same_restored_path(m_src, dst):
-                                            moves[i] = (temp_dst, m_dst)
+                                    for i in pending_indices:
+                                        moves[i] = (temp_dst, moves[i][1])
+
+                                    norm_temp_dst = _normalize_restored_path(temp_dst)
+                                    source_paths_map.setdefault(
+                                        norm_temp_dst, []
+                                    ).extend(pending_indices)
                                 else:
                                     # Non-cyclic inline rename (Requirement 2)
                                     safe_dst = get_safe_path(
