@@ -143,13 +143,21 @@ def test_criterion_3_sort_result_terminal_states_and_rollback_flag():
 
 
 def test_state_change_hooks_and_telemetry_broadcast(session):
-    """Event hooks receive state transitions and telemetry events safely."""
+    """Event hooks receive state transitions and telemetry events safely and support unregistration."""
     pipeline = SortPipeline(session)
     state_transitions = []
+    single_arg_states = []
+    three_arg_transitions = []
     telemetry_events = []
 
     def on_state_change(old_state, new_state):
         state_transitions.append((old_state, new_state))
+
+    def on_new_state_only(new_state):
+        single_arg_states.append(new_state)
+
+    def on_state_with_context(old_state, new_state, context):
+        three_arg_transitions.append((old_state, new_state, context))
 
     def on_telemetry(event, payload):
         telemetry_events.append((event, payload))
@@ -158,13 +166,15 @@ def test_state_change_hooks_and_telemetry_broadcast(session):
         raise RuntimeError("Faulty subscriber should not crash pipeline")
 
     pipeline.add_state_change_hook(on_state_change)
+    pipeline.add_state_change_hook(on_new_state_only)
+    pipeline.add_state_change_hook(on_state_with_context)
     pipeline.add_state_change_hook(faulty_hook)
     pipeline.add_telemetry_hook(on_telemetry)
     pipeline.add_telemetry_hook(faulty_hook)
 
     plan, result = pipeline.run()
 
-    # Verified state transitions occurred
+    # Verified state transitions occurred across 1-arg, 2-arg, and 3-arg hooks
     assert (
         PipelineLifecycleState.CREATED,
         PipelineLifecycleState.PLANNING,
@@ -181,14 +191,49 @@ def test_state_change_hooks_and_telemetry_broadcast(session):
         PipelineLifecycleState.EXECUTING,
         PipelineLifecycleState.COMPLETED,
     ) in state_transitions
+    assert single_arg_states[-1] == PipelineLifecycleState.COMPLETED
+    assert (
+        PipelineLifecycleState.EXECUTING,
+        PipelineLifecycleState.COMPLETED,
+        {},
+    ) in three_arg_transitions
 
-    # Verified telemetry events were broadcast
+    # Verified telemetry events were broadcast with state and sanitization
+    pipeline.emit_telemetry("custom_audit", api_key="super-secret-value")
     event_names = [e[0] for e in telemetry_events]
     assert "plan_start" in event_names
     assert "plan_finish" in event_names
     assert "execute_start" in event_names
     assert "execute_finish" in event_names
+    assert "state_change" in event_names
+    custom_payloads = [p for name, p in telemetry_events if name == "custom_audit"]
+    assert len(custom_payloads) == 1
+    assert custom_payloads[0]["api_key"] == "[REDACTED]"
+    assert custom_payloads[0]["state"] == PipelineLifecycleState.COMPLETED.value
     assert result.ok
+
+    # Unregister hooks and verify subsequent transitions/telemetry are no longer delivered to them
+    pipeline.remove_state_change_hook(on_state_change)
+    pipeline.remove_state_change_hook(faulty_hook)
+    pipeline.remove_telemetry_hook(on_telemetry)
+    pipeline.remove_telemetry_hook(faulty_hook)
+
+    recorded_state_count = len(state_transitions)
+    recorded_telemetry_count = len(telemetry_events)
+
+    undo_result = pipeline.undo(result.session_id)
+    pipeline.emit_telemetry("post_unregister_event", detail="ignored")
+
+    assert undo_result.ok
+    assert len(state_transitions) == recorded_state_count
+    assert len(telemetry_events) == recorded_telemetry_count
+    # Still-registered 1-arg and 3-arg hooks continue receiving transitions
+    assert PipelineLifecycleState.ROLLED_BACK in single_arg_states
+    assert (
+        PipelineLifecycleState.ROLLING_BACK,
+        PipelineLifecycleState.ROLLED_BACK,
+        {},
+    ) in three_arg_transitions
 
 
 def test_undo_state_transitions_and_failure(session):

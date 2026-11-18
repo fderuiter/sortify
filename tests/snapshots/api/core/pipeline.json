@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "0c13fce4b3fbd6dd0518093a186917d8951f97f1b864df406946ade85e84653c"
+    "checksum": "8cd148118c49d127a51cff345416a2e16db1de0be62f35b7bb057629fec3613e"
   },
   "classes": [
     {
@@ -68,42 +68,6 @@
         },
         {
           "async": false,
-          "decorators": [],
-          "name": "add_state_change_hook",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "Callable",
-              "default": null,
-              "name": "callback"
-            }
-          ],
-          "returns": "None"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "add_telemetry_hook",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "Callable",
-              "default": null,
-              "name": "callback"
-            }
-          ],
-          "returns": "None"
-        },
-        {
-          "async": false,
           "decorators": [
             "@property"
           ],
@@ -116,34 +80,6 @@
             }
           ],
           "returns": "str"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "emit_telemetry",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "event"
-            },
-            {
-              "annotation": "dict | None",
-              "default": "None",
-              "name": "data"
-            },
-            {
-              "annotation": "Any",
-              "default": null,
-              "name": "**kwargs"
-            }
-          ],
-          "returns": "None"
         },
         {
           "async": false,
