@@ -405,13 +405,18 @@ class Database:
     ) -> dict[str, str]:
         """Retrieve a mapping of filepath to file_hash for given filepaths in a base directory.
 
-        Queries only filepath and file_hash columns with an SQL IN filter to bypass
-        AES text decryption. Missing document records map to an empty string.
+        Queries only filepath and file_hash columns with an SQL IN filter chunked
+        to 500 items to bypass AES text decryption. Missing document records map
+        to an empty string.
         """
-        if not filepaths:
+        if not base_dir or not filepaths:
             return {}
 
-        norm_map = {fp: fp.replace("\\", "/") for fp in filepaths}
+        reverse_norm: dict[str, list[str]] = {}
+        for fp in filepaths:
+            norm_fp = fp.replace("\\", "/")
+            reverse_norm.setdefault(norm_fp, []).append(fp)
+
         result = {orig_fp: "" for orig_fp in filepaths}
 
         with self._cache_lock:
@@ -419,25 +424,25 @@ class Database:
                 if hasattr(self._cached_documents, "get") and not isinstance(
                     self._cached_documents, list
                 ):
-                    for orig_fp, norm_fp in norm_map.items():
+                    for norm_fp, orig_fps in reverse_norm.items():
                         row = self._cached_documents.get(norm_fp)
                         if row is not None and row[2]:
-                            result[orig_fp] = row[2]
+                            for orig_fp in orig_fps:
+                                result[orig_fp] = row[2]
                 else:
                     for row in self._cached_documents:
-                        for orig_fp, norm_fp in norm_map.items():
-                            if row[0] == norm_fp and row[2]:
+                        if row[2] and row[0] in reverse_norm:
+                            for orig_fp in reverse_norm[row[0]]:
                                 result[orig_fp] = row[2]
 
-        missing_norm = {
-            norm_fp: orig_fp
-            for orig_fp, norm_fp in norm_map.items()
-            if not result[orig_fp]
-        }
-        if missing_norm:
+        unique_missing = [
+            norm_fp
+            for norm_fp, orig_fps in reverse_norm.items()
+            if any(not result[orig_fp] for orig_fp in orig_fps)
+        ]
+        if unique_missing:
             conn = get_db_connection(self.db_path)
             with conn:
-                unique_missing = list(missing_norm.keys())
                 batch_size = 500
                 for i in range(0, len(unique_missing), batch_size):
                     batch = unique_missing[i : i + batch_size]
@@ -446,15 +451,13 @@ class Database:
                         f"SELECT filepath, file_hash FROM documents WHERE base_dir = ? AND filepath IN ({placeholders})",
                         [base_dir, *batch],
                     )
-                    for row in cursor.fetchall():
-                        db_fp, db_hash = row[0], row[1]
-                        for orig_fp, norm_fp in norm_map.items():
-                            if norm_fp == db_fp:
-                                result[orig_fp] = db_hash or ""
+                    for db_fp, db_hash in cursor.fetchall():
+                        for orig_fp in reverse_norm.get(db_fp, ()):
+                            result[orig_fp] = db_hash or ""
 
-        for orig_fp, norm_fp in norm_map.items():
+        for norm_fp, orig_fps in reverse_norm.items():
             if norm_fp not in result:
-                result[norm_fp] = result[orig_fp]
+                result[norm_fp] = result[orig_fps[0]]
 
         return result
 
@@ -1848,40 +1851,6 @@ class Database:
                     and filepath.replace("\\", "/") in filepaths_norm
                 )
             }
-
-    def get_document_hashes(
-        self, base_dir: str, filepaths: list[str]
-    ) -> dict[str, str]:
-        """Project only filepath and file_hash columns for specified documents chunked to 500 items."""
-        if not base_dir or not filepaths:
-            return {}
-
-        conn = get_db_connection(self.db_path)
-        hashes: dict[str, str] = {}
-        with conn:
-            chunk_size = 500
-            for i in range(0, len(filepaths), chunk_size):
-                chunk = filepaths[i : i + chunk_size]
-                norm_map: dict[str, list[str]] = {}
-                for fp in chunk:
-                    norm = fp.replace("\\", "/")
-                    norm_map.setdefault(norm, []).append(fp)
-
-                placeholders = ",".join(["?"] * len(norm_map))
-                cursor = conn.execute(
-                    f"""
-                    SELECT filepath, file_hash
-                    FROM documents
-                    WHERE base_dir = ? AND filepath IN ({placeholders})
-                    """,
-                    (base_dir, *norm_map.keys()),
-                )
-                for db_fp, file_hash in cursor.fetchall():
-                    if file_hash is not None:
-                        hashes[db_fp] = file_hash
-                        for orig_fp in norm_map.get(db_fp, []):
-                            hashes[orig_fp] = file_hash
-        return hashes
 
     def get_documents_by_filepaths(
         self, base_dir: str, filepaths: list[str]
