@@ -242,8 +242,6 @@ class SortPipeline(LifecycleTelemetryMixin):
                 session.lifecycle_state = initial_state
         self._state = initial_state
         self._lock = threading.RLock()
-        self._state_hooks: list[Callable] = []
-        self._telemetry_hooks: list[Callable] = []
         self._rollback_completed: bool | None = None
 
     @property
@@ -260,18 +258,6 @@ class SortPipeline(LifecycleTelemetryMixin):
     def base_dir(self) -> str:
         """The folder being sorted."""
         return self.session.base_dir
-
-    def add_state_change_hook(self, callback: Callable) -> None:
-        """Subscribe to lifecycle state transition notifications."""
-        with self._lock:
-            if callback not in self._state_hooks:
-                self._state_hooks.append(callback)
-
-    def add_telemetry_hook(self, callback: Callable) -> None:
-        """Subscribe to pipeline telemetry event notifications."""
-        with self._lock:
-            if callback not in self._telemetry_hooks:
-                self._telemetry_hooks.append(callback)
 
     def _validate_transition(self, target_state: PipelineLifecycleState) -> None:
         allowed = _ALLOWED_TRANSITIONS.get(self._state, set())
@@ -303,43 +289,8 @@ class SortPipeline(LifecycleTelemetryMixin):
         new_state: PipelineLifecycleState,
         context: dict | None = None,
     ) -> None:
-        hooks = list(self._state_hooks)
-        for hook in hooks:
-            try:
-                sig = inspect.signature(hook)
-                param_count = len(
-                    [
-                        p
-                        for p in sig.parameters.values()
-                        if p.kind
-                        in (
-                            inspect.Parameter.POSITIONAL_ONLY,
-                            inspect.Parameter.POSITIONAL_OR_KEYWORD,
-                        )
-                    ]
-                )
-                if param_count == 1:
-                    hook(new_state)
-                elif param_count == 2:
-                    hook(old_state, new_state)
-                else:
-                    hook(old_state, new_state, context or {})
-            except Exception as e:
-                logger.warning(f"Error in state change hook {hook}: {e}", exc_info=True)
-
-    def emit_telemetry(
-        self, event: str, data: dict | None = None, **kwargs: Any
-    ) -> None:
-        """Safely broadcast telemetry event to registered subscribers."""
-        payload = dict(data or {})
-        payload.update(kwargs)
-        payload["state"] = self.state.value
-        hooks = list(self._telemetry_hooks)
-        for hook in hooks:
-            try:
-                hook(event, payload)
-            except Exception as e:
-                logger.warning(f"Error in telemetry hook {hook}: {e}", exc_info=True)
+        """Broadcast lifecycle state transition via LifecycleTelemetryMixin."""
+        self._notify_lifecycle_listeners(old_state, new_state, context=context)
 
     def plan(
         self,
