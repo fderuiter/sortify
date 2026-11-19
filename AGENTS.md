@@ -7,6 +7,7 @@ Local, offline-first Python 3.12 file sorter (`smart-autosorter`). Read `CONTEXT
 - Install: `uv sync` (add `--extra ml` only when the work needs torch/easyocr/transformers).
 - Fast tests: `uv run pytest -m "not slow"`. One file while iterating: `uv run pytest tests/test_<area>.py -n0`.
 - Slow / ML tests: `uv sync --all-groups --extra ml` and `uv run pytest -m "slow"`.
+- Bundle build and smoke test: `uv sync --extra ml --group build && uv run python scripts/build.py` (or `uv run python scripts/build.py --lite` without ML weights), then `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring ./dist/smart-autosorter/smart-autosorter --smoke-test` (`dist\smart-autosorter\smart-autosorter.exe --smoke-test` on Windows).
 - Lint and format: `uv run ruff check` and `uv run ruff format`.
 - Type check: `uv run ty check`.
 - Dependency audit: `uv run deptry .`.

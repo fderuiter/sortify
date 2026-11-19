@@ -167,3 +167,88 @@ def test_release_workflow_pe_dependency_verification():
             assert verify_idx < idx, (
                 f"PE verification must run before archive step '{step.get('name')}'"
             )
+
+
+def test_release_workflow_pull_request_paths_include_manifests():
+    """Verify pull_request.paths triggers dry-run builds when dependency manifests or packaging files change."""
+    workflow = _load_release_workflow()
+    triggers = workflow.get("on", workflow.get(True))
+    pr_trigger = triggers.get("pull_request", {})
+    assert pr_trigger.get("branches") == ["main"]
+
+    paths = set(pr_trigger.get("paths", []))
+    expected_paths = {
+        ".github/workflows/release.yml",
+        "scripts/build.py",
+        "smart-autosorter.spec",
+        "scripts/verify_pe_dependencies.py",
+        "pyproject.toml",
+        "uv.lock",
+    }
+    assert expected_paths.issubset(paths), (
+        f"Missing expected pull_request.paths in release.yml: {sorted(expected_paths - paths)}"
+    )
+
+
+def test_release_workflow_concurrency_cancels_only_pull_requests():
+    """Verify top-level concurrency cancels superseded PR builds while letting published releases finish."""
+    workflow = _load_release_workflow()
+    concurrency = workflow.get("concurrency")
+    assert isinstance(concurrency, dict), "Missing top-level concurrency in release.yml"
+    assert (
+        concurrency.get("group")
+        == "release-${{ github.event.pull_request.number || github.event.release.tag_name || github.run_id }}"
+    )
+    assert (
+        concurrency.get("cancel-in-progress")
+        == "${{ github.event_name == 'pull_request' }}"
+    )
+
+
+def test_release_workflow_smoke_test_before_archiving():
+    """Verify build-binaries runs --smoke-test across all OSes before packaging release archives."""
+    workflow = _load_release_workflow()
+    build_job = workflow["jobs"]["build-binaries"]
+    build_steps = build_job["steps"]
+
+    smoke_steps = [
+        s
+        for s in build_steps
+        if s.get("name") == "Verify compiled executable (Smoke Test)"
+    ]
+    assert len(smoke_steps) == 1, (
+        "Missing 'Verify compiled executable (Smoke Test)' step in build-binaries job in release.yml"
+    )
+
+    smoke_step = smoke_steps[0]
+    assert "if" not in smoke_step, (
+        "Smoke test step must run on Windows, Linux, and macOS without an OS filter"
+    )
+    assert smoke_step.get("shell") == "python"
+
+    keyring_backend = (smoke_step.get("env") or {}).get("PYTHON_KEYRING_BACKEND") or (
+        build_job.get("env") or {}
+    ).get("PYTHON_KEYRING_BACKEND")
+    assert keyring_backend == "keyring.backends.fail.Keyring"
+
+    run_script = smoke_step.get("run", "")
+    assert "smart-autosorter" in run_script
+    assert "--smoke-test" in run_script
+    assert "smoke_test_error.txt" in run_script
+    assert "sys.exit(" in run_script
+
+    step_names = [s.get("name") for s in build_steps]
+    build_idx = step_names.index("Build executable")
+    pe_verify_idx = step_names.index("Verify PE binary dependencies")
+    smoke_idx = step_names.index("Verify compiled executable (Smoke Test)")
+    archive_win_idx = step_names.index("Package as Archive (Windows)")
+    archive_unix_idx = step_names.index("Package as Archive (Unix)")
+
+    assert build_idx < pe_verify_idx < smoke_idx < archive_win_idx
+    assert smoke_idx < archive_unix_idx
+
+    for idx, step in enumerate(build_steps):
+        if "archive" in step.get("name", "").lower():
+            assert smoke_idx < idx, (
+                f"Smoke test must run before archive step '{step.get('name')}'"
+            )
