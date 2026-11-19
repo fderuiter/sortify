@@ -139,6 +139,15 @@ def test_spec_file_partitioning():
         assert is_prunable("docs/keyboard_shortcuts.md") is False
         assert is_prunable("docs/assets/diagrams/user_guide_setup_wizard.svg") is False
         assert is_prunable("docs/assets/diagrams/core_architecture.svg") is False
+        # Verify runtime .dist-info and .egg-info metadata (including .md/.rst license files) are preserved
+        assert is_prunable("smart_autosorter-0.1.0.dist-info/METADATA") is False
+        assert (
+            is_prunable("numpy-2.5.5.dist-info/licenses/numpy/random/LICENSE.md")
+            is False
+        )
+        assert is_prunable("openpyxl-3.1.5.dist-info/LICENCE.rst") is False
+        assert is_prunable("pkg-1.0.egg-info/PKG-INFO") is False
+        assert is_prunable("pkg-1.0.egg/EGG-INFO/AUTHORS.md") is False
         # Verify third-party package documentation and non-markdown/non-svg files are pruned
         assert is_prunable("site-packages/numpy/docs/index.md") is True
         assert is_prunable("/some/path/to/pytorch/docs/README.md") is True
@@ -453,3 +462,127 @@ def test_destination_path_normalization_and_assertion():
         assert "\\" not in dest, (
             f"Found backslash in destination path for binary asset: {dest}"
         )
+
+
+def test_spec_file_recursive_metadata_collection_and_excludes(tmp_path, monkeypatch):
+    """Verify smart-autosorter.spec collects recursive runtime metadata, skips excluded packages, and tolerates missing ML packages."""
+    import importlib.metadata
+
+    spec_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "smart-autosorter.spec"
+    )
+    with open(spec_path, "r", encoding="utf-8") as f:
+        spec_content = f.read()
+
+    monkeypatch.chdir(tmp_path)
+
+    def _run_spec(lite_flag, copy_metadata_side_effect):
+        mock_globals = {
+            "Analysis": MagicMock(),
+            "PYZ": MagicMock(),
+            "EXE": MagicMock(),
+            "COLLECT": MagicMock(),
+            "SPEC": os.path.join(str(tmp_path), "smart-autosorter.spec"),
+            "__file__": spec_path,
+        }
+        mock_hooks = MagicMock()
+        mock_hooks.collect_all.return_value = ([], [], [])
+        mock_hooks.collect_data_files.return_value = []
+        mock_hooks.copy_metadata.side_effect = copy_metadata_side_effect
+
+        with (
+            patch.dict("os.environ", {"LITE_BUILD": lite_flag}),
+            patch.dict(
+                sys.modules,
+                {
+                    "PyInstaller": MagicMock(),
+                    "PyInstaller.utils": MagicMock(),
+                    "PyInstaller.utils.hooks": mock_hooks,
+                },
+            ),
+        ):
+            exec(spec_content, mock_globals)
+        return mock_globals, mock_hooks
+
+    # 1. Full build (LITE_BUILD=0): queries smart-autosorter + ML packages recursively,
+    # skips base excludes (e.g. httpx), and tolerates missing ML packages.
+    def full_copy_metadata(pkg, recursive=False):
+        if pkg == "smart-autosorter":
+            return [
+                (
+                    "/sp/smart_autosorter-0.1.0.dist-info",
+                    "smart_autosorter-0.1.0.dist-info",
+                ),
+                ("/sp/scikit_learn-1.9.1.dist-info", "scikit_learn-1.9.1.dist-info"),
+                ("/sp/httpx-0.28.1.dist-info", "httpx-0.28.1.dist-info"),
+            ]
+        if pkg == "llama-cpp-python":
+            return [
+                (
+                    "/sp/llama_cpp_python-0.3.34.dist-info",
+                    "llama_cpp_python-0.3.34.dist-info",
+                )
+            ]
+        raise importlib.metadata.PackageNotFoundError(pkg)
+
+    full_globals, full_hooks = _run_spec("0", full_copy_metadata)
+    called_recursive = [
+        call.args[0]
+        for call in full_hooks.copy_metadata.call_args_list
+        if call.kwargs.get("recursive") is True
+    ]
+    assert set(called_recursive) == {
+        "smart-autosorter",
+        "easyocr",
+        "transformers",
+        "onnxruntime",
+        "llama-cpp-python",
+        "torch",
+    }
+    full_dests = {
+        dest for _, dest in full_globals["Analysis"].call_args.kwargs["datas"]
+    }
+    assert "smart_autosorter-0.1.0.dist-info" in full_dests
+    assert "scikit_learn-1.9.1.dist-info" in full_dests
+    assert "llama_cpp_python-0.3.34.dist-info" in full_dests
+    assert "httpx-0.28.1.dist-info" not in full_dests
+
+    # 2. Lite build (LITE_BUILD=1): skips ML packages and filters out lite-excluded packages
+    # from smart-autosorter's recursive metadata.
+    def lite_copy_metadata(pkg, recursive=False):
+        if pkg == "smart-autosorter":
+            return [
+                (
+                    "/sp/smart_autosorter-0.1.0.dist-info",
+                    "smart_autosorter-0.1.0.dist-info",
+                ),
+                ("/sp/textual-8.2.8.dist-info", "textual-8.2.8.dist-info"),
+                (
+                    "/sp/sqlcipher3_wheels-0.5.7.dist-info",
+                    "sqlcipher3_wheels-0.5.7.dist-info",
+                ),
+                ("/sp/scipy-1.18.1.dist-info", "scipy-1.18.1.dist-info"),
+                ("/sp/scikit_learn-1.9.1.dist-info", "scikit_learn-1.9.1.dist-info"),
+                ("/sp/pandas-3.1.1.dist-info", "pandas-3.1.1.dist-info"),
+                ("/sp/numpy-2.5.5.dist-info", "numpy-2.5.5.dist-info"),
+                ("/sp/lxml-6.1.3.dist-info", "lxml-6.1.3.dist-info"),
+            ]
+        raise AssertionError(f"Unexpected metadata lookup in lite mode: {pkg}")
+
+    lite_globals, lite_hooks = _run_spec("1", lite_copy_metadata)
+    lite_called = [call.args[0] for call in lite_hooks.copy_metadata.call_args_list]
+    assert lite_called == ["smart-autosorter"]
+    lite_dests = {
+        dest for _, dest in lite_globals["Analysis"].call_args.kwargs["datas"]
+    }
+    assert "smart_autosorter-0.1.0.dist-info" in lite_dests
+    assert "textual-8.2.8.dist-info" in lite_dests
+    assert "sqlcipher3_wheels-0.5.7.dist-info" in lite_dests
+    for excluded_dist in (
+        "scipy-1.18.1.dist-info",
+        "scikit_learn-1.9.1.dist-info",
+        "pandas-3.1.1.dist-info",
+        "numpy-2.5.5.dist-info",
+        "lxml-6.1.3.dist-info",
+    ):
+        assert excluded_dist not in lite_dests

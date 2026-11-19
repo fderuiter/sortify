@@ -156,9 +156,20 @@ jobs:
       - name: Generate CycloneDX SBOM with Syft
         uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
         with:
-          path: .
+          path: dist/smart-autosorter
           format: cyclonedx-json
           output-file: dist/${{ matrix.artifact_name }}.sbom.json
+          upload-artifact: false
+          upload-release-assets: false
+
+      - name: Generate Model CycloneDX SBOM with Syft
+        uses: anchore/sbom-action@66cbf4bc1f1c0d2edc94016e65bc221b6bb0ad6c # v0.24.3
+        env:
+          SYFT_FILE_METADATA_SELECTION: all
+        with:
+          file: dist/smart-autosorter-models.zip
+          format: cyclonedx-json
+          output-file: dist/smart-autosorter-models.zip.sbom.json
           upload-artifact: false
           upload-release-assets: false
 
@@ -172,6 +183,7 @@ jobs:
             dist/${{ matrix.artifact_name }}.sbom.json
             dist/smart-autosorter-models.zip
             dist/smart-autosorter-models.zip.sha256
+            dist/smart-autosorter-models.zip.sbom.json
           if-no-files-found: error
           retention-days: 7
 
@@ -220,6 +232,13 @@ jobs:
           subject-path: dist/${{ matrix.artifact_name }}
           sbom-path: dist/${{ matrix.artifact_name }}.sbom.json
 
+      - name: Attest Model SBOM
+        if: matrix.os_name == 'Linux'
+        uses: actions/attest-sbom@c604332985a26aa8cf1bdc465b92731239ec6b9e # v4.1.0
+        with:
+          subject-path: dist/smart-autosorter-models.zip
+          sbom-path: dist/smart-autosorter-models.zip.sbom.json
+
       - name: Upload Release Artifacts
         uses: softprops/action-gh-release@8a0cd651e5b2365bd640854a3fa5dfc70e4875f3 # v3.0.4
         with:
@@ -239,5 +258,6 @@ jobs:
           files: |
             dist/smart-autosorter-models.zip
             dist/smart-autosorter-models.zip.sha256
+            dist/smart-autosorter-models.zip.sbom.json
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
