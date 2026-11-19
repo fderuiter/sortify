@@ -367,6 +367,14 @@ def test_spec_cpu_build_excludes_nvidia_and_triton():
     mock_hooks = MagicMock()
     mock_hooks.collect_all.return_value = ([], [], [])
     mock_hooks.collect_data_files.return_value = []
+    mock_hooks.copy_metadata.return_value = [
+        ("/sp/torch-2.15.0+cpu.dist-info", "torch-2.15.0+cpu.dist-info"),
+        (
+            "/sp/nvidia_cuda_runtime_cu12-12.4.127.dist-info",
+            "nvidia_cuda_runtime_cu12-12.4.127.dist-info",
+        ),
+        ("/sp/triton-3.2.0.dist-info", "triton-3.2.0.dist-info"),
+    ]
 
     with (
         patch.dict("os.environ", {"LITE_BUILD": "0", "CPU_BUILD": "1"}),
@@ -386,6 +394,10 @@ def test_spec_cpu_build_excludes_nvidia_and_triton():
         assert "triton" in excludes
         assert "torch" not in excludes
         assert "torch" in mock_globals["ml_packages"]
+        datas_dests = {dest for _, dest in analysis_kwargs.get("datas", [])}
+        assert "torch-2.15.0+cpu.dist-info" in datas_dests
+        assert "nvidia_cuda_runtime_cu12-12.4.127.dist-info" not in datas_dests
+        assert "triton-3.2.0.dist-info" not in datas_dests
 
 
 def test_build_script_target_verification_missing_executable(tmp_path):
