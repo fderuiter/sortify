@@ -1,6 +1,47 @@
 {
   "_metadata": {
-    "checksum": "b11ce5c11e5d7e5531ac2fab42992bcece606340ab37dc64c0adebf57a8d1aa8"
+    "checksum": "7dcdc0ae68a4c8f24d74450850f8966dced9f617f41a472aa06154f9f2db4973"
   },
-  "cli": []
+  "classes": [],
+  "cli": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "emit_cli_error",
+      "parameters": [
+        {
+          "annotation": "str | BaseException",
+          "default": null,
+          "name": "message"
+        },
+        {
+          "annotation": "str",
+          "default": "'error'",
+          "name": "status"
+        },
+        {
+          "annotation": "int",
+          "default": "1",
+          "name": "exit_code"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "json_mode"
+        },
+        {
+          "annotation": "dict[str, Any] | None",
+          "default": "None",
+          "name": "extra"
+        },
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "stream"
+        }
+      ],
+      "returns": "NoReturn"
+    }
+  ]
 }

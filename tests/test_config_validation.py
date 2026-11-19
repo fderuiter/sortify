@@ -892,3 +892,140 @@ def test_explicit_change_of_env_value_is_persisted(tmp_path, monkeypatch):
 
     saved = json.loads((app_dir / "settings.json").read_text(encoding="utf-8"))
     assert saved["MAX_FOLDERS"] == 5
+
+
+def test_all_53_settings_fields_have_descriptions():
+    """Verify all 53 Settings fields define non-empty descriptions in Python and JSON schema."""
+    from pathlib import Path
+
+    assert len(Settings.model_fields) == 53
+    for field_name, field_info in Settings.model_fields.items():
+        assert (
+            isinstance(field_info.description, str) and field_info.description.strip()
+        ), f"Missing description on Settings.{field_name}"
+
+    schema_path = Path(__file__).resolve().parent.parent / "app" / "config_schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    properties = schema["properties"]
+    assert len(properties) == 53
+    for prop_name, prop_schema in properties.items():
+        assert (
+            isinstance(prop_schema.get("description"), str)
+            and prop_schema["description"].strip()
+        ), f"Missing description on schema property {prop_name}"
+
+
+def test_policy_rule_typed_schema_and_runtime_dict_compatibility():
+    """Verify PolicyRule validates all 6 types, 5 actions, and 8 post_unarchive_action values while preserving dict compatibility."""
+    all_types = ["keyword", "pattern", "override", "action", "compliance", "unarchive"]
+    all_actions = ["archive", "retain", "quarantine", "redact", "unarchive"]
+    all_post_actions = [
+        "delete",
+        "remove",
+        "cleanup",
+        "move",
+        "archive",
+        "relocate",
+        "retain",
+        "keep",
+    ]
+
+    rules = [
+        {
+            "type": p_type,
+            "expression": f"expr_{idx}",
+            "target_path": f"Folder_{idx}",
+            "priority": 100 - idx,
+            "halting": False,
+            "enabled": True,
+            "action": all_actions[idx % len(all_actions)],
+            "post_unarchive_action": all_post_actions[idx % len(all_post_actions)],
+            "post_unarchive_target": "Processed_Archives",
+            "custom_metadata": "preserved",
+        }
+        for idx, p_type in enumerate(all_types)
+    ]
+
+    for p_action in all_post_actions:
+        rules.append(
+            {
+                "type": "unarchive",
+                "expression": f"zip_{p_action}",
+                "target_path": "Unpacked",
+                "priority": 10,
+                "action": "unarchive",
+                "post_unarchive_action": p_action,
+            }
+        )
+
+    settings = Settings(POLICIES=rules)
+    assert len(settings.POLICIES) == len(rules)
+    for rule in settings.POLICIES:
+        assert isinstance(rule, dict)
+    assert settings.POLICIES[0]["custom_metadata"] == "preserved"
+    assert settings.POLICIES[0]["post_unarchive_target"] == "Processed_Archives"
+
+
+def test_app_settings_load_accepts_legacy_unarchive_aliases(tmp_path, caplog):
+    """Verify AppSettings.load() accepts legacy post_action and archive_action aliases in settings.json."""
+    settings_file = tmp_path / "settings.json"
+    settings_file.write_text(
+        json.dumps(
+            {
+                "POLICIES": [
+                    {
+                        "type": "unarchive",
+                        "expression": "bundle",
+                        "target_path": "Unpacked",
+                        "priority": 20,
+                        "action": "unarchive",
+                        "post_action": "keep",
+                    },
+                    {
+                        "type": "unarchive",
+                        "expression": "release",
+                        "target_path": "Unpacked_Release",
+                        "priority": 10,
+                        "action": "unarchive",
+                        "archive_action": "relocate",
+                        "post_unarchive_target": "Archive_Backup",
+                    },
+                ]
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    caplog.clear()
+    with caplog.at_level(logging.WARNING):
+        loaded = AppSettings(filepath=str(settings_file))
+
+    assert loaded._has_validation_errors is False
+    assert "Configuration validation failed" not in caplog.text
+    assert len(loaded.POLICIES) == 2
+    assert loaded.POLICIES[0]["post_action"] == "keep"
+    assert loaded.POLICIES[1]["archive_action"] == "relocate"
+
+
+def test_validate_schema_completeness_enforces_descriptions_and_policies():
+    """Verify scripts/validate_config.py detects missing descriptions or untyped POLICIES items."""
+    from pathlib import Path
+
+    from scripts.validate_config import validate_schema_completeness
+
+    schema_path = Path(__file__).resolve().parent.parent / "app" / "config_schema.json"
+    schema = json.loads(schema_path.read_text(encoding="utf-8"))
+    assert validate_schema_completeness(schema) is None
+
+    missing_desc = json.loads(json.dumps(schema))
+    del missing_desc["properties"]["MAX_FOLDERS"]["description"]
+    with pytest.raises(ValueError, match="MAX_FOLDERS"):
+        validate_schema_completeness(missing_desc)
+
+    untyped_policies = json.loads(json.dumps(schema))
+    untyped_policies["properties"]["POLICIES"]["items"] = {
+        "additionalProperties": True,
+        "type": "object",
+    }
+    with pytest.raises(ValueError, match="POLICIES.items"):
+        validate_schema_completeness(untyped_policies)

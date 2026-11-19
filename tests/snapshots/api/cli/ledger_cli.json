@@ -1,7 +1,8 @@
 {
   "_metadata": {
-    "checksum": "8e76116687d18b3c05adea6b67e090b7089c4e42090c4190d222e6621ca078e1"
+    "checksum": "9c78f7ff1f03527299d5feded6624017d3656345e694fa3da2d4d14cf67330f9"
   },
+  "classes": [],
   "cli": [
     {
       "args": [
@@ -256,6 +257,39 @@
         "help": "Output response in structured JSON format"
       },
       "method": "add_argument"
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "handle_ledger_command",
+      "parameters": [
+        {
+          "annotation": "argparse.Namespace",
+          "default": null,
+          "name": "args"
+        },
+        {
+          "annotation": "AppSettings",
+          "default": null,
+          "name": "settings"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "register_subparser",
+      "parameters": [
+        {
+          "annotation": "argparse._SubParsersAction",
+          "default": null,
+          "name": "subparsers"
+        }
+      ],
+      "returns": "None"
     }
   ]
 }

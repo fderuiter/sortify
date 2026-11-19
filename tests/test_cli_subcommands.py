@@ -689,3 +689,49 @@ def test_cli_ledger_status_and_purge_failure_flags(tmp_path):
     assert code == 0, f"Error: {stderr}"
     res = json.loads(stdout)
     assert res["count"] == 0
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_config_set_collection_and_optional_bool_parsing(tmp_path):
+    """Test config --set with comma-separated and JSON collections plus null optional booleans."""
+    env = {"AUTOSORTER_APP_DIR": str(tmp_path / "app_cfg")}
+
+    # Comma-separated set[str] (exact user_guide.md example)
+    code, stdout, stderr = run_cli(
+        ["config", "--set", "STOP_WORDS", "word1,word2,word3", "--json"],
+        env=env,
+    )
+    assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+    data = json.loads(stdout)
+    assert set(data["STOP_WORDS"]) == {"word1", "word2", "word3"}
+
+    # JSON array for set[str]
+    code, stdout, stderr = run_cli(
+        ["config", "--set", "STOP_WORDS", '["alpha", "beta"]', "--json"],
+        env=env,
+    )
+    assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+    assert set(json.loads(stdout)["STOP_WORDS"]) == {"alpha", "beta"}
+
+    # Comma-separated list[str]
+    code, stdout, stderr = run_cli(
+        ["config", "--set", "IGNORED_EXTENSIONS", "tmp,bak", "--json"],
+        env=env,
+    )
+    assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+    assert json.loads(stdout)["IGNORED_EXTENSIONS"] == [".tmp", ".bak"]
+
+    # Optional bool: true then null reset
+    code, stdout, stderr = run_cli(
+        ["config", "--set", "AI_CONSENT_GRANTED", "true", "--json"],
+        env=env,
+    )
+    assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+    assert json.loads(stdout)["AI_CONSENT_GRANTED"] is True
+
+    code, stdout, stderr = run_cli(
+        ["config", "--set", "AI_CONSENT_GRANTED", "null", "--json"],
+        env=env,
+    )
+    assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+    assert json.loads(stdout)["AI_CONSENT_GRANTED"] is None

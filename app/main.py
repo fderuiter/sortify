@@ -842,6 +842,71 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
             session.close()
 
 
+def _parse_config_cli_value(key_upper: str, raw_value: str, curr_val: Any) -> Any:
+    """Parse a raw CLI string value for `config --set` based on field schema metadata."""
+    import json
+    import types
+    import typing
+
+    from app.config import Settings
+
+    field_info = Settings.model_fields.get(key_upper)
+    annotation = field_info.annotation if field_info is not None else type(curr_val)
+    origin = typing.get_origin(annotation)
+    args = typing.get_args(annotation)
+
+    is_optional_bool = origin in (typing.Union, types.UnionType) and (
+        bool in args and type(None) in args
+    )
+
+    if is_optional_bool:
+        val_lower = raw_value.strip().lower()
+        if val_lower in ("null", "none"):
+            return None
+        if val_lower in ("true", "1", "yes", "on"):
+            return True
+        if val_lower in ("false", "0", "no", "off"):
+            return False
+        raise ValueError(
+            f"Invalid optional boolean value '{raw_value}'. Use true, false, or null."
+        )
+
+    if annotation is bool or isinstance(curr_val, bool):
+        val_lower = raw_value.strip().lower()
+        if val_lower in ("true", "1", "yes", "on"):
+            return True
+        if val_lower in ("false", "0", "no", "off"):
+            return False
+        raise ValueError(f"Invalid boolean value '{raw_value}'. Use true or false.")
+
+    if origin in (set, list) or isinstance(curr_val, (set, list)):
+        target_is_set = origin is set or isinstance(curr_val, set)
+        stripped = raw_value.strip()
+        if stripped.startswith("["):
+            parsed = json.loads(stripped)
+            if not isinstance(parsed, list):
+                raise ValueError("JSON collection input must be a JSON array.")
+            return set(parsed) if target_is_set else parsed
+        items = [item.strip() for item in raw_value.split(",") if item.strip()]
+        return set(items) if target_is_set else items
+
+    if origin is dict or annotation is dict or isinstance(curr_val, dict):
+        parsed = json.loads(raw_value.strip())
+        if not isinstance(parsed, dict):
+            raise ValueError("Mapping configuration input must be a JSON object.")
+        return parsed
+
+    if annotation is int or (
+        isinstance(curr_val, int) and not isinstance(curr_val, bool)
+    ):
+        return int(raw_value)
+
+    if annotation is float or isinstance(curr_val, float):
+        return float(raw_value)
+
+    return raw_value
+
+
 def handle_config_command(args: argparse.Namespace, settings: AppSettings):
     """View or update application settings."""
     import json
@@ -854,14 +919,7 @@ def handle_config_command(args: argparse.Namespace, settings: AppSettings):
             if hasattr(settings._settings_model, key_upper):
                 curr_val = getattr(settings, key_upper)
                 try:
-                    if isinstance(curr_val, bool):
-                        new_val = value.lower() in ("true", "1", "yes")
-                    elif isinstance(curr_val, int):
-                        new_val = int(value)
-                    elif isinstance(curr_val, float):
-                        new_val = float(value)
-                    else:
-                        new_val = value
+                    new_val = _parse_config_cli_value(key_upper, value, curr_val)
                     setattr(settings, key_upper, new_val)
                     settings.flush()
                 except Exception as ex:
