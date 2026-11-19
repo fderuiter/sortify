@@ -318,13 +318,32 @@ def test_dependency_update_type_from_title(title, expected):
 
 def test_protected_paths_are_listed_in_codeowners():
     codeowners = Path(__file__).resolve().parents[1] / ".github" / "CODEOWNERS"
+    rule_lines = [
+        line.strip()
+        for line in codeowners.read_text(encoding="utf-8").splitlines()
+        if line.strip() and not line.strip().startswith("#")
+    ]
+    all_patterns = [line.split()[0] for line in rule_lines]
+    wildcard_patterns = [p for p in all_patterns if "*" in p]
+    assert not wildcard_patterns, (
+        f".github/CODEOWNERS must not contain wildcard rules: {wildcard_patterns}"
+    )
+
     owned = {
         line.split()[0]
-        for line in codeowners.read_text(encoding="utf-8").splitlines()
-        if line.strip() and not line.startswith("#") and "@fderuiter" in line
+        for line in rule_lines
+        if len(line.split()) >= 2 and "@fderuiter" in line.split()[1:]
     }
-    missing = [p for p in PROTECTED_PATHS if p not in owned]
+    expected_paths = set(PROTECTED_PATHS) | {
+        "tests/snapshots/api/",
+        "tests/snapshots/tui_svg/",
+    }
+    missing = [p for p in sorted(expected_paths) if p not in owned]
     assert not missing, f"Add to .github/CODEOWNERS: {missing}"
+    unexpected = sorted(owned - expected_paths)
+    assert not unexpected, (
+        f"Unexpected .github/CODEOWNERS entries outside Tier 3 paths: {unexpected}"
+    )
 
 
 @pytest.mark.parametrize(
