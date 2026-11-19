@@ -176,6 +176,15 @@ jobs:
       run: |
         uv run python scripts/generate_docs.py --check
 
+    - name: Upload Documentation Site Artifact
+      if: github.ref == 'refs/heads/main'
+      uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
+      with:
+        name: docs-site
+        path: site/
+        if-no-files-found: error
+        retention-days: 7
+
   build-and-test:
     name: Build & Test
     needs: [security-and-audit, type-check, static-checks]
@@ -301,61 +310,110 @@ jobs:
                 print("No smoke_test_error.txt found.")
             sys.exit(res.returncode)
 
-  # The only job that keeps checkout credentials: mkdocs gh-deploy pushes.
+  # Publishes the prebuilt site artifact from static-checks after required-ci
+  # succeeds on main, keeping contents: write out of checkout and build steps.
   doc-deploy:
     name: Doc Deploy
-    needs: [static-checks]
+    needs: [required-ci]
     if: github.ref == 'refs/heads/main'
     runs-on: ubuntu-latest
     timeout-minutes: 15
+    concurrency:
+      group: doc-deploy
+      cancel-in-progress: false
     permissions:
       contents: write
     steps:
-    - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+    - name: Download Documentation Site Artifact
+      uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
       with:
-        # mkdocs gh-deploy pushes with the persisted token, and only on main.
-        # PR runs never deploy, so they keep the token out of .git/config.
-        persist-credentials: ${{ github.ref == 'refs/heads/main' }}
-
-    - name: Install uv
-      uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
-      with:
-        version: "0.13.1"
-        enable-cache: true
-
-    - name: Set up Python
-      uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
-      with:
-        python-version: "3.12"
-
-    - name: Install dependencies
-      run: |
-        uv sync --frozen --group docs
-
-    - name: Set up Node
-      uses: actions/setup-node@949feb2413d6458794dcd2491c4babbbce0c15c1 # v7.1.0
-      with:
-        node-version: "22"
-
-    - name: Install Mermaid renderer
-      run: |
-        npm install --global @mermaid-js/mermaid-cli@12.0.0
-        # Ubuntu 24.04 runners block unprivileged user namespaces through
-        # AppArmor, so headless Chrome dies with "No usable sandbox!". Allow
-        # them rather than running Chrome with --no-sandbox.
-        sudo sysctl -w kernel.apparmor_restrict_unprivileged_userns=0
-        # Fail here, not silently in doc compilation, if headless Chrome can't start.
-        printf 'graph TD\n  A --> B\n' > "$RUNNER_TEMP/probe.mmd"
-        mmdc -i "$RUNNER_TEMP/probe.mmd" -o "$RUNNER_TEMP/probe.svg"
-
-    - name: Compile Documentation
-      run: |
-        uv run python scripts/generate_docs.py
+        name: docs-site
+        path: site
 
     - name: Deploy Documentation
-      if: github.ref == 'refs/heads/main'
+      env:
+        GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
       run: |
-        uv run mkdocs gh-deploy --force
+        set -euo pipefail
+
+        SITE_DIR="${PWD}/site"
+        if [ ! -f "${SITE_DIR}/index.html" ]; then
+          echo "Error: Prebuilt site/index.html is missing from docs-site artifact." >&2
+          exit 1
+        fi
+
+        # actions/upload-artifact drops dotfiles by default; restore .nojekyll so
+        # GitHub Pages serves underscore-prefixed assets without Jekyll processing.
+        : > "${SITE_DIR}/.nojekyll"
+
+        if [ -z "${GITHUB_TOKEN:-}" ]; then
+          echo "Error: GITHUB_TOKEN must be provided via environment." >&2
+          exit 1
+        fi
+
+        SERVER_URL="${GITHUB_SERVER_URL:-https://github.com}"
+        REMOTE_URL="${SERVER_URL}/${GITHUB_REPOSITORY}.git"
+        AUTH_HEADER="$(printf 'x-access-token:%s' "${GITHUB_TOKEN}" | base64 | tr -d '\r\n')"
+
+        export GIT_TERMINAL_PROMPT=0
+        export GIT_CONFIG_COUNT=1
+        export GIT_CONFIG_KEY_0="http.${SERVER_URL}/.extraheader"
+        export GIT_CONFIG_VALUE_0="AUTHORIZATION: basic ${AUTH_HEADER}"
+
+        TMP_ROOT="$(mktemp -d)"
+        trap 'rm -rf "${TMP_ROOT}"' EXIT
+        META_DIR="${TMP_ROOT}/meta"
+        PAGES_DIR="${TMP_ROOT}/pages"
+
+        git init --quiet "${META_DIR}"
+        git -C "${META_DIR}" config core.hooksPath /dev/null
+        git -C "${META_DIR}" fetch --quiet --no-tags --filter=blob:none "${REMOTE_URL}" "+refs/heads/main:refs/remotes/origin/main"
+
+        if ! git -C "${META_DIR}" merge-base --is-ancestor "${GITHUB_SHA}" refs/remotes/origin/main 2>/dev/null; then
+          echo "Skipping deployment: ${GITHUB_SHA} is not an ancestor of refs/heads/main."
+          exit 0
+        fi
+
+        git init --quiet "${PAGES_DIR}"
+        git -C "${PAGES_DIR}" config core.hooksPath /dev/null
+        git -C "${PAGES_DIR}" config core.excludesFile /dev/null
+        git -C "${PAGES_DIR}" config user.name "github-actions[bot]"
+        git -C "${PAGES_DIR}" config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+
+        DEPLOYED_COMMIT=""
+        if git -C "${PAGES_DIR}" ls-remote --exit-code --heads "${REMOTE_URL}" refs/heads/gh-pages >/dev/null 2>&1; then
+          git -C "${PAGES_DIR}" fetch --quiet --no-tags --depth=1 "${REMOTE_URL}" "+refs/heads/gh-pages:refs/remotes/origin/gh-pages"
+          LAST_MSG="$(git -C "${PAGES_DIR}" log -1 --format=%B refs/remotes/origin/gh-pages)"
+          DEPLOYED_SHA=""
+          if [[ "${LAST_MSG}" =~ Deployed[[:space:]]+([0-9a-f]{7,40}) ]]; then
+            DEPLOYED_SHA="${BASH_REMATCH[1]}"
+          fi
+          if [ -n "${DEPLOYED_SHA}" ]; then
+            DEPLOYED_COMMIT="$(git -C "${META_DIR}" rev-parse --verify "${DEPLOYED_SHA}^{commit}" 2>/dev/null || true)"
+          fi
+          if [ -n "${DEPLOYED_COMMIT}" ] && [ "${DEPLOYED_COMMIT}" != "${GITHUB_SHA}" ]; then
+            if git -C "${META_DIR}" merge-base --is-ancestor "${DEPLOYED_COMMIT}" refs/remotes/origin/main 2>/dev/null \
+              && git -C "${META_DIR}" merge-base --is-ancestor "${GITHUB_SHA}" "${DEPLOYED_COMMIT}" 2>/dev/null; then
+              echo "Skipping deployment: gh-pages already contains newer main commit ${DEPLOYED_COMMIT} (current run is ${GITHUB_SHA})."
+              exit 0
+            fi
+          fi
+          git -C "${PAGES_DIR}" checkout --quiet -B gh-pages refs/remotes/origin/gh-pages
+          git -C "${PAGES_DIR}" rm -rf --quiet --ignore-unmatch .
+        else
+          git -C "${PAGES_DIR}" checkout --quiet --orphan gh-pages
+        fi
+
+        cp -a "${SITE_DIR}/." "${PAGES_DIR}/"
+        git -C "${PAGES_DIR}" add --all --force
+
+        if [ "${DEPLOYED_COMMIT}" = "${GITHUB_SHA}" ] && git -C "${PAGES_DIR}" diff --cached --quiet; then
+          echo "Skipping deployment: gh-pages is already up to date for ${GITHUB_SHA}."
+          exit 0
+        fi
+
+        git -C "${PAGES_DIR}" commit --quiet --allow-empty -m "Deployed ${GITHUB_SHA}"
+        git -C "${PAGES_DIR}" push --quiet "${REMOTE_URL}" HEAD:refs/heads/gh-pages
 
   heavy-tests:
     name: Heavy Tests
