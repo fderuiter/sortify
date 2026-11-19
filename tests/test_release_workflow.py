@@ -46,13 +46,54 @@ def test_release_workflow_attestations_and_sbom():
         s.get("with", {}).get("persist-credentials") is False for s in checkouts
     )
 
-    # 2. Anchore Syft SBOM step check
+    # 2. Anchore Syft SBOM steps check (scoped to shipped bundle and model archive)
     syft_steps = _steps_using(build_steps, "anchore/sbom-action")
-    assert len(syft_steps) > 0, "Missing anchore/sbom-action step in release.yml"
-    syft_with = syft_steps[0].get("with", {})
+    assert len(syft_steps) == 2, (
+        "Expected anchore/sbom-action steps for both binary bundle and model archive in release.yml"
+    )
+    binary_syft_steps = [
+        s
+        for s in syft_steps
+        if s.get("with", {}).get("output-file")
+        == "dist/${{ matrix.artifact_name }}.sbom.json"
+    ]
+    assert len(binary_syft_steps) == 1
+    syft_with = binary_syft_steps[0].get("with", {})
+    assert syft_with.get("path") == "dist/smart-autosorter"
+    assert "file" not in syft_with
     assert syft_with.get("format") == "cyclonedx-json"
-    assert "${{ matrix.artifact_name }}.sbom.json" in syft_with.get("output-file", "")
+    assert syft_with.get("upload-artifact") is False
     assert syft_with.get("upload-release-assets") is False
+
+    model_syft_steps = [
+        s
+        for s in syft_steps
+        if s.get("with", {}).get("output-file")
+        == "dist/smart-autosorter-models.zip.sbom.json"
+    ]
+    assert len(model_syft_steps) == 1
+    model_syft_with = model_syft_steps[0].get("with", {})
+    assert model_syft_with.get("file") == "dist/smart-autosorter-models.zip"
+    assert "path" not in model_syft_with
+    assert model_syft_with.get("format") == "cyclonedx-json"
+    assert model_syft_with.get("upload-artifact") is False
+    assert model_syft_with.get("upload-release-assets") is False
+    assert (model_syft_steps[0].get("env") or {}).get(
+        "SYFT_FILE_METADATA_SELECTION"
+    ) == "all"
+
+    upload_artifact_steps = _steps_using(build_steps, "actions/upload-artifact")
+    assert len(upload_artifact_steps) == 1
+    uploaded_build_paths = {
+        line.strip()
+        for line in upload_artifact_steps[0]
+        .get("with", {})
+        .get("path", "")
+        .splitlines()
+        if line.strip()
+    }
+    assert "dist/${{ matrix.artifact_name }}.sbom.json" in uploaded_build_paths
+    assert "dist/smart-autosorter-models.zip.sbom.json" in uploaded_build_paths
 
     publish_steps = publish.get("steps", [])
 
@@ -67,7 +108,7 @@ def test_release_workflow_attestations_and_sbom():
     model_prov_steps = [
         s
         for s in provenance_steps
-        if "smart-autosorter-models.zip" in s.get("with", {}).get("subject-path", "")
+        if s.get("with", {}).get("subject-path") == "dist/smart-autosorter-models.zip"
     ]
     assert len(model_prov_steps) == 1, (
         "Missing actions/attest-build-provenance step for model weights in release.yml"
@@ -76,11 +117,34 @@ def test_release_workflow_attestations_and_sbom():
 
     # 4. SBOM attestation step check
     attest_sbom_steps = _steps_using(publish_steps, "actions/attest-sbom")
-    assert len(attest_sbom_steps) > 0, "Missing actions/attest-sbom step in release.yml"
-    sbom_attest_with = attest_sbom_steps[0].get("with", {})
-    assert "${{ matrix.artifact_name }}" in sbom_attest_with.get("subject-path", "")
-    assert "${{ matrix.artifact_name }}.sbom.json" in sbom_attest_with.get(
-        "sbom-path", ""
+    assert len(attest_sbom_steps) == 2, (
+        "Expected actions/attest-sbom steps for both binary archives and model weights in release.yml"
+    )
+    binary_attest_steps = [
+        s
+        for s in attest_sbom_steps
+        if s.get("with", {}).get("subject-path") == "dist/${{ matrix.artifact_name }}"
+    ]
+    assert len(binary_attest_steps) == 1
+    assert "if" not in binary_attest_steps[0]
+    sbom_attest_with = binary_attest_steps[0].get("with", {})
+    assert (
+        sbom_attest_with.get("sbom-path")
+        == "dist/${{ matrix.artifact_name }}.sbom.json"
+    )
+
+    model_attest_steps = [
+        s
+        for s in attest_sbom_steps
+        if s.get("with", {}).get("subject-path") == "dist/smart-autosorter-models.zip"
+    ]
+    assert len(model_attest_steps) == 1, (
+        "Missing actions/attest-sbom step for model weights in release.yml"
+    )
+    assert model_attest_steps[0].get("if") == "matrix.os_name == 'Linux'"
+    assert (
+        model_attest_steps[0].get("with", {}).get("sbom-path")
+        == "dist/smart-autosorter-models.zip.sbom.json"
     )
 
     # 5. Upload Release Artifacts step check
@@ -89,7 +153,8 @@ def test_release_workflow_attestations_and_sbom():
         "Missing softprops/action-gh-release step in release.yml"
     )
     files = release_steps[0].get("with", {}).get("files", "")
-    assert "${{ matrix.artifact_name }}.sbom.json" in files
+    assert "dist/${{ matrix.artifact_name }}.sbom.json" in files
+    assert "smart-autosorter-models.zip.sbom.json" not in files
 
 
 def test_publish_matrix_matches_build_matrix():
@@ -127,7 +192,14 @@ def test_release_builds_and_publishes_once():
     models = [s for s in uploads if "smart-autosorter-models.zip" in s["with"]["files"]]
     assert len(models) == 1
     assert models[0].get("if") == "matrix.os_name == 'Linux'"
-    assert "smart-autosorter-models.zip.sha256" in models[0]["with"]["files"]
+    model_files = {
+        line.strip() for line in models[0]["with"]["files"].splitlines() if line.strip()
+    }
+    assert model_files == {
+        "dist/smart-autosorter-models.zip",
+        "dist/smart-autosorter-models.zip.sha256",
+        "dist/smart-autosorter-models.zip.sbom.json",
+    }
 
 
 def test_release_workflow_pe_dependency_verification():

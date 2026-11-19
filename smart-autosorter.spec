@@ -4,19 +4,33 @@
 import importlib.util
 import os
 import platform
+import re
 import sys
 
 # Removed customtkinter
-from PyInstaller.utils.hooks import collect_all, collect_data_files
+from PyInstaller.utils.hooks import collect_all, collect_data_files, copy_metadata
 
 block_cipher = None
 
 # Core machine learning and NLP dependencies required for offline processing
 is_lite = os.environ.get("LITE_BUILD") == "1"
 ml_packages = []
+ml_metadata_packages = []
 datas = []
 binaries = []
 hiddenimports = []
+
+excludes = [
+    'tkinter', 'tcl', 'tk', '_tkinter', 'sqlite3', '_sqlite3',
+    'nicegui', 'fastapi', 'uvicorn', 'starlette', 'socketio', 'engineio',
+    'vbuild', 'httpx', 'websockets', 'watchfiles'
+]
+if is_lite:
+    excludes.extend([
+        'torch', 'torchvision', 'triton', 'nvidia', 'easyocr', 'scipy',
+        'sklearn', 'scikit-learn', 'pandas', 'cv2', 'numpy', 'skimage',
+        'scikit-image', 'sympy', 'lxml', 'mypy', 'matplotlib'
+    ])
 
 if is_lite:
     lite_marker_path = os.path.join(os.path.dirname(os.path.abspath(SPEC)), "LITE_BUILD") if 'SPEC' in locals() else os.path.join(os.getcwd(), "LITE_BUILD")
@@ -29,6 +43,49 @@ else:
         'torch', 'easyocr', 'transformers', 'sklearn', 'llama_cpp',
         'onnxruntime', 'numpy', 'pandas', 'PIL', 'scipy'
     ]
+    ml_metadata_packages = [
+        'easyocr', 'transformers', 'onnxruntime', 'llama-cpp-python', 'torch'
+    ]
+
+
+def _normalize_pkg_name(name):
+    """Canonicalize package/distribution names per PEP 503."""
+    return re.sub(r"[-_.]+", "-", str(name).strip().lower()).strip("-")
+
+
+def is_excluded_metadata(src_path, dest_path, excluded_pkgs):
+    """Return True if a metadata tuple belongs to an excluded package."""
+    excluded_norm = {_normalize_pkg_name(p) for p in excluded_pkgs}
+    if "socketio" in excluded_norm:
+        excluded_norm.add("python-socketio")
+    if "engineio" in excluded_norm:
+        excluded_norm.add("python-engineio")
+
+    candidates = (
+        str(dest_path).replace('\\', '/').split('/')
+        + str(src_path).replace('\\', '/').split('/')
+    )
+    for part in candidates:
+        part_lower = part.lower()
+        stem = None
+        if part_lower.endswith('.dist-info'):
+            stem = part[:-10]
+        elif part_lower.endswith('.egg-info'):
+            stem = part[:-9]
+        elif part_lower.endswith('.egg'):
+            stem = part[:-4]
+        if stem:
+            dist_raw = re.split(r"-(?=\d)", stem, maxsplit=1)[0]
+            dist_norm = _normalize_pkg_name(dist_raw)
+            if dist_norm in excluded_norm:
+                return True
+            if "nvidia" in excluded_norm and dist_norm.startswith("nvidia-"):
+                return True
+            if "cv2" in excluded_norm and dist_norm.startswith("opencv-"):
+                return True
+            return False
+    return False
+
 
 # Collect all dynamic libraries, weights, and hidden imports for ML packages
 for pkg in ml_packages:
@@ -39,6 +96,35 @@ for pkg in ml_packages:
         hiddenimports.extend(pkg_hiddenimports)
     except Exception as e:
         print(f"Warning: Could not collect package {pkg}: {e}")
+
+# Preserve runtime .dist-info metadata recursively for smart-autosorter and ML packages
+seen_metadata_dests = {
+    str(item[1]).replace('\\', '/')
+    for item in datas
+    if isinstance(item, (tuple, list)) and len(item) >= 2
+}
+excluded_canonical = {_normalize_pkg_name(p) for p in excludes}
+for meta_pkg in ['smart-autosorter', *ml_metadata_packages]:
+    if _normalize_pkg_name(meta_pkg) in excluded_canonical:
+        continue
+    try:
+        meta_entries = copy_metadata(meta_pkg, recursive=True)
+    except Exception as e:
+        print(f"Warning: Could not collect metadata for {meta_pkg}: {e}")
+        try:
+            meta_entries = copy_metadata(meta_pkg)
+        except Exception:
+            meta_entries = []
+    for entry in meta_entries:
+        if not (isinstance(entry, (tuple, list)) and len(entry) >= 2):
+            continue
+        m_src, m_dest = entry[0], entry[1]
+        if is_excluded_metadata(m_src, m_dest, excludes):
+            continue
+        norm_m_dest = str(m_dest).replace('\\', '/')
+        if norm_m_dest not in seen_metadata_dests:
+            seen_metadata_dests.add(norm_m_dest)
+            datas.append(entry)
 
 # Bundle jsonschema and rfc3987 syntax data assets
 for schema_pkg in ('jsonschema', 'jsonschema_specifications', 'referencing', 'rfc3987_syntax', 'rfc3987'):
@@ -226,19 +312,6 @@ if (platform.system().lower() == "windows" or sys.platform == "win32") and "pyte
                     binaries.append((dll_path, '.'))
                     binaries.append((dll_path, 'sqlcipher3'))
 
-is_lite = os.environ.get("LITE_BUILD") == "1"
-excludes = [
-    'tkinter', 'tcl', 'tk', '_tkinter', 'sqlite3', '_sqlite3',
-    'nicegui', 'fastapi', 'uvicorn', 'starlette', 'socketio', 'engineio',
-    'vbuild', 'httpx', 'websockets', 'watchfiles'
-]
-if is_lite:
-    excludes.extend([
-        'torch', 'torchvision', 'triton', 'nvidia', 'easyocr', 'scipy',
-        'sklearn', 'scikit-learn', 'pandas', 'cv2', 'numpy', 'skimage',
-        'scikit-image', 'sympy', 'lxml', 'mypy', 'matplotlib'
-    ])
-
 # Path normalization and inline path assertion helpers for executable packaging
 def normalize_dest_path(path_str):
     """Normalize target destination paths inside the virtual environment to use forward slashes."""
@@ -338,6 +411,10 @@ def is_tcl_tk_asset(name):
 def is_prunable_asset(name):
     name_lower = name.lower().replace('\\', '/')
     parts = name_lower.split('/')
+
+    # Protect runtime distribution metadata (.dist-info / .egg-info) so Syft reads intact metadata
+    if any(p.endswith(('.dist-info', '.egg-info')) or p == 'egg-info' for p in parts):
+        return False
     
     # Protect bundled documentation markdown files and SVG diagrams
     norm_path = name_lower.removeprefix('./').lstrip('/')
