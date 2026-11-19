@@ -627,7 +627,8 @@ def build_diagrams(
     if not output_dir.is_absolute():
         output_dir = REPO_ROOT / output_dir
 
-    output_dir.mkdir(parents=True, exist_ok=True)
+    if not verify_only:
+        output_dir.mkdir(parents=True, exist_ok=True)
     specs = collect_all_specs()
 
     if not specs:
@@ -693,10 +694,6 @@ def build_diagrams(
             all_success = False
             continue
 
-        # Write or update .mmd file
-        with open(mmd_file, "w", encoding="utf-8", newline="\n") as f:
-            f.write(mmd_content)
-
         cached_entry = cache.get(spec_id, {})
         cached_hash = (
             cached_entry.get("sha256") if isinstance(cached_entry, dict) else None
@@ -708,6 +705,24 @@ def build_diagrams(
         )
 
         if verify_only:
+            existing_mmd = None
+            if mmd_file.exists():
+                try:
+                    existing_mmd = mmd_file.read_text(encoding="utf-8").replace(
+                        "\r\n", "\n"
+                    )
+                except Exception:
+                    existing_mmd = None
+
+            if existing_mmd != mmd_content.replace("\r\n", "\n"):
+                sys.stderr.write(
+                    f"Verification FAILED: {mmd_file.name} is missing or out of sync "
+                    f"with the current '{spec_id}' spec. Run "
+                    "`uv run python scripts/diagram_toolchain.py build` and commit "
+                    "the updated diagram files.\n"
+                )
+                all_success = False
+
             if rendered_hash != current_hash:
                 sys.stderr.write(
                     f"Verification FAILED: {svg_file.name} was not rendered from the "
@@ -719,15 +734,15 @@ def build_diagrams(
 
             # Check schema validity and syntax, then headless compilation or fallback notice
             if has_browser and mmdc_cmd:
-                temp_svg = output_dir / f".tmp_verify_{spec_id}.svg"
-                rendered_ok = render_diagram_artifact(
-                    mmdc_cmd, mmd_file, temp_svg, "svg"
-                )
-                if temp_svg.exists():
-                    try:
-                        temp_svg.unlink()
-                    except Exception:
-                        pass
+                import tempfile
+
+                with tempfile.TemporaryDirectory() as tmp_dir:
+                    temp_mmd = Path(tmp_dir) / f"{spec_id}.mmd"
+                    temp_mmd.write_text(mmd_content, encoding="utf-8", newline="\n")
+                    temp_svg = Path(tmp_dir) / f"{spec_id}.svg"
+                    rendered_ok = render_diagram_artifact(
+                        mmdc_cmd, temp_mmd, temp_svg, "svg"
+                    )
 
                 if not rendered_ok:
                     sys.stderr.write(
@@ -745,6 +760,10 @@ def build_diagrams(
                     f"Verified spec '{spec_id}' -> {mmd_file.name} (validated syntax, click directives, and schema)."
                 )
             continue
+
+        # Write or update .mmd file only during build mode
+        with open(mmd_file, "w", encoding="utf-8", newline="\n") as f:
+            f.write(mmd_content)
 
         if not needs_render:
             print(f"Skipping cached diagram asset: {spec_id}")

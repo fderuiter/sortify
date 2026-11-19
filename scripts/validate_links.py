@@ -12,9 +12,12 @@ import urllib.request
 from urllib.parse import urlparse
 
 URL_REGEX = re.compile(r'https?://[^\s\'"<>]+')
+_TEMPLATE_EXPR_RE = re.compile(r"\{[^{}]+\}")
 TIMEOUT = 3.0
 DEFAULT_BYPASS_DOMAINS = {
     "example.com",
+    "example.org",
+    "example.net",
     "proxy.example.com",
     "test-proxy",
     "initial-proxy",
@@ -23,29 +26,34 @@ DEFAULT_BYPASS_DOMAINS = {
     "docs.smartautosorter.com",
     "sortify.ai",
     "docs.sortify.ai",
-    "astral.sh",
-    "docs.astral.sh",
-    "pypi.org",
-    "osv.dev",
-    "api.osv.dev",
-    "download.pytorch.org",
-    "github.com",
-    "huggingface.co",
-    "google.com",
-    "www.google.com",
-    "fonts.googleapis.com",
-    "fonts.gstatic.com",
-    "googleapis.com",
-    "gstatic.com",
+    "security.huggingface.co",
     "localhost",
     "127.0.0.1",
     "host",
     "dummy",
-    "w3.org",
-    "www.w3.org",
-    "keepachangelog.com",
-    "www.keepachangelog.com",
 }
+_OSV_QUERY_PROBE_BODY = (
+    b'{"package":{"name":"pip","ecosystem":"PyPI"},"version":"24.0"}'
+)
+
+
+def is_template_or_redacted_url(url: str) -> bool:
+    """Return True for valid f-string URL templates or redacted credential literals."""
+    if "[REDACTED]" in url:
+        return True
+    if "{" in url or "}" in url:
+        substituted = _TEMPLATE_EXPR_RE.sub("placeholder", url)
+        if "{" in substituted or "}" in substituted:
+            return False
+        try:
+            parsed = urlparse(substituted)
+            _ = parsed.port
+            return parsed.scheme in ("http", "https") and bool(
+                parsed.netloc and parsed.hostname
+            )
+        except ValueError:
+            return False
+    return False
 
 
 def validate_url(
@@ -55,28 +63,61 @@ def validate_url(
     allow_offline: bool = False,
 ):
     """Validate a single URL using HEAD with a fallback to GET."""
-    parsed = urlparse(url)
+    try:
+        parsed = urlparse(url)
+        scheme = parsed.scheme
+        netloc = parsed.netloc
+        hostname = parsed.hostname
+        _ = parsed.port
+    except ValueError as e:
+        return False, f"Invalid URL structure: {e}", True
+
+    if scheme not in ("http", "https") or not (netloc and hostname):
+        return False, "Invalid URL structure", True
+
     bypass_set = bypass_domains or set()
-    hostname = parsed.hostname or parsed.netloc
     if (
-        parsed.netloc in bypass_set
+        netloc in bypass_set
         or hostname in bypass_set
         or any(
-            hostname and (hostname == domain or hostname.endswith("." + domain))
+            hostname == domain or hostname.endswith("." + domain)
             for domain in bypass_set
         )
     ):
-        return True, f"Bypassed ({parsed.netloc})", False
+        return True, f"Bypassed ({netloc})", False
 
     if local_only:
+        return True, "OK (Local-only)", False
+
+    if scheme == "https" and hostname == "api.osv.dev" and parsed.path in ("", "/"):
+        probe_req = urllib.request.Request(
+            f"{url.rstrip('/')}/v1/query",
+            data=_OSV_QUERY_PROBE_BODY,
+            method="POST",
+            headers={
+                "Content-Type": "application/json",
+                "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)",
+            },
+        )
         try:
-            if parsed.scheme in ("http", "https") and bool(
-                parsed.netloc or parsed.hostname
-            ):
-                return True, "OK (Local-only)", False
-            return False, "Invalid URL structure", True
+            with urllib.request.urlopen(probe_req, timeout=TIMEOUT) as response:
+                return True, f"OK (POST {response.status})", False
+        except urllib.error.HTTPError as e:
+            return False, f"HTTP Error {e.code}: {e.reason}", True
+        except urllib.error.URLError as e:
+            return (
+                False,
+                f"Connection/Timeout Error: {e.reason}",
+                not allow_offline,
+            )
+        except socket.timeout:
+            return (
+                False,
+                "Connection/Timeout Error: timed out",
+                not allow_offline,
+            )
         except Exception as e:
-            return False, f"Invalid URL structure: {str(e)}", True
+            return False, f"Unexpected Error: {str(e)}", not allow_offline
 
     # Using a common user agent to avoid being blocked immediately
     req = urllib.request.Request(
@@ -201,7 +242,7 @@ def main():
                 found = URL_REGEX.findall(file_content)
                 for url in found:
                     url = url.strip().rstrip(".,;)'\"`<> \n\r\t\\")
-                    if url:
+                    if url and not is_template_or_redacted_url(url):
                         urls.add(url)
         except FileNotFoundError:
             continue
@@ -235,7 +276,8 @@ def main():
                     else:
                         print(f"[\033[93mWARN\033[0m] {url} - {msg}")
             except Exception as exc:
-                print(f"[\033[93mWARN\033[0m] {url} generated an exception: {exc}")
+                print(f"[\033[91mFAIL\033[0m] {url} generated an exception: {exc}")
+                has_critical_error = True
 
     if has_critical_error:
         print(

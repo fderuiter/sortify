@@ -1117,3 +1117,43 @@ def test_cli_function_signature_drift_detected(monkeypatch, capsys):
     assert exc_info.value.code == 1
     captured = capsys.readouterr()
     assert "Signature drift detected in 'app/cli/error_emitter.py'" in captured.err
+
+
+def test_orphan_detection_runs_with_explicit_module_paths(
+    tmp_path, monkeypatch, capsys
+):
+    """Orphaned snapshots under tests/snapshots/ fail even when explicit module_paths are passed."""
+    import shutil
+
+    snap_copy_root = tmp_path / "snapshots"
+    shutil.copytree(validate_signatures.get_snapshot_root_dir(), snap_copy_root)
+    fake_api_dir = snap_copy_root / "api"
+    orphan_file = fake_api_dir / "core" / "orphaned_deleted_module.json"
+    orphan_file.write_text('{"orphaned": true}\n', encoding="utf-8")
+
+    orig_tui_svgs = validate_signatures.collect_tui_svg_snapshots()
+    monkeypatch.setattr(validate_signatures, "SNAPSHOT_DIR", str(fake_api_dir))
+    monkeypatch.setattr(
+        validate_signatures,
+        "collect_tui_svg_snapshots",
+        lambda tests_dir=None: {
+            os.path.realpath(
+                os.path.join(str(snap_copy_root), "tui_svg", os.path.basename(p))
+            )
+            for p in orig_tui_svgs
+        },
+    )
+
+    # Case 1: explicit monitored module path passed
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py", "app/config.py"])
+    with pytest.raises(SystemExit) as exc1:
+        validate_signatures.main()
+    assert exc1.value.code == 1
+    assert "Orphaned snapshot file detected" in capsys.readouterr().err
+
+    # Case 2: explicit orphaned snapshot path passed (matches zero monitored Python modules)
+    monkeypatch.setattr(sys, "argv", ["validate_signatures.py", str(orphan_file)])
+    with pytest.raises(SystemExit) as exc2:
+        validate_signatures.main()
+    assert exc2.value.code == 1
+    assert "Orphaned snapshot file detected" in capsys.readouterr().err

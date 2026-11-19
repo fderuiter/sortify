@@ -461,3 +461,67 @@ def test_verify_offline_bundle_frozen_and_ml_verification():
         assert mod in run_scripts, f"Missing '{mod}' import in verify-offline-bundle"
     assert "is_ml_available()" in run_scripts
     assert "torch.cuda.is_available()" in run_scripts
+
+
+def test_precommit_hooks_full_repo_readonly_parity():
+    """Verify pre-commit hooks match CI full-repo read-only execution and trigger patterns."""
+    import re
+
+    import yaml
+
+    repo_root = Path(__file__).resolve().parent.parent
+    precommit_cfg = yaml.safe_load(
+        (repo_root / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    )
+    local_repo = next(r for r in precommit_cfg["repos"] if r["repo"] == "local")
+    hooks = {h["id"]: h for h in local_repo["hooks"]}
+
+    for hook_id in (
+        "validate-docs",
+        "validate-diagram-artifacts",
+        "validate-config-schema",
+        "validate-signatures",
+        "validate-architecture",
+    ):
+        assert hooks[hook_id].get("pass_filenames") is False, (
+            f"{hook_id} must set pass_filenames: false"
+        )
+
+    assert "--check" in hooks["validate-config-schema"]["entry"]
+
+    # Trigger regex coverage checks
+    assert re.search(hooks["validate-docs"]["files"], "network_rules.json")
+    assert re.search(hooks["validate-docs"]["files"], "app/config_schema.json")
+    assert re.search(hooks["validate-docs"]["files"], "pyproject.toml")
+
+    for path in (
+        "app/config.py",
+        "app/config_schema.json",
+        "pyproject.toml",
+        "uv.lock",
+    ):
+        assert re.search(hooks["validate-config-schema"]["files"], path)
+
+    for path in (
+        "app/main.py",
+        "tests/snapshots/api/core/orphan.json",
+        "pyproject.toml",
+        "uv.lock",
+    ):
+        assert re.search(hooks["validate-signatures"]["files"], path)
+
+    for path in (
+        "app/config.py",
+        "scripts/diagram_schema.py",
+        "docs/assets/diagrams/core_architecture.svg",
+        "pyproject.toml",
+        "uv.lock",
+    ):
+        assert re.search(hooks["validate-architecture"]["files"], path)
+
+    workflow = _load_ci_workflow()
+    build_steps = workflow["jobs"]["build-and-test"]["steps"]
+    cfg_step = next(
+        s for s in build_steps if s.get("name") == "Validate Configuration Schema"
+    )
+    assert "scripts/validate_config.py --check" in cfg_step.get("run", "")

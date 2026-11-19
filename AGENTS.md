@@ -9,13 +9,15 @@ Local, offline-first Python 3.12 file sorter (`smart-autosorter`). Read `CONTEXT
 - Fast tests: `uv run pytest -m "not slow"`. One file while iterating: `uv run pytest tests/test_<area>.py -n0`.
 - Slow / ML tests: `uv sync --all-groups --extra ml` and `uv run pytest -m "slow"`.
 - Bundle build and smoke test: `uv sync --extra ml --group build && uv run python scripts/build.py` (or `uv run python scripts/build.py --lite` without ML weights), then `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring ./dist/smart-autosorter/smart-autosorter --smoke-test` (`dist\smart-autosorter\smart-autosorter.exe --smoke-test` on Windows).
-- Lint and format: `uv run ruff check` and `uv run ruff format`.
+- Lint and format: `uv run ruff check` and `uv run ruff format` (read-only check: `uv run ruff format --check .`).
 - Type check: `uv run ty check`.
 - Dependency audit: `uv run deptry .`.
+- Read-only repository checks: `uv run python scripts/validate_config.py --check`, `uv run python scripts/generate_docs.py --check --no-build`, `uv run python scripts/diagram_toolchain.py verify`, `uv run python scripts/validate_signatures.py`, and `uv run python scripts/validate_links.py --local-only`.
+- Explicit baseline syncs: `uv run python scripts/validate_config.py --sync` (config schema), `uv run python scripts/generate_docs.py` (generated docs, `SECURITY.md`, and config schema), `uv run python scripts/validate_signatures.py --update` (API/CLI signature snapshots), and `uv run python scripts/diagram_toolchain.py build` (`.mmd` and `.svg` diagrams).
 - Vulnerability remediation: `uv run python scripts/remediate_vulnerabilities.py --stage-dir <dir>` (stage validated lockfiles and `remediation_manifest.json` read-only) and `uv run python scripts/remediate_vulnerabilities.py --publish-from <dir>` (publish signed PRs and issue alerts).
 - Architecture and import validation: `uv run python scripts/validate_architecture.py` and `uv run python scripts/validate_imports.py`.
 - Prompt manifest verification: `uv run python scripts/prompt_manifest.py verify --strict` (generate keypair with `keygen`; re-sign via `PROMPT_MANIFEST_PRIVATE_KEY` with `generate`).
-- Hooks: `uv run pre-commit install`; they run ruff, secret detection (gitleaks), workflow linting (actionlint), plus the repo validators in `scripts/`.
+- Hooks: `uv run pre-commit install` (or `uv run pre-commit run --all-files`); they run ruff, secret detection (gitleaks), workflow linting (actionlint), plus full-repository read-only validators in `scripts/`.
 
 ## Conventions
 

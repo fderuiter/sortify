@@ -1,6 +1,7 @@
 #!/usr/bin/env python3
 """Validate the application configuration schema and build system config."""
 
+import argparse
 import json
 import sys
 import tomllib
@@ -176,53 +177,91 @@ def generate_config_schema() -> dict:
     return schema
 
 
-def sync_config_schema(schema_path: Path | None = None) -> bool:
-    """Synchronize app/config_schema.json with runtime Settings schema.
+def sync_config_schema(
+    schema_path: Path | None = None,
+    check_only: bool = False,
+) -> bool:
+    """Synchronize or verify app/config_schema.json against runtime Settings schema.
 
-    Returns True if the file was modified or newly created, False if already up to date.
+    When check_only is False (default), writes updated JSON to schema_path and returns True
+    if the file was modified or newly created, False if already up to date.
+    When check_only is True, compares in memory without touching disk and returns True if
+    schema_path is missing, unreadable, or out of sync with the generated schema.
     """
     if schema_path is None:
         schema_path = repo_root / "app" / "config_schema.json"
 
     schema = generate_config_schema()
     validate_schema_completeness(schema)
+    expected_text = json.dumps(schema, indent=2) + "\n"
 
     existing_schema = None
+    existing_text = None
     if schema_path.exists():
         try:
-            with open(schema_path, "r", encoding="utf-8") as f:
-                existing_schema = json.load(f)
+            raw_text = schema_path.read_text(encoding="utf-8")
+            existing_text = raw_text.replace("\r\n", "\n")
+            existing_schema = json.loads(existing_text)
         except Exception:
             existing_schema = None
+            existing_text = None
 
-    if existing_schema != schema:
+    is_drifted = existing_schema != schema or existing_text != expected_text
+    if is_drifted:
+        if check_only:
+            return True
         schema_path.parent.mkdir(parents=True, exist_ok=True)
         with open(schema_path, "w", encoding="utf-8", newline="\n") as f:
-            json.dump(schema, f, indent=2)
-            f.write("\n")
+            f.write(expected_text)
         return True
 
     return False
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """Validate configuration schema and build system requirements."""
+    parser = argparse.ArgumentParser(
+        description="Validate or synchronize app/config_schema.json and build-system bounds."
+    )
+    mode_group = parser.add_mutually_exclusive_group()
+    mode_group.add_argument(
+        "--check",
+        action="store_true",
+        help="Validate configuration schema in memory without modifying files on disk.",
+    )
+    mode_group.add_argument(
+        "--sync",
+        action="store_true",
+        help="Synchronize app/config_schema.json on disk with runtime Settings.",
+    )
+    args = parser.parse_args(argv)
+    check_only = not args.sync
+
     try:
         validate_build_system_config()
 
         schema_path = repo_root / "app" / "config_schema.json"
-        was_updated = sync_config_schema(schema_path)
+        drifted_or_updated = sync_config_schema(schema_path, check_only=check_only)
 
-        if was_updated:
+        if check_only:
+            if drifted_or_updated:
+                print(
+                    "Error: Configuration schema (app/config_schema.json) is out of sync with app/config.py. "
+                    "Run 'uv run python scripts/validate_config.py --sync' and commit the changes.",
+                    file=sys.stderr,
+                )
+                return 1
             print(
-                "Configuration schema updated. Please commit the changes.",
-                file=sys.stderr,
+                "Configuration schema and build-system requirements are valid and up-to-date."
             )
-            return 1
+            return 0
 
-        print(
-            "Configuration schema and build-system requirements are valid and up-to-date."
-        )
+        if drifted_or_updated:
+            print("Configuration schema synchronized at app/config_schema.json.")
+        else:
+            print(
+                "Configuration schema and build-system requirements are valid and up-to-date."
+            )
         return 0
     except ValidationError as e:
         print(f"Configuration schema validation failed:\n{e}", file=sys.stderr)

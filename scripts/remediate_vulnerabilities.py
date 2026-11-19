@@ -44,9 +44,9 @@ def sanitize_sensitive_info(text: Any, token: str | None = None) -> str:
         text = text.replace(token.strip(), "[REDACTED]")
     # Redact x-access-token or http(s) authorization headers/credentials in URLs
     text = re.sub(
-        r"https?://x-access-token:[^@]+@", "https://x-access-token:[REDACTED]@", text
+        r"(https?://)x-access-token:[^@]+@", r"\1x-access-token:[REDACTED]@", text
     )
-    text = re.sub(r"https?://[^:]+:[^@]+@", "https://[REDACTED]:[REDACTED]@", text)
+    text = re.sub(r"(https?://)[^:]+:[^@]+@", r"\1[REDACTED]:[REDACTED]@", text)
     return text
 
 

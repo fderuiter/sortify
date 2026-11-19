@@ -675,7 +675,8 @@ def main():
             print(
                 f"No signature-monitored modules to validate among specified path(s): {', '.join(args.module_paths)}"
             )
-            sys.exit(0)
+            if args.regenerate:
+                sys.exit(0)
     else:
         target_modules = all_modules
 
@@ -811,14 +812,17 @@ def main():
             has_errors = True
 
     snap_root = get_snapshot_root_dir()
-    if not args.module_paths and os.path.exists(snap_root):
-        valid_snap_paths.update(collect_tui_svg_snapshots())
+    if os.path.exists(snap_root):
+        all_valid_snap_paths = {
+            os.path.realpath(m["snapshot_path"]) for m in all_modules
+        }
+        all_valid_snap_paths.update(collect_tui_svg_snapshots())
         for root, _, files in os.walk(snap_root):
             for file in files:
                 if file.endswith(".actual") or file.startswith("."):
                     continue
                 full_snap = os.path.realpath(os.path.join(root, file))
-                if full_snap not in valid_snap_paths:
+                if full_snap not in all_valid_snap_paths:
                     rel_orphaned = safe_relpath(full_snap, BASE_DIR)
                     print(
                         f"FAIL: Orphaned snapshot file detected: {rel_orphaned}",

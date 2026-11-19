@@ -52,7 +52,7 @@ repos:
         entry: uv run python scripts/generate_docs.py --check --no-build
         language: system
         pass_filenames: false
-        files: '^(docs/|scripts/.*\.py|app/.*\.py|app/config_schema\.json|mkdocs\.yml|README\.md|PRIVACY\.md|SECURITY\.md)'
+        files: '^(docs/|scripts/.*\.py|app/.*\.py|app/config_schema\.json|network_rules\.json|pyproject\.toml|uv\.lock|mkdocs\.yml|README\.md|PRIVACY\.md|SECURITY\.md)'
       - id: validate-diagram-artifacts
         name: Validate Diagram Artifacts and Mermaid Compilation
         entry: uv run python scripts/diagram_toolchain.py --verify
@@ -64,11 +64,13 @@ repos:
         entry: uv run python scripts/validate_links.py --local-only
         language: system
         files: '\.(py|md)$'
+        exclude: '^tests/'
       - id: validate-config-schema
         name: Validate Configuration Schema
-        entry: uv run python scripts/validate_config.py
+        entry: uv run python scripts/validate_config.py --check
         language: system
-        files: '^app/config\.py$'
+        pass_filenames: false
+        files: '^(app/config\.py|app/config_schema\.json|pyproject\.toml|uv\.lock|scripts/validate_config\.py)$'
       - id: validate-agent-prompts
         name: Validate Agent Prompts Manifest
         entry: uv run python scripts/prompt_manifest.py verify --strict
@@ -79,12 +81,14 @@ repos:
         name: Validate API and CLI Signatures
         entry: uv run python scripts/validate_signatures.py
         language: system
-        files: '(\.py$|tests/snapshots/.*)'
+        pass_filenames: false
+        files: '(\.py$|^tests/snapshots/|pyproject\.toml$|uv\.lock$)'
       - id: validate-architecture
         name: Validate Architectural Guardrails and System Utilities
         entry: uv run python scripts/validate_architecture.py
         language: system
-        files: '^app/.*\.py$'
+        pass_filenames: false
+        files: '^(app/.*\.py|scripts/validate_architecture\.py|scripts/diagram_schema\.py|docs/assets/diagrams/.*|pyproject\.toml|uv\.lock)$'
       - id: deptry
         name: Check dependency declarations
         entry: uv run deptry .
