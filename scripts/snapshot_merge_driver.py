@@ -576,7 +576,7 @@ def run_git_setup():
     sys.exit(0)
 
 
-def run_cli_resolver(file_path: str = None, diff_only: bool = False):
+def run_cli_resolver(file_path: str | None = None, diff_only: bool = False):
     """Run interactive CLI resolution tool for inspecting snapshot diffs and fields."""
     print("==================================================================")
     print("         Interactive Snapshot Conflict & Diff Resolver            ")

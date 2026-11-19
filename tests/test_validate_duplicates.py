@@ -106,6 +106,24 @@ def my_func(x, y):
     assert hash1 == hash2
 
 
+def test_compute_normalized_ast_hash_normalizes_annotated_assignments():
+    code1 = """
+def my_func(a: int, b: str) -> bool:
+    marker: str
+    val: int = a + len(b)
+    return val > 10
+"""
+    code2 = """
+def my_func(x, y):
+    res = x + len(y)
+    return res > 10
+"""
+    node1 = ast.parse(code1).body[0]
+    node2 = ast.parse(code2).body[0]
+
+    assert compute_normalized_ast_hash(node1) == compute_normalized_ast_hash(node2)
+
+
 def test_utility_anti_duplication_visitor_canonical_registry():
     errors = []
     hashes = {}
