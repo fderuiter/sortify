@@ -227,6 +227,7 @@ if (platform.system().lower() == "windows" or sys.platform == "win32") and "pyte
                     binaries.append((dll_path, 'sqlcipher3'))
 
 is_lite = os.environ.get("LITE_BUILD") == "1"
+is_cpu = os.environ.get("CPU_BUILD") == "1"
 excludes = [
     'tkinter', 'tcl', 'tk', '_tkinter', 'sqlite3', '_sqlite3',
     'nicegui', 'fastapi', 'uvicorn', 'starlette', 'socketio', 'engineio',
@@ -238,6 +239,8 @@ if is_lite:
         'sklearn', 'scikit-learn', 'pandas', 'cv2', 'numpy', 'skimage',
         'scikit-image', 'sympy', 'lxml', 'mypy', 'matplotlib'
     ])
+elif is_cpu:
+    excludes.extend(['nvidia', 'triton'])
 
 # Path normalization and inline path assertion helpers for executable packaging
 def normalize_dest_path(path_str):
