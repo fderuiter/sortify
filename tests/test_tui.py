@@ -2394,19 +2394,24 @@ def test_announcements_are_spoken_only_when_enabled(temp_workspace, speak):
 
     async def _test():
         app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
-        async with app.run_test() as pilot:
-            await pilot.pause()
-            app.join_speech_thread(timeout=1.0)
-            with (
-                patch("sys.platform", "linux"),
-                patch("shutil.which", return_value="/usr/bin/spd-say"),
-                patch("subprocess.run") as run,
-            ):
+        with (
+            patch("sys.platform", "linux"),
+            patch("shutil.which", return_value="/usr/bin/spd-say"),
+            patch("subprocess.run") as run,
+        ):
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                app.join_speech_thread(timeout=1.0)
+                run.reset_mock()
                 app.announce("Scan finished")
                 app.join_speech_thread(timeout=1.0)
-            spoken = [c.args[0] for c in run.call_args_list]
-            assert spoken == ([["/usr/bin/spd-say", "Scan finished"]] if speak else [])
-            assert "Scan finished" in str(app.query_one("#status-bar", Static).render())
+                spoken = [c.args[0] for c in run.call_args_list]
+                assert spoken == (
+                    [["/usr/bin/spd-say", "Scan finished"]] if speak else []
+                )
+                assert "Scan finished" in str(
+                    app.query_one("#status-bar", Static).render()
+                )
 
     asyncio.run(_test())
 

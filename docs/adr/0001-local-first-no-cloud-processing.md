@@ -4,7 +4,7 @@ status: accepted (recorded retroactively on 2026-10-19; the rationale is inferre
 
 # File contents never leave the machine
 
-Sortify extracts, classifies, clusters and names files entirely on the user's machine. The only outbound traffic is fetching model weights from Hugging Face (checked against `app/core/hashes_registry.py`) and the security-advisory lookup; sandboxed worker threads have `socket.connect` patched to block anything else (`app/core/shared_registry.py`), and the offline bundle lets the ML features run with no network at all. We chose this over hosted OCR/LLM APIs because users sort documents (clinical trial files, finances, PHI) that they cannot send to a third party.
+Sortify extracts, classifies, clusters and names files entirely on the user's machine. The only outbound traffic is fetching model weights from Hugging Face (checked against `app/core/hashes_registry.py`) and the security-advisory lookup; sandboxed worker threads have `socket.socket.connect` patched to block anything else (`app/core/network_guard.py`), and the offline bundle lets the ML features run with no network at all. We chose this over hosted OCR/LLM APIs because users sort documents (clinical trial files, finances, PHI) that they cannot send to a third party.
 
 ## Consequences
 

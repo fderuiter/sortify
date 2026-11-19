@@ -9,9 +9,11 @@ from scripts.generate_docs import (
     _describe_default,
     _describe_type,
     _format_key,
+    audit_adr_status,
     audit_auto_merge_policy,
     audit_handwritten_docs,
     audit_model_hosts,
+    audit_privacy_policy,
     get_handwritten_docs,
     main,
     update_security_md,
@@ -119,6 +121,143 @@ def test_update_security_md_fails_on_policy_drift(tmp_path, monkeypatch):
     with patch("scripts.validate_links.validate_url", return_value=(True, "ok", False)):
         with pytest.raises(ValueError, match="(?i)fallback policy"):
             update_security_md()
+
+
+def test_audit_privacy_policy_clean():
+    """Verify PRIVACY.md passes fail-closed SQLCipher and host directory audits."""
+    assert audit_privacy_policy() == []
+
+
+def test_audit_privacy_policy_detects_sqlite_fallback_claim(tmp_path):
+    """Verify PRIVACY.md audit fails when a plain SQLite fallback is claimed."""
+    baseline = Path("PRIVACY.md").read_text(encoding="utf-8")
+    drifted = baseline + (
+        "\nIf SQLCipher is missing, the app falls back to plain SQLite pages.\n"
+    )
+    bad_privacy = tmp_path / "PRIVACY.md"
+    bad_privacy.write_text(drifted, encoding="utf-8")
+
+    errors = audit_privacy_policy(doc_path=str(bad_privacy))
+    assert any("plain SQLite fallback" in e for e in errors)
+
+    with patch(
+        "scripts.generate_docs.get_handwritten_docs", return_value=[str(bad_privacy)]
+    ):
+        hw_errors = audit_handwritten_docs()
+        assert any("plain SQLite fallback" in e for e in hw_errors)
+
+
+def test_audit_privacy_policy_detects_missing_fail_closed_or_runtime_drift(
+    tmp_path, monkeypatch
+):
+    """Verify PRIVACY.md audit catches missing fail-closed prose or db_conn flag drift."""
+    import app.core.db_conn
+
+    baseline = Path("PRIVACY.md").read_text(encoding="utf-8")
+    no_error_claim = baseline.replace(
+        "fails closed and raises an error", "continues running"
+    )
+    bad_privacy = tmp_path / "PRIVACY.md"
+    bad_privacy.write_text(no_error_claim, encoding="utf-8")
+
+    errors = audit_privacy_policy(doc_path=str(bad_privacy))
+    assert any("fails closed and raises an error" in e for e in errors)
+
+    monkeypatch.setattr(app.core.db_conn, "_disable_pytest_win_fallback", False)
+    runtime_drift_errors = audit_privacy_policy(content=baseline, doc_path="PRIVACY.md")
+    assert any("_disable_pytest_win_fallback" in e for e in runtime_drift_errors)
+
+
+@pytest.mark.parametrize(
+    "missing_token",
+    [
+        "~/.autosorter/",
+        "AUTOSORTER_APP_DIR",
+        "~/.sortify/keys",
+        r"%APPDATA%\Sortify\keys",
+        "~/.smart-autosorter/",
+        "autosorter_sessions_<user>",
+    ],
+)
+def test_audit_privacy_policy_detects_missing_host_directory(missing_token):
+    """Verify PRIVACY.md audit reports an error when any host storage path is omitted."""
+    baseline = Path("PRIVACY.md").read_text(encoding="utf-8")
+    drifted = baseline.replace(missing_token, "REDACTED_PATH")
+    errors = audit_privacy_policy(content=drifted, doc_path="PRIVACY.md")
+    assert any(missing_token in e for e in errors)
+
+
+def test_audit_adr_status_clean():
+    """Verify all accepted ADRs pass citation and Implementation section audits."""
+    assert audit_adr_status() == []
+
+
+def test_audit_adr_0001_detects_stale_socket_sandbox_citation(tmp_path):
+    """Verify ADR 0001 fails audit if it cites shared_registry.py or omits network_guard.py."""
+    adr_path = Path("docs/adr/0001-local-first-no-cloud-processing.md")
+    baseline = adr_path.read_text(encoding="utf-8")
+    drifted = baseline.replace(
+        "app/core/network_guard.py", "app/core/shared_registry.py"
+    )
+    bad_adr_dir = tmp_path / "adr"
+    bad_adr_dir.mkdir()
+    bad_adr = bad_adr_dir / adr_path.name
+    bad_adr.write_text(drifted, encoding="utf-8")
+
+    errors = audit_adr_status(doc_path=str(bad_adr))
+    assert any("app/core/network_guard.py" in e for e in errors)
+    assert any("app/core/shared_registry.py" in e for e in errors)
+
+    with patch(
+        "scripts.generate_docs.get_handwritten_docs", return_value=[str(bad_adr)]
+    ):
+        hw_errors = audit_handwritten_docs()
+        assert any("app/core/network_guard.py" in e for e in hw_errors)
+
+
+@pytest.mark.parametrize(
+    "adr_filename",
+    [
+        "0006-one-move-ledger-replayed-for-undo.md",
+        "0007-one-sort-pipeline-behind-a-composition-root.md",
+        "0008-one-app-store-with-numbered-migrations.md",
+    ],
+)
+def test_audit_adr_status_detects_missing_or_incomplete_implementation_section(
+    tmp_path, adr_filename
+):
+    """Verify ADRs 0006, 0007, and 0008 fail audit when Implementation section is missing or omits open items."""
+    adr_path = Path("docs/adr") / adr_filename
+    baseline = adr_path.read_text(encoding="utf-8")
+    without_impl = (
+        baseline.split("## Implementation")[0]
+        + "## Considered options"
+        + baseline.split("## Considered options")[1]
+    )
+
+    bad_adr_dir = tmp_path / "adr"
+    bad_adr_dir.mkdir()
+    bad_adr = bad_adr_dir / adr_filename
+    bad_adr.write_text(without_impl, encoding="utf-8")
+
+    errors = audit_adr_status(doc_path=str(bad_adr))
+    assert any("## Implementation" in e for e in errors)
+
+    incomplete_impl = (
+        baseline.split("## Implementation")[0]
+        + "## Implementation\n\nActive: shipped.\n\n## Considered options"
+        + baseline.split("## Considered options")[1]
+    )
+    incomplete_errors = audit_adr_status(
+        content=incomplete_impl, doc_path=str(adr_path)
+    )
+    assert incomplete_errors
+
+    with patch(
+        "scripts.generate_docs.get_handwritten_docs", return_value=[str(bad_adr)]
+    ):
+        hw_errors = audit_handwritten_docs()
+        assert any("## Implementation" in e for e in hw_errors)
 
 
 def test_auto_merge_policy_bot_authors_consistency():

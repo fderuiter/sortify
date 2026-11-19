@@ -17,6 +17,10 @@ The application has no telemetry, tracking or analytics. It makes network reques
 
 ## Data Storage and Encryption
 
-Local databases are encrypted at rest. Each database is encrypted with SQLCipher, and extracted text and vectors are additionally encrypted per column. The key is stored in your operating system's keyring, or in a key file readable only by your user account when no keyring is available. If the SQLCipher library can't be loaded on a platform, the app logs a security warning and falls back to plain SQLite pages; the per-column encryption of extracted text and vectors still applies.
+Local databases are encrypted at rest. Each database is encrypted with SQLCipher, and extracted text and vectors are additionally encrypted per column. The key is stored in your operating system's keyring, or in a `0600` key file readable only by your user account when no keyring is available. If the SQLCipher library cannot be loaded or verified on a platform, Sortify fails closed and raises an error when opening a database.
 
-Undo history and session data are kept in your user profile and the system temp folder. Deleting `~/.autosorter/` (or the folder set in `AUTOSORTER_APP_DIR`) removes stored settings and caches.
+Outside the folders you sort, Sortify writes local state to the following host directories (remove all of them to delete local application data from a machine):
+- **`~/.autosorter/`** (or the directory set in `AUTOSORTER_APP_DIR`): the encrypted application store (`sortify.db`, including undo history, extracted text, vectors, and caches), configuration settings, logs, and daemon IPC files.
+- **`~/.sortify/keys`** (POSIX/macOS) or **`%APPDATA%\Sortify\keys`** (Windows): fallback encryption key files (`0600` permissions) used when no OS keyring is available, alongside per-database `secret.key` files.
+- **`~/.smart-autosorter/`**: downloaded or hydrated offline ML/ONNX model weights and bundles.
+- **`autosorter_sessions_<user>`** inside the system temporary directory (unless `AUTOSORTER_APP_DIR` redirects sessions under `<AUTOSORTER_APP_DIR>/sessions`): user-isolated (`0700`) session directories and legacy session databases.

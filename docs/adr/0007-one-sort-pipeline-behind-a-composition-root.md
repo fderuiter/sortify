@@ -12,6 +12,10 @@ Imports point one way: `app.main`, `app.cli` and `app.ui` may import `app.core`,
 
 We chose this because the scan, extract, fit, plan and move sequence is copied about ten times across `main.py`, `tui.py`, `demo.py`, `daemon.py` and `session.py` (#708), and each copy wires its own database and history paths (#709). The copies drift: the TUI's Ctrl+S scan never extracts text (#754), the daemon runs blocking sort work on its event loop (#717), Drop Zone and the daemon skip the plan preview the CLI shows, and one-off CLI flags get saved permanently (#735). Since bots write most changes and copy whatever the code already does, the boundary has to be a check, not a convention.
 
+## Implementation
+
+Active: `SortPipeline` (`plan`, `execute`, `undo`, `run`) in `app/core/pipeline.py`, managed store leases in `app/core/services.py`, `PluginRegistry` in `app/core/plugin_registry.py`, and downward `app.core` import checks in `scripts/validate_architecture.py`. Still open: `IMPORT_LAYER_RULES` in `scripts/validate_architecture.py` leaves five front-end store callers unblocked (`app/main.py`, `app/cli/ledger_cli.py`, `app/ui/tui.py`, `app/ui/modals/session.py`, and `app/ui/modals/settings.py`), and consolidating the remaining direct session construction and production test branches behind one composition root is pending.
+
 ## Considered options
 
 - **A shared helper function per step, called by each front end.** Less churn, but every front end still decides the order and the error handling, which is exactly what has drifted.
