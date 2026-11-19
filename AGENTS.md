@@ -12,6 +12,7 @@ Local, offline-first Python 3.12 file sorter (`smart-autosorter`). Read `CONTEXT
 - Dependency audit: `uv run deptry .`.
 - Vulnerability remediation: `uv run python scripts/remediate_vulnerabilities.py --stage-dir <dir>` (stage validated lockfiles and `remediation_manifest.json` read-only) and `uv run python scripts/remediate_vulnerabilities.py --publish-from <dir>` (publish signed PRs and issue alerts).
 - Architecture and import validation: `uv run python scripts/validate_architecture.py` and `uv run python scripts/validate_imports.py`.
+- Prompt manifest verification: `uv run python scripts/prompt_manifest.py verify --strict` (generate keypair with `keygen`; re-sign via `PROMPT_MANIFEST_PRIVATE_KEY` with `generate`).
 - Hooks: `uv run pre-commit install`; they run ruff, secret detection (gitleaks), workflow linting (actionlint), plus the repo validators in `scripts/`.
 
 ## Conventions

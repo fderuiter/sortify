@@ -140,15 +140,8 @@ jobs:
         uv run deptry .
 
     - name: Validate Agent Prompts Manifest
-      env:
-        PROMPT_MANIFEST_SECRET: ${{ secrets.PROMPT_MANIFEST_SECRET }}
       run: |
-        if [ -n "$PROMPT_MANIFEST_SECRET" ]; then
-          uv run python scripts/prompt_manifest.py verify
-        else
-          echo "PROMPT_MANIFEST_SECRET is not configured in this environment; running in non-strict verification mode."
-          CI="" uv run python scripts/prompt_manifest.py verify
-        fi
+        uv run python scripts/prompt_manifest.py verify --strict
 
     - name: Validate Diagram Specifications and Toolchain
       run: |

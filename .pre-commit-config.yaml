@@ -71,10 +71,10 @@ repos:
         files: '^app/config\.py$'
       - id: validate-agent-prompts
         name: Validate Agent Prompts Manifest
-        entry: uv run python scripts/prompt_manifest.py verify
+        entry: uv run python scripts/prompt_manifest.py verify --strict
         language: system
         pass_filenames: false
-        files: '^\.github/AGENTS/.*$'
+        files: '^(\.github/AGENTS/.*|scripts/prompt_manifest\.py)$'
       - id: validate-signatures
         name: Validate API and CLI Signatures
         entry: uv run python scripts/validate_signatures.py
