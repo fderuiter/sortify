@@ -483,6 +483,10 @@ jobs:
       with:
         version: "0.13.1"
         enable-cache: true
+        cache-dependency-glob: |
+          pyproject.toml
+          uv.lock
+          offline_bundle/requirements.txt
 
     - name: Set up Python
       uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
@@ -491,7 +495,11 @@ jobs:
 
     - name: Prepare Offline Bundle
       run: |
-        uv run python scripts/prepare_offline.py --cpu
+        uv run --no-project python scripts/prepare_offline.py --cpu --frozen
+
+    - name: Verify Tracked Manifest Unmodified
+      run: |
+        git diff --exit-code
 
     - name: Verify Offline Bundle Archive Exists
       run: |
@@ -502,11 +510,27 @@ jobs:
 
     - name: Install Offline Bundle
       run: |
-        uv run python scripts/install_offline.py offline-install
+        uv run --no-project python scripts/install_offline.py offline-install
+        git diff --exit-code
 
-    - name: Verify Application Import in Offline Environment
+    - name: Verify Application and ML Imports in Offline Environment
       run: |
-        .venv/bin/python -c "import app, app.main, app.config, app.core; print('Application modules successfully imported from offline bundle environment!')"
+        .venv/bin/python - <<'PY'
+        import app
+        import app.config
+        import app.core
+        import app.main
+        import easyocr
+        import llama_cpp
+        import onnxruntime
+        import torch
+        import transformers
+        from app.core.verifier import is_ml_available
+
+        assert is_ml_available(), "Expected is_ml_available() to return True"
+        assert torch.cuda.is_available() is False, "Expected CPU-only PyTorch build"
+        print("Application and ML modules successfully imported from offline bundle environment!")
+        PY
 
   required-ci:
     name: Required CI

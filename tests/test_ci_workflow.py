@@ -442,3 +442,22 @@ def test_no_ci_job_executes_duplicate_uv_sync():
         assert sync_count <= 1, (
             f"Job {job_name!r} runs 'uv sync' {sync_count} times; expected at most once"
         )
+
+
+def test_verify_offline_bundle_frozen_and_ml_verification():
+    """Verify verify-offline-bundle validates the frozen manifest, checks git diff, and tests ML imports."""
+    workflow = _load_ci_workflow()
+    jobs = workflow.get("jobs", {})
+    assert "verify-offline-bundle" in jobs
+    assert "verify-offline-bundle" in _needs_set(jobs["required-ci"])
+
+    steps = jobs["verify-offline-bundle"].get("steps", [])
+    run_scripts = "\n".join(s.get("run", "") for s in steps)
+
+    assert "scripts/prepare_offline.py --cpu --frozen" in run_scripts
+    assert "git diff --exit-code" in run_scripts
+    assert "scripts/install_offline.py offline-install" in run_scripts
+    for mod in ("torch", "easyocr", "onnxruntime", "transformers", "llama_cpp"):
+        assert mod in run_scripts, f"Missing '{mod}' import in verify-offline-bundle"
+    assert "is_ml_available()" in run_scripts
+    assert "torch.cuda.is_available()" in run_scripts
