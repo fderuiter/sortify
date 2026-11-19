@@ -123,9 +123,10 @@ In the TUI, `[Ctrl+Y]` opens the history view.
 View settings with `smart-autosorter config --show`, and change one with `config --set KEY VALUE`. Settings are stored in `~/.autosorter/settings.json`; command-line flags override them for a single run. In the TUI, `[Ctrl+O]` opens the settings dialog.
 
 ### Exclusion list (stop words)
-Stop words are common terms (e.g. 'the', 'and', 'for') ignored when analyzing document text. They don't filter file types.
+Stop words are common terms (e.g. 'the', 'and', 'for') ignored when analyzing document text. They don't filter file types. List and set settings accept either a comma-separated string or a JSON array:
 ```bash
 smart-autosorter config --set STOP_WORDS "word1,word2,word3"
+smart-autosorter config --set STOP_WORDS '["word1", "word2", "word3"]'
 ```
 
 ### Cleaning up empty folders
@@ -137,6 +138,7 @@ smart-autosorter config --set CLEANUP_EMPTY_FOLDERS true
 ### AI consent
 ```bash
 smart-autosorter config --set AI_CONSENT_GRANTED true
+smart-autosorter config --set AI_CONSENT_GRANTED null
 ```
 
 ## Rule Migration and Export

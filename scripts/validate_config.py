@@ -50,6 +50,114 @@ def validate_build_system_config():
         sys.exit(1)
 
 
+EXPECTED_POLICY_TYPES = {
+    "keyword",
+    "pattern",
+    "override",
+    "action",
+    "compliance",
+    "unarchive",
+}
+EXPECTED_POLICY_ACTIONS = {
+    "archive",
+    "retain",
+    "quarantine",
+    "redact",
+    "unarchive",
+}
+EXPECTED_POST_UNARCHIVE_ACTIONS = {
+    "delete",
+    "remove",
+    "cleanup",
+    "move",
+    "archive",
+    "relocate",
+    "retain",
+    "keep",
+}
+
+
+def _resolve_schema_ref(schema: dict, subschema: dict) -> dict:
+    """Resolve a local JSON Schema $ref against top-level $defs if present."""
+    ref = subschema.get("$ref")
+    if isinstance(ref, str) and ref.startswith("#/$defs/"):
+        def_name = ref[len("#/$defs/") :]
+        return schema.get("$defs", {}).get(def_name, subschema)
+    return subschema
+
+
+def validate_schema_completeness(schema: dict) -> None:
+    """Verify that every Settings property defines a description and POLICIES items are typed."""
+    properties = schema.get("properties", {})
+    if not properties:
+        raise ValueError("Configuration schema contains no properties.")
+
+    missing_descriptions = [
+        key
+        for key, prop in properties.items()
+        if not isinstance(prop.get("description"), str)
+        or not prop["description"].strip()
+    ]
+    if missing_descriptions:
+        raise ValueError(
+            "Configuration schema is missing descriptions for properties: "
+            + ", ".join(sorted(missing_descriptions))
+        )
+
+    policies_prop = properties.get("POLICIES")
+    if not isinstance(policies_prop, dict) or policies_prop.get("type") != "array":
+        raise ValueError("Configuration schema must define 'POLICIES' as an array.")
+
+    items_schema = _resolve_schema_ref(schema, policies_prop.get("items", {}))
+    item_props = items_schema.get("properties")
+    if not isinstance(item_props, dict):
+        raise ValueError(
+            "Configuration schema 'POLICIES.items' must define typed object properties."
+        )
+
+    required_keys = set(items_schema.get("required", []))
+    expected_required = {"type", "expression", "target_path", "priority"}
+    if not expected_required.issubset(required_keys):
+        raise ValueError(
+            f"POLICIES.items required keys {sorted(required_keys)} missing "
+            f"{sorted(expected_required - required_keys)}."
+        )
+
+    expected_optional = {"halting", "enabled", "action", "post_unarchive_action"}
+    missing_optional = expected_optional - set(item_props.keys())
+    if missing_optional:
+        raise ValueError(
+            f"POLICIES.items properties missing optional keys: {sorted(missing_optional)}."
+        )
+
+    type_enum = set(
+        _resolve_schema_ref(schema, item_props.get("type", {})).get("enum", [])
+    )
+    if type_enum != EXPECTED_POLICY_TYPES:
+        raise ValueError(
+            f"POLICIES.items.type enum {sorted(type_enum)} does not match {sorted(EXPECTED_POLICY_TYPES)}."
+        )
+
+    action_enum = set(
+        _resolve_schema_ref(schema, item_props.get("action", {})).get("enum", [])
+    )
+    if action_enum != EXPECTED_POLICY_ACTIONS:
+        raise ValueError(
+            f"POLICIES.items.action enum {sorted(action_enum)} does not match {sorted(EXPECTED_POLICY_ACTIONS)}."
+        )
+
+    post_enum = set(
+        _resolve_schema_ref(schema, item_props.get("post_unarchive_action", {})).get(
+            "enum", []
+        )
+    )
+    if post_enum != EXPECTED_POST_UNARCHIVE_ACTIONS:
+        raise ValueError(
+            f"POLICIES.items.post_unarchive_action enum {sorted(post_enum)} does not match "
+            f"{sorted(EXPECTED_POST_UNARCHIVE_ACTIONS)}."
+        )
+
+
 def generate_config_schema() -> dict:
     """Generate normalized JSON schema for application Settings."""
     from app.config import Settings
@@ -77,6 +185,7 @@ def sync_config_schema(schema_path: Path | None = None) -> bool:
         schema_path = repo_root / "app" / "config_schema.json"
 
     schema = generate_config_schema()
+    validate_schema_completeness(schema)
 
     existing_schema = None
     if schema_path.exists():

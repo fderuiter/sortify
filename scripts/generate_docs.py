@@ -22,6 +22,37 @@ def generate_tutorial_docs():
     tutorials_dir.mkdir(parents=True, exist_ok=True)
 
 
+def _init_defines_dunder_all(source_path: str) -> bool:
+    """Return True if an __init__.py file defines `__all__` at module scope."""
+    import ast
+
+    try:
+        with open(source_path, "r", encoding="utf-8") as f:
+            tree = ast.parse(f.read(), filename=source_path)
+    except Exception:
+        return False
+
+    for node in tree.body:
+        if isinstance(node, ast.Assign):
+            if any(
+                isinstance(target, ast.Name) and target.id == "__all__"
+                for target in node.targets
+            ):
+                return True
+        elif isinstance(node, (ast.AnnAssign, ast.AugAssign)):
+            if isinstance(node.target, ast.Name) and node.target.id == "__all__":
+                return True
+    return False
+
+
+def _module_parts_for_doc_path(file_path: str) -> tuple[str, ...]:
+    """Return dotted module path parts for a Python file or package __init__.py."""
+    path_obj = Path(file_path)
+    if path_obj.name == "__init__.py":
+        return path_obj.parent.parts
+    return path_obj.with_suffix("").parts
+
+
 def generate_api_docs():
     """Generate API reference markdown from python modules."""
     app_dir = "app"
@@ -37,21 +68,22 @@ def generate_api_docs():
         )
         f.write('<a id="appcoresanitizer"></a>\n\n')
 
-        # Find all python files except ui and binaries
+        # Find all python files except ui and binaries; include __init__.py modules defining __all__
         py_files = glob.glob(os.path.join(app_dir, "**", "*.py"), recursive=True)
         py_files = [
             p
             for p in py_files
-            if not p.endswith("__init__.py")
+            if (not p.endswith("__init__.py") or _init_defines_dunder_all(p))
             and "/ui/" not in p
             and "\\ui\\" not in p
+            and not p.endswith(("app/ui/__init__.py", "app\\ui\\__init__.py"))
             and "/binaries/" not in p
             and "\\binaries\\" not in p
         ]
-        py_files.sort(key=lambda p: Path(p).parts)
+        py_files.sort(key=_module_parts_for_doc_path)
 
         for file_path in py_files:
-            parts = Path(file_path).with_suffix("").parts
+            parts = _module_parts_for_doc_path(file_path)
             module_name = ".".join(parts)
             f.write(f"## `{module_name}`\n\n")
             f.write(f"::: {module_name}\n\n")
@@ -220,7 +252,7 @@ def _describe_type(annotation) -> str:
         text = str(annotation)
     else:
         text = getattr(annotation, "__name__", None) or str(annotation)
-    text = text.replace("typing.", "")
+    text = text.replace("typing.", "").replace("app.config.", "")
     # Annotated item types (e.g. constrained strings) add noise, not meaning:
     # keep the base type and drop the bracketed metadata.
     while "Annotated[" in text:
@@ -307,10 +339,30 @@ def generate_admin_guide():
             "2. **Local Settings File (`~/.autosorter/settings.json`):** Parameters defined here override environment variables and default properties.\n"
         )
         f.write(
-            "3. **Environment Variables (or the app directory's `.env` file):** Only variables prefixed with `SORTIFY_` apply, for example `SORTIFY_MAX_FOLDERS=9`. A `.env` file is read only from the app directory (`~/.autosorter/.env`, or `$AUTOSORTER_APP_DIR/.env`), never from the current working directory. Values from the environment apply to each run but are not written to `settings.json`, so they keep working until the setting is changed explicitly.\n"
+            "3. **Environment Variables (or the app directory's `.env` file):** Configuration schema fields in `Settings` use the `SORTIFY_` prefix (for example `SORTIFY_MAX_FOLDERS=9`), while dedicated runtime control variables (such as `SORTIFY_AI_CONSENT`, `AUTOSORTER_APP_DIR`, and `NON_INTERACTIVE`; see [Runtime Environment Variables](#runtime-environment-variables)) control process startup, UI guards, and offline model paths. A `.env` file is read only from the app directory (`~/.autosorter/.env`, or `$AUTOSORTER_APP_DIR/.env`), never from the current working directory. Values from the environment apply to each run but are not written to `settings.json`, so they keep working until the setting is changed explicitly.\n"
         )
         f.write(
             "4. **Default Parameters:** Base defaults are used as fallbacks if a setting is not explicitly defined in the local file or environment.\n\n"
+        )
+
+        f.write("### Runtime Environment Variables\n\n")
+        f.write(
+            "In addition to `SORTIFY_<SETTING>` overrides for every field in `Settings`, the runtime inspects the following environment variables:\n\n"
+            "| Variable | Source | Behavior |\n"
+            "|---|---|---|\n"
+            "| `SORTIFY_<SETTING>` | `app/config.py` | Per-run override for any `Settings` schema field (for example `SORTIFY_MAX_FOLDERS=9` or `SORTIFY_MAX_WORKERS=8`), read from the environment or `$AUTOSORTER_APP_DIR/.env`. |\n"
+            "| `SORTIFY_AI_CONSENT` | `app/main.py`, `app/ui/tui.py` | Per-run AI consent override (`1`/`true`/`yes`/`on` grants consent; `0`/`false`/`no`/`off` declines consent). CLI `--accept-ai-consent` and `--decline-ai-consent` flags take higher precedence. |\n"
+            "| `AUTOSORTER_APP_DIR` | `app/config.py`, `app/core/path_utils.py` | Overrides the application configuration and state directory (default `~/.autosorter`), relocating `settings.json`, `.env`, SQLite databases, and logs. |\n"
+            "| `NON_INTERACTIVE` | `app/main.py`, `app/ui/tui.py` | When set to `1`, `true`, `yes`, or `on`, enables headless non-interactive mode, bypasses the onboarding wizard, and defaults unset `AI_CONSENT_GRANTED` to `False`. |\n"
+            "| `NO_COLOR` | `app/main.py` | When non-empty, disables ANSI color codes and rich terminal styling across CLI output (equivalent to `--no-color`). |\n"
+            "| `FORCE_TUI` | `app/ui/tui.py` | When non-empty, bypasses the interactive TTY check (`isatty()`) when launching the Textual TUI in non-TTY streams. |\n"
+            "| `IGNORE_TERMINAL_SIZE` | `app/ui/tui.py` | When non-empty, bypasses the minimum `80x24` terminal dimension check during TUI startup. |\n"
+            "| `LITE_BUILD` | `app/core/verifier.py` | When set to `1`, marks packaged or sandboxed execution as a lite distribution so missing optional ML dependencies (`torch`, `easyocr`) fall back cleanly instead of failing startup verification. |\n"
+            "| `EASYOCR_MODULE_PATH` | `app/core/verifier.py`, `app/core/model_registry.py` | Custom base directory containing the `model/` folder for offline EasyOCR weights (`craft_mlt_25k.pth`, `english_g2.pth`) when `offline_bundle/easyocr` is absent. |\n"
+            "| `SMART_AUTOSORTER_MODELS_ZIP` | `app/core/offline_loader.py` | Explicit file path override pointing to a sidecar `smart-autosorter-models.zip` offline model archive. |\n"
+            "| `MODELS_ZIP_PATH` | `app/core/offline_loader.py` | Alternate environment variable pointing to a sidecar `smart-autosorter-models.zip` offline model archive. |\n"
+            "| `<MODEL_ID>_PATH` / `MODEL_PATH` | `app/core/offline_loader.py` | Highest-precedence directory override for resolving a specific offline model bundle (for example `GENERATIVE_NAMING_PATH` or `MODEL_PATH`). |\n"
+            "| `DEBUG` / `PROMPT_DUMP_FILE` | `app/core/analyzer_strategies.py` | Diagnostic controls enabling debug mode (`1`/`true`/`yes`/`on`) and optional generative prompt dumping when `DEBUG` is active. |\n\n"
         )
 
         f.write("## Dynamic Configuration Saves\n\n")
@@ -325,16 +377,27 @@ def generate_admin_guide():
         )
         f.write("### Rule Syntax & Types\n\n")
         f.write(
-            "Compliance policies categorize and sort documents based on three rule types:\n\n"
-        )
-        f.write(
-            "- **Keyword Rules**: Search for files containing a specific word or phrase anywhere in their text contents (for example, 'invoice' or 'billing').\n"
-        )
-        f.write(
-            "- **Pattern Rules**: Match files using structured formatting or text sequences (such as a standard format of letters followed by numbers) to match specific document types.\n"
-        )
-        f.write(
-            "- **Override Rules**: Check for exact text matches, taking precedent to bypass standard classification rules.\n\n"
+            "Each entry in `POLICIES` follows the typed `PolicyRule` schema in `app/config_schema.json`:\n\n"
+            "- **Required keys**: `type` (`str`), `expression` (non-empty `str`), `target_path` (relative `str`), and `priority` (`int`).\n"
+            "- **Optional keys**: `halting` (`bool`, default `false`), `enabled` (`bool`, default `true`), `action` (`str`), and `post_unarchive_action` (`str`, with legacy aliases `post_action` and `archive_action` accepted when loading existing `settings.json` files).\n\n"
+            "Compliance and routing policies support all **6** rule `type` values:\n\n"
+            "- **`keyword`**: Case-insensitive substring match against the filename and extracted document text (or the filename alone when a preliminary status match is present; expressions `'secret'` and `'credential'` invoke credential/secret scanning across the path and text).\n"
+            "- **`pattern`**: Case-insensitive substring match against the **lowercase filename (`os.path.basename(file_path).lower()`) only**—does not inspect extracted document text.\n"
+            "- **`override`**: Case-insensitive match against the **lowercase filename or full file path (`file_path.lower()`)**—does not inspect extracted document text, allowing deterministic path-level routing overrides.\n"
+            "- **`action`**: Lifecycle directive rule evaluated via case-insensitive substring matching against the filename and extracted document text.\n"
+            "- **`compliance`**: Regulatory and sensitivity rule evaluated via case-insensitive substring matching against the filename and extracted document text (plus secret detection when `expression` is `'secret'` or `'credential'`).\n"
+            "- **`unarchive`**: Archive ingestion rule evaluated via case-insensitive substring matching against the filename and extracted document text to trigger archive extraction workflows.\n\n"
+            "### Lifecycle Actions & Post-Unarchive Directives\n\n"
+            "When a policy rule specifies an optional `action` key (`PolicyEngine.SUPPORTED_ACTIONS`), it must be one of the **5** supported lifecycle actions:\n\n"
+            "- **`archive`**: Route or package matching files into designated archive storage.\n"
+            "- **`retain`**: Keep matching files under retention governance at the target destination.\n"
+            "- **`quarantine`**: Intercept and stage matching files in compliance quarantine for forensic review before release.\n"
+            "- **`redact`**: Flag or process matching files through PII/secret redaction handling.\n"
+            "- **`unarchive`**: Safely extract supported `.zip` archives into `target_path` with zip-bomb/size safety checks and enqueue extracted child files for sorting.\n\n"
+            "When `action` is set to `'unarchive'`, `post_unarchive_action` controls how the original archive file is handled after extraction and supports **8** values across three behaviors:\n\n"
+            "- **Delete source archive** (default): `'delete'`, `'remove'`, `'cleanup'`.\n"
+            "- **Relocate source archive** (for example to `post_unarchive_target`): `'move'`, `'archive'`, `'relocate'`.\n"
+            "- **Retain source archive in place**: `'retain'`, `'keep'`.\n\n"
         )
 
         f.write("### Sequential Execution & Priority\n\n")
@@ -423,25 +486,57 @@ def generate_admin_guide():
             "- **CLI Guidance & Exit Code 2**: If no target directory path or subcommand is supplied (e.g. `python3 app/main.py < /dev/null`), the application outputs CLI usage guidance to `sys.stderr` and exits cleanly with exit code `2`. This prevents non-interactive streams from hanging on terminal UI initialization.\n"
         )
         f.write(
-            "- **Explicit Interface Flag Overrides**: If explicit UI flags (`--gui`, `--tui`, `--demo`, `--daemon`, `FORCE_GUI`) are invoked, the requested interface launcher is executed as explicitly requested.\n\n"
+            "- **Explicit Interface Flag Overrides**: If explicit UI or daemon flags (`--tui`, `--interactive`, `--demo`, `--daemon`) are invoked, the requested interface or background service launcher is executed as explicitly requested.\n\n"
         )
 
-        subparsers_action = None
-        for action in main_parser._actions:
-            if isinstance(action, argparse._SubParsersAction):
-                subparsers_action = action
-                break
+        f.write("#### Structured JSON Output, Error Payloads, and Exit Codes\n\n")
+        f.write(
+            "Automation pipelines invoking CLI commands with `--json` can rely on deterministic stream separation, error envelopes, and exit codes:\n\n"
+            "- **Stream Routing (`stdout` vs `stderr`)**: When `--json` is passed, **both** structured command results and structured error payloads (`emit_cli_error(..., json_mode=True)` and `SortifyArgumentParser.error()`) are emitted to **`sys.stdout`** as UTF-8 JSON objects so callers can parse `stdout` unconditionally. Without `--json`, human-readable errors prefixed with `Error: ` and progress messages are written to **`sys.stderr`**.\n"
+            '- **Error Payload Schema**: JSON errors emit `{"status": "error", "message": "<clean message>"}` (stripping any duplicate leading `\'Error: \'` prefix) plus command-specific context fields when available (such as `"job_id"` when `quarantine inspect` cannot find a record).\n'
+            "- **Exit Codes**:\n"
+            "  - `0`: Command succeeded (including `quarantine` batch commands where `status` is `'success'` or `'partial_success'`).\n"
+            "  - `1`: Operational, validation, or runtime failure (missing directories, invalid configuration values, missing records, or `quarantine` batch runs where all jobs failed).\n"
+            "  - `2`: CLI usage or argument validation failure (unrecognized flags, invalid option choices, missing nested `ledger` or `quarantine` subcommand, missing required `<job_id>` / `--job-ids`, or invoking `smart-autosorter` with no target path or subcommand on a non-interactive `stdin` stream). Passing `--json` anywhere on the command line formats exit-code `2` parser errors as JSON on `sys.stdout`.\n"
+            '- **Quarantine Batch Status Envelope (`quarantine process`, `release`, `dismiss`)**: Batch commands return `{"status": "<batch_status>", "count": N, "results": [...]}` (plus top-level convenience keys `"job_id"` and `"status_code"` when `count == 1`), where `status` is one of:\n'
+            "  - `'success'`: Every requested job ID completed its target transition (`exit code 0`).\n"
+            "  - `'partial_success'`: At least one job succeeded and at least one job failed (`exit code 0`).\n"
+            "  - `'failed'`: Zero requested jobs succeeded (`exit code 1`).\n\n"
+        )
 
-        if subparsers_action:
-            f.write("#### Subcommands\n\n")
-            for sub_name, sub_parser in subparsers_action.choices.items():
-                f.write(f"##### `{sub_name}`\n```text\n")
+        def _write_subparsers_docs(
+            parser_obj: argparse.ArgumentParser,
+            prefix: str = "",
+            heading_level: int = 5,
+        ) -> None:
+            nested_action = None
+            for act in parser_obj._actions:
+                if isinstance(act, argparse._SubParsersAction):
+                    nested_action = act
+                    break
+            if not nested_action:
+                return
+            hashes = "#" * min(heading_level, 6)
+            for sub_name, sub_parser in nested_action.choices.items():
+                full_cmd = f"{prefix} {sub_name}".strip()
+                f.write(f"{hashes} `{full_cmd}`\n```text\n")
                 f.write(sub_parser.format_help().replace("\r\n", "\n"))
                 f.write("```\n\n")
-                if sub_name == "ledger":
+                if full_cmd == "ledger":
                     f.write(
                         "For comprehensive operational procedures, headless transaction reconciliation workflows, state transition handling, and stale daemon lock cleanup, refer to the dedicated [Ledger Reconciliation Runbook](runbooks/ledger_reconciliation.md).\n\n"
                     )
+                _write_subparsers_docs(
+                    sub_parser, prefix=full_cmd, heading_level=heading_level + 1
+                )
+
+        has_top_subparsers = any(
+            isinstance(action, argparse._SubParsersAction)
+            for action in main_parser._actions
+        )
+        if has_top_subparsers:
+            f.write("#### Subcommands\n\n")
+            _write_subparsers_docs(main_parser, prefix="", heading_level=5)
 
         # sandbox_cli.py
         f.write("### `sandbox_cli.py`\n")

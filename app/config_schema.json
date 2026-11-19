@@ -1,23 +1,109 @@
 {
+  "$defs": {
+    "PolicyRule": {
+      "additionalProperties": true,
+      "description": "Typed dictionary schema for unified compliance and routing policy rules.",
+      "properties": {
+        "type": {
+          "description": "Rule evaluation strategy: 'keyword', 'action', 'compliance', or 'unarchive' match filenames and document text; 'pattern' matches lowercase filenames only; 'override' matches lowercase filenames or full file paths.",
+          "enum": [
+            "keyword",
+            "pattern",
+            "override",
+            "action",
+            "compliance",
+            "unarchive"
+          ],
+          "title": "Type",
+          "type": "string"
+        },
+        "expression": {
+          "description": "Non-empty case-insensitive substring or pattern expression to match.",
+          "minLength": 1,
+          "title": "Expression",
+          "type": "string"
+        },
+        "target_path": {
+          "description": "Relative destination folder path validated against path safety rules (no leading slashes, '..' traversal segments, OS-reserved device names, illegal path characters, or trailing spaces/periods; may be empty when an action handles placement).",
+          "title": "Target Path",
+          "type": "string"
+        },
+        "priority": {
+          "description": "Integer evaluation priority; rules execute sequentially from highest priority to lowest.",
+          "title": "Priority",
+          "type": "integer"
+        },
+        "halting": {
+          "description": "When true, stop evaluating lower-priority rules immediately if this rule does not match.",
+          "title": "Halting",
+          "type": "boolean"
+        },
+        "enabled": {
+          "description": "Whether this policy rule is active during evaluation (defaults to true when omitted).",
+          "title": "Enabled",
+          "type": "boolean"
+        },
+        "action": {
+          "description": "Optional lifecycle directive executed when the policy matches.",
+          "enum": [
+            "archive",
+            "retain",
+            "quarantine",
+            "redact",
+            "unarchive"
+          ],
+          "title": "Action",
+          "type": "string"
+        },
+        "post_unarchive_action": {
+          "description": "Source archive handling after 'unarchive' extraction: delete ('delete', 'remove', 'cleanup'), relocate ('move', 'archive', 'relocate'), or keep in place ('retain', 'keep'). Legacy aliases 'post_action' and 'archive_action' are also accepted when loading settings.json.",
+          "enum": [
+            "delete",
+            "remove",
+            "cleanup",
+            "move",
+            "archive",
+            "relocate",
+            "retain",
+            "keep"
+          ],
+          "title": "Post Unarchive Action",
+          "type": "string"
+        }
+      },
+      "required": [
+        "type",
+        "expression",
+        "target_path",
+        "priority"
+      ],
+      "title": "PolicyRule",
+      "type": "object"
+    }
+  },
   "description": "Application settings schema.",
   "properties": {
     "CONTEXTUAL_RENAMING": {
       "default": false,
+      "description": "Whether to rename sorted files using extracted document context and dates during plan generation.",
       "title": "Contextual Renaming",
       "type": "boolean"
     },
     "AI_ASSISTED_NAMING": {
       "default": false,
+      "description": "Whether to use the local generative LLM model to synthesize descriptive folder and file names (requires AI consent and the optional 'ml' extra).",
       "title": "Ai Assisted Naming",
       "type": "boolean"
     },
     "PRESERVE_HIERARCHY": {
       "default": false,
+      "description": "Whether to retain relative source subfolder structure beneath generated destination category directories.",
       "title": "Preserve Hierarchy",
       "type": "boolean"
     },
     "MAX_FOLDERS": {
       "default": 12,
+      "description": "Maximum number of category folders generated per clustering level (integer from 1 to 50 folders).",
       "exclusiveMinimum": 0,
       "maximum": 50,
       "title": "Max Folders",
@@ -25,6 +111,7 @@
     },
     "MAX_WORKERS": {
       "default": 4,
+      "description": "Maximum number of concurrent worker threads or processes used for file extraction and move operations (integer from 1 to 64 workers).",
       "exclusiveMinimum": 0,
       "maximum": 64,
       "title": "Max Workers",
@@ -32,6 +119,7 @@
     },
     "MAX_DEPTH": {
       "default": 5,
+      "description": "Maximum directory recursion depth for hierarchical clustering and folder generation (integer from 1 to 10 levels).",
       "exclusiveMinimum": 0,
       "maximum": 10,
       "title": "Max Depth",
@@ -39,6 +127,7 @@
     },
     "MAX_FEATURES": {
       "default": 3,
+      "description": "Maximum number of top TF-IDF keyword terms combined when naming generated cluster folders (integer from 1 to 10 terms).",
       "exclusiveMinimum": 0,
       "maximum": 10,
       "title": "Max Features",
@@ -46,73 +135,85 @@
     },
     "CLEANUP_EMPTY_FOLDERS": {
       "default": true,
+      "description": "Whether to automatically remove empty source subdirectories after file moves complete.",
       "title": "Cleanup Empty Folders",
       "type": "boolean"
     },
     "SPEAK_ANNOUNCEMENTS": {
       "default": false,
+      "description": "Whether to emit spoken accessibility announcements in the terminal UI when screen-reader feedback is enabled.",
       "title": "Speak Announcements",
       "type": "boolean"
     },
     "ENABLE_CHARACTER_KEY_SHORTCUTS": {
       "default": true,
+      "description": "Whether single-character keyboard shortcuts (such as 'R' to reassign) are active in the terminal UI when text inputs are not focused.",
       "title": "Enable Character Key Shortcuts",
       "type": "boolean"
     },
     "KEYWORD_RULES": {
       "additionalProperties": true,
+      "description": "Mapping of lowercase keyword strings to relative target folder paths. Target paths are validated to forbid absolute paths, '..' traversal segments, OS-reserved device names, illegal characters (<, >, :, \", |, ?, *), and trailing spaces or periods.",
       "title": "Keyword Rules",
       "type": "object"
     },
     "DISABLED_KEYWORD_RULES": {
       "additionalProperties": true,
+      "description": "Mapping of temporarily disabled keyword strings to relative target folder paths, preserving path mappings while inactive and enforcing the same relative target path validation as KEYWORD_RULES.",
       "title": "Disabled Keyword Rules",
       "type": "object"
     },
     "LEARNED_RULES": {
       "additionalProperties": true,
+      "description": "Mapping of user-corrected keyword patterns to relative target folder paths learned from interactive reassignments, validated with the same relative path rules as KEYWORD_RULES.",
       "title": "Learned Rules",
       "type": "object"
     },
     "EXTENSION_CATEGORIES": {
       "additionalProperties": true,
+      "description": "Custom mapping of category folder names to lists of file extensions or extension overrides used for fallback file-type routing.",
       "title": "Extension Categories",
       "type": "object"
     },
     "POLICIES": {
+      "description": "Ordered list of typed PolicyRule dictionaries evaluated from highest integer priority to lowest across 6 rule types ('keyword', 'pattern', 'override', 'action', 'compliance', 'unarchive'), 5 lifecycle actions ('archive', 'retain', 'quarantine', 'redact', 'unarchive'), and 8 post-unarchive actions; warns when higher-priority rules shadow lower-priority rules.",
       "items": {
-        "additionalProperties": true,
-        "type": "object"
+        "$ref": "#/$defs/PolicyRule"
       },
       "title": "Policies",
       "type": "array"
     },
     "VISUAL_TIMEOUT": {
       "default": 30,
+      "description": "Per-file timeout in seconds (> 0) for visual OCR and vision model extraction before aborting visual analysis on a document.",
       "exclusiveMinimum": 0,
       "title": "Visual Timeout",
       "type": "integer"
     },
     "IMAGE_MAX_DIMENSION": {
       "default": 1000,
+      "description": "Maximum width or height in pixels (> 0) to which images are downscaled while preserving aspect ratio prior to OCR or vision inference.",
       "exclusiveMinimum": 0,
       "title": "Image Max Dimension",
       "type": "integer"
     },
     "IMAGE_SKIP_THRESHOLD": {
       "default": 3000,
+      "description": "Dimension threshold in pixels (> 0) above which oversized images trigger pre-processing downscaling or fast-path handling.",
       "exclusiveMinimum": 0,
       "title": "Image Skip Threshold",
       "type": "integer"
     },
     "PDF_TEXT_DENSITY_THRESHOLD": {
       "default": 50,
+      "description": "Minimum average extracted character count per PDF page (>= 0 characters) below which a PDF is treated as scanned and routed to OCR fallback.",
       "minimum": 0,
       "title": "Pdf Text Density Threshold",
       "type": "integer"
     },
     "MODEL_THREADS": {
       "default": 2,
+      "description": "Number of CPU threads allocated per local ML/ONNX/GGUF model inference worker (integer from 1 to 32 threads).",
       "maximum": 32,
       "minimum": 1,
       "title": "Model Threads",
@@ -120,6 +221,7 @@
     },
     "GRAMMAR_CACHE_SIZE": {
       "default": 16,
+      "description": "Maximum number of compiled GBNF grammar definitions cached in memory for constrained generative naming (integer from 1 to 256 entries).",
       "exclusiveMinimum": 0,
       "maximum": 256,
       "title": "Grammar Cache Size",
@@ -127,11 +229,13 @@
     },
     "SNAPSHOT_RETENTION_DAYS": {
       "default": 30,
+      "description": "Number of days (> 0) to retain historical sorting session records and rollback snapshots before automatic pruning.",
       "exclusiveMinimum": 0,
       "title": "Snapshot Retention Days",
       "type": "integer"
     },
     "PROTECTED_PATHS": {
+      "description": "List of absolute literal directory paths protected from scanning, moving, or modification. Relative paths and wildcard or glob characters ('*', '?', '[', ']') are rejected.",
       "items": {
         "type": "string"
       },
@@ -143,6 +247,7 @@
         "CRITICAL",
         "HIGH"
       ],
+      "description": "Sensitivity severity ratings (such as 'CRITICAL' and 'HIGH') that automatically route detected files into compliance quarantine staging.",
       "items": {
         "type": "string"
       },
@@ -151,27 +256,32 @@
     },
     "QUARANTINE_DIR_NAME": {
       "default": "_Compliance_Quarantine",
+      "description": "Directory name created inside the workspace for staging quarantined compliance files.",
       "title": "Quarantine Dir Name",
       "type": "string"
     },
     "PROXY": {
       "default": "",
+      "description": "Outbound network proxy URI used for model downloads and security advisory checks. Kept cleartext in memory during runtime, encrypted at rest in settings.json with an 'enc:' prefix (auto-migrating legacy plaintext values), and replaced with '<DECRYPTION_FAILED>' in memory if decryption fails without overwriting persisted ciphertext.",
       "title": "Proxy",
       "type": "string"
     },
     "SECURITY_ADVISORY_ENDPOINT": {
       "default": "https://security.huggingface.co/api/advisories",
+      "description": "HTTPS endpoint queried with model repository IDs and SHA-256 digests to check for published model security advisories before loading weights.",
       "title": "Security Advisory Endpoint",
       "type": "string"
     },
     "SECURITY_ADVISORY_CACHE_TTL": {
       "default": 3600,
+      "description": "Time-to-live in seconds (>= 1 second) for cached security advisory responses before re-querying the advisory endpoint.",
       "minimum": 1,
       "title": "Security Advisory Cache Ttl",
       "type": "integer"
     },
     "SECURITY_ADVISORY_FALLBACK_POLICY": {
       "default": "strict",
+      "description": "Fallback behavior when the security advisory endpoint is unreachable: 'strict' refuses to load unverified models, whereas 'permissive' allows loading.",
       "enum": [
         "strict",
         "permissive"
@@ -181,22 +291,26 @@
     },
     "OCR_GPU_ENABLED": {
       "default": false,
+      "description": "Whether to enable GPU hardware acceleration for EasyOCR and vision extraction workloads when a compatible accelerator is available.",
       "title": "Ocr Gpu Enabled",
       "type": "boolean"
     },
     "AUDIO_GPU_ENABLED": {
       "default": false,
+      "description": "Whether to enable GPU hardware acceleration for Whisper audio transcription workloads.",
       "title": "Audio Gpu Enabled",
       "type": "boolean"
     },
     "AUDIO_MAX_WORKERS": {
       "default": 2,
+      "description": "Maximum number of concurrent worker processes dedicated to audio transcription tasks (integer from 1 to 64 workers; aliased as MAX_AUDIO_WORKERS).",
       "exclusiveMinimum": 0,
       "maximum": 64,
       "title": "Audio Max Workers",
       "type": "integer"
     },
     "PLUGINS": {
+      "description": "List of enabled plugin Python module identifiers. Entries must be valid dotted Python identifiers without path or shell characters; explicit dotted module paths must start with 'app.plugins.' or 'sortify_plugin_', and Python standard library or system modules are forbidden.",
       "items": {
         "type": "string"
       },
@@ -205,11 +319,13 @@
     },
     "OCR_LANGUAGES": {
       "default": "en",
+      "description": "Comma-separated list of non-empty OCR language codes (alphanumeric characters and underscores only, such as 'en' or 'ch_sim,en').",
       "title": "Ocr Languages",
       "type": "string"
     },
     "VISION_ENGINE": {
       "default": "easyocr",
+      "description": "Visual text and caption extraction backend: 'easyocr' for standard OCR or 'florence-2' for vision-language document understanding.",
       "enum": [
         "easyocr",
         "florence-2"
@@ -219,6 +335,7 @@
     },
     "CONFLICT_POLICY": {
       "default": "rename",
+      "description": "Resolution strategy when a destination file already exists: 'skip' leaves the source untouched, 'rename' appends a numeric suffix, and 'overwrite' replaces the target.",
       "enum": [
         "skip",
         "rename",
@@ -229,21 +346,25 @@
     },
     "SORTING_STRATEGY": {
       "default": "default",
+      "description": "Document clustering and taxonomy strategy identifier (for example 'default' TF-IDF/embedding clustering, 'generative', 'clinical_tmf', or 'clinical_isf').",
       "title": "Sorting Strategy",
       "type": "string"
     },
     "CLINICAL_SMART_RENAMING": {
       "default": false,
+      "description": "Whether clinical sorting strategies standardize filenames using Trial Master File (TMF/ISF) study, artifact, and date metadata.",
       "title": "Clinical Smart Renaming",
       "type": "boolean"
     },
     "CLINICAL_GENERATE_AUDIT_REPORT": {
       "default": true,
+      "description": "Whether clinical compliance runs automatically generate a regulatory audit trail report upon completion.",
       "title": "Clinical Generate Audit Report",
       "type": "boolean"
     },
     "COHERENCE_THRESHOLD": {
       "default": 0.5,
+      "description": "Minimum semantic similarity coherence score (float from 0.0 to 1.0) required to group documents into a topic cluster before falling back to Miscellaneous.",
       "maximum": 1.0,
       "minimum": 0.0,
       "title": "Coherence Threshold",
@@ -251,54 +372,63 @@
     },
     "DEBOUNCE_DELAY": {
       "default": 0.6,
+      "description": "Initial filesystem event debounce delay in seconds (> 0.0 and must be <= MAX_DEBOUNCE_DELAY) before the background daemon processes newly modified files.",
       "exclusiveMinimum": 0.0,
       "title": "Debounce Delay",
       "type": "number"
     },
     "MAX_DEBOUNCE_DELAY": {
       "default": 5.0,
+      "description": "Maximum ceiling in seconds (> 0.0 and must be >= DEBOUNCE_DELAY) that bursty filesystem events can defer daemon batch processing.",
       "exclusiveMinimum": 0.0,
       "title": "Max Debounce Delay",
       "type": "number"
     },
     "MAX_QUEUE_CAPACITY": {
       "default": 1000,
+      "description": "Maximum number of pending filesystem events (> 0 items) buffered in the background daemon priority queue before backpressure applies.",
       "exclusiveMinimum": 0,
       "title": "Max Queue Capacity",
       "type": "integer"
     },
     "DEDUP_WINDOW": {
       "default": 0.5,
+      "description": "Time window in seconds (>= 0.0 seconds) used by the daemon watcher to coalesce duplicate filesystem events for the same path.",
       "minimum": 0.0,
       "title": "Dedup Window",
       "type": "number"
     },
     "RECONCILIATION_INTERVAL": {
       "default": 30.0,
+      "description": "Periodic interval in seconds (> 0.0 seconds) between background daemon sweeps for missed files and incomplete ledger transactions.",
       "exclusiveMinimum": 0.0,
       "title": "Reconciliation Interval",
       "type": "number"
     },
     "WORKER_TIMEOUT": {
       "default": 300.0,
+      "description": "Maximum execution time in seconds (>= 0.0 seconds) allowed for background extraction, clustering, or forensic quarantine scan workers before timing out.",
       "minimum": 0.0,
       "title": "Worker Timeout",
       "type": "number"
     },
     "TABULAR_MAX_SHEETS": {
       "default": 10,
+      "description": "Maximum number of workbook sheets (> 0 sheets) sampled per spreadsheet during tabular text extraction (aliased as MAX_SPREADSHEET_SHEETS).",
       "exclusiveMinimum": 0,
       "title": "Tabular Max Sheets",
       "type": "integer"
     },
     "TABULAR_MAX_ROWS": {
       "default": 10000,
+      "description": "Maximum number of rows (> 0 rows) read per sheet or CSV file during tabular text extraction (aliased as MAX_SPREADSHEET_ROWS).",
       "exclusiveMinimum": 0,
       "title": "Tabular Max Rows",
       "type": "integer"
     },
     "TABULAR_MAX_CHARACTERS": {
       "default": 50000,
+      "description": "Maximum total extracted character budget (> 0 characters) retained per tabular document (aliased as MAX_SPREADSHEET_CHARACTERS).",
       "exclusiveMinimum": 0,
       "title": "Tabular Max Characters",
       "type": "integer"
@@ -309,6 +439,7 @@
         ".tmp",
         ".download"
       ],
+      "description": "List of temporary or incomplete file extensions skipped during scanning and daemon watching (non-empty strings normalized with a leading '.', such as '.tmp').",
       "items": {
         "minLength": 1,
         "pattern": "^\\..+",
@@ -327,10 +458,12 @@
         }
       ],
       "default": null,
+      "description": "User consent state for local AI model downloads and semantic vector indexing: true (granted), false (declined; unloads models and scrubs vectors), or null (not yet prompted).",
       "title": "Ai Consent Granted"
     },
     "LOG_FILE": {
       "default": "autosorter.log",
+      "description": "Filesystem path to the primary rotating application log file (non-empty string; defaults to 'autosorter.log' inside the app directory).",
       "minLength": 1,
       "title": "Log File",
       "type": "string"
@@ -397,6 +530,7 @@
         "xlsx",
         "your"
       ],
+      "description": "Set of common noise and file-extension tokens excluded during TF-IDF keyword extraction and cluster folder naming.",
       "items": {
         "type": "string"
       },

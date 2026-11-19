@@ -1955,3 +1955,94 @@ def test_user_guide_rename_shortcut_and_tui_bindings():
     }
     assert bindings_by_key.get("ctrl+r") == "open_active_rules"
     assert bindings_by_key.get("f2") == "rename_node"
+
+
+def test_admin_guide_field_descriptions_policies_and_env_vars():
+    """Verify docs/admin_guide.md documents all 53 field descriptions, 6 policy types, 5 actions, 8 post-unarchive values, and runtime env vars."""
+    from app.config import Settings
+    from app.core.policy_engine import PolicyEngine
+
+    admin_content = Path("docs/admin_guide.md").read_text(encoding="utf-8")
+
+    for name, field_info in Settings.model_fields.items():
+        assert f"### `{name}`" in admin_content
+        assert field_info.description in admin_content
+
+    for policy_type in (
+        "keyword",
+        "pattern",
+        "override",
+        "action",
+        "compliance",
+        "unarchive",
+    ):
+        assert f"- **`{policy_type}`**:" in admin_content
+
+    assert (
+        "lowercase filename (`os.path.basename(file_path).lower()`) only"
+        in admin_content
+    )
+    assert "lowercase filename or full file path (`file_path.lower()`)" in admin_content
+
+    for action_name in PolicyEngine.SUPPORTED_ACTIONS:
+        assert f"- **`{action_name}`**:" in admin_content
+
+    for post_val in (
+        "delete",
+        "remove",
+        "cleanup",
+        "move",
+        "archive",
+        "relocate",
+        "retain",
+        "keep",
+    ):
+        assert f"'{post_val}'" in admin_content
+
+    for env_var in (
+        "SORTIFY_AI_CONSENT",
+        "AUTOSORTER_APP_DIR",
+        "NON_INTERACTIVE",
+        "NO_COLOR",
+        "FORCE_TUI",
+        "IGNORE_TERMINAL_SIZE",
+        "LITE_BUILD",
+        "EASYOCR_MODULE_PATH",
+        "SMART_AUTOSORTER_MODELS_ZIP",
+        "MODELS_ZIP_PATH",
+        "MODEL_PATH",
+        "PROMPT_DUMP_FILE",
+    ):
+        assert f"`{env_var}`" in admin_content
+
+
+def test_admin_guide_nested_subcommands_json_contracts_and_no_gui():
+    """Verify docs/admin_guide.md renders nested ledger/quarantine subcommands, JSON contracts, and omits removed GUI flags."""
+    admin_content = Path("docs/admin_guide.md").read_text(encoding="utf-8")
+
+    for sub in ("list", "inspect", "process", "release", "dismiss"):
+        assert f"###### `quarantine {sub}`" in admin_content
+
+    for sub in ("status", "reconcile", "purge", "export"):
+        assert f"###### `ledger {sub}`" in admin_content
+
+    assert (
+        "#### Structured JSON Output, Error Payloads, and Exit Codes" in admin_content
+    )
+    assert "emit_cli_error" in admin_content
+    assert "SortifyArgumentParser.error()" in admin_content
+    assert "'partial_success'" in admin_content
+    assert "--gui" not in admin_content
+    assert "FORCE_GUI" not in admin_content
+
+    user_guide_content = Path("docs/user_guide.md").read_text(encoding="utf-8")
+    assert '--set STOP_WORDS "word1,word2,word3"' in user_guide_content
+    assert '--set STOP_WORDS \'["word1", "word2", "word3"]\'' in user_guide_content
+    assert "--gui" not in user_guide_content
+
+
+def test_api_reference_includes_dunder_all_init_packages():
+    """Verify docs/api_reference.md includes package __init__.py modules defining __all__ such as app.cli."""
+    api_content = Path("docs/api_reference.md").read_text(encoding="utf-8")
+    assert "## `app.cli`" in api_content
+    assert "::: app.cli" in api_content

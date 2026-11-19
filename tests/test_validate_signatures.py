@@ -161,15 +161,17 @@ def test_dynamic_cli_file_discovery(tmp_path):
     assert "app/main.py" in cli_defs
     assert "sandbox_cli.py" in cli_defs
 
-    # Check that public files in cli_dir were discovered, while __init__.py and _*.py were ignored
+    # Check that public files and __init__.py in cli_dir were discovered, while _*.py was ignored
     discovered = [
         k for k in cli_defs.keys() if k not in ("app/main.py", "sandbox_cli.py")
     ]
-    assert len(discovered) == 2
+    assert len(discovered) == 3
+    assert any("__init__.py" in k for k in discovered)
     assert any("alpha_cli.py" in k for k in discovered)
     assert any("beta_cli.py" in k for k in discovered)
-    assert not any("__init__.py" in k for k in discovered)
     assert not any("_private_helper.py" in k for k in discovered)
+    for key in discovered:
+        assert set(cli_defs[key].keys()) == {"classes", "functions", "cli"}
 
     # Automatically discovers newly added CLI subcommand file
     (cli_dir / "gamma_cli.py").write_text("parser.add_argument('--gamma')")
@@ -177,7 +179,7 @@ def test_dynamic_cli_file_discovery(tmp_path):
     discovered_updated = [
         k for k in cli_defs_updated.keys() if k not in ("app/main.py", "sandbox_cli.py")
     ]
-    assert len(discovered_updated) == 3
+    assert len(discovered_updated) == 4
 
 
 def test_collect_current_definitions():
@@ -1060,3 +1062,58 @@ def test_validate_signatures_detects_structured_conflict_payload(
     captured = capsys.readouterr()
     assert "Unresolved merge collision detected" in captured.err
     assert "structured conflict metadata" in captured.err
+
+
+def test_cli_module_snapshots_track_classes_functions_and_cli():
+    defs = collect_current_definitions()
+    expected_cli_modules = {
+        "app/cli/__init__.py",
+        "app/cli/error_emitter.py",
+        "app/cli/ledger_cli.py",
+        "app/cli/quarantine_cli.py",
+    }
+    for mod_path in expected_cli_modules:
+        assert mod_path in defs["cli"]
+        payload = defs["cli"][mod_path]
+        assert set(payload.keys()) == {"classes", "functions", "cli"}
+
+    init_fn_names = [
+        fn["name"] for fn in defs["cli"]["app/cli/__init__.py"]["functions"]
+    ]
+    assert init_fn_names == [
+        "handle_cli_command",
+        "json_default",
+        "register_cli_subcommands",
+    ]
+
+    emitter_fn_names = [
+        fn["name"] for fn in defs["cli"]["app/cli/error_emitter.py"]["functions"]
+    ]
+    assert emitter_fn_names == ["emit_cli_error"]
+
+    modules_by_rel = {m["source_rel"]: m for m in collect_modules_and_payloads()}
+    for mod_path in expected_cli_modules:
+        assert mod_path in modules_by_rel
+        assert os.path.exists(modules_by_rel[mod_path]["snapshot_path"])
+
+
+def test_cli_function_signature_drift_detected(monkeypatch, capsys):
+    defs = collect_current_definitions()
+    mutated = json.loads(json.dumps(defs))
+    mutated["cli"]["app/cli/error_emitter.py"]["functions"][0]["parameters"].append(
+        {"name": "new_param", "annotation": "bool", "default": "False"}
+    )
+
+    monkeypatch.setattr(
+        validate_signatures, "collect_current_definitions", lambda: mutated
+    )
+    monkeypatch.setattr(
+        sys, "argv", ["validate_signatures.py", "app/cli/error_emitter.py"]
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        validate_signatures.main()
+
+    assert exc_info.value.code == 1
+    captured = capsys.readouterr()
+    assert "Signature drift detected in 'app/cli/error_emitter.py'" in captured.err

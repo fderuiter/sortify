@@ -1,0 +1,53 @@
+{
+  "_metadata": {
+    "checksum": "c15474559aa2fadb052d783027e338845b66cf922fee4fb760290f7afbf7ea63"
+  },
+  "classes": [],
+  "cli": [],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "handle_cli_command",
+      "parameters": [
+        {
+          "annotation": "argparse.Namespace",
+          "default": null,
+          "name": "args"
+        },
+        {
+          "annotation": "AppSettings",
+          "default": null,
+          "name": "settings"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "json_default",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "obj"
+        }
+      ],
+      "returns": "Any"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "register_cli_subcommands",
+      "parameters": [
+        {
+          "annotation": "argparse._SubParsersAction",
+          "default": null,
+          "name": "subparsers"
+        }
+      ],
+      "returns": "None"
+    }
+  ]
+}

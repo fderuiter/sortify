@@ -8,6 +8,10 @@ This document is automatically generated. Do not edit manually.
 
 <a id="appcoresanitizer"></a>
 
+## `app.cli`
+
+::: app.cli
+
 ## `app.cli.error_emitter`
 
 ::: app.cli.error_emitter
@@ -275,6 +279,10 @@ This document is automatically generated. Do not edit manually.
 ## `app.main`
 
 ::: app.main
+
+## `app.plugins.clinical_compliance`
+
+::: app.plugins.clinical_compliance
 
 ## `app.plugins.clinical_compliance.clinical_compliance`
 

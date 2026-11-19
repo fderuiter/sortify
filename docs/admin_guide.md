@@ -10,239 +10,345 @@ The following parameters are extracted directly from the application's configura
 - **Type**: `bool`
 - **Default**: `False`
 
+Whether to rename sorted files using extracted document context and dates during plan generation.
+
 ### `AI_ASSISTED_NAMING`
 - **Type**: `bool`
 - **Default**: `False`
 
+Whether to use the local generative LLM model to synthesize descriptive folder and file names (requires AI consent and the optional 'ml' extra).
+
 ### `PRESERVE_HIERARCHY`
 - **Type**: `bool`
 - **Default**: `False`
+
+Whether to retain relative source subfolder structure beneath generated destination category directories.
 
 ### `MAX_FOLDERS`
 - **Type**: `int`
 - **Default**: `12`
 - **Allowed**: > 0, <= 50
 
+Maximum number of category folders generated per clustering level (integer from 1 to 50 folders).
+
 ### `MAX_WORKERS`
 - **Type**: `int`
 - **Default**: `4`
 - **Allowed**: > 0, <= 64
+
+Maximum number of concurrent worker threads or processes used for file extraction and move operations (integer from 1 to 64 workers).
 
 ### `MAX_DEPTH`
 - **Type**: `int`
 - **Default**: `5`
 - **Allowed**: > 0, <= 10
 
+Maximum directory recursion depth for hierarchical clustering and folder generation (integer from 1 to 10 levels).
+
 ### `MAX_FEATURES`
 - **Type**: `int`
 - **Default**: `3`
 - **Allowed**: > 0, <= 10
 
+Maximum number of top TF-IDF keyword terms combined when naming generated cluster folders (integer from 1 to 10 terms).
+
 ### `CLEANUP_EMPTY_FOLDERS`
 - **Type**: `bool`
 - **Default**: `True`
+
+Whether to automatically remove empty source subdirectories after file moves complete.
 
 ### `SPEAK_ANNOUNCEMENTS`
 - **Type**: `bool`
 - **Default**: `False`
 
+Whether to emit spoken accessibility announcements in the terminal UI when screen-reader feedback is enabled.
+
 ### `ENABLE_CHARACTER_KEY_SHORTCUTS`
 - **Type**: `bool`
 - **Default**: `True`
+
+Whether single-character keyboard shortcuts (such as 'R' to reassign) are active in the terminal UI when text inputs are not focused.
 
 ### `KEYWORD_RULES`
 - **Type**: `dict`
 - **Default**: `{}`
 
+Mapping of lowercase keyword strings to relative target folder paths. Target paths are validated to forbid absolute paths, '..' traversal segments, OS-reserved device names, illegal characters (<, >, :, ", |, ?, *), and trailing spaces or periods.
+
 ### `DISABLED_KEYWORD_RULES`
 - **Type**: `dict`
 - **Default**: `{}`
+
+Mapping of temporarily disabled keyword strings to relative target folder paths, preserving path mappings while inactive and enforcing the same relative target path validation as KEYWORD_RULES.
 
 ### `LEARNED_RULES`
 - **Type**: `dict`
 - **Default**: `{}`
 
+Mapping of user-corrected keyword patterns to relative target folder paths learned from interactive reassignments, validated with the same relative path rules as KEYWORD_RULES.
+
 ### `EXTENSION_CATEGORIES`
 - **Type**: `dict`
 - **Default**: `{}`
 
+Custom mapping of category folder names to lists of file extensions or extension overrides used for fallback file-type routing.
+
 ### `POLICIES`
-- **Type**: `list[dict]`
+- **Type**: `list[PolicyRule]`
 - **Default**: `[]`
+
+Ordered list of typed PolicyRule dictionaries evaluated from highest integer priority to lowest across 6 rule types ('keyword', 'pattern', 'override', 'action', 'compliance', 'unarchive'), 5 lifecycle actions ('archive', 'retain', 'quarantine', 'redact', 'unarchive'), and 8 post-unarchive actions; warns when higher-priority rules shadow lower-priority rules.
 
 ### `VISUAL_TIMEOUT`
 - **Type**: `int`
 - **Default**: `30`
 - **Allowed**: > 0
 
+Per-file timeout in seconds (> 0) for visual OCR and vision model extraction before aborting visual analysis on a document.
+
 ### `IMAGE_MAX_DIMENSION`
 - **Type**: `int`
 - **Default**: `1000`
 - **Allowed**: > 0
+
+Maximum width or height in pixels (> 0) to which images are downscaled while preserving aspect ratio prior to OCR or vision inference.
 
 ### `IMAGE_SKIP_THRESHOLD`
 - **Type**: `int`
 - **Default**: `3000`
 - **Allowed**: > 0
 
+Dimension threshold in pixels (> 0) above which oversized images trigger pre-processing downscaling or fast-path handling.
+
 ### `PDF_TEXT_DENSITY_THRESHOLD`
 - **Type**: `int`
 - **Default**: `50`
 - **Allowed**: >= 0
+
+Minimum average extracted character count per PDF page (>= 0 characters) below which a PDF is treated as scanned and routed to OCR fallback.
 
 ### `MODEL_THREADS`
 - **Type**: `int`
 - **Default**: `2`
 - **Allowed**: >= 1, <= 32
 
+Number of CPU threads allocated per local ML/ONNX/GGUF model inference worker (integer from 1 to 32 threads).
+
 ### `GRAMMAR_CACHE_SIZE`
 - **Type**: `int`
 - **Default**: `16`
 - **Allowed**: > 0, <= 256
+
+Maximum number of compiled GBNF grammar definitions cached in memory for constrained generative naming (integer from 1 to 256 entries).
 
 ### `SNAPSHOT_RETENTION_DAYS`
 - **Type**: `int`
 - **Default**: `30`
 - **Allowed**: > 0
 
+Number of days (> 0) to retain historical sorting session records and rollback snapshots before automatic pruning.
+
 ### `PROTECTED_PATHS`
 - **Type**: `list[str]`
 - **Default**: `[]`
+
+List of absolute literal directory paths protected from scanning, moving, or modification. Relative paths and wildcard or glob characters ('*', '?', '[', ']') are rejected.
 
 ### `AUTO_QUARANTINE_RATINGS`
 - **Type**: `list[str]`
 - **Default**: `['CRITICAL', 'HIGH']`
 
+Sensitivity severity ratings (such as 'CRITICAL' and 'HIGH') that automatically route detected files into compliance quarantine staging.
+
 ### `QUARANTINE_DIR_NAME`
 - **Type**: `str`
 - **Default**: `'_Compliance_Quarantine'`
+
+Directory name created inside the workspace for staging quarantined compliance files.
 
 ### `PROXY`
 - **Type**: `str`
 - **Default**: `''`
 
+Outbound network proxy URI used for model downloads and security advisory checks. Kept cleartext in memory during runtime, encrypted at rest in settings.json with an 'enc:' prefix (auto-migrating legacy plaintext values), and replaced with '<DECRYPTION_FAILED>' in memory if decryption fails without overwriting persisted ciphertext.
+
 ### `SECURITY_ADVISORY_ENDPOINT`
 - **Type**: `str`
 - **Default**: `'https://security.huggingface.co/api/advisories'`
+
+HTTPS endpoint queried with model repository IDs and SHA-256 digests to check for published model security advisories before loading weights.
 
 ### `SECURITY_ADVISORY_CACHE_TTL`
 - **Type**: `int`
 - **Default**: `3600`
 - **Allowed**: >= 1
 
+Time-to-live in seconds (>= 1 second) for cached security advisory responses before re-querying the advisory endpoint.
+
 ### `SECURITY_ADVISORY_FALLBACK_POLICY`
 - **Type**: `str`
 - **Default**: `'strict'`
 - **Allowed**: `strict`, `permissive`
 
+Fallback behavior when the security advisory endpoint is unreachable: 'strict' refuses to load unverified models, whereas 'permissive' allows loading.
+
 ### `OCR_GPU_ENABLED`
 - **Type**: `bool`
 - **Default**: `False`
 
+Whether to enable GPU hardware acceleration for EasyOCR and vision extraction workloads when a compatible accelerator is available.
+
 ### `AUDIO_GPU_ENABLED`
 - **Type**: `bool`
 - **Default**: `False`
+
+Whether to enable GPU hardware acceleration for Whisper audio transcription workloads.
 
 ### `AUDIO_MAX_WORKERS`
 - **Type**: `int`
 - **Default**: `2`
 - **Allowed**: > 0, <= 64
 
+Maximum number of concurrent worker processes dedicated to audio transcription tasks (integer from 1 to 64 workers; aliased as MAX_AUDIO_WORKERS).
+
 ### `PLUGINS`
 - **Type**: `list[str]`
 - **Default**: `[]`
 
+List of enabled plugin Python module identifiers. Entries must be valid dotted Python identifiers without path or shell characters; explicit dotted module paths must start with 'app.plugins.' or 'sortify_plugin_', and Python standard library or system modules are forbidden.
+
 ### `OCR_LANGUAGES`
 - **Type**: `str`
 - **Default**: `'en'`
+
+Comma-separated list of non-empty OCR language codes (alphanumeric characters and underscores only, such as 'en' or 'ch_sim,en').
 
 ### `VISION_ENGINE`
 - **Type**: `str`
 - **Default**: `'easyocr'`
 - **Allowed**: `easyocr`, `florence-2`
 
+Visual text and caption extraction backend: 'easyocr' for standard OCR or 'florence-2' for vision-language document understanding.
+
 ### `CONFLICT_POLICY`
 - **Type**: `str`
 - **Default**: `'rename'`
 - **Allowed**: `skip`, `rename`, `overwrite`
 
+Resolution strategy when a destination file already exists: 'skip' leaves the source untouched, 'rename' appends a numeric suffix, and 'overwrite' replaces the target.
+
 ### `SORTING_STRATEGY`
 - **Type**: `str`
 - **Default**: `'default'`
+
+Document clustering and taxonomy strategy identifier (for example 'default' TF-IDF/embedding clustering, 'generative', 'clinical_tmf', or 'clinical_isf').
 
 ### `CLINICAL_SMART_RENAMING`
 - **Type**: `bool`
 - **Default**: `False`
 
+Whether clinical sorting strategies standardize filenames using Trial Master File (TMF/ISF) study, artifact, and date metadata.
+
 ### `CLINICAL_GENERATE_AUDIT_REPORT`
 - **Type**: `bool`
 - **Default**: `True`
+
+Whether clinical compliance runs automatically generate a regulatory audit trail report upon completion.
 
 ### `COHERENCE_THRESHOLD`
 - **Type**: `float`
 - **Default**: `0.5`
 - **Allowed**: >= 0.0, <= 1.0
 
+Minimum semantic similarity coherence score (float from 0.0 to 1.0) required to group documents into a topic cluster before falling back to Miscellaneous.
+
 ### `DEBOUNCE_DELAY`
 - **Type**: `float`
 - **Default**: `0.6`
 - **Allowed**: > 0.0
+
+Initial filesystem event debounce delay in seconds (> 0.0 and must be <= MAX_DEBOUNCE_DELAY) before the background daemon processes newly modified files.
 
 ### `MAX_DEBOUNCE_DELAY`
 - **Type**: `float`
 - **Default**: `5.0`
 - **Allowed**: > 0.0
 
+Maximum ceiling in seconds (> 0.0 and must be >= DEBOUNCE_DELAY) that bursty filesystem events can defer daemon batch processing.
+
 ### `MAX_QUEUE_CAPACITY`
 - **Type**: `int`
 - **Default**: `1000`
 - **Allowed**: > 0
+
+Maximum number of pending filesystem events (> 0 items) buffered in the background daemon priority queue before backpressure applies.
 
 ### `DEDUP_WINDOW`
 - **Type**: `float`
 - **Default**: `0.5`
 - **Allowed**: >= 0.0
 
+Time window in seconds (>= 0.0 seconds) used by the daemon watcher to coalesce duplicate filesystem events for the same path.
+
 ### `RECONCILIATION_INTERVAL`
 - **Type**: `float`
 - **Default**: `30.0`
 - **Allowed**: > 0.0
+
+Periodic interval in seconds (> 0.0 seconds) between background daemon sweeps for missed files and incomplete ledger transactions.
 
 ### `WORKER_TIMEOUT`
 - **Type**: `float`
 - **Default**: `300.0`
 - **Allowed**: >= 0.0
 
+Maximum execution time in seconds (>= 0.0 seconds) allowed for background extraction, clustering, or forensic quarantine scan workers before timing out.
+
 ### `TABULAR_MAX_SHEETS`
 - **Type**: `int`
 - **Default**: `10`
 - **Allowed**: > 0
+
+Maximum number of workbook sheets (> 0 sheets) sampled per spreadsheet during tabular text extraction (aliased as MAX_SPREADSHEET_SHEETS).
 
 ### `TABULAR_MAX_ROWS`
 - **Type**: `int`
 - **Default**: `10000`
 - **Allowed**: > 0
 
+Maximum number of rows (> 0 rows) read per sheet or CSV file during tabular text extraction (aliased as MAX_SPREADSHEET_ROWS).
+
 ### `TABULAR_MAX_CHARACTERS`
 - **Type**: `int`
 - **Default**: `50000`
 - **Allowed**: > 0
 
+Maximum total extracted character budget (> 0 characters) retained per tabular document (aliased as MAX_SPREADSHEET_CHARACTERS).
+
 ### `IGNORED_EXTENSIONS`
 - **Type**: `list[str]`
 - **Default**: `['.crdownload', '.tmp', '.download']`
+
+List of temporary or incomplete file extensions skipped during scanning and daemon watching (non-empty strings normalized with a leading '.', such as '.tmp').
 
 ### `AI_CONSENT_GRANTED`
 - **Type**: `bool | None`
 - **Default**: `None`
 
+User consent state for local AI model downloads and semantic vector indexing: true (granted), false (declined; unloads models and scrubs vectors), or null (not yet prompted).
+
 ### `LOG_FILE`
 - **Type**: `str`
 - **Default**: `'~/.autosorter/autosorter.log'`
 
+Filesystem path to the primary rotating application log file (non-empty string; defaults to 'autosorter.log' inside the app directory).
+
 ### `STOP_WORDS`
 - **Type**: `set[str]`
 - **Default**: 59 built-in entries (see `app/config.py`)
+
+Set of common noise and file-extension tokens excluded during TF-IDF keyword extraction and cluster folder naming.
 
 ## Precedence Rules
 
@@ -250,8 +356,28 @@ The application evaluates configuration parameters using a strict precedence hie
 
 1. **Command-Line Flags:** Flags such as `--max-folders`, `--strategy` and `--conflict-policy` override every other source for that run only.
 2. **Local Settings File (`~/.autosorter/settings.json`):** Parameters defined here override environment variables and default properties.
-3. **Environment Variables (or the app directory's `.env` file):** Only variables prefixed with `SORTIFY_` apply, for example `SORTIFY_MAX_FOLDERS=9`. A `.env` file is read only from the app directory (`~/.autosorter/.env`, or `$AUTOSORTER_APP_DIR/.env`), never from the current working directory. Values from the environment apply to each run but are not written to `settings.json`, so they keep working until the setting is changed explicitly.
+3. **Environment Variables (or the app directory's `.env` file):** Configuration schema fields in `Settings` use the `SORTIFY_` prefix (for example `SORTIFY_MAX_FOLDERS=9`), while dedicated runtime control variables (such as `SORTIFY_AI_CONSENT`, `AUTOSORTER_APP_DIR`, and `NON_INTERACTIVE`; see [Runtime Environment Variables](#runtime-environment-variables)) control process startup, UI guards, and offline model paths. A `.env` file is read only from the app directory (`~/.autosorter/.env`, or `$AUTOSORTER_APP_DIR/.env`), never from the current working directory. Values from the environment apply to each run but are not written to `settings.json`, so they keep working until the setting is changed explicitly.
 4. **Default Parameters:** Base defaults are used as fallbacks if a setting is not explicitly defined in the local file or environment.
+
+### Runtime Environment Variables
+
+In addition to `SORTIFY_<SETTING>` overrides for every field in `Settings`, the runtime inspects the following environment variables:
+
+| Variable | Source | Behavior |
+|---|---|---|
+| `SORTIFY_<SETTING>` | `app/config.py` | Per-run override for any `Settings` schema field (for example `SORTIFY_MAX_FOLDERS=9` or `SORTIFY_MAX_WORKERS=8`), read from the environment or `$AUTOSORTER_APP_DIR/.env`. |
+| `SORTIFY_AI_CONSENT` | `app/main.py`, `app/ui/tui.py` | Per-run AI consent override (`1`/`true`/`yes`/`on` grants consent; `0`/`false`/`no`/`off` declines consent). CLI `--accept-ai-consent` and `--decline-ai-consent` flags take higher precedence. |
+| `AUTOSORTER_APP_DIR` | `app/config.py`, `app/core/path_utils.py` | Overrides the application configuration and state directory (default `~/.autosorter`), relocating `settings.json`, `.env`, SQLite databases, and logs. |
+| `NON_INTERACTIVE` | `app/main.py`, `app/ui/tui.py` | When set to `1`, `true`, `yes`, or `on`, enables headless non-interactive mode, bypasses the onboarding wizard, and defaults unset `AI_CONSENT_GRANTED` to `False`. |
+| `NO_COLOR` | `app/main.py` | When non-empty, disables ANSI color codes and rich terminal styling across CLI output (equivalent to `--no-color`). |
+| `FORCE_TUI` | `app/ui/tui.py` | When non-empty, bypasses the interactive TTY check (`isatty()`) when launching the Textual TUI in non-TTY streams. |
+| `IGNORE_TERMINAL_SIZE` | `app/ui/tui.py` | When non-empty, bypasses the minimum `80x24` terminal dimension check during TUI startup. |
+| `LITE_BUILD` | `app/core/verifier.py` | When set to `1`, marks packaged or sandboxed execution as a lite distribution so missing optional ML dependencies (`torch`, `easyocr`) fall back cleanly instead of failing startup verification. |
+| `EASYOCR_MODULE_PATH` | `app/core/verifier.py`, `app/core/model_registry.py` | Custom base directory containing the `model/` folder for offline EasyOCR weights (`craft_mlt_25k.pth`, `english_g2.pth`) when `offline_bundle/easyocr` is absent. |
+| `SMART_AUTOSORTER_MODELS_ZIP` | `app/core/offline_loader.py` | Explicit file path override pointing to a sidecar `smart-autosorter-models.zip` offline model archive. |
+| `MODELS_ZIP_PATH` | `app/core/offline_loader.py` | Alternate environment variable pointing to a sidecar `smart-autosorter-models.zip` offline model archive. |
+| `<MODEL_ID>_PATH` / `MODEL_PATH` | `app/core/offline_loader.py` | Highest-precedence directory override for resolving a specific offline model bundle (for example `GENERATIVE_NAMING_PATH` or `MODEL_PATH`). |
+| `DEBUG` / `PROMPT_DUMP_FILE` | `app/core/analyzer_strategies.py` | Diagnostic controls enabling debug mode (`1`/`true`/`yes`/`on`) and optional generative prompt dumping when `DEBUG` is active. |
 
 ## Dynamic Configuration Saves
 
@@ -265,11 +391,35 @@ System settings modified during runtime are dynamically saved to the local JSON 
 
 ### Rule Syntax & Types
 
-Compliance policies categorize and sort documents based on three rule types:
+Each entry in `POLICIES` follows the typed `PolicyRule` schema in `app/config_schema.json`:
 
-- **Keyword Rules**: Search for files containing a specific word or phrase anywhere in their text contents (for example, 'invoice' or 'billing').
-- **Pattern Rules**: Match files using structured formatting or text sequences (such as a standard format of letters followed by numbers) to match specific document types.
-- **Override Rules**: Check for exact text matches, taking precedent to bypass standard classification rules.
+- **Required keys**: `type` (`str`), `expression` (non-empty `str`), `target_path` (relative `str`), and `priority` (`int`).
+- **Optional keys**: `halting` (`bool`, default `false`), `enabled` (`bool`, default `true`), `action` (`str`), and `post_unarchive_action` (`str`, with legacy aliases `post_action` and `archive_action` accepted when loading existing `settings.json` files).
+
+Compliance and routing policies support all **6** rule `type` values:
+
+- **`keyword`**: Case-insensitive substring match against the filename and extracted document text (or the filename alone when a preliminary status match is present; expressions `'secret'` and `'credential'` invoke credential/secret scanning across the path and text).
+- **`pattern`**: Case-insensitive substring match against the **lowercase filename (`os.path.basename(file_path).lower()`) only**—does not inspect extracted document text.
+- **`override`**: Case-insensitive match against the **lowercase filename or full file path (`file_path.lower()`)**—does not inspect extracted document text, allowing deterministic path-level routing overrides.
+- **`action`**: Lifecycle directive rule evaluated via case-insensitive substring matching against the filename and extracted document text.
+- **`compliance`**: Regulatory and sensitivity rule evaluated via case-insensitive substring matching against the filename and extracted document text (plus secret detection when `expression` is `'secret'` or `'credential'`).
+- **`unarchive`**: Archive ingestion rule evaluated via case-insensitive substring matching against the filename and extracted document text to trigger archive extraction workflows.
+
+### Lifecycle Actions & Post-Unarchive Directives
+
+When a policy rule specifies an optional `action` key (`PolicyEngine.SUPPORTED_ACTIONS`), it must be one of the **5** supported lifecycle actions:
+
+- **`archive`**: Route or package matching files into designated archive storage.
+- **`retain`**: Keep matching files under retention governance at the target destination.
+- **`quarantine`**: Intercept and stage matching files in compliance quarantine for forensic review before release.
+- **`redact`**: Flag or process matching files through PII/secret redaction handling.
+- **`unarchive`**: Safely extract supported `.zip` archives into `target_path` with zip-bomb/size safety checks and enqueue extracted child files for sorting.
+
+When `action` is set to `'unarchive'`, `post_unarchive_action` controls how the original archive file is handled after extraction and supports **8** values across three behaviors:
+
+- **Delete source archive** (default): `'delete'`, `'remove'`, `'cleanup'`.
+- **Relocate source archive** (for example to `post_unarchive_target`): `'move'`, `'archive'`, `'relocate'`.
+- **Retain source archive in place**: `'retain'`, `'keep'`.
 
 ### Sequential Execution & Priority
 
@@ -368,7 +518,22 @@ When executing `app/main.py` in non-interactive or detached standard input strea
 
 - **Target Path Auto-Routing**: If a positional target directory path is supplied without an explicit subcommand (e.g. `python3 app/main.py /tmp/docs < /dev/null`), execution is routed to headless batch document sorting (`handle_sort_command`) as a **dry run**: the plan is printed and no files are moved, because nobody is present to confirm it. Use the explicit `sort` subcommand (e.g. `python3 app/main.py sort /tmp/docs`) to move files from scripts or cron.
 - **CLI Guidance & Exit Code 2**: If no target directory path or subcommand is supplied (e.g. `python3 app/main.py < /dev/null`), the application outputs CLI usage guidance to `sys.stderr` and exits cleanly with exit code `2`. This prevents non-interactive streams from hanging on terminal UI initialization.
-- **Explicit Interface Flag Overrides**: If explicit UI flags (`--gui`, `--tui`, `--demo`, `--daemon`, `FORCE_GUI`) are invoked, the requested interface launcher is executed as explicitly requested.
+- **Explicit Interface Flag Overrides**: If explicit UI or daemon flags (`--tui`, `--interactive`, `--demo`, `--daemon`) are invoked, the requested interface or background service launcher is executed as explicitly requested.
+
+#### Structured JSON Output, Error Payloads, and Exit Codes
+
+Automation pipelines invoking CLI commands with `--json` can rely on deterministic stream separation, error envelopes, and exit codes:
+
+- **Stream Routing (`stdout` vs `stderr`)**: When `--json` is passed, **both** structured command results and structured error payloads (`emit_cli_error(..., json_mode=True)` and `SortifyArgumentParser.error()`) are emitted to **`sys.stdout`** as UTF-8 JSON objects so callers can parse `stdout` unconditionally. Without `--json`, human-readable errors prefixed with `Error: ` and progress messages are written to **`sys.stderr`**.
+- **Error Payload Schema**: JSON errors emit `{"status": "error", "message": "<clean message>"}` (stripping any duplicate leading `'Error: '` prefix) plus command-specific context fields when available (such as `"job_id"` when `quarantine inspect` cannot find a record).
+- **Exit Codes**:
+  - `0`: Command succeeded (including `quarantine` batch commands where `status` is `'success'` or `'partial_success'`).
+  - `1`: Operational, validation, or runtime failure (missing directories, invalid configuration values, missing records, or `quarantine` batch runs where all jobs failed).
+  - `2`: CLI usage or argument validation failure (unrecognized flags, invalid option choices, missing nested `ledger` or `quarantine` subcommand, missing required `<job_id>` / `--job-ids`, or invoking `smart-autosorter` with no target path or subcommand on a non-interactive `stdin` stream). Passing `--json` anywhere on the command line formats exit-code `2` parser errors as JSON on `sys.stdout`.
+- **Quarantine Batch Status Envelope (`quarantine process`, `release`, `dismiss`)**: Batch commands return `{"status": "<batch_status>", "count": N, "results": [...]}` (plus top-level convenience keys `"job_id"` and `"status_code"` when `count == 1`), where `status` is one of:
+  - `'success'`: Every requested job ID completed its target transition (`exit code 0`).
+  - `'partial_success'`: At least one job succeeded and at least one job failed (`exit code 0`).
+  - `'failed'`: Zero requested jobs succeeded (`exit code 1`).
 
 #### Subcommands
 
@@ -706,6 +871,85 @@ options:
 
 For comprehensive operational procedures, headless transaction reconciliation workflows, state transition handling, and stale daemon lock cleanup, refer to the dedicated [Ledger Reconciliation Runbook](runbooks/ledger_reconciliation.md).
 
+###### `ledger status`
+```text
+usage: smart-autosorter ledger status [-h] [--ledger-db LEDGER_DB] [-q]
+                                      [--no-color] [--json]
+                                      [--session-id SESSION_ID] [--failed]
+                                      [--aborted]
+
+options:
+  -h, --help            show this help message and exit
+  --ledger-db LEDGER_DB
+                        Path to sidecar transaction ledger database file
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --session-id SESSION_ID
+                        Filter pending entries by session ID
+  --failed              Filter for failed and aborted transaction records
+  --aborted             Filter specifically for aborted transaction records
+```
+
+###### `ledger reconcile`
+```text
+usage: smart-autosorter ledger reconcile [-h] [--ledger-db LEDGER_DB] [-q]
+                                         [--no-color] [--json]
+
+options:
+  -h, --help            show this help message and exit
+  --ledger-db LEDGER_DB
+                        Path to sidecar transaction ledger database file
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+```
+
+###### `ledger purge`
+```text
+usage: smart-autosorter ledger purge [-h] [--ledger-db LEDGER_DB] [-q]
+                                     [--no-color] [--json]
+                                     [--session-id SESSION_ID] [--completed]
+                                     [--failed] [--aborted] [--force]
+
+options:
+  -h, --help            show this help message and exit
+  --ledger-db LEDGER_DB
+                        Path to sidecar transaction ledger database file
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --session-id SESSION_ID
+                        Purge entries for a specific session ID
+  --completed           Purge all completed transaction records
+  --failed              Purge all failed and aborted transaction records
+  --aborted             Purge all aborted transaction records
+  --force               Bypass confirmation prompt when purging records
+```
+
+###### `ledger export`
+```text
+usage: smart-autosorter ledger export [-h] [--ledger-db LEDGER_DB] [-q]
+                                      [--no-color] [--json]
+                                      [--session-id SESSION_ID] [-o OUTPUT]
+                                      [-f {csv,json}] [--csv]
+
+options:
+  -h, --help            show this help message and exit
+  --ledger-db LEDGER_DB
+                        Path to sidecar transaction ledger database file
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --session-id SESSION_ID
+                        Export entries for a specific session ID
+  -o OUTPUT, --output OUTPUT
+                        Output file path for exported audit log
+  -f {csv,json}, --format {csv,json}
+                        Audit log export format (csv or json)
+  --csv                 Export audit log in CSV format
+```
+
 ##### `quarantine`
 ```text
 usage: smart-autosorter quarantine [-h] [--json]
@@ -725,6 +969,119 @@ positional arguments:
 options:
   -h, --help            show this help message and exit
   --json                Output response in structured JSON format
+```
+
+###### `quarantine list`
+```text
+usage: smart-autosorter quarantine list [-h] [--db-path DB_PATH] [-q]
+                                        [--no-color] [--json]
+                                        [--status STATUS]
+                                        [--base-dir BASE_DIR]
+
+options:
+  -h, --help           show this help message and exit
+  --db-path DB_PATH    Path to database file
+  -q, --quiet          Suppress informational prints
+  --no-color           Disable ANSI color formatting
+  --json               Output response in structured JSON format
+  --status STATUS      Filter items by quarantine status (e.g. STAGED,
+                       QUARANTINED, IN_INSPECTION, RELEASED,
+                       DEAD_LETTER_QUEUE)
+  --base-dir BASE_DIR  Filter items by base directory
+```
+
+###### `quarantine inspect`
+```text
+usage: smart-autosorter quarantine inspect [-h] [--db-path DB_PATH] [-q]
+                                           [--no-color] [--json]
+                                           [--job-id JOB_ID]
+                                           [JOB_ID]
+
+positional arguments:
+  JOB_ID             Quarantine job ID
+
+options:
+  -h, --help         show this help message and exit
+  --db-path DB_PATH  Path to database file
+  -q, --quiet        Suppress informational prints
+  --no-color         Disable ANSI color formatting
+  --json             Output response in structured JSON format
+  --job-id JOB_ID    Quarantine job ID
+```
+
+###### `quarantine process`
+```text
+usage: smart-autosorter quarantine process [-h] [--db-path DB_PATH] [-q]
+                                           [--no-color] [--json]
+                                           [--job-id JOB_ID]
+                                           [--job-ids JOB_IDS]
+                                           [--timeout TIMEOUT]
+                                           [JOB_ID ...]
+
+positional arguments:
+  JOB_ID             Quarantine job ID(s)
+
+options:
+  -h, --help         show this help message and exit
+  --db-path DB_PATH  Path to database file
+  -q, --quiet        Suppress informational prints
+  --no-color         Disable ANSI color formatting
+  --json             Output response in structured JSON format
+  --job-id JOB_ID    Quarantine job ID
+  --job-ids JOB_IDS  Comma-separated list of quarantine job IDs
+  --timeout TIMEOUT  Forensic scan timeout in seconds (default 300.0)
+```
+
+###### `quarantine release`
+```text
+usage: smart-autosorter quarantine release [-h] [--db-path DB_PATH] [-q]
+                                           [--no-color] [--json]
+                                           [--job-id JOB_ID]
+                                           [--job-ids JOB_IDS]
+                                           [--dest-dir DEST_DIR]
+                                           [--conflict-policy {rename,skip,overwrite}]
+                                           [--allow-external-dest]
+                                           [JOB_ID ...]
+
+positional arguments:
+  JOB_ID                Quarantine job ID(s)
+
+options:
+  -h, --help            show this help message and exit
+  --db-path DB_PATH     Path to database file
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --job-id JOB_ID       Quarantine job ID
+  --job-ids JOB_IDS     Comma-separated list of quarantine job IDs
+  --dest-dir DEST_DIR   Target destination directory for released file
+  --conflict-policy {rename,skip,overwrite}
+                        Conflict resolution policy when destination file
+                        exists (rename, skip, overwrite; default: rename)
+  --allow-external-dest
+                        Allow release destination outside base directory
+                        boundary
+```
+
+###### `quarantine dismiss`
+```text
+usage: smart-autosorter quarantine dismiss [-h] [--db-path DB_PATH] [-q]
+                                           [--no-color] [--json]
+                                           [--job-id JOB_ID]
+                                           [--job-ids JOB_IDS]
+                                           [JOB_ID ...]
+
+positional arguments:
+  JOB_ID             Quarantine job ID(s)
+
+options:
+  -h, --help         show this help message and exit
+  --db-path DB_PATH  Path to database file
+  -q, --quiet        Suppress informational prints
+  --no-color         Disable ANSI color formatting
+  --json             Output response in structured JSON format
+  --job-id JOB_ID    Quarantine job ID
+  --job-ids JOB_IDS  Comma-separated list of quarantine job IDs
 ```
 
 ### `sandbox_cli.py`

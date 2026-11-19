@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "189a877cef1d92048de8e2f2fca48a67ec2ca81933f97aebb9269ca1d65e2aa4"
+    "checksum": "0cfb158ea729f1c571b7066e3f5fac4f984e3158106fa67568253646ed60f63f"
   },
   "classes": [
     {
@@ -158,6 +158,13 @@
           "returns": "bool"
         }
       ]
+    },
+    {
+      "class_name": "PolicyRule",
+      "decorators": [
+        "@with_config(ConfigDict(extra='allow'))"
+      ],
+      "methods": []
     },
     {
       "class_name": "Settings",
@@ -387,7 +394,7 @@
         {
           "async": false,
           "decorators": [
-            "@field_validator('POLICIES')",
+            "@field_validator('POLICIES', mode='before')",
             "@classmethod"
           ],
           "name": "validate_policies",

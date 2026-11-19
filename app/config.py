@@ -12,9 +12,16 @@ import threading
 from collections import defaultdict
 from collections.abc import Callable
 from pathlib import Path
-from typing import Annotated, Any, Literal
+from typing import Annotated, Any, Literal, NotRequired, TypedDict
 
-from pydantic import Field, ValidationError, field_validator, model_validator
+from pydantic import (
+    ConfigDict,
+    Field,
+    ValidationError,
+    field_validator,
+    model_validator,
+    with_config,
+)
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 from app.core.policy_engine import is_masked_by
@@ -88,45 +95,350 @@ def get_debug_log_dir() -> Path:
     return log_dir.resolve()
 
 
+@with_config(ConfigDict(extra="allow"))
+class PolicyRule(TypedDict):
+    """Typed dictionary schema for unified compliance and routing policy rules."""
+
+    type: Annotated[
+        Literal[
+            "keyword",
+            "pattern",
+            "override",
+            "action",
+            "compliance",
+            "unarchive",
+        ],
+        Field(
+            description=(
+                "Rule evaluation strategy: 'keyword', 'action', 'compliance', or 'unarchive' "
+                "match filenames and document text; 'pattern' matches lowercase filenames only; "
+                "'override' matches lowercase filenames or full file paths."
+            )
+        ),
+    ]
+    expression: Annotated[
+        str,
+        Field(
+            min_length=1,
+            description="Non-empty case-insensitive substring or pattern expression to match.",
+        ),
+    ]
+    target_path: Annotated[
+        str,
+        Field(
+            description=(
+                "Relative destination folder path validated against path safety rules "
+                "(no leading slashes, '..' traversal segments, OS-reserved device names, "
+                "illegal path characters, or trailing spaces/periods; may be empty when an action handles placement)."
+            )
+        ),
+    ]
+    priority: Annotated[
+        int,
+        Field(
+            description="Integer evaluation priority; rules execute sequentially from highest priority to lowest."
+        ),
+    ]
+    halting: NotRequired[
+        Annotated[
+            bool,
+            Field(
+                description="When true, stop evaluating lower-priority rules immediately if this rule does not match."
+            ),
+        ]
+    ]
+    enabled: NotRequired[
+        Annotated[
+            bool,
+            Field(
+                description="Whether this policy rule is active during evaluation (defaults to true when omitted)."
+            ),
+        ]
+    ]
+    action: NotRequired[
+        Annotated[
+            Literal["archive", "retain", "quarantine", "redact", "unarchive"],
+            Field(
+                description="Optional lifecycle directive executed when the policy matches."
+            ),
+        ]
+    ]
+    post_unarchive_action: NotRequired[
+        Annotated[
+            Literal[
+                "delete",
+                "remove",
+                "cleanup",
+                "move",
+                "archive",
+                "relocate",
+                "retain",
+                "keep",
+            ],
+            Field(
+                description=(
+                    "Source archive handling after 'unarchive' extraction: delete ('delete', "
+                    "'remove', 'cleanup'), relocate ('move', 'archive', 'relocate'), or keep "
+                    "in place ('retain', 'keep'). Legacy aliases 'post_action' and "
+                    "'archive_action' are also accepted when loading settings.json."
+                )
+            ),
+        ]
+    ]
+
+
 class Settings(BaseSettings):
     """Application settings schema."""
 
-    CONTEXTUAL_RENAMING: bool = Field(default=False)
-    AI_ASSISTED_NAMING: bool = Field(default=False)
-    PRESERVE_HIERARCHY: bool = Field(default=False)
-    MAX_FOLDERS: int = Field(default=12, gt=0, le=50)
-    MAX_WORKERS: int = Field(default=4, gt=0, le=64)
-    MAX_DEPTH: int = Field(default=5, gt=0, le=10)
-    MAX_FEATURES: int = Field(default=3, gt=0, le=10)
-    CLEANUP_EMPTY_FOLDERS: bool = Field(default=True)
-    SPEAK_ANNOUNCEMENTS: bool = Field(default=False)
-    ENABLE_CHARACTER_KEY_SHORTCUTS: bool = Field(default=True)
-    KEYWORD_RULES: dict = Field(default_factory=dict)
-    DISABLED_KEYWORD_RULES: dict = Field(default_factory=dict)
-    LEARNED_RULES: dict = Field(default_factory=dict)
-    EXTENSION_CATEGORIES: dict = Field(default_factory=dict)
-    POLICIES: list[dict] = Field(default_factory=list)
-    VISUAL_TIMEOUT: int = Field(default=30, gt=0)
-    IMAGE_MAX_DIMENSION: int = Field(default=1000, gt=0)
-    IMAGE_SKIP_THRESHOLD: int = Field(default=3000, gt=0)
-    PDF_TEXT_DENSITY_THRESHOLD: int = Field(default=50, ge=0)
-    MODEL_THREADS: int = Field(default=2, ge=1, le=32)
-    GRAMMAR_CACHE_SIZE: int = Field(default=16, gt=0, le=256)
-    SNAPSHOT_RETENTION_DAYS: int = Field(default=30, gt=0)
-    PROTECTED_PATHS: list[str] = Field(default_factory=list)
-    AUTO_QUARANTINE_RATINGS: list[str] = Field(default=["CRITICAL", "HIGH"])
-    QUARANTINE_DIR_NAME: str = Field(default="_Compliance_Quarantine")
-    PROXY: str = Field(default="")
+    CONTEXTUAL_RENAMING: bool = Field(
+        default=False,
+        description=(
+            "Whether to rename sorted files using extracted document context and dates "
+            "during plan generation."
+        ),
+    )
+    AI_ASSISTED_NAMING: bool = Field(
+        default=False,
+        description=(
+            "Whether to use the local generative LLM model to synthesize descriptive "
+            "folder and file names (requires AI consent and the optional 'ml' extra)."
+        ),
+    )
+    PRESERVE_HIERARCHY: bool = Field(
+        default=False,
+        description=(
+            "Whether to retain relative source subfolder structure beneath generated "
+            "destination category directories."
+        ),
+    )
+    MAX_FOLDERS: int = Field(
+        default=12,
+        gt=0,
+        le=50,
+        description=(
+            "Maximum number of category folders generated per clustering level "
+            "(integer from 1 to 50 folders)."
+        ),
+    )
+    MAX_WORKERS: int = Field(
+        default=4,
+        gt=0,
+        le=64,
+        description=(
+            "Maximum number of concurrent worker threads or processes used for file "
+            "extraction and move operations (integer from 1 to 64 workers)."
+        ),
+    )
+    MAX_DEPTH: int = Field(
+        default=5,
+        gt=0,
+        le=10,
+        description=(
+            "Maximum directory recursion depth for hierarchical clustering and folder "
+            "generation (integer from 1 to 10 levels)."
+        ),
+    )
+    MAX_FEATURES: int = Field(
+        default=3,
+        gt=0,
+        le=10,
+        description=(
+            "Maximum number of top TF-IDF keyword terms combined when naming generated "
+            "cluster folders (integer from 1 to 10 terms)."
+        ),
+    )
+    CLEANUP_EMPTY_FOLDERS: bool = Field(
+        default=True,
+        description=(
+            "Whether to automatically remove empty source subdirectories after file "
+            "moves complete."
+        ),
+    )
+    SPEAK_ANNOUNCEMENTS: bool = Field(
+        default=False,
+        description=(
+            "Whether to emit spoken accessibility announcements in the terminal UI "
+            "when screen-reader feedback is enabled."
+        ),
+    )
+    ENABLE_CHARACTER_KEY_SHORTCUTS: bool = Field(
+        default=True,
+        description=(
+            "Whether single-character keyboard shortcuts (such as 'R' to reassign) are "
+            "active in the terminal UI when text inputs are not focused."
+        ),
+    )
+    KEYWORD_RULES: dict = Field(
+        default_factory=dict,
+        description=(
+            "Mapping of lowercase keyword strings to relative target folder paths. "
+            "Target paths are validated to forbid absolute paths, '..' traversal segments, "
+            'OS-reserved device names, illegal characters (<, >, :, ", |, ?, *), and trailing spaces or periods.'
+        ),
+    )
+    DISABLED_KEYWORD_RULES: dict = Field(
+        default_factory=dict,
+        description=(
+            "Mapping of temporarily disabled keyword strings to relative target folder paths, "
+            "preserving path mappings while inactive and enforcing the same relative target path validation as KEYWORD_RULES."
+        ),
+    )
+    LEARNED_RULES: dict = Field(
+        default_factory=dict,
+        description=(
+            "Mapping of user-corrected keyword patterns to relative target folder paths "
+            "learned from interactive reassignments, validated with the same relative path rules as KEYWORD_RULES."
+        ),
+    )
+    EXTENSION_CATEGORIES: dict = Field(
+        default_factory=dict,
+        description=(
+            "Custom mapping of category folder names to lists of file extensions or "
+            "extension overrides used for fallback file-type routing."
+        ),
+    )
+    POLICIES: list[PolicyRule] = Field(
+        default_factory=list,
+        description=(
+            "Ordered list of typed PolicyRule dictionaries evaluated from highest integer "
+            "priority to lowest across 6 rule types ('keyword', 'pattern', 'override', 'action', "
+            "'compliance', 'unarchive'), 5 lifecycle actions ('archive', 'retain', 'quarantine', "
+            "'redact', 'unarchive'), and 8 post-unarchive actions; warns when higher-priority rules shadow lower-priority rules."
+        ),
+    )
+    VISUAL_TIMEOUT: int = Field(
+        default=30,
+        gt=0,
+        description=(
+            "Per-file timeout in seconds (> 0) for visual OCR and vision model extraction "
+            "before aborting visual analysis on a document."
+        ),
+    )
+    IMAGE_MAX_DIMENSION: int = Field(
+        default=1000,
+        gt=0,
+        description=(
+            "Maximum width or height in pixels (> 0) to which images are downscaled "
+            "while preserving aspect ratio prior to OCR or vision inference."
+        ),
+    )
+    IMAGE_SKIP_THRESHOLD: int = Field(
+        default=3000,
+        gt=0,
+        description=(
+            "Dimension threshold in pixels (> 0) above which oversized images trigger "
+            "pre-processing downscaling or fast-path handling."
+        ),
+    )
+    PDF_TEXT_DENSITY_THRESHOLD: int = Field(
+        default=50,
+        ge=0,
+        description=(
+            "Minimum average extracted character count per PDF page (>= 0 characters) "
+            "below which a PDF is treated as scanned and routed to OCR fallback."
+        ),
+    )
+    MODEL_THREADS: int = Field(
+        default=2,
+        ge=1,
+        le=32,
+        description=(
+            "Number of CPU threads allocated per local ML/ONNX/GGUF model inference "
+            "worker (integer from 1 to 32 threads)."
+        ),
+    )
+    GRAMMAR_CACHE_SIZE: int = Field(
+        default=16,
+        gt=0,
+        le=256,
+        description=(
+            "Maximum number of compiled GBNF grammar definitions cached in memory for "
+            "constrained generative naming (integer from 1 to 256 entries)."
+        ),
+    )
+    SNAPSHOT_RETENTION_DAYS: int = Field(
+        default=30,
+        gt=0,
+        description=(
+            "Number of days (> 0) to retain historical sorting session records and "
+            "rollback snapshots before automatic pruning."
+        ),
+    )
+    PROTECTED_PATHS: list[str] = Field(
+        default_factory=list,
+        description=(
+            "List of absolute literal directory paths protected from scanning, moving, "
+            "or modification. Relative paths and wildcard or glob characters ('*', '?', '[', ']') are rejected."
+        ),
+    )
+    AUTO_QUARANTINE_RATINGS: list[str] = Field(
+        default=["CRITICAL", "HIGH"],
+        description=(
+            "Sensitivity severity ratings (such as 'CRITICAL' and 'HIGH') that "
+            "automatically route detected files into compliance quarantine staging."
+        ),
+    )
+    QUARANTINE_DIR_NAME: str = Field(
+        default="_Compliance_Quarantine",
+        description=(
+            "Directory name created inside the workspace for staging quarantined "
+            "compliance files."
+        ),
+    )
+    PROXY: str = Field(
+        default="",
+        description=(
+            "Outbound network proxy URI used for model downloads and security advisory "
+            "checks. Kept cleartext in memory during runtime, encrypted at rest in settings.json "
+            "with an 'enc:' prefix (auto-migrating legacy plaintext values), and replaced with "
+            "'<DECRYPTION_FAILED>' in memory if decryption fails without overwriting persisted ciphertext."
+        ),
+    )
     SECURITY_ADVISORY_ENDPOINT: str = Field(
-        default="https://security.huggingface.co/api/advisories"
+        default="https://security.huggingface.co/api/advisories",
+        description=(
+            "HTTPS endpoint queried with model repository IDs and SHA-256 digests to "
+            "check for published model security advisories before loading weights."
+        ),
     )
-    SECURITY_ADVISORY_CACHE_TTL: int = Field(default=3600, ge=1)
+    SECURITY_ADVISORY_CACHE_TTL: int = Field(
+        default=3600,
+        ge=1,
+        description=(
+            "Time-to-live in seconds (>= 1 second) for cached security advisory "
+            "responses before re-querying the advisory endpoint."
+        ),
+    )
     SECURITY_ADVISORY_FALLBACK_POLICY: Literal["strict", "permissive"] = Field(
-        default="strict"
+        default="strict",
+        description=(
+            "Fallback behavior when the security advisory endpoint is unreachable: "
+            "'strict' refuses to load unverified models, whereas 'permissive' allows loading."
+        ),
     )
-    OCR_GPU_ENABLED: bool = Field(default=False)
-    AUDIO_GPU_ENABLED: bool = Field(default=False)
-    AUDIO_MAX_WORKERS: int = Field(default=2, gt=0, le=64)
+    OCR_GPU_ENABLED: bool = Field(
+        default=False,
+        description=(
+            "Whether to enable GPU hardware acceleration for EasyOCR and vision "
+            "extraction workloads when a compatible accelerator is available."
+        ),
+    )
+    AUDIO_GPU_ENABLED: bool = Field(
+        default=False,
+        description=(
+            "Whether to enable GPU hardware acceleration for Whisper audio "
+            "transcription workloads."
+        ),
+    )
+    AUDIO_MAX_WORKERS: int = Field(
+        default=2,
+        gt=0,
+        le=64,
+        description=(
+            "Maximum number of concurrent worker processes dedicated to audio "
+            "transcription tasks (integer from 1 to 64 workers; aliased as MAX_AUDIO_WORKERS)."
+        ),
+    )
 
     @property
     def MAX_AUDIO_WORKERS(self) -> int:
@@ -137,7 +449,15 @@ class Settings(BaseSettings):
     def MAX_AUDIO_WORKERS(self, val: int) -> None:
         self.AUDIO_MAX_WORKERS = val
 
-    PLUGINS: list[str] = Field(default_factory=list)
+    PLUGINS: list[str] = Field(
+        default_factory=list,
+        description=(
+            "List of enabled plugin Python module identifiers. Entries must be valid "
+            "dotted Python identifiers without path or shell characters; explicit dotted module "
+            "paths must start with 'app.plugins.' or 'sortify_plugin_', and Python standard library "
+            "or system modules are forbidden."
+        ),
+    )
 
     @field_validator("PLUGINS", mode="before")
     @classmethod
@@ -198,22 +518,129 @@ class Settings(BaseSettings):
                 validated.append(cleaned)
         return validated
 
-    OCR_LANGUAGES: str = Field(default="en")
-    VISION_ENGINE: Literal["easyocr", "florence-2"] = Field(default="easyocr")
-    CONFLICT_POLICY: Literal["skip", "rename", "overwrite"] = Field(default="rename")
-    SORTING_STRATEGY: str = Field(default="default")
-    CLINICAL_SMART_RENAMING: bool = Field(default=False)
-    CLINICAL_GENERATE_AUDIT_REPORT: bool = Field(default=True)
-    COHERENCE_THRESHOLD: float = Field(default=0.5, ge=0.0, le=1.0)
-    DEBOUNCE_DELAY: float = Field(default=0.6, gt=0.0)
-    MAX_DEBOUNCE_DELAY: float = Field(default=5.0, gt=0.0)
-    MAX_QUEUE_CAPACITY: int = Field(default=1000, gt=0)
-    DEDUP_WINDOW: float = Field(default=0.5, ge=0.0)
-    RECONCILIATION_INTERVAL: float = Field(default=30.0, gt=0.0)
-    WORKER_TIMEOUT: float = Field(default=300.0, ge=0.0)
-    TABULAR_MAX_SHEETS: int = Field(default=10, gt=0)
-    TABULAR_MAX_ROWS: int = Field(default=10000, gt=0)
-    TABULAR_MAX_CHARACTERS: int = Field(default=50000, gt=0)
+    OCR_LANGUAGES: str = Field(
+        default="en",
+        description=(
+            "Comma-separated list of non-empty OCR language codes (alphanumeric "
+            "characters and underscores only, such as 'en' or 'ch_sim,en')."
+        ),
+    )
+    VISION_ENGINE: Literal["easyocr", "florence-2"] = Field(
+        default="easyocr",
+        description=(
+            "Visual text and caption extraction backend: 'easyocr' for standard OCR "
+            "or 'florence-2' for vision-language document understanding."
+        ),
+    )
+    CONFLICT_POLICY: Literal["skip", "rename", "overwrite"] = Field(
+        default="rename",
+        description=(
+            "Resolution strategy when a destination file already exists: 'skip' leaves "
+            "the source untouched, 'rename' appends a numeric suffix, and 'overwrite' replaces the target."
+        ),
+    )
+    SORTING_STRATEGY: str = Field(
+        default="default",
+        description=(
+            "Document clustering and taxonomy strategy identifier (for example 'default' "
+            "TF-IDF/embedding clustering, 'generative', 'clinical_tmf', or 'clinical_isf')."
+        ),
+    )
+    CLINICAL_SMART_RENAMING: bool = Field(
+        default=False,
+        description=(
+            "Whether clinical sorting strategies standardize filenames using Trial "
+            "Master File (TMF/ISF) study, artifact, and date metadata."
+        ),
+    )
+    CLINICAL_GENERATE_AUDIT_REPORT: bool = Field(
+        default=True,
+        description=(
+            "Whether clinical compliance runs automatically generate a regulatory "
+            "audit trail report upon completion."
+        ),
+    )
+    COHERENCE_THRESHOLD: float = Field(
+        default=0.5,
+        ge=0.0,
+        le=1.0,
+        description=(
+            "Minimum semantic similarity coherence score (float from 0.0 to 1.0) "
+            "required to group documents into a topic cluster before falling back to Miscellaneous."
+        ),
+    )
+    DEBOUNCE_DELAY: float = Field(
+        default=0.6,
+        gt=0.0,
+        description=(
+            "Initial filesystem event debounce delay in seconds (> 0.0 and must be "
+            "<= MAX_DEBOUNCE_DELAY) before the background daemon processes newly modified files."
+        ),
+    )
+    MAX_DEBOUNCE_DELAY: float = Field(
+        default=5.0,
+        gt=0.0,
+        description=(
+            "Maximum ceiling in seconds (> 0.0 and must be >= DEBOUNCE_DELAY) that "
+            "bursty filesystem events can defer daemon batch processing."
+        ),
+    )
+    MAX_QUEUE_CAPACITY: int = Field(
+        default=1000,
+        gt=0,
+        description=(
+            "Maximum number of pending filesystem events (> 0 items) buffered in the "
+            "background daemon priority queue before backpressure applies."
+        ),
+    )
+    DEDUP_WINDOW: float = Field(
+        default=0.5,
+        ge=0.0,
+        description=(
+            "Time window in seconds (>= 0.0 seconds) used by the daemon watcher to "
+            "coalesce duplicate filesystem events for the same path."
+        ),
+    )
+    RECONCILIATION_INTERVAL: float = Field(
+        default=30.0,
+        gt=0.0,
+        description=(
+            "Periodic interval in seconds (> 0.0 seconds) between background daemon "
+            "sweeps for missed files and incomplete ledger transactions."
+        ),
+    )
+    WORKER_TIMEOUT: float = Field(
+        default=300.0,
+        ge=0.0,
+        description=(
+            "Maximum execution time in seconds (>= 0.0 seconds) allowed for background "
+            "extraction, clustering, or forensic quarantine scan workers before timing out."
+        ),
+    )
+    TABULAR_MAX_SHEETS: int = Field(
+        default=10,
+        gt=0,
+        description=(
+            "Maximum number of workbook sheets (> 0 sheets) sampled per spreadsheet "
+            "during tabular text extraction (aliased as MAX_SPREADSHEET_SHEETS)."
+        ),
+    )
+    TABULAR_MAX_ROWS: int = Field(
+        default=10000,
+        gt=0,
+        description=(
+            "Maximum number of rows (> 0 rows) read per sheet or CSV file during "
+            "tabular text extraction (aliased as MAX_SPREADSHEET_ROWS)."
+        ),
+    )
+    TABULAR_MAX_CHARACTERS: int = Field(
+        default=50000,
+        gt=0,
+        description=(
+            "Maximum total extracted character budget (> 0 characters) retained per "
+            "tabular document (aliased as MAX_SPREADSHEET_CHARACTERS)."
+        ),
+    )
 
     @property
     def MAX_SPREADSHEET_SHEETS(self) -> int:
@@ -231,7 +658,13 @@ class Settings(BaseSettings):
         return self.TABULAR_MAX_CHARACTERS
 
     IGNORED_EXTENSIONS: list[Annotated[str, Field(min_length=1, pattern=r"^\..+")]] = (
-        Field(default=[".crdownload", ".tmp", ".download"])
+        Field(
+            default=[".crdownload", ".tmp", ".download"],
+            description=(
+                "List of temporary or incomplete file extensions skipped during scanning "
+                "and daemon watching (non-empty strings normalized with a leading '.', such as '.tmp')."
+            ),
+        )
     )
 
     @field_validator("IGNORED_EXTENSIONS", mode="before")
@@ -346,12 +779,16 @@ class Settings(BaseSettings):
             validate_target_path(target_path, keyword=keyword)
         return v
 
-    @field_validator("POLICIES")
+    @field_validator("POLICIES", mode="before")
     @classmethod
     def validate_policies(cls, v: list[dict]) -> list[dict]:
         """Validate that unified policies have valid target paths, types, expression, and priority, and check for overlaps."""
         from app.core.path_utils import validate_target_path
 
+        if not isinstance(v, list):
+            raise ValueError("POLICIES must be a list.")
+
+        normalized_policies = []
         for rule in v:
             if not isinstance(rule, dict):
                 raise ValueError("Each policy must be a dictionary.")
@@ -377,11 +814,18 @@ class Settings(BaseSettings):
                 raise ValueError("Policy target_path must be a string.")
             validate_target_path(target_path, keyword=expression)
 
-            if "priority" not in rule or not isinstance(rule["priority"], int):
+            if (
+                "priority" not in rule
+                or not isinstance(rule["priority"], int)
+                or isinstance(rule["priority"], bool)
+            ):
                 raise ValueError("Policy must have an integer priority.")
 
             if "halting" in rule and not isinstance(rule["halting"], bool):
                 raise ValueError("Policy halting property must be a boolean.")
+
+            if "enabled" in rule and not isinstance(rule["enabled"], bool):
+                raise ValueError("Policy enabled property must be a boolean.")
 
             action = rule.get("action")
             if action is not None:
@@ -412,8 +856,41 @@ class Settings(BaseSettings):
                 ):
                     raise ValueError(f"Invalid post_unarchive_action: {post_act}.")
 
+            needs_copy = (
+                ("action" in rule and rule["action"] is None)
+                or (isinstance(action, str) and action != action.lower())
+                or (
+                    "post_unarchive_action" in rule
+                    and rule["post_unarchive_action"] is None
+                )
+                or (
+                    isinstance(rule.get("post_unarchive_action"), str)
+                    and rule["post_unarchive_action"]
+                    != rule["post_unarchive_action"].lower()
+                )
+            )
+            if needs_copy:
+                updated_rule = dict(rule)
+                if "action" in updated_rule:
+                    if updated_rule["action"] is None:
+                        updated_rule.pop("action")
+                    elif isinstance(updated_rule["action"], str):
+                        updated_rule["action"] = updated_rule["action"].lower()
+                if "post_unarchive_action" in updated_rule:
+                    if updated_rule["post_unarchive_action"] is None:
+                        updated_rule.pop("post_unarchive_action")
+                    elif isinstance(updated_rule["post_unarchive_action"], str):
+                        updated_rule["post_unarchive_action"] = updated_rule[
+                            "post_unarchive_action"
+                        ].lower()
+                normalized_policies.append(updated_rule)
+            else:
+                normalized_policies.append(rule)
+
         # Overlap check
-        sorted_policies = sorted(v, key=lambda x: x.get("priority", 0), reverse=True)
+        sorted_policies = sorted(
+            normalized_policies, key=lambda x: x.get("priority", 0), reverse=True
+        )
 
         for i, lower_rule in enumerate(sorted_policies):
             for higher_rule in sorted_policies[:i]:
@@ -428,71 +905,91 @@ class Settings(BaseSettings):
                     print(f"WARNING: {msg}", file=sys.stderr)
                     break
 
-        return v
+        return normalized_policies
 
-    AI_CONSENT_GRANTED: bool | None = Field(default=None)
-    LOG_FILE: str = Field(default=str(get_app_dir() / "autosorter.log"), min_length=1)
-    STOP_WORDS: set[str] = {
-        "the",
-        "and",
-        "for",
-        "this",
-        "that",
-        "with",
-        "from",
-        "inc",
-        "com",
-        "pdf",
-        "docx",
-        "txt",
-        "csv",
-        "xlsx",
-        "xls",
-        "site",
-        "team",
-        "page",
-        "nan",
-        "unnamed",
-        "your",
-        "have",
-        "will",
-        "are",
-        "not",
-        "can",
-        "all",
-        "was",
-        "has",
-        "but",
-        "what",
-        "there",
-        "out",
-        "about",
-        "get",
-        "would",
-        "like",
-        "which",
-        "their",
-        "when",
-        "who",
-        "some",
-        "how",
-        "these",
-        "into",
-        "other",
-        "could",
-        "than",
-        "only",
-        "also",
-        "over",
-        "well",
-        "because",
-        "through",
-        "don",
-        "should",
-        "been",
-        "much",
-        "where",
-    }
+    AI_CONSENT_GRANTED: bool | None = Field(
+        default=None,
+        description=(
+            "User consent state for local AI model downloads and semantic vector "
+            "indexing: true (granted), false (declined; unloads models and scrubs vectors), "
+            "or null (not yet prompted)."
+        ),
+    )
+    LOG_FILE: str = Field(
+        default=str(get_app_dir() / "autosorter.log"),
+        min_length=1,
+        description=(
+            "Filesystem path to the primary rotating application log file "
+            "(non-empty string; defaults to 'autosorter.log' inside the app directory)."
+        ),
+    )
+    STOP_WORDS: set[str] = Field(
+        default={
+            "the",
+            "and",
+            "for",
+            "this",
+            "that",
+            "with",
+            "from",
+            "inc",
+            "com",
+            "pdf",
+            "docx",
+            "txt",
+            "csv",
+            "xlsx",
+            "xls",
+            "site",
+            "team",
+            "page",
+            "nan",
+            "unnamed",
+            "your",
+            "have",
+            "will",
+            "are",
+            "not",
+            "can",
+            "all",
+            "was",
+            "has",
+            "but",
+            "what",
+            "there",
+            "out",
+            "about",
+            "get",
+            "would",
+            "like",
+            "which",
+            "their",
+            "when",
+            "who",
+            "some",
+            "how",
+            "these",
+            "into",
+            "other",
+            "could",
+            "than",
+            "only",
+            "also",
+            "over",
+            "well",
+            "because",
+            "through",
+            "don",
+            "should",
+            "been",
+            "much",
+            "where",
+        },
+        description=(
+            "Set of common noise and file-extension tokens excluded during TF-IDF "
+            "keyword extraction and cluster folder naming."
+        ),
+    )
 
     # Only SORTIFY_-prefixed variables apply, and `.env` is read from the app
     # directory (see `app_env_file()`), never from the working directory.

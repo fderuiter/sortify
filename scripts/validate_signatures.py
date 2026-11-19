@@ -351,12 +351,17 @@ def collect_cli_definitions(cli_dir=None):
             for file in files:
                 if (
                     file.endswith(".py")
-                    and not file.startswith("_")
+                    and (file == "__init__.py" or not file.startswith("_"))
                     and not file.startswith(".")
                 ):
                     full_path = os.path.join(root, file)
                     rel_path = safe_relpath(full_path, BASE_DIR).replace("\\", "/")
-                    cli_data[rel_path] = extract_cli(full_path)
+                    sigs = extract_module_signatures(full_path)
+                    cli_data[rel_path] = {
+                        "classes": sigs["classes"],
+                        "functions": sigs["functions"],
+                        "cli": extract_cli(full_path),
+                    }
 
     return dict(sorted(cli_data.items()))
 
@@ -570,7 +575,9 @@ def collect_modules_and_payloads():
         if isinstance(cli_dict, dict):
             for source_rel, cli_calls in cli_dict.items():
                 snap_path = source_path_to_snapshot_path(source_rel)
-                payload = {"cli": cli_calls}
+                payload = (
+                    cli_calls if isinstance(cli_calls, dict) else {"cli": cli_calls}
+                )
                 modules.append(
                     {
                         "category": "cli",
