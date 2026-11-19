@@ -16,7 +16,15 @@ on:
       - 'scripts/build.py'
       - 'smart-autosorter.spec'
       - 'scripts/verify_pe_dependencies.py'
+      - 'pyproject.toml'
+      - 'uv.lock'
   workflow_dispatch:
+
+# A new push to a PR supersedes the run in progress. Published releases and
+# manual dispatches keep unique groups and never cancel in-progress runs.
+concurrency:
+  group: release-${{ github.event.pull_request.number || github.event.release.tag_name || github.run_id }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 
 # Building runs third-party code (dependencies, PyInstaller, Syft) and also
 # runs on PRs, so it gets a read-only token. Only the publish job, which runs
@@ -82,6 +90,36 @@ jobs:
         if: runner.os == 'Windows'
         run: |
           uv run python scripts/verify_pe_dependencies.py
+
+      - name: Verify compiled executable (Smoke Test)
+        shell: python
+        env:
+          PYTHON_KEYRING_BACKEND: keyring.backends.fail.Keyring
+        run: |
+          import subprocess, sys, os
+          exe_ext = ".exe" if sys.platform == "win32" else ""
+          cli_exe = os.path.join("dist", "smart-autosorter", f"smart-autosorter{exe_ext}")
+          if not os.path.exists(cli_exe):
+              print(f"Missing CLI executable target: {cli_exe}")
+              sys.exit(1)
+          res = subprocess.run([cli_exe, "--smoke-test"])
+          if res.returncode != 0:
+              print(f"Smoke test failed with exit code {res.returncode}")
+              found_log = False
+              for path in [
+                  "smoke_test_error.txt",
+                  os.path.join("dist", "smart-autosorter", "smoke_test_error.txt"),
+                  os.path.expanduser(os.path.join("~", ".autosorter", "smoke_test_error.txt")),
+              ]:
+                  if os.path.exists(path):
+                      with open(path, "r", encoding="utf-8", errors="replace") as f:
+                          print("=== smoke_test_error.txt ===")
+                          print(f.read())
+                      found_log = True
+                      break
+              if not found_log:
+                  print("No smoke_test_error.txt found.")
+              sys.exit(res.returncode)
 
       - name: Package as Archive (Windows)
         if: runner.os == 'Windows'
