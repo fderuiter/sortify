@@ -10,6 +10,17 @@ REPO_ROOT = Path(__file__).resolve().parent.parent
 if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
+_CHECK_STAGE_DIR: Path | None = None
+
+
+def _resolve_output_path(rel_path: str) -> str:
+    """Resolve output path, redirecting into _CHECK_STAGE_DIR during read-only --check."""
+    if _CHECK_STAGE_DIR is not None:
+        staged = _CHECK_STAGE_DIR / rel_path
+        staged.parent.mkdir(parents=True, exist_ok=True)
+        return str(staged)
+    return rel_path
+
 
 def get_python_executable():
     """Dynamically determine the best Python command/executable."""
@@ -18,7 +29,7 @@ def get_python_executable():
 
 def generate_tutorial_docs():
     """Ensure tutorial documentation directory exists."""
-    tutorials_dir = Path("docs") / "tutorials"
+    tutorials_dir = Path(_resolve_output_path(os.path.join("docs", "tutorials")))
     tutorials_dir.mkdir(parents=True, exist_ok=True)
 
 
@@ -56,7 +67,7 @@ def _module_parts_for_doc_path(file_path: str) -> tuple[str, ...]:
 def generate_api_docs():
     """Generate API reference markdown from python modules."""
     app_dir = "app"
-    output_file = os.path.join("docs", "api_reference.md")
+    output_file = _resolve_output_path(os.path.join("docs", "api_reference.md"))
 
     with open(output_file, "w", encoding="utf-8", newline="\n") as f:
         f.write("# API Reference\n\n")
@@ -94,7 +105,7 @@ def compile_diagram_assets():
     from scripts.diagram_toolchain import build_diagrams, reset_markdown_anchors_cache
 
     reset_markdown_anchors_cache()
-    if not build_diagrams(force=False, verify_only=False):
+    if not build_diagrams(force=False, verify_only=_CHECK_STAGE_DIR is not None):
         raise RuntimeError(
             "One or more diagrams failed schema validation or rendering; "
             "see the messages above."
@@ -105,7 +116,13 @@ def sync_config_schema():
     """Synchronize application configuration JSON schema."""
     from scripts.validate_config import sync_config_schema as _sync_schema
 
-    _sync_schema()
+    if _CHECK_STAGE_DIR is not None:
+        staged_schema = Path(
+            _resolve_output_path(os.path.join("app", "config_schema.json"))
+        )
+        _sync_schema(schema_path=staged_schema)
+    else:
+        _sync_schema()
 
 
 generate_config_schema = sync_config_schema
@@ -114,7 +131,7 @@ generate_config_schema = sync_config_schema
 def generate_ui_docs():
     """Generate UI Reference from app/ui/*.py."""
     app_dir = os.path.join("app", "ui")
-    output_file = os.path.join("docs", "ui.md")
+    output_file = _resolve_output_path(os.path.join("docs", "ui.md"))
 
     with open(output_file, "w", encoding="utf-8", newline="\n") as f:
         f.write("# UI API Reference\n\n")
@@ -209,7 +226,7 @@ def generate_keyboard_docs():
     ui_files = glob.glob(os.path.join("app", "ui", "**", "*.py"), recursive=True)
     for source_path in sorted(ui_files):
         bindings.update(_collect_bindings(source_path))
-    output_file = os.path.join("docs", "keyboard_shortcuts.md")
+    output_file = _resolve_output_path(os.path.join("docs", "keyboard_shortcuts.md"))
 
     def table(rows):
         lines = ["| Keys | Action |", "|---|---|"]
@@ -300,7 +317,7 @@ def _describe_bounds(field) -> str:
 
 def generate_admin_guide():
     """Generate Admin Guide from config and scripts."""
-    output_file = os.path.join("docs", "admin_guide.md")
+    output_file = _resolve_output_path(os.path.join("docs", "admin_guide.md"))
 
     # Import config safely
     from app.config import Settings
@@ -659,7 +676,12 @@ def update_security_md(sec_file="SECURITY.md"):
     import re
     from urllib.parse import urlparse
 
-    from scripts.validate_links import DEFAULT_BYPASS_DOMAINS, URL_REGEX, validate_url
+    from scripts.validate_links import (
+        DEFAULT_BYPASS_DOMAINS,
+        URL_REGEX,
+        is_template_or_redacted_url,
+        validate_url,
+    )
 
     network_deps = []
     urls_to_validate = set()
@@ -752,6 +774,20 @@ def update_security_md(sec_file="SECURITY.md"):
             # Find URLs
             for match in URL_REGEX.finditer(file_content):
                 url = match.group(0).rstrip(".,;)'\"")
+                if "[REDACTED]" in url:
+                    continue
+                if is_template_or_redacted_url(url):
+                    static_prefix = url.split("{", 1)[0]
+                    try:
+                        domain = urlparse(static_prefix).netloc
+                    except Exception:
+                        domain = ""
+                    if domain:
+                        network_deps.append(
+                            f"- `{domain}` (via `{rel_path}`): Auto-discovered network URL"
+                        )
+                    continue
+
                 urls_to_validate.add(url)
 
                 try:
@@ -797,7 +833,8 @@ def update_security_md(sec_file="SECURITY.md"):
                 else:
                     print(f"[PASS] {url} - {msg}")
             except Exception as e:
-                print(f"[WARN] {url} generated an exception: {e}")
+                print(f"[FAIL] {url} generated an exception: {e}")
+                has_critical_error = True
 
     if has_critical_error:
         raise Exception(
@@ -829,7 +866,12 @@ def update_security_md(sec_file="SECURITY.md"):
         if not in_network_section:
             out_lines.append(line)
 
-    with open(sec_file, "w", encoding="utf-8", newline="\n") as f:
+    target_sec_file = (
+        _resolve_output_path(sec_file)
+        if _CHECK_STAGE_DIR is not None and sec_file == "SECURITY.md"
+        else sec_file
+    )
+    with open(target_sec_file, "w", encoding="utf-8", newline="\n") as f:
         f.writelines(out_lines)
 
 
@@ -1571,60 +1613,82 @@ def main():
         ("sync_config_schema", sync_config_schema),
     ]
 
-    errors = []
-    for name, task in tasks:
-        try:
-            task()
-        except Exception as e:
-            errors.append((name, e, sys.exc_info()))
+    import tempfile
+    from contextlib import nullcontext
 
-    if errors:
-        sys.stderr.write(
-            "Documentation generation encountered errors in the following modules:\n\n"
-        )
-        for name, exc, exc_info in errors:
-            sys.stderr.write(f"--- Error in {name} ---\n")
-            traceback.print_exception(*exc_info, file=sys.stderr)
-            sys.stderr.write("\n")
-        sys.exit(1)
-        return
-
-    # Validate Mermaid diagram syntax across documentation files
-    mermaid_validation_errors = validate_mermaid_diagrams()
-    if mermaid_validation_errors:
-        sys.stderr.write(
-            "\nError: Mermaid diagram syntax validation failed with the following issues:\n"
-        )
-        for err in mermaid_validation_errors:
-            sys.stderr.write(f"  - {err}\n")
-        sys.exit(1)
-        return
-
-    # 3. Check for unsynced files and audit handwritten docs if requested
+    global _CHECK_STAGE_DIR
     changed_files = []
-    if args.check:
-        for filepath in generated_files:
-            new_content = None
-            if os.path.exists(filepath):
+    stage_ctx = tempfile.TemporaryDirectory() if args.check else nullcontext(None)
+    with stage_ctx as stage_dir_str:
+        _CHECK_STAGE_DIR = Path(stage_dir_str) if stage_dir_str is not None else None
+        try:
+            errors = []
+            for name, task in tasks:
                 try:
-                    with open(filepath, "r", encoding="utf-8") as f:
-                        new_content = f.read().replace("\r\n", "\n")
-                except Exception:
-                    pass
-            if new_content != initial_contents.get(filepath):
-                changed_files.append(filepath)
+                    task()
+                except Exception as e:
+                    errors.append((name, e, sys.exc_info()))
 
-        doc_audit_errors = audit_handwritten_docs()
-        host_audit_errors = audit_model_hosts()
-        all_audit_errors = list(dict.fromkeys(doc_audit_errors + host_audit_errors))
-        if all_audit_errors:
-            sys.stderr.write(
-                "\nError: Documentation audit failed with the following issues:\n"
-            )
-            for err in all_audit_errors:
-                sys.stderr.write(f"  - {err}\n")
-            sys.exit(1)
-            return
+            if errors:
+                sys.stderr.write(
+                    "Documentation generation encountered errors in the following modules:\n\n"
+                )
+                for name, exc, exc_info in errors:
+                    sys.stderr.write(f"--- Error in {name} ---\n")
+                    traceback.print_exception(*exc_info, file=sys.stderr)
+                    sys.stderr.write("\n")
+                sys.exit(1)
+                return
+
+            # Validate Mermaid diagram syntax across documentation files
+            mermaid_validation_errors = validate_mermaid_diagrams()
+            if mermaid_validation_errors:
+                sys.stderr.write(
+                    "\nError: Mermaid diagram syntax validation failed with the following issues:\n"
+                )
+                for err in mermaid_validation_errors:
+                    sys.stderr.write(f"  - {err}\n")
+                sys.exit(1)
+                return
+
+            # 3. Check for unsynced files and audit handwritten docs if requested
+            if args.check:
+                for filepath in generated_files:
+                    new_content = None
+                    staged_candidate = (
+                        _CHECK_STAGE_DIR / filepath
+                        if _CHECK_STAGE_DIR is not None
+                        else None
+                    )
+                    read_target = (
+                        str(staged_candidate)
+                        if staged_candidate is not None and staged_candidate.exists()
+                        else filepath
+                    )
+                    if os.path.exists(read_target):
+                        try:
+                            with open(read_target, "r", encoding="utf-8") as f:
+                                new_content = f.read().replace("\r\n", "\n")
+                        except Exception:
+                            pass
+                    if new_content != initial_contents.get(filepath):
+                        changed_files.append(filepath)
+
+                doc_audit_errors = audit_handwritten_docs()
+                host_audit_errors = audit_model_hosts()
+                all_audit_errors = list(
+                    dict.fromkeys(doc_audit_errors + host_audit_errors)
+                )
+                if all_audit_errors:
+                    sys.stderr.write(
+                        "\nError: Documentation audit failed with the following issues:\n"
+                    )
+                    for err in all_audit_errors:
+                        sys.stderr.write(f"  - {err}\n")
+                    sys.exit(1)
+                    return
+        finally:
+            _CHECK_STAGE_DIR = None
 
     # 4. Run MkDocs build (and preserve strict build flags)
     if not args.no_build:

@@ -250,3 +250,75 @@ def test_main_network_failure_fails(mock_urlopen, monkeypatch, tmp_path):
         main()
     except SystemExit as exc:
         assert exc.code == 1
+
+
+@patch("urllib.request.urlopen")
+def test_validate_url_malformed_ipv6_fails_in_local_and_live_modes(
+    mock_urlopen, monkeypatch, tmp_path
+):
+    bad_url = "https://[invalid-ipv6-host/docs/guide"
+    for local_only in (True, False):
+        ok, msg, is_crit = validate_url(
+            bad_url, {"example.com", "invalid-ipv6-host"}, local_only=local_only
+        )
+        assert ok is False
+        assert "Invalid URL structure" in msg
+        assert is_crit is True
+    mock_urlopen.assert_not_called()
+
+    for ext in (".md", ".py"):
+        target = tmp_path / f"sample{ext}"
+        target.write_text(f'URL = "{bad_url}"\n', encoding="utf-8")
+        for args in (
+            ["validate_links.py", "--local-only", str(target)],
+            ["validate_links.py", str(target)],
+        ):
+            monkeypatch.setattr(sys, "argv", args)
+            try:
+                main()
+                raise AssertionError("Expected SystemExit(1)")
+            except SystemExit as exc:
+                assert exc.code == 1
+
+
+def test_worker_exception_marks_critical_failure(monkeypatch, tmp_path):
+    doc = tmp_path / "crash.md"
+    doc.write_text("Visit https://live-test.invalid/page\n", encoding="utf-8")
+
+    def boom(*_args, **_kwargs):
+        raise RuntimeError("simulated worker crash")
+
+    monkeypatch.setattr("scripts.validate_links.validate_url", boom)
+    monkeypatch.setattr(sys, "argv", ["validate_links.py", "--local-only", str(doc)])
+    try:
+        main()
+        raise AssertionError("Expected SystemExit(1)")
+    except SystemExit as exc:
+        assert exc.code == 1
+
+
+def test_default_bypass_domains_restricted_and_templates_skipped():
+    from scripts.validate_links import (
+        DEFAULT_BYPASS_DOMAINS,
+        is_template_or_redacted_url,
+    )
+
+    for live_host in (
+        "github.com",
+        "pypi.org",
+        "astral.sh",
+        "docs.astral.sh",
+        "osv.dev",
+        "api.osv.dev",
+        "download.pytorch.org",
+        "huggingface.co",
+        "keepachangelog.com",
+        "w3.org",
+        "www.w3.org",
+    ):
+        assert live_host not in DEFAULT_BYPASS_DOMAINS
+
+    assert is_template_or_redacted_url("https://api.osv.dev/v1/vulns/{vuln_id.strip()}")
+    assert is_template_or_redacted_url("https://[REDACTED]:[REDACTED]@")
+    assert not is_template_or_redacted_url("https://[invalid-ipv6-host/docs/guide")
+    assert not is_template_or_redacted_url("https://[invalid-ipv6-host/{slug}")

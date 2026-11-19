@@ -16,7 +16,7 @@
       "description": "Model acquisition (e.g., `facebook/opt-125m` for generative naming)."
     },
     {
-      "pattern": "https://download\\.pytorch\\.org",
+      "pattern": "https://download\\.pytorch\\.org(?:/whl/cpu)?",
       "match_type": "regex",
       "description": "Fetching CPU-optimized PyTorch wheels."
     },

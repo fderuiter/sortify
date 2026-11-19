@@ -33,7 +33,8 @@ uv run pytest -m slow -n 0              # ML, snapshot and integration tests
 uv run ruff check . && uv run ruff format .
 uv run ty check                         # type check app/ (config in pyproject.toml)
 uv run pre-commit run --all-files       # every hook, same as CI's static checks
-uv run python scripts/generate_docs.py --check  # regenerate docs, audit links, build the site
+uv run python scripts/validate_config.py --check        # verify config schema and pyproject.toml bounds read-only
+uv run python scripts/generate_docs.py --check          # verify generated docs/diagrams read-only and build site/
 uv run mkdocs serve                     # preview the docs site at http://127.0.0.1:8000
 ```
 
@@ -41,25 +42,26 @@ Set `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` when running tests on
 
 ## What the hooks and CI check
 
-`.pre-commit-config.yaml` runs ruff (lint and format), ty (type check) plus the repo's own validators in `scripts/`:
+`.pre-commit-config.yaml` runs ruff (lint and format), ty (type check) plus the repo's own read-only validators in `scripts/` across the full repository:
 
 | Hook | Script | Fails when |
 |---|---|---|
-| `validate-docs` | `uv run python scripts/generate_docs.py --check --no-build` | generated docs (`docs/api_reference.md`, `docs/ui.md`, `docs/admin_guide.md`, `SECURITY.md`, `app/config_schema.json`) are stale, or a handwritten doc links to a missing path |
-| `validate-diagram-artifacts` | `scripts/diagram_toolchain.py` | a Mermaid diagram spec doesn't compile |
-| `validate-signatures` | `scripts/validate_signatures.py` | a public API or CLI signature changed without updating its baseline in `tests/snapshots/api/` |
-| `validate-architecture` | `scripts/validate_architecture.py` | a centralized helper (path validation, packaging checks, key lookup) is duplicated instead of reused |
-| `validate-imports` | `scripts/validate_imports.py` | `app/` imports a package that isn't a declared dependency |
+| `validate-docs` | `uv run python scripts/generate_docs.py --check --no-build` | generated docs (`docs/api_reference.md`, `docs/ui.md`, `docs/admin_guide.md`, `docs/keyboard_shortcuts.md`, `SECURITY.md`, `app/config_schema.json`) are stale, or a handwritten doc links to a missing path |
+| `validate-diagram-artifacts` | `uv run python scripts/diagram_toolchain.py --verify` | a Mermaid diagram spec or `.mmd`/`.svg` artifact in `docs/assets/diagrams/` is stale or invalid |
+| `validate-signatures` | `uv run python scripts/validate_signatures.py` | a public API or CLI signature changed without updating its baseline in `tests/snapshots/api/`, or an orphaned snapshot exists under `tests/snapshots/` |
+| `validate-architecture` | `uv run python scripts/validate_architecture.py` | a centralized helper, `Settings` usage, or architecture diagram inventory drifts across `app/`, `scripts/diagram_schema.py`, or `docs/assets/diagrams/` |
+| `validate-imports` | `uv run python scripts/validate_imports.py` | `app/` imports a package that isn't a declared dependency |
 | `deptry` | `uv run deptry .` | a declared dependency is unused, an import comes only in transitively, or runtime code imports a dev-only package (exceptions are in `[tool.deptry]` in `pyproject.toml`) |
-| `validate-config-schema` | `scripts/validate_config.py` | `app/config.py` and `app/config_schema.json` disagree |
-| `validate-links` | `scripts/validate_links.py --local-only` | a URL in a changed file is malformed (CI also checks that external links resolve) |
+| `validate-config-schema` | `uv run python scripts/validate_config.py --check` | `app/config.py` and `app/config_schema.json` disagree, or `pyproject.toml` `hatchling` bounds drift |
+| `validate-links` | `uv run python scripts/validate_links.py --local-only` | a URL in a changed `.py` or `.md` file is malformed (CI runs `scripts/validate_links.py` to check that live external links resolve) |
 
 CI (`.github/workflows/ci.yml`) runs the same checks, a dependency audit and secret scan, then the test suite on Linux, Windows and macOS. The fast suite must keep coverage of `app/` at 70% or above (`--cov-fail-under` in `ci.yml`; on Linux this counts branches too). On Linux, the modules that move, undo and encrypt files must also stay above their own floors in `[tool.sortify.coverage-floors]` in `pyproject.toml`, checked by `scripts/check_coverage_floors.py`. Raise a floor when your tests raise its module. Tests run with a synchronous stand-in for the database write queue; mark a test `@pytest.mark.real_db_worker` to run it against the real asynchronous queue. The aggregate `Required CI` job is the merge gate.
 
 ## Updating baselines
 
-Some checks compare against committed files. When you change them on purpose, regenerate and commit the result so reviewers can see the diff:
+Read-only `--check` and `--verify` commands never overwrite tracked files on disk. When you change a baseline on purpose, run the explicit sync command and commit the result so reviewers can see the diff:
 
+- **Configuration schema:** `uv run python scripts/validate_config.py --sync` rewrites `app/config_schema.json` from `app/config.py`.
 - **Generated docs:** `uv run python scripts/generate_docs.py` rewrites the generated pages, `SECURITY.md`, and synchronizes `app/config_schema.json`.
 - **API and CLI signatures:** `uv run python scripts/validate_signatures.py --update`.
 - **TUI snapshots:** `UPDATE_SNAPSHOTS=1 uv run pytest tests/test_visual_snapshots.py -n 0`, then commit `tests/snapshots/tui_svg/`.

@@ -1029,3 +1029,64 @@ def test_validate_schema_completeness_enforces_descriptions_and_policies():
     }
     with pytest.raises(ValueError, match="POLICIES.items"):
         validate_schema_completeness(untyped_policies)
+
+
+def test_sync_config_schema_check_only_does_not_overwrite_disk(tmp_path):
+    """Verify check_only=True detects drift in memory without writing, while default writes."""
+    from scripts.validate_config import generate_config_schema, sync_config_schema
+
+    schema_file = tmp_path / "config_schema.json"
+    drifted_content = '{"drifted": true}\n'
+    schema_file.write_text(drifted_content, encoding="utf-8")
+
+    # check_only=True reports drift (True) and leaves drifted file untouched
+    assert sync_config_schema(schema_path=schema_file, check_only=True) is True
+    assert schema_file.read_text(encoding="utf-8") == drifted_content
+
+    # Default check_only=False preserves write behavior and updates disk
+    assert sync_config_schema(schema_path=schema_file) is True
+    assert (
+        json.loads(schema_file.read_text(encoding="utf-8")) == generate_config_schema()
+    )
+    assert sync_config_schema(schema_path=schema_file, check_only=True) is False
+
+
+def test_validate_config_cli_check_and_sync_flags(tmp_path, monkeypatch, capsys):
+    """Verify validate_config.py --check fails read-only on drift and --sync updates cleanly."""
+    import shutil
+
+    import scripts.validate_config as vc
+
+    fake_root = tmp_path / "repo"
+    (fake_root / "app").mkdir(parents=True)
+    shutil.copy2(vc.repo_root / "pyproject.toml", fake_root / "pyproject.toml")
+    schema_file = fake_root / "app" / "config_schema.json"
+    drifted_text = '{"stale": true}\n'
+    schema_file.write_text(drifted_text, encoding="utf-8")
+
+    monkeypatch.setattr(vc, "repo_root", fake_root)
+
+    assert vc.main(["--check"]) == 1
+    assert schema_file.read_text(encoding="utf-8") == drifted_text
+    assert "--sync" in capsys.readouterr().err
+
+    assert vc.main(["--sync"]) == 0
+    assert schema_file.read_text(encoding="utf-8") != drifted_text
+    assert vc.main(["--check"]) == 0
+
+
+def test_validate_config_rejects_invalid_hatchling_bounds(tmp_path, monkeypatch):
+    """Verify invalid hatchling bounds in pyproject.toml fail validate_config.py --check."""
+    import scripts.validate_config as vc
+
+    fake_root = tmp_path / "repo"
+    fake_root.mkdir(parents=True)
+    (fake_root / "pyproject.toml").write_text(
+        '[build-system]\nrequires = ["hatchling>=1.0.0"]\nbuild-backend = "hatchling.build"\n',
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(vc, "repo_root", fake_root)
+
+    with pytest.raises(SystemExit) as exc_info:
+        vc.main(["--check"])
+    assert exc_info.value.code == 1

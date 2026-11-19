@@ -2046,3 +2046,47 @@ def test_api_reference_includes_dunder_all_init_packages():
     api_content = Path("docs/api_reference.md").read_text(encoding="utf-8")
     assert "## `app.cli`" in api_content
     assert "::: app.cli" in api_content
+
+
+def test_diagram_toolchain_verify_only_never_mutates_mmd_or_creates_dir(tmp_path):
+    """Verify verify_only=True does not create missing output_dir or overwrite drifted .mmd files."""
+    from scripts.diagram_toolchain import build_diagrams
+
+    missing_dir = tmp_path / "nonexistent_diagrams"
+    assert build_diagrams(output_dir=missing_dir, verify_only=True) is False
+    assert not missing_dir.exists()
+
+    out_dir = tmp_path / "existing_diagrams"
+    out_dir.mkdir()
+    drifted_mmd = out_dir / "core_architecture.mmd"
+    drifted_mmd.write_text("flowchart TD\n  STALE --> NODE\n", encoding="utf-8")
+    assert build_diagrams(output_dir=out_dir, verify_only=True) is False
+    assert drifted_mmd.read_text(encoding="utf-8") == "flowchart TD\n  STALE --> NODE\n"
+
+
+def test_update_security_md_worker_exception_raises_critical(tmp_path, monkeypatch):
+    """Verify worker exceptions during update_security_md fail critically rather than warning."""
+    import json
+
+    from scripts.generate_docs import update_security_md
+
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "net.py").write_text(
+        'ENDPOINT = "https://unreachable.invalid/v1"\n', encoding="utf-8"
+    )
+    (tmp_path / "network_rules.json").write_text(
+        json.dumps({"targets": ["app"], "rules": []}), encoding="utf-8"
+    )
+    sec_md = tmp_path / "SECURITY.md"
+    initial_sec = "# Security Policy\n\n## Network Dependencies\n\nstale\n"
+    sec_md.write_text(initial_sec, encoding="utf-8")
+    monkeypatch.chdir(tmp_path)
+
+    with patch(
+        "scripts.validate_links.validate_url",
+        side_effect=RuntimeError("worker boom"),
+    ):
+        with pytest.raises(Exception, match="failed connectivity validation"):
+            update_security_md(sec_file=str(sec_md))
+
+    assert sec_md.read_text(encoding="utf-8") == initial_sec
