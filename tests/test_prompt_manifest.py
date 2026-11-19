@@ -1,14 +1,28 @@
 import json
+import re
+from pathlib import Path
 
 import pytest
+import yaml
 
 from scripts.prompt_manifest import (
-    compute_manifest_hmac,
+    PINNED_PUBLIC_KEY_HEX,
     compute_sha256,
     generate,
+    generate_keypair,
+    keygen,
     parse_and_validate_prompt,
+    serialize_manifest_payload,
+    sign_manifest_hashes,
     verify,
+    verify_manifest_signature,
 )
+
+
+@pytest.fixture
+def ed25519_keypair() -> tuple[str, str]:
+    """Generate an ephemeral Ed25519 keypair dynamically per test."""
+    return generate_keypair()
 
 
 def test_parse_valid_frontmatter(tmp_path):
@@ -246,16 +260,40 @@ def test_parse_utf8_bom(tmp_path):
     assert body == "This is the prompt body."
 
 
-def test_end_to_end_generate_and_verify(tmp_path, monkeypatch):
+def test_keygen_generates_valid_ed25519_keypair(capsys):
+    """Test keygen generates distinct valid 32-byte hex Ed25519 keypairs and prints CLI env lines."""
+    priv1, pub1 = keygen()
+    captured = capsys.readouterr()
+
+    assert len(priv1) == 64
+    assert len(pub1) == 64
+    assert bytes.fromhex(priv1) != bytes.fromhex(pub1)
+    assert f"PROMPT_MANIFEST_PRIVATE_KEY={priv1}" in captured.out
+    assert f"PINNED_PUBLIC_KEY_HEX={pub1}" in captured.out
+
+    priv2, pub2 = generate_keypair()
+    assert priv1 != priv2
+    assert pub1 != pub2
+
+    hashes = {"agent.md": "a" * 64}
+    sig = sign_manifest_hashes(hashes, priv1)
+    assert len(sig) == 128
+    assert verify_manifest_signature(hashes, sig, pub1) is True
+    assert verify_manifest_signature(hashes, sig, pub2) is False
+
+
+def test_end_to_end_generate_and_verify(tmp_path, monkeypatch, ed25519_keypair):
     """Test full generate and verify cycle under happy path and failure paths."""
-    # Setup temporary agents dir and manifest path
+    private_key_hex, public_key_hex = ed25519_keypair
+
     agents_dir = tmp_path / "AGENTS"
     agents_dir.mkdir()
     manifest_path = agents_dir / "manifest.json"
 
     monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
     monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
-    monkeypatch.setenv("PROMPT_MANIFEST_SECRET", "test-secret-key-123")
+    monkeypatch.setattr("scripts.prompt_manifest.PINNED_PUBLIC_KEY_HEX", public_key_hex)
+    monkeypatch.setenv("PROMPT_MANIFEST_PRIVATE_KEY", private_key_hex)
 
     # Create two agent prompts
     agent1 = agents_dir / "agent1.md"
@@ -280,10 +318,12 @@ def test_end_to_end_generate_and_verify(tmp_path, monkeypatch):
         manifest_data = json.load(f)
 
     assert "_signature" in manifest_data
+    assert len(manifest_data["_signature"]) == 128
     assert "agent1.md" in manifest_data
     assert "agent2.md" in manifest_data
 
-    # Verify happy path
+    # Verify happy path without needing private key in environment
+    monkeypatch.delenv("PROMPT_MANIFEST_PRIVATE_KEY", raising=False)
     verify()  # Should complete without error/exit
 
     # Update only frontmatter, verification should still succeed!
@@ -305,15 +345,17 @@ def test_end_to_end_generate_and_verify(tmp_path, monkeypatch):
     assert excinfo.value.code == 1
 
 
-def test_verify_with_deleted_file(tmp_path, monkeypatch):
+def test_verify_with_deleted_file(tmp_path, monkeypatch, ed25519_keypair):
     """Test that verification fails when a file in manifest is deleted."""
+    private_key_hex, public_key_hex = ed25519_keypair
     agents_dir = tmp_path / "AGENTS"
     agents_dir.mkdir()
     manifest_path = agents_dir / "manifest.json"
 
     monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
     monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
-    monkeypatch.setenv("PROMPT_MANIFEST_SECRET", "test-secret-key-123")
+    monkeypatch.setattr("scripts.prompt_manifest.PINNED_PUBLIC_KEY_HEX", public_key_hex)
+    monkeypatch.setenv("PROMPT_MANIFEST_PRIVATE_KEY", private_key_hex)
 
     agent1 = agents_dir / "agent1.md"
     agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
@@ -329,15 +371,17 @@ def test_verify_with_deleted_file(tmp_path, monkeypatch):
     assert excinfo.value.code == 1
 
 
-def test_verify_with_missing_manifest_file(tmp_path, monkeypatch):
+def test_verify_with_missing_manifest_file(tmp_path, monkeypatch, ed25519_keypair):
     """Test that verification fails when a new file is not in the manifest."""
+    private_key_hex, public_key_hex = ed25519_keypair
     agents_dir = tmp_path / "AGENTS"
     agents_dir.mkdir()
     manifest_path = agents_dir / "manifest.json"
 
     monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
     monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
-    monkeypatch.setenv("PROMPT_MANIFEST_SECRET", "test-secret-key-123")
+    monkeypatch.setattr("scripts.prompt_manifest.PINNED_PUBLIC_KEY_HEX", public_key_hex)
+    monkeypatch.setenv("PROMPT_MANIFEST_PRIVATE_KEY", private_key_hex)
 
     agent1 = agents_dir / "agent1.md"
     agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
@@ -353,8 +397,8 @@ def test_verify_with_missing_manifest_file(tmp_path, monkeypatch):
     assert excinfo.value.code == 1
 
 
-def test_main_cli(tmp_path, monkeypatch):
-    """Test main entry point parsing and delegation with --secret argument."""
+def test_main_cli(tmp_path, monkeypatch, capsys):
+    """Test main CLI entry point for keygen, generate, and verify."""
     from scripts.prompt_manifest import main
 
     agents_dir = tmp_path / "AGENTS"
@@ -363,15 +407,25 @@ def test_main_cli(tmp_path, monkeypatch):
 
     monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
     monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
-    monkeypatch.delenv("PROMPT_MANIFEST_SECRET", raising=False)
+    monkeypatch.delenv("PROMPT_MANIFEST_PRIVATE_KEY", raising=False)
+
+    # CLI keygen
+    monkeypatch.setattr("sys.argv", ["prompt_manifest.py", "keygen"])
+    main()
+    keygen_out = capsys.readouterr().out
+    kv = dict(
+        line.split("=", 1) for line in keygen_out.strip().splitlines() if "=" in line
+    )
+    private_key_hex = kv["PROMPT_MANIFEST_PRIVATE_KEY"]
+    public_key_hex = kv["PINNED_PUBLIC_KEY_HEX"]
 
     agent1 = agents_dir / "agent1.md"
     agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
 
-    # Mock command line arguments for generate with --secret
+    # CLI generate with --private-key
     monkeypatch.setattr(
         "sys.argv",
-        ["prompt_manifest.py", "generate", "--secret", "cli-test-secret"],
+        ["prompt_manifest.py", "generate", "--private-key", private_key_hex],
     )
     main()
 
@@ -380,17 +434,22 @@ def test_main_cli(tmp_path, monkeypatch):
         manifest_data = json.load(f)
     assert "_signature" in manifest_data
 
-    # Mock command line arguments for verify with --secret
+    # CLI verify with --public-key and --strict
     monkeypatch.setattr(
         "sys.argv",
-        ["prompt_manifest.py", "verify", "--secret", "cli-test-secret"],
+        ["prompt_manifest.py", "verify", "--public-key", public_key_hex, "--strict"],
     )
-    main()  # Should succeed without throwing SystemExit or exception
+    main()
+
+    # CLI verify using PINNED_PUBLIC_KEY_HEX without CLI key argument
+    monkeypatch.setattr("scripts.prompt_manifest.PINNED_PUBLIC_KEY_HEX", public_key_hex)
+    monkeypatch.setattr("sys.argv", ["prompt_manifest.py", "verify", "--strict"])
+    main()
 
 
-def test_compute_manifest_hmac_deterministic_sorting():
-    """Test that HMAC calculation sorts filenames alphabetically and is deterministic."""
-    secret = "secret-key-xyz"
+def test_sign_manifest_hashes_deterministic_sorting(ed25519_keypair):
+    """Test that Ed25519 signing sorts filenames alphabetically and is deterministic."""
+    private_key_hex, public_key_hex = ed25519_keypair
     hashes_order_1 = {
         "b_agent.md": "hash_b",
         "a_agent.md": "hash_a",
@@ -409,33 +468,36 @@ def test_compute_manifest_hmac_deterministic_sorting():
         "c_agent.md": "hash_c",
     }
 
-    sig1 = compute_manifest_hmac(hashes_order_1, secret)
-    sig2 = compute_manifest_hmac(hashes_order_2, secret)
-    sig3 = compute_manifest_hmac(hashes_with_sig, secret)
+    sig1 = sign_manifest_hashes(hashes_order_1, private_key_hex)
+    sig2 = sign_manifest_hashes(hashes_order_2, private_key_hex)
+    sig3 = sign_manifest_hashes(hashes_with_sig, private_key_hex)
 
     assert sig1 == sig2
     assert sig1 == sig3
+    assert verify_manifest_signature(hashes_order_1, sig1, public_key_hex) is True
 
 
-def test_compute_manifest_hmac_line_ending_normalization():
-    """Test that CRLF line endings normalize to LF for HMAC calculation."""
-    secret = "secret-key-xyz"
-    # Even if hashes dict or inputs have CRLF, normalization to LF ensures consistency
-    hashes = {"agent.md": "hash123"}
-    sig = compute_manifest_hmac(hashes, secret)
+def test_serialize_manifest_payload_line_ending_normalization(ed25519_keypair):
+    """Test that CRLF line endings normalize to LF and Ed25519 produces 128-char hex signatures."""
+    private_key_hex, public_key_hex = ed25519_keypair
+    hashes = {"agent.md": "hash123\r\n"}
+    payload = serialize_manifest_payload(hashes)
+    assert b"\r" not in payload
+    sig = sign_manifest_hashes({"agent.md": "hash123"}, private_key_hex)
     assert isinstance(sig, str)
-    assert len(sig) == 64  # SHA-256 hex digest length
+    assert len(sig) == 128  # 64-byte Ed25519 signature hex length
+    assert verify_manifest_signature({"agent.md": "hash123"}, sig, public_key_hex)
 
 
-def test_generate_fails_without_secret(tmp_path, monkeypatch):
-    """Test that generate fails with exit code 1 if secret is missing."""
+def test_generate_fails_without_private_key(tmp_path, monkeypatch):
+    """Test that generate fails with exit code 1 if PROMPT_MANIFEST_PRIVATE_KEY is missing."""
     agents_dir = tmp_path / "AGENTS"
     agents_dir.mkdir()
     manifest_path = agents_dir / "manifest.json"
 
     monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
     monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
-    monkeypatch.delenv("PROMPT_MANIFEST_SECRET", raising=False)
+    monkeypatch.delenv("PROMPT_MANIFEST_PRIVATE_KEY", raising=False)
 
     agent1 = agents_dir / "agent1.md"
     agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
@@ -446,52 +508,87 @@ def test_generate_fails_without_secret(tmp_path, monkeypatch):
     assert not manifest_path.exists()
 
 
-def test_verify_fails_with_tampered_signature(tmp_path, monkeypatch):
-    """Test that verification fails when _signature is tampered with."""
+def test_generate_fails_with_malformed_private_key_without_leaking(
+    tmp_path, monkeypatch, capsys
+):
+    """Test that malformed private keys fail cleanly without echoing key material."""
     agents_dir = tmp_path / "AGENTS"
     agents_dir.mkdir()
     manifest_path = agents_dir / "manifest.json"
 
     monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
     monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
-    secret = "test-secret"
 
     agent1 = agents_dir / "agent1.md"
     agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
 
-    generate(secret=secret)
-
-    # Tamper with the signature
-    with open(manifest_path, "r", encoding="utf-8") as f:
-        manifest_data = json.load(f)
-    manifest_data["_signature"] = "tampered_signature_hex_value"
-    with open(manifest_path, "w", encoding="utf-8") as f:
-        json.dump(manifest_data, f, indent=4)
-
+    bad_input = "not-valid-hex-" + ("z" * 20)
     with pytest.raises(SystemExit) as excinfo:
-        verify(secret=secret)
+        generate(private_key=bad_input)
     assert excinfo.value.code == 1
+    captured = capsys.readouterr()
+    assert bad_input not in captured.err
+    assert bad_input not in captured.out
+    assert not manifest_path.exists()
 
 
-def test_verify_fails_with_tampered_prompt_and_manifest_hash(tmp_path, monkeypatch):
-    """Test security threat model: attacker alters prompt AND updates manifest hash,
-    bypassing plain hash check, but fails HMAC signature verification.
-    """
+def test_verify_fails_with_tampered_signature(tmp_path, monkeypatch, ed25519_keypair):
+    """Test that verification fails when _signature is tampered, malformed, or non-string."""
+    private_key_hex, public_key_hex = ed25519_keypair
     agents_dir = tmp_path / "AGENTS"
     agents_dir.mkdir()
     manifest_path = agents_dir / "manifest.json"
 
     monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
     monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
-    secret = "maintainer-secret"
+    monkeypatch.setattr("scripts.prompt_manifest.PINNED_PUBLIC_KEY_HEX", public_key_hex)
+
+    agent1 = agents_dir / "agent1.md"
+    agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
+
+    generate(private_key=private_key_hex)
+    with open(manifest_path, "r", encoding="utf-8") as f:
+        valid_manifest = json.load(f)
+
+    # Flip one nibble in valid 128-char hex signature
+    orig_sig = valid_manifest["_signature"]
+    flipped_char = "0" if orig_sig[0] != "0" else "1"
+    tampered_sig = flipped_char + orig_sig[1:]
+
+    for bad_sig in (tampered_sig, "not_hex_signature", 12345):
+        manifest_data = dict(valid_manifest)
+        manifest_data["_signature"] = bad_sig
+        with open(manifest_path, "w", encoding="utf-8") as f:
+            json.dump(manifest_data, f, indent=4)
+
+        with pytest.raises(SystemExit) as excinfo:
+            verify()
+        assert excinfo.value.code == 1
+
+
+def test_verify_fails_with_tampered_prompt_and_manifest_hash(
+    tmp_path, monkeypatch, ed25519_keypair
+):
+    """Test security threat model: attacker alters prompt AND updates manifest hash
+    (either keeping original signature or re-signing with an unpinned keypair).
+    """
+    maintainer_priv, maintainer_pub = ed25519_keypair
+    attacker_priv, _ = generate_keypair()
+
+    agents_dir = tmp_path / "AGENTS"
+    agents_dir.mkdir()
+    manifest_path = agents_dir / "manifest.json"
+
+    monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
+    monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
+    monkeypatch.setattr("scripts.prompt_manifest.PINNED_PUBLIC_KEY_HEX", maintainer_pub)
 
     agent1 = agents_dir / "agent1.md"
     agent1.write_text("Original prompt text", encoding="utf-8", newline="\n")
 
-    generate(secret=secret)
+    generate(private_key=maintainer_priv)
 
-    # Contributor tampers with prompt and manually updates SHA-256 hash in manifest.json
-    # without knowing the maintainer secret
+    # Case 1: Contributor tampers with prompt and updates SHA-256 hash without re-signing
     agent1.write_text(
         "Tampered prompt text by PR author", encoding="utf-8", newline="\n"
     )
@@ -503,26 +600,35 @@ def test_verify_fails_with_tampered_prompt_and_manifest_hash(tmp_path, monkeypat
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest_data, f, indent=4)
 
-    # CI runs verify with maintainer secret - should fail!
     with pytest.raises(SystemExit) as excinfo:
-        verify(secret=secret)
+        verify()
+    assert excinfo.value.code == 1
+
+    # Case 2: Contributor re-signs manifest with their own Ed25519 keypair (not pinned)
+    generate(private_key=attacker_priv)
+    with pytest.raises(SystemExit) as excinfo:
+        verify()
     assert excinfo.value.code == 1
 
 
-def test_verify_fails_with_missing_signature(tmp_path, monkeypatch):
-    """Test that verification fails when _signature is missing from manifest."""
+def test_verify_fails_with_missing_signature_unconditionally(
+    tmp_path, monkeypatch, ed25519_keypair
+):
+    """Test that verification fails when _signature is missing even when CI='' and strict=False."""
+    private_key_hex, public_key_hex = ed25519_keypair
     agents_dir = tmp_path / "AGENTS"
     agents_dir.mkdir()
     manifest_path = agents_dir / "manifest.json"
 
     monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
     monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
-    secret = "test-secret"
+    monkeypatch.setattr("scripts.prompt_manifest.PINNED_PUBLIC_KEY_HEX", public_key_hex)
+    monkeypatch.delenv("PROMPT_MANIFEST_PRIVATE_KEY", raising=False)
 
     agent1 = agents_dir / "agent1.md"
     agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
 
-    generate(secret=secret)
+    generate(private_key=private_key_hex)
 
     # Remove signature key
     with open(manifest_path, "r", encoding="utf-8") as f:
@@ -531,58 +637,73 @@ def test_verify_fails_with_missing_signature(tmp_path, monkeypatch):
     with open(manifest_path, "w", encoding="utf-8") as f:
         json.dump(manifest_data, f, indent=4)
 
-    with pytest.raises(SystemExit) as excinfo:
-        verify(secret=secret)
-    assert excinfo.value.code == 1
+    for ci_val, strict_flag in (
+        ("", False),
+        ("", True),
+        ("true", False),
+        ("true", True),
+    ):
+        monkeypatch.setenv("CI", ci_val)
+        with pytest.raises(SystemExit) as excinfo:
+            verify(strict=strict_flag)
+        assert excinfo.value.code == 1
 
 
-def test_verify_strict_mode_missing_secret(tmp_path, monkeypatch):
-    """Test that verification fails with exit code 1 if secret is missing in strict mode."""
-    agents_dir = tmp_path / "AGENTS"
-    agents_dir.mkdir()
-    manifest_path = agents_dir / "manifest.json"
+def test_committed_repository_manifest_and_ci_guardrails(monkeypatch):
+    """Verify the committed .github/AGENTS/manifest.json signature and strict CI/hook configuration."""
+    repo_root = Path(__file__).resolve().parent.parent
+    committed_agents_dir = repo_root / ".github" / "AGENTS"
+    committed_manifest = committed_agents_dir / "manifest.json"
 
-    monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
-    monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
-    monkeypatch.delenv("PROMPT_MANIFEST_SECRET", raising=False)
+    assert committed_manifest.exists(), (
+        f"Missing committed manifest: {committed_manifest}"
+    )
+    manifest_data = json.loads(committed_manifest.read_text(encoding="utf-8"))
+    assert "_signature" in manifest_data, (
+        "Committed manifest.json must include _signature"
+    )
+    assert isinstance(manifest_data["_signature"], str)
+    assert len(manifest_data["_signature"]) == 128
+    assert "merge-conflicts.md" in manifest_data
+    assert "pr-gatekeeper.md" in manifest_data
+    assert len(PINNED_PUBLIC_KEY_HEX) == 64
 
-    agent1 = agents_dir / "agent1.md"
-    agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
+    monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", committed_agents_dir)
+    monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", committed_manifest)
+    monkeypatch.delenv("PROMPT_MANIFEST_PRIVATE_KEY", raising=False)
+    monkeypatch.setenv("CI", "")
 
-    generate(secret="temp-secret")
+    # Must pass strictly with only the committed public key and zero secrets
+    verify(strict=True)
 
-    # Explicit strict=True
-    monkeypatch.delenv("CI", raising=False)
-    with pytest.raises(SystemExit) as excinfo:
-        verify(strict=True)
-    assert excinfo.value.code == 1
+    # Verify CI workflow runs strict verification unconditionally without secret/CI="" bypass
+    ci_workflow = yaml.safe_load(
+        (repo_root / ".github" / "workflows" / "ci.yml").read_text(encoding="utf-8")
+    )
+    static_steps = ci_workflow["jobs"]["static-checks"]["steps"]
+    manifest_step = next(
+        (s for s in static_steps if s.get("name") == "Validate Agent Prompts Manifest"),
+        None,
+    )
+    assert manifest_step is not None
+    assert "env" not in manifest_step or "PROMPT_MANIFEST_SECRET" not in (
+        manifest_step.get("env") or {}
+    )
+    step_run = manifest_step.get("run", "")
+    assert "scripts/prompt_manifest.py verify --strict" in step_run
+    assert 'CI=""' not in step_run
+    assert "PROMPT_MANIFEST_SECRET" not in step_run
 
-    # Implicit strict via CI environment variable
-    monkeypatch.setenv("CI", "true")
-    with pytest.raises(SystemExit) as excinfo:
-        verify()
-    assert excinfo.value.code == 1
-
-
-def test_verify_non_strict_mode_missing_secret(tmp_path, monkeypatch, capsys):
-    """Test that non-strict verification warns and passes hash checks when secret is absent."""
-    agents_dir = tmp_path / "AGENTS"
-    agents_dir.mkdir()
-    manifest_path = agents_dir / "manifest.json"
-
-    monkeypatch.setattr("scripts.prompt_manifest.AGENTS_DIR", agents_dir)
-    monkeypatch.setattr("scripts.prompt_manifest.MANIFEST_PATH", manifest_path)
-    monkeypatch.delenv("PROMPT_MANIFEST_SECRET", raising=False)
-    monkeypatch.delenv("CI", raising=False)
-
-    agent1 = agents_dir / "agent1.md"
-    agent1.write_text("Hello 1", encoding="utf-8", newline="\n")
-
-    generate(secret="temp-secret")
-
-    # Non-strict verify without secret
-    verify(strict=False)
-
-    captured = capsys.readouterr()
-    assert "skipping HMAC signature verification" in captured.err
-    assert "Verification passed" in captured.out
+    # Verify pre-commit hook runs strict verification and watches scripts/prompt_manifest.py
+    pre_commit_cfg = yaml.safe_load(
+        (repo_root / ".pre-commit-config.yaml").read_text(encoding="utf-8")
+    )
+    local_repo = next(r for r in pre_commit_cfg["repos"] if r.get("repo") == "local")
+    prompt_hook = next(
+        h for h in local_repo["hooks"] if h.get("id") == "validate-agent-prompts"
+    )
+    assert "scripts/prompt_manifest.py verify --strict" in prompt_hook["entry"]
+    files_pattern = re.compile(prompt_hook["files"])
+    assert files_pattern.search(".github/AGENTS/manifest.json")
+    assert files_pattern.search(".github/AGENTS/pr-gatekeeper.md")
+    assert files_pattern.search("scripts/prompt_manifest.py")

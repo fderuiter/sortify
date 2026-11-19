@@ -1,17 +1,29 @@
-"""Utility for generating and verifying SHA-256 manifests for agent prompts."""
+"""Utility for generating and verifying Ed25519-signed SHA-256 manifests for agent prompts."""
 
 import argparse
 import hashlib
-import hmac
 import json
 import os
 import sys
 from pathlib import Path
 
 import yaml
+from cryptography.exceptions import InvalidSignature
+from cryptography.hazmat.primitives import serialization
+from cryptography.hazmat.primitives.asymmetric.ed25519 import (
+    Ed25519PrivateKey,
+    Ed25519PublicKey,
+)
 
 MANIFEST_PATH = Path(".github/AGENTS/manifest.json")
 AGENTS_DIR = Path(".github/AGENTS")
+
+# Pinned 32-byte raw Ed25519 public key (hex-encoded) for verifying .github/AGENTS/manifest.json.
+# Guarded by CODEOWNERS and PROTECTED_PATHS in scripts/classify_pr.py.
+MANIFEST_ED25519_PUB_HEX = (
+    "e7c983e2526688dcf486e805f8df368242dbb8b206f0c51a1527478853e092e4"
+)
+PINNED_PUBLIC_KEY_HEX = MANIFEST_ED25519_PUB_HEX
 
 
 def parse_and_validate_prompt(filepath: Path) -> tuple[dict, str]:
@@ -98,7 +110,7 @@ def parse_and_validate_prompt(filepath: Path) -> tuple[dict, str]:
     return frontmatter, body_text
 
 
-def compute_sha256(filepath):
+def compute_sha256(filepath: Path) -> str:
     """Compute the SHA-256 hash of decoupled and normalized prompt body text."""
     _, body_text = parse_and_validate_prompt(filepath)
     sha256_hash = hashlib.sha256()
@@ -108,48 +120,143 @@ def compute_sha256(filepath):
     return sha256_hash.hexdigest()
 
 
-def get_hashes():
+def get_hashes() -> dict[str, str]:
     """Retrieve SHA-256 hashes for all agent prompt files."""
-    hashes = {}
-    for filepath in AGENTS_DIR.glob("*"):
+    hashes: dict[str, str] = {}
+    for filepath in sorted(AGENTS_DIR.glob("*")):
         if filepath.is_file() and filepath.name != "manifest.json":
             hashes[filepath.name] = compute_sha256(filepath)
     return hashes
 
 
-def compute_manifest_hmac(hashes: dict[str, str], secret: str) -> str:
-    """Compute HMAC-SHA256 signature across all prompt content hashes sorted alphabetically."""
+def serialize_manifest_payload(hashes: dict[str, str]) -> bytes:
+    """Serialize prompt content hashes sorted alphabetically into LF-normalized UTF-8 bytes."""
     sorted_files = sorted(f for f in hashes if f != "_signature")
     lines = [f"{f}:{hashes[f]}" for f in sorted_files]
     payload = "\n".join(lines)
     if lines:
         payload += "\n"
-    # Ensure line endings are normalized to LF
     normalized_payload = payload.replace("\r\n", "\n").replace("\r", "\n")
-    return hmac.new(
-        secret.encode("utf-8"),
-        normalized_payload.encode("utf-8"),
-        hashlib.sha256,
-    ).hexdigest()
+    return normalized_payload.encode("utf-8")
 
 
-def generate(secret: str | None = None):
-    """Generate the manifest.json file containing hashes of agent prompts and HMAC signature."""
-    resolved_secret = secret or os.environ.get("PROMPT_MANIFEST_SECRET")
-    if not resolved_secret:
+def _load_private_key(private_key_hex: str) -> Ed25519PrivateKey:
+    """Parse a 64-character hex string into an Ed25519PrivateKey without echoing key material."""
+    cleaned = private_key_hex.strip()
+    try:
+        raw_bytes = bytes.fromhex(cleaned)
+    except ValueError as exc:
+        raise ValueError(
+            "Invalid Ed25519 private key: expected 64-character hexadecimal string."
+        ) from exc
+    if len(raw_bytes) != 32:
+        raise ValueError(
+            f"Invalid Ed25519 private key length: expected 32 bytes, got {len(raw_bytes)}."
+        )
+    try:
+        return Ed25519PrivateKey.from_private_bytes(raw_bytes)
+    except ValueError as exc:
+        raise ValueError("Invalid Ed25519 private key bytes.") from exc
+
+
+def _load_public_key(public_key_hex: str) -> Ed25519PublicKey:
+    """Parse a 64-character hex string into an Ed25519PublicKey."""
+    cleaned = public_key_hex.strip()
+    try:
+        raw_bytes = bytes.fromhex(cleaned)
+    except ValueError as exc:
+        raise ValueError(
+            "Invalid Ed25519 public key: expected 64-character hexadecimal string."
+        ) from exc
+    if len(raw_bytes) != 32:
+        raise ValueError(
+            f"Invalid Ed25519 public key length: expected 32 bytes, got {len(raw_bytes)}."
+        )
+    try:
+        return Ed25519PublicKey.from_public_bytes(raw_bytes)
+    except ValueError as exc:
+        raise ValueError("Invalid Ed25519 public key bytes.") from exc
+
+
+def generate_keypair() -> tuple[str, str]:
+    """Generate a new Ed25519 keypair and return (private_key_hex, public_key_hex)."""
+    private_key = Ed25519PrivateKey.generate()
+    private_hex = private_key.private_bytes(
+        encoding=serialization.Encoding.Raw,
+        format=serialization.PrivateFormat.Raw,
+        encryption_algorithm=serialization.NoEncryption(),
+    ).hex()
+    public_hex = (
+        private_key.public_key()
+        .public_bytes(
+            encoding=serialization.Encoding.Raw,
+            format=serialization.PublicFormat.Raw,
+        )
+        .hex()
+    )
+    return private_hex, public_hex
+
+
+def keygen() -> tuple[str, str]:
+    """Generate an Ed25519 keypair and print hex-encoded private and public keys."""
+    private_hex, public_hex = generate_keypair()
+    print(f"PROMPT_MANIFEST_PRIVATE_KEY={private_hex}")
+    print(f"PINNED_PUBLIC_KEY_HEX={public_hex}")
+    return private_hex, public_hex
+
+
+def sign_manifest_hashes(hashes: dict[str, str], private_key_hex: str) -> str:
+    """Compute hex-encoded Ed25519 signature across all prompt content hashes sorted alphabetically."""
+    private_key = _load_private_key(private_key_hex)
+    payload = serialize_manifest_payload(hashes)
+    return private_key.sign(payload).hex()
+
+
+def verify_manifest_signature(
+    hashes: dict[str, str],
+    signature_hex: str,
+    public_key_hex: str | None = None,
+) -> bool:
+    """Verify hex-encoded Ed25519 signature across sorted prompt content hashes."""
+    resolved_pub = (
+        public_key_hex if public_key_hex is not None else PINNED_PUBLIC_KEY_HEX
+    )
+    public_key = _load_public_key(resolved_pub)
+    if len(signature_hex) != 128:
+        return False
+    try:
+        signature_bytes = bytes.fromhex(signature_hex)
+    except ValueError:
+        return False
+    payload = serialize_manifest_payload(hashes)
+    try:
+        public_key.verify(signature_bytes, payload)
+        return True
+    except InvalidSignature:
+        return False
+
+
+def generate(private_key: str | None = None) -> None:
+    """Generate the manifest.json file containing hashes of agent prompts and an Ed25519 signature."""
+    resolved_private_key = (
+        private_key
+        if private_key is not None
+        else os.environ.get("PROMPT_MANIFEST_PRIVATE_KEY")
+    )
+    if not resolved_private_key or not resolved_private_key.strip():
         print(
-            "Error: PROMPT_MANIFEST_SECRET is required to generate the manifest signature.",
+            "Error: PROMPT_MANIFEST_PRIVATE_KEY is required to generate the manifest signature.",
             file=sys.stderr,
         )
         sys.exit(1)
 
     try:
         hashes = get_hashes()
+        signature = sign_manifest_hashes(hashes, resolved_private_key)
     except (ValueError, TypeError) as e:
         print(f"Error: {e}", file=sys.stderr)
         sys.exit(1)
 
-    signature = compute_manifest_hmac(hashes, resolved_secret)
     manifest_data = {"_signature": signature, **hashes}
 
     with open(MANIFEST_PATH, "w", encoding="utf-8", newline="") as f:
@@ -158,10 +265,24 @@ def generate(secret: str | None = None):
     print(f"Manifest successfully generated at {MANIFEST_PATH}")
 
 
-def verify(secret: str | None = None, strict: bool = False):
-    """Verify that all agent prompt files match the hashes in manifest.json and the signature is valid."""
-    resolved_secret = secret or os.environ.get("PROMPT_MANIFEST_SECRET")
-    is_strict = strict or bool(os.environ.get("CI"))
+def verify(public_key: str | None = None, strict: bool = False) -> None:
+    """Verify that all agent prompt files match the hashes in manifest.json and the Ed25519 signature is valid."""
+    _ = strict  # Verification is unconditionally strict across local hooks and CI.
+    resolved_public_key = (
+        public_key if public_key is not None else PINNED_PUBLIC_KEY_HEX
+    )
+    if not resolved_public_key or not resolved_public_key.strip():
+        print(
+            "Error: Pinned Ed25519 public key is missing.",
+            file=sys.stderr,
+        )
+        sys.exit(1)
+
+    try:
+        _load_public_key(resolved_public_key)
+    except ValueError as e:
+        print(f"Error: {e}", file=sys.stderr)
+        sys.exit(1)
 
     if not MANIFEST_PATH.exists():
         print(f"Error: Manifest file {MANIFEST_PATH} does not exist.", file=sys.stderr)
@@ -184,19 +305,6 @@ def verify(secret: str | None = None, strict: bool = False):
         print("Error: Manifest file must be a JSON dictionary.", file=sys.stderr)
         sys.exit(1)
 
-    if not resolved_secret:
-        if is_strict:
-            print(
-                "Error: PROMPT_MANIFEST_SECRET is missing during strict CI verification runs.",
-                file=sys.stderr,
-            )
-            sys.exit(1)
-        else:
-            print(
-                "Warning: PROMPT_MANIFEST_SECRET is not set; skipping HMAC signature verification.",
-                file=sys.stderr,
-            )
-
     try:
         current_hashes = get_hashes()
     except (ValueError, TypeError) as e:
@@ -205,32 +313,29 @@ def verify(secret: str | None = None, strict: bool = False):
 
     mismatches = False
 
-    # Verify HMAC signature
-    manifest_signature = manifest_data.get("_signature")
-    if resolved_secret or is_strict:
-        if not manifest_signature:
+    # Unconditionally verify Ed25519 signature
+    if "_signature" not in manifest_data or manifest_data["_signature"] in (None, ""):
+        print(
+            "Error: Manifest signature '_signature' is missing.",
+            file=sys.stderr,
+        )
+        mismatches = True
+    else:
+        manifest_signature = manifest_data["_signature"]
+        if not isinstance(manifest_signature, str):
             print(
-                "Error: Manifest signature '_signature' is missing.",
+                "Error: Manifest signature '_signature' must be a string.",
                 file=sys.stderr,
             )
             mismatches = True
-        elif resolved_secret:
-            if not isinstance(manifest_signature, str):
-                print(
-                    "Error: Manifest signature '_signature' must be a string.",
-                    file=sys.stderr,
-                )
-                mismatches = True
-            else:
-                expected_signature = compute_manifest_hmac(
-                    current_hashes, resolved_secret
-                )
-                if not hmac.compare_digest(manifest_signature, expected_signature):
-                    print(
-                        "Error: Manifest HMAC signature mismatch.",
-                        file=sys.stderr,
-                    )
-                    mismatches = True
+        elif not verify_manifest_signature(
+            current_hashes, manifest_signature, resolved_public_key
+        ):
+            print(
+                "Error: Manifest Ed25519 signature verification failed.",
+                file=sys.stderr,
+            )
+            mismatches = True
 
     # Check for missing files or mismatched hashes
     manifest_hashes = {
@@ -264,7 +369,7 @@ def verify(secret: str | None = None, strict: bool = False):
             file=sys.stderr,
         )
         print(
-            "Please use 'uv run python scripts/prompt_manifest.py generate' to update the manifest.",
+            "Please use 'PROMPT_MANIFEST_PRIVATE_KEY=<hex> uv run python scripts/prompt_manifest.py generate' to update the manifest.",
             file=sys.stderr,
         )
         sys.exit(1)
@@ -272,31 +377,40 @@ def verify(secret: str | None = None, strict: bool = False):
         print("Verification passed. All agent prompt files match the manifest.")
 
 
-def main():
+def main() -> None:
     """Execute the main entry point for the manifest utility."""
     parser = argparse.ArgumentParser(
-        description="Agent Prompts SHA-256 Manifest Utility"
+        description="Agent Prompts Ed25519-Signed SHA-256 Manifest Utility"
     )
     parser.add_argument(
-        "action", choices=["generate", "verify"], help="Action to perform"
+        "action",
+        choices=["keygen", "generate", "verify"],
+        help="Action to perform",
     )
     parser.add_argument(
-        "--secret",
+        "--private-key",
         default=None,
-        help="Secret key for HMAC signature (defaults to PROMPT_MANIFEST_SECRET env var)",
+        help="Hex-encoded Ed25519 private key for signing (defaults to PROMPT_MANIFEST_PRIVATE_KEY env var)",
+    )
+    parser.add_argument(
+        "--public-key",
+        default=None,
+        help="Hex-encoded Ed25519 public key for verification (defaults to PINNED_PUBLIC_KEY_HEX)",
     )
     parser.add_argument(
         "--strict",
         action="store_true",
-        help="Enforce strict verification (fail if secret is missing; enabled by default in CI)",
+        help="Enforce strict signature and manifest verification",
     )
 
     args = parser.parse_args()
 
-    if args.action == "generate":
-        generate(secret=args.secret)
+    if args.action == "keygen":
+        keygen()
+    elif args.action == "generate":
+        generate(private_key=args.private_key)
     elif args.action == "verify":
-        verify(secret=args.secret, strict=args.strict)
+        verify(public_key=args.public_key, strict=args.strict)
 
 
 if __name__ == "__main__":
