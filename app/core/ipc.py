@@ -462,7 +462,12 @@ class DaemonIPCClient:
             else:
                 if not os.path.exists(socket_path):
                     raise RuntimeError(f"Socket file '{socket_path}' does not exist.")
-                reader, writer = await asyncio.open_unix_connection(socket_path)
+                open_unix_connection = getattr(asyncio, "open_unix_connection", None)
+                if open_unix_connection is None:
+                    raise RuntimeError(
+                        f"Unix domain sockets are not supported on this platform: '{socket_path}'"
+                    )
+                reader, writer = await open_unix_connection(socket_path)
 
             try:
                 writer.write(req_bytes)

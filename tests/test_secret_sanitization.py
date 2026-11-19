@@ -279,3 +279,90 @@ def test_contextual_file_renamer_scrubs_secrets():
     assert not contains_secrets(new_fn)
     assert "sk_live_" not in new_fn
     assert "AKIA" not in new_fn
+
+
+def test_high_entropy_subtoken_preserves_surrounding_segments():
+    """Verify delimiter-separated compound words scrub high-entropy sub-tokens without erasing surrounding words."""
+    from app.core.path_utils import sanitize_name
+
+    compound = "Project_a8F93b12C4d5E6f7A8b9C0d1e2f3a4b5_Notes"
+    scrubbed = sanitize_secret_patterns(compound)
+    assert not contains_secrets(scrubbed)
+    assert "Project" in scrubbed
+    assert "Notes" in scrubbed
+
+    redacted = sanitize_secret_patterns(compound, replacement="[REDACTED]")
+    assert redacted == "Project_[REDACTED]_Notes"
+
+    pure_compound = "a8F93b12C4d5E6f7A8b9C0d1e2f3a4b5_b9G04c23D5e6F7a8B9c0D1e2f3a4b5c6"
+    assert sanitize_secret_patterns(pure_compound) == ""
+
+    assert (
+        sanitize_name("Project_a8F93b12C4d5E6f7A8b9C0d1e2f3a4b5_Notes.pdf")
+        == "Project_Notes.pdf"
+    )
+
+
+def test_macos_tmpdir_high_entropy_base_dir_preserved(tmp_path):
+    """Verify macOS-style high-entropy TMPDIR segments in base_dir or existing directories are preserved."""
+    from app.core.path_utils import sanitize_folder_key
+    from app.core.verifier import VerificationEngine
+
+    # 1. Virtual macOS base_dir passed to VerificationEngine.verify_plan_integrity
+    macos_base = "/private/var/folders/24/8k48jl6d249rn9qfxwsl6xvm0000gn/T/tmpia0iqzuq"
+    dest_folder = f"{macos_base}/Investment-Finance"
+    secret_dest = f"{macos_base}/sk_live_51Nxabc123XYZ4567890abcdef/Docs"
+    pure_secret_dest = f"{macos_base}/sk_live_51Nxabc123XYZ4567890abcdef"
+    plan = {
+        dest_folder: {
+            "finance_doc.txt": {
+                "__type__": "file",
+                "relative_source": "finance_doc.txt",
+                "target_filename": "finance_doc.txt",
+            }
+        },
+        secret_dest: {
+            "notes.txt": {
+                "__type__": "file",
+                "relative_source": "notes.txt",
+                "target_filename": "notes.txt",
+            }
+        },
+        pure_secret_dest: {
+            "secret_only.txt": {
+                "__type__": "file",
+                "relative_source": "secret_only.txt",
+                "target_filename": "secret_only.txt",
+            }
+        },
+    }
+
+    result = VerificationEngine.verify_plan_integrity(macos_base, plan)
+    assert result["success"] is True, f"Unexpected verification warnings: {result}"
+    assert dest_folder in result["plan"]
+    assert f"{macos_base}/Docs" in result["plan"]
+    assert f"{macos_base}/Unnamed_safe" in result["plan"]
+
+    # 2. Existing local directory with high-entropy OS temp segment called via sanitize_folder_key directly
+    existing_tmp = (
+        tmp_path / "var" / "folders" / "24" / "8k48jl6d249rn9qfxwsl6xvm0000gn" / "T"
+    )
+    existing_tmp.mkdir(parents=True)
+    raw_target = str(existing_tmp / "Sorted_Output")
+    safe_target, transformed = sanitize_folder_key(raw_target)
+    assert safe_target == raw_target
+    assert transformed is False
+
+    # 3. UNC shares and reserved OS names in absolute path segments
+    unc_key, unc_trans = sanitize_folder_key(
+        r"\\server\share\sk_live_51Nxabc123XYZ4567890abcdef\Docs"
+    )
+    assert unc_key == r"\\server\share\Docs"
+    assert unc_trans is True
+
+    short_unc, _ = sanitize_folder_key(r"\\server")
+    assert short_unc == r"\\server"
+
+    reserved_abs, res_trans = sanitize_folder_key("/Volumes/Backup/CON.txt")
+    assert reserved_abs == "/Volumes/Backup/CON_safe.txt"
+    assert res_trans is True

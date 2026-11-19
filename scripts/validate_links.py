@@ -58,7 +58,7 @@ def is_template_or_redacted_url(url: str) -> bool:
 
 def validate_url(
     url: str,
-    bypass_domains: set = None,
+    bypass_domains: set | None = None,
     local_only: bool = False,
     allow_offline: bool = False,
 ):

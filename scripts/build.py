@@ -599,11 +599,24 @@ def main(argv=None):
                 "nvtx",
                 "libdevice",
             ]
+            gpu_binary_exts = (
+                ".so",
+                ".dll",
+                ".dylib",
+                ".pyd",
+                ".bc",
+                ".cubin",
+                ".fatbin",
+                ".ptx",
+            )
             found_gpu_libs = []
             for root, dirs, files in os.walk(dist_dir):
                 for file in files:
                     name_lower = file.lower()
-                    if any(term in name_lower for term in gpu_terms):
+                    is_gpu_binary = (
+                        name_lower.endswith(gpu_binary_exts) or ".so." in name_lower
+                    )
+                    if is_gpu_binary and any(term in name_lower for term in gpu_terms):
                         found_gpu_libs.append(os.path.join(root, file))
             if found_gpu_libs:
                 print("Error: Standalone bundle contains GPU/CUDA/cuDNN binaries!")

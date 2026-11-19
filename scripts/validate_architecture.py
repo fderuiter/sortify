@@ -99,67 +99,61 @@ def compute_normalized_ast_hash(node: ast.AST) -> str:
     """Compute SHA256 hash of a function AST node after normalizing docstrings, type annotations, and local variable names."""
     func_copy = copy.deepcopy(node)
 
-    # 1. Strip docstring if first statement in function body is a string literal expression
-    if func_copy.body and isinstance(func_copy.body[0], ast.Expr):
-        first_val = func_copy.body[0].value
-        if isinstance(first_val, ast.Constant) and isinstance(first_val.value, str):
-            func_copy.body.pop(0)
+    if isinstance(func_copy, (ast.FunctionDef, ast.AsyncFunctionDef)):
+        # 1. Strip docstring if first statement in function body is a string literal expression
+        if func_copy.body and isinstance(func_copy.body[0], ast.Expr):
+            first_val = func_copy.body[0].value
+            if isinstance(first_val, ast.Constant) and isinstance(first_val.value, str):
+                func_copy.body.pop(0)
 
-    # 2. Strip type annotations and type comments
-    func_copy.returns = None
-    if hasattr(func_copy, "type_comment"):
+        # 2. Strip type annotations and type comments
+        func_copy.returns = None
         func_copy.type_comment = None
 
-    if hasattr(func_copy, "args") and func_copy.args:
         args_obj = func_copy.args
-        for arg in (
-            getattr(args_obj, "posonlyargs", [])
-            + getattr(args_obj, "args", [])
-            + getattr(args_obj, "kwonlyargs", [])
-        ):
+        for arg in args_obj.posonlyargs + args_obj.args + args_obj.kwonlyargs:
             arg.annotation = None
-            if hasattr(arg, "type_comment"):
-                arg.type_comment = None
-        if getattr(args_obj, "vararg", None):
+            arg.type_comment = None
+        if args_obj.vararg is not None:
             args_obj.vararg.annotation = None
-            if hasattr(args_obj.vararg, "type_comment"):
-                args_obj.vararg.type_comment = None
-        if getattr(args_obj, "kwarg", None):
+            args_obj.vararg.type_comment = None
+        if args_obj.kwarg is not None:
             args_obj.kwarg.annotation = None
-            if hasattr(args_obj.kwarg, "type_comment"):
-                args_obj.kwarg.type_comment = None
+            args_obj.kwarg.type_comment = None
 
     # 3. Normalize local variable / parameter names and walk tree
-    var_map = {}
+    var_map: dict[str, str] = {}
 
     class ASTNormalizer(ast.NodeTransformer):
-        def visit_arg(self, n):
-            self.generic_visit(n)
-            if n.arg and n.arg not in BUILTIN_NAMES:
-                if n.arg not in var_map:
-                    var_map[n.arg] = f"v_{len(var_map)}"
-                n.arg = var_map[n.arg]
-            return n
+        def visit_arg(self, node: ast.arg) -> ast.arg:
+            self.generic_visit(node)
+            if node.arg and node.arg not in BUILTIN_NAMES:
+                if node.arg not in var_map:
+                    var_map[node.arg] = f"v_{len(var_map)}"
+                node.arg = var_map[node.arg]
+            return node
 
-        def visit_Name(self, n):
-            self.generic_visit(n)
-            if n.id and n.id not in BUILTIN_NAMES:
-                if n.id not in var_map:
-                    var_map[n.id] = f"v_{len(var_map)}"
-                n.id = var_map[n.id]
-            return n
+        def visit_Name(self, node: ast.Name) -> ast.Name:
+            self.generic_visit(node)
+            if node.id and node.id not in BUILTIN_NAMES:
+                if node.id not in var_map:
+                    var_map[node.id] = f"v_{len(var_map)}"
+                node.id = var_map[node.id]
+            return node
 
-        def visit_keyword(self, n):
-            self.generic_visit(n)
-            if n.arg and n.arg not in BUILTIN_NAMES:
-                if n.arg in var_map:
-                    n.arg = var_map[n.arg]
-            return n
+        def visit_keyword(self, node: ast.keyword) -> ast.keyword:
+            self.generic_visit(node)
+            if node.arg and node.arg not in BUILTIN_NAMES:
+                if node.arg in var_map:
+                    node.arg = var_map[node.arg]
+            return node
 
-        def visit_AnnAssign(self, n):
-            self.generic_visit(n)
-            n.annotation = None
-            return n
+        def visit_AnnAssign(self, node: ast.AnnAssign) -> ast.AST | None:
+            if node.value is None:
+                return None
+            target = self.visit(node.target)
+            value = self.visit(node.value)
+            return ast.Assign(targets=[target], value=value, type_comment=None)
 
     normalizer = ASTNormalizer()
     func_copy = normalizer.visit(func_copy)
@@ -617,8 +611,9 @@ def validate_import_time_globals(errors: list, filepath: str, tree: ast.AST) -> 
         for target in targets:
             for part in ast.walk(target):
                 if _is_global_target(part):
+                    lineno = getattr(node, "lineno", 0)
                     errors.append(
-                        f"{filepath}:{node.lineno}: Import-time global patch: "
+                        f"{filepath}:{lineno}: Import-time global patch: "
                         f"'{ast.unparse(part)}' is assigned at module level; "
                         "move it into an explicit install() called from an entrypoint"
                     )
@@ -658,8 +653,9 @@ def validate_no_test_detection(errors: list, filepath: str, tree: ast.AST) -> No
         elif isinstance(node, ast.Constant) and node.value in _TEST_DETECTION_NAMES:
             found = node.value
         if found:
+            lineno = getattr(node, "lineno", 0)
             errors.append(
-                f"{filepath}:{node.lineno}: Test detection in production code: "
+                f"{filepath}:{lineno}: Test detection in production code: "
                 f"'{found}'; inject the dependency so tests run the production path"
             )
 

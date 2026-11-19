@@ -63,6 +63,22 @@ ml = [
     "torch",
 ]
 
+[tool.uv]
+override-dependencies = ["torchvision"]
+
+[[tool.uv.index]]
+name = "pytorch-cpu"
+url = "https://download.pytorch.org/whl/cpu"
+explicit = true
+
+[tool.uv.sources]
+torch = [
+    { index = "pytorch-cpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+torchvision = [
+    { index = "pytorch-cpu", marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
+]
+
 [project.scripts]
 smart-autosorter = "app.main:main"
 
@@ -127,11 +143,13 @@ python-version = "3.12"
 error-on-warning = false
 
 [tool.ty.src]
-include = ["app"]
+include = ["app", "scripts"]
 
 [tool.ty.analysis]
-# Optional `ml` extra and `docs` group packages, imported lazily behind guards.
+# Optional `ml` extra and `build`/`docs` group packages, imported lazily behind guards.
 allowed-unresolved-imports = [
+    "PyInstaller",
+    "PyInstaller.**",
     "easyocr",
     "llama_cpp",
     "mkdocs",
@@ -141,14 +159,13 @@ allowed-unresolved-imports = [
 ]
 
 [tool.ty.rules]
-# `def f(x: str = None)` is used throughout; mypy ran with implicit_optional.
-invalid-parameter-default = "ignore"
+# `def f(x: str = None)` legacy sites are ratcheted via [tool.sortify.ty-warning-ceilings].
+invalid-parameter-default = "warn"
 
-# UI and CLI modules report dynamic typing findings as warnings.
+# UI modules report dynamic typing findings as warnings (#740).
 [[tool.ty.overrides]]
 include = [
     "app/ui/**",
-    "app/cli/**",
 ]
 
 [tool.ty.overrides.rules]
@@ -251,3 +268,35 @@ show_missing = true
 "app/core/db_conn.py" = 71
 "app/core/verifier.py" = 82
 "app/core/path_utils.py" = 77
+
+# Per-file shrink-only ceilings for legacy ty warnings (#740), enforced by
+# scripts/check_ty_warnings.py. Unlisted files must have 0 warnings; lower a
+# ceiling or delete its line as warnings are resolved, never raise one.
+[tool.sortify.ty-warning-ceilings]
+"app/config.py" = 1
+"app/core/analyzer.py" = 1
+"app/core/analyzer_strategies.py" = 2
+"app/core/daemon.py" = 1
+"app/core/db_worker.py" = 2
+"app/core/downloader.py" = 1
+"app/core/env_helper.py" = 1
+"app/core/history.py" = 3
+"app/core/mover.py" = 17
+"app/core/path_utils.py" = 2
+"app/log_filter.py" = 1
+"app/ui/a11y.py" = 6
+"app/ui/layout.py" = 2
+"app/ui/mixins/pipeline.py" = 73
+"app/ui/mixins/selection.py" = 157
+"app/ui/mixins/tree_view.py" = 45
+"app/ui/modals/drop_zone.py" = 2
+"app/ui/modals/edit.py" = 3
+"app/ui/modals/quarantine.py" = 3
+"app/ui/modals/reports.py" = 6
+"app/ui/modals/rules.py" = 4
+"app/ui/modals/sample_playground.py" = 3
+"app/ui/modals/session.py" = 1
+"app/ui/modals/settings.py" = 4
+"app/ui/modals/wizard.py" = 1
+"app/ui/tui.py" = 2
+"app/ui/widgets/vim_tree.py" = 2

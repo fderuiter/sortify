@@ -111,7 +111,10 @@ def attach_console() -> bool:
     try:
         import ctypes
 
-        allocated = bool(ctypes.windll.kernel32.AllocConsole())  # ty: ignore[unresolved-attribute]
+        windll = getattr(ctypes, "windll", None)
+        if windll is None:
+            return False
+        allocated = bool(windll.kernel32.AllocConsole())
     except (AttributeError, OSError):
         return False
     if not allocated:
@@ -127,8 +130,10 @@ def attach_console() -> bool:
 
 def _add_dll_directory(path: str) -> None:
     # A directory that vanished or is not allowed only loses that search path.
-    with contextlib.suppress(OSError):
-        os.add_dll_directory(path)  # ty: ignore[unresolved-attribute]
+    add_dll_dir = getattr(os, "add_dll_directory", None)
+    if add_dll_dir is not None:
+        with contextlib.suppress(OSError):
+            add_dll_dir(path)
 
 
 def bundle_dll_directories(base_dir: str | None, exe_dir: str | None) -> list[str]:

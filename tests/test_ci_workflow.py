@@ -463,11 +463,65 @@ def test_verify_offline_bundle_frozen_and_ml_verification():
     assert "torch.cuda.is_available()" in run_scripts
 
 
+def test_type_check_job_installs_all_groups_emits_annotations_and_enforces_ratchet():
+    """Verify type-check preserves job ID/name, installs all groups, emits GitHub annotations, and enforces check_ty_warnings.py."""
+    workflow = _load_ci_workflow()
+    jobs = workflow.get("jobs", {})
+    assert "type-check" in jobs, "Missing 'type-check' job in ci.yml"
+
+    job = jobs["type-check"]
+    assert job.get("name") == "Type Check (ty)"
+    steps = job.get("steps", [])
+
+    sync_step = next((s for s in steps if "uv sync" in s.get("run", "")), None)
+    assert sync_step is not None, "Missing uv sync step in type-check"
+    assert sync_step.get("run", "").strip() == "uv sync --frozen --all-groups"
+
+    ty_step = next((s for s in steps if "uv run ty check" in s.get("run", "")), None)
+    assert ty_step is not None, "Missing 'uv run ty check' step in type-check"
+    assert "--output-format github" in ty_step.get("run", "")
+
+    ratchet_step = next(
+        (s for s in steps if "scripts/check_ty_warnings.py" in s.get("run", "")),
+        None,
+    )
+    assert ratchet_step is not None, (
+        "Missing 'scripts/check_ty_warnings.py' step in type-check"
+    )
+    for platform in ("linux", "darwin", "win32"):
+        assert platform in ratchet_step.get("run", ""), (
+            f"Expected type-check ratchet step to check platform {platform!r}"
+        )
+
+    assert steps.index(sync_step) < steps.index(ty_step) < steps.index(ratchet_step)
+
+
+def test_pre_commit_ty_check_triggers_on_app_scripts_pyproject_and_lockfile():
+    """Verify ty-check in .pre-commit-config.yaml runs the warning ratchet and triggers on app, scripts, pyproject.toml, and uv.lock."""
+    import re
+
+    config = yaml.safe_load(Path(".pre-commit-config.yaml").read_text(encoding="utf-8"))
+    local_repo = next(r for r in config.get("repos", []) if r.get("repo") == "local")
+    ty_hook = next(h for h in local_repo.get("hooks", []) if h.get("id") == "ty-check")
+
+    assert "scripts/check_ty_warnings.py" in ty_hook.get("entry", "")
+    pattern = re.compile(ty_hook["files"])
+    for expected_match in (
+        "app/main.py",
+        "app/core/history.py",
+        "scripts/build.py",
+        "scripts/check_ty_warnings.py",
+        "pyproject.toml",
+        "uv.lock",
+    ):
+        assert pattern.search(expected_match), (
+            f"Expected ty-check files regex {ty_hook['files']!r} to match {expected_match!r}"
+        )
+
+
 def test_precommit_hooks_full_repo_readonly_parity():
     """Verify pre-commit hooks match CI full-repo read-only execution and trigger patterns."""
     import re
-
-    import yaml
 
     repo_root = Path(__file__).resolve().parent.parent
     precommit_cfg = yaml.safe_load(

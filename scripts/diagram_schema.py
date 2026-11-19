@@ -4980,7 +4980,7 @@ class LazyDiagramSpecsDict(dict):
         """Get spec by key lazily."""
         return get_diagram_spec(key)
 
-    def get(self, key: str, default: Any = None, /) -> Any:  # ty: ignore[invalid-method-override]
+    def get(self, key: str, default: Any = None, /) -> Any:  # ty: ignore[incompatible-method-override]
         """Get spec by key lazily or return default."""
         if key in _SPEC_FACTORIES:
             return get_diagram_spec(key)

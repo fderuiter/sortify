@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "5f23e83ad4783a7247e4828b12020bc1396d0da4ce42e789dd4064a8b6d50f71"
+    "checksum": "4c8e0eef4f4ba39278ffd643629e54fc32e9f597bb200595215ac26d1c1573a6"
   },
   "classes": [
     {
@@ -611,7 +611,7 @@
           "name": "store"
         }
       ],
-      "returns": "Iterator[HistoryManager]"
+      "returns": "Generator[HistoryManager]"
     }
   ]
 }

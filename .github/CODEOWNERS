@@ -1,5 +1,3 @@
-* @fderuiter
-
 # Protected paths: never auto-merged, the owner must approve (ADR 0009).
 # Keep in sync with PROTECTED_PATHS in scripts/classify_pr.py; a test checks it.
 .github/ @fderuiter

@@ -249,9 +249,11 @@ class VerificationEngine:
     ) -> dict:
         """Run complete virtual filesystem simulation and integrity check."""
         try:
-            from app.core.path_utils import sanitize_plan as _sp
+            from app.core.path_utils import _sanitize_plan_with_base
 
-            sanitized_plan, sanitization_warnings = _sp(plan)
+            sanitized_plan, sanitization_warnings = _sanitize_plan_with_base(
+                plan, base_dir=base_dir
+            )
             import logging
 
             for warn in sanitization_warnings:

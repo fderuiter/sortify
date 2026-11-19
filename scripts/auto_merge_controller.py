@@ -17,6 +17,8 @@ import argparse
 import logging
 import os
 import sys
+import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from enum import Enum
 from typing import Any, Optional
@@ -34,6 +36,10 @@ from scripts.classify_pr import (
 logger = logging.getLogger(__name__)
 
 REQUIRED_CI_CHECK = "Required CI"
+CI_WORKFLOW_FILE = "ci.yml"
+DEFAULT_BASE_BRANCH = "main"
+BRANCH_UPDATE_POLL_ATTEMPTS = 6
+BRANCH_UPDATE_POLL_INTERVAL_SECONDS = 2.0
 GITHUB_ACTIONS_APP_SLUG = "github-actions"
 DEPENDABOT_LOGIN = "dependabot[bot]"
 AUTOMERGE_OPT_IN_LABEL = "automerge"
@@ -209,6 +215,18 @@ class GitHubClient:
         """Add labels to a PR."""
         self._post(f"issues/{pr_number}/labels", {"labels": labels})
 
+    def dispatch_workflow(
+        self,
+        workflow_id: str,
+        ref: str,
+        inputs: Optional[dict[str, Any]] = None,
+    ) -> None:
+        """Trigger a workflow_dispatch event for a workflow on the given branch ref."""
+        payload: dict[str, Any] = {"ref": ref}
+        if inputs:
+            payload["inputs"] = inputs
+        self._post(f"actions/workflows/{workflow_id}/dispatches", payload)
+
 
 def is_pr_eligible_for_automerge(pr: dict[str, Any]) -> bool:
     """Check if PR has automerge eligibility labels."""
@@ -305,7 +323,68 @@ def reclassify_pr(
     return classify_pr(build_pr_metadata(client, full_pr))
 
 
-def process_auto_merge_queue(client: GitHubClient) -> AutoMergeResult:
+def is_base_repo_branch(full_pr: dict[str, Any]) -> bool:
+    """Return True only when the PR head branch belongs to the base repository."""
+    head = full_pr.get("head")
+    base = full_pr.get("base")
+    if not isinstance(head, dict) or not isinstance(base, dict):
+        return False
+    head_ref = head.get("ref")
+    if not isinstance(head_ref, str) or not head_ref.strip():
+        return False
+    head_repo = head.get("repo")
+    base_repo = base.get("repo")
+    if not isinstance(head_repo, dict) or not isinstance(base_repo, dict):
+        return False
+    head_full_name = head_repo.get("full_name")
+    base_full_name = base_repo.get("full_name")
+    if (
+        not isinstance(head_full_name, str)
+        or not isinstance(base_full_name, str)
+        or not head_full_name.strip()
+        or not base_full_name.strip()
+    ):
+        return False
+    if head_full_name.lower() != base_full_name.lower():
+        return False
+    head_id = head_repo.get("id")
+    base_id = base_repo.get("id")
+    if head_id is not None and base_id is not None and head_id != base_id:
+        return False
+    return True
+
+
+def wait_for_updated_head_sha(
+    client: GitHubClient,
+    pr_number: int,
+    previous_head_sha: str,
+    *,
+    max_attempts: int = BRANCH_UPDATE_POLL_ATTEMPTS,
+    poll_interval_seconds: float = BRANCH_UPDATE_POLL_INTERVAL_SECONDS,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> Optional[str]:
+    """Poll pull request metadata briefly until head SHA advances past previous_head_sha."""
+    for attempt in range(max_attempts):
+        if attempt > 0:
+            sleep_fn(poll_interval_seconds)
+        try:
+            refreshed_pr = client.get_pull_request(pr_number)
+        except requests.RequestException as exc:
+            logger.warning(
+                f"Transient error polling PR #{pr_number} after branch update: {exc}"
+            )
+            continue
+        refreshed_sha = str((refreshed_pr.get("head") or {}).get("sha") or "").strip()
+        if refreshed_sha and refreshed_sha != previous_head_sha:
+            return refreshed_sha
+    return None
+
+
+def process_auto_merge_queue(
+    client: GitHubClient,
+    *,
+    sleep_fn: Callable[[float], None] = time.sleep,
+) -> AutoMergeResult:
     """Process open PRs and attempt to auto-merge or update the first eligible PR.
 
     Returns an AutoMergeResult object indicating the action taken and PR ID.
@@ -366,6 +445,12 @@ def process_auto_merge_queue(client: GitHubClient) -> AutoMergeResult:
 
         # Check if branch is behind main
         if mergeable_state == "behind":
+            if not is_base_repo_branch(full_pr):
+                logger.info(
+                    f"Skipping branch update for PR #{pr_number}: head branch does not belong to the base repository."
+                )
+                continue
+            head_ref = str(full_pr["head"]["ref"]).strip()
             logger.info(f"PR #{pr_number} is behind main. Requesting branch update...")
             success = client.update_branch(pr_number, head_sha)
             if not success:
@@ -376,9 +461,19 @@ def process_auto_merge_queue(client: GitHubClient) -> AutoMergeResult:
                     pr_number, ["automerge:conflict", "automerge:blocked"]
                 )
                 continue
-            logger.info(
-                f"Branch updated for PR #{pr_number}. Waiting for required CI on updated SHA..."
+            updated_sha = wait_for_updated_head_sha(
+                client, pr_number, head_sha, sleep_fn=sleep_fn
             )
+            if updated_sha:
+                logger.info(
+                    f"Branch updated for PR #{pr_number} ({head_sha[:8]} -> {updated_sha[:8]}). "
+                    f"Dispatching '{CI_WORKFLOW_FILE}' on '{head_ref}'..."
+                )
+                client.dispatch_workflow(CI_WORKFLOW_FILE, head_ref)
+            else:
+                logger.warning(
+                    f"Branch update requested for PR #{pr_number}, but head SHA did not advance from {head_sha[:8]} within poll window; skipping CI dispatch."
+                )
             return AutoMergeResult(action=AutoMergeAction.UPDATED, pr_id=pr_number)
 
         # Verify Required CI on head SHA (GitHub Actions check run only)
@@ -398,6 +493,21 @@ def process_auto_merge_queue(client: GitHubClient) -> AutoMergeResult:
         )
         if merged:
             logger.info(f"Successfully auto-merged PR #{pr_number}!")
+            base_ref = (
+                str(
+                    (full_pr.get("base") or {}).get("ref") or DEFAULT_BASE_BRANCH
+                ).strip()
+                or DEFAULT_BASE_BRANCH
+            )
+            try:
+                client.dispatch_workflow(CI_WORKFLOW_FILE, base_ref)
+                logger.info(
+                    f"Dispatched '{CI_WORKFLOW_FILE}' on '{base_ref}' after merging PR #{pr_number}."
+                )
+            except Exception as exc:
+                logger.warning(
+                    f"Merged PR #{pr_number}, but failed to dispatch '{CI_WORKFLOW_FILE}' on '{base_ref}': {exc}"
+                )
             return AutoMergeResult(action=AutoMergeAction.MERGED, pr_id=pr_number)
         else:
             logger.error(f"Failed to execute squash merge for PR #{pr_number}.")
