@@ -14,6 +14,7 @@ block_cipher = None
 
 # Core machine learning and NLP dependencies required for offline processing
 is_lite = os.environ.get("LITE_BUILD") == "1"
+is_cpu = os.environ.get("CPU_BUILD") == "1"
 ml_packages = []
 ml_metadata_packages = []
 datas = []
@@ -31,6 +32,8 @@ if is_lite:
         'sklearn', 'scikit-learn', 'pandas', 'cv2', 'numpy', 'skimage',
         'scikit-image', 'sympy', 'lxml', 'mypy', 'matplotlib'
     ])
+elif is_cpu:
+    excludes.extend(['nvidia', 'triton'])
 
 if is_lite:
     lite_marker_path = os.path.join(os.path.dirname(os.path.abspath(SPEC)), "LITE_BUILD") if 'SPEC' in locals() else os.path.join(os.getcwd(), "LITE_BUILD")

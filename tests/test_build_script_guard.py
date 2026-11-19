@@ -239,6 +239,167 @@ def test_build_script_cpu_profile_scan_fails_if_gpu_binaries_exist():
                 )
 
 
+@pytest.mark.parametrize(
+    "gpu_binary",
+    [
+        "libcudart.so",
+        "libcudart.3eda8113.so.13",
+        "cudart64_12.dll",
+        "libdevice.10.bc",
+    ],
+)
+def test_build_script_cpu_profile_rejects_binary_and_bitcode_gpu_files(gpu_binary):
+    """Verify that --cpu rejects .so, versioned .so., .dll, and .bc GPU binaries."""
+    mock_pyinstaller_main.run.reset_mock()
+    with patch("sys.argv", ["build.py", "--cpu"]):
+        with (
+            patch("importlib.util.find_spec") as mock_find_spec,
+            patch("sys.exit", side_effect=SystemExit) as mock_exit,
+            patch("scripts.build.download_and_prepare_weights"),
+            patch("os.path.exists", return_value=True),
+            patch("scripts.build.bundle_license"),
+            patch(
+                "os.walk",
+                return_value=[
+                    ("dist/smart-autosorter/_internal/torch/lib", [], [gpu_binary]),
+                    ("dist/smart-autosorter/scipy", [], ["_sparsetools.so"]),
+                ],
+            ),
+            patch("builtins.print") as mock_print,
+        ):
+            mock_spec = MagicMock()
+            mock_spec.submodule_search_locations = ["/some/path"]
+            mock_find_spec.return_value = mock_spec
+
+            mock_torch = MagicMock()
+            if sys.platform in ("win32", "linux"):
+                mock_torch.__version__ = "2.15.0+cpu"
+            else:
+                mock_torch.__version__ = "2.15.0"
+                mock_torch.cuda.is_available.return_value = False
+
+            with patch.dict("sys.modules", {"torch": mock_torch}):
+                with pytest.raises(SystemExit):
+                    main()
+
+                mock_exit.assert_called_once_with(1)
+                printed_messages = "".join(
+                    [call.args[0] for call in mock_print.call_args_list if call.args]
+                )
+                assert (
+                    "Standalone bundle contains GPU/CUDA/cuDNN binaries"
+                    in printed_messages
+                )
+                assert gpu_binary in printed_messages
+
+
+def test_build_script_cpu_profile_ignores_stubs_headers_and_sources():
+    """Verify that --cpu ignores .pyi, .h, .cpp, and .cu files with GPU terms in their names."""
+    mock_pyinstaller_main.run.reset_mock()
+    with patch("sys.argv", ["build.py", "--cpu"]):
+        with (
+            patch("importlib.util.find_spec") as mock_find_spec,
+            patch("sys.exit", side_effect=SystemExit) as mock_exit,
+            patch("scripts.build.download_and_prepare_weights"),
+            patch("os.path.exists", return_value=True),
+            patch("scripts.build.bundle_license"),
+            patch(
+                "os.walk",
+                return_value=[
+                    (
+                        "dist/smart-autosorter/_internal/torch",
+                        [],
+                        [
+                            "_cuda.pyi",
+                            "cuda_graphs.py",
+                            "cuda_runtime.h",
+                            "cudnn_ops.cpp",
+                            "cuda_kernels.cu",
+                            "cuda_fp16.cuh",
+                        ],
+                    ),
+                    ("dist/smart-autosorter/scipy", [], ["_sparsetools.so"]),
+                ],
+            ),
+            patch("builtins.print") as mock_print,
+        ):
+            mock_spec = MagicMock()
+            mock_spec.submodule_search_locations = ["/some/path"]
+            mock_find_spec.return_value = mock_spec
+
+            mock_torch = MagicMock()
+            if sys.platform in ("win32", "linux"):
+                mock_torch.__version__ = "2.15.0+cpu"
+            else:
+                mock_torch.__version__ = "2.15.0"
+                mock_torch.cuda.is_available.return_value = False
+
+            with patch.dict("sys.modules", {"torch": mock_torch}):
+                main()
+
+                mock_exit.assert_not_called()
+                printed_messages = "".join(
+                    [call.args[0] for call in mock_print.call_args_list if call.args]
+                )
+                assert (
+                    "Validation passed: No GPU/CUDA/cuDNN binaries found"
+                    in printed_messages
+                )
+
+
+def test_spec_cpu_build_excludes_nvidia_and_triton():
+    """Verify smart-autosorter.spec adds nvidia and triton to excludes when CPU_BUILD equals 1."""
+    import os
+
+    spec_path = os.path.join(
+        os.path.dirname(os.path.dirname(__file__)), "smart-autosorter.spec"
+    )
+    with open(spec_path, "r", encoding="utf-8") as f:
+        spec_content = f.read()
+
+    mock_globals = {
+        "Analysis": MagicMock(),
+        "PYZ": MagicMock(),
+        "EXE": MagicMock(),
+        "COLLECT": MagicMock(),
+        "__file__": spec_path,
+    }
+    mock_hooks = MagicMock()
+    mock_hooks.collect_all.return_value = ([], [], [])
+    mock_hooks.collect_data_files.return_value = []
+    mock_hooks.copy_metadata.return_value = [
+        ("/sp/torch-2.15.0+cpu.dist-info", "torch-2.15.0+cpu.dist-info"),
+        (
+            "/sp/nvidia_cuda_runtime_cu12-12.4.127.dist-info",
+            "nvidia_cuda_runtime_cu12-12.4.127.dist-info",
+        ),
+        ("/sp/triton-3.2.0.dist-info", "triton-3.2.0.dist-info"),
+    ]
+
+    with (
+        patch.dict("os.environ", {"LITE_BUILD": "0", "CPU_BUILD": "1"}),
+        patch.dict(
+            sys.modules,
+            {
+                "PyInstaller": MagicMock(),
+                "PyInstaller.utils": MagicMock(),
+                "PyInstaller.utils.hooks": mock_hooks,
+            },
+        ),
+    ):
+        exec(spec_content, mock_globals)
+        analysis_kwargs = mock_globals["Analysis"].call_args.kwargs
+        excludes = analysis_kwargs.get("excludes", [])
+        assert "nvidia" in excludes
+        assert "triton" in excludes
+        assert "torch" not in excludes
+        assert "torch" in mock_globals["ml_packages"]
+        datas_dests = {dest for _, dest in analysis_kwargs.get("datas", [])}
+        assert "torch-2.15.0+cpu.dist-info" in datas_dests
+        assert "nvidia_cuda_runtime_cu12-12.4.127.dist-info" not in datas_dests
+        assert "triton-3.2.0.dist-info" not in datas_dests
+
+
 def test_build_script_target_verification_missing_executable(tmp_path):
     """Verify that build fails if dist directory exists but is missing target executable."""
     import os

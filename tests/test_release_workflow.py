@@ -324,3 +324,84 @@ def test_release_workflow_smoke_test_before_archiving():
             assert smoke_idx < idx, (
                 f"Smoke test must run before archive step '{step.get('name')}'"
             )
+
+
+def test_release_workflow_builds_with_cpu_flag():
+    """Verify release.yml syncs frozen ml+build dependencies and runs scripts/build.py --cpu."""
+    workflow = _load_release_workflow()
+    build_steps = workflow["jobs"]["build-binaries"]["steps"]
+
+    install_steps = [s for s in build_steps if s.get("name") == "Install dependencies"]
+    assert len(install_steps) == 1
+    assert "uv sync --frozen --extra ml --group build" in install_steps[0].get(
+        "run", ""
+    )
+
+    exec_build_steps = [s for s in build_steps if s.get("name") == "Build executable"]
+    assert len(exec_build_steps) == 1
+    build_cmd = exec_build_steps[0].get("run", "").strip()
+    assert "uv run python scripts/build.py --cpu" in build_cmd
+
+
+def test_pyproject_and_uv_lock_route_cpu_pytorch_sources():
+    """Verify pyproject.toml and uv.lock route Linux/Windows torch and torchvision to pytorch-cpu while keeping macOS on PyPI."""
+    import tomllib
+
+    with open("pyproject.toml", "rb") as f:
+        pyproject = tomllib.load(f)
+
+    uv_cfg = pyproject.get("tool", {}).get("uv", {})
+    assert "torchvision" in uv_cfg.get("override-dependencies", [])
+
+    indexes = uv_cfg.get("index", [])
+    pytorch_cpu_indexes = [idx for idx in indexes if idx.get("name") == "pytorch-cpu"]
+    assert len(pytorch_cpu_indexes) == 1
+    assert pytorch_cpu_indexes[0].get("url") == "https://download.pytorch.org/whl/cpu"
+    assert pytorch_cpu_indexes[0].get("explicit") is True
+
+    sources = uv_cfg.get("sources", {})
+    for pkg_name in ("torch", "torchvision"):
+        pkg_sources = sources.get(pkg_name, [])
+        assert isinstance(pkg_sources, list) and len(pkg_sources) == 1
+        entry = pkg_sources[0]
+        assert entry.get("index") == "pytorch-cpu"
+        marker = entry.get("marker", "")
+        assert "sys_platform == 'linux'" in marker
+        assert "sys_platform == 'win32'" in marker
+        assert "darwin" not in marker
+
+    with open("uv.lock", "rb") as f:
+        lock_data = tomllib.load(f)
+
+    packages = lock_data.get("package", [])
+    pkg_names = {pkg["name"] for pkg in packages}
+    gpu_packages = {
+        name
+        for name in pkg_names
+        if name == "triton" or name.startswith(("nvidia-", "cuda-"))
+    }
+    assert not gpu_packages, (
+        f"Unexpected GPU packages in uv.lock: {sorted(gpu_packages)}"
+    )
+
+    for pkg_name in ("torch", "torchvision"):
+        entries = [pkg for pkg in packages if pkg["name"] == pkg_name]
+        cpu_entries = [
+            pkg
+            for pkg in entries
+            if pkg.get("source", {}).get("registry")
+            == "https://download.pytorch.org/whl/cpu"
+        ]
+        pypi_entries = [
+            pkg
+            for pkg in entries
+            if pkg.get("source", {}).get("registry") == "https://pypi.org/simple"
+        ]
+        assert len(cpu_entries) == 1, f"Expected pytorch-cpu entry for {pkg_name}"
+        assert "+cpu" in cpu_entries[0]["version"]
+        assert len(pypi_entries) == 1, f"Expected macOS PyPI entry for {pkg_name}"
+        for wheel in pypi_entries[0].get("wheels", []):
+            url = wheel.get("url", "")
+            assert "macosx" in url, (
+                f"Expected only macOS wheels in PyPI {pkg_name} entry, got: {url}"
+            )
