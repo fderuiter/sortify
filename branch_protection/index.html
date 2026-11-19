@@ -1403,11 +1403,12 @@
 <li><strong>Restrict Deletions:</strong> Enabled (prevents deleting <code>main</code>).</li>
 <li><strong>Block Force Pushes:</strong> Enabled (prevents non-fast-forward updates).</li>
 <li><strong>Require Pull Request Before Merging:</strong></li>
-<li>Code Owner Reviews: Required for sensitive paths.</li>
+<li>Code Owner Reviews: Required (<code>require_code_owner_review: true</code> with <code>required_approving_review_count: 0</code> and no <code>bypass_actors</code>). <code>.github/CODEOWNERS</code> lists only Tier 3 protected paths (<code>PROTECTED_PATHS</code> in <code>scripts/classify_pr.py</code>) and snapshot baselines (<code>tests/snapshots/api/</code>, <code>tests/snapshots/tui_svg/</code>) with no <code>*</code> catch-all rule, so Tier 1 and maintainer-labelled Tier 2 PRs can auto-merge while Tier 3 changes require <code>@fderuiter</code> approval.</li>
 <li>Require Conversation Resolution: All review threads must be resolved before merge.</li>
 <li><strong>Required Status Checks:</strong></li>
 <li>Require branches to be up to date before merging (<code>strict_required_status_checks_policy: true</code>).</li>
-<li>Required Check Name: <code>Required CI</code> (durable aggregate status from <code>.github/workflows/ci.yml</code>).</li>
+<li>Required Check Name: <code>Required CI</code> (durable aggregate GitHub Actions check run from <code>.github/workflows/ci.yml</code>).</li>
+<li><code>workflow_dispatch</code> Orchestration &amp; Fork Limits: Because <code>GITHUB_TOKEN</code> updates and merges do not trigger <code>pull_request</code> or <code>push</code> workflows, <code>scripts/auto_merge_controller.py</code> dispatches <code>.github/workflows/ci.yml</code> (<code>workflow_dispatch</code>) on updated in-repository PR branches to post <code>Required CI</code> on the new head SHA, and dispatches <code>.github/workflows/ci.yml</code> on <code>main</code> after merging so <code>main</code> verification and <code>doc-deploy</code> run. External fork branches that fall behind <code>main</code> cannot be dispatched via <code>workflow_dispatch</code> and are skipped until the contributor updates or rebases the fork branch.</li>
 <li><strong>Linear History:</strong> Required (Squash merge strategy).</li>
 </ul>
 <h2 id="manual-configuration-instructions-github-ui">Manual Configuration Instructions (GitHub UI)</h2>
