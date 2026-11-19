@@ -5,7 +5,7 @@ import logging
 import os
 import time
 import uuid
-from collections.abc import Callable, Collection, Iterator
+from collections.abc import Callable, Collection, Generator
 from contextlib import contextmanager
 from functools import partial
 from pathlib import Path
@@ -3007,7 +3007,7 @@ class HistoryManager:
 
 
 @contextmanager
-def open_session_history(store=None) -> Iterator[HistoryManager]:
+def open_session_history(store=None) -> Generator[HistoryManager]:
     """Yield shared history services without taking ownership of their writer."""
     from app.core.services import acquire_services
 

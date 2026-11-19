@@ -81,11 +81,15 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --frozen
+        uv sync --frozen --all-groups
 
     - name: Run ty Type Check
       run: |
         uv run ty check --output-format github
+
+    - name: Enforce ty Warning Ceilings
+      run: |
+        uv run python scripts/check_ty_warnings.py --github-annotations
 
   static-checks:
     name: Static Checks

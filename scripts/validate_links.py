@@ -50,7 +50,7 @@ DEFAULT_BYPASS_DOMAINS = {
 
 def validate_url(
     url: str,
-    bypass_domains: set = None,
+    bypass_domains: set | None = None,
     local_only: bool = False,
     allow_offline: bool = False,
 ):

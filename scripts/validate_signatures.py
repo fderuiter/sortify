@@ -482,7 +482,7 @@ def snapshot_path_to_source_path(snapshot_abs_path: str) -> str:
 
 
 def verify_snapshot_integrity(
-    snapshot_data: dict, snapshot_path: str = None
+    snapshot_data: dict, snapshot_path: str | None = None
 ) -> tuple[bool, str, dict]:
     """Verify inline checksum header of a snapshot data dictionary."""
     if not isinstance(snapshot_data, dict):

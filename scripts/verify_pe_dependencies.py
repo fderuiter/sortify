@@ -113,8 +113,9 @@ def extract_pe_imports(pe_path: Path) -> list[str]:
             directories=[pefile.DIRECTORY_ENTRY["IMAGE_DIRECTORY_ENTRY_IMPORT"]]
         )
         imports = []
-        if hasattr(pe, "DIRECTORY_ENTRY_IMPORT"):
-            for entry in pe.DIRECTORY_ENTRY_IMPORT:
+        import_entries = getattr(pe, "DIRECTORY_ENTRY_IMPORT", None)
+        if import_entries:
+            for entry in import_entries:
                 if entry.dll:
                     dll_str = entry.dll.decode("utf-8", errors="ignore").strip().lower()
                     if dll_str:

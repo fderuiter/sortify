@@ -82,7 +82,7 @@ def _evaluate_marker(marker_str: str) -> bool:
         "implementation_version",
     }
 
-    def _eval_node(node: ast.AST) -> object:
+    def _eval_node(node: ast.AST) -> str | bool:
         if isinstance(node, ast.Expression):
             return _eval_node(node.body)
         if isinstance(node, ast.BoolOp):
@@ -101,32 +101,37 @@ def _evaluate_marker(marker_str: str) -> bool:
                 is_ver_cmp = (
                     isinstance(left_node, ast.Name) and left_node.id in version_keys
                 ) or (isinstance(comp_node, ast.Name) and comp_node.id in version_keys)
-                lhs: object = (
-                    _version_tuple(str(left_val))
-                    if is_ver_cmp and isinstance(op, (ast.Lt, ast.LtE, ast.Gt, ast.GtE))
-                    else left_val
-                )
-                rhs: object = (
-                    _version_tuple(str(right_val))
-                    if is_ver_cmp and isinstance(op, (ast.Lt, ast.LtE, ast.Gt, ast.GtE))
-                    else right_val
-                )
                 if isinstance(op, ast.Eq):
-                    ok = lhs == rhs
+                    ok = left_val == right_val
                 elif isinstance(op, ast.NotEq):
-                    ok = lhs != rhs
+                    ok = left_val != right_val
                 elif isinstance(op, ast.In):
-                    ok = str(lhs) in str(rhs)
+                    ok = str(left_val) in str(right_val)
                 elif isinstance(op, ast.NotIn):
-                    ok = str(lhs) not in str(rhs)
-                elif isinstance(op, ast.Lt):
-                    ok = lhs < rhs  # type: ignore[operator]
-                elif isinstance(op, ast.LtE):
-                    ok = lhs <= rhs  # type: ignore[operator]
-                elif isinstance(op, ast.Gt):
-                    ok = lhs > rhs  # type: ignore[operator]
-                elif isinstance(op, ast.GtE):
-                    ok = lhs >= rhs  # type: ignore[operator]
+                    ok = str(left_val) not in str(right_val)
+                elif isinstance(op, (ast.Lt, ast.LtE, ast.Gt, ast.GtE)):
+                    if is_ver_cmp:
+                        lv = _version_tuple(str(left_val))
+                        rv = _version_tuple(str(right_val))
+                        if isinstance(op, ast.Lt):
+                            ok = lv < rv
+                        elif isinstance(op, ast.LtE):
+                            ok = lv <= rv
+                        elif isinstance(op, ast.Gt):
+                            ok = lv > rv
+                        else:
+                            ok = lv >= rv
+                    else:
+                        ls = str(left_val)
+                        rs = str(right_val)
+                        if isinstance(op, ast.Lt):
+                            ok = ls < rs
+                        elif isinstance(op, ast.LtE):
+                            ok = ls <= rs
+                        elif isinstance(op, ast.Gt):
+                            ok = ls > rs
+                        else:
+                            ok = ls >= rs
                 else:
                     raise ValueError(
                         f"Unsupported comparison operator in marker: {marker_str!r}"

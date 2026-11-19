@@ -38,10 +38,10 @@ repos:
         types: [python]
       - id: ty-check
         name: Ty Type Check
-        entry: uv run ty check
+        entry: uv run python scripts/check_ty_warnings.py
         language: system
         pass_filenames: false
-        files: '^(app/.*\.py|pyproject\.toml)$'
+        files: '^(app/.*\.py|scripts/.*\.py|pyproject\.toml|uv\.lock)$'
       - id: forbid-cache-files
         name: Block cache files, virtual environments, and bytecode
         entry: Cannot commit cache files, bytecode, or virtual environments. Please clean your workspace.
