@@ -10,6 +10,10 @@ The schema has one version, held in `PRAGMA user_version`. Changes are numbered 
 
 We chose this because schema changes today are ad hoc in four modules (#712): `db.py` checks `user_version` for some changes and then runs `ALTER TABLE documents ADD COLUMN rating` inside `try/except: pass` on every open, and `history.py` does the same for ten `snapshot_files` columns. Errors other than "column exists" are swallowed with them. Foreign keys are never enabled, so `ON DELETE CASCADE` on `document_vectors` does nothing and deletes leave encrypted vectors behind. Per-session databases in the temp folder mean undo history can vanish on reboot, and the `ledger` and `quarantine` CLIs read a different database from the one sorts write to.
 
+## Implementation
+
+Active: one encrypted app store (`sortify.db` under `~/.autosorter/` or `AUTOSORTER_APP_DIR`) with legacy session import in `app/core/store.py`, and ordered `PRAGMA user_version` migrations with `StoreTooNewError` in `app/core/migrations.py`. Still open: `app/core/db_conn.py` leaves foreign keys disabled (`PRAGMA foreign_keys=ON` and pre-enable orphan cleanup are not yet run), `app/core/db.py` defines `documents` with six columns without a separate extraction `status` column and omits `settings_audit`, and per-session temp directories (`app/core/path_utils.py`) remain alongside the unified store.
+
 ## Considered options
 
 - **Alembic.** Mature, but it brings SQLAlchemy, its own config and its own history table, and it has to be taught about SQLCipher keys. A dozen small functions and `user_version` cover a single-user embedded store.

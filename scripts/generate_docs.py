@@ -870,6 +870,373 @@ audit_model_host_docs = audit_model_hosts
 validate_model_hosts = audit_model_hosts
 
 
+REQUIRED_PRIVACY_HOST_TOKENS = (
+    "~/.autosorter/",
+    "AUTOSORTER_APP_DIR",
+    "~/.sortify/keys",
+    r"%APPDATA%\Sortify\keys",
+    "~/.smart-autosorter/",
+    "autosorter_sessions_<user>",
+)
+
+
+def _extract_markdown_section(content: str, heading: str) -> str | None:
+    """Return stripped body text under ``## <heading>``, or None if absent."""
+    pattern = re.compile(
+        rf"^##\s+{re.escape(heading)}\s*$([\s\S]*?)(?=^##\s+|\Z)",
+        re.MULTILINE,
+    )
+    match = pattern.search(content)
+    if not match:
+        return None
+    return match.group(1).strip()
+
+
+def audit_privacy_policy(content=None, doc_path="PRIVACY.md"):
+    """Audit PRIVACY.md encryption claims and host directory disclosures against runtime code."""
+    errors = []
+    if content is None:
+        p = Path(doc_path)
+        if not p.exists():
+            return [f"Missing privacy policy document: {doc_path}"]
+        try:
+            content = p.read_text(encoding="utf-8")
+        except Exception as e:
+            return [f"Could not read privacy policy document {doc_path}: {e}"]
+
+    try:
+        from app.core import db_conn
+
+        fail_closed = bool(getattr(db_conn, "_disable_pytest_win_fallback", True))
+    except Exception:
+        fail_closed = True
+
+    affirmative_fallback_re = re.compile(
+        r"(?<!instead of )(?<!rather than )(?<!without )(?<!never )(?<!not )"
+        r"\b(?:falls?\s+back\s+to\s+(?:plain|standard|unencrypted)\s+sqlite|"
+        r"falling\s+back\s+to\s+(?:plain|standard|unencrypted)\s+sqlite|"
+        r"operating\s+in\s+standard\s+sqlite\s+fallback|"
+        r"plain\s+sqlite\s+(?:fallback|pages))\b",
+        re.IGNORECASE,
+    )
+    claims_fail_closed = bool(
+        re.search(
+            r"sqlcipher[\s\S]{0,240}?\b(?:fails?\s+closed|raises?\s+(?:a\s+|an\s+)?(?:\w+\s+)?error|refuses?\s+to\s+open)\b",
+            content,
+            re.IGNORECASE,
+        )
+    )
+
+    if fail_closed:
+        if affirmative_fallback_re.search(content):
+            errors.append(
+                f"Privacy policy ({doc_path}) claims a plain SQLite fallback, contradicting fail-closed SQLCipher enforcement in app/core/db_conn.py"
+            )
+        if not claims_fail_closed:
+            errors.append(
+                f"Privacy policy ({doc_path}) must state that missing or unverified SQLCipher fails closed and raises an error"
+            )
+    else:
+        if claims_fail_closed and not affirmative_fallback_re.search(content):
+            errors.append(
+                f"Privacy policy ({doc_path}) claims fail-closed SQLCipher behavior, but app.core.db_conn._disable_pytest_win_fallback is False"
+            )
+
+    for token in REQUIRED_PRIVACY_HOST_TOKENS:
+        if token not in content:
+            errors.append(
+                f"Privacy policy ({doc_path}) is missing host storage disclosure: '{token}'"
+            )
+
+    if "undo history" not in content.lower():
+        errors.append(
+            f"Privacy policy ({doc_path}) is missing undo history storage disclosure"
+        )
+
+    return errors
+
+
+def _count_frontend_store_callers(root: Path) -> list[str]:
+    """Return sorted relative paths of front-end modules importing store modules directly."""
+    import ast
+
+    store_modules = {
+        "app.core.db",
+        "app.core.db_worker",
+        "app.core.history",
+        "app.core.ledger",
+    }
+    candidates = []
+    for rel in ("app/main.py", "app/demo.py"):
+        p = root / rel
+        if p.is_file():
+            candidates.append(p)
+    for subdir in ("app/cli", "app/ui"):
+        base = root / subdir
+        if base.is_dir():
+            candidates.extend(sorted(base.rglob("*.py")))
+
+    callers = []
+    for file_path in candidates:
+        try:
+            tree = ast.parse(file_path.read_text(encoding="utf-8"))
+        except Exception:
+            continue
+        imported = False
+        for node in ast.walk(tree):
+            if isinstance(node, ast.Import):
+                if any(alias.name in store_modules for alias in node.names):
+                    imported = True
+                    break
+            elif isinstance(node, ast.ImportFrom) and node.module in store_modules:
+                imported = True
+                break
+        if imported:
+            callers.append(file_path.relative_to(root).as_posix())
+    return sorted(callers)
+
+
+def _inspect_adr_runtime_state(repo_root: Path | None = None) -> dict:
+    """Inspect local runtime source files offline to verify ADR implementation claims."""
+    root = Path(repo_root) if repo_root is not None else REPO_ROOT
+
+    ng_path = root / "app/core/network_guard.py"
+    ng_src = ng_path.read_text(encoding="utf-8") if ng_path.is_file() else ""
+    network_guard_patches_socket = "socket.socket.connect =" in ng_src
+
+    mover_path = root / "app/core/mover.py"
+    mover_src = mover_path.read_text(encoding="utf-8") if mover_path.is_file() else ""
+    mover_has_coexisting_ledgers = (
+        "TransactionLedger" in mover_src and "log_step" in mover_src
+    )
+
+    history_path = root / "app/core/history.py"
+    history_src = (
+        history_path.read_text(encoding="utf-8") if history_path.is_file() else ""
+    )
+    history_has_snapshot_rollback = (
+        "def _rollback_from_snapshot_internal" in history_src
+    )
+
+    val_arch_path = root / "scripts/validate_architecture.py"
+    store_imports_blocked = False
+    if val_arch_path.is_file():
+        val_src = val_arch_path.read_text(encoding="utf-8")
+        store_imports_blocked = all(
+            token in val_src
+            for token in (
+                "app.core.db",
+                "app.core.history",
+                "app.core.ledger",
+            )
+        )
+    frontend_store_callers = _count_frontend_store_callers(root)
+
+    db_conn_path = root / "app/core/db_conn.py"
+    db_conn_src = (
+        db_conn_path.read_text(encoding="utf-8") if db_conn_path.is_file() else ""
+    )
+    foreign_keys_enabled = bool(
+        re.search(r"PRAGMA\s+foreign_keys\s*=\s*(?:ON|1)\b", db_conn_src, re.IGNORECASE)
+    )
+
+    db_path = root / "app/core/db.py"
+    db_src = db_path.read_text(encoding="utf-8") if db_path.is_file() else ""
+    has_settings_audit = bool(
+        re.search(
+            r"CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+settings_audit\b",
+            db_src,
+            re.IGNORECASE,
+        )
+    )
+    docs_ddl_match = re.search(
+        r"CREATE\s+TABLE(?:\s+IF\s+NOT\s+EXISTS)?\s+documents\s*\(([\s\S]*?)\)",
+        db_src,
+        re.IGNORECASE,
+    )
+    has_documents_status = bool(
+        docs_ddl_match
+        and re.search(r"^\s*status\s+TEXT\b", docs_ddl_match.group(1), re.MULTILINE)
+    )
+
+    return {
+        "network_guard_patches_socket": network_guard_patches_socket,
+        "mover_has_coexisting_ledgers": mover_has_coexisting_ledgers,
+        "history_has_snapshot_rollback": history_has_snapshot_rollback,
+        "store_imports_blocked": store_imports_blocked,
+        "frontend_store_callers": frontend_store_callers,
+        "foreign_keys_enabled": foreign_keys_enabled,
+        "has_settings_audit": has_settings_audit,
+        "has_documents_status": has_documents_status,
+    }
+
+
+def audit_adr_status(content=None, doc_path=None, repo_root: Path | None = None):
+    """Audit accepted ADRs for accurate module citations and Implementation sections."""
+    root = Path(repo_root) if repo_root is not None else REPO_ROOT
+    if doc_path is None and content is None:
+        adr_dir = root / "docs" / "adr"
+        if not adr_dir.is_dir():
+            return [f"Missing ADR directory: {adr_dir}"]
+        all_errors = []
+        for adr_file in sorted(adr_dir.glob("*.md")):
+            all_errors.extend(
+                audit_adr_status(
+                    content=None,
+                    doc_path=adr_file.as_posix(),
+                    repo_root=root,
+                )
+            )
+        return all_errors
+
+    label = doc_path or "ADR"
+    if content is None:
+        assert doc_path is not None
+        p = Path(doc_path)
+        if not p.exists():
+            return [f"Missing ADR document: {doc_path}"]
+        try:
+            content = p.read_text(encoding="utf-8")
+        except Exception as e:
+            return [f"Could not read ADR document {doc_path}: {e}"]
+
+    frontmatter_match = re.match(r"^---\s*\n([\s\S]*?)\n---", content)
+    if not frontmatter_match or not re.search(
+        r"^status:\s*accepted\b",
+        frontmatter_match.group(1),
+        re.MULTILINE | re.IGNORECASE,
+    ):
+        return []
+
+    errors = []
+    filename = os.path.basename(str(label))
+    state = _inspect_adr_runtime_state(root)
+
+    if filename.startswith("0001-"):
+        if state["network_guard_patches_socket"]:
+            if "app/core/network_guard.py" not in content:
+                errors.append(
+                    f"ADR 0001 ({label}) must cite 'app/core/network_guard.py' for worker socket sandboxing"
+                )
+            if "app/core/shared_registry.py" in content:
+                errors.append(
+                    f"ADR 0001 ({label}) cites re-export shim 'app/core/shared_registry.py' instead of 'app/core/network_guard.py'"
+                )
+
+    elif filename.startswith("0005-"):
+        impl = _extract_markdown_section(content, "Implementation")
+        if not impl:
+            errors.append(
+                f"ADR 0005 ({label}) is missing a non-empty '## Implementation' section"
+            )
+
+    elif filename.startswith("0006-"):
+        has_open_gap = (
+            state["mover_has_coexisting_ledgers"]
+            or state["history_has_snapshot_rollback"]
+        )
+        impl = _extract_markdown_section(content, "Implementation")
+        if has_open_gap:
+            if not impl:
+                errors.append(
+                    f"ADR 0006 ({label}) is missing '## Implementation' while legacy ledgers or snapshot rollback remain in app/core/"
+                )
+            else:
+                impl_lower = impl.lower()
+                if "active" not in impl_lower or "open" not in impl_lower:
+                    errors.append(
+                        f"ADR 0006 ({label}) '## Implementation' must separate active and open items"
+                    )
+                if state["mover_has_coexisting_ledgers"] and (
+                    "app/core/mover.py" not in impl
+                    or ("TransactionLedger" not in impl and "log_step" not in impl)
+                ):
+                    errors.append(
+                        f"ADR 0006 ({label}) '## Implementation' must document coexisting ledgers in app/core/mover.py"
+                    )
+                if state["history_has_snapshot_rollback"] and (
+                    "app/core/history.py" not in impl
+                    or "_rollback_from_snapshot_internal" not in impl
+                ):
+                    errors.append(
+                        f"ADR 0006 ({label}) '## Implementation' must document snapshot rollback (_rollback_from_snapshot_internal) in app/core/history.py"
+                    )
+        elif impl and "_rollback_from_snapshot_internal" in impl:
+            errors.append(
+                f"ADR 0006 ({label}) '## Implementation' still marks _rollback_from_snapshot_internal open after removal"
+            )
+
+    elif filename.startswith("0007-"):
+        callers = state["frontend_store_callers"]
+        has_open_gap = (not state["store_imports_blocked"]) or bool(callers)
+        impl = _extract_markdown_section(content, "Implementation")
+        if has_open_gap:
+            if not impl:
+                errors.append(
+                    f"ADR 0007 ({label}) is missing '## Implementation' while front-end store imports remain unblocked"
+                )
+            else:
+                impl_lower = impl.lower()
+                if "active" not in impl_lower or "open" not in impl_lower:
+                    errors.append(
+                        f"ADR 0007 ({label}) '## Implementation' must separate active and open items"
+                    )
+                if (
+                    "scripts/validate_architecture.py" not in impl
+                    or "unblocked" not in impl_lower
+                ):
+                    errors.append(
+                        f"ADR 0007 ({label}) '## Implementation' must note unblocked front-end store callers in scripts/validate_architecture.py"
+                    )
+        elif impl and "unblocked" in impl.lower():
+            errors.append(
+                f"ADR 0007 ({label}) '## Implementation' still claims front-end store callers are unblocked after layer enforcement landed"
+            )
+
+    elif filename.startswith("0008-"):
+        has_open_gap = (
+            not state["foreign_keys_enabled"]
+            or not state["has_settings_audit"]
+            or not state["has_documents_status"]
+        )
+        impl = _extract_markdown_section(content, "Implementation")
+        if has_open_gap:
+            if not impl:
+                errors.append(
+                    f"ADR 0008 ({label}) is missing '## Implementation' while foreign_keys or baseline schema items remain unimplemented"
+                )
+            else:
+                impl_lower = impl.lower()
+                if "active" not in impl_lower or "open" not in impl_lower:
+                    errors.append(
+                        f"ADR 0008 ({label}) '## Implementation' must separate active and open items"
+                    )
+                if not state["foreign_keys_enabled"] and (
+                    "app/core/db_conn.py" not in impl
+                    or "foreign keys" not in impl_lower
+                    and "foreign_keys" not in impl_lower
+                ):
+                    errors.append(
+                        f"ADR 0008 ({label}) '## Implementation' must note disabled foreign keys in app/core/db_conn.py"
+                    )
+                if (
+                    not state["has_settings_audit"] or not state["has_documents_status"]
+                ) and (
+                    "app/core/db.py" not in impl
+                    or "settings_audit" not in impl
+                    or "status" not in impl_lower
+                ):
+                    errors.append(
+                        f"ADR 0008 ({label}) '## Implementation' must note unbuilt documents status column and settings_audit in app/core/db.py"
+                    )
+        elif impl and "leaves foreign keys disabled" in impl.lower():
+            errors.append(
+                f"ADR 0008 ({label}) '## Implementation' still claims foreign keys are disabled after PRAGMA foreign_keys=ON was enabled"
+            )
+
+    return errors
+
+
 def audit_handwritten_docs():
     """Audit external links and relative codebase path references in handwritten docs."""
     import re
@@ -940,6 +1307,15 @@ def audit_handwritten_docs():
                     architecture_content=content,
                 )
             )
+
+        # 5. Privacy policy encryption and host directory consistency check
+        if os.path.basename(doc_path) == "PRIVACY.md":
+            errors.extend(audit_privacy_policy(content=content, doc_path=doc_path))
+
+        # 6. ADR implementation status and module citation consistency check
+        norm_doc_path = doc_path.replace("\\", "/")
+        if norm_doc_path.startswith("docs/adr/") or "/adr/" in norm_doc_path:
+            errors.extend(audit_adr_status(content=content, doc_path=doc_path))
 
     return errors
 

@@ -10,6 +10,10 @@ Undo walks a session's `verified` and `done` rows backwards. For each one it mov
 
 We chose this because moves are recorded in three places today (`transaction_ledger` in the main database and again in a sidecar `transaction_ledger.db` with a different schema, `history.db`'s `step_ledger`, plus `rollback_journal.json`), and they can disagree after a crash (#714). Undo instead restores from a pre-sort snapshot of the folder and deletes what the snapshot lacks, which is how it has destroyed hidden files and files created after the sort (#713). A ledger of what Sortify itself did can only ever reverse Sortify's own actions.
 
+## Implementation
+
+Active: `MoveLedger` and the `moves` table (`app/core/moves.py`), legacy `step_ledger` import in `app/core/store.py`, pre-move `intent` / `done` / `verified` / `failed` recording in `app/core/mover.py`, and backwards move replay in `app/core/history.py` and `SortPipeline.undo` (`app/core/pipeline.py`) when `moves` rows exist. Still open: `app/core/mover.py` writes concurrently to `moves`, `transaction_ledger`, sidecar `TransactionLedger` (`app/core/ledger.py`) and `HistoryManager.log_step` (`step_ledger`), and `app/core/history.py` still runs `_rollback_from_snapshot_internal` against `snapshot_files` alongside `rollback_journal.json` when ledger rows are absent.
+
 ## Considered options
 
 - **Keep the snapshot and fix its edge cases.** Rejected: a snapshot describes the folder, not Sortify's actions, so restoring it has to decide what to do with every file that changed for any reason. Each fix (#713, #715, #767) narrows the damage without removing the cause.
