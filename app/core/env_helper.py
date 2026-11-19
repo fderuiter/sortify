@@ -180,8 +180,10 @@ if sys.platform == "win32":
         """A subclass of Popen that executes child processes under a restricted token on Windows."""
 
         def _close_pipe_fds(self, *args, **kwargs):
-            with contextlib.suppress(OSError):
-                super()._close_pipe_fds(*args, **kwargs)
+            close_pipe_fds = getattr(super(), "_close_pipe_fds", None)
+            if callable(close_pipe_fds):
+                with contextlib.suppress(OSError):
+                    close_pipe_fds(*args, **kwargs)
 
         def _execute_child(self, *args, **kwargs):
             # Safe extraction helper for variable signatures across Python versions
@@ -691,10 +693,10 @@ def run_background_process(cmd, sandbox: bool = SANDBOX_SUPPORTED, **kwargs):
 
             orig_popen = subprocess.Popen
             try:
-                subprocess.Popen = RestrictedPopen
+                setattr(subprocess, "Popen", RestrictedPopen)
                 return subprocess.run(cmd, **kwargs)
             finally:
-                subprocess.Popen = orig_popen
+                setattr(subprocess, "Popen", orig_popen)
 
     # Un-sandboxed execution
     if "env" not in kwargs:

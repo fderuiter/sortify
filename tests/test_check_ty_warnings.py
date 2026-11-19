@@ -194,3 +194,5 @@ def test_main_cli_help_and_invalid_report_paths(tmp_path: Path):
 
 def test_head_passes_live_ty_warning_ratchet():
     assert main(["prog"]) == 0
+    for platform in ("linux", "darwin", "win32"):
+        assert main(["prog", "--platform", platform]) == 0
