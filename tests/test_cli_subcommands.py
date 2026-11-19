@@ -129,6 +129,43 @@ def test_sort_subcommand_live_execution():
 
 
 @pytest.mark.xdist_group(name="cli_subcommands")
+def test_sort_subcommand_live_execution_macos_high_entropy_tmpdir(tmp_path):
+    """Regression test: live sort --dest-dir succeeds when TMPDIR contains high-entropy Darwin tokens."""
+    darwin_tmp = (
+        tmp_path
+        / "private"
+        / "var"
+        / "folders"
+        / "vx"
+        / "6j7x8k9l0m1n2p3q4r5s6t7u0000gn"
+        / "T"
+    )
+    src_dir = darwin_tmp / "src"
+    dest_dir = darwin_tmp / "dst"
+    src_dir.mkdir(parents=True)
+    dest_dir.mkdir(parents=True)
+    create_sample_corpus(str(src_dir))
+
+    code, stdout, stderr = run_cli(
+        [
+            "sort",
+            str(src_dir),
+            "--json",
+            "--dest-dir",
+            str(dest_dir),
+        ]
+    )
+
+    assert code == 0, (
+        f"Expected 0 exit code, got {code}. Stderr: {stderr}. Stdout: {stdout}"
+    )
+    data = json.loads(stdout)
+    assert data["status"] == "success"
+    assert data["dry_run"] is False
+    assert data["summary"]["audit_report"]["verified_pass_count"] >= 3
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
 def test_scan_subcommand_json():
     """Test scan subcommand with --json output and jq pipeline style structure."""
     with tempfile.TemporaryDirectory() as src_dir:

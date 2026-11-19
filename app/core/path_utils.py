@@ -478,6 +478,107 @@ def _is_absolute_path(path: str) -> bool:
     )
 
 
+def _sanitize_path_segment(part: str) -> str:
+    """Sanitize a single path segment against secrets, PII, illegal characters, and reserved names."""
+    import unicodedata
+
+    from app.core.text_utils import sanitize_secret_patterns
+
+    part_s = sanitize_secret_patterns(part)
+    part_s = scrub_pii_from_filename(part_s)
+    part_s = unicodedata.normalize("NFC", part_s)
+    part_s = part_s.replace("\x00", "")
+    part_s = re.sub(r"[\x00-\x1f\x7f]", "_", part_s)
+    escaped_chars = "".join(re.escape(c) for c in ILLEGAL_PATH_CHARS_SET)
+    part_s = re.sub(f"[{escaped_chars}]", "_", part_s)
+    part_s = part_s.rstrip(". ")
+    if not part_s or not part_s.strip(" ._"):
+        return ""
+    upper_name = part_s.upper()
+    base_name = upper_name.split(".")[0]
+    if base_name in RESERVED_NAMES:
+        subparts = part_s.split(".")
+        subparts[0] = subparts[0] + "_safe"
+        part_s = ".".join(subparts)
+    return part_s
+
+
+def _match_trusted_base_prefix(
+    orig_key: str, base_dir: str | None
+) -> tuple[str, str, str] | None:
+    """Return (matched_base_prefix, relative_rest, separator) if orig_key is nested within base_dir."""
+    if not base_dir or not _is_absolute_path(orig_key):
+        return None
+
+    candidates: list[str] = []
+    base_clean = base_dir.rstrip("/\\")
+    if base_clean:
+        candidates.append(base_clean)
+    if os.path.isabs(base_dir):
+        for resolved in (os.path.abspath(base_dir), os.path.realpath(base_dir)):
+            cleaned = resolved.rstrip("/\\")
+            if cleaned and cleaned not in candidates:
+                candidates.append(cleaned)
+
+    candidates.sort(key=len, reverse=True)
+    key_norm = orig_key.replace("\\", "/")
+    is_win_drive = bool(re.match(r"^[a-zA-Z]:", orig_key)) or bool(
+        re.match(r"^[a-zA-Z]:", base_dir)
+    )
+
+    for cand in candidates:
+        cand_norm = cand.replace("\\", "/")
+        if is_win_drive:
+            matches = (
+                key_norm.lower() == cand_norm.lower()
+                or key_norm.lower().startswith(cand_norm.lower() + "/")
+            )
+        else:
+            matches = key_norm == cand_norm or key_norm.startswith(cand_norm + "/")
+
+        if matches:
+            prefix = orig_key[: len(cand)]
+            rel_rest = orig_key[len(cand) :].lstrip("/\\")
+            sep = (
+                "\\"
+                if ("\\" in prefix or bool(re.match(r"^[a-zA-Z]:", prefix)))
+                else "/"
+            )
+            return prefix, rel_rest, sep
+
+    return None
+
+
+def _sanitize_folder_key_for_base(
+    key: str, base_dir: str | None = None
+) -> tuple[str, bool]:
+    """Sanitize a folder key while preserving any trusted base_dir prefix verbatim."""
+    if not isinstance(key, str) or not key:
+        return "Unnamed_safe", True
+
+    matched = _match_trusted_base_prefix(key, base_dir)
+    if matched is not None:
+        base_prefix, rel_rest, sep = matched
+        if not rel_rest:
+            return base_prefix, base_prefix != key
+
+        raw_parts = [p for p in re.split(r"[/\\]+", rel_rest) if p]
+        clean_parts = [p for p in raw_parts if p not in ("..", ".")]
+        sanitized_parts = []
+        for part in clean_parts:
+            part_s = _sanitize_path_segment(part)
+            if part_s:
+                sanitized_parts.append(part_s)
+
+        if not sanitized_parts:
+            sanitized_parts = ["Unnamed_safe"]
+
+        safe_path = f"{base_prefix}{sep}{sep.join(sanitized_parts)}"
+        return safe_path, safe_path != key
+
+    return sanitize_folder_key(key)
+
+
 def sanitize_folder_key(key: str) -> tuple[str, bool]:
     """Sanitize a folder hierarchy key to be OS-safe and clean.
 
@@ -496,20 +597,18 @@ def sanitize_folder_key(key: str) -> tuple[str, bool]:
     from app.core.text_utils import sanitize_secret_patterns
 
     orig_key = key
-    key = sanitize_secret_patterns(key)
-    key = scrub_pii_from_filename(key)
 
-    s = unicodedata.normalize("NFC", key)
-
-    # Remove null bytes and replace control characters
-    s = s.replace("\x00", "")
-    s = re.sub(r"[\x00-\x1f\x7f]", "_", s)
-
-    # If key represents an absolute destination path, preserve its root/drive while sanitizing each segment
+    # If key represents an absolute destination path, preserve its root/drive and any
+    # existing host directory prefix while sanitizing proposed child segments individually.
     if _is_absolute_path(orig_key):
+        s = unicodedata.normalize("NFC", orig_key)
+        s = s.replace("\x00", "")
+        s = re.sub(r"[\x00-\x1f\x7f]", "_", s)
+
         is_unc = s.startswith(r"\\") or s.startswith("//")
         drive_match = re.match(r"^([a-zA-Z]:)[/\\]?", s)
         is_posix = s.startswith("/") and not is_unc
+        has_unc_traversal = False
 
         if drive_match:
             drive_prefix = drive_match.group(1).upper()
@@ -517,9 +616,9 @@ def sanitize_folder_key(key: str) -> tuple[str, bool]:
             sep = "\\"
             root = f"{drive_prefix}\\"
         elif is_unc:
-            parts_unc = [
-                p for p in re.split(r"[/\\]+", s) if p and p not in ("..", ".")
-            ]
+            raw_unc = [p for p in re.split(r"[/\\]+", s) if p]
+            has_unc_traversal = any(p in ("..", ".") for p in raw_unc)
+            parts_unc = [p for p in raw_unc if p not in ("..", ".")]
             if len(parts_unc) >= 2:
                 root = f"\\\\{parts_unc[0]}\\{parts_unc[1]}\\"
                 rest = "\\".join(parts_unc[2:])
@@ -536,23 +635,38 @@ def sanitize_folder_key(key: str) -> tuple[str, bool]:
             rest = s.lstrip(r"/\ ")
             sep = "/"
 
-        parts = re.split(r"[/\\]+", rest)
-        clean_parts = [p for p in parts if p not in ("..", ".")]
+        parts = [p for p in re.split(r"[/\\]+", rest) if p]
+        has_traversal = has_unc_traversal or any(p in ("..", ".") for p in parts)
 
-        sanitized_parts = []
-        escaped_chars = "".join(re.escape(c) for c in ILLEGAL_PATH_CHARS_SET)
-        for part in clean_parts:
-            part_s = re.sub(f"[{escaped_chars}]", "_", part)
-            part_s = part_s.rstrip(". ")
-            upper_name = part_s.upper()
-            base_name = upper_name.split(".")[0]
-            if base_name in RESERVED_NAMES:
-                subparts = part_s.split(".")
-                subparts[0] = subparts[0] + "_safe"
-                part_s = ".".join(subparts)
+        existing_count = 0
+        if s == orig_key and not has_traversal:
+            for idx in range(len(parts)):
+                candidate_dir = (
+                    root + sep.join(parts[: idx + 1])
+                    if root.endswith(sep)
+                    else root + sep + sep.join(parts[: idx + 1])
+                )
+                try:
+                    if os.path.isdir(candidate_dir):
+                        existing_count = idx + 1
+                    else:
+                        break
+                except OSError:
+                    break
+
+        preserved_parts = parts[:existing_count]
+        remaining_parts = [p for p in parts[existing_count:] if p not in ("..", ".")]
+
+        new_sanitized_parts = []
+        for part in remaining_parts:
+            part_s = _sanitize_path_segment(part)
             if part_s:
-                sanitized_parts.append(part_s)
+                new_sanitized_parts.append(part_s)
 
+        if existing_count > 0 and remaining_parts and not new_sanitized_parts:
+            new_sanitized_parts = ["Unnamed_safe"]
+
+        sanitized_parts = preserved_parts + new_sanitized_parts
         if sanitized_parts:
             s = (
                 root + sep.join(sanitized_parts)
@@ -564,6 +678,15 @@ def sanitize_folder_key(key: str) -> tuple[str, bool]:
 
         transformed = s != orig_key
         return s, transformed
+
+    key = sanitize_secret_patterns(key)
+    key = scrub_pii_from_filename(key)
+
+    s = unicodedata.normalize("NFC", key)
+
+    # Remove null bytes and replace control characters
+    s = s.replace("\x00", "")
+    s = re.sub(r"[\x00-\x1f\x7f]", "_", s)
 
     # Split by slashes/backslashes to clean path traversal segments
     parts = re.split(r"[/\\]+", s)
@@ -687,7 +810,9 @@ def sanitize_filename(name: str) -> tuple[str, bool]:
     return leaf, transformed
 
 
-def _sanitize_plan_key(key: str, is_file: bool = False) -> tuple[str, bool]:
+def _sanitize_plan_key(
+    key: str, is_file: bool = False, base_dir: str | None = None
+) -> tuple[str, bool]:
     """Sanitize a plan dictionary key, handling file targets and folder keys safely."""
     if not isinstance(key, str) or not key:
         return "Unnamed_safe", True
@@ -695,14 +820,13 @@ def _sanitize_plan_key(key: str, is_file: bool = False) -> tuple[str, bool]:
     if is_file:
         return sanitize_filename(key)
     else:
-        return sanitize_folder_key(key)
+        return _sanitize_folder_key_for_base(key, base_dir=base_dir)
 
 
-def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
-    """Recursively sanitize folder keys, leaf file names, and target filenames in a plan dictionary or SortingPlan.
-
-    Returns (sanitized_plan, warnings).
-    """
+def _sanitize_plan_for_base_dir(
+    plan: Any, base_dir: str | None = None
+) -> tuple[dict, list[str]]:
+    """Recursively sanitize folder keys, leaf file names, and target filenames while preserving a trusted base_dir prefix."""
     if hasattr(plan, "plan") and isinstance(plan.plan, dict):
         plan = plan.plan
     elif hasattr(plan, "model_dump") and not isinstance(plan, dict):
@@ -782,7 +906,9 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
             sanitized_plan[safe_file_key] = file_content
 
         elif _is_dir_node(content):
-            safe_key, transformed = _sanitize_plan_key(key, is_file=False)
+            safe_key, transformed = _sanitize_plan_key(
+                key, is_file=False, base_dir=base_dir
+            )
             if transformed:
                 warnings.append(f"Sanitized folder key '{key}' to '{safe_key}'")
 
@@ -791,7 +917,7 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
                 if isinstance(content, dict)
                 else {}
             )
-            sub_sanitized, sub_warns = sanitize_plan(children)
+            sub_sanitized, sub_warns = _sanitize_plan_for_base_dir(children)
             warnings.extend(sub_warns)
 
             dir_content = sub_sanitized
@@ -804,11 +930,13 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
             sanitized_plan[safe_key] = dir_content
 
         elif isinstance(content, (dict, BaseModel)):
-            safe_key, transformed = _sanitize_plan_key(key, is_file=False)
+            safe_key, transformed = _sanitize_plan_key(
+                key, is_file=False, base_dir=base_dir
+            )
             if transformed:
                 warnings.append(f"Sanitized folder key '{key}' to '{safe_key}'")
 
-            sub_sanitized, sub_warns = sanitize_plan(content)
+            sub_sanitized, sub_warns = _sanitize_plan_for_base_dir(content)
             warnings.extend(sub_warns)
 
             if safe_key in sanitized_plan:
@@ -832,6 +960,14 @@ def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
             sanitized_plan[key] = content
 
     return sanitized_plan, warnings
+
+
+def sanitize_plan(plan: Any) -> tuple[dict, list[str]]:
+    """Recursively sanitize folder keys, leaf file names, and target filenames in a plan dictionary or SortingPlan.
+
+    Returns (sanitized_plan, warnings).
+    """
+    return _sanitize_plan_for_base_dir(plan, base_dir=None)
 
 
 def is_valid_name(name: str) -> bool:

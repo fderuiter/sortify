@@ -76,7 +76,7 @@ PRIVATE_KEY_PATTERN = re.compile(
 )
 SSN_PATTERN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 CREDIT_CARD_PATTERN = re.compile(r"\b(?:\d[ -]*?){13,16}\b")
-SUB_TOKEN_PATTERN = re.compile(r"([_\-/])")
+SUB_TOKEN_PATTERN = re.compile(r"([_\-/\\])")
 
 
 def calculate_shannon_entropy(text: str) -> float:
@@ -231,31 +231,36 @@ def sanitize_secret_patterns(text: str, replacement: str = "") -> str:
             new_words.append(word)
             continue
 
-        if _is_high_entropy_token(word):
+        if any(sep in word for sep in ("_", "-", "/", "\\")):
+            sub_tokens = SUB_TOKEN_PATTERN.split(word)
+            new_sub_tokens = []
+            sub_modified = False
+            kept_content = False
+            for st in sub_tokens:
+                if st in ("_", "-", "/", "\\") or not st:
+                    new_sub_tokens.append(st)
+                elif len(st) >= 20 and _is_high_entropy_token(st):
+                    if replacement:
+                        new_sub_tokens.append(replacement)
+                        kept_content = True
+                    sub_modified = True
+                else:
+                    new_sub_tokens.append(st)
+                    kept_content = True
+            if sub_modified:
+                if kept_content:
+                    new_words.append("".join(new_sub_tokens))
+                elif replacement:
+                    new_words.append(replacement)
+                modified = True
+            else:
+                new_words.append(word)
+        elif _is_high_entropy_token(word):
             if replacement:
                 new_words.append(replacement)
             modified = True
         else:
-            if "_" in word or "-" in word or "/" in word:
-                sub_tokens = SUB_TOKEN_PATTERN.split(word)
-                new_sub_tokens = []
-                sub_modified = False
-                for st in sub_tokens:
-                    if st in ("_", "-", "/") or not st:
-                        new_sub_tokens.append(st)
-                    elif len(st) >= 20 and _is_high_entropy_token(st):
-                        if replacement:
-                            new_sub_tokens.append(replacement)
-                        sub_modified = True
-                    else:
-                        new_sub_tokens.append(st)
-                if sub_modified:
-                    new_words.append("".join(new_sub_tokens))
-                    modified = True
-                else:
-                    new_words.append(word)
-            else:
-                new_words.append(word)
+            new_words.append(word)
 
     if modified:
         result = " ".join(new_words)

@@ -279,3 +279,108 @@ def test_contextual_file_renamer_scrubs_secrets():
     assert not contains_secrets(new_fn)
     assert "sk_live_" not in new_fn
     assert "AKIA" not in new_fn
+
+
+def test_compound_high_entropy_subtoken_scrubbing_preserves_context():
+    """Verify compound paths/names scrub only high-entropy sub-tokens rather than wiping legitimate segments."""
+    from app.core.path_utils import sanitize_folder_key, sanitize_name
+
+    folder_key, transformed = sanitize_folder_key(
+        "Folder/a8F93b12C4d5E6f7A8b9C0d1e2f3a4b5/Documents"
+    )
+    assert transformed is True
+    assert "a8F93b12C4d5E6f7A8b9C0d1e2f3a4b5" not in folder_key
+    assert folder_key == "Folder_Documents"
+
+    filename = sanitize_name("Invoice_a8F93b12C4d5E6f7A8b9C0d1e2f3a4b5_2026.pdf")
+    assert filename == "Invoice_2026.pdf"
+
+    all_secret = sanitize_secret_patterns(
+        "a8F93b12C4d5E6f7A8b9C0d1_x9Y8z7W6v5U4t3S2r1Q0p9O8"
+    )
+    assert all_secret == ""
+
+
+def test_verify_plan_integrity_preserves_high_entropy_base_dir_and_sanitizes_children(
+    tmp_path,
+):
+    """Verify trusted base_dir and existing host temp prefixes are preserved while child folder segments are sanitized."""
+    from app.core.path_utils import sanitize_folder_key
+    from app.core.verifier import VerificationEngine
+
+    macos_base = "/private/var/folders/vx/6j7x8k9l0m1n2p3q4r5s6t7u0000gn/T/tmp_sort_dst"
+    plan = {
+        f"{macos_base}/Investment-Finance": {
+            "budget.csv": {
+                "__type__": "file",
+                "relative_source": "budget.csv",
+                "target_filename": "budget.csv",
+                "source_root": "/private/var/folders/vx/6j7x8k9l0m1n2p3q4r5s6t7u0000gn/T/src",
+            }
+        },
+        f"{macos_base}/Invoices: 2026": {
+            "inv.pdf": {
+                "__type__": "file",
+                "relative_source": "inv.pdf",
+                "target_filename": "inv.pdf",
+                "source_root": "/private/var/folders/vx/6j7x8k9l0m1n2p3q4r5s6t7u0000gn/T/src",
+            }
+        },
+        f"{macos_base}/sk_live_51Nxabc123XYZ4567890abcdef": {
+            "note.txt": {
+                "__type__": "file",
+                "relative_source": "note.txt",
+                "target_filename": "note.txt",
+                "source_root": "/private/var/folders/vx/6j7x8k9l0m1n2p3q4r5s6t7u0000gn/T/src",
+            }
+        },
+    }
+
+    result = VerificationEngine.verify_plan_integrity(macos_base, plan)
+    assert result["success"] is True
+    assert result["escaping_paths"] == []
+    assert f"{macos_base}/Investment-Finance" in plan
+    assert f"{macos_base}/Invoices_ 2026" in plan
+    assert f"{macos_base}/Unnamed_safe" in plan
+
+    existing_darwin_dir = (
+        tmp_path / "var" / "folders" / "vx" / "6j7x8k9l0m1n2p3q4r5s6t7u0000gn" / "T"
+    )
+    existing_darwin_dir.mkdir(parents=True)
+    safe_abs, trans_abs = sanitize_folder_key(f"{existing_darwin_dir}/Miscellaneous")
+    assert safe_abs == f"{existing_darwin_dir}/Miscellaneous"
+    assert trans_abs is False
+
+    safe_secret_child, trans_secret_child = sanitize_folder_key(
+        f"{existing_darwin_dir}/sk_live_51Nxabc123XYZ4567890abcdef"
+    )
+    assert safe_secret_child == f"{existing_darwin_dir}/Unnamed_safe"
+    assert trans_secret_child is True
+
+    win_base = r"C:\Users\runner_6j7x8k9l0m1n2p3q4r5s6t7u\AppData\Local\Temp\dst"
+    win_plan = {
+        rf"{win_base}\CON": {
+            "report.txt": {
+                "__type__": "file",
+                "relative_source": "report.txt",
+                "target_filename": "report.txt",
+                "source_root": r"C:\src",
+            }
+        },
+        win_base: {
+            "root_doc.txt": {
+                "__type__": "file",
+                "relative_source": "root_doc.txt",
+                "target_filename": "root_doc.txt",
+                "source_root": r"C:\src",
+            }
+        },
+    }
+    win_res = VerificationEngine.verify_plan_integrity(win_base, win_plan)
+    assert rf"{win_base}\CON_safe" in win_plan
+    assert win_base in win_plan
+    assert win_res["warnings"]
+
+    unc_safe, unc_trans = sanitize_folder_key(r"\\server\share\Finance\CON")
+    assert unc_safe == r"\\server\share\Finance\CON_safe"
+    assert unc_trans is True
