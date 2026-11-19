@@ -93,3 +93,22 @@ def test_doc_deploy_job_configuration_and_steps():
     assert compile_idx < deploy_idx, (
         "Documentation compilation must run before mkdocs gh-deploy"
     )
+
+
+def test_verify_offline_bundle_frozen_and_ml_verification():
+    """Verify verify-offline-bundle validates the frozen manifest, checks git diff, and tests ML imports."""
+    workflow = _load_ci_workflow()
+    jobs = workflow.get("jobs", {})
+    assert "verify-offline-bundle" in jobs
+    assert "verify-offline-bundle" in jobs["required-ci"].get("needs", [])
+
+    steps = jobs["verify-offline-bundle"].get("steps", [])
+    run_scripts = "\n".join(s.get("run", "") for s in steps)
+
+    assert "scripts/prepare_offline.py --cpu --frozen" in run_scripts
+    assert "git diff --exit-code" in run_scripts
+    assert "scripts/install_offline.py offline-install" in run_scripts
+    for mod in ("torch", "easyocr", "onnxruntime", "transformers", "llama_cpp"):
+        assert mod in run_scripts, f"Missing '{mod}' import in verify-offline-bundle"
+    assert "is_ml_available()" in run_scripts
+    assert "torch.cuda.is_available()" in run_scripts

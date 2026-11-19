@@ -4,7 +4,8 @@ Local, offline-first Python 3.12 file sorter (`smart-autosorter`). Read `CONTEXT
 
 ## Commands
 
-- Install: `uv sync` (add `--extra ml` only when the work needs torch/easyocr/transformers).
+- Install: `uv sync` (add `--extra ml` when the work needs the ML stack: `torch`, `easyocr`, `onnxruntime`, `transformers`, `llama-cpp-python`).
+- Offline bundle: `uv run python scripts/prepare_offline.py --cpu` to recompile `offline_bundle/requirements.txt` (`--extra ml --universal` with CPU PyTorch); `uv run --no-project python scripts/prepare_offline.py --cpu --frozen` and `uv run --no-project python scripts/install_offline.py offline-install` to validate the tracked manifest and offline install without overwriting it.
 - Fast tests: `uv run pytest -m "not slow"`. One file while iterating: `uv run pytest tests/test_<area>.py -n0`.
 - Lint and format: `uv run ruff check` and `uv run ruff format`.
 - Type check: `uv run ty check`.

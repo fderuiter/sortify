@@ -149,6 +149,51 @@ def test_offline_requirements_manifest_specifies_hashes():
             )
 
 
+def test_offline_requirements_manifest_covers_base_and_ml_packages():
+    """Verify that offline_bundle/requirements.txt pins all base and ml packages and CPU torch."""
+    from scripts.prepare_offline import (
+        _load_required_project_packages,
+        _parse_manifest_entries,
+    )
+
+    repo_root = Path(__file__).resolve().parent.parent
+    req_file = repo_root / "offline_bundle" / "requirements.txt"
+    pyproject_file = repo_root / "pyproject.toml"
+
+    base_deps, ml_deps = _load_required_project_packages(pyproject_file)
+    assert {
+        "easyocr",
+        "transformers",
+        "onnxruntime",
+        "llama-cpp-python",
+        "torch",
+    }.issubset(ml_deps)
+
+    entries = _parse_manifest_entries(req_file.read_text(encoding="utf-8"))
+    pinned_names = {str(item["name"]) for item in entries}
+    active_names = {str(item["name"]) for item in entries if item["active"]}
+
+    missing_base = base_deps - active_names
+    missing_ml = ml_deps - active_names
+    assert not missing_base, f"Missing base dependencies in manifest: {missing_base}"
+    assert not missing_ml, f"Missing ml dependencies in manifest: {missing_ml}"
+
+    # Verify CPU PyTorch is pinned and no CUDA/NVIDIA packages appear
+    torch_specs = [str(item["spec"]) for item in entries if item["name"] == "torch"]
+    assert any("+cpu" in spec for spec in torch_specs), (
+        f"Expected CPU PyTorch (+cpu) entry in manifest, found: {torch_specs}"
+    )
+    for name in pinned_names:
+        assert not name.startswith(("nvidia-", "cuda-")), (
+            f"Unexpected GPU package '{name}' in offline_bundle/requirements.txt"
+        )
+    for item in entries:
+        spec = str(item["spec"])
+        assert "+cu" not in spec and "cuda" not in spec.lower(), (
+            f"Unexpected CUDA build tag in offline_bundle/requirements.txt: {spec}"
+        )
+
+
 @patch("scripts.install_offline.safe_extract_zip")
 @patch("scripts.install_offline.os.path.exists", return_value=True)
 def test_extract_and_install_offline_traversal_exit(mock_exists, mock_extract):
