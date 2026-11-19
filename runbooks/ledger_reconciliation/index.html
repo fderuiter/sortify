@@ -1,0 +1,2804 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://fderuiter.github.io/sortify/runbooks/ledger_reconciliation/">
+      
+      
+        <link rel="prev" href="../../troubleshooting/">
+      
+      
+        <link rel="next" href="../../api_reference/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+    
+    
+      
+        <title>Ledger Reconciliation - Smart AutoSorter AI Pro API</title>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/stylesheets/main.57a0d79d.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("../..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#operational-runbook-transaction-ledger-reconciliation-and-recovery" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href="../.." title="Smart AutoSorter AI Pro API" class="md-header__button md-logo" aria-label="Smart AutoSorter AI Pro API" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Smart AutoSorter AI Pro API
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Ledger Reconciliation
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href="../.." title="Smart AutoSorter AI Pro API" class="md-nav__button md-logo" aria-label="Smart AutoSorter AI Pro API" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Smart AutoSorter AI Pro API
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../.." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../user_guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../keyboard_shortcuts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keyboard Shortcuts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../admin_guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administrator Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interactive Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Interactive Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/01_ml_analyzer_clustering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stateful ML Analyzer Clustering
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/02_multi_format_text_extraction/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi-Format Text Extraction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../tutorials/03_virtual_sorting_verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Virtual Sorting Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--active md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" checked>
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operational Runbooks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="true">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operational Runbooks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ledger Reconciliation
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ledger Reconciliation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architectural-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architectural Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#transaction-lifecycle-and-state-transitions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transaction Lifecycle and State Transitions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Transaction Lifecycle and State Transitions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#status-definitions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status Definitions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#allowed-state-transitions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Allowed State Transitions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cli-reference-and-practical-invocations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Reference and Practical Invocations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CLI Reference and Practical Invocations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#common-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inspecting-incomplete-transactions-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inspecting Incomplete Transactions (status)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inspecting Incomplete Transactions (status)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#flags-for-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flags for status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#practical-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Practical Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#executing-automated-reconciliation-reconcile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executing Automated Reconciliation (reconcile)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Executing Automated Reconciliation (reconcile)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#flags-for-reconcile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flags for reconcile
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#practical-examples_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Practical Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#purging-ledger-records-purge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Purging Ledger Records (purge)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Purging Ledger Records (purge)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#flags-for-purge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flags for purge
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#practical-examples_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Practical Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exporting-audit-logs-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exporting Audit Logs (export)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Exporting Audit Logs (export)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#flags-for-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flags for export
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#practical-examples_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Practical Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-by-step-resolution-paths-for-failure-reasons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step-by-Step Resolution Paths for Failure Reasons
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step-by-Step Resolution Paths for Failure Reasons">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reconciled_success" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RECONCILED_SUCCESS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#aborted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ABORTED
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ABORTED">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#scenario-a-move-aborted-prior-to-physical-move" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scenario A: Move aborted prior to physical move
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scenario-b-duplicate-destination-safely-removed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scenario B: Duplicate destination safely removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#failed_conflict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FAILED_CONFLICT
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="FAILED_CONFLICT">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#scenario-a-destination-file-exists-with-differing-content" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scenario A: Destination file exists with differing content
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scenario-b-duplicate-destination-could-not-be-removed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scenario B: Duplicate destination could not be removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#failed_missing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FAILED_MISSING
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stale-daemon-lock-and-ipc-socket-recovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stale Daemon Lock and IPC Socket Recovery
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Stale Daemon Lock and IPC Socket Recovery">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lock-mechanics-file-locations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lock Mechanics &amp; File Locations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#critical-warning-active-process-safety" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CRITICAL WARNING: Active Process Safety
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#safe-verification-cleanup-procedure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Safe Verification &amp; Cleanup Procedure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Safe Verification &amp; Cleanup Procedure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-1-inspect-the-pid-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Inspect the PID File
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2-verify-process-liveness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Verify Process Liveness
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-3-remove-stale-lock-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Remove Stale Lock Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cross-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../api_reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture & Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_3" id="__nav_8_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture Decisions
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture Decisions
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0001-local-first-no-cloud-processing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    File contents never leave the machine
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (recorded retroactively on 2026-10-19; the rationale is inferred from the code, so correct it if it is wrong)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0002-encrypt-extracted-text-at-rest/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extracted text and vectors are encrypted at rest with one per-database key
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (recorded retroactively on 2026-10-19; the rationale is inferred from the code, so correct it if it is wrong)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0003-single-writer-database-thread/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    All database writes go through one writer thread
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (recorded retroactively on 2026-10-19; the rationale is inferred from the code, so correct it if it is wrong)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0004-clustering-in-a-spawned-subprocess/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clustering runs in a spawned subprocess on an encrypted payload
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (recorded retroactively on 2026-10-19; the rationale is inferred from the code, so correct it if it is wrong)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0005-moves-never-destroy-unverified-bytes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    A move never destroys bytes it has not verified exist elsewhere
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0006-one-move-ledger-replayed-for-undo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    One move ledger, and undo replays it
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0007-one-sort-pipeline-behind-a-composition-root/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    One sort pipeline, built in one place, with layers enforced in CI
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0008-one-app-store-with-numbered-migrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    One app store, versioned by numbered migrations
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../adr/0009-auto-merge-gate-by-path-tier/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-merge decides by path tier, and data-safety code always needs a human
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../auto_merge_policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Merge Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../branch_protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Branch Protection Rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../contributor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributor Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_7" id="__nav_8_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../../ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#table-of-contents" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Table of Contents
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#architectural-overview" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Architectural Overview
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#transaction-lifecycle-and-state-transitions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Transaction Lifecycle and State Transitions
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Transaction Lifecycle and State Transitions">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#status-definitions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Status Definitions
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#allowed-state-transitions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Allowed State Transitions
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cli-reference-and-practical-invocations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLI Reference and Practical Invocations
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="CLI Reference and Practical Invocations">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#common-flags" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Common Flags
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#inspecting-incomplete-transactions-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Inspecting Incomplete Transactions (status)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Inspecting Incomplete Transactions (status)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#flags-for-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flags for status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#practical-examples" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Practical Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#executing-automated-reconciliation-reconcile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Executing Automated Reconciliation (reconcile)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Executing Automated Reconciliation (reconcile)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#flags-for-reconcile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flags for reconcile
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#practical-examples_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Practical Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#purging-ledger-records-purge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Purging Ledger Records (purge)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Purging Ledger Records (purge)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#flags-for-purge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flags for purge
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#practical-examples_2" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Practical Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exporting-audit-logs-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exporting Audit Logs (export)
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Exporting Audit Logs (export)">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#flags-for-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Flags for export
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#practical-examples_3" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Practical Examples
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#step-by-step-resolution-paths-for-failure-reasons" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step-by-Step Resolution Paths for Failure Reasons
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Step-by-Step Resolution Paths for Failure Reasons">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#reconciled_success" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RECONCILED_SUCCESS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#aborted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ABORTED
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ABORTED">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#scenario-a-move-aborted-prior-to-physical-move" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scenario A: Move aborted prior to physical move
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scenario-b-duplicate-destination-safely-removed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scenario B: Duplicate destination safely removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#failed_conflict" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FAILED_CONFLICT
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="FAILED_CONFLICT">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#scenario-a-destination-file-exists-with-differing-content" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scenario A: Destination file exists with differing content
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scenario-b-duplicate-destination-could-not-be-removed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Scenario B: Duplicate destination could not be removed
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#failed_missing" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        FAILED_MISSING
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#stale-daemon-lock-and-ipc-socket-recovery" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Stale Daemon Lock and IPC Socket Recovery
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Stale Daemon Lock and IPC Socket Recovery">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#lock-mechanics-file-locations" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lock Mechanics &amp; File Locations
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#critical-warning-active-process-safety" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CRITICAL WARNING: Active Process Safety
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#safe-verification-cleanup-procedure" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Safe Verification &amp; Cleanup Procedure
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Safe Verification &amp; Cleanup Procedure">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#step-1-inspect-the-pid-file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 1: Inspect the PID File
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-2-verify-process-liveness" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 2: Verify Process Liveness
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#step-3-remove-stale-lock-files" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Step 3: Remove Stale Lock Files
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#cross-references" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cross-References
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="operational-runbook-transaction-ledger-reconciliation-and-recovery">Operational Runbook: Transaction Ledger Reconciliation and Recovery</h1>
+<p>This operational runbook provides authoritative standard operating procedures (SOP) for system administrators and operators managing Sortify (<code>smart-autosorter</code>) in headless batch processing and daemon environments.</p>
+<p>When headless sorting jobs or background daemon tasks are interrupted—due to system restarts, process termination, hardware faults, or out-of-memory events—uncommitted file transitions may remain in the transaction ledger. This runbook details how to inspect ledger state, execute automated headless reconciliation, resolve conflicts across all terminal transaction statuses, and safely clean up stale lock files.</p>
+<hr />
+<h2 id="table-of-contents">Table of Contents</h2>
+<ol>
+<li><a href="#architectural-overview">Architectural Overview</a></li>
+<li><a href="#transaction-lifecycle-and-state-transitions">Transaction Lifecycle and State Transitions</a></li>
+<li><a href="#cli-reference-and-practical-invocations">CLI Reference and Practical Invocations</a></li>
+<li><a href="#common-flags">Common Flags</a></li>
+<li><a href="#inspecting-incomplete-transactions-status">Inspecting Incomplete Transactions (<code>status</code>)</a></li>
+<li><a href="#executing-automated-reconciliation-reconcile">Executing Automated Reconciliation (<code>reconcile</code>)</a></li>
+<li><a href="#purging-ledger-records-purge">Purging Ledger Records (<code>purge</code>)</a></li>
+<li><a href="#exporting-audit-logs-export">Exporting Audit Logs (<code>export</code>)</a></li>
+<li><a href="#step-by-step-resolution-paths-for-failure-reasons">Step-by-Step Resolution Paths for Failure Reasons</a></li>
+<li><a href="#reconciled_success"><code>RECONCILED_SUCCESS</code></a></li>
+<li><a href="#aborted"><code>ABORTED</code></a></li>
+<li><a href="#failed_conflict"><code>FAILED_CONFLICT</code></a></li>
+<li><a href="#failed_missing"><code>FAILED_MISSING</code></a></li>
+<li><a href="#stale-daemon-lock-and-ipc-socket-recovery">Stale Daemon Lock and IPC Socket Recovery</a></li>
+<li><a href="#lock-mechanics--file-locations">Lock Mechanics &amp; File Locations</a></li>
+<li><a href="#critical-warning-active-process-safety">CRITICAL WARNING: Active Process Safety</a></li>
+<li><a href="#safe-verification--cleanup-procedure">Safe Verification &amp; Cleanup Procedure</a></li>
+<li><a href="#cross-references">Cross-References</a></li>
+</ol>
+<hr />
+<h2 id="architectural-overview">Architectural Overview</h2>
+<p>Sortify implements a two-phase transaction logging pattern to guarantee file system integrity and prevent data loss during moves:</p>
+<ul>
+<li><strong>Sidecar Ledger Database</strong>: The ledger is maintained as an independent SQLite database in WAL mode (<code>transaction_ledger.db</code>), separate from the main application metadata database. By default, it resides at <code>~/.autosorter/transaction_ledger.db</code> (or <code>$AUTOSORTER_APP_DIR/transaction_ledger.db</code>).</li>
+<li><strong>Two-Phase Commit</strong>:</li>
+<li><strong>Intent Logging</strong>: Before moving any physical bytes on disk, Sortify records an entry in the ledger with status <code>PENDING</code> via <code>app/core/ledger.py</code>.</li>
+<li><strong>Physical Move</strong>: The file is moved on disk. Upon completion of the move, the entry status is updated to <code>MOVED_PHYSICAL</code>.</li>
+<li><strong>Metadata Index Update</strong>: The main SQLCipher database is updated with the document's new location. Once updated, the ledger status transitions to <code>COMPLETED</code> and the ledger entry is cleaned up.</li>
+<li><strong>Headless Interruption</strong>: If the process crashes while an entry is in <code>PENDING</code> or <code>MOVED_PHYSICAL</code>, the next startup or operator reconciliation command evaluates physical disk state against the ledger record to safely roll forward or roll back.</li>
+</ul>
+<hr />
+<h2 id="transaction-lifecycle-and-state-transitions">Transaction Lifecycle and State Transitions</h2>
+<p>Defined in <code>app/core/ledger.py:L41-L85</code>, the ledger defines seven statuses across non-terminal and terminal states.</p>
+<div class="highlight"><pre><span></span><code>                  +-------------------------+
+                  |         PENDING         |
+                  +-------------------------+
+                     /   |       |       \
+                    /    |       |        \
+                   v     |       |         v
+     +----------------+  |       |   +-------------------+
+     | MOVED_PHYSICAL |  |       |   |      ABORTED      | (Terminal)
+     +----------------+  |       |   +-------------------+
+        /    |    \      |       |
+       /     |     \     |       |
+      v      |      v    v       v
++-----------+|   +--------------------+   +-------------------+
+| COMPLETED ||   | RECONCILED_SUCCESS |   |  FAILED_CONFLICT  | (Terminal)
++-----------+|   +--------------------+   +-------------------+
+ (Terminal)  |         (Terminal)                   ^
+             |                                      |
+             +--------------------------------------+
+             |
+             v
+   +-------------------+
+   |  FAILED_MISSING   | (Terminal)
+   +-------------------+
+</code></pre></div>
+<h3 id="status-definitions">Status Definitions</h3>
+<table>
+<thead>
+<tr>
+<th>Status</th>
+<th>Category</th>
+<th>Description</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>PENDING</code></td>
+<td>Non-Terminal</td>
+<td>Move intent logged to sidecar ledger prior to beginning physical disk operation.</td>
+</tr>
+<tr>
+<td><code>MOVED_PHYSICAL</code></td>
+<td>Non-Terminal</td>
+<td>File was physically relocated on disk, but main database record was not yet committed.</td>
+</tr>
+<tr>
+<td><code>COMPLETED</code></td>
+<td>Terminal</td>
+<td>Standard completion: file physically relocated and application database record committed.</td>
+</tr>
+<tr>
+<td><code>RECONCILED_SUCCESS</code></td>
+<td>Terminal</td>
+<td>Automated reconciliation detected the destination file intact on disk and updated database records.</td>
+</tr>
+<tr>
+<td><code>ABORTED</code></td>
+<td>Terminal</td>
+<td>Move cancelled prior to physical transfer, or identical duplicate destination removed and source preserved.</td>
+</tr>
+<tr>
+<td><code>FAILED_CONFLICT</code></td>
+<td>Terminal</td>
+<td>Reconciliation encountered both source and destination files with differing contents; both preserved to avoid loss.</td>
+</tr>
+<tr>
+<td><code>FAILED_MISSING</code></td>
+<td>Terminal</td>
+<td>Reconciliation found that neither the source file nor destination file exists on disk.</td>
+</tr>
+</tbody>
+</table>
+<h3 id="allowed-state-transitions">Allowed State Transitions</h3>
+<p>Transitions are strictly validated by <code>ALLOWED_TRANSITIONS</code> in <code>app/core/ledger.py</code>:</p>
+<ul>
+<li><strong>From <code>PENDING</code></strong>: Allowed to transition to <code>MOVED_PHYSICAL</code>, <code>COMPLETED</code>, <code>RECONCILED_SUCCESS</code>, <code>ABORTED</code>, <code>FAILED_CONFLICT</code>, or <code>FAILED_MISSING</code>.</li>
+<li><strong>From <code>MOVED_PHYSICAL</code></strong>: Allowed to transition to <code>COMPLETED</code>, <code>RECONCILED_SUCCESS</code>, <code>ABORTED</code>, <code>FAILED_CONFLICT</code>, or <code>FAILED_MISSING</code>.</li>
+<li><strong>Terminal States</strong>: <code>COMPLETED</code>, <code>RECONCILED_SUCCESS</code>, <code>ABORTED</code>, <code>FAILED_CONFLICT</code>, and <code>FAILED_MISSING</code> allow <strong>no further transitions</strong> (<code>frozenset()</code>). Once an entry reaches a terminal state, its record is immutable until purged.</li>
+</ul>
+<hr />
+<h2 id="cli-reference-and-practical-invocations">CLI Reference and Practical Invocations</h2>
+<p>The <code>smart-autosorter ledger</code> command group is defined in <code>app/cli/ledger_cli.py</code>. Operators use these subcommands for non-interactive maintenance and batch session recovery.</p>
+<h3 id="common-flags">Common Flags</h3>
+<p>These flags apply to <code>smart-autosorter ledger</code> and all its subcommands:</p>
+<ul>
+<li><code>--ledger-db PATH</code>: Path to a custom sidecar transaction ledger database file. Defaults to <code>~/.autosorter/transaction_ledger.db</code>.</li>
+<li><code>-q</code>, <code>--quiet</code>: Suppress human-readable informational banners and status summaries.</li>
+<li><code>--no-color</code>: Disable ANSI color escape codes (recommended for cron and headless log collection).</li>
+<li><code>--json</code>: Output response payloads in structured, machine-parseable JSON format on standard output.</li>
+</ul>
+<hr />
+<h3 id="inspecting-incomplete-transactions-status">Inspecting Incomplete Transactions (<code>status</code>)</h3>
+<p>Inspect pending, interrupted, or failed transaction entries currently recorded in the ledger.</p>
+<h4 id="flags-for-status">Flags for <code>status</code></h4>
+<ul>
+<li><code>--session-id SESSION_ID</code>: Filter results to entries associated with a specific batch session identifier.</li>
+<li><code>--failed</code>: Filter exclusively for failed and aborted transaction records (<code>FAILED_CONFLICT</code>, <code>FAILED_MISSING</code>, <code>ABORTED</code>).</li>
+<li><code>--aborted</code>: Filter exclusively for aborted transaction records (<code>ABORTED</code>).</li>
+<li><code>--json</code>: Return structured JSON array of pending entries.</li>
+<li><code>--ledger-db PATH</code>: Target an alternate ledger database file.</li>
+<li><code>-q</code>, <code>--quiet</code>: Omit the header summary line.</li>
+<li><code>--no-color</code>: Suppress ANSI color codes.</li>
+</ul>
+<h4 id="practical-examples">Practical Examples</h4>
+<ol>
+<li>
+<p><strong>Check all incomplete, pending, or failed entries across all sessions:</strong>
+   <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>ledger<span class="w"> </span>status
+</code></pre></div>
+   <em>Example Output:</em>
+   <div class="highlight"><pre><span></span><code>Transaction Ledger Status: 2 pending, incomplete, or failed entry(ies).
+  [PENDING] sess_9a8b1c:docs/invoices/inv_101.pdf | Source: /data/staging/inv_101.pdf -&gt; Dest: /data/sorted/Finance/inv_101.pdf
+  [FAILED_CONFLICT] sess_9a8b1c:docs/reports/annual.pdf | Source: /data/staging/annual.pdf -&gt; Dest: /data/sorted/Reports/annual.pdf | Reason: Destination file exists and content differs from source; both files preserved.
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Filter by specific session ID:</strong>
+   <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>ledger<span class="w"> </span>status<span class="w"> </span>--session-id<span class="w"> </span><span class="s2">"sess_9a8b1c"</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Filter exclusively for failed or conflicted records:</strong>
+   <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>ledger<span class="w"> </span>status<span class="w"> </span>--failed
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Structured JSON output for pipeline automation:</strong>
+   <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>ledger<span class="w"> </span>status<span class="w"> </span>--json
+</code></pre></div>
+   <em>Example JSON Output:</em>
+   <div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"success"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"count"</span><span class="p">:</span><span class="w"> </span><span class="mi">1</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"pending_entries"</span><span class="p">:</span><span class="w"> </span><span class="p">[</span>
+<span class="w">    </span><span class="p">{</span>
+<span class="w">      </span><span class="nt">"entry_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sess_9a8b1c:docs/reports/annual.pdf"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"session_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sess_9a8b1c"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"base_dir"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/data/staging"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"source_path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/data/staging/annual.pdf"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"dest_path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/data/sorted/Reports/annual.pdf"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"source_rel_path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"docs/reports/annual.pdf"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"dest_rel_path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Reports/annual.pdf"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"current_dest"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Reports/annual.pdf"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"file_hash"</span><span class="p">:</span><span class="w"> </span><span class="s2">"e3b0c44298fc1c149afbf4c8996fb92427ae41e4649b934ca495991b7852b855"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"FAILED_CONFLICT"</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"created_at"</span><span class="p">:</span><span class="w"> </span><span class="mf">1731715200.0</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"updated_at"</span><span class="p">:</span><span class="w"> </span><span class="mf">1731715205.0</span><span class="p">,</span>
+<span class="w">      </span><span class="nt">"failure_reason"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Destination file exists and content differs from source; both files preserved."</span>
+<span class="w">    </span><span class="p">}</span>
+<span class="w">  </span><span class="p">]</span>
+<span class="p">}</span>
+</code></pre></div></p>
+</li>
+</ol>
+<hr />
+<h3 id="executing-automated-reconciliation-reconcile">Executing Automated Reconciliation (<code>reconcile</code>)</h3>
+<p>Reconciliation scans all non-terminal transactions (<code>PENDING</code> and <code>MOVED_PHYSICAL</code>), queries actual physical filesystem state, aligns database records, updates terminal statuses, and purges completed entries.</p>
+<h4 id="flags-for-reconcile">Flags for <code>reconcile</code></h4>
+<ul>
+<li><code>--ledger-db PATH</code>: Target a custom ledger database file.</li>
+<li><code>--json</code>: Output result as a JSON dictionary <code>{"status": "success", "reconciled_count": &lt;int&gt;}</code>.</li>
+<li><code>-q</code>, <code>--quiet</code>: Suppress confirmation prints to stderr.</li>
+<li><code>--no-color</code>: Disable color output.</li>
+</ul>
+<h4 id="practical-examples_1">Practical Examples</h4>
+<ol>
+<li>
+<p><strong>Standard headless reconciliation:</strong>
+   <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>ledger<span class="w"> </span>reconcile
+</code></pre></div>
+   <em>Example Output:</em>
+   <div class="highlight"><pre><span></span><code>Transaction ledger reconciliation completed. Reconciled 2 entry(ies).
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Headless cron execution with JSON telemetry:</strong>
+   <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>ledger<span class="w"> </span>reconcile<span class="w"> </span>--json<span class="w"> </span>--quiet
+</code></pre></div>
+   <em>Example JSON Output:</em>
+   <div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"success"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"reconciled_count"</span><span class="p">:</span><span class="w"> </span><span class="mi">2</span>
+<span class="p">}</span>
+</code></pre></div></p>
+</li>
+</ol>
+<hr />
+<h3 id="purging-ledger-records-purge">Purging Ledger Records (<code>purge</code>)</h3>
+<p>Remove finalized, completed, aborted, or failed transaction entries from the sidecar database once operational review or audits are complete.</p>
+<h4 id="flags-for-purge">Flags for <code>purge</code></h4>
+<ul>
+<li><code>--session-id SESSION_ID</code>: Limit purge to records belonging to a specific session ID.</li>
+<li><code>--completed</code>: Purge all entries with status <code>COMPLETED</code> and <code>RECONCILED_SUCCESS</code>.</li>
+<li><code>--failed</code>: Purge all entries with status <code>FAILED_CONFLICT</code>, <code>FAILED_MISSING</code>, and <code>ABORTED</code>.</li>
+<li><code>--aborted</code>: Purge specifically entries with status <code>ABORTED</code>.</li>
+<li><code>--force</code>: Bypass the interactive confirmation prompt (<code>Are you sure you want to purge transaction ledger records? [y/N]</code>). <strong>Mandatory</strong> for scripts, CI, and non-interactive environments without a TTY.</li>
+<li><code>--json</code>: Output JSON confirmation payload.</li>
+<li><code>--ledger-db PATH</code>: Target custom ledger database.</li>
+<li><code>-q</code>, <code>--quiet</code>: Suppress informational messages.</li>
+<li><code>--no-color</code>: Disable color output.</li>
+</ul>
+<h4 id="practical-examples_2">Practical Examples</h4>
+<ol>
+<li>
+<p><strong>Purge all completed records across all sessions:</strong>
+   <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>ledger<span class="w"> </span>purge<span class="w"> </span>--completed
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Non-interactive batch script purge with <code>--force</code>:</strong>
+   <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>ledger<span class="w"> </span>purge<span class="w"> </span>--session-id<span class="w"> </span><span class="s2">"sess_9a8b1c"</span><span class="w"> </span>--failed<span class="w"> </span>--force<span class="w"> </span>--json
+</code></pre></div>
+   <em>Example JSON Output:</em>
+   <div class="highlight"><pre><span></span><code><span class="p">{</span>
+<span class="w">  </span><span class="nt">"status"</span><span class="p">:</span><span class="w"> </span><span class="s2">"success"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"message"</span><span class="p">:</span><span class="w"> </span><span class="s2">"Transaction ledger records purged successfully."</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"session_id"</span><span class="p">:</span><span class="w"> </span><span class="s2">"sess_9a8b1c"</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"completed_only"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"failed_only"</span><span class="p">:</span><span class="w"> </span><span class="kc">true</span><span class="p">,</span>
+<span class="w">  </span><span class="nt">"aborted_only"</span><span class="p">:</span><span class="w"> </span><span class="kc">false</span>
+<span class="p">}</span>
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Purge all aborted transactions without touching conflicted or missing records:</strong>
+   <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>ledger<span class="w"> </span>purge<span class="w"> </span>--aborted<span class="w"> </span>--force
+</code></pre></div></p>
+</li>
+</ol>
+<hr />
+<h3 id="exporting-audit-logs-export">Exporting Audit Logs (<code>export</code>)</h3>
+<p>Export session history and transaction audit logs from the application database for compliance, auditing, or forensic analysis.</p>
+<h4 id="flags-for-export">Flags for <code>export</code></h4>
+<ul>
+<li><code>--session-id SESSION_ID</code>: Export records for a specific session ID (exports all historical records if omitted).</li>
+<li><code>-o</code>, <code>--output PATH</code>: Specify output file path (defaults to <code>audit_log_&lt;session_id or 'all'&gt;.csv</code> or <code>.json</code>).</li>
+<li><code>-f</code>, <code>--format {csv,json}</code>: Explicit export format.</li>
+<li><code>--csv</code>: Shorthand convenience flag to export in CSV format.</li>
+<li><code>--json</code>: Output execution summary in JSON format to stdout.</li>
+<li><code>--ledger-db PATH</code>: Target custom ledger database.</li>
+<li><code>-q</code>, <code>--quiet</code>: Suppress informational prints to stderr.</li>
+<li><code>--no-color</code>: Disable color output.</li>
+</ul>
+<h4 id="practical-examples_3">Practical Examples</h4>
+<ol>
+<li>
+<p><strong>Export session audit trail to CSV:</strong>
+   <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>ledger<span class="w"> </span><span class="nb">export</span><span class="w"> </span>--session-id<span class="w"> </span><span class="s2">"sess_9a8b1c"</span><span class="w"> </span>--csv<span class="w"> </span>-o<span class="w"> </span>/var/log/sortify/audit_sess_9a8b1c.csv
+</code></pre></div>
+   <em>Example Output:</em>
+   <div class="highlight"><pre><span></span><code>Audit log exported (CSV) to '/var/log/sortify/audit_sess_9a8b1c.csv'. 48 record(s) written.
+</code></pre></div></p>
+</li>
+<li>
+<p><strong>Export all sessions to JSON formatted audit report:</strong>
+   <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>ledger<span class="w"> </span><span class="nb">export</span><span class="w"> </span>--format<span class="w"> </span>json<span class="w"> </span>-o<span class="w"> </span>/var/log/sortify/full_audit.json<span class="w"> </span>--json
+</code></pre></div></p>
+</li>
+</ol>
+<hr />
+<h2 id="step-by-step-resolution-paths-for-failure-reasons">Step-by-Step Resolution Paths for Failure Reasons</h2>
+<p>When reconciliation executes, transactions evaluate to one of four terminal outcomes. Follow these procedures to resolve each case safely.</p>
+<div class="highlight"><pre><span></span><code>                    Reconciliation Evaluation
+                                |
+             +------------------+------------------+
+             |                                     |
+    Source missing?                       Source exists?
+             |                                     |
+     +-------+-------+                     +-------+-------+
+     |               |                     |               |
+Destination     Destination           Destination     Destination
+  exists?         missing?              missing?        exists?
+     |               |                     |               |
+     v               v                     v               v
+RECONCILED_     FAILED_MISSING          ABORTED        Check Content
+ SUCCESS     (Files disappeared)    (Move aborted;        Match?
+(Roll forward                         Source kept)         |
+  database)                                        +-------+-------+
+                                                   |               |
+                                              Identical?       Different?
+                                                   |               |
+                                                   v               v
+                                                ABORTED     FAILED_CONFLICT
+                                              (Duplicate    (Both files kept;
+                                               removed)     operator triage)
+</code></pre></div>
+<hr />
+<h3 id="reconciled_success"><code>RECONCILED_SUCCESS</code></h3>
+<ul>
+<li><strong>Condition</strong>: Physical move completed (<code>MOVED_PHYSICAL</code> or destination file exists on disk while source file is gone).</li>
+<li><strong>Automated Action</strong>: Reconciliation automatically rolls forward the main application database record (<code>update_document_path</code> and <code>set_user_verified_target</code>) to point to the destination path.</li>
+<li><strong>Operator Action Required</strong>: None. The move succeeded on disk, and the database now reflects the new location. Completed entries are purged automatically by <code>reconcile</code>.</li>
+</ul>
+<hr />
+<h3 id="aborted"><code>ABORTED</code></h3>
+<p>An aborted state occurs under two distinct scenarios:</p>
+<h4 id="scenario-a-move-aborted-prior-to-physical-move">Scenario A: Move aborted prior to physical move</h4>
+<ul>
+<li><strong>Reason String</strong>: <code>"Move aborted prior to physical file move; source file preserved at origin."</code></li>
+<li><strong>Condition</strong>: Status was <code>PENDING</code>. Source file exists at its original path; destination file does not exist.</li>
+<li><strong>Cause</strong>: Daemon process was terminated before filesystem operations commenced.</li>
+<li><strong>Resolution Path</strong>:</li>
+<li>Confirm source file presence:
+     <div class="highlight"><pre><span></span><code>ls<span class="w"> </span>-la<span class="w"> </span><span class="s2">"/data/staging/file.pdf"</span>
+</code></pre></div></li>
+<li>The database retains the source file path. The source file is completely intact.</li>
+<li>Re-queue or re-run sorting on the source directory:
+     <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>sort<span class="w"> </span>/data/staging
+</code></pre></div></li>
+<li>Purge the aborted ledger entry:
+     <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>ledger<span class="w"> </span>purge<span class="w"> </span>--aborted<span class="w"> </span>--force
+</code></pre></div></li>
+</ul>
+<h4 id="scenario-b-duplicate-destination-safely-removed">Scenario B: Duplicate destination safely removed</h4>
+<ul>
+<li><strong>Reason String</strong>: <code>"Incomplete move left duplicate destination; duplicate removed and source preserved."</code></li>
+<li><strong>Condition</strong>: Both source and destination files existed, and <code>same_file_content</code> confirmed they were byte-identical (or hard-linked).</li>
+<li><strong>Automated Action</strong>: Reconciliation safely deleted the duplicate file at destination and preserved the source file at origin. Database was kept pointing to the source.</li>
+<li><strong>Resolution Path</strong>: Verify source file integrity and re-sort when ready.</li>
+</ul>
+<hr />
+<h3 id="failed_conflict"><code>FAILED_CONFLICT</code></h3>
+<p>A conflict failure indicates that Sortify prevented silent data overwrite or data loss.</p>
+<h4 id="scenario-a-destination-file-exists-with-differing-content">Scenario A: Destination file exists with differing content</h4>
+<ul>
+<li><strong>Reason String</strong>: <code>"Destination file exists and content differs from source; both files preserved."</code></li>
+<li><strong>Condition</strong>: Both source and destination files exist on disk, but their byte contents or checksums differ.</li>
+<li><strong>Cause</strong>: A preexisting or independently generated file exists at the target destination path with identical naming.</li>
+<li><strong>Resolution Path</strong>:</li>
+<li>Identify the conflicting paths from ledger status:
+     <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>ledger<span class="w"> </span>status<span class="w"> </span>--failed<span class="w"> </span>--json
+</code></pre></div></li>
+<li>Inspect and compare both files manually using checksums or diff tools:
+     <div class="highlight"><pre><span></span><code>sha256sum<span class="w"> </span><span class="s2">"/data/staging/report.pdf"</span><span class="w"> </span><span class="s2">"/data/sorted/Reports/report.pdf"</span>
+</code></pre></div></li>
+<li>Determine the correct canonical version:<ul>
+<li><strong>If the destination file is valid and should not be replaced</strong>: Rename the source file or move it to a dedicated manual triage folder:
+   <div class="highlight"><pre><span></span><code>mv<span class="w"> </span><span class="s2">"/data/staging/report.pdf"</span><span class="w"> </span><span class="s2">"/data/staging/report_v2.pdf"</span>
+</code></pre></div></li>
+<li><strong>If the source file should overwrite the destination file</strong>: Back up or remove the conflicting destination file manually:
+   <div class="highlight"><pre><span></span><code>mv<span class="w"> </span><span class="s2">"/data/sorted/Reports/report.pdf"</span><span class="w"> </span><span class="s2">"/data/sorted/Reports/report_archive.pdf"</span>
+</code></pre></div></li>
+</ul>
+</li>
+<li>Re-run reconciliation to update the ledger:
+     <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>ledger<span class="w"> </span>reconcile
+</code></pre></div></li>
+<li>Once resolved, purge failed entries from the ledger:
+     <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>ledger<span class="w"> </span>purge<span class="w"> </span>--failed<span class="w"> </span>--force
+</code></pre></div></li>
+</ul>
+<h4 id="scenario-b-duplicate-destination-could-not-be-removed">Scenario B: Duplicate destination could not be removed</h4>
+<ul>
+<li><strong>Reason String</strong>: <code>"Reconciliation conflict for &lt;entry_id&gt;: duplicate destination could not be removed: &lt;error&gt;"</code></li>
+<li><strong>Condition</strong>: Destination was identical to source, but filesystem permissions or file locks prevented deleting the duplicate destination.</li>
+<li><strong>Resolution Path</strong>:</li>
+<li>Inspect file permissions and open handles on the destination file:
+     <div class="highlight"><pre><span></span><code>lsof<span class="w"> </span><span class="s2">"/data/sorted/Reports/report.pdf"</span>
+ls<span class="w"> </span>-la<span class="w"> </span><span class="s2">"/data/sorted/Reports/report.pdf"</span>
+</code></pre></div></li>
+<li>Release any locking processes or adjust permissions (<code>chmod +w /data/sorted/Reports/report.pdf</code>).</li>
+<li>Remove the duplicate destination file manually.</li>
+<li>Run <code>smart-autosorter ledger reconcile</code> again.</li>
+</ul>
+<hr />
+<h3 id="failed_missing"><code>FAILED_MISSING</code></h3>
+<ul>
+<li><strong>Reason String</strong>: <code>"Neither source nor destination file exists."</code></li>
+<li><strong>Condition</strong>: The ledger logged intent to move a file, but neither the source path nor the destination path exists on the filesystem.</li>
+<li><strong>Cause</strong>:</li>
+<li>Monitored network share, NAS, or removable volume was unmounted.</li>
+<li>An external script or operator deleted or moved the file out-of-band while Sortify was running.</li>
+<li><strong>Resolution Path</strong>:</li>
+<li>Verify mount points and volume availability:
+     <div class="highlight"><pre><span></span><code>df<span class="w"> </span>-h
+mount<span class="w"> </span><span class="p">|</span><span class="w"> </span>grep<span class="w"> </span>-i<span class="w"> </span><span class="s2">"/data"</span>
+</code></pre></div></li>
+<li>If the volume was detached, remount the volume and re-run reconciliation:
+     <div class="highlight"><pre><span></span><code>mount<span class="w"> </span>-a
+smart-autosorter<span class="w"> </span>ledger<span class="w"> </span>reconcile
+</code></pre></div></li>
+<li>If the file was intentionally deleted out-of-band:<ul>
+<li>Export an audit record of the event:
+   <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>ledger<span class="w"> </span><span class="nb">export</span><span class="w"> </span>--csv<span class="w"> </span>-o<span class="w"> </span>/var/log/sortify/missing_files_audit.csv
+</code></pre></div></li>
+<li>Purge the missing record from the ledger:
+   <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>ledger<span class="w"> </span>purge<span class="w"> </span>--failed<span class="w"> </span>--force
+</code></pre></div></li>
+</ul>
+</li>
+</ul>
+<hr />
+<h2 id="stale-daemon-lock-and-ipc-socket-recovery">Stale Daemon Lock and IPC Socket Recovery</h2>
+<p>Background directory watching daemons (<code>smart-autosorter daemon start</code>) manage an IPC server and write lock files to prevent duplicate daemon processes on the same directory tree.</p>
+<h3 id="lock-mechanics-file-locations">Lock Mechanics &amp; File Locations</h3>
+<p>Referencing <code>app/core/ipc.py:L83-L110</code>:
+- <strong>Lock Files</strong>:
+  - <code>.autosorter.pid</code>: Written to the base directory of the watched folder. Contains a JSON payload with <code>pid</code>, <code>socket_path</code>, <code>auth_token</code>, and creation timestamp.
+  - <code>.autosorter.sock</code>: Unix domain socket file created in the base directory (on Linux/macOS) or a loopback TCP listener on <code>127.0.0.1</code> (on Windows).
+- <strong>Stale Lock Contention</strong>: Occurs when a daemon process was abruptly halted (e.g., <code>kill -9</code>, power outage, kernel OOM) and was unable to execute shutdown hooks to unlink <code>.autosorter.pid</code> and <code>.autosorter.sock</code>.</p>
+<hr />
+<h3 id="critical-warning-active-process-safety">CRITICAL WARNING: Active Process Safety</h3>
+<blockquote>
+<p><strong>DANGER: NEVER UNLINK LOCK FILES FOR AN ACTIVE PROCESS</strong></p>
+<p>Deleting <code>.autosorter.pid</code> or <code>.autosorter.sock</code> while a daemon process is actively running will break process coordination and may result in:
+- Multiple concurrent sorting daemons operating on identical directories (<strong>split-brain</strong>).
+- Concurrent file moves causing collision errors and data corruption.
+- Broken IPC telemetry and client communication failure.</p>
+<p><strong>Always verify process liveness before removing any lock or socket files.</strong></p>
+</blockquote>
+<hr />
+<h3 id="safe-verification-cleanup-procedure">Safe Verification &amp; Cleanup Procedure</h3>
+<p>Follow this strict three-step procedure to resolve lock contention safely:</p>
+<h4 id="step-1-inspect-the-pid-file">Step 1: Inspect the PID File</h4>
+<p>Locate the <code>.autosorter.pid</code> file in the base watched directory and read the recorded process ID:</p>
+<div class="highlight"><pre><span></span><code>cat<span class="w"> </span>/data/staging/.autosorter.pid
+</code></pre></div>
+<p><em>Example Output:</em>
+<div class="highlight"><pre><span></span><code><span class="p">{</span><span class="nt">"pid"</span><span class="p">:</span><span class="w"> </span><span class="mi">48219</span><span class="p">,</span><span class="w"> </span><span class="nt">"socket_path"</span><span class="p">:</span><span class="w"> </span><span class="s2">"/data/staging/.autosorter.sock"</span><span class="p">,</span><span class="w"> </span><span class="nt">"auth_token"</span><span class="p">:</span><span class="w"> </span><span class="s2">"a1b2c3d4..."</span><span class="p">}</span>
+</code></pre></div></p>
+<h4 id="step-2-verify-process-liveness">Step 2: Verify Process Liveness</h4>
+<p>Verify whether the process ID is actively executing on the system.</p>
+<p><strong>On Linux / macOS:</strong>
+<div class="highlight"><pre><span></span><code><span class="c1"># Check if process exists and is active</span>
+<span class="nb">kill</span><span class="w"> </span>-0<span class="w"> </span><span class="m">48219</span><span class="w"> </span><span class="m">2</span>&gt;/dev/null<span class="w"> </span><span class="o">&amp;&amp;</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"ACTIVE PROCESS DETECTED"</span><span class="w"> </span><span class="o">||</span><span class="w"> </span><span class="nb">echo</span><span class="w"> </span><span class="s2">"PROCESS NOT RUNNING (STALE)"</span>
+
+<span class="c1"># Inspect process details if alive</span>
+ps<span class="w"> </span>-fp<span class="w"> </span><span class="m">48219</span>
+</code></pre></div></p>
+<p><strong>On Windows (PowerShell / Command Prompt):</strong>
+<div class="highlight"><pre><span></span><code><span class="nb">Get-Process</span> <span class="n">-Id</span> <span class="n">48219</span> <span class="n">-ErrorAction</span> <span class="n">SilentlyContinue</span>
+<span class="c"># Or via cmd.exe:</span>
+<span class="n">tasklist</span> <span class="p">/</span><span class="n">FI</span> <span class="s2">"PID eq 48219"</span>
+</code></pre></div></p>
+<ul>
+<li><strong>If the process IS alive (<code>ACTIVE PROCESS DETECTED</code>)</strong>:</li>
+<li><strong>DO NOT delete the lock files.</strong></li>
+<li>If you need to stop the daemon, send a graceful shutdown signal:
+    <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>daemon<span class="w"> </span>stop<span class="w"> </span>--target<span class="w"> </span>/data/staging
+<span class="c1"># Or send SIGTERM:</span>
+<span class="nb">kill</span><span class="w"> </span>-15<span class="w"> </span><span class="m">48219</span>
+</code></pre></div></li>
+<li>
+<p>Wait for the process to exit cleanly and remove its own lock files.</p>
+</li>
+<li>
+<p><strong>If the process is NOT running (<code>PROCESS NOT RUNNING (STALE)</code>)</strong>:</p>
+</li>
+<li>The process died abruptly; the lock files are stale and safe to clean. Proceed to Step 3.</li>
+</ul>
+<h4 id="step-3-remove-stale-lock-files">Step 3: Remove Stale Lock Files</h4>
+<p>Once process termination is verified:</p>
+<div class="highlight"><pre><span></span><code><span class="c1"># Remove socket file first if present</span>
+rm<span class="w"> </span>-f<span class="w"> </span>/data/staging/.autosorter.sock
+
+<span class="c1"># Remove pid file</span>
+rm<span class="w"> </span>-f<span class="w"> </span>/data/staging/.autosorter.pid
+</code></pre></div>
+<p><em>(Note: Starting the daemon via <code>smart-autosorter daemon start /data/staging</code> also checks process liveness automatically using <code>is_process_alive()</code> in <code>app/core/ipc.py:L20-L53</code> and will automatically clean stale lock files if the previous process is dead).</em></p>
+<hr />
+<h2 id="cross-references">Cross-References</h2>
+<ul>
+<li><strong>Interactive Session Recovery Guide</strong>: <a href="../../troubleshooting/#session-recovery">Troubleshooting Guide</a></li>
+<li><strong>Configuration &amp; Maintenance Reference</strong>: <a href="../../admin_guide/">Administrator Guide</a></li>
+<li><strong>Core Ledger Implementation</strong>: <code>app/core/ledger.py</code></li>
+<li><strong>CLI Ledger Command Implementation</strong>: <code>app/cli/ledger_cli.py</code></li>
+<li><strong>IPC Server &amp; Lock Management</strong>: <code>app/core/ipc.py</code></li>
+</ul>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "../..", "features": [], "search": "../../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>

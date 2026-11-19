@@ -1,0 +1,12 @@
+flowchart TD
+    text["Sanitized Document Text"]
+    cache[("ONNX Model Property Cache")]
+    engine[["FastEmbed Embedding Engine"]]
+    vector(["Dense Vector Embedding Output"])
+    text -->|Check Initialized| cache
+    cache -->|Pass Weights| engine
+    engine -->|Emit Vector| vector
+    click text "docs/api_reference.md#appcoresemantic_embeddings" "Document Text Input"
+    click cache "docs/api_reference.md#appcorecache" "Model Cache"
+    click engine tooltip "Embedding Engine"
+    click vector tooltip "Vector Output [384]"

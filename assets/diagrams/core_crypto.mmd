@@ -1,0 +1,12 @@
+flowchart TD
+    req("Cryptographic Operation Request")
+    key[("Master Key Provider")]
+    engine[["SHA256 / AES-256 Engine"]]
+    res(["Encrypted Payload / Digest"])
+    req --> key
+    key -->|Supply Key Material| engine
+    engine --> res
+    click req "docs/api_reference.md#appcorecrypto" "Crypto Request"
+    click key tooltip "Key Provider"
+    click engine tooltip "Crypto Engine"
+    click res tooltip "Crypto Result"

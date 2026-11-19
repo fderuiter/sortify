@@ -1,0 +1,36 @@
+flowchart TD
+    A["Launch Application"]
+    B{First-Run Setup Wizard}
+    C["Download 80MB Model from Hugging Face"]
+    D["Enable Semantic AI Sorting"]
+    E["Fallback to Offline Non-Semantic Mode"]
+    F["Open User Guide"]
+    G["Enter Workspace Directory Path"]
+    H["Select Quick Preset (Demo / Downloads / Documents)"]
+    I{Validate Directory Path}
+    J["Display Inline Error Banner"]
+    K["Begin Directory Scan"]
+    A --> B
+    B -->|Accept & Download| C
+    C -->|Download Successful| D
+    C -->|Network Error or Offline| E
+    B -->|Decline| E
+    B -->|Help| F
+    B -->|Enter Path| G
+    B -->|Select Preset| H
+    H -->|Populate Path| G
+    G -->|Finish & Save| I
+    I -->|Invalid Path| J
+    J -->|Correct Path| G
+    I -->|Valid Path| K
+    click A "#first-run-steps--setup-wizard" "Launch Application Step"
+    click B "#first-run-steps--setup-wizard" "First-Run Setup Wizard"
+    click C "https://huggingface.co" "Hugging Face Model Download" _blank
+    click D "#privacy-configurations" "Privacy & Semantic AI Settings"
+    click E "#offline-non-semantic-mode" "Offline Mode Information"
+    click F "#first-run-steps--setup-wizard" "User Guide Reference"
+    click G "#first-run-steps--setup-wizard" "Workspace Directory Input Field (#input-dir)"
+    click H "#first-run-steps--setup-wizard" "Quick Preset Buttons"
+    click I "#first-run-steps--setup-wizard" "Directory Path Validation"
+    click J "#first-run-steps--setup-wizard" "Inline Error Banner (#lbl-error)"
+    click K "#first-run-steps--setup-wizard" "Scan and Organize Workspace"

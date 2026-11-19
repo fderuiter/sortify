@@ -1,0 +1,2410 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://fderuiter.github.io/sortify/user_guide/">
+      
+      
+        <link rel="prev" href="..">
+      
+      
+        <link rel="next" href="../keyboard_shortcuts/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+    
+    
+      
+        <title>User Guide - Smart AutoSorter AI Pro API</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.57a0d79d.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#user-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Smart AutoSorter AI Pro API" class="md-header__button md-logo" aria-label="Smart AutoSorter AI Pro API" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Smart AutoSorter AI Pro API
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              User Guide
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Smart AutoSorter AI Pro API" class="md-nav__button md-logo" aria-label="Smart AutoSorter AI Pro API" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Smart AutoSorter AI Pro API
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#first-run-and-ai-consent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First Run and AI Consent
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="First Run and AI Consent">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#from-the-command-line" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        From the command line
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#in-the-terminal-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In the terminal interface
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sorting-a-folder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sorting a Folder
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Sorting a Folder">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#in-the-terminal-interface_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In the terminal interface
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#from-the-command-line_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        From the command line
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#command-palette" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Command Palette
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Command Palette">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#navigation-and-search-filtering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Navigation and Search Filtering
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workflows-without-dedicated-shortcuts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflows Without Dedicated Shortcuts
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-files-are-placed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Files Are Placed
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supported-file-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported File Formats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#undoing-a-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Undoing a Run
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Settings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#exclusion-list-stop-words" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exclusion list (stop words)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cleaning-up-empty-folders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cleaning up empty folders
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ai-consent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI consent
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rule-migration-and-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule Migration and Export
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Rule Migration and Export">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#accessing-the-template-gallery-and-rule-migration-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Accessing the Template Gallery and Rule Migration Tools
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#active-rule-manager" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Active Rule Manager
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Active Rule Manager">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#launching-the-rule-manager" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Launching the Rule Manager
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#managing-rules-and-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Managing Rules and Controls
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#importing-external-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Importing External Rules
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Importing External Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#supported-importers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported Importers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#import-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Import Workflow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fallback-behaviors-and-parsing-error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fallback Behaviors and Parsing Error Handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conflict-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conflict Resolution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exporting-active-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exporting Active Rules
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Exporting Active Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#supported-export-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported Export Formats
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#export-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Export Workflow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#path-validation-and-safety-guards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Path Validation and Safety Guards
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#background-folder-monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background Folder Monitoring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#offline-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Offline Mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#privacy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Privacy
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../keyboard_shortcuts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keyboard Shortcuts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../admin_guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administrator Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interactive Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Interactive Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/01_ml_analyzer_clustering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stateful ML Analyzer Clustering
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/02_multi_format_text_extraction/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi-Format Text Extraction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/03_virtual_sorting_verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Virtual Sorting Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operational Runbooks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operational Runbooks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../runbooks/ledger_reconciliation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ledger Reconciliation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api_reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture & Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_3" id="__nav_8_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture Decisions
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture Decisions
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0001-local-first-no-cloud-processing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    File contents never leave the machine
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (recorded retroactively on 2026-10-19; the rationale is inferred from the code, so correct it if it is wrong)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0002-encrypt-extracted-text-at-rest/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extracted text and vectors are encrypted at rest with one per-database key
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (recorded retroactively on 2026-10-19; the rationale is inferred from the code, so correct it if it is wrong)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0003-single-writer-database-thread/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    All database writes go through one writer thread
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (recorded retroactively on 2026-10-19; the rationale is inferred from the code, so correct it if it is wrong)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0004-clustering-in-a-spawned-subprocess/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clustering runs in a spawned subprocess on an encrypted payload
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (recorded retroactively on 2026-10-19; the rationale is inferred from the code, so correct it if it is wrong)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0005-moves-never-destroy-unverified-bytes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    A move never destroys bytes it has not verified exist elsewhere
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0006-one-move-ledger-replayed-for-undo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    One move ledger, and undo replays it
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0007-one-sort-pipeline-behind-a-composition-root/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    One sort pipeline, built in one place, with layers enforced in CI
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0008-one-app-store-with-numbered-migrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    One app store, versioned by numbered migrations
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0009-auto-merge-gate-by-path-tier/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-merge decides by path tier, and data-safety code always needs a human
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../auto_merge_policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Merge Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../branch_protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Branch Protection Rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributor Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_7" id="__nav_8_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#first-run-and-ai-consent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        First Run and AI Consent
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="First Run and AI Consent">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#from-the-command-line" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        From the command line
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#in-the-terminal-interface" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In the terminal interface
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#sorting-a-folder" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sorting a Folder
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Sorting a Folder">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#in-the-terminal-interface_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        In the terminal interface
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#from-the-command-line_1" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        From the command line
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#command-palette" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Command Palette
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Command Palette">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#navigation-and-search-filtering" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Navigation and Search Filtering
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#workflows-without-dedicated-shortcuts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Workflows Without Dedicated Shortcuts
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#how-files-are-placed" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        How Files Are Placed
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#supported-file-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported File Formats
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#undoing-a-run" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Undoing a Run
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#settings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Settings
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Settings">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#exclusion-list-stop-words" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exclusion list (stop words)
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cleaning-up-empty-folders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Cleaning up empty folders
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ai-consent" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI consent
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#rule-migration-and-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule Migration and Export
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Rule Migration and Export">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#accessing-the-template-gallery-and-rule-migration-tools" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Accessing the Template Gallery and Rule Migration Tools
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#active-rule-manager" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Active Rule Manager
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Active Rule Manager">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#launching-the-rule-manager" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Launching the Rule Manager
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#managing-rules-and-controls" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Managing Rules and Controls
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#importing-external-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Importing External Rules
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Importing External Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#supported-importers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported Importers
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#import-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Import Workflow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#fallback-behaviors-and-parsing-error-handling" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Fallback Behaviors and Parsing Error Handling
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conflict-resolution" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Conflict Resolution
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#exporting-active-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Exporting Active Rules
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Exporting Active Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#supported-export-formats" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Supported Export Formats
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#export-workflow" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Export Workflow
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#path-validation-and-safety-guards" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Path Validation and Safety Guards
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#background-folder-monitoring" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Background Folder Monitoring
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#offline-mode" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Offline Mode
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#privacy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Privacy
+      
+    </span>
+  </a>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="user-guide">User Guide</h1>
+<p>Smart AutoSorter AI Pro organizes a folder of documents into a generated folder tree. You can drive it from the full-screen terminal interface (TUI) or from the command line, and every run can be undone.</p>
+<p>The examples below use <code>smart-autosorter</code>. When running from a source checkout, prefix each command with <code>uv run</code>.</p>
+<h2 id="first-run-and-ai-consent">First Run and AI Consent</h2>
+<p><a id="first-run-steps--setup-wizard"></a></p>
+<p>On first launch the <strong>Privacy &amp; Data Setup Wizard</strong> asks whether you allow the optional AI model download: a one-time, roughly 80 MB embedding model from Hugging Face.</p>
+<p><img alt="First-Run Setup Wizard Flowchart" src="../assets/diagrams/user_guide_setup_wizard.svg" /></p>
+<p>Declining is fine. Sorting still works offline using TF-IDF keyword clustering (see <a href="#offline-mode">Offline Mode</a>).</p>
+<h3 id="from-the-command-line">From the command line</h3>
+<ul>
+<li>Grant consent and download the model:
+  <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>--accept-ai-consent
+</code></pre></div></li>
+<li>Decline and stay fully offline:
+  <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>--decline-ai-consent
+</code></pre></div></li>
+<li>In scripts or other non-interactive environments, add <code>--non-interactive</code> (or <code>--skip-wizard</code>) so no dialog waits for input:
+  <div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>--accept-ai-consent<span class="w"> </span>--non-interactive
+</code></pre></div></li>
+</ul>
+<h3 id="in-the-terminal-interface">In the terminal interface</h3>
+<p>The wizard opens automatically on first launch of <code>smart-autosorter</code>:
+1. <strong>AI Consent</strong>: Use <code>[Tab]</code> / <code>[Shift+Tab]</code> to focus the AI Consent switch (<code>#switch-consent</code>), then press <code>[Space]</code> or <code>[Enter]</code> to toggle consent for local semantic AI sorting.
+2. <strong>Workspace Directory</strong>: Navigate to the workspace directory input field (<code>#input-dir</code>) to enter the absolute path of the directory you want to organize. If left empty, it falls back to the current working directory.
+3. <strong>Quick Presets</strong>: Alternatively, choose one of the quick preset buttons to quickly populate <code>#input-dir</code>:
+   - <strong>Demo Workspace</strong>: sandbox demo folder (<code>sandbox/demo_workspace</code>, created automatically if needed).
+   - <strong>Downloads</strong>: your user <code>~/Downloads</code> directory.
+   - <strong>Documents</strong>: your user <code>~/Documents</code> directory.
+4. <strong>Validation and Error Handling</strong>: If an invalid or non-existent path is entered, selecting <strong>Finish &amp; Save</strong> (or pressing <code>[Enter]</code> inside <code>#input-dir</code>) displays an inline error banner (<code>#lbl-error</code>), announces the error message via screen reader, and restores focus directly to the input field so you can correct it. The wizard remains open until a valid directory path is provided.
+5. <strong>Finish &amp; Save</strong>: Highlight <strong>Finish &amp; Save</strong> (or press <code>[Enter]</code> inside <code>#input-dir</code>). The wizard validates the directory path through path validation before saving settings, applying any selected starter templates, and initiating the initial directory scan.</p>
+<p>Reopen the wizard any time with <code>[Ctrl+W]</code>.</p>
+<h2 id="sorting-a-folder">Sorting a Folder</h2>
+<h3 id="in-the-terminal-interface_1">In the terminal interface</h3>
+<ol>
+<li>Start the app with <code>smart-autosorter</code> (or <code>smart-autosorter --tui</code>).</li>
+<li>Press <code>[Ctrl+B]</code> to choose a folder, then <code>[Ctrl+S]</code> to scan it. The proposed folder tree appears; nothing has moved yet.</li>
+<li>Review the plan. <code>[Ctrl+F]</code> searches the tree, <code>[Space]</code> checks items, <code>[Ctrl+L]</code> locks a file in place, <code>[F2]</code> renames a file or folder category node, <code>[Ctrl+N]</code> creates a folder, and <code>[Ctrl+R]</code> opens the active rule manager modal. Press <code>[R]</code> to reassign checked files or the active item to a target folder (if a text input field such as the search box is focused, defocus it first before pressing <code>[F2]</code>, <code>[Ctrl+R]</code>, or <code>[R]</code>; see <a href="../keyboard_shortcuts/">Keyboard Shortcuts</a>). You can also press <code>[Ctrl+K]</code> to open the <a href="#command-palette">Command Palette</a> for command discovery and to trigger all system actions without memorizing keybindings.</li>
+<li>Press <code>[Ctrl+E]</code> to execute. You can review duplicates first, and an audit report is shown when the moves finish.</li>
+</ol>
+<p>Press <code>[Ctrl+K]</code> for the command palette, <code>[?]</code> or <code>[F1]</code> for the full list of shortcuts, and <code>[Ctrl+Q]</code> to quit. Every shortcut is also listed in <a href="../keyboard_shortcuts/">Keyboard Shortcuts</a>.</p>
+<h3 id="from-the-command-line_1">From the command line</h3>
+<div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>scan<span class="w"> </span>~/Downloads<span class="w">            </span><span class="c1"># print the proposed folder tree, move nothing</span>
+smart-autosorter<span class="w"> </span>scan<span class="w"> </span>~/Downloads<span class="w"> </span>--json<span class="w">     </span><span class="c1"># the same plan as JSON, for scripts</span>
+smart-autosorter<span class="w"> </span>sort<span class="w"> </span>~/Downloads<span class="w"> </span>--dry-run<span class="w">  </span><span class="c1"># verify the plan without moving</span>
+smart-autosorter<span class="w"> </span>sort<span class="w"> </span>~/Downloads<span class="w">            </span><span class="c1"># sort in place</span>
+smart-autosorter<span class="w"> </span>sort<span class="w"> </span>~/Downloads<span class="w"> </span>--dest-dir<span class="w"> </span>~/Sorted
+</code></pre></div>
+<p>Useful options for <code>sort</code> and <code>scan</code>:
+- <code>--max-folders N</code>: maximum folders per level (default 12, up to 50).
+- <code>--strategy</code>: <code>default</code> (keyword clustering), <code>generative</code> (local LLM folder names, needs the <code>ml</code> extra), or the clinical <code>clinical_tmf</code> / <code>clinical_isf</code> strategies.
+- <code>--conflict-policy skip|rename</code>: what to do when a destination file already exists.
+- <code>--export-report FILE --report-format html|json</code>: save an audit report of the run.
+- <code>--preset demo|downloads|documents</code>: use a standard folder instead of naming one.
+- <code>-q</code> / <code>--quiet</code> and <code>--no-color</code>: less output, and plain text for logs or terminals without color.</p>
+<h2 id="command-palette">Command Palette</h2>
+<p><a id="command-palette"></a></p>
+<p>The Command Palette is a global searchable overlay providing quick access to every action and workflow in the terminal interface. Press <code>[Ctrl+K]</code> from anywhere in the application to summon the palette.</p>
+<h3 id="navigation-and-search-filtering">Navigation and Search Filtering</h3>
+<p>When the palette opens, focus is placed in the command search input field (<code>#palette-input</code>):
+- <strong>Real-Time Search Filtering</strong>: As you type, the palette filters commands in real time across command titles, categories, descriptions, and keyboard shortcuts.
+- <strong>Arrow Navigation</strong>: Press the <code>[Up]</code> and <code>[Down]</code> arrow keys to navigate through the filtered list of commands (<code>#palette-list</code>) while retaining focus in the input field.
+- <strong>Selection</strong>: Press <code>[Enter]</code> while in the input field or click a highlighted command in the list to execute the action immediately.
+- <strong>Cancellation</strong>: Press <code>[Esc]</code> to dismiss the command palette overlay without executing an action.</p>
+<h3 id="workflows-without-dedicated-shortcuts">Workflows Without Dedicated Shortcuts</h3>
+<p>While primary actions (such as scanning or executing plans) have direct keybindings, several workflows do not have dedicated shortcuts and are executed directly through the command palette:</p>
+<ul>
+<li><strong>Model Manager</strong> (<code>Open Model Manager</code>): Manage ONNX embedding model downloads (<code>all-MiniLM-L6-v2</code>) and local embeddings. Download the sentence transformer model, retry failed downloads, or configure corporate proxy endpoints.</li>
+<li><strong>CRO Forensic Ingestion</strong> (<code>Open CRO Forensic Ingestion</code>): Multi-study clinical compliance ingestion workflow to scan clinical study folders and organize documents into Trial Master File (TMF/ISF) folder structures.</li>
+<li><strong>Export Active Rules</strong> (<code>Export Active Rules</code>): Open the rule export dialog to serialize active keyword rules and compliance policies to disk in Sortify JSON (<code>*.json</code>), Hazel (<code>*.hazelrules</code>), or DropIt (<code>*.ini</code>) formats.</li>
+<li><strong>Import External Rules</strong> (<code>Import External Rules</code>): Open the rule migration dialog to import external rule sets and taxonomy definitions from Hazel, DropIt, or TagSpaces configurations.</li>
+<li><strong>Export Simulation Report</strong> (<code>Export Simulation Report</code>): Export dry-run simulation audit reports to HTML or JSON formats for verification before executing file moves.</li>
+<li><strong>Starter Rule Templates</strong> (<code>Browse Starter Rule Templates</code>): Open the starter rule template gallery to browse and apply curated rule packs (such as Developer Workspace or Media &amp; Downloads).</li>
+</ul>
+<h2 id="how-files-are-placed">How Files Are Placed</h2>
+<p>Each file goes through these steps in order, and the first one that matches decides where it goes:
+1. Locked paths you pinned in the TUI.
+2. Compliance policies and the sensitivity classifier. Highly sensitive files go to a quarantine folder for review.
+3. Keyword rules, imported rules, and policies (see <a href="#rule-migration-and-export">Rule Migration and Export</a>), alongside rules learned from your past corrections.
+4. Extension categories for files whose text isn't extracted (for example <code>Images</code>, <code>Archives</code>, <code>Executables</code>).
+5. The folder a file with the same content went to before.
+6. Content clustering for everything else.</p>
+<p><a id="ai-clustering-constraints"></a>
+Clustering groups documents with similar wording and names each folder after its two strongest keywords (for example <code>Finance-Budget</code>). It recurses into large groups to make sub-folders, up to five levels deep. When fewer than three documents are left to cluster at the top level they go to <code>Miscellaneous</code>.</p>
+<h2 id="supported-file-formats">Supported File Formats</h2>
+<p>Text is extracted from <code>.txt</code>, <code>.docx</code>, <code>.csv</code>, <code>.xlsx</code>, <code>.xls</code> and <code>.pdf</code>. With the optional <code>ml</code> extra installed, images (<code>.png</code>, <code>.jpg</code>, <code>.jpeg</code>) are read with OCR and audio (<code>.mp3</code>, <code>.wav</code>, <code>.m4a</code>) is transcribed with Whisper (which needs <code>ffmpeg</code> and <code>whisper</code> on your <code>PATH</code>). Every other file type is still sorted, into an extension category folder.</p>
+<h2 id="undoing-a-run">Undoing a Run</h2>
+<p>Every run is recorded as a session that can be rolled back:
+<div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>undo<span class="w"> </span>--list<span class="w">           </span><span class="c1"># show recent sessions</span>
+smart-autosorter<span class="w"> </span>undo<span class="w"> </span>--latest<span class="w">         </span><span class="c1"># roll back the most recent run</span>
+smart-autosorter<span class="w"> </span>undo<span class="w"> </span>--session-id<span class="w"> </span>ID<span class="w">  </span><span class="c1"># roll back a specific run</span>
+</code></pre></div>
+In the TUI, <code>[Ctrl+Y]</code> opens the history view.</p>
+<h2 id="settings">Settings</h2>
+<p>View settings with <code>smart-autosorter config --show</code>, and change one with <code>config --set KEY VALUE</code>. Settings are stored in <code>~/.autosorter/settings.json</code>; command-line flags override them for a single run. In the TUI, <code>[Ctrl+O]</code> opens the settings dialog.</p>
+<h3 id="exclusion-list-stop-words">Exclusion list (stop words)</h3>
+<p>Stop words are common terms (e.g. 'the', 'and', 'for') ignored when analyzing document text. They don't filter file types. List and set settings accept either a comma-separated string or a JSON array:
+<div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>config<span class="w"> </span>--set<span class="w"> </span>STOP_WORDS<span class="w"> </span><span class="s2">"word1,word2,word3"</span>
+smart-autosorter<span class="w"> </span>config<span class="w"> </span>--set<span class="w"> </span>STOP_WORDS<span class="w"> </span><span class="s1">'["word1", "word2", "word3"]'</span>
+</code></pre></div></p>
+<h3 id="cleaning-up-empty-folders">Cleaning up empty folders</h3>
+<p>When enabled, folders left empty after sorting are removed.
+<div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>config<span class="w"> </span>--set<span class="w"> </span>CLEANUP_EMPTY_FOLDERS<span class="w"> </span><span class="nb">true</span>
+</code></pre></div></p>
+<h3 id="ai-consent">AI consent</h3>
+<div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>config<span class="w"> </span>--set<span class="w"> </span>AI_CONSENT_GRANTED<span class="w"> </span><span class="nb">true</span>
+smart-autosorter<span class="w"> </span>config<span class="w"> </span>--set<span class="w"> </span>AI_CONSENT_GRANTED<span class="w"> </span>null
+</code></pre></div>
+<h2 id="rule-migration-and-export">Rule Migration and Export</h2>
+<p><a id="rule-migration-and-export"></a></p>
+<p>Sortify allows you to import existing rules from competitor automation tools—such as macOS Hazel, DropIt for Windows, and TagSpaces—as well as export active rules for backup or cross-tool compatibility.</p>
+<h3 id="accessing-the-template-gallery-and-rule-migration-tools">Accessing the Template Gallery and Rule Migration Tools</h3>
+<p>In the terminal interface (TUI):
+1. Press <code>[Ctrl+O]</code> to open the <strong>Application Settings</strong> dialog.
+2. Select the <strong>AI &amp; Privacy Settings</strong> tab.
+3. Choose <strong>Starter Rule Template Gallery</strong> (<code>#btn-open-templates</code>) to view built-in template packs (such as Developer Workspace and Media &amp; Downloads).
+4. Use the bottom action buttons to manage external rules:
+   - <strong>Import External Rules</strong> (<code>#btn-import-rules</code>): opens the rule import dialog to migrate rules from Hazel, DropIt, or TagSpaces.
+   - <strong>Export Rules</strong> (<code>#btn-export-rules</code>): opens the rule export dialog to save active keyword rules and policies to disk.
+   - <strong>Apply Selected Templates</strong> (<code>#btn-apply-templates</code>): merges checked starter template packs into your configuration.
+   - <strong>Close</strong> (<code>#btn-close-gallery</code>) or <code>[Esc]</code>: returns to the settings dialog.</p>
+<h3 id="active-rule-manager">Active Rule Manager</h3>
+<p><a id="active-rule-manager"></a></p>
+<p>Sortify provides a dedicated <strong>Active Rule Manager</strong> modal to inspect, add, edit, toggle, and delete active keyword rules and compliance policies.</p>
+<h4 id="launching-the-rule-manager">Launching the Rule Manager</h4>
+<p>You can open the active rule manager using either of the following methods:
+- <strong>Direct Shortcut</strong>: Press <code>[Ctrl+R]</code> from the main plan tree review screen.
+- <strong>Settings Dialog</strong>: Press <code>[Ctrl+O]</code> to open Settings, switch to the <strong>AI &amp; Privacy Settings</strong> tab, and select <strong>Active Rule Manager</strong> (<code>#btn-open-rules</code>).
+- <strong>Command Palette</strong>: Press <code>[Ctrl+K]</code> and select <strong>Open Active Rule Manager</strong>.</p>
+<p><em>Note on focus</em>: When focus is inside a text input field (such as the tree search box or modal input fields), <code>[Ctrl+R]</code> and <code>[F2]</code> do not trigger modal actions. Defocus the text input or press <code>[Esc]</code> before using these shortcuts.</p>
+<h4 id="managing-rules-and-controls">Managing Rules and Controls</h4>
+<p>The active rule manager displays all configured rules in the interactive <strong>Rules Table</strong> (<code>#rules-table</code>) with columns for <code>Status</code> (Active or Disabled), <code>Type</code> (e.g. <code>keyword</code>, <code>compliance</code>, <code>pattern</code>), <code>Pattern</code>, <code>Target Folder</code>, and <code>Priority</code>.</p>
+<p>Use the following shortcuts and button controls:
+- <strong>Toggle Rule Status</strong> (<code>[Space]</code> or <code>#btn-toggle-rule</code>): Toggles the selected rule between <em>Active</em> and <em>Disabled</em>. Toggling a keyword rule moves it between <code>KEYWORD_RULES</code> and <code>DISABLED_KEYWORD_RULES</code> without deleting its destination path, preserving row cursor focus on the table.
+- <strong>Add Rule</strong> (<code>#btn-add-rule</code>): Opens the rule editor modal (<code>RuleEditModal</code>) to define a new keyword rule. Enter a matching pattern and target folder. Target paths are validated to ensure they are relative paths and do not contain directory traversal (<code>..</code>) or invalid characters.
+- <strong>Edit Rule</strong> (<code>[Enter]</code> or <code>#btn-edit-rule</code>): Opens the rule editor modal for the highlighted rule, allowing you to update its pattern expression or target folder.
+- <strong>Delete Rule</strong> (<code>[Delete]</code> or <code>#btn-delete-rule</code>): Prompts a confirmation dialog (<code>DeleteRuleConfirmModal</code>) before permanently deleting the selected rule or policy from settings.
+- <strong>Import Rules</strong> (<code>[Ctrl+I]</code> / <code>[I]</code> or <code>#btn-import-rules</code>): Opens the external rule import dialog (<code>RuleImportModal</code>) to import rules from Hazel, DropIt, or TagSpaces. Completing the import workflow updates the rules table immediately without closing the active rule manager.
+- <strong>Export Rules</strong> (<code>[Ctrl+E]</code> / <code>[E]</code> or <code>#btn-export-rules</code>): Opens the export dialog (<code>ExportRulesModal</code>) displaying active rule counts and exports active rules to Sortify JSON, Hazel, or DropIt formats.
+- <strong>Browse Templates</strong> (<code>[Ctrl+B]</code> / <code>[B]</code> or <code>#btn-browse-templates</code>): Opens the template gallery modal (<code>TemplateGalleryModal</code>) to browse and apply pre-configured starter packs. When templates are applied, the rules table refreshes immediately.
+- <strong>Close Dialog</strong> (<code>[Esc]</code> or <code>#btn-close-rules</code>): Closes the active rule manager and returns to the previous view.</p>
+<h3 id="importing-external-rules">Importing External Rules</h3>
+<p>The <strong>Import External Rules</strong> modal lets you import rules from third-party tools into Sortify:</p>
+<h4 id="supported-importers">Supported Importers</h4>
+<ul>
+<li><strong>Hazel (<code>.hazelrules</code>, <code>.plist</code>)</strong>: Parses Apple property list rule packages (<code>HazelRuleImporter</code>). Extracted conditions (e.g. filename contains or extension matches) and move actions are converted into Sortify keyword rules and pattern policies.</li>
+<li><strong>DropIt (<code>.xml</code>, <code>.json</code>, <code>.dropit</code>, <code>.ini</code>)</strong>: Parses DropIt profiles and association packages (<code>DropItRuleImporter</code>), translating associations into keyword rules and matching policies.</li>
+<li><strong>TagSpaces (<code>taggroup.json</code>, <code>taggroups.json</code>)</strong>: Parses TagSpaces tag taxonomy exports (<code>TagSpacesRuleImporter</code>), converting tag groupings into keyword-to-folder sorting rules.</li>
+</ul>
+<h4 id="import-workflow">Import Workflow</h4>
+<ol>
+<li>Enter the full path to your rule file in the input field (for example, <code>/path/to/rules.hazelrules</code> or <code>taggroup.json</code>).</li>
+<li>Select <strong>Parse File</strong> (<code>#btn-parse-rule-file</code>) or press <code>[Enter]</code>.</li>
+<li>Inspect the parsed preview:</li>
+<li><strong>Imported Keywords</strong>: Displays extracted keyword mappings and their designated destination folders.</li>
+<li><strong>Imported Policies</strong>: Displays rule types, expressions or patterns, target paths, and rule priorities.</li>
+<li><strong>Warnings Banner</strong>: Highlights unmapped operators or syntax anomalies.</li>
+<li>Resolve any detected conflicts (see <a href="#conflict-resolution">Conflict Resolution</a> below).</li>
+<li>Select <strong>Merge Rules into Settings</strong> (<code>#btn-merge-imported-rules</code>) to commit the imported rules into your active settings.</li>
+</ol>
+<h4 id="fallback-behaviors-and-parsing-error-handling">Fallback Behaviors and Parsing Error Handling</h4>
+<ul>
+<li><strong>Syntax Errors and Malformed Files</strong>: If a file cannot be parsed or contains syntax errors, the importer captures the error in the warning banner without aborting or corrupting existing settings.</li>
+<li><strong>Unmapped Condition Operators</strong>: Unrecognized condition operators or actions are flagged as non-blocking warnings, and unsupported clauses are skipped while extracting all valid conditions.</li>
+<li><strong>TagSpaces Asymmetry</strong>: TagSpaces taxonomy imports generate keyword rules, but Sortify does not export back to native TagSpaces files (see <a href="#exporting-active-rules">Exporting Active Rules</a>).</li>
+</ul>
+<h3 id="conflict-resolution">Conflict Resolution</h3>
+<p><a id="conflict-resolution"></a></p>
+<p>When an imported rule targets a keyword or pattern that already exists in your settings with a different target path, Sortify flags it under <strong>Detected Rule Conflicts</strong>:</p>
+<ul>
+<li><strong>Bulk Resolution Strategy</strong>: Use the dropdown selector to apply a uniform policy across all conflicts:</li>
+<li><strong>Keep Existing (Skip Conflicts)</strong> (<code>keep_existing</code>): Retains your existing settings rule and ignores the incoming conflicting rule.</li>
+<li><strong>Overwrite Existing Rules</strong> (<code>overwrite</code>): Replaces your existing destination path with the imported rule's destination path.</li>
+<li><strong>Skip Conflicting Rules</strong> (<code>skip_conflicting</code>): Omits conflicting rules while merging non-conflicting rules.</li>
+<li><strong>Interactive Per-Rule Override</strong>: In the <strong>Rule Conflicts</strong> table (<code>#dt-rule-conflicts</code>), click or press <code>[Space]</code> or <code>[Enter]</code> on any row to cycle that rule's resolution individually between <em>Keep Existing</em>, <em>Overwrite</em>, and <em>Skip Conflicting</em>.</li>
+</ul>
+<h3 id="exporting-active-rules">Exporting Active Rules</h3>
+<p><a id="exporting-active-rules"></a></p>
+<p>The <strong>Export Active Rules</strong> modal serializes your active keyword rules and compliance policies to disk for backups or migration into other workflow tools.</p>
+<h4 id="supported-export-formats">Supported Export Formats</h4>
+<ul>
+<li><strong>Sortify JSON (<code>*.json</code>)</strong>: Native Sortify JSON format (<code>format: "sortify"</code>, version 1) preserving full rule structure, keyword mappings, and policy configurations.</li>
+<li><strong>Hazel Rules (<code>*.hazelrules</code>)</strong>: Apple property list format mapping keyword rules and policies to Hazel-compatible move rules (<code>NSRuleActionMove</code>).</li>
+<li><strong>DropIt Configuration (<code>*.ini</code>)</strong>: Standard DropIt configuration file with <code>[DropIt]</code> header and <code>[Association_N]</code> sections.</li>
+</ul>
+<p><em>Note: While TagSpaces tag groups can be imported into keyword rules, exporting back to native TagSpaces taxonomy files is not supported.</em></p>
+<h4 id="export-workflow">Export Workflow</h4>
+<ol>
+<li>Select your target format from the <strong>Export Format</strong> dropdown (<code>sortify_json</code>, <code>hazel</code>, or <code>dropit_ini</code>). The destination filename automatically updates its extension (<code>.json</code>, <code>.hazelrules</code>, or <code>.ini</code>).</li>
+<li>Enter the target file path in the <strong>Destination File Path</strong> field (<code>#input-export-path</code>).</li>
+<li>Select <strong>Export Rules</strong> (<code>#btn-do-export</code>) or press <code>[Enter]</code>.</li>
+</ol>
+<h4 id="path-validation-and-safety-guards">Path Validation and Safety Guards</h4>
+<p>Destination paths are validated before writing:
+- Directory traversal segments (<code>..</code>) and null characters (<code>\0</code>) are rejected.
+- Destination paths pointing to existing directory paths rather than file paths are blocked.
+- Parent directories are automatically created if they do not yet exist, provided write permissions are available.</p>
+<h2 id="background-folder-monitoring">Background Folder Monitoring</h2>
+<p>The daemon watches a folder and sorts new files as they arrive:
+<div class="highlight"><pre><span></span><code>smart-autosorter<span class="w"> </span>daemon<span class="w"> </span>start<span class="w"> </span>~/Downloads
+smart-autosorter<span class="w"> </span>daemon<span class="w"> </span>status
+smart-autosorter<span class="w"> </span>daemon<span class="w"> </span>stop
+</code></pre></div>
+<code>pause</code>, <code>resume</code>, <code>health</code> and <code>metrics</code> are also available.</p>
+<p><img alt="Watchdog Event Aggregation &amp; Debounce State Machine" src="../assets/diagrams/user_guide_watchdog_state.svg" /></p>
+<ul>
+<li><strong>Incomplete downloads are ignored.</strong> Files ending in <code>.crdownload</code>, <code>.tmp</code> or <code>.download</code> are skipped until they are finished.</li>
+<li><strong>Bursts are batched.</strong> After a file event the daemon waits 0.6 seconds (<code>DEBOUNCE_DELAY</code>) for more changes, and never more than 5 seconds (<code>MAX_DEBOUNCE_DELAY</code>) during a continuous stream of writes.</li>
+</ul>
+<h2 id="offline-mode">Offline Mode</h2>
+<p><a id="offline-non-semantic-mode"></a></p>
+<p>If you decline the model download, are offline during setup, or the model is missing, the app runs without the embedding model:
+- Documents are still clustered by content, using TF-IDF keyword vectors instead of sentence embeddings. Groupings can be a little less precise for documents that use different words for the same topic.
+- No network connections are made for the model.</p>
+<h2 id="privacy">Privacy</h2>
+<p><a id="privacy-configurations"></a></p>
+<p>All document processing happens on your machine, and local databases are encrypted. The app's only network traffic is the optional model download and a security-advisory check for that model. See the Privacy Policy (<code>PRIVACY.md</code> in the repository) for details.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": [], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>

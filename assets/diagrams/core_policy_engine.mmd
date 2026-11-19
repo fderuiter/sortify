@@ -1,0 +1,18 @@
+flowchart TD
+    doc["Target Document Metadata"]
+    templates[("Rule Templates Engine")]
+    sort["Sort Policy Rules High-to-Low"]
+    eval{Evaluate Next Policy Rule}
+    quarantine["Quarantine Interceptor"]
+    route(["Assigned Destination Category"])
+    doc --> sort
+    sort -->|Fetch Rules| templates
+    templates --> eval
+    eval -->|Violation Match| quarantine
+    eval -->|Rule Matched| route
+    click doc "docs/api_reference.md#appcorepolicy_engine" "Document Input"
+    click templates "docs/api_reference.md#appcorerule_templates" "Templates Engine"
+    click sort tooltip "Sort Priority"
+    click eval tooltip "Evaluate Rule"
+    click quarantine "docs/api_reference.md#appcorequarantine_interceptor" "Quarantine Trigger"
+    click route tooltip "Destination Category"

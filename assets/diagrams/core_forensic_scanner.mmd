@@ -1,0 +1,15 @@
+flowchart TD
+    scan("Forensic Drive Scan")
+    header{Magic Byte Header Inspection}
+    entropy[["Entropy & Hash Analysis"]]
+    hidden["Hidden Stream Detection"]
+    report[("Forensic Evidence Manifest")]
+    scan --> header
+    header -->|Header Extracted| entropy
+    entropy --> hidden
+    hidden -->|Emit Manifest| report
+    click scan "docs/api_reference.md#appcoreforensic_scanner" "Drive Scan"
+    click header tooltip "Header Inspection"
+    click entropy tooltip "Entropy Analysis"
+    click hidden tooltip "Hidden Detection"
+    click report tooltip "Evidence Manifest"

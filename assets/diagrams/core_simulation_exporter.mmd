@@ -1,0 +1,20 @@
+flowchart TD
+    plan["Reorganization Plan Input"]
+    selector{Export Format Selector}
+    json["JSON Audit Export"]
+    csv["CSV Summary Export"]
+    html["Interactive HTML Preview"]
+    writer[("Disk Output Writer")]
+    plan --> selector
+    selector -->|Format: JSON| json
+    selector -->|Format: CSV| csv
+    selector -->|Format: HTML| html
+    json --> writer
+    csv --> writer
+    html --> writer
+    click plan "docs/api_reference.md#appcoresimulation_exporter" "Plan Input"
+    click selector tooltip "Format Selector"
+    click json tooltip "JSON Export"
+    click csv tooltip "CSV Export"
+    click html tooltip "HTML Export"
+    click writer tooltip "Output Writer"

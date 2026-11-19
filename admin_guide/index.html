@@ -1,0 +1,4618 @@
+
+<!doctype html>
+<html lang="en" class="no-js">
+  <head>
+    
+      <meta charset="utf-8">
+      <meta name="viewport" content="width=device-width,initial-scale=1">
+      
+      
+      
+        <link rel="canonical" href="https://fderuiter.github.io/sortify/admin_guide/">
+      
+      
+        <link rel="prev" href="../keyboard_shortcuts/">
+      
+      
+        <link rel="next" href="../tutorials/01_ml_analyzer_clustering/">
+      
+      
+        
+      
+      
+      <link rel="icon" href="../assets/images/favicon.png">
+      <meta name="generator" content="mkdocs-1.6.1, mkdocs-material-9.8.1">
+    
+    
+      
+        <title>Administrator Guide - Smart AutoSorter AI Pro API</title>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/stylesheets/main.57a0d79d.min.css">
+      
+      
+
+
+    
+    
+      
+    
+    
+      
+        
+        
+        <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+        <link rel="stylesheet" href="https://fonts.googleapis.com/css?family=Roboto:300,300i,400,400i,700,700i%7CRoboto+Mono:400,400i,700,700i&display=fallback">
+        <style>:root{--md-text-font:"Roboto";--md-code-font:"Roboto Mono"}</style>
+      
+    
+    
+      <link rel="stylesheet" href="../assets/_mkdocstrings.css">
+    
+    <script>__md_scope=new URL("..",location),__md_hash=e=>[...e].reduce(((e,_)=>(e<<5)-e+_.charCodeAt(0)),0),__md_get=(e,_=localStorage,t=__md_scope)=>JSON.parse(_.getItem(t.pathname+"."+e)),__md_set=(e,_,t=localStorage,a=__md_scope)=>{try{t.setItem(a.pathname+"."+e,JSON.stringify(_))}catch(e){}}</script>
+    
+      
+
+    
+    
+  </head>
+  
+  
+    <body dir="ltr">
+  
+    
+    <input class="md-toggle" data-md-toggle="drawer" type="checkbox" id="__drawer" autocomplete="off">
+    <input class="md-toggle" data-md-toggle="search" type="checkbox" id="__search" autocomplete="off">
+    <label class="md-overlay" for="__drawer"></label>
+    <div data-md-component="skip">
+      
+        
+        <a href="#administrator-guide" class="md-skip">
+          Skip to content
+        </a>
+      
+    </div>
+    <div data-md-component="announce">
+      
+    </div>
+    
+    
+      
+
+  
+
+<header class="md-header md-header--shadow" data-md-component="header">
+  <nav class="md-header__inner md-grid" aria-label="Header">
+    <a href=".." title="Smart AutoSorter AI Pro API" class="md-header__button md-logo" aria-label="Smart AutoSorter AI Pro API" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    <label class="md-header__button md-icon" for="__drawer">
+      
+      <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M3 6h18v2H3zm0 5h18v2H3zm0 5h18v2H3z"/></svg>
+    </label>
+    <div class="md-header__title" data-md-component="header-title">
+      <div class="md-header__ellipsis">
+        <div class="md-header__topic">
+          <span class="md-ellipsis">
+            Smart AutoSorter AI Pro API
+          </span>
+        </div>
+        <div class="md-header__topic" data-md-component="header-topic">
+          <span class="md-ellipsis">
+            
+              Administrator Guide
+            
+          </span>
+        </div>
+      </div>
+    </div>
+    
+    
+      <script>var palette=__md_get("__palette");if(palette&&palette.color){if("(prefers-color-scheme)"===palette.color.media){var media=matchMedia("(prefers-color-scheme: light)"),input=document.querySelector(media.matches?"[data-md-color-media='(prefers-color-scheme: light)']":"[data-md-color-media='(prefers-color-scheme: dark)']");palette.color.media=input.getAttribute("data-md-color-media"),palette.color.scheme=input.getAttribute("data-md-color-scheme"),palette.color.primary=input.getAttribute("data-md-color-primary"),palette.color.accent=input.getAttribute("data-md-color-accent")}for(var[key,value]of Object.entries(palette.color))document.body.setAttribute("data-md-color-"+key,value)}</script>
+    
+    
+    
+      
+      
+        <label class="md-header__button md-icon" for="__search">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        </label>
+        <div class="md-search" data-md-component="search" role="dialog">
+  <label class="md-search__overlay" for="__search"></label>
+  <div class="md-search__inner" role="search">
+    <form class="md-search__form" name="search">
+      <input type="text" class="md-search__input" name="query" aria-label="Search" placeholder="Search" autocapitalize="off" autocorrect="off" autocomplete="off" spellcheck="false" data-md-component="search-query" required>
+      <label class="md-search__icon md-icon" for="__search">
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M9.5 3A6.5 6.5 0 0 1 16 9.5c0 1.61-.59 3.09-1.56 4.23l.27.27h.79l5 5-1.5 1.5-5-5v-.79l-.27-.27A6.52 6.52 0 0 1 9.5 16 6.5 6.5 0 0 1 3 9.5 6.5 6.5 0 0 1 9.5 3m0 2C7 5 5 7 5 9.5S7 14 9.5 14 14 12 14 9.5 12 5 9.5 5"/></svg>
+        
+        <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M20 11v2H8l5.5 5.5-1.42 1.42L4.16 12l7.92-7.92L13.5 5.5 8 11z"/></svg>
+      </label>
+      <nav class="md-search__options" aria-label="Search">
+        
+        <button type="reset" class="md-search__icon md-icon" title="Clear" aria-label="Clear" tabindex="-1">
+          
+          <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M19 6.41 17.59 5 12 10.59 6.41 5 5 6.41 10.59 12 5 17.59 6.41 19 12 13.41 17.59 19 19 17.59 13.41 12z"/></svg>
+        </button>
+      </nav>
+      
+    </form>
+    <div class="md-search__output">
+      <div class="md-search__scrollwrap" tabindex="0" data-md-scrollfix>
+        <div class="md-search-result" data-md-component="search-result">
+          <div class="md-search-result__meta">
+            Initializing search
+          </div>
+          <ol class="md-search-result__list" role="presentation"></ol>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+      
+    
+    
+  </nav>
+  
+</header>
+    
+    <div class="md-container" data-md-component="container">
+      
+      
+        
+          
+        
+      
+      <main class="md-main" data-md-component="main">
+        <div class="md-main__inner md-grid">
+          
+            
+              
+              <div class="md-sidebar md-sidebar--primary" data-md-component="sidebar" data-md-type="navigation" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+
+
+<nav class="md-nav md-nav--primary" aria-label="Navigation" data-md-level="0">
+  <label class="md-nav__title" for="__drawer">
+    <a href=".." title="Smart AutoSorter AI Pro API" class="md-nav__button md-logo" aria-label="Smart AutoSorter AI Pro API" data-md-component="logo">
+      
+  
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24"><path d="M12 8a3 3 0 0 0 3-3 3 3 0 0 0-3-3 3 3 0 0 0-3 3 3 3 0 0 0 3 3m0 3.54C9.64 9.35 6.5 8 3 8v11c3.5 0 6.64 1.35 9 3.54 2.36-2.19 5.5-3.54 9-3.54V8c-3.5 0-6.64 1.35-9 3.54"/></svg>
+
+    </a>
+    Smart AutoSorter AI Pro API
+  </label>
+  
+  <ul class="md-nav__list" data-md-scrollfix>
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href=".." class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Home
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../user_guide/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    User Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../keyboard_shortcuts/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Keyboard Shortcuts
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+    
+  
+  
+  
+    <li class="md-nav__item md-nav__item--active">
+      
+      <input class="md-nav__toggle md-toggle" type="checkbox" id="__toc">
+      
+      
+        
+      
+      
+        <label class="md-nav__link md-nav__link--active" for="__toc">
+          
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administrator Guide
+  
+
+    
+  </span>
+  
+  
+
+          <span class="md-nav__icon md-icon"></span>
+        </label>
+      
+      <a href="./" class="md-nav__link md-nav__link--active">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Administrator Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+      
+        
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Parameters
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration Parameters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#contextual_renaming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CONTEXTUAL_RENAMING
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ai_assisted_naming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI_ASSISTED_NAMING
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preserve_hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PRESERVE_HIERARCHY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_folders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_FOLDERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_workers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_WORKERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_depth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_DEPTH
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_FEATURES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cleanup_empty_folders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLEANUP_EMPTY_FOLDERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#speak_announcements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SPEAK_ANNOUNCEMENTS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enable_character_key_shortcuts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ENABLE_CHARACTER_KEY_SHORTCUTS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keyword_rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KEYWORD_RULES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#disabled_keyword_rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DISABLED_KEYWORD_RULES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#learned_rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LEARNED_RULES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extension_categories" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EXTENSION_CATEGORIES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POLICIES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#visual_timeout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VISUAL_TIMEOUT
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#image_max_dimension" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IMAGE_MAX_DIMENSION
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#image_skip_threshold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IMAGE_SKIP_THRESHOLD
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pdf_text_density_threshold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PDF_TEXT_DENSITY_THRESHOLD
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model_threads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MODEL_THREADS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#grammar_cache_size" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GRAMMAR_CACHE_SIZE
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#snapshot_retention_days" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SNAPSHOT_RETENTION_DAYS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#protected_paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PROTECTED_PATHS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto_quarantine_ratings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AUTO_QUARANTINE_RATINGS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarantine_dir_name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        QUARANTINE_DIR_NAME
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PROXY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security_advisory_endpoint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SECURITY_ADVISORY_ENDPOINT
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security_advisory_cache_ttl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SECURITY_ADVISORY_CACHE_TTL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security_advisory_fallback_policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SECURITY_ADVISORY_FALLBACK_POLICY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ocr_gpu_enabled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OCR_GPU_ENABLED
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#audio_gpu_enabled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AUDIO_GPU_ENABLED
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#audio_max_workers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AUDIO_MAX_WORKERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PLUGINS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ocr_languages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OCR_LANGUAGES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vision_engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VISION_ENGINE
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conflict_policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CONFLICT_POLICY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sorting_strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SORTING_STRATEGY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clinical_smart_renaming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLINICAL_SMART_RENAMING
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clinical_generate_audit_report" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLINICAL_GENERATE_AUDIT_REPORT
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#coherence_threshold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        COHERENCE_THRESHOLD
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#debounce_delay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DEBOUNCE_DELAY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_debounce_delay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_DEBOUNCE_DELAY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_queue_capacity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_QUEUE_CAPACITY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dedup_window" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DEDUP_WINDOW
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reconciliation_interval" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RECONCILIATION_INTERVAL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#worker_timeout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WORKER_TIMEOUT
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tabular_max_sheets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TABULAR_MAX_SHEETS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tabular_max_rows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TABULAR_MAX_ROWS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tabular_max_characters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TABULAR_MAX_CHARACTERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ignored_extensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IGNORED_EXTENSIONS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ai_consent_granted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI_CONSENT_GRANTED
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#log_file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LOG_FILE
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stop_words" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        STOP_WORDS
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#precedence-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Precedence Rules
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Precedence Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#runtime-environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runtime Environment Variables
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dynamic-configuration-saves" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dynamic Configuration Saves
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compliance-policies-routing-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compliance Policies &amp; Routing Rules
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Compliance Policies &amp; Routing Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#policy-evaluation-flowchart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Policy Evaluation Flowchart
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rule-syntax-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule Syntax &amp; Types
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lifecycle-actions-post-unarchive-directives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle Actions &amp; Post-Unarchive Directives
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sequential-execution-priority" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sequential Execution &amp; Priority
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#halting-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Halting Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#path-validation-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Path Validation Rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-recovery-troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Recovery &amp; Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#maintenance-scripts-and-cli-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maintenance Scripts and CLI Commands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Maintenance Scripts and CLI Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#appmainpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        app/main.py
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="app/main.py">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#top-level-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Top-Level Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#non-interactive-headless-execution-guard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-Interactive / Headless Execution Guard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#structured-json-output-error-payloads-and-exit-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Structured JSON Output, Error Payloads, and Exit Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subcommands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subcommands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Subcommands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sort" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sort
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        scan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        config
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#daemon" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        daemon
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#undo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        undo
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#drop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        drop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ledger" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ledger
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ledger">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ledger-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ledger status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ledger-reconcile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ledger reconcile
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ledger-purge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ledger purge
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ledger-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ledger export
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarantine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        quarantine
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="quarantine">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#quarantine-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        quarantine list
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarantine-inspect" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        quarantine inspect
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarantine-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        quarantine process
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarantine-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        quarantine release
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarantine-dismiss" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        quarantine dismiss
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sandbox_clipy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sandbox_cli.py
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="sandbox_cli.py">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scriptsprepare_offlinepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        scripts/prepare_offline.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scriptsinstall_offlinepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        scripts/install_offline.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_5" >
+        
+          
+          <label class="md-nav__link" for="__nav_5" id="__nav_5_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Interactive Tutorials
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_5_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_5">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Interactive Tutorials
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/01_ml_analyzer_clustering/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Stateful ML Analyzer Clustering
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/02_multi_format_text_extraction/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Multi-Format Text Extraction
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../tutorials/03_virtual_sorting_verification/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Virtual Sorting Verification
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../troubleshooting/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Troubleshooting
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_7" id="__nav_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Operational Runbooks
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Operational Runbooks
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../runbooks/ledger_reconciliation/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Ledger Reconciliation
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+      
+      
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8" >
+        
+          
+          <label class="md-nav__link" for="__nav_8" id="__nav_8_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Reference
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="1" aria-labelledby="__nav_8_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Reference
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../api_reference/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    API Reference
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../architecture/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture & Internals
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_3" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_3" id="__nav_8_3_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Architecture Decisions
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_3_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_3">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Architecture Decisions
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0001-local-first-no-cloud-processing/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    File contents never leave the machine
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (recorded retroactively on 2026-10-19; the rationale is inferred from the code, so correct it if it is wrong)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0002-encrypt-extracted-text-at-rest/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Extracted text and vectors are encrypted at rest with one per-database key
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (recorded retroactively on 2026-10-19; the rationale is inferred from the code, so correct it if it is wrong)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0003-single-writer-database-thread/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    All database writes go through one writer thread
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (recorded retroactively on 2026-10-19; the rationale is inferred from the code, so correct it if it is wrong)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0004-clustering-in-a-spawned-subprocess/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Clustering runs in a spawned subprocess on an encrypted payload
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (recorded retroactively on 2026-10-19; the rationale is inferred from the code, so correct it if it is wrong)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0005-moves-never-destroy-unverified-bytes/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    A move never destroys bytes it has not verified exist elsewhere
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0006-one-move-ledger-replayed-for-undo/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    One move ledger, and undo replays it
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0007-one-sort-pipeline-behind-a-composition-root/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    One sort pipeline, built in one place, with layers enforced in CI
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0008-one-app-store-with-numbered-migrations/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    One app store, versioned by numbered migrations
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../adr/0009-auto-merge-gate-by-path-tier/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-merge decides by path tier, and data-safety code always needs a human
+  
+
+    
+  </span>
+  
+  
+    
+  
+  
+    <span class="md-status md-status--accepted (2026-10-19)"></span>
+  
+
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../auto_merge_policy/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Auto-Merge Policy
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../branch_protection/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Branch Protection Rules
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../contributor/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Contributor Guide
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    
+    
+    
+    
+    
+    <li class="md-nav__item md-nav__item--nested">
+      
+        
+        
+        <input class="md-nav__toggle md-toggle " type="checkbox" id="__nav_8_7" >
+        
+          
+          <label class="md-nav__link" for="__nav_8_7" id="__nav_8_7_label" tabindex="0">
+            
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Developer Guides
+  
+
+    
+  </span>
+  
+  
+
+            <span class="md-nav__icon md-icon"></span>
+          </label>
+        
+        <nav class="md-nav" data-md-level="2" aria-labelledby="__nav_8_7_label" aria-expanded="false">
+          <label class="md-nav__title" for="__nav_8_7">
+            <span class="md-nav__icon md-icon"></span>
+            
+  
+    Developer Guides
+  
+
+          </label>
+          <ul class="md-nav__list" data-md-scrollfix>
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../core/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    Core
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+              
+                
+  
+  
+  
+  
+    <li class="md-nav__item">
+      <a href="../ui/" class="md-nav__link">
+        
+  
+  
+  <span class="md-ellipsis">
+    
+  
+    UI
+  
+
+    
+  </span>
+  
+  
+
+      </a>
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+              
+            
+          </ul>
+        </nav>
+      
+    </li>
+  
+
+    
+  </ul>
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+            
+              
+              <div class="md-sidebar md-sidebar--secondary" data-md-component="sidebar" data-md-type="toc" >
+                <div class="md-sidebar__scrollwrap">
+                  <div class="md-sidebar__inner">
+                    
+
+<nav class="md-nav md-nav--secondary" aria-label="Table of contents">
+  
+  
+  
+    
+  
+  
+    <label class="md-nav__title" for="__toc">
+      <span class="md-nav__icon md-icon"></span>
+      Table of contents
+    </label>
+    <ul class="md-nav__list" data-md-component="toc" data-md-scrollfix>
+      
+        <li class="md-nav__item">
+  <a href="#configuration-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Parameters
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Configuration Parameters">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#contextual_renaming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CONTEXTUAL_RENAMING
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ai_assisted_naming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI_ASSISTED_NAMING
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#preserve_hierarchy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PRESERVE_HIERARCHY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_folders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_FOLDERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_workers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_WORKERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_depth" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_DEPTH
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_features" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_FEATURES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#cleanup_empty_folders" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLEANUP_EMPTY_FOLDERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#speak_announcements" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SPEAK_ANNOUNCEMENTS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#enable_character_key_shortcuts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ENABLE_CHARACTER_KEY_SHORTCUTS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#keyword_rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        KEYWORD_RULES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#disabled_keyword_rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DISABLED_KEYWORD_RULES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#learned_rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LEARNED_RULES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#extension_categories" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        EXTENSION_CATEGORIES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#policies" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        POLICIES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#visual_timeout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VISUAL_TIMEOUT
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#image_max_dimension" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IMAGE_MAX_DIMENSION
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#image_skip_threshold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IMAGE_SKIP_THRESHOLD
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#pdf_text_density_threshold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PDF_TEXT_DENSITY_THRESHOLD
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#model_threads" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MODEL_THREADS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#grammar_cache_size" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        GRAMMAR_CACHE_SIZE
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#snapshot_retention_days" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SNAPSHOT_RETENTION_DAYS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#protected_paths" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PROTECTED_PATHS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#auto_quarantine_ratings" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AUTO_QUARANTINE_RATINGS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarantine_dir_name" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        QUARANTINE_DIR_NAME
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#proxy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PROXY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security_advisory_endpoint" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SECURITY_ADVISORY_ENDPOINT
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security_advisory_cache_ttl" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SECURITY_ADVISORY_CACHE_TTL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#security_advisory_fallback_policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SECURITY_ADVISORY_FALLBACK_POLICY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ocr_gpu_enabled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OCR_GPU_ENABLED
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#audio_gpu_enabled" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AUDIO_GPU_ENABLED
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#audio_max_workers" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AUDIO_MAX_WORKERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#plugins" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        PLUGINS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ocr_languages" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        OCR_LANGUAGES
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#vision_engine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        VISION_ENGINE
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#conflict_policy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CONFLICT_POLICY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sorting_strategy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        SORTING_STRATEGY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clinical_smart_renaming" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLINICAL_SMART_RENAMING
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#clinical_generate_audit_report" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        CLINICAL_GENERATE_AUDIT_REPORT
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#coherence_threshold" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        COHERENCE_THRESHOLD
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#debounce_delay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DEBOUNCE_DELAY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_debounce_delay" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_DEBOUNCE_DELAY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#max_queue_capacity" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        MAX_QUEUE_CAPACITY
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#dedup_window" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        DEDUP_WINDOW
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#reconciliation_interval" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        RECONCILIATION_INTERVAL
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#worker_timeout" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        WORKER_TIMEOUT
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tabular_max_sheets" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TABULAR_MAX_SHEETS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tabular_max_rows" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TABULAR_MAX_ROWS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#tabular_max_characters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TABULAR_MAX_CHARACTERS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ignored_extensions" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        IGNORED_EXTENSIONS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ai_consent_granted" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        AI_CONSENT_GRANTED
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#log_file" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        LOG_FILE
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#stop_words" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        STOP_WORDS
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#precedence-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Precedence Rules
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Precedence Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#runtime-environment-variables" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Runtime Environment Variables
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#dynamic-configuration-saves" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Dynamic Configuration Saves
+      
+    </span>
+  </a>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#compliance-policies-routing-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Compliance Policies &amp; Routing Rules
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Compliance Policies &amp; Routing Rules">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#policy-evaluation-flowchart" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Policy Evaluation Flowchart
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#rule-syntax-types" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Rule Syntax &amp; Types
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#lifecycle-actions-post-unarchive-directives" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Lifecycle Actions &amp; Post-Unarchive Directives
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sequential-execution-priority" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Sequential Execution &amp; Priority
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#halting-parameters" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Halting Parameters
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#path-validation-rules" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Path Validation Rules
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#configuration-recovery-troubleshooting" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Configuration Recovery &amp; Troubleshooting
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+        <li class="md-nav__item">
+  <a href="#maintenance-scripts-and-cli-commands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Maintenance Scripts and CLI Commands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Maintenance Scripts and CLI Commands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#appmainpy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        app/main.py
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="app/main.py">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#top-level-usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Top-Level Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#non-interactive-headless-execution-guard" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Non-Interactive / Headless Execution Guard
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#structured-json-output-error-payloads-and-exit-codes" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Structured JSON Output, Error Payloads, and Exit Codes
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#subcommands" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Subcommands
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="Subcommands">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#sort" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sort
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scan" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        scan
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#config" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        config
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#daemon" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        daemon
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#undo" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        undo
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#drop" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        drop
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ledger" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ledger
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="ledger">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#ledger-status" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ledger status
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ledger-reconcile" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ledger reconcile
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ledger-purge" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ledger purge
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#ledger-export" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        ledger export
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarantine" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        quarantine
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="quarantine">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#quarantine-list" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        quarantine list
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarantine-inspect" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        quarantine inspect
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarantine-process" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        quarantine process
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarantine-release" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        quarantine release
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#quarantine-dismiss" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        quarantine dismiss
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#sandbox_clipy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        sandbox_cli.py
+      
+    </span>
+  </a>
+  
+    <nav class="md-nav" aria-label="sandbox_cli.py">
+      <ul class="md-nav__list">
+        
+          <li class="md-nav__item">
+  <a href="#usage" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        Usage
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scriptsprepare_offlinepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        scripts/prepare_offline.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
+  <a href="#scriptsinstall_offlinepy" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        scripts/install_offline.py
+      
+    </span>
+  </a>
+  
+</li>
+        
+      </ul>
+    </nav>
+  
+</li>
+      
+    </ul>
+  
+</nav>
+                  </div>
+                </div>
+              </div>
+            
+          
+          
+            <div class="md-content" data-md-component="content">
+              
+              <article class="md-content__inner md-typeset">
+                
+                  
+
+
+
+<h1 id="administrator-guide">Administrator Guide</h1>
+<p>This document is automatically generated. Do not edit manually.</p>
+<h2 id="configuration-parameters">Configuration Parameters</h2>
+<p>The following parameters are extracted directly from the application's configuration schema (<code>app.config.Settings</code>). Set them with <code>smart-autosorter config --set NAME VALUE</code>, in <code>~/.autosorter/settings.json</code>, or as an environment variable with the <code>SORTIFY_</code> prefix (for example <code>SORTIFY_MAX_FOLDERS</code>). For recovering interrupted sorting sessions, reconciling headless transaction ledgers, or resolving stale lock files, see the <a href="../runbooks/ledger_reconciliation/">Ledger Reconciliation Runbook</a>.</p>
+<h3 id="contextual_renaming"><code>CONTEXTUAL_RENAMING</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>bool</code></li>
+<li><strong>Default</strong>: <code>False</code></li>
+</ul>
+<p>Whether to rename sorted files using extracted document context and dates during plan generation.</p>
+<h3 id="ai_assisted_naming"><code>AI_ASSISTED_NAMING</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>bool</code></li>
+<li><strong>Default</strong>: <code>False</code></li>
+</ul>
+<p>Whether to use the local generative LLM model to synthesize descriptive folder and file names (requires AI consent and the optional 'ml' extra).</p>
+<h3 id="preserve_hierarchy"><code>PRESERVE_HIERARCHY</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>bool</code></li>
+<li><strong>Default</strong>: <code>False</code></li>
+</ul>
+<p>Whether to retain relative source subfolder structure beneath generated destination category directories.</p>
+<h3 id="max_folders"><code>MAX_FOLDERS</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>int</code></li>
+<li><strong>Default</strong>: <code>12</code></li>
+<li><strong>Allowed</strong>: &gt; 0, &lt;= 50</li>
+</ul>
+<p>Maximum number of category folders generated per clustering level (integer from 1 to 50 folders).</p>
+<h3 id="max_workers"><code>MAX_WORKERS</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>int</code></li>
+<li><strong>Default</strong>: <code>4</code></li>
+<li><strong>Allowed</strong>: &gt; 0, &lt;= 64</li>
+</ul>
+<p>Maximum number of concurrent worker threads or processes used for file extraction and move operations (integer from 1 to 64 workers).</p>
+<h3 id="max_depth"><code>MAX_DEPTH</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>int</code></li>
+<li><strong>Default</strong>: <code>5</code></li>
+<li><strong>Allowed</strong>: &gt; 0, &lt;= 10</li>
+</ul>
+<p>Maximum directory recursion depth for hierarchical clustering and folder generation (integer from 1 to 10 levels).</p>
+<h3 id="max_features"><code>MAX_FEATURES</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>int</code></li>
+<li><strong>Default</strong>: <code>3</code></li>
+<li><strong>Allowed</strong>: &gt; 0, &lt;= 10</li>
+</ul>
+<p>Maximum number of top TF-IDF keyword terms combined when naming generated cluster folders (integer from 1 to 10 terms).</p>
+<h3 id="cleanup_empty_folders"><code>CLEANUP_EMPTY_FOLDERS</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>bool</code></li>
+<li><strong>Default</strong>: <code>True</code></li>
+</ul>
+<p>Whether to automatically remove empty source subdirectories after file moves complete.</p>
+<h3 id="speak_announcements"><code>SPEAK_ANNOUNCEMENTS</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>bool</code></li>
+<li><strong>Default</strong>: <code>False</code></li>
+</ul>
+<p>Whether to emit spoken accessibility announcements in the terminal UI when screen-reader feedback is enabled.</p>
+<h3 id="enable_character_key_shortcuts"><code>ENABLE_CHARACTER_KEY_SHORTCUTS</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>bool</code></li>
+<li><strong>Default</strong>: <code>True</code></li>
+</ul>
+<p>Whether single-character keyboard shortcuts (such as 'R' to reassign) are active in the terminal UI when text inputs are not focused.</p>
+<h3 id="keyword_rules"><code>KEYWORD_RULES</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>dict</code></li>
+<li><strong>Default</strong>: <code>{}</code></li>
+</ul>
+<p>Mapping of lowercase keyword strings to relative target folder paths. Target paths are validated to forbid absolute paths, '..' traversal segments, OS-reserved device names, illegal characters (&lt;, &gt;, :, ", |, ?, *), and trailing spaces or periods.</p>
+<h3 id="disabled_keyword_rules"><code>DISABLED_KEYWORD_RULES</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>dict</code></li>
+<li><strong>Default</strong>: <code>{}</code></li>
+</ul>
+<p>Mapping of temporarily disabled keyword strings to relative target folder paths, preserving path mappings while inactive and enforcing the same relative target path validation as KEYWORD_RULES.</p>
+<h3 id="learned_rules"><code>LEARNED_RULES</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>dict</code></li>
+<li><strong>Default</strong>: <code>{}</code></li>
+</ul>
+<p>Mapping of user-corrected keyword patterns to relative target folder paths learned from interactive reassignments, validated with the same relative path rules as KEYWORD_RULES.</p>
+<h3 id="extension_categories"><code>EXTENSION_CATEGORIES</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>dict</code></li>
+<li><strong>Default</strong>: <code>{}</code></li>
+</ul>
+<p>Custom mapping of category folder names to lists of file extensions or extension overrides used for fallback file-type routing.</p>
+<h3 id="policies"><code>POLICIES</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>list[PolicyRule]</code></li>
+<li><strong>Default</strong>: <code>[]</code></li>
+</ul>
+<p>Ordered list of typed PolicyRule dictionaries evaluated from highest integer priority to lowest across 6 rule types ('keyword', 'pattern', 'override', 'action', 'compliance', 'unarchive'), 5 lifecycle actions ('archive', 'retain', 'quarantine', 'redact', 'unarchive'), and 8 post-unarchive actions; warns when higher-priority rules shadow lower-priority rules.</p>
+<h3 id="visual_timeout"><code>VISUAL_TIMEOUT</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>int</code></li>
+<li><strong>Default</strong>: <code>30</code></li>
+<li><strong>Allowed</strong>: &gt; 0</li>
+</ul>
+<p>Per-file timeout in seconds (&gt; 0) for visual OCR and vision model extraction before aborting visual analysis on a document.</p>
+<h3 id="image_max_dimension"><code>IMAGE_MAX_DIMENSION</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>int</code></li>
+<li><strong>Default</strong>: <code>1000</code></li>
+<li><strong>Allowed</strong>: &gt; 0</li>
+</ul>
+<p>Maximum width or height in pixels (&gt; 0) to which images are downscaled while preserving aspect ratio prior to OCR or vision inference.</p>
+<h3 id="image_skip_threshold"><code>IMAGE_SKIP_THRESHOLD</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>int</code></li>
+<li><strong>Default</strong>: <code>3000</code></li>
+<li><strong>Allowed</strong>: &gt; 0</li>
+</ul>
+<p>Dimension threshold in pixels (&gt; 0) above which oversized images trigger pre-processing downscaling or fast-path handling.</p>
+<h3 id="pdf_text_density_threshold"><code>PDF_TEXT_DENSITY_THRESHOLD</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>int</code></li>
+<li><strong>Default</strong>: <code>50</code></li>
+<li><strong>Allowed</strong>: &gt;= 0</li>
+</ul>
+<p>Minimum average extracted character count per PDF page (&gt;= 0 characters) below which a PDF is treated as scanned and routed to OCR fallback.</p>
+<h3 id="model_threads"><code>MODEL_THREADS</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>int</code></li>
+<li><strong>Default</strong>: <code>2</code></li>
+<li><strong>Allowed</strong>: &gt;= 1, &lt;= 32</li>
+</ul>
+<p>Number of CPU threads allocated per local ML/ONNX/GGUF model inference worker (integer from 1 to 32 threads).</p>
+<h3 id="grammar_cache_size"><code>GRAMMAR_CACHE_SIZE</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>int</code></li>
+<li><strong>Default</strong>: <code>16</code></li>
+<li><strong>Allowed</strong>: &gt; 0, &lt;= 256</li>
+</ul>
+<p>Maximum number of compiled GBNF grammar definitions cached in memory for constrained generative naming (integer from 1 to 256 entries).</p>
+<h3 id="snapshot_retention_days"><code>SNAPSHOT_RETENTION_DAYS</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>int</code></li>
+<li><strong>Default</strong>: <code>30</code></li>
+<li><strong>Allowed</strong>: &gt; 0</li>
+</ul>
+<p>Number of days (&gt; 0) to retain historical sorting session records and rollback snapshots before automatic pruning.</p>
+<h3 id="protected_paths"><code>PROTECTED_PATHS</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>list[str]</code></li>
+<li><strong>Default</strong>: <code>[]</code></li>
+</ul>
+<p>List of absolute literal directory paths protected from scanning, moving, or modification. Relative paths and wildcard or glob characters ('*', '?', '[', ']') are rejected.</p>
+<h3 id="auto_quarantine_ratings"><code>AUTO_QUARANTINE_RATINGS</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>list[str]</code></li>
+<li><strong>Default</strong>: <code>['CRITICAL', 'HIGH']</code></li>
+</ul>
+<p>Sensitivity severity ratings (such as 'CRITICAL' and 'HIGH') that automatically route detected files into compliance quarantine staging.</p>
+<h3 id="quarantine_dir_name"><code>QUARANTINE_DIR_NAME</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>str</code></li>
+<li><strong>Default</strong>: <code>'_Compliance_Quarantine'</code></li>
+</ul>
+<p>Directory name created inside the workspace for staging quarantined compliance files.</p>
+<h3 id="proxy"><code>PROXY</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>str</code></li>
+<li><strong>Default</strong>: <code>''</code></li>
+</ul>
+<p>Outbound network proxy URI used for model downloads and security advisory checks. Kept cleartext in memory during runtime, encrypted at rest in settings.json with an 'enc:' prefix (auto-migrating legacy plaintext values), and replaced with '<DECRYPTION_FAILED>' in memory if decryption fails without overwriting persisted ciphertext.</p>
+<h3 id="security_advisory_endpoint"><code>SECURITY_ADVISORY_ENDPOINT</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>str</code></li>
+<li><strong>Default</strong>: <code>'https://security.huggingface.co/api/advisories'</code></li>
+</ul>
+<p>HTTPS endpoint queried with model repository IDs and SHA-256 digests to check for published model security advisories before loading weights.</p>
+<h3 id="security_advisory_cache_ttl"><code>SECURITY_ADVISORY_CACHE_TTL</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>int</code></li>
+<li><strong>Default</strong>: <code>3600</code></li>
+<li><strong>Allowed</strong>: &gt;= 1</li>
+</ul>
+<p>Time-to-live in seconds (&gt;= 1 second) for cached security advisory responses before re-querying the advisory endpoint.</p>
+<h3 id="security_advisory_fallback_policy"><code>SECURITY_ADVISORY_FALLBACK_POLICY</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>str</code></li>
+<li><strong>Default</strong>: <code>'strict'</code></li>
+<li><strong>Allowed</strong>: <code>strict</code>, <code>permissive</code></li>
+</ul>
+<p>Fallback behavior when the security advisory endpoint is unreachable: 'strict' refuses to load unverified models, whereas 'permissive' allows loading.</p>
+<h3 id="ocr_gpu_enabled"><code>OCR_GPU_ENABLED</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>bool</code></li>
+<li><strong>Default</strong>: <code>False</code></li>
+</ul>
+<p>Whether to enable GPU hardware acceleration for EasyOCR and vision extraction workloads when a compatible accelerator is available.</p>
+<h3 id="audio_gpu_enabled"><code>AUDIO_GPU_ENABLED</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>bool</code></li>
+<li><strong>Default</strong>: <code>False</code></li>
+</ul>
+<p>Whether to enable GPU hardware acceleration for Whisper audio transcription workloads.</p>
+<h3 id="audio_max_workers"><code>AUDIO_MAX_WORKERS</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>int</code></li>
+<li><strong>Default</strong>: <code>2</code></li>
+<li><strong>Allowed</strong>: &gt; 0, &lt;= 64</li>
+</ul>
+<p>Maximum number of concurrent worker processes dedicated to audio transcription tasks (integer from 1 to 64 workers; aliased as MAX_AUDIO_WORKERS).</p>
+<h3 id="plugins"><code>PLUGINS</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>list[str]</code></li>
+<li><strong>Default</strong>: <code>[]</code></li>
+</ul>
+<p>List of enabled plugin Python module identifiers. Entries must be valid dotted Python identifiers without path or shell characters; explicit dotted module paths must start with 'app.plugins.' or 'sortify_plugin_', and Python standard library or system modules are forbidden.</p>
+<h3 id="ocr_languages"><code>OCR_LANGUAGES</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>str</code></li>
+<li><strong>Default</strong>: <code>'en'</code></li>
+</ul>
+<p>Comma-separated list of non-empty OCR language codes (alphanumeric characters and underscores only, such as 'en' or 'ch_sim,en').</p>
+<h3 id="vision_engine"><code>VISION_ENGINE</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>str</code></li>
+<li><strong>Default</strong>: <code>'easyocr'</code></li>
+<li><strong>Allowed</strong>: <code>easyocr</code>, <code>florence-2</code></li>
+</ul>
+<p>Visual text and caption extraction backend: 'easyocr' for standard OCR or 'florence-2' for vision-language document understanding.</p>
+<h3 id="conflict_policy"><code>CONFLICT_POLICY</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>str</code></li>
+<li><strong>Default</strong>: <code>'rename'</code></li>
+<li><strong>Allowed</strong>: <code>skip</code>, <code>rename</code>, <code>overwrite</code></li>
+</ul>
+<p>Resolution strategy when a destination file already exists: 'skip' leaves the source untouched, 'rename' appends a numeric suffix, and 'overwrite' replaces the target.</p>
+<h3 id="sorting_strategy"><code>SORTING_STRATEGY</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>str</code></li>
+<li><strong>Default</strong>: <code>'default'</code></li>
+</ul>
+<p>Document clustering and taxonomy strategy identifier (for example 'default' TF-IDF/embedding clustering, 'generative', 'clinical_tmf', or 'clinical_isf').</p>
+<h3 id="clinical_smart_renaming"><code>CLINICAL_SMART_RENAMING</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>bool</code></li>
+<li><strong>Default</strong>: <code>False</code></li>
+</ul>
+<p>Whether clinical sorting strategies standardize filenames using Trial Master File (TMF/ISF) study, artifact, and date metadata.</p>
+<h3 id="clinical_generate_audit_report"><code>CLINICAL_GENERATE_AUDIT_REPORT</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>bool</code></li>
+<li><strong>Default</strong>: <code>True</code></li>
+</ul>
+<p>Whether clinical compliance runs automatically generate a regulatory audit trail report upon completion.</p>
+<h3 id="coherence_threshold"><code>COHERENCE_THRESHOLD</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>float</code></li>
+<li><strong>Default</strong>: <code>0.5</code></li>
+<li><strong>Allowed</strong>: &gt;= 0.0, &lt;= 1.0</li>
+</ul>
+<p>Minimum semantic similarity coherence score (float from 0.0 to 1.0) required to group documents into a topic cluster before falling back to Miscellaneous.</p>
+<h3 id="debounce_delay"><code>DEBOUNCE_DELAY</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>float</code></li>
+<li><strong>Default</strong>: <code>0.6</code></li>
+<li><strong>Allowed</strong>: &gt; 0.0</li>
+</ul>
+<p>Initial filesystem event debounce delay in seconds (&gt; 0.0 and must be &lt;= MAX_DEBOUNCE_DELAY) before the background daemon processes newly modified files.</p>
+<h3 id="max_debounce_delay"><code>MAX_DEBOUNCE_DELAY</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>float</code></li>
+<li><strong>Default</strong>: <code>5.0</code></li>
+<li><strong>Allowed</strong>: &gt; 0.0</li>
+</ul>
+<p>Maximum ceiling in seconds (&gt; 0.0 and must be &gt;= DEBOUNCE_DELAY) that bursty filesystem events can defer daemon batch processing.</p>
+<h3 id="max_queue_capacity"><code>MAX_QUEUE_CAPACITY</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>int</code></li>
+<li><strong>Default</strong>: <code>1000</code></li>
+<li><strong>Allowed</strong>: &gt; 0</li>
+</ul>
+<p>Maximum number of pending filesystem events (&gt; 0 items) buffered in the background daemon priority queue before backpressure applies.</p>
+<h3 id="dedup_window"><code>DEDUP_WINDOW</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>float</code></li>
+<li><strong>Default</strong>: <code>0.5</code></li>
+<li><strong>Allowed</strong>: &gt;= 0.0</li>
+</ul>
+<p>Time window in seconds (&gt;= 0.0 seconds) used by the daemon watcher to coalesce duplicate filesystem events for the same path.</p>
+<h3 id="reconciliation_interval"><code>RECONCILIATION_INTERVAL</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>float</code></li>
+<li><strong>Default</strong>: <code>30.0</code></li>
+<li><strong>Allowed</strong>: &gt; 0.0</li>
+</ul>
+<p>Periodic interval in seconds (&gt; 0.0 seconds) between background daemon sweeps for missed files and incomplete ledger transactions.</p>
+<h3 id="worker_timeout"><code>WORKER_TIMEOUT</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>float</code></li>
+<li><strong>Default</strong>: <code>300.0</code></li>
+<li><strong>Allowed</strong>: &gt;= 0.0</li>
+</ul>
+<p>Maximum execution time in seconds (&gt;= 0.0 seconds) allowed for background extraction, clustering, or forensic quarantine scan workers before timing out.</p>
+<h3 id="tabular_max_sheets"><code>TABULAR_MAX_SHEETS</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>int</code></li>
+<li><strong>Default</strong>: <code>10</code></li>
+<li><strong>Allowed</strong>: &gt; 0</li>
+</ul>
+<p>Maximum number of workbook sheets (&gt; 0 sheets) sampled per spreadsheet during tabular text extraction (aliased as MAX_SPREADSHEET_SHEETS).</p>
+<h3 id="tabular_max_rows"><code>TABULAR_MAX_ROWS</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>int</code></li>
+<li><strong>Default</strong>: <code>10000</code></li>
+<li><strong>Allowed</strong>: &gt; 0</li>
+</ul>
+<p>Maximum number of rows (&gt; 0 rows) read per sheet or CSV file during tabular text extraction (aliased as MAX_SPREADSHEET_ROWS).</p>
+<h3 id="tabular_max_characters"><code>TABULAR_MAX_CHARACTERS</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>int</code></li>
+<li><strong>Default</strong>: <code>50000</code></li>
+<li><strong>Allowed</strong>: &gt; 0</li>
+</ul>
+<p>Maximum total extracted character budget (&gt; 0 characters) retained per tabular document (aliased as MAX_SPREADSHEET_CHARACTERS).</p>
+<h3 id="ignored_extensions"><code>IGNORED_EXTENSIONS</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>list[str]</code></li>
+<li><strong>Default</strong>: <code>['.crdownload', '.tmp', '.download']</code></li>
+</ul>
+<p>List of temporary or incomplete file extensions skipped during scanning and daemon watching (non-empty strings normalized with a leading '.', such as '.tmp').</p>
+<h3 id="ai_consent_granted"><code>AI_CONSENT_GRANTED</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>bool | None</code></li>
+<li><strong>Default</strong>: <code>None</code></li>
+</ul>
+<p>User consent state for local AI model downloads and semantic vector indexing: true (granted), false (declined; unloads models and scrubs vectors), or null (not yet prompted).</p>
+<h3 id="log_file"><code>LOG_FILE</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>str</code></li>
+<li><strong>Default</strong>: <code>'~/.autosorter/autosorter.log'</code></li>
+</ul>
+<p>Filesystem path to the primary rotating application log file (non-empty string; defaults to 'autosorter.log' inside the app directory).</p>
+<h3 id="stop_words"><code>STOP_WORDS</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>set[str]</code></li>
+<li><strong>Default</strong>: 59 built-in entries (see <code>app/config.py</code>)</li>
+</ul>
+<p>Set of common noise and file-extension tokens excluded during TF-IDF keyword extraction and cluster folder naming.</p>
+<h2 id="precedence-rules">Precedence Rules</h2>
+<p>The application evaluates configuration parameters using a strict precedence hierarchy to determine how settings interact. The priority is applied as follows, from highest to lowest:</p>
+<ol>
+<li><strong>Command-Line Flags:</strong> Flags such as <code>--max-folders</code>, <code>--strategy</code> and <code>--conflict-policy</code> override every other source for that run only.</li>
+<li><strong>Local Settings File (<code>~/.autosorter/settings.json</code>):</strong> Parameters defined here override environment variables and default properties.</li>
+<li><strong>Environment Variables (or the app directory's <code>.env</code> file):</strong> Configuration schema fields in <code>Settings</code> use the <code>SORTIFY_</code> prefix (for example <code>SORTIFY_MAX_FOLDERS=9</code>), while dedicated runtime control variables (such as <code>SORTIFY_AI_CONSENT</code>, <code>AUTOSORTER_APP_DIR</code>, and <code>NON_INTERACTIVE</code>; see <a href="#runtime-environment-variables">Runtime Environment Variables</a>) control process startup, UI guards, and offline model paths. A <code>.env</code> file is read only from the app directory (<code>~/.autosorter/.env</code>, or <code>$AUTOSORTER_APP_DIR/.env</code>), never from the current working directory. Values from the environment apply to each run but are not written to <code>settings.json</code>, so they keep working until the setting is changed explicitly.</li>
+<li><strong>Default Parameters:</strong> Base defaults are used as fallbacks if a setting is not explicitly defined in the local file or environment.</li>
+</ol>
+<h3 id="runtime-environment-variables">Runtime Environment Variables</h3>
+<p>In addition to <code>SORTIFY_&lt;SETTING&gt;</code> overrides for every field in <code>Settings</code>, the runtime inspects the following environment variables:</p>
+<table>
+<thead>
+<tr>
+<th>Variable</th>
+<th>Source</th>
+<th>Behavior</th>
+</tr>
+</thead>
+<tbody>
+<tr>
+<td><code>SORTIFY_&lt;SETTING&gt;</code></td>
+<td><code>app/config.py</code></td>
+<td>Per-run override for any <code>Settings</code> schema field (for example <code>SORTIFY_MAX_FOLDERS=9</code> or <code>SORTIFY_MAX_WORKERS=8</code>), read from the environment or <code>$AUTOSORTER_APP_DIR/.env</code>.</td>
+</tr>
+<tr>
+<td><code>SORTIFY_AI_CONSENT</code></td>
+<td><code>app/main.py</code>, <code>app/ui/tui.py</code></td>
+<td>Per-run AI consent override (<code>1</code>/<code>true</code>/<code>yes</code>/<code>on</code> grants consent; <code>0</code>/<code>false</code>/<code>no</code>/<code>off</code> declines consent). CLI <code>--accept-ai-consent</code> and <code>--decline-ai-consent</code> flags take higher precedence.</td>
+</tr>
+<tr>
+<td><code>AUTOSORTER_APP_DIR</code></td>
+<td><code>app/config.py</code>, <code>app/core/path_utils.py</code></td>
+<td>Overrides the application configuration and state directory (default <code>~/.autosorter</code>), relocating <code>settings.json</code>, <code>.env</code>, SQLite databases, and logs.</td>
+</tr>
+<tr>
+<td><code>NON_INTERACTIVE</code></td>
+<td><code>app/main.py</code>, <code>app/ui/tui.py</code></td>
+<td>When set to <code>1</code>, <code>true</code>, <code>yes</code>, or <code>on</code>, enables headless non-interactive mode, bypasses the onboarding wizard, and defaults unset <code>AI_CONSENT_GRANTED</code> to <code>False</code>.</td>
+</tr>
+<tr>
+<td><code>NO_COLOR</code></td>
+<td><code>app/main.py</code></td>
+<td>When non-empty, disables ANSI color codes and rich terminal styling across CLI output (equivalent to <code>--no-color</code>).</td>
+</tr>
+<tr>
+<td><code>FORCE_TUI</code></td>
+<td><code>app/ui/tui.py</code></td>
+<td>When non-empty, bypasses the interactive TTY check (<code>isatty()</code>) when launching the Textual TUI in non-TTY streams.</td>
+</tr>
+<tr>
+<td><code>IGNORE_TERMINAL_SIZE</code></td>
+<td><code>app/ui/tui.py</code></td>
+<td>When non-empty, bypasses the minimum <code>80x24</code> terminal dimension check during TUI startup.</td>
+</tr>
+<tr>
+<td><code>LITE_BUILD</code></td>
+<td><code>app/core/verifier.py</code></td>
+<td>When set to <code>1</code>, marks packaged or sandboxed execution as a lite distribution so missing optional ML dependencies (<code>torch</code>, <code>easyocr</code>) fall back cleanly instead of failing startup verification.</td>
+</tr>
+<tr>
+<td><code>EASYOCR_MODULE_PATH</code></td>
+<td><code>app/core/verifier.py</code>, <code>app/core/model_registry.py</code></td>
+<td>Custom base directory containing the <code>model/</code> folder for offline EasyOCR weights (<code>craft_mlt_25k.pth</code>, <code>english_g2.pth</code>) when <code>offline_bundle/easyocr</code> is absent.</td>
+</tr>
+<tr>
+<td><code>SMART_AUTOSORTER_MODELS_ZIP</code></td>
+<td><code>app/core/offline_loader.py</code></td>
+<td>Explicit file path override pointing to a sidecar <code>smart-autosorter-models.zip</code> offline model archive.</td>
+</tr>
+<tr>
+<td><code>MODELS_ZIP_PATH</code></td>
+<td><code>app/core/offline_loader.py</code></td>
+<td>Alternate environment variable pointing to a sidecar <code>smart-autosorter-models.zip</code> offline model archive.</td>
+</tr>
+<tr>
+<td><code>&lt;MODEL_ID&gt;_PATH</code> / <code>MODEL_PATH</code></td>
+<td><code>app/core/offline_loader.py</code></td>
+<td>Highest-precedence directory override for resolving a specific offline model bundle (for example <code>GENERATIVE_NAMING_PATH</code> or <code>MODEL_PATH</code>).</td>
+</tr>
+<tr>
+<td><code>DEBUG</code> / <code>PROMPT_DUMP_FILE</code></td>
+<td><code>app/core/analyzer_strategies.py</code></td>
+<td>Diagnostic controls enabling debug mode (<code>1</code>/<code>true</code>/<code>yes</code>/<code>on</code>) and optional generative prompt dumping when <code>DEBUG</code> is active.</td>
+</tr>
+</tbody>
+</table>
+<h2 id="dynamic-configuration-saves">Dynamic Configuration Saves</h2>
+<p>System settings modified during runtime are dynamically saved to the local JSON configuration file (<code>~/.autosorter/settings.json</code>) located in the user's home directory. To ensure stability and prevent excessive disk writes, these dynamic changes are saved with a short debounced delay of 0.5 seconds.</p>
+<h2 id="compliance-policies-routing-rules">Compliance Policies &amp; Routing Rules</h2>
+<h3 id="policy-evaluation-flowchart">Policy Evaluation Flowchart</h3>
+<p><img alt="Policy Evaluation Flowchart" src="../assets/diagrams/policy_evaluation_flow.svg" /></p>
+<h3 id="rule-syntax-types">Rule Syntax &amp; Types</h3>
+<p>Each entry in <code>POLICIES</code> follows the typed <code>PolicyRule</code> schema in <code>app/config_schema.json</code>:</p>
+<ul>
+<li><strong>Required keys</strong>: <code>type</code> (<code>str</code>), <code>expression</code> (non-empty <code>str</code>), <code>target_path</code> (relative <code>str</code>), and <code>priority</code> (<code>int</code>).</li>
+<li><strong>Optional keys</strong>: <code>halting</code> (<code>bool</code>, default <code>false</code>), <code>enabled</code> (<code>bool</code>, default <code>true</code>), <code>action</code> (<code>str</code>), and <code>post_unarchive_action</code> (<code>str</code>, with legacy aliases <code>post_action</code> and <code>archive_action</code> accepted when loading existing <code>settings.json</code> files).</li>
+</ul>
+<p>Compliance and routing policies support all <strong>6</strong> rule <code>type</code> values:</p>
+<ul>
+<li><strong><code>keyword</code></strong>: Case-insensitive substring match against the filename and extracted document text (or the filename alone when a preliminary status match is present; expressions <code>'secret'</code> and <code>'credential'</code> invoke credential/secret scanning across the path and text).</li>
+<li><strong><code>pattern</code></strong>: Case-insensitive substring match against the <strong>lowercase filename (<code>os.path.basename(file_path).lower()</code>) only</strong>—does not inspect extracted document text.</li>
+<li><strong><code>override</code></strong>: Case-insensitive match against the <strong>lowercase filename or full file path (<code>file_path.lower()</code>)</strong>—does not inspect extracted document text, allowing deterministic path-level routing overrides.</li>
+<li><strong><code>action</code></strong>: Lifecycle directive rule evaluated via case-insensitive substring matching against the filename and extracted document text.</li>
+<li><strong><code>compliance</code></strong>: Regulatory and sensitivity rule evaluated via case-insensitive substring matching against the filename and extracted document text (plus secret detection when <code>expression</code> is <code>'secret'</code> or <code>'credential'</code>).</li>
+<li><strong><code>unarchive</code></strong>: Archive ingestion rule evaluated via case-insensitive substring matching against the filename and extracted document text to trigger archive extraction workflows.</li>
+</ul>
+<h3 id="lifecycle-actions-post-unarchive-directives">Lifecycle Actions &amp; Post-Unarchive Directives</h3>
+<p>When a policy rule specifies an optional <code>action</code> key (<code>PolicyEngine.SUPPORTED_ACTIONS</code>), it must be one of the <strong>5</strong> supported lifecycle actions:</p>
+<ul>
+<li><strong><code>archive</code></strong>: Route or package matching files into designated archive storage.</li>
+<li><strong><code>retain</code></strong>: Keep matching files under retention governance at the target destination.</li>
+<li><strong><code>quarantine</code></strong>: Intercept and stage matching files in compliance quarantine for forensic review before release.</li>
+<li><strong><code>redact</code></strong>: Flag or process matching files through PII/secret redaction handling.</li>
+<li><strong><code>unarchive</code></strong>: Safely extract supported <code>.zip</code> archives into <code>target_path</code> with zip-bomb/size safety checks and enqueue extracted child files for sorting.</li>
+</ul>
+<p>When <code>action</code> is set to <code>'unarchive'</code>, <code>post_unarchive_action</code> controls how the original archive file is handled after extraction and supports <strong>8</strong> values across three behaviors:</p>
+<ul>
+<li><strong>Delete source archive</strong> (default): <code>'delete'</code>, <code>'remove'</code>, <code>'cleanup'</code>.</li>
+<li><strong>Relocate source archive</strong> (for example to <code>post_unarchive_target</code>): <code>'move'</code>, <code>'archive'</code>, <code>'relocate'</code>.</li>
+<li><strong>Retain source archive in place</strong>: <code>'retain'</code>, <code>'keep'</code>.</li>
+</ul>
+<h3 id="sequential-execution-priority">Sequential Execution &amp; Priority</h3>
+<p>Rules are evaluated sequentially, starting from the highest priority value down to the lowest. Because rules are checked in priority order, if a higher-priority rule matches, it will be executed first. This can sometimes result in 'shadowing', where a lower-priority rule never runs because a higher-priority rule has already matched the same conditions. To resolve overlaps, adjust rule priority numbers or make matching conditions more specific.</p>
+<h3 id="halting-parameters">Halting Parameters</h3>
+<p>Each policy includes a 'Halt on mismatch' setting. When active, if a document fails to meet this rule's criteria, the system will immediately stop evaluating any remaining lower-priority rules. This halting behavior is crucial for enforcing strict sequential checks and ensuring that files do not proceed to general classification or AI-based sorting if they fail compliance conditions.</p>
+<h3 id="path-validation-rules">Path Validation Rules</h3>
+<p>To ensure system security, stability, and compatibility across operating systems, all target paths must comply with the following strict validation rules:</p>
+<ul>
+<li><strong>No Absolute Paths</strong>: All target paths must be relative paths and cannot start with leading slashes (such as <code>/</code> or <code>\</code>).</li>
+<li><strong>No Directory Traversal</strong>: Paths are blocked from using directory traversal segments (such as <code>..</code>) to prevent files from being moved outside of the designated folders.</li>
+<li><strong>No Illegal Characters</strong>: Target paths must not contain any prohibited characters, including <code>&lt;</code>, <code>&gt;</code>, <code>:</code>, <code>"</code>, <code>|</code>, <code>?</code>, or <code>*</code>.</li>
+</ul>
+<h3 id="configuration-recovery-troubleshooting">Configuration Recovery &amp; Troubleshooting</h3>
+<p>If the system detects invalid fields or syntax errors in the configuration file (<code>settings.json</code>), automatic saves are locked. This safeguard prevents overwriting and potentially corrupting your existing settings. While saves are suspended, the application will use temporary default values to prevent crashes.</p>
+<p>To resolve a blocked-save state, follow these recovery options:</p>
+<ol>
+<li><strong>Check Warning Banners</strong>: Review the detailed list of validation errors displayed under the warning banner in the application settings dialog.</li>
+<li><strong>Manually Edit Settings</strong>: Open the local configuration file (<code>~/.autosorter/settings.json</code>) and correct the invalid values or formats.</li>
+<li><strong>Reset Configuration</strong>: Delete the invalid <code>settings.json</code> file or click the reset button to restore default, valid configuration values, which will immediately re-enable automatic saving.</li>
+<li><strong>Ledger &amp; Session Recovery</strong>: For recovering interrupted batch sorting sessions or resolving stale transaction records, refer to the dedicated <a href="../runbooks/ledger_reconciliation/">Ledger Reconciliation Runbook</a>.</li>
+</ol>
+<h2 id="maintenance-scripts-and-cli-commands">Maintenance Scripts and CLI Commands</h2>
+<h3 id="appmainpy"><code>app/main.py</code></h3>
+<p>Main command-line interface for Smart AutoSorter AI Pro.</p>
+<h4 id="top-level-usage">Top-Level Usage</h4>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter [-h] [-q] [--no-color] [--demo] [--smoke-test]
+                        [--json] [--daemon] [--tui] [--interactive]
+                        [--accept-ai-consent | --decline-ai-consent]
+                        [--skip-wizard] [--non-interactive]
+                        {sort,scan,config,daemon,undo,drop,ledger,quarantine}
+                        ...
+
+Smart AutoSorter AI Pro: sort a folder of documents into topic
+folders, offline. Every move can be undone.
+
+positional arguments:
+  {sort,scan,config,daemon,undo,drop,ledger,quarantine}
+                        Available subcommands
+    sort                Run document sorting in headless batch processing mode
+    scan                Run directory scanning and analysis without moving
+                        files
+    config              View or update application configuration settings
+    daemon              Launch or control persistent directory-watching daemon
+    undo                Rollback sorting operations and manage history
+                        sessions
+    drop                Quick file drop triage receiver for target files or
+                        directories
+    ledger              Manage transaction ledger entries and automated
+                        reconciliation
+    quarantine          Manage compliance quarantine staging, inspection, and
+                        release
+
+options:
+  -h, --help            show this help message and exit
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --demo                Run interactive CLI demo mode
+  --smoke-test          Run automated database smoke test and exit
+  --json                Output in structured JSON format
+  --daemon              Launch the persistent directory-watching daemon
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Same as --tui
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+
+examples:
+  smart-autosorter                         open the full-screen TUI
+  smart-autosorter sort ~/Downloads --dry-run
+                                           preview the plan without moving files
+  smart-autosorter sort ~/Downloads        sort the folder
+  smart-autosorter undo --latest           move the last sort's files back
+  smart-autosorter undo --list             list past sorts you can undo
+
+Run 'smart-autosorter &lt;command&gt; --help' for a command's options.
+</code></pre></div>
+<h4 id="non-interactive-headless-execution-guard">Non-Interactive / Headless Execution Guard</h4>
+<p>When executing <code>app/main.py</code> in non-interactive or detached standard input streams (such as CI automation pipelines or script redirections using <code>&lt; /dev/null</code> where <code>sys.stdin.isatty()</code> returns <code>False</code>):</p>
+<ul>
+<li><strong>Target Path Auto-Routing</strong>: If a positional target directory path is supplied without an explicit subcommand (e.g. <code>python3 app/main.py /tmp/docs &lt; /dev/null</code>), execution is routed to headless batch document sorting (<code>handle_sort_command</code>) as a <strong>dry run</strong>: the plan is printed and no files are moved, because nobody is present to confirm it. Use the explicit <code>sort</code> subcommand (e.g. <code>python3 app/main.py sort /tmp/docs</code>) to move files from scripts or cron.</li>
+<li><strong>CLI Guidance &amp; Exit Code 2</strong>: If no target directory path or subcommand is supplied (e.g. <code>python3 app/main.py &lt; /dev/null</code>), the application outputs CLI usage guidance to <code>sys.stderr</code> and exits cleanly with exit code <code>2</code>. This prevents non-interactive streams from hanging on terminal UI initialization.</li>
+<li><strong>Explicit Interface Flag Overrides</strong>: If explicit UI or daemon flags (<code>--tui</code>, <code>--interactive</code>, <code>--demo</code>, <code>--daemon</code>) are invoked, the requested interface or background service launcher is executed as explicitly requested.</li>
+</ul>
+<h4 id="structured-json-output-error-payloads-and-exit-codes">Structured JSON Output, Error Payloads, and Exit Codes</h4>
+<p>Automation pipelines invoking CLI commands with <code>--json</code> can rely on deterministic stream separation, error envelopes, and exit codes:</p>
+<ul>
+<li><strong>Stream Routing (<code>stdout</code> vs <code>stderr</code>)</strong>: When <code>--json</code> is passed, <strong>both</strong> structured command results and structured error payloads (<code>emit_cli_error(..., json_mode=True)</code> and <code>SortifyArgumentParser.error()</code>) are emitted to <strong><code>sys.stdout</code></strong> as UTF-8 JSON objects so callers can parse <code>stdout</code> unconditionally. Without <code>--json</code>, human-readable errors prefixed with <code>Error:</code> and progress messages are written to <strong><code>sys.stderr</code></strong>.</li>
+<li><strong>Error Payload Schema</strong>: JSON errors emit <code>{"status": "error", "message": "&lt;clean message&gt;"}</code> (stripping any duplicate leading <code>'Error: '</code> prefix) plus command-specific context fields when available (such as <code>"job_id"</code> when <code>quarantine inspect</code> cannot find a record).</li>
+<li><strong>Exit Codes</strong>:</li>
+<li><code>0</code>: Command succeeded (including <code>quarantine</code> batch commands where <code>status</code> is <code>'success'</code> or <code>'partial_success'</code>).</li>
+<li><code>1</code>: Operational, validation, or runtime failure (missing directories, invalid configuration values, missing records, or <code>quarantine</code> batch runs where all jobs failed).</li>
+<li><code>2</code>: CLI usage or argument validation failure (unrecognized flags, invalid option choices, missing nested <code>ledger</code> or <code>quarantine</code> subcommand, missing required <code>&lt;job_id&gt;</code> / <code>--job-ids</code>, or invoking <code>smart-autosorter</code> with no target path or subcommand on a non-interactive <code>stdin</code> stream). Passing <code>--json</code> anywhere on the command line formats exit-code <code>2</code> parser errors as JSON on <code>sys.stdout</code>.</li>
+<li><strong>Quarantine Batch Status Envelope (<code>quarantine process</code>, <code>release</code>, <code>dismiss</code>)</strong>: Batch commands return <code>{"status": "&lt;batch_status&gt;", "count": N, "results": [...]}</code> (plus top-level convenience keys <code>"job_id"</code> and <code>"status_code"</code> when <code>count == 1</code>), where <code>status</code> is one of:</li>
+<li><code>'success'</code>: Every requested job ID completed its target transition (<code>exit code 0</code>).</li>
+<li><code>'partial_success'</code>: At least one job succeeded and at least one job failed (<code>exit code 0</code>).</li>
+<li><code>'failed'</code>: Zero requested jobs succeeded (<code>exit code 1</code>).</li>
+</ul>
+<h4 id="subcommands">Subcommands</h4>
+<h5 id="sort"><code>sort</code></h5>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter sort [-h] [--preset {demo,downloads,documents}]
+                             [--json] [--dest-dir DEST_DIR] [--dry-run] [-q]
+                             [--no-color] [--max-folders MAX_FOLDERS]
+                             [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                             [--conflict-policy {skip,rename}]
+                             [--contextual-renaming]
+                             [--no-contextual-renaming] [--tui]
+                             [--interactive]
+                             [--accept-ai-consent | --decline-ai-consent]
+                             [--skip-wizard] [--non-interactive]
+                             [--export-report EXPORT_REPORT]
+                             [--report-format {html,json}]
+                             [directory]
+
+positional arguments:
+  directory             Target directory to sort
+
+options:
+  -h, --help            show this help message and exit
+  --preset {demo,downloads,documents}
+                        Use standard workspace preset directory (demo,
+                        downloads, documents)
+  --json                Output result in structured JSON format
+  --dest-dir DEST_DIR   Destination directory for sorted files
+  --dry-run             Perform dry run analysis without executing physical
+                        moves
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
+</code></pre></div>
+<h5 id="scan"><code>scan</code></h5>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter scan [-h] [--preset {demo,downloads,documents}]
+                             [--json] [-q] [--no-color]
+                             [--max-folders MAX_FOLDERS]
+                             [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                             [--conflict-policy {skip,rename}]
+                             [--contextual-renaming]
+                             [--no-contextual-renaming] [--tui]
+                             [--interactive]
+                             [--accept-ai-consent | --decline-ai-consent]
+                             [--skip-wizard] [--non-interactive]
+                             [--export-report EXPORT_REPORT]
+                             [--report-format {html,json}]
+                             [directory]
+
+positional arguments:
+  directory             Target directory to scan
+
+options:
+  -h, --help            show this help message and exit
+  --preset {demo,downloads,documents}
+                        Use standard workspace preset directory (demo,
+                        downloads, documents)
+  --json                Output scan plan in structured JSON format
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
+</code></pre></div>
+<h5 id="config"><code>config</code></h5>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter config [-h] [--show] [--json] [--set KEY VALUE] [-q]
+                               [--no-color] [--max-folders MAX_FOLDERS]
+                               [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                               [--conflict-policy {skip,rename}]
+                               [--contextual-renaming]
+                               [--no-contextual-renaming] [--tui]
+                               [--interactive]
+                               [--accept-ai-consent | --decline-ai-consent]
+                               [--skip-wizard] [--non-interactive]
+                               [--export-report EXPORT_REPORT]
+                               [--report-format {html,json}]
+
+options:
+  -h, --help            show this help message and exit
+  --show                Display current configuration settings (the default)
+  --json                Output configuration as JSON
+  --set KEY VALUE       Set configuration KEY to VALUE
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
+</code></pre></div>
+<h5 id="daemon"><code>daemon</code></h5>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter daemon [-h] [--watch] [-q] [--no-color]
+                               [--max-folders MAX_FOLDERS]
+                               [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                               [--conflict-policy {skip,rename}]
+                               [--contextual-renaming]
+                               [--no-contextual-renaming] [--tui]
+                               [--interactive]
+                               [--accept-ai-consent | --decline-ai-consent]
+                               [--skip-wizard] [--non-interactive]
+                               [--export-report EXPORT_REPORT]
+                               [--report-format {html,json}]
+                               [action] [directory]
+
+positional arguments:
+  action                Action (start, status, health, metrics, pause, resume,
+                        stop) or directory to watch
+  directory             Directory to watch or control
+
+options:
+  -h, --help            show this help message and exit
+  --watch               Continuously monitor status telemetry in real time
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
+</code></pre></div>
+<h5 id="undo"><code>undo</code></h5>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter undo [-h] [--session-id SESSION_ID] [--list]
+                             [--latest] [--force] [--json] [-q] [--no-color]
+                             [--max-folders MAX_FOLDERS]
+                             [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                             [--conflict-policy {skip,rename}]
+                             [--contextual-renaming]
+                             [--no-contextual-renaming] [--tui]
+                             [--interactive]
+                             [--accept-ai-consent | --decline-ai-consent]
+                             [--skip-wizard] [--non-interactive]
+                             [--export-report EXPORT_REPORT]
+                             [--report-format {html,json}]
+
+options:
+  -h, --help            show this help message and exit
+  --session-id SESSION_ID
+                        Specific historical session ID UUID to rollback
+  --list                List active and completed historical sorting sessions
+  --latest              Rollback the latest historical sorting session
+  --force               Force rollback even if original files are missing
+  --json                Output session list or rollback status in structured
+                        JSON format
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
+</code></pre></div>
+<h5 id="drop"><code>drop</code></h5>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter drop [-h] [--dest-dir DEST_DIR] [--dry-run] [--json]
+                             [-q] [--no-color] [--max-folders MAX_FOLDERS]
+                             [--strategy {default,generative,clinical_tmf,clinical_isf}]
+                             [--conflict-policy {skip,rename}]
+                             [--contextual-renaming]
+                             [--no-contextual-renaming] [--tui]
+                             [--interactive]
+                             [--accept-ai-consent | --decline-ai-consent]
+                             [--skip-wizard] [--non-interactive]
+                             [--export-report EXPORT_REPORT]
+                             [--report-format {html,json}]
+                             paths [paths ...]
+
+positional arguments:
+  paths                 Target file or directory paths to process
+
+options:
+  -h, --help            show this help message and exit
+  --dest-dir DEST_DIR   Destination directory for sorted files
+  --dry-run             Perform dry run analysis without executing physical
+                        moves
+  --json                Output result in structured JSON format
+  -q, --quiet           Suppress informational prints and non-essential
+                        progress output
+  --no-color            Disable ANSI color and style formatting
+  --max-folders MAX_FOLDERS
+                        Maximum number of generated subfolders
+  --strategy {default,generative,clinical_tmf,clinical_isf}
+                        Sorting strategy
+  --conflict-policy {skip,rename}
+                        Conflict resolution policy
+  --contextual-renaming
+                        Enable AI contextual renaming
+  --no-contextual-renaming
+                        Disable AI contextual renaming
+  --tui                 Launch full-screen Textual TUI interface
+  --interactive         Launch full-screen interactive TUI mode
+  --accept-ai-consent   Pre-configure AI consent as granted and bypass
+                        onboarding wizard
+  --decline-ai-consent  Pre-configure AI consent as declined and bypass
+                        onboarding wizard
+  --skip-wizard         Bypass onboarding wizard modal during startup
+  --non-interactive     Run in non-interactive mode and bypass interactive
+                        modal dialogs
+  --export-report EXPORT_REPORT
+                        Export dry-run simulation report to output file path
+  --report-format {html,json}
+                        Format for exported simulation report (html or json)
+</code></pre></div>
+<h5 id="ledger"><code>ledger</code></h5>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter ledger [-h] [--json]
+                               {status,reconcile,purge,export} ...
+
+positional arguments:
+  {status,reconcile,purge,export}
+                        Ledger subcommands
+    status              Display incomplete or pending transaction ledger
+                        entries
+    reconcile           Execute automated headless reconciliation for
+                        interrupted file moves
+    purge               Purge completed or session transaction ledger records
+    export              Export session history transaction records as CSV or
+                        JSON audit log
+
+options:
+  -h, --help            show this help message and exit
+  --json                Output response in structured JSON format
+</code></pre></div>
+<p>For comprehensive operational procedures, headless transaction reconciliation workflows, state transition handling, and stale daemon lock cleanup, refer to the dedicated <a href="../runbooks/ledger_reconciliation/">Ledger Reconciliation Runbook</a>.</p>
+<h6 id="ledger-status"><code>ledger status</code></h6>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter ledger status [-h] [--ledger-db LEDGER_DB] [-q]
+                                      [--no-color] [--json]
+                                      [--session-id SESSION_ID] [--failed]
+                                      [--aborted]
+
+options:
+  -h, --help            show this help message and exit
+  --ledger-db LEDGER_DB
+                        Path to sidecar transaction ledger database file
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --session-id SESSION_ID
+                        Filter pending entries by session ID
+  --failed              Filter for failed and aborted transaction records
+  --aborted             Filter specifically for aborted transaction records
+</code></pre></div>
+<h6 id="ledger-reconcile"><code>ledger reconcile</code></h6>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter ledger reconcile [-h] [--ledger-db LEDGER_DB] [-q]
+                                         [--no-color] [--json]
+
+options:
+  -h, --help            show this help message and exit
+  --ledger-db LEDGER_DB
+                        Path to sidecar transaction ledger database file
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+</code></pre></div>
+<h6 id="ledger-purge"><code>ledger purge</code></h6>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter ledger purge [-h] [--ledger-db LEDGER_DB] [-q]
+                                     [--no-color] [--json]
+                                     [--session-id SESSION_ID] [--completed]
+                                     [--failed] [--aborted] [--force]
+
+options:
+  -h, --help            show this help message and exit
+  --ledger-db LEDGER_DB
+                        Path to sidecar transaction ledger database file
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --session-id SESSION_ID
+                        Purge entries for a specific session ID
+  --completed           Purge all completed transaction records
+  --failed              Purge all failed and aborted transaction records
+  --aborted             Purge all aborted transaction records
+  --force               Bypass confirmation prompt when purging records
+</code></pre></div>
+<h6 id="ledger-export"><code>ledger export</code></h6>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter ledger export [-h] [--ledger-db LEDGER_DB] [-q]
+                                      [--no-color] [--json]
+                                      [--session-id SESSION_ID] [-o OUTPUT]
+                                      [-f {csv,json}] [--csv]
+
+options:
+  -h, --help            show this help message and exit
+  --ledger-db LEDGER_DB
+                        Path to sidecar transaction ledger database file
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --session-id SESSION_ID
+                        Export entries for a specific session ID
+  -o OUTPUT, --output OUTPUT
+                        Output file path for exported audit log
+  -f {csv,json}, --format {csv,json}
+                        Audit log export format (csv or json)
+  --csv                 Export audit log in CSV format
+</code></pre></div>
+<h5 id="quarantine"><code>quarantine</code></h5>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter quarantine [-h] [--json]
+                                   {list,inspect,process,release,dismiss} ...
+
+positional arguments:
+  {list,inspect,process,release,dismiss}
+                        Quarantine subcommands
+    list                List staged and quarantined compliance items
+    inspect             Inspect a specific quarantine job record and audit
+                        trail
+    process             Trigger forensic scanning and policy evaluation for
+                        quarantine jobs
+    release             Release quarantined items to destination directory
+    dismiss             Dismiss quarantine items without restoring files
+
+options:
+  -h, --help            show this help message and exit
+  --json                Output response in structured JSON format
+</code></pre></div>
+<h6 id="quarantine-list"><code>quarantine list</code></h6>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter quarantine list [-h] [--db-path DB_PATH] [-q]
+                                        [--no-color] [--json]
+                                        [--status STATUS]
+                                        [--base-dir BASE_DIR]
+
+options:
+  -h, --help           show this help message and exit
+  --db-path DB_PATH    Path to database file
+  -q, --quiet          Suppress informational prints
+  --no-color           Disable ANSI color formatting
+  --json               Output response in structured JSON format
+  --status STATUS      Filter items by quarantine status (e.g. STAGED,
+                       QUARANTINED, IN_INSPECTION, RELEASED,
+                       DEAD_LETTER_QUEUE)
+  --base-dir BASE_DIR  Filter items by base directory
+</code></pre></div>
+<h6 id="quarantine-inspect"><code>quarantine inspect</code></h6>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter quarantine inspect [-h] [--db-path DB_PATH] [-q]
+                                           [--no-color] [--json]
+                                           [--job-id JOB_ID]
+                                           [JOB_ID]
+
+positional arguments:
+  JOB_ID             Quarantine job ID
+
+options:
+  -h, --help         show this help message and exit
+  --db-path DB_PATH  Path to database file
+  -q, --quiet        Suppress informational prints
+  --no-color         Disable ANSI color formatting
+  --json             Output response in structured JSON format
+  --job-id JOB_ID    Quarantine job ID
+</code></pre></div>
+<h6 id="quarantine-process"><code>quarantine process</code></h6>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter quarantine process [-h] [--db-path DB_PATH] [-q]
+                                           [--no-color] [--json]
+                                           [--job-id JOB_ID]
+                                           [--job-ids JOB_IDS]
+                                           [--timeout TIMEOUT]
+                                           [JOB_ID ...]
+
+positional arguments:
+  JOB_ID             Quarantine job ID(s)
+
+options:
+  -h, --help         show this help message and exit
+  --db-path DB_PATH  Path to database file
+  -q, --quiet        Suppress informational prints
+  --no-color         Disable ANSI color formatting
+  --json             Output response in structured JSON format
+  --job-id JOB_ID    Quarantine job ID
+  --job-ids JOB_IDS  Comma-separated list of quarantine job IDs
+  --timeout TIMEOUT  Forensic scan timeout in seconds (default 300.0)
+</code></pre></div>
+<h6 id="quarantine-release"><code>quarantine release</code></h6>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter quarantine release [-h] [--db-path DB_PATH] [-q]
+                                           [--no-color] [--json]
+                                           [--job-id JOB_ID]
+                                           [--job-ids JOB_IDS]
+                                           [--dest-dir DEST_DIR]
+                                           [--conflict-policy {rename,skip,overwrite}]
+                                           [--allow-external-dest]
+                                           [JOB_ID ...]
+
+positional arguments:
+  JOB_ID                Quarantine job ID(s)
+
+options:
+  -h, --help            show this help message and exit
+  --db-path DB_PATH     Path to database file
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --job-id JOB_ID       Quarantine job ID
+  --job-ids JOB_IDS     Comma-separated list of quarantine job IDs
+  --dest-dir DEST_DIR   Target destination directory for released file
+  --conflict-policy {rename,skip,overwrite}
+                        Conflict resolution policy when destination file
+                        exists (rename, skip, overwrite; default: rename)
+  --allow-external-dest
+                        Allow release destination outside base directory
+                        boundary
+</code></pre></div>
+<h6 id="quarantine-dismiss"><code>quarantine dismiss</code></h6>
+<div class="highlight"><pre><span></span><code>usage: smart-autosorter quarantine dismiss [-h] [--db-path DB_PATH] [-q]
+                                           [--no-color] [--json]
+                                           [--job-id JOB_ID]
+                                           [--job-ids JOB_IDS]
+                                           [JOB_ID ...]
+
+positional arguments:
+  JOB_ID             Quarantine job ID(s)
+
+options:
+  -h, --help         show this help message and exit
+  --db-path DB_PATH  Path to database file
+  -q, --quiet        Suppress informational prints
+  --no-color         Disable ANSI color formatting
+  --json             Output response in structured JSON format
+  --job-id JOB_ID    Quarantine job ID
+  --job-ids JOB_IDS  Comma-separated list of quarantine job IDs
+</code></pre></div>
+<h3 id="sandbox_clipy"><code>sandbox_cli.py</code></h3>
+<p>CLI tool for testing ML extraction and analysis in an isolated sandbox environment.</p>
+<h4 id="usage">Usage</h4>
+<div class="highlight"><pre><span></span><code>usage: sandbox_cli.py [-h] [-q] [--no-color] [--tui] [--interactive]
+                      {reset,extract,analyze} ...
+
+Sandbox CLI Tool for ML Accuracy Verification
+
+positional arguments:
+  {reset,extract,analyze}
+                        Available commands
+    reset               Reset the sandbox dataset to its golden state
+    extract             Extract text from a specific sandbox file
+    analyze             Run the analysis pipeline on all sandbox files
+
+options:
+  -h, --help            show this help message and exit
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color output
+  --tui                 Launch full-screen Textual TUI mode on sandbox dataset
+  --interactive         Launch full-screen interactive TUI mode on sandbox
+                        dataset
+</code></pre></div>
+<h3 id="scriptsprepare_offlinepy"><code>scripts/prepare_offline.py</code></h3>
+<p>Utility script to prepare an offline deployment bundle.</p>
+<p>Vulnerability database and package index endpoints used for dependency auditing:
+- https://pypi.org
+- https://api.osv.dev
+- https://api.github.com/advisories</p>
+<h3 id="scriptsinstall_offlinepy"><code>scripts/install_offline.py</code></h3>
+<p>Offline installation and verification script.</p>
+
+
+
+
+
+
+
+
+
+
+
+
+                
+              </article>
+            </div>
+          
+          
+<script>var target=document.getElementById(location.hash.slice(1));target&&target.name&&(target.checked=target.name.startsWith("__tabbed_"))</script>
+        </div>
+        
+      </main>
+      
+        <footer class="md-footer">
+  
+  <div class="md-footer-meta md-typeset">
+    <div class="md-footer-meta__inner md-grid">
+      <div class="md-copyright">
+  
+  
+    Made with
+    <a href="https://squidfunk.github.io/mkdocs-material/" target="_blank" rel="noopener">
+      Material for MkDocs
+    </a>
+  
+</div>
+      
+    </div>
+  </div>
+</footer>
+      
+    </div>
+    <div class="md-dialog" data-md-component="dialog">
+      <div class="md-dialog__inner md-typeset"></div>
+    </div>
+    
+    
+    
+      
+      
+      <script id="__config" type="application/json">{"annotate": null, "base": "..", "features": [], "search": "../assets/javascripts/workers/search.a7633da7.min.js", "tags": null, "translations": {"clipboard.copied": "Copied to clipboard", "clipboard.copy": "Copy to clipboard", "search.result.more.one": "1 more on this page", "search.result.more.other": "# more on this page", "search.result.none": "No matching documents", "search.result.one": "1 matching document", "search.result.other": "# matching documents", "search.result.placeholder": "Type to start searching", "search.result.term.missing": "Missing", "select.version": "Select version"}, "version": null}</script>
+    
+    
+      <script src="../assets/javascripts/bundle.a5f9d56c.min.js"></script>
+      
+    
+  </body>
+</html>
