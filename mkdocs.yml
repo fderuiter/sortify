@@ -1,4 +1,5 @@
 site_name: Smart AutoSorter AI Pro API
+site_url: https://fderuiter.github.io/sortify/
 theme:
   name: material
 
@@ -24,6 +25,7 @@ plugins:
             show_root_heading: true
 
 nav:
+  - Home: index.md
   - User Guide: user_guide.md
   - Keyboard Shortcuts: keyboard_shortcuts.md
   - Administrator Guide: admin_guide.md
