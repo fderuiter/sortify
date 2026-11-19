@@ -10,6 +10,7 @@ Local, offline-first Python 3.12 file sorter (`smart-autosorter`). Read `CONTEXT
 - Lint and format: `uv run ruff check` and `uv run ruff format`.
 - Type check: `uv run ty check`.
 - Dependency audit: `uv run deptry .`.
+- Vulnerability remediation: `uv run python scripts/remediate_vulnerabilities.py --stage-dir <dir>` (stage validated lockfiles and `remediation_manifest.json` read-only) and `uv run python scripts/remediate_vulnerabilities.py --publish-from <dir>` (publish signed PRs and issue alerts).
 - Architecture and import validation: `uv run python scripts/validate_architecture.py` and `uv run python scripts/validate_imports.py`.
 - Hooks: `uv run pre-commit install`; they run ruff, secret detection (gitleaks), workflow linting (actionlint), plus the repo validators in `scripts/`.
 

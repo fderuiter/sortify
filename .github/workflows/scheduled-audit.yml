@@ -6,25 +6,20 @@ on:
   workflow_dispatch:
 
 permissions:
-  contents: write
-  pull-requests: write
-  issues: write
+  contents: read
 
 jobs:
-  scheduled-vulnerability-audit:
-    name: Scheduled Vulnerability Audit
+  audit-and-stage:
+    name: Audit and Stage Vulnerability Patches
     runs-on: ubuntu-latest
-    timeout-minutes: 15
+    timeout-minutes: 45
+    permissions:
+      contents: read
     steps:
       - name: Checkout repository
         uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
         with:
           persist-credentials: false
-
-      - name: Configure Git Author
-        run: |
-          git config --global user.name "github-actions[bot]"
-          git config --global user.email "github-actions[bot]@users.noreply.github.com"
 
       - name: Install uv
         uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
@@ -39,85 +34,73 @@ jobs:
 
       - name: Install dependencies
         run: |
-          uv sync --frozen --all-groups
+          uv sync --frozen --group dev
 
-      - name: Run Dependency Audit & CVE Patch Generator
-        id: audit
+      - name: Run Dependency Audit and Stage Patches
         env:
           GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
           GITHUB_REPOSITORY: ${{ github.repository }}
           PYTHON_KEYRING_BACKEND: keyring.backends.fail.Keyring
         run: |
-          set +e
-          uv run python scripts/remediate_vulnerabilities.py 2>&1 | tee audit_report.txt
-          EXIT_CODE=${PIPESTATUS[0]}
-          if [ "$EXIT_CODE" -ne 0 ]; then
-            echo "Vulnerabilities detected by uv audit."
-            exit "$EXIT_CODE"
-          fi
+          uv run python scripts/remediate_vulnerabilities.py --stage-dir remediation-stage
 
-      - name: Report Security Vulnerabilities
-        if: failure() && steps.audit.outcome == 'failure'
-        uses: actions/github-script@3a2844b7e9c422d3c10d287c895573f7108da1b3 # v9.0.0
+      - name: Upload Staged Remediation Artifact
+        if: always()
+        uses: actions/upload-artifact@cf430e030ddbb5b0abf93d22962f4752f3646cd9 # v7.0.2
         with:
-          github-token: ${{ secrets.GITHUB_TOKEN }}
-          script: |
-            const fs = require('fs');
-            let report = '';
-            if (fs.existsSync('audit_report.txt')) {
-              report = fs.readFileSync('audit_report.txt', 'utf8').trim();
-            } else {
-              report = 'No audit report output captured.';
-            }
+          name: remediation-stage
+          path: remediation-stage/
+          if-no-files-found: ignore
+          retention-days: 7
 
-            const issueTitle = '[Security] Automated Dependency Audit Failure';
-            const reportLower = report.toLowerCase();
-            let labels = ['security'];
-            let reviewerMention = '';
+  publish-remediation:
+    name: Publish Staged Remediation PRs and Alerts
+    needs: [audit-and-stage]
+    if: always()
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+    steps:
+      - name: Checkout repository
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
 
-            if (reportLower.includes('critical')) {
-              labels.push('severity:critical', 'priority:urgent');
-              reviewerMention = '\n\n**Attention Maintainers:** @fderuiter/security-team @fderuiter/maintainers';
-            } else if (reportLower.includes('high')) {
-              labels.push('severity:high', 'priority:urgent');
-              reviewerMention = '\n\n**Attention Maintainers:** @fderuiter/security-team @fderuiter/maintainers';
-            } else if (reportLower.includes('low')) {
-              labels.push('severity:low');
-            } else {
-              labels.push('severity:medium');
-            }
+      - name: Install uv
+        uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3
+        with:
+          version: "0.13.1"
+          enable-cache: true
 
-            const { data: openIssues } = await github.rest.issues.listForRepo({
-              owner: context.repo.owner,
-              repo: context.repo.repo,
-              state: 'open',
-              labels: 'security',
-            });
+      - name: Set up Python
+        uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
+        with:
+          python-version: "3.12"
 
-            const existingIssue = openIssues.find(issue =>
-              issue.title === issueTitle ||
-              issue.title.includes('Automated Dependency Audit Failure') ||
-              issue.title.includes('Automated Vulnerability Audit Alert')
-            );
+      - name: Install dependencies
+        run: |
+          uv sync --frozen --group dev
 
-            const body = `## ⚠️ Security Vulnerability Audit Failure Alert\n\nThe scheduled automated vulnerability audit detected one or more unexempted security vulnerabilities in production dependencies (\`uv.lock\`).${reviewerMention}\n\n### Audit Report Details\n\n\`\`\`text\n${report}\n\`\`\`\n\n---\n*Last audited at: ${new Date().toUTCString()}*\n*Triggered by scheduled workflow run: [Run Details](${context.serverUrl}/${context.repo.owner}/${context.repo.repo}/actions/runs/${context.runId})*\n`;
+      - name: Download Staged Remediation Artifact
+        continue-on-error: true
+        uses: actions/download-artifact@9000827ccba6bdab643e8b6fd33ac0654aef8333 # v8.0.2
+        with:
+          name: remediation-stage
+          path: remediation-stage
 
-            if (existingIssue) {
-              console.log(`Updating existing open security issue #${existingIssue.number}`);
-              await github.rest.issues.update({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                issue_number: existingIssue.number,
-                body: body,
-                labels: labels,
-              });
-            } else {
-              console.log('Creating new security issue');
-              await github.rest.issues.create({
-                owner: context.repo.owner,
-                repo: context.repo.repo,
-                title: issueTitle,
-                body: body,
-                labels: labels,
-              });
-            }
+      - name: Publish Signed Security PRs and Triage Alerts
+        env:
+          REMEDIATION_APP_ID: ${{ secrets.REMEDIATION_APP_ID }}
+          REMEDIATION_APP_PRIVATE_KEY: ${{ secrets.REMEDIATION_APP_PRIVATE_KEY }}
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_REPOSITORY: ${{ github.repository }}
+          AUDIT_JOB_STATUS: ${{ needs.audit-and-stage.result }}
+          PYTHON_KEYRING_BACKEND: keyring.backends.fail.Keyring
+        run: |
+          uv run --no-sync python scripts/remediate_vulnerabilities.py \
+            --publish-from remediation-stage \
+            --audit-job-status "$AUDIT_JOB_STATUS" \
+            --require-app-token
