@@ -85,3 +85,43 @@ def test_checkouts_do_not_persist_credentials(path):
                 assert persist is False, (
                     f"{path.name}: {job_name} checks out with persisted credentials"
                 )
+
+
+def test_scheduled_audit_splits_readonly_staging_from_app_publish():
+    """scheduled-audit.yml must isolate untrusted package test execution from write/App credentials."""
+    path = Path(".github/workflows/scheduled-audit.yml")
+    raw_text = path.read_text(encoding="utf-8")
+    workflow = yaml.safe_load(raw_text)
+
+    assert workflow.get("permissions") == {"contents": "read"}
+    assert "@fderuiter/security-team" not in raw_text
+    assert "@fderuiter/maintainers" not in raw_text
+    assert "reportLower.includes" not in raw_text
+
+    jobs = workflow.get("jobs") or {}
+    assert "audit-and-stage" in jobs
+    assert "publish-remediation" in jobs
+
+    stage_job = jobs["audit-and-stage"]
+    assert stage_job.get("permissions") == {"contents": "read"}
+    assert stage_job.get("timeout-minutes") == 45
+
+    stage_job_dump = yaml.safe_dump(stage_job)
+    assert "REMEDIATION_APP_PRIVATE_KEY" not in stage_job_dump
+    assert "REMEDIATION_APP_ID" not in stage_job_dump
+    assert "--group dev" in stage_job_dump
+    assert "--stage-dir" in stage_job_dump
+
+    publish_job = jobs["publish-remediation"]
+    assert publish_job.get("needs") == ["audit-and-stage"]
+    assert publish_job.get("if") == "always()"
+    assert publish_job.get("timeout-minutes") == 15
+    assert publish_job.get("permissions") == {
+        "contents": "write",
+        "pull-requests": "write",
+        "issues": "write",
+    }
+    publish_job_dump = yaml.safe_dump(publish_job)
+    assert "--publish-from" in publish_job_dump
+    assert "REMEDIATION_APP_ID" in publish_job_dump
+    assert "REMEDIATION_APP_PRIVATE_KEY" in publish_job_dump
