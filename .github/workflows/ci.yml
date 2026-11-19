@@ -178,6 +178,7 @@ jobs:
 
   build-and-test:
     name: Build & Test
+    needs: [security-and-audit, type-check, static-checks]
     strategy:
       # Let every OS finish so a failure on one doesn't hide the others' results.
       fail-fast: false
@@ -358,6 +359,7 @@ jobs:
 
   heavy-tests:
     name: Heavy Tests
+    needs: [security-and-audit, type-check, static-checks]
     runs-on: ubuntu-latest
     timeout-minutes: 60
     steps:
@@ -389,12 +391,11 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --frozen --all-groups
+        uv sync --frozen --all-groups --extra ml
 
     - name: Heavy ML and Integration Tests
       shell: bash
       run: |
-        uv sync --frozen --all-groups --extra ml
         if ! uv run pytest -m "slow" -n auto --cov --cov-report=term tests/; then
           if [ -f pytest_failures.txt ]; then
             echo "=== PYTEST FAILURES ==="
@@ -407,6 +408,7 @@ jobs:
 
   verify-offline-bundle:
     name: Verify Offline Bundle
+    needs: [security-and-audit, type-check, static-checks]
     runs-on: ubuntu-latest
     timeout-minutes: 45
     steps:
