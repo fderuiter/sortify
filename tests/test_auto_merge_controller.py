@@ -2,9 +2,12 @@
 
 from __future__ import annotations
 
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
+import requests
+import yaml
 
 from scripts.auto_merge_controller import (
     AutoMergeAction,
@@ -12,6 +15,7 @@ from scripts.auto_merge_controller import (
     GitHubClient,
     automerge_label_applied_by_maintainer,
     build_pr_metadata,
+    is_base_repo_branch,
     is_pr_eligible_for_automerge,
     main,
     parse_args,
@@ -95,7 +99,15 @@ def test_process_queue_merges_eligible_pr():
         "title": "docs: fix typo",
         "draft": False,
         "state": "open",
-        "head": {"sha": "sha12345"},
+        "head": {
+            "sha": "sha12345",
+            "ref": "docs/fix-typo",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "base": {
+            "ref": "main",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
         "mergeable": True,
         "mergeable_state": "clean",
         "user": {"login": "fderuiter"},
@@ -119,6 +131,7 @@ def test_process_queue_merges_eligible_pr():
         "docs: fix typo (#200)",
         "Auto-merged low-risk PR #200\n\nAuthor: fderuiter",
     )
+    client.dispatch_workflow.assert_called_once_with("ci.yml", "main")
 
 
 def test_process_queue_updates_behind_branch():
@@ -126,16 +139,34 @@ def test_process_queue_updates_behind_branch():
     client.list_open_pull_requests.return_value = [
         {"number": 201, "labels": [{"name": "automerge:eligible"}], "draft": False}
     ]
-    client.get_pull_request.return_value = {
+    behind_pr = {
         "number": 201,
         "title": "fix: minor bug",
         "draft": False,
         "state": "open",
-        "head": {"sha": "sha67890"},
+        "head": {
+            "sha": "sha67890",
+            "ref": "fix/minor-bug",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "base": {
+            "ref": "main",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
         "mergeable": True,
         "mergeable_state": "behind",
         "user": {"login": "stitch"},
     }
+    updated_pr = {
+        **behind_pr,
+        "head": {
+            "sha": "sha_updated_201",
+            "ref": "fix/minor-bug",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "mergeable_state": "blocked",
+    }
+    client.get_pull_request.side_effect = [behind_pr, updated_pr]
     client.get_commit_verification.return_value = {
         "verified": True,
         "reason": "valid",
@@ -143,12 +174,13 @@ def test_process_queue_updates_behind_branch():
     _stub_pr_contents(client, ["docs/guide.md"])
     client.update_branch.return_value = True
 
-    res = process_auto_merge_queue(client)
+    res = process_auto_merge_queue(client, sleep_fn=lambda _: None)
     assert res.action == AutoMergeAction.UPDATED
     assert res.pr_id == 201
     assert res.pr_number == 201
     assert res.pull_request_id == 201
     client.update_branch.assert_called_once_with(201, "sha67890")
+    client.dispatch_workflow.assert_called_once_with("ci.yml", "fix/minor-bug")
     client.merge_pull_request.assert_not_called()
 
 
@@ -191,7 +223,15 @@ def test_process_queue_handles_branch_update_conflict():
         "title": "fix: minor bug",
         "draft": False,
         "state": "open",
-        "head": {"sha": "sha11111"},
+        "head": {
+            "sha": "sha11111",
+            "ref": "fix/conflict-branch",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "base": {
+            "ref": "main",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
         "mergeable": True,
         "mergeable_state": "behind",
         "user": {"login": "jules"},
@@ -209,6 +249,7 @@ def test_process_queue_handles_branch_update_conflict():
     client.add_labels.assert_called_once_with(
         202, ["automerge:conflict", "automerge:blocked"]
     )
+    client.dispatch_workflow.assert_not_called()
     client.merge_pull_request.assert_not_called()
 
 
@@ -759,3 +800,268 @@ def test_process_queue_blocks_security_patch_without_automerge():
     res = process_auto_merge_queue(client)
     assert res.action == AutoMergeAction.NONE
     client.merge_pull_request.assert_not_called()
+
+
+def test_dispatch_workflow_posts_to_github_actions_endpoint():
+    client = GitHubClient("fake_token", "owner", "repo")
+    client._post = MagicMock(return_value={})
+
+    client.dispatch_workflow("ci.yml", "main")
+    client._post.assert_called_once_with(
+        "actions/workflows/ci.yml/dispatches",
+        {"ref": "main"},
+    )
+
+    client._post.reset_mock()
+    client.dispatch_workflow("ci.yml", "feat/branch", inputs={"dry_run": "true"})
+    client._post.assert_called_once_with(
+        "actions/workflows/ci.yml/dispatches",
+        {"ref": "feat/branch", "inputs": {"dry_run": "true"}},
+    )
+
+
+def test_is_base_repo_branch_checks_repository_identity():
+    same_repo_pr = {
+        "head": {
+            "ref": "docs/typo",
+            "repo": {"id": 10, "full_name": "fderuiter/sortify"},
+        },
+        "base": {
+            "ref": "main",
+            "repo": {"id": 10, "full_name": "fderuiter/sortify"},
+        },
+    }
+    fork_pr = {
+        "head": {
+            "ref": "docs/typo",
+            "repo": {"id": 99, "full_name": "contributor/sortify", "fork": True},
+        },
+        "base": {
+            "ref": "main",
+            "repo": {"id": 10, "full_name": "fderuiter/sortify"},
+        },
+    }
+    deleted_fork_pr = {
+        "head": {"ref": "docs/typo", "repo": None},
+        "base": {
+            "ref": "main",
+            "repo": {"id": 10, "full_name": "fderuiter/sortify"},
+        },
+    }
+    assert is_base_repo_branch(same_repo_pr) is True
+    assert is_base_repo_branch(fork_pr) is False
+    assert is_base_repo_branch(deleted_fork_pr) is False
+    assert is_base_repo_branch({"head": {"sha": "abc"}}) is False
+
+
+def test_process_queue_skips_behind_fork_branch_and_merges_next_eligible_pr():
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 600, "labels": [{"name": "automerge:eligible"}], "draft": False},
+        {"number": 601, "labels": [{"name": "automerge:eligible"}], "draft": False},
+    ]
+    fork_behind_pr = {
+        "number": 600,
+        "title": "docs: fork typo fix",
+        "draft": False,
+        "state": "open",
+        "head": {
+            "sha": "sha_fork_600",
+            "ref": "patch-1",
+            "repo": {"id": 99, "full_name": "contributor/sortify", "fork": True},
+        },
+        "base": {
+            "ref": "main",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "mergeable": True,
+        "mergeable_state": "behind",
+        "user": {"login": "contributor"},
+    }
+    in_repo_clean_pr = {
+        "number": 601,
+        "title": "docs: in-repo update",
+        "draft": False,
+        "state": "open",
+        "head": {
+            "sha": "sha_clean_601",
+            "ref": "docs/in-repo",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "base": {
+            "ref": "main",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "mergeable": True,
+        "mergeable_state": "clean",
+        "user": {"login": "fderuiter"},
+    }
+    client.get_pull_request.side_effect = [fork_behind_pr, in_repo_clean_pr]
+    client.get_commit_verification.return_value = {
+        "verified": True,
+        "reason": "valid",
+    }
+    _stub_pr_contents(client, ["docs/guide.md"])
+    client.get_required_ci_conclusion.return_value = "success"
+    client.merge_pull_request.return_value = True
+
+    res = process_auto_merge_queue(client)
+    assert res.action == AutoMergeAction.MERGED
+    assert res.pr_id == 601
+    client.update_branch.assert_not_called()
+    client.add_labels.assert_not_called()
+    client.dispatch_workflow.assert_called_once_with("ci.yml", "main")
+
+
+def test_process_queue_polls_until_new_head_sha_before_dispatching_ci():
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 602, "labels": [{"name": "automerge:eligible"}], "draft": False}
+    ]
+    behind_pr = {
+        "number": 602,
+        "title": "docs: stale in-repo branch",
+        "draft": False,
+        "state": "open",
+        "head": {
+            "sha": "sha_old_602",
+            "ref": "docs/stale-branch",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "base": {
+            "ref": "main",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "mergeable": True,
+        "mergeable_state": "behind",
+        "user": {"login": "stitch"},
+    }
+    updated_pr = {
+        **behind_pr,
+        "head": {
+            "sha": "sha_new_602",
+            "ref": "docs/stale-branch",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "mergeable_state": "blocked",
+    }
+    # Initial fetch, transient poll error, old SHA, then updated SHA
+    client.get_pull_request.side_effect = [
+        behind_pr,
+        requests.ConnectionError("transient"),
+        behind_pr,
+        updated_pr,
+    ]
+    client.get_commit_verification.return_value = {"verified": True}
+    _stub_pr_contents(client, ["docs/guide.md"])
+    client.update_branch.return_value = True
+
+    sleeps: list[float] = []
+    res = process_auto_merge_queue(client, sleep_fn=sleeps.append)
+    assert res.action == AutoMergeAction.UPDATED
+    assert res.pr_id == 602
+    assert len(sleeps) == 2
+    client.dispatch_workflow.assert_called_once_with("ci.yml", "docs/stale-branch")
+
+
+def test_process_queue_skips_ci_dispatch_when_head_sha_does_not_advance(caplog):
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 603, "labels": [{"name": "automerge:eligible"}], "draft": False}
+    ]
+    behind_pr = {
+        "number": 603,
+        "title": "docs: stalled branch update",
+        "draft": False,
+        "state": "open",
+        "head": {
+            "sha": "sha_stalled_603",
+            "ref": "docs/stalled",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "base": {
+            "ref": "main",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "mergeable": True,
+        "mergeable_state": "behind",
+        "user": {"login": "stitch"},
+    }
+    client.get_pull_request.return_value = behind_pr
+    client.get_commit_verification.return_value = {"verified": True}
+    _stub_pr_contents(client, ["docs/guide.md"])
+    client.update_branch.return_value = True
+
+    res = process_auto_merge_queue(client, sleep_fn=lambda _: None)
+    assert res.action == AutoMergeAction.UPDATED
+    assert res.pr_id == 603
+    client.dispatch_workflow.assert_not_called()
+    assert "did not advance" in caplog.text
+
+
+def test_process_queue_logs_transient_post_merge_dispatch_error_without_failing(caplog):
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 604, "labels": [{"name": "automerge:eligible"}], "draft": False}
+    ]
+    client.get_pull_request.return_value = {
+        "number": 604,
+        "title": "docs: merge despite transient dispatch error",
+        "draft": False,
+        "state": "open",
+        "head": {
+            "sha": "sha_merge_604",
+            "ref": "docs/merge-604",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "base": {
+            "ref": "main",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "mergeable": True,
+        "mergeable_state": "clean",
+        "user": {"login": "fderuiter"},
+    }
+    client.get_commit_verification.return_value = {"verified": True}
+    _stub_pr_contents(client, ["docs/guide.md"])
+    client.get_required_ci_conclusion.return_value = "success"
+    client.merge_pull_request.return_value = True
+    client.dispatch_workflow.side_effect = requests.HTTPError("503 Service Unavailable")
+
+    res = process_auto_merge_queue(client)
+    assert res.action == AutoMergeAction.MERGED
+    assert res.pr_id == 604
+    client.dispatch_workflow.assert_called_once_with("ci.yml", "main")
+    assert "failed to dispatch 'ci.yml' on 'main'" in caplog.text
+
+
+def test_auto_merge_controller_workflow_uses_job_level_concurrency_and_permissions():
+    workflow_path = (
+        Path(__file__).resolve().parents[1]
+        / ".github"
+        / "workflows"
+        / "auto-merge-controller.yml"
+    )
+    workflow = yaml.safe_load(workflow_path.read_text(encoding="utf-8"))
+
+    assert "concurrency" not in workflow, (
+        "auto-merge-controller.yml must not declare workflow-level concurrency"
+    )
+    assert workflow.get("permissions") == {"contents": "read"}
+
+    job = workflow["jobs"]["auto-merge"]
+    job_keys = list(job.keys())
+    assert "if" in job_keys and "concurrency" in job_keys
+    assert job_keys.index("concurrency") > job_keys.index("if")
+    assert job["concurrency"] == {
+        "group": "auto-merge-controller",
+        "cancel-in-progress": False,
+    }
+    assert job["permissions"] == {
+        "contents": "write",
+        "pull-requests": "write",
+        "issues": "write",
+        "actions": "write",
+        "checks": "read",
+        "statuses": "read",
+    }

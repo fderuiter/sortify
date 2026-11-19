@@ -9,14 +9,7 @@ on:
     - cron: '*/15 * * * *'
 
 permissions:
-  contents: write
-  pull-requests: write
-  statuses: read
-  checks: read
-
-concurrency:
-  group: auto-merge-controller
-  cancel-in-progress: true
+  contents: read
 
 jobs:
   auto-merge:
@@ -24,6 +17,16 @@ jobs:
     runs-on: ubuntu-latest
     timeout-minutes: 15
     if: ${{ github.event_name != 'workflow_run' || github.event.workflow_run.conclusion == 'success' }}
+    concurrency:
+      group: auto-merge-controller
+      cancel-in-progress: false
+    permissions:
+      contents: write
+      pull-requests: write
+      issues: write
+      actions: write
+      checks: read
+      statuses: read
     steps:
       # Runs the default branch's controller; never PR code.
       - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
