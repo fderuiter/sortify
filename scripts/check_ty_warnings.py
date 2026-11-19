@@ -10,7 +10,7 @@ zero warnings and enforces shrink-only per-file ceilings from
 - Any configured ceiling above its file's actual warning count fails so
   resolved warnings ratify a lower (or removed) ceiling immediately.
 
-Usage: uv run python scripts/check_ty_warnings.py [ty_report.json] [--github-annotations]
+Usage: uv run python scripts/check_ty_warnings.py [ty_report.json] [--platform PLATFORM] [--github-annotations]
 """
 
 import argparse
@@ -125,22 +125,29 @@ def check(
     return failures
 
 
-def _ty_command() -> list[str]:
+def _ty_command(platform: str | None = None) -> list[str]:
     venv_ty = Path(sys.executable).resolve().parent / (
         "ty.exe" if sys.platform == "win32" else "ty"
     )
     if venv_ty.is_file():
-        return [str(venv_ty), "check", "--output-format", "gitlab"]
-    which_ty = shutil.which("ty")
-    if which_ty:
-        return [which_ty, "check", "--output-format", "gitlab"]
-    return [sys.executable, "-m", "ty", "check", "--output-format", "gitlab"]
+        cmd = [str(venv_ty), "check", "--output-format", "gitlab"]
+    else:
+        which_ty = shutil.which("ty")
+        if which_ty:
+            cmd = [which_ty, "check", "--output-format", "gitlab"]
+        else:
+            cmd = [sys.executable, "-m", "ty", "check", "--output-format", "gitlab"]
+    if platform:
+        cmd.extend(["--platform", platform])
+    return cmd
 
 
-def run_ty_report(repo_root: Path) -> tuple[int, list[dict[str, Any]] | None, str]:
+def run_ty_report(
+    repo_root: Path, *, platform: str | None = None
+) -> tuple[int, list[dict[str, Any]] | None, str]:
     """Execute ty check in GitLab JSON format and parse the diagnostic list."""
     res = subprocess.run(
-        _ty_command(),
+        _ty_command(platform=platform),
         cwd=repo_root,
         capture_output=True,
         text=True,
@@ -201,6 +208,11 @@ def main(argv: list[str] | None = None, *, repo_root: Path | None = None) -> int
         help="Optional path to pre-generated ty GitLab JSON report",
     )
     parser.add_argument(
+        "--platform",
+        default=None,
+        help="Optional target platform passed to ty check (e.g. linux, darwin, win32)",
+    )
+    parser.add_argument(
         "--github-annotations",
         action="store_true",
         help="Emit GitHub Actions ::error workflow annotations on failure",
@@ -245,7 +257,7 @@ def main(argv: list[str] | None = None, *, repo_root: Path | None = None) -> int
             report = json.load(fh)
         check_root: Path | None = repo_root
     else:
-        ty_exit, maybe_report, err_text = run_ty_report(root)
+        ty_exit, maybe_report, err_text = run_ty_report(root, platform=args.platform)
         if maybe_report is None:
             print(f"Error running ty check: {err_text}", file=sys.stderr)
             return 1

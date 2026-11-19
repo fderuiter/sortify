@@ -89,7 +89,9 @@ jobs:
 
     - name: Enforce ty Warning Ceilings
       run: |
-        uv run python scripts/check_ty_warnings.py --github-annotations
+        for platform in linux darwin win32; do
+          uv run python scripts/check_ty_warnings.py --platform "$platform" --github-annotations
+        done
 
   static-checks:
     name: Static Checks

@@ -129,6 +129,36 @@ def test_sort_subcommand_live_execution():
 
 
 @pytest.mark.xdist_group(name="cli_subcommands")
+def test_sort_subcommand_live_execution_high_entropy_tmpdir(tmp_path):
+    """Regression test: sort --dest-dir succeeds when TMPDIR contains macOS-style high-entropy segments."""
+    macos_tmp = (
+        tmp_path / "var" / "folders" / "24" / "8k48jl6d249rn9qfxwsl6xvm0000gn" / "T"
+    )
+    src_dir = macos_tmp / "src"
+    dest_dir = macos_tmp / "dest"
+    src_dir.mkdir(parents=True)
+    dest_dir.mkdir(parents=True)
+    create_sample_corpus(src_dir)
+
+    code, stdout, stderr = run_cli(
+        [
+            "sort",
+            str(src_dir),
+            "--json",
+            "--dest-dir",
+            str(dest_dir),
+        ]
+    )
+
+    assert code == 0, (
+        f"Expected 0 exit code, got {code}. Stdout: {stdout} Stderr: {stderr}"
+    )
+    data = json.loads(stdout)
+    assert data["status"] == "success"
+    assert data["dry_run"] is False
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
 def test_scan_subcommand_json():
     """Test scan subcommand with --json output and jq pipeline style structure."""
     with tempfile.TemporaryDirectory() as src_dir:

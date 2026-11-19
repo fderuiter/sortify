@@ -488,6 +488,10 @@ def test_type_check_job_installs_all_groups_emits_annotations_and_enforces_ratch
     assert ratchet_step is not None, (
         "Missing 'scripts/check_ty_warnings.py' step in type-check"
     )
+    for platform in ("linux", "darwin", "win32"):
+        assert platform in ratchet_step.get("run", ""), (
+            f"Expected type-check ratchet step to check platform {platform!r}"
+        )
 
     assert steps.index(sync_step) < steps.index(ty_step) < steps.index(ratchet_step)
 
