@@ -982,6 +982,53 @@ def validate_mermaid_diagrams():
     return errors
 
 
+def validate_mkdocs_site(site_dir="site"):
+    """Validate built MkDocs site artifacts (non-empty index.html and populated sitemap.xml)."""
+    from defusedxml import ElementTree as ET
+
+    site_path = Path(site_dir)
+    errors = []
+
+    index_path = site_path / "index.html"
+    if not index_path.is_file():
+        errors.append(f"Missing MkDocs root page: {index_path.as_posix()}")
+    else:
+        try:
+            index_content = index_path.read_text(encoding="utf-8")
+        except Exception as exc:
+            errors.append(
+                f"Could not read MkDocs root page {index_path.as_posix()}: {exc}"
+            )
+        else:
+            if not index_content.strip():
+                errors.append(f"Empty MkDocs root page: {index_path.as_posix()}")
+
+    sitemap_path = site_path / "sitemap.xml"
+    if not sitemap_path.is_file():
+        errors.append(f"Missing MkDocs sitemap: {sitemap_path.as_posix()}")
+    else:
+        try:
+            sitemap_content = sitemap_path.read_text(encoding="utf-8")
+            root = ET.fromstring(sitemap_content)
+        except Exception as exc:
+            errors.append(
+                f"Invalid XML in MkDocs sitemap {sitemap_path.as_posix()}: {exc}"
+            )
+        else:
+            loc_entries = [
+                (elem.text or "").strip()
+                for elem in root.iter()
+                if (elem.tag == "loc" or elem.tag.endswith("}loc"))
+                and (elem.text or "").strip()
+            ]
+            if not loc_entries:
+                errors.append(
+                    f"MkDocs sitemap contains no <loc> entries: {sitemap_path.as_posix()}"
+                )
+
+    return errors
+
+
 def main():
     """Execute the unified documentation generation and validation pipeline."""
     os.chdir(REPO_ROOT)
@@ -1137,6 +1184,16 @@ def main():
                     f"Error: MkDocs build failed with exit code {result.returncode}\n"
                 )
                 sys.exit(result.returncode)
+                return
+
+            site_validation_errors = validate_mkdocs_site()
+            if site_validation_errors:
+                sys.stderr.write(
+                    "\nError: MkDocs site validation failed with the following issues:\n"
+                )
+                for err in site_validation_errors:
+                    sys.stderr.write(f"  - {err}\n")
+                sys.exit(1)
                 return
     else:
         print("Skipping MkDocs build (--no-build).")

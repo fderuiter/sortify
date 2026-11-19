@@ -16,6 +16,7 @@ from scripts.generate_docs import (
     main,
     update_security_md,
     validate_mermaid_diagrams,
+    validate_mkdocs_site,
     validate_security_policy,
 )
 
@@ -317,6 +318,9 @@ def test_main_strict_flag():
             patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
             patch("scripts.generate_docs.update_security_md") as mock_sec,
             patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch(
+                "scripts.generate_docs.validate_mkdocs_site", return_value=[]
+            ) as mock_val_site,
             patch("subprocess.run") as mock_run,
             patch.dict("sys.modules", {"mkdocs": MagicMock()}),
         ):
@@ -337,6 +341,7 @@ def test_main_strict_flag():
             args, kwargs = mock_run.call_args
             cmd = args[0]
             assert "--strict" not in cmd
+            mock_val_site.assert_called_once_with()
 
 
 def test_main_default_strict():
@@ -350,6 +355,9 @@ def test_main_default_strict():
             patch("scripts.generate_docs.generate_admin_guide") as mock_admin,
             patch("scripts.generate_docs.update_security_md") as mock_sec,
             patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch(
+                "scripts.generate_docs.validate_mkdocs_site", return_value=[]
+            ) as mock_val_site,
             patch("subprocess.run") as mock_run,
             patch.dict("sys.modules", {"mkdocs": MagicMock()}),
         ):
@@ -363,6 +371,148 @@ def test_main_default_strict():
             args, kwargs = mock_run.call_args
             cmd = args[0]
             assert "--strict" in cmd
+            mock_val_site.assert_called_once_with()
+
+
+def test_main_exits_nonzero_when_mkdocs_site_validation_fails(capsys):
+    """Verify main() exits with code 1 when validate_mkdocs_site reports invalid artifacts."""
+    with patch("sys.argv", ["generate_docs.py"]):
+        with (
+            patch("scripts.generate_docs.compile_diagram_assets"),
+            patch("scripts.generate_docs.generate_tutorial_docs"),
+            patch("scripts.generate_docs.generate_api_docs"),
+            patch("scripts.generate_docs.generate_ui_docs"),
+            patch("scripts.generate_docs.generate_admin_guide"),
+            patch("scripts.generate_docs.generate_keyboard_docs"),
+            patch("scripts.generate_docs.update_security_md"),
+            patch("scripts.generate_docs.sync_config_schema"),
+            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch(
+                "scripts.generate_docs.validate_mkdocs_site",
+                return_value=["Missing MkDocs root page: site/index.html"],
+            ),
+            patch("subprocess.run", return_value=MagicMock(returncode=0)),
+            patch.dict("sys.modules", {"mkdocs": MagicMock()}),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 1
+            captured = capsys.readouterr()
+            assert "MkDocs site validation failed" in captured.err
+            assert "Missing MkDocs root page: site/index.html" in captured.err
+
+
+def test_validate_mkdocs_site_valid_and_invalid_directories(tmp_path):
+    """Verify validate_mkdocs_site catches missing/empty index.html and missing/empty sitemap.xml."""
+    # 1. Nonexistent directory
+    missing_dir = tmp_path / "nonexistent_site"
+    errors = validate_mkdocs_site(str(missing_dir))
+    assert any("Missing MkDocs root page" in e for e in errors)
+    assert any("Missing MkDocs sitemap" in e for e in errors)
+
+    # 2. Empty index.html and sitemap.xml with zero <loc> entries
+    empty_site = tmp_path / "empty_site"
+    empty_site.mkdir()
+    (empty_site / "index.html").write_text("   \n", encoding="utf-8")
+    (empty_site / "sitemap.xml").write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9"></urlset>\n',
+        encoding="utf-8",
+    )
+    errors = validate_mkdocs_site(str(empty_site))
+    assert any("Empty MkDocs root page" in e for e in errors)
+    assert any("no <loc> entries" in e for e in errors)
+
+    # 3. Malformed sitemap.xml
+    malformed_site = tmp_path / "malformed_site"
+    malformed_site.mkdir()
+    (malformed_site / "index.html").write_text(
+        "<!doctype html><html><body>Home</body></html>", encoding="utf-8"
+    )
+    (malformed_site / "sitemap.xml").write_text("<urlset><unclosed>", encoding="utf-8")
+    errors = validate_mkdocs_site(str(malformed_site))
+    assert any("Invalid XML in MkDocs sitemap" in e for e in errors)
+
+    # 4. Valid site directory
+    valid_site = tmp_path / "valid_site"
+    valid_site.mkdir()
+    (valid_site / "index.html").write_text(
+        "<!doctype html><html><body><h1>Smart AutoSorter AI Pro</h1></body></html>",
+        encoding="utf-8",
+    )
+    (valid_site / "sitemap.xml").write_text(
+        '<?xml version="1.0" encoding="UTF-8"?>\n'
+        '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">\n'
+        "  <url><loc>https://fderuiter.github.io/sortify/</loc></url>\n"
+        "</urlset>\n",
+        encoding="utf-8",
+    )
+    assert validate_mkdocs_site(str(valid_site)) == []
+
+
+def test_mkdocs_strict_build_generates_index_logo_links_and_sitemap(tmp_path):
+    """Integration test running mkdocs build --strict -d to verify index.html, logo links, and sitemap.xml."""
+    import re
+    import subprocess
+    import sys
+
+    from defusedxml import ElementTree as ET
+
+    pytest.importorskip("mkdocs")
+
+    site_dir = tmp_path / "site"
+    result = subprocess.run(
+        [sys.executable, "-m", "mkdocs", "build", "--strict", "-d", str(site_dir)],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert result.returncode == 0, (
+        f"mkdocs build --strict failed:\nSTDOUT:\n{result.stdout}\nSTDERR:\n{result.stderr}"
+    )
+
+    assert validate_mkdocs_site(str(site_dir)) == []
+
+    # Verify root landing page exists and embeds core architecture diagram
+    root_index = site_dir / "index.html"
+    assert root_index.is_file()
+    index_html = root_index.read_text(encoding="utf-8")
+    assert "Smart AutoSorter AI Pro" in index_html
+    assert "assets/diagrams/core_architecture.svg" in index_html
+
+    # Verify logo links across root and nested pages resolve to site/index.html
+    logo_href_re = re.compile(
+        r'<a[^>]*class="[^"]*\bmd-logo\b[^"]*"[^>]*href="([^"]+)"'
+        r'|<a[^>]*href="([^"]+)"[^>]*class="[^"]*\bmd-logo\b[^"]*"'
+    )
+    pages_to_check = [
+        root_index,
+        site_dir / "user_guide" / "index.html",
+        site_dir / "tutorials" / "01_ml_analyzer_clustering" / "index.html",
+    ]
+    for page_path in pages_to_check:
+        assert page_path.is_file(), f"Expected built page {page_path}"
+        html = page_path.read_text(encoding="utf-8")
+        match = logo_href_re.search(html)
+        assert match is not None, f"Missing md-logo anchor in {page_path}"
+        href = match.group(1) or match.group(2)
+        resolved = (page_path.parent / href).resolve()
+        target_index = resolved / "index.html" if resolved.is_dir() else resolved
+        assert target_index == root_index.resolve(), (
+            f"Logo link '{href}' in {page_path} resolved to {target_index}, expected {root_index.resolve()}"
+        )
+
+    # Verify sitemap.xml has canonical <loc> URLs for root and existing pages
+    sitemap_root = ET.fromstring((site_dir / "sitemap.xml").read_text(encoding="utf-8"))
+    locs = {
+        (elem.text or "").strip()
+        for elem in sitemap_root.iter()
+        if (elem.tag == "loc" or elem.tag.endswith("}loc"))
+        and (elem.text or "").strip()
+    }
+    assert "https://fderuiter.github.io/sortify/" in locs
+    assert "https://fderuiter.github.io/sortify/user_guide/" in locs
+    assert all(url.startswith("https://fderuiter.github.io/sortify/") for url in locs)
 
 
 def test_main_no_build_flag():
