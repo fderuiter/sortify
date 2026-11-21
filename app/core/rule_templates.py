@@ -333,6 +333,7 @@ def export_active_rules(
 
         for idx, pol in enumerate(policies):
             p_type = str(pol.get("type", "keyword")).strip().lower()
+            p_action = str(pol.get("action", "") or "").strip().lower()
             p_expr = str(pol.get("expression", "")).strip()
             p_target = str(pol.get("target_path", "")).strip()
             if not p_expr:
@@ -347,10 +348,16 @@ def export_active_rules(
                 cond_target = "Name"
                 cond_op = "contains"
 
+            hazel_act_type = (
+                "NSRuleActionUnarchive"
+                if (p_action == "unarchive" or p_type == "unarchive")
+                else "NSRuleActionMove"
+            )
+
             rules_list.append(
                 {
                     "NSRuleName": f"Policy {idx + 1}: {p_expr}",
-                    "NSRuleIsEnabled": True,
+                    "NSRuleIsEnabled": bool(pol.get("enabled", True)),
                     "NSRuleConditions": [
                         {
                             "target": cond_target,
@@ -363,7 +370,7 @@ def export_active_rules(
                     ],
                     "NSRuleActions": [
                         {
-                            "NSRuleActionType": "NSRuleActionMove",
+                            "NSRuleActionType": hazel_act_type,
                             "DestinationPath": p_target,
                         }
                     ],
@@ -394,15 +401,22 @@ def export_active_rules(
             assoc_idx += 1
 
         for pol in policies:
+            p_type = str(pol.get("type", "keyword")).strip().lower()
+            p_action = str(pol.get("action", "") or "").strip().lower()
             p_expr = str(pol.get("expression", "")).strip()
             p_target = str(pol.get("target_path", "")).strip()
             if not p_expr:
                 continue
+            dropit_act = (
+                "Extract"
+                if (p_action == "unarchive" or p_type == "unarchive")
+                else "Move"
+            )
             sec_name = f"Association_{assoc_idx}"
             config[sec_name] = {
                 "Name": p_expr,
                 "Rules": p_expr,
-                "Action": "Move",
+                "Action": dropit_act,
                 "Destination": p_target,
             }
             assoc_idx += 1

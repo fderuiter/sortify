@@ -356,7 +356,13 @@ def test_build_parser_factory():
         "quarantine",
         "undo",
         "drop",
+        "rules",
     }
+
+    rules_parser = subparsers_action.choices["rules"]
+    rules_help = rules_parser.format_help()
+    assert "import" in rules_help
+    assert "export" in rules_help
 
     undo_parser = subparsers_action.choices["undo"]
     undo_help = undo_parser.format_help()

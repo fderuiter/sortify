@@ -1650,6 +1650,7 @@ def _main_impl():
         "daemon",
         "ledger",
         "quarantine",
+        "rules",
         "undo",
         "drop",
     )

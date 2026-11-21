@@ -1,11 +1,51 @@
 """Policy Engine module for evaluating compliance policies and validating lock paths."""
 
+import fnmatch
 import os
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict
 
 from app.core.path_utils import validate_target_path
+
+
+def match_pattern_expression(expression: str, filename: str) -> bool:
+    """Evaluate a pattern expression against a filename using wildcards, extension masks, or substring matching.
+
+    Parameters
+    ----------
+    expression : str
+        Pattern rule expression (glob mask such as ``*.pdf``, extension mask such as ``.pdf``,
+        or plain substring text).
+    filename : str
+        File path or basename to test against the pattern expression.
+
+    Returns
+    -------
+    bool
+        True if the filename matches the pattern expression, False otherwise.
+    """
+    if not expression or not filename:
+        return False
+    expr_lower = str(expression).strip().lower()
+    if not expr_lower:
+        return False
+    fn_only = os.path.basename(str(filename)).lower()
+    if not fn_only:
+        return False
+
+    has_wildcard = (
+        "*" in expr_lower
+        or "?" in expr_lower
+        or ("[" in expr_lower and "]" in expr_lower)
+    )
+    if has_wildcard:
+        return fnmatch.fnmatchcase(fn_only, expr_lower)
+
+    if expr_lower.startswith(".") and "/" not in expr_lower and "\\" not in expr_lower:
+        return fnmatch.fnmatchcase(fn_only, f"*{expr_lower}")
+
+    return expr_lower in fn_only
 
 
 class PolicyEvaluationResult(BaseModel):
@@ -93,14 +133,21 @@ class PolicyEngine:
                 file_path
             ) or PolicyEngine.contains_secrets(doc_text_str)
 
-        if rule_type in ("keyword", "action", "compliance", "unarchive", ""):
+        if rule_type == "unarchive":
+            if expression:
+                if match_pattern_expression(expression, fn_only):
+                    return True
+                text_to_search = fn_only if status_match else (fn_only + " " + dl_lower)
+                return expression in text_to_search
+            return bool(rule.get("action"))
+        if rule_type in ("keyword", "action", "compliance", ""):
             if expression:
                 text_to_search = fn_only if status_match else (fn_only + " " + dl_lower)
                 return expression in text_to_search
             # If no expression is given but an action directive exists, match unconditionally
             return bool(rule.get("action"))
         elif rule_type == "pattern":
-            return expression in fn_only
+            return match_pattern_expression(expression, fn_only)
         elif rule_type == "override":
             return (
                 expression == fn_only
@@ -180,13 +227,13 @@ class PolicyEngine:
 
     @staticmethod
     def validate_lock_path_safe(
-        lock_path: Any, file_path: Optional[str] = None
-    ) -> tuple[bool, Optional[str]]:
+        lock_path: Any, file_path: str | None = None
+    ) -> tuple[bool, str | None]:
         """Validate a folder lock path safely without raising exceptions.
 
         Returns
         -------
-            Tuple[bool, Optional[str]]: (is_valid, error_message)
+            tuple[bool, str | None]: (is_valid, error_message)
             (True, None) if valid, (False, error_message) if invalid.
         """
         if not isinstance(lock_path, str):
@@ -200,7 +247,7 @@ class PolicyEngine:
             return False, str(err)
 
     @staticmethod
-    def validate_lock_path(lock_path: str, file_path: Optional[str] = None) -> None:
+    def validate_lock_path(lock_path: str, file_path: str | None = None) -> None:
         """Validate a folder lock path against the established policy schema (path rules).
 
         Raises ValueError if invalid.

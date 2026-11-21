@@ -6,6 +6,7 @@ import os
 
 from app.core.extractor import get_file_hash
 from app.core.extractor_strategies import registry
+from app.core.policy_engine import match_pattern_expression
 from app.core.progress import emit_progress
 
 DEFAULT_EXTENSION_CATEGORIES = {
@@ -188,10 +189,15 @@ class MetadataPass:
                         ):
                             is_match = True
                     elif p_type == "pattern":
-                        if expr_lower in filename_only:
+                        if match_pattern_expression(expr_lower, filename_only):
+                            is_match = True
+                    elif p_type == "unarchive":
+                        if expr_lower and match_pattern_expression(
+                            expr_lower, filename_only
+                        ):
                             is_match = True
                     elif p_type == "keyword":
-                        if expr_lower in filename_only:
+                        if expr_lower and expr_lower in filename_only:
                             is_match = True
 
                     if is_match:

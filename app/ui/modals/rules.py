@@ -3,7 +3,7 @@
 from pathlib import Path
 from typing import Any, Optional
 
-from textual import events, on
+from textual import events, on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -143,7 +143,7 @@ class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                     id="btn-import-rules",
                     variant="primary",
                 )
-                btn_import.tooltip = "Import Hazel (.hazelrules), DropIt XML/JSON, or TagSpaces taggroup.json rule files"
+                btn_import.tooltip = "Import Hazel (.hazelrules/.plist), DropIt (.ini/.xml/.json/.dropit), or TagSpaces (taggroup.json) rule files"
                 yield btn_import
                 btn_export = Button(
                     "Export Rules",
@@ -545,9 +545,18 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
         width: 1fr;
         margin-right: 1;
     }
+    #btn-browse-rule-file {
+        width: auto;
+        min-width: 11;
+        margin-right: 1;
+    }
     #btn-parse-rule-file {
         width: auto;
-        min-width: 14;
+        min-width: 12;
+    }
+    #chk-import-disabled {
+        margin-top: 0;
+        margin-bottom: 0;
     }
     #select-bulk-conflict-strategy {
         width: 1fr;
@@ -595,7 +604,7 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
         min-width: 10;
         margin-left: 1;
     }
-    Button:focus, Input:focus {
+    Button:focus, Input:focus, Checkbox:focus {
         border: heavy $accent;
         text-style: bold;
     }
@@ -607,6 +616,7 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
         self.current_result: Optional[Any] = None
         self.conflicts: list[Any] = []
         self.conflict_resolutions: dict[str, str] = {}
+        self.import_disabled: bool = True
 
     def compose(self) -> ComposeResult:
         """Compose rule import modal children."""
@@ -619,22 +629,37 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
             )
             with Vertical(classes="modal-body"):
                 yield Label(
-                    "Select a Hazel .hazelrules, DropIt XML/JSON profile, or TagSpaces taggroup.json file to import:"
+                    "Select a Hazel (.hazelrules/.plist), DropIt (.ini/.xml/.json/.dropit), TagSpaces (taggroup.json), or Sortify JSON file to import:"
                 )
 
                 with Horizontal(classes="input-row"):
                     yield Input(
-                        placeholder="/path/to/rules.hazelrules, profile.xml/json, or taggroup.json",
+                        placeholder="/path/to/rules.hazelrules, profile.ini/xml/json/dropit, or taggroup.json",
                         id="input-rule-file-path",
                     )
+                    btn_browse = Button(
+                        "Browse...", id="btn-browse-rule-file", variant="default"
+                    )
+                    btn_browse.tooltip = "Select a rule file (.hazelrules, .plist, .ini, .xml, .json, .dropit) using the native file dialog"
+                    yield btn_browse
                     btn_parse = Button(
                         "Parse File", id="btn-parse-rule-file", variant="primary"
                     )
                     btn_parse.tooltip = "Parse selected rule file and display preview"
                     yield btn_parse
 
+                chk_disabled = Checkbox(
+                    "Import new rules disabled for review",
+                    value=True,
+                    id="chk-import-disabled",
+                )
+                chk_disabled.tooltip = (
+                    "Stage newly imported rules disabled until reviewed and enabled"
+                )
+                yield chk_disabled
+
                 yield Label(
-                    "Enter file path and click 'Parse File' to preview extracted rules.",
+                    "Browse or enter a file path and click 'Parse File' to preview extracted rules.",
                     id="lbl-import-status",
                     classes="status-text",
                 )
@@ -725,6 +750,84 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
             return "Skip Conflicting"
         return "Keep Existing"
 
+    @on(Checkbox.Changed, "#chk-import-disabled")
+    def _on_import_disabled_changed(self, event: Checkbox.Changed) -> None:
+        """Toggle whether newly imported rules are staged disabled for review."""
+        self.import_disabled = bool(event.value)
+        mode_text = (
+            "disabled for review" if self.import_disabled else "enabled immediately"
+        )
+        self.announce(f"New imported rules will be staged {mode_text}.")
+
+    @on(Button.Pressed, "#btn-browse-rule-file")
+    def action_browse_file(self) -> None:
+        """Open native OS file picker to select an external rule package."""
+        initial_dir: str | None = None
+        try:
+            raw_val = self.query_one("#input-rule-file-path", Input).value.strip()
+            if raw_val:
+                cand = Path(raw_val).expanduser()
+                parent = cand if cand.is_dir() else cand.parent
+                if parent.exists():
+                    initial_dir = str(parent)
+        except Exception:
+            pass
+        if not initial_dir:
+            base_dir = getattr(self.app, "base_dir", None)
+            if base_dir and Path(str(base_dir)).exists():
+                initial_dir = str(base_dir)
+        self._browse_rule_file_worker(initial_dir)
+
+    @work(thread=True)
+    def _browse_rule_file_worker(self, initial_dir: str | None) -> None:
+        """Launch native file picker on a worker thread without blocking the TUI."""
+        from app.core.native_dialog import (
+            RULE_IMPORT_EXTENSIONS,
+            NativeDialogError,
+            select_native_file,
+        )
+
+        try:
+            selected = select_native_file(
+                initial_dir=initial_dir,
+                title="Select Rule File to Import",
+                extensions=RULE_IMPORT_EXTENSIONS,
+            )
+        except NativeDialogError as exc:
+            self.app.call_from_thread(self._handle_browse_fallback, str(exc))
+            return
+        except Exception as exc:
+            self.app.call_from_thread(self._handle_browse_fallback, str(exc))
+            return
+
+        if selected:
+            self.app.call_from_thread(self._apply_selected_rule_file, selected)
+        else:
+            self.app.call_from_thread(self.announce, "Rule file selection cancelled.")
+
+    def _apply_selected_rule_file(self, selected_path: str) -> None:
+        """Populate selected rule file path into input and parse preview."""
+        try:
+            inp = self.query_one("#input-rule-file-path", Input)
+            inp.value = selected_path
+        except Exception:
+            return
+        self.announce(f"Selected rule file: {selected_path}")
+        self.action_parse_file()
+
+    def _handle_browse_fallback(self, reason: str) -> None:
+        """Fall back to manual path input when native file dialog is unavailable."""
+        msg = (
+            f"Native file picker unavailable ({reason}). "
+            "Please enter the rule file path manually."
+        )
+        try:
+            self.query_one("#lbl-import-status", Label).update(msg)
+            self.query_one("#input-rule-file-path", Input).focus()
+        except Exception:
+            pass
+        self.announce(msg)
+
     @on(Button.Pressed, "#btn-parse-rule-file")
     @on(Input.Submitted, "#input-rule-file-path")
     def action_parse_file(self) -> None:
@@ -773,8 +876,14 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
             dt_kw.add_row(kw, target_dir)
 
         for pol in res.policies:
+            pol_type_label = str(pol.get("type", "keyword"))
+            if (
+                str(pol.get("action", "")).lower() == "unarchive"
+                and pol_type_label.lower() != "unarchive"
+            ):
+                pol_type_label = f"{pol_type_label} [unarchive]"
             dt_pol.add_row(
-                pol.get("type", "keyword"),
+                pol_type_label,
                 pol.get("expression", ""),
                 pol.get("target_path", ""),
                 str(pol.get("priority", 75)),
@@ -927,11 +1036,21 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
         except Exception:
             pass
 
+        stage_disabled = self.import_disabled
+        try:
+            stage_disabled = bool(
+                self.query_one("#chk-import-disabled", Checkbox).value
+            )
+            self.import_disabled = stage_disabled
+        except Exception:
+            pass
+
         try:
             new_kw, new_pol = self.current_result.merge_into_settings(
                 self.settings,
                 resolutions=self.conflict_resolutions,
                 default_strategy=bulk_strategy,
+                import_disabled=stage_disabled,
             )
         except Exception as exc:
             err_msg = f"Failed to save imported rules: {exc}"
@@ -949,7 +1068,18 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
                 pass
             return
 
-        msg = f"Merged imported rules: {len(new_kw)} keyword rules and {len(new_pol)} policies."
+        dis_kw = getattr(self.settings, "DISABLED_KEYWORD_RULES", {}) or {}
+        if stage_disabled:
+            msg = (
+                f"Merged imported rules (new rules staged disabled for review): "
+                f"{len(new_kw)} active keyword(s), {len(dis_kw)} disabled keyword(s), "
+                f"and {len(new_pol)} policies."
+            )
+        else:
+            msg = (
+                f"Merged imported rules: {len(new_kw)} keyword rules and "
+                f"{len(new_pol)} policies."
+            )
         self.announce(msg)
         try:
             if hasattr(self.app, "notify"):
