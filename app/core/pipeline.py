@@ -324,6 +324,19 @@ class SortPipeline(LifecycleTelemetryMixin):
                 from app.core.scanner import get_files_recursively
 
                 items = get_files_recursively(self.base_dir)
+                custom_qdir = (
+                    str(getattr(self.settings, "QUARANTINE_DIR_NAME", "") or "")
+                    .replace("\\", "/")
+                    .strip("/")
+                    .split("/")[0]
+                )
+                if custom_qdir and items:
+                    items = [
+                        it
+                        for it in items
+                        if str(it).replace("\\", "/").strip("/").split("/")[0]
+                        != custom_qdir
+                    ]
 
             generator = build_corpus_generator(
                 base_dir=self.base_dir,

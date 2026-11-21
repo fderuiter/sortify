@@ -372,10 +372,11 @@ class Settings(BaseSettings):
         ),
     )
     AUTO_QUARANTINE_RATINGS: list[str] = Field(
-        default=["CRITICAL", "HIGH"],
+        default_factory=list,
         description=(
-            "Sensitivity severity ratings (such as 'CRITICAL' and 'HIGH') that "
-            "automatically route detected files into compliance quarantine staging."
+            "Opt-in sensitivity severity ratings (such as 'CRITICAL' and 'HIGH') that "
+            "automatically route detected files into compliance quarantine staging. "
+            "Defaults to an empty list so automatic sensitivity quarantine is disabled until enabled."
         ),
     )
     QUARANTINE_DIR_NAME: str = Field(

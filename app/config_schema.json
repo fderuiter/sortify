@@ -243,11 +243,7 @@
       "type": "array"
     },
     "AUTO_QUARANTINE_RATINGS": {
-      "default": [
-        "CRITICAL",
-        "HIGH"
-      ],
-      "description": "Sensitivity severity ratings (such as 'CRITICAL' and 'HIGH') that automatically route detected files into compliance quarantine staging.",
+      "description": "Opt-in sensitivity severity ratings (such as 'CRITICAL' and 'HIGH') that automatically route detected files into compliance quarantine staging. Defaults to an empty list so automatic sensitivity quarantine is disabled until enabled.",
       "items": {
         "type": "string"
       },

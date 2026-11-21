@@ -608,6 +608,10 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         norm_path = os.path.normpath(path).replace("\\", "/")
 
         # Ignore database files, cache/temp folders, and application metadata files
+        quarantine_dir_name = (
+            getattr(self.settings, "QUARANTINE_DIR_NAME", "_Compliance_Quarantine")
+            or "_Compliance_Quarantine"
+        )
         ignored_patterns = [
             ".autosorter",
             "sortify.db",
@@ -622,6 +626,8 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             "settings.json",
             "autosorter.log",
             "_Quarantine_Staging",
+            "_Compliance_Quarantine",
+            quarantine_dir_name,
         ]
 
         for pattern in ignored_patterns:

@@ -580,7 +580,12 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             with self._open_db() as db_inst:
                 from app.core.quarantine_interceptor import QuarantineInterceptorService
 
-                service = QuarantineInterceptorService(db=db_inst)
+                runtime_settings = getattr(getattr(self, "app", None), "settings", None)
+                service = QuarantineInterceptorService(
+                    db=db_inst,
+                    policies=self.policies,
+                    runtime_settings=runtime_settings,
+                )
                 results = service.release_quarantine_batch(
                     clean_job_ids, dest_dir=target_dir, allow_external=allow_external
                 )
@@ -692,8 +697,11 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             with self._open_db() as db_inst:
                 from app.core.quarantine_interceptor import QuarantineInterceptorService
 
+                runtime_settings = getattr(getattr(self, "app", None), "settings", None)
                 service = QuarantineInterceptorService(
-                    db=db_inst, policies=self.policies
+                    db=db_inst,
+                    policies=self.policies,
+                    runtime_settings=runtime_settings,
                 )
                 results = service.process_quarantine_batch(clean_job_ids)
                 self._call_ui(self._on_batch_reinspect_complete, results)

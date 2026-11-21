@@ -1188,6 +1188,18 @@ class AutoSorterTUI(
                         self.settings.PRESERVE_HIERARCHY = res["PRESERVE_HIERARCHY"]
                     except Exception:
                         pass
+                if "AUTO_QUARANTINE_RATINGS" in res:
+                    try:
+                        self.settings.AUTO_QUARANTINE_RATINGS = res[
+                            "AUTO_QUARANTINE_RATINGS"
+                        ]
+                    except Exception:
+                        pass
+                if "QUARANTINE_DIR_NAME" in res:
+                    try:
+                        self.settings.QUARANTINE_DIR_NAME = res["QUARANTINE_DIR_NAME"]
+                    except Exception:
+                        pass
                 if hasattr(self.settings, "_save"):
                     self.settings._save()
                 self.update_status()

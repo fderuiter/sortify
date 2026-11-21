@@ -486,6 +486,47 @@ class SettingsModal(
                         tooltip="Toggle AI contextual file renaming",
                     )
 
+                    current_auto_ratings = {
+                        str(r).upper()
+                        for r in (
+                            getattr(self.settings, "AUTO_QUARANTINE_RATINGS", []) or []
+                        )
+                        if r
+                    }
+                    yield LabeledSwitch(
+                        label="Auto-Quarantine CRITICAL Sensitivity",
+                        value="CRITICAL" in current_auto_ratings,
+                        switch_id="switch-quarantine-critical",
+                        tooltip="Automatically hold CRITICAL sensitivity documents in compliance quarantine during sorting and daemon monitoring",
+                    )
+
+                    yield LabeledSwitch(
+                        label="Auto-Quarantine HIGH Sensitivity",
+                        value="HIGH" in current_auto_ratings,
+                        switch_id="switch-quarantine-high",
+                        tooltip="Automatically hold HIGH sensitivity documents in compliance quarantine during sorting and daemon monitoring",
+                    )
+
+                    yield Label(
+                        "Compliance Quarantine Folder Name:",
+                        classes="field-label",
+                    )
+                    q_dir_val = (
+                        getattr(
+                            self.settings,
+                            "QUARANTINE_DIR_NAME",
+                            "_Compliance_Quarantine",
+                        )
+                        or "_Compliance_Quarantine"
+                    )
+                    inp_qdir = Input(
+                        value=str(q_dir_val),
+                        placeholder="_Compliance_Quarantine",
+                        id="input-quarantine-dir",
+                    )
+                    inp_qdir.tooltip = "Workspace subfolder name used when staging held compliance files"
+                    yield inp_qdir
+
                     yield LabeledSwitch(
                         label="Speak Status Messages Aloud",
                         value=bool(
@@ -673,6 +714,26 @@ class SettingsModal(
         if hasattr(self, "announce"):
             self.announce(f"Character key shortcuts {state_str}.", priority="polite")
 
+    @on(Switch.Changed, "#switch-quarantine-critical")
+    def on_quarantine_critical_changed(self, event: Switch.Changed) -> None:
+        """Announce status update when CRITICAL sensitivity auto-quarantine switch is toggled."""
+        state_str = "enabled" if event.value else "disabled"
+        if hasattr(self, "announce"):
+            self.announce(
+                f"Automatic CRITICAL sensitivity quarantine {state_str}.",
+                priority="polite",
+            )
+
+    @on(Switch.Changed, "#switch-quarantine-high")
+    def on_quarantine_high_changed(self, event: Switch.Changed) -> None:
+        """Announce status update when HIGH sensitivity auto-quarantine switch is toggled."""
+        state_str = "enabled" if event.value else "disabled"
+        if hasattr(self, "announce"):
+            self.announce(
+                f"Automatic HIGH sensitivity quarantine {state_str}.",
+                priority="polite",
+            )
+
     def _execute_scrub_and_purge(self) -> None:
         """Execute memory model unload, database vector clearing, and background model cache purging."""
         try:
@@ -830,6 +891,58 @@ class SettingsModal(
             conflict_pol = getattr(self.settings, "CONFLICT_POLICY", "rename")
 
         try:
+            q_dir_raw = self.query_one("#input-quarantine-dir", Input).value.strip()
+        except Exception:
+            q_dir_raw = getattr(
+                self.settings, "QUARANTINE_DIR_NAME", "_Compliance_Quarantine"
+            )
+        q_dir_str = q_dir_raw or "_Compliance_Quarantine"
+        from app.core.path_utils import validate_target_path
+
+        try:
+            if any(ch in q_dir_str for ch in ("*", "?", "[", "]")):
+                raise ValueError(
+                    "Wildcard characters are not allowed in quarantine folder name."
+                )
+            validate_target_path(q_dir_str, keyword="QUARANTINE_DIR_NAME")
+        except ValueError as e:
+            self._show_help_button(help_url)
+            from app.ui.notifications import notify
+
+            err_text = f"Invalid quarantine folder name: {e}"
+            notify(f"Settings error: {err_text}", type="error", help_url=help_url)
+            self.announce(f"Settings error: {err_text}", help_url=help_url)
+            return
+
+        existing_ratings = [
+            str(r).upper()
+            for r in (getattr(self.settings, "AUTO_QUARANTINE_RATINGS", []) or [])
+            if r and str(r).upper() not in ("CRITICAL", "HIGH")
+        ]
+        try:
+            q_crit = self.query_one("#switch-quarantine-critical", Switch).value
+        except Exception:
+            q_crit = "CRITICAL" in {
+                str(r).upper()
+                for r in (getattr(self.settings, "AUTO_QUARANTINE_RATINGS", []) or [])
+            }
+        try:
+            q_high = self.query_one("#switch-quarantine-high", Switch).value
+        except Exception:
+            q_high = "HIGH" in {
+                str(r).upper()
+                for r in (getattr(self.settings, "AUTO_QUARANTINE_RATINGS", []) or [])
+            }
+        auto_quarantine_ratings: list[str] = []
+        if q_crit:
+            auto_quarantine_ratings.append("CRITICAL")
+        if q_high:
+            auto_quarantine_ratings.append("HIGH")
+        for extra_r in existing_ratings:
+            if extra_r not in auto_quarantine_ratings:
+                auto_quarantine_ratings.append(extra_r)
+
+        try:
             cleanup_empty = self.query_one(
                 "#switch-cleanup-empty-folders", Switch
             ).value
@@ -855,6 +968,8 @@ class SettingsModal(
             "ENABLE_CHARACTER_KEY_SHORTCUTS": char_shortcuts,
             "CLEANUP_EMPTY_FOLDERS": cleanup_empty,
             "PRESERVE_HIERARCHY": preserve_hier,
+            "AUTO_QUARANTINE_RATINGS": auto_quarantine_ratings,
+            "QUARANTINE_DIR_NAME": q_dir_str,
         }
         self.announce("Saved application settings.")
         self.dismiss(res)
