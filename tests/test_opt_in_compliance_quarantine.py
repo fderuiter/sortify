@@ -45,7 +45,7 @@ def test_personal_sort_default_config_and_starter_packs_zero_quarantine(
     """Fresh default config with starter packs sorts everyday sensitive & technical files without quarantining any."""
     app_dir = tmp_path / "app_data"
     app_dir.mkdir()
-    monkeypatch.setenv("SORTIFY_APP_DIR", str(app_dir))
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
     AppSettings._instance = None
 
     ws = tmp_path / "personal_workspace"
@@ -240,7 +240,7 @@ def test_plan_preview_displays_quarantine_folder_and_subsequent_scans_skip_it(
     """Enabling AUTO_QUARANTINE_RATINGS surfaces _Compliance_Quarantine in plan preview and subsequent scans ignore it."""
     app_dir = tmp_path / "app_data"
     app_dir.mkdir()
-    monkeypatch.setenv("SORTIFY_APP_DIR", str(app_dir))
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
     AppSettings._instance = None
 
     ws = tmp_path / "workspace"
@@ -405,7 +405,7 @@ def test_release_records_content_hash_exemption_for_mover_and_reevaluates_on_edi
     """Released unchanged files sort normally without repeat quarantine; editing the file triggers re-evaluation."""
     app_dir = tmp_path / "app_data"
     app_dir.mkdir()
-    monkeypatch.setenv("SORTIFY_APP_DIR", str(app_dir))
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
     AppSettings._instance = None
 
     ws = tmp_path / "workspace"
@@ -462,8 +462,13 @@ def test_release_records_content_hash_exemption_for_mover_and_reevaluates_on_edi
 
 
 @pytest.mark.anyio
-async def test_daemon_skips_unchanged_released_file_and_reholds_when_modified(tmp_path):
+async def test_daemon_skips_unchanged_released_file_and_reholds_when_modified(
+    tmp_path, monkeypatch
+):
     """ContinuousWatchdogDaemon does not re-quarantine unchanged released files, but re-evaluates modified content."""
+    app_dir = tmp_path / "app_data"
+    app_dir.mkdir()
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
     ws = tmp_path / "watched_ws"
     ws.mkdir()
 
@@ -589,3 +594,47 @@ def test_explicit_compliance_policies_still_run_when_auto_quarantine_disabled(
     res_a = service.process_quarantine_job(j_a)
     assert res_a["status"] == "ARCHIVED"
     assert (ws / "Archived_2020" / "legacy_ledger.txt").exists()
+
+
+def test_tui_partial_settings_without_consent_attr_does_not_schedule_deferred_wizard(
+    tmp_path, monkeypatch
+):
+    """Partial settings stubs without AI_CONSENT_GRANTED do not push WizardModal on deferred frame refreshes."""
+    from unittest.mock import patch
+
+    import textual.timer as ttimer
+
+    app_dir = tmp_path / "app_data"
+    app_dir.mkdir()
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+
+    class PartialSettingsStub:
+        def __init__(self):
+            self.language = "en"
+            self.ai_status_badge = "ON"
+
+    orig_sleep = ttimer.sleep
+
+    async def delayed_frame_sleep(delay):
+        if delay < 0.1:
+            delay = 0.25
+        return await orig_sleep(delay)
+
+    async def _run_partial():
+        app = AutoSorterTUI(settings=PartialSettingsStub(), base_dir=str(tmp_path))
+        pushed = []
+        orig_push = app.push_screen
+
+        def spy_push(screen, callback=None, *args, **kwargs):
+            pushed.append(screen)
+            return orig_push(screen, callback, *args, **kwargs)
+
+        with patch.object(ttimer, "sleep", delayed_frame_sleep):
+            async with app.run_test() as pilot:
+                await pilot.pause()
+                app.push_screen = spy_push
+                await pilot.pause()
+                assert not any(isinstance(s, WizardModal) for s in pushed)
+                assert not isinstance(app.screen, WizardModal)
+
+    asyncio.run(_run_partial())

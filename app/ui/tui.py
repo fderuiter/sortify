@@ -597,7 +597,8 @@ class AutoSorterTUI(
             or is_non_interactive_env
         )
 
-        if getattr(self.settings, "AI_CONSENT_GRANTED", None) is None:
+        _unset = object()
+        if getattr(self.settings, "AI_CONSENT_GRANTED", _unset) is None:
             if is_bypass:
                 self.settings.AI_CONSENT_GRANTED = False
                 if hasattr(self.settings, "_save"):
