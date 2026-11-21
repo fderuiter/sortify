@@ -205,11 +205,14 @@ def test_offline_requirements_manifest_sympy_mpmath_compatibility():
     entries = _parse_manifest_entries(req_file.read_text(encoding="utf-8"))
 
     pinned_versions = {
-        str(item["name"]): str(item["spec"]).split("==", 1)[1]
+        str(item["name"]): str(item["spec"]).split("==", 1)[1].split(";", 1)[0].strip()
         for item in entries
         if item["active"] and "==" in str(item["spec"])
     }
-    if "sympy" in pinned_versions and "mpmath" in pinned_versions:
+    if "sympy" in pinned_versions:
+        assert "mpmath" in pinned_versions, (
+            "sympy is present in offline_bundle/requirements.txt, so mpmath must also be pinned"
+        )
         sympy_ver = Version(pinned_versions["sympy"].split("+", 1)[0])
         mpmath_ver = Version(pinned_versions["mpmath"].split("+", 1)[0])
         if sympy_ver <= Version("1.14.0"):

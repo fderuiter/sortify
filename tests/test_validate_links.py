@@ -323,3 +323,90 @@ def test_default_bypass_domains_restricted_and_templates_skipped():
     assert is_template_or_redacted_url("https://[REDACTED]:[REDACTED]@")
     assert not is_template_or_redacted_url("https://[invalid-ipv6-host/docs/guide")
     assert not is_template_or_redacted_url("https://[invalid-ipv6-host/{slug}")
+
+
+@patch("urllib.request.urlopen")
+def test_validate_url_rate_limited_403_and_429_are_non_critical(mock_urlopen):
+    """Verify HTTP 429 and rate-limited 403 responses warn without failing critically or retrying GET."""
+    rate_limit_403 = urllib.error.HTTPError(
+        "https://api.github.com/advisories",
+        403,
+        "rate limit exceeded",
+        {"X-RateLimit-Remaining": "0", "X-RateLimit-Limit": "60"},
+        None,
+    )
+    mock_urlopen.side_effect = rate_limit_403
+
+    success, msg, is_critical = validate_url("https://api.github.com/advisories", set())
+    assert success is False
+    assert "403" in msg and "rate limited" in msg
+    assert is_critical is False
+    assert mock_urlopen.call_count == 1
+
+    mock_urlopen.reset_mock()
+    header_only_rate_limit = urllib.error.HTTPError(
+        "https://api.github.com/advisories",
+        403,
+        "Forbidden",
+        {"X-RateLimit-Remaining": "0"},
+        None,
+    )
+    mock_urlopen.side_effect = header_only_rate_limit
+
+    success, msg, is_critical = validate_url("https://api.github.com/advisories", set())
+    assert success is False
+    assert "rate limited" in msg
+    assert is_critical is False
+    assert mock_urlopen.call_count == 1
+
+    mock_urlopen.reset_mock()
+    too_many_429 = urllib.error.HTTPError(
+        "https://pypi.org", 429, "Too Many Requests", {"Retry-After": "30"}, None
+    )
+    mock_urlopen.side_effect = too_many_429
+
+    success, msg, is_critical = validate_url("https://pypi.org", set())
+    assert success is False
+    assert "429" in msg and "rate limited" in msg
+    assert is_critical is False
+    assert mock_urlopen.call_count == 1
+
+
+@patch("urllib.request.urlopen")
+def test_validate_url_non_rate_limited_403_remains_critical(mock_urlopen):
+    """Verify genuine 403 Forbidden without rate-limit signals still falls back to GET and fails critically."""
+    err_head = urllib.error.HTTPError(
+        "https://pypi.org/secret", 403, "Forbidden", {}, None
+    )
+    err_get = urllib.error.HTTPError(
+        "https://pypi.org/secret", 403, "Forbidden", {}, None
+    )
+    mock_urlopen.side_effect = [err_head, err_get]
+
+    success, msg, is_critical = validate_url("https://pypi.org/secret", set())
+    assert success is False
+    assert msg == "HTTP Error 403: Forbidden"
+    assert is_critical is True
+    assert mock_urlopen.call_count == 2
+
+
+@patch("urllib.request.urlopen")
+def test_main_rate_limited_url_exits_zero(mock_urlopen, monkeypatch, tmp_path):
+    """Verify validate_links.py main() exits 0 with warning when an upstream API rate-limits probes."""
+    test_file = tmp_path / "doc.md"
+    test_file.write_text(
+        "Advisory feed: https://api.github.com/advisories\n", encoding="utf-8"
+    )
+    mock_urlopen.side_effect = urllib.error.HTTPError(
+        "https://api.github.com/advisories",
+        403,
+        "rate limit exceeded",
+        {"X-RateLimit-Remaining": "0"},
+        None,
+    )
+    monkeypatch.setattr(sys, "argv", ["validate_links.py", str(test_file)])
+    try:
+        main()
+        raise AssertionError("Expected SystemExit(0)")
+    except SystemExit as exc:
+        assert exc.code == 0

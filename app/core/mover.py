@@ -1214,20 +1214,41 @@ def _process_move_item(
     sens_rating_str = str(sens_rating or "LOW").upper()
     auto_ratings = [
         r.upper()
-        for r in getattr(
-            runtime_settings, "AUTO_QUARANTINE_RATINGS", ["CRITICAL", "HIGH"]
-        )
+        for r in (getattr(runtime_settings, "AUTO_QUARANTINE_RATINGS", []) or [])
+        if r
     ]
-    quarantine_dir_name = getattr(
-        runtime_settings, "QUARANTINE_DIR_NAME", "_Compliance_Quarantine"
+    quarantine_dir_name = (
+        getattr(runtime_settings, "QUARANTINE_DIR_NAME", "_Compliance_Quarantine")
+        or "_Compliance_Quarantine"
     )
 
-    active_dest = current_dest
+    abs_base_dir = os.path.abspath(base_dir) if base_dir else ""
+    candidate_sha256: str | None = None
+    is_approved_release = False
     if sens_rating_str in auto_ratings:
-        logging.warning(
-            f"Downstream Barrier Interception: File {source_path} has sensitivity rating {sens_rating_str}. "
-            f"Blocking move to '{current_dest}' and redirecting to '{quarantine_dir_name}'."
+        from app.core.quarantine_interceptor import _is_content_approved_for_release
+        from app.core.resilient_file_ops import resilient_file_hash
+
+        if os.path.exists(source_path):
+            try:
+                candidate_sha256 = resilient_file_hash(source_path)
+            except Exception:
+                candidate_sha256 = None
+        is_approved_release = _is_content_approved_for_release(
+            db,
+            base_dir=abs_base_dir,
+            file_hash=candidate_sha256,
+            file_path=source_path,
         )
+
+    is_sensitivity_hold = sens_rating_str in auto_ratings and not is_approved_release
+    active_dest = current_dest
+    if is_sensitivity_hold:
+        if active_dest != quarantine_dir_name:
+            logging.warning(
+                f"Downstream Barrier Interception: File {source_path} has sensitivity rating {sens_rating_str}. "
+                f"Blocking move to '{current_dest}' and redirecting to '{quarantine_dir_name}'."
+            )
         active_dest = quarantine_dir_name
 
     dest_dir = os.path.normpath(os.path.join(base_dir, active_dest))
@@ -1272,17 +1293,19 @@ def _process_move_item(
 
     source_rel_path = safe_relpath(source_path, base_dir).replace("\\", "/")
     rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
+    abs_dest_path = os.path.abspath(dest_path)
 
-    if sens_rating_str in auto_ratings and db:
+    if is_sensitivity_hold and db:
         with db_lock:
             try:
                 job_id = f"qjob_mover_{uuid.uuid4().hex[:12]}"
                 if hasattr(db, "stage_quarantine_record"):
                     db.stage_quarantine_record(
                         job_id=job_id,
-                        base_dir=base_dir,
+                        base_dir=abs_base_dir or base_dir,
                         original_filepath=source_rel_path,
-                        staged_filepath=rel_dest,
+                        staged_filepath=abs_dest_path,
+                        file_hash=candidate_sha256,
                         policy_action="sensitivity_hold",
                     )
                 if hasattr(db, "update_quarantine_status"):
@@ -1381,9 +1404,17 @@ def _process_move_item(
                 }
             )
 
+    qdir_top = quarantine_dir_name.replace("\\", "/").strip("/").split("/")[0]
+    active_dest_top = active_dest.replace("\\", "/").strip("/").split("/")[0]
+    is_quarantine_dest = active_dest_top in (
+        "_Compliance_Quarantine",
+        "_Quarantine_Staging",
+        qdir_top,
+    )
+
     if dest_path == source_path:
         with db_lock:
-            if file_hash:
+            if file_hash and not is_quarantine_dest:
                 db_updates_batch.append(
                     {
                         "type": "verified_target",
@@ -1496,7 +1527,7 @@ def _process_move_item(
         step_hash = file_hash
 
     with db_lock:
-        if file_hash:
+        if file_hash and not is_quarantine_dest:
             db_updates_batch.append(
                 {
                     "type": "verified_target",

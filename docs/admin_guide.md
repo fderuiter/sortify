@@ -157,9 +157,9 @@ List of absolute literal directory paths protected from scanning, moving, or mod
 
 ### `AUTO_QUARANTINE_RATINGS`
 - **Type**: `list[str]`
-- **Default**: `['CRITICAL', 'HIGH']`
+- **Default**: `[]`
 
-Sensitivity severity ratings (such as 'CRITICAL' and 'HIGH') that automatically route detected files into compliance quarantine staging.
+Opt-in sensitivity severity ratings (such as 'CRITICAL' and 'HIGH') that automatically route detected files into compliance quarantine staging. Defaults to an empty list so automatic sensitivity quarantine is disabled until enabled.
 
 ### `QUARANTINE_DIR_NAME`
 - **Type**: `str`
