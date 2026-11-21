@@ -439,6 +439,11 @@ def test_heavy_tests_runs_single_uv_sync_with_ml_extra():
     assert ratchet_step is not None, (
         "Missing 'scripts/check_ty_warnings.py' step in heavy-tests"
     )
+    assert "uv run ty check" in ratchet_step.get("run", "")
+    assert "analysis.allowed-unresolved-imports" in ratchet_step.get("run", "")
+    assert "llama_cpp" not in ratchet_step.get("run", ""), (
+        "heavy-tests installs --extra llm so llama_cpp must not be allowed unresolved"
+    )
     for platform in ("linux", "darwin", "win32"):
         assert platform in ratchet_step.get("run", ""), (
             f"Expected heavy-tests ratchet step to check platform {platform!r}"
@@ -505,6 +510,11 @@ def test_type_check_job_installs_all_groups_emits_annotations_and_enforces_ratch
     ty_step = next((s for s in steps if "uv run ty check" in s.get("run", "")), None)
     assert ty_step is not None, "Missing 'uv run ty check' step in type-check"
     assert "--output-format github" in ty_step.get("run", "")
+    assert "analysis.allowed-unresolved-imports" in ty_step.get("run", "")
+    for ml_mod in ("easyocr", "onnxruntime", "torch", "transformers"):
+        assert ml_mod not in ty_step.get("run", ""), (
+            f"type-check installs --extra ml so {ml_mod!r} must not be allowed unresolved"
+        )
 
     ratchet_step = next(
         (s for s in steps if "scripts/check_ty_warnings.py" in s.get("run", "")),

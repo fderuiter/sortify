@@ -148,12 +148,18 @@ error-on-warning = false
 include = ["app", "scripts"]
 
 [tool.ty.analysis]
-# Optional `llm` extra and `build`/`docs` group packages, imported lazily behind guards.
+# Optional `ml`/`llm` extras and `build`/`docs` group packages, imported lazily
+# behind guards so core-only (`--all-groups`) environments pass `ty check`; when
+# installed (`--extra ml` / `--extra llm`), `ty` resolves and checks real types.
 allowed-unresolved-imports = [
     "PyInstaller",
     "PyInstaller.**",
+    "easyocr",
     "llama_cpp",
     "mkdocs",
+    "onnxruntime",
+    "torch",
+    "transformers",
 ]
 
 [tool.ty.rules]

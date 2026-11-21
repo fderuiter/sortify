@@ -13,7 +13,7 @@ uv sync --all-groups --extra ml
 uv run pre-commit install
 ```
 
-`--extra ml` installs prebuilt binary wheels (`easyocr`, `onnxruntime`, `torch`, `transformers`) for OCR, ONNX embeddings, and PyTorch classification with no compiler required, and satisfies the `ty-check` pre-commit hook.
+`--extra ml` installs prebuilt binary wheels (`easyocr`, `onnxruntime`, `torch`, `transformers`) for OCR, ONNX embeddings, and PyTorch classification with no compiler required, matching CI's `type-check` job so `ty-check` type-checks ML imports.
 
 Add `--extra llm` (`uv sync --all-groups --extra ml --extra llm`) when developing local GGUF folder naming (`llama-cpp-python`), full executables, or offline bundles. Compiling `llama-cpp-python` from source requires CMake (`>=3.15`) and a C++17 toolchain:
 

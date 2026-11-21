@@ -85,7 +85,7 @@ jobs:
 
     - name: Run ty Type Check
       run: |
-        uv run ty check --output-format github
+        uv run ty check --output-format github -c 'analysis.allowed-unresolved-imports = ["PyInstaller", "PyInstaller.**", "llama_cpp", "mkdocs"]'
 
     - name: Enforce ty Warning Ceilings
       run: |
@@ -452,6 +452,7 @@ jobs:
 
     - name: Enforce ty Warning Ceilings (ML + LLM)
       run: |
+        uv run ty check --output-format github -c 'analysis.allowed-unresolved-imports = ["PyInstaller", "PyInstaller.**", "mkdocs"]'
         for platform in linux darwin win32; do
           uv run python scripts/check_ty_warnings.py --platform "$platform" --github-annotations
         done
