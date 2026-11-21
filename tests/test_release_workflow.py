@@ -327,15 +327,15 @@ def test_release_workflow_smoke_test_before_archiving():
 
 
 def test_release_workflow_builds_with_cpu_flag():
-    """Verify release.yml syncs frozen ml+build dependencies and runs scripts/build.py --cpu."""
+    """Verify release.yml syncs frozen ml+llm+build dependencies and runs scripts/build.py --cpu."""
     workflow = _load_release_workflow()
     build_steps = workflow["jobs"]["build-binaries"]["steps"]
 
     install_steps = [s for s in build_steps if s.get("name") == "Install dependencies"]
     assert len(install_steps) == 1
-    assert "uv sync --frozen --extra ml --group build" in install_steps[0].get(
-        "run", ""
-    )
+    assert "uv sync --frozen --extra ml --extra llm --group build" in install_steps[
+        0
+    ].get("run", "")
 
     exec_build_steps = [s for s in build_steps if s.get("name") == "Build executable"]
     assert len(exec_build_steps) == 1

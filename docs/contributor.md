@@ -9,11 +9,17 @@ To set up your local development environment and sync every dependency group (de
 ![Contributor Onboarding Workflow](assets/diagrams/contributor_onboarding.svg)
 
 ```bash
-uv sync --all-groups
+uv sync --all-groups --extra ml
 uv run pre-commit install
 ```
 
-Add `--extra ml` to also install the optional OCR, audio and embedding libraries.
+`--extra ml` installs prebuilt binary wheels (`easyocr`, `onnxruntime`, `torch`, `transformers`) for OCR, ONNX embeddings, and PyTorch classification with no compiler required, and satisfies the `ty-check` pre-commit hook.
+
+Add `--extra llm` (`uv sync --all-groups --extra ml --extra llm`) when developing local GGUF folder naming (`llama-cpp-python`), full executables, or offline bundles. Compiling `llama-cpp-python` from source requires CMake (`>=3.15`) and a C++17 toolchain:
+
+- **Linux (Debian/Ubuntu):** `sudo apt-get install build-essential cmake` (or `gcc-c++`, `make`, and `cmake`)
+- **macOS:** `xcode-select --install && brew install cmake`
+- **Windows:** Visual Studio Build Tools with the **Desktop development with C++** workload (MSVC) and CMake (`winget install Kitware.CMake`)
 
 Once the setup is complete, verify your environment by running the test suite:
 

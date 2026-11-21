@@ -59,8 +59,10 @@ ml = [
     "easyocr>=1.7.0",
     "transformers>=4.57.6",
     "onnxruntime>=1.28.0",
-    "llama-cpp-python>=0.3.34",
     "torch",
+]
+llm = [
+    "llama-cpp-python>=0.3.34",
 ]
 
 [tool.uv]
@@ -146,16 +148,12 @@ error-on-warning = false
 include = ["app", "scripts"]
 
 [tool.ty.analysis]
-# Optional `ml` extra and `build`/`docs` group packages, imported lazily behind guards.
+# Optional `llm` extra and `build`/`docs` group packages, imported lazily behind guards.
 allowed-unresolved-imports = [
     "PyInstaller",
     "PyInstaller.**",
-    "easyocr",
     "llama_cpp",
     "mkdocs",
-    "onnxruntime",
-    "torch",
-    "transformers",
 ]
 
 [tool.ty.rules]

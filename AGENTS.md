@@ -4,11 +4,11 @@ Local, offline-first Python 3.12 file sorter (`smart-autosorter`). Read `CONTEXT
 
 ## Commands
 
-- Install: `uv sync` (add `--all-groups` to match CI static/type checks, and `--extra ml` when the work needs the ML stack: `torch`, `easyocr`, `onnxruntime`, `transformers`, `llama-cpp-python`).
-- Offline bundle: `uv run python scripts/prepare_offline.py --cpu` to recompile `offline_bundle/requirements.txt` (`--extra ml --universal` with CPU PyTorch); `uv run --no-project python scripts/prepare_offline.py --cpu --frozen` and `uv run --no-project python scripts/install_offline.py offline-install` to validate the tracked manifest and offline install without overwriting it.
+- Install: `uv sync` (add `--all-groups --extra ml` to match CI static/type checks and install the wheel-backed ML stack: `torch`, `easyocr`, `onnxruntime`, `transformers`, which requires no C++ compiler). Add `--extra llm` (`llama-cpp-python`) for local GGUF naming, full builds, or offline bundles; compiling `llama-cpp-python` from sdist requires CMake (`>=3.15`) and a C++17 compiler (**Linux:** `sudo apt-get install build-essential cmake`; **macOS:** `xcode-select --install && brew install cmake`; **Windows:** Visual Studio Build Tools with "Desktop development with C++" and `winget install Kitware.CMake`).
+- Offline bundle: `uv run python scripts/prepare_offline.py --cpu` to recompile `offline_bundle/requirements.txt` (`--extra ml --extra llm --universal` with CPU PyTorch); `uv run --no-project python scripts/prepare_offline.py --cpu --frozen` and `uv run --no-project python scripts/install_offline.py offline-install` to validate the tracked manifest and offline install without overwriting it.
 - Fast tests: `uv run pytest -m "not slow"`. One file while iterating: `uv run pytest tests/test_<area>.py -n0`.
-- Slow / ML tests: `uv sync --all-groups --extra ml` and `uv run pytest -m "slow"`.
-- Bundle build and smoke test: `uv sync --frozen --extra ml --group build && uv run python scripts/build.py --cpu` (or `uv run python scripts/build.py --lite` without ML weights), then `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring ./dist/smart-autosorter/smart-autosorter --smoke-test` (`dist\smart-autosorter\smart-autosorter.exe --smoke-test` on Windows).
+- Slow / ML tests: `uv sync --all-groups --extra ml --extra llm` and `uv run pytest -m "slow"`.
+- Bundle build and smoke test: `uv sync --frozen --extra ml --extra llm --group build && uv run python scripts/build.py --cpu` (or `uv run python scripts/build.py --lite` without ML weights), then `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring ./dist/smart-autosorter/smart-autosorter --smoke-test` (`dist\smart-autosorter\smart-autosorter.exe --smoke-test` on Windows).
 - Lint and format: `uv run ruff check` and `uv run ruff format` (read-only check: `uv run ruff format --check .`).
 - Type check: `uv run ty check` and `uv run python scripts/check_ty_warnings.py` (enforces shrink-only per-file warning ceilings in `[tool.sortify.ty-warning-ceilings]`).
 - Dependency audit: `uv run deptry .`.

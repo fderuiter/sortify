@@ -400,11 +400,20 @@ def test_required_ci_gate_depends_on_all_upstream_jobs_and_fails_closed():
 
 
 def test_heavy_tests_runs_single_uv_sync_with_ml_extra():
-    """Verify heavy-tests runs uv sync once with --extra ml during dependency installation."""
+    """Verify heavy-tests syncs --extra ml --extra llm once and enforces check_ty_warnings.py before slow tests."""
     pyproject = tomllib.loads(Path("pyproject.toml").read_text(encoding="utf-8"))
     optional_deps = pyproject.get("project", {}).get("optional-dependencies", {})
     assert "ml" in optional_deps and optional_deps["ml"], (
         "pyproject.toml must define non-empty [project.optional-dependencies].ml"
+    )
+    assert "llm" in optional_deps and optional_deps["llm"], (
+        "pyproject.toml must define non-empty [project.optional-dependencies].llm"
+    )
+    assert not any("llama-cpp-python" in dep for dep in optional_deps["ml"]), (
+        "llama-cpp-python must be separated out of [project.optional-dependencies].ml"
+    )
+    assert any("llama-cpp-python" in dep for dep in optional_deps["llm"]), (
+        "llama-cpp-python must be declared in [project.optional-dependencies].llm"
     )
 
     workflow = _load_ci_workflow()
@@ -421,7 +430,19 @@ def test_heavy_tests_runs_single_uv_sync_with_ml_extra():
     assert install_step.get("name") == "Install dependencies"
     install_run = install_step.get("run", "")
     assert install_run.count("uv sync") == 1
-    assert install_run.strip() == "uv sync --frozen --all-groups --extra ml"
+    assert install_run.strip() == "uv sync --frozen --all-groups --extra ml --extra llm"
+
+    ratchet_step = next(
+        (s for s in steps if "scripts/check_ty_warnings.py" in s.get("run", "")),
+        None,
+    )
+    assert ratchet_step is not None, (
+        "Missing 'scripts/check_ty_warnings.py' step in heavy-tests"
+    )
+    for platform in ("linux", "darwin", "win32"):
+        assert platform in ratchet_step.get("run", ""), (
+            f"Expected heavy-tests ratchet step to check platform {platform!r}"
+        )
 
     test_step = next(
         (s for s in steps if s.get("name") == "Heavy ML and Integration Tests"), None
@@ -429,7 +450,9 @@ def test_heavy_tests_runs_single_uv_sync_with_ml_extra():
     assert test_step is not None, "Missing 'Heavy ML and Integration Tests' step"
     assert "uv sync" not in test_step.get("run", "")
     assert 'pytest -m "slow"' in test_step.get("run", "")
-    assert steps.index(install_step) < steps.index(test_step)
+    assert (
+        steps.index(install_step) < steps.index(ratchet_step) < steps.index(test_step)
+    )
 
 
 def test_no_ci_job_executes_duplicate_uv_sync():
@@ -475,7 +498,9 @@ def test_type_check_job_installs_all_groups_emits_annotations_and_enforces_ratch
 
     sync_step = next((s for s in steps if "uv sync" in s.get("run", "")), None)
     assert sync_step is not None, "Missing uv sync step in type-check"
-    assert sync_step.get("run", "").strip() == "uv sync --frozen --all-groups"
+    assert (
+        sync_step.get("run", "").strip() == "uv sync --frozen --all-groups --extra ml"
+    )
 
     ty_step = next((s for s in steps if "uv run ty check" in s.get("run", "")), None)
     assert ty_step is not None, "Missing 'uv run ty check' step in type-check"

@@ -66,10 +66,10 @@ jobs:
           python-version: "3.12"
 
       # The full build profile (scripts/build.py without --lite) refuses to
-      # run unless the ML packages from the `ml` extra are installed.
+      # run unless the ML and GGUF packages from the `ml` and `llm` extras are installed.
       - name: Install dependencies
         run: |
-          uv sync --frozen --extra ml --group build
+          uv sync --frozen --extra ml --extra llm --group build
 
       - name: Cache Model Weights
         uses: actions/cache@55cc8345863c7cc4c66a329aec7e433d2d1c52a9 # v6.1.0

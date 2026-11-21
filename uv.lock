@@ -3959,9 +3959,11 @@ dependencies = [
 ]
 
 [package.optional-dependencies]
+llm = [
+    { name = "llama-cpp-python" },
+]
 ml = [
     { name = "easyocr" },
-    { name = "llama-cpp-python" },
     { name = "onnxruntime" },
     { name = "torch", version = "2.15.0", source = { registry = "https://pypi.org/simple" }, marker = "sys_platform != 'linux' and sys_platform != 'win32'" },
     { name = "torch", version = "2.15.0+cpu", source = { registry = "https://download.pytorch.org/whl/cpu" }, marker = "sys_platform == 'linux' or sys_platform == 'win32'" },
@@ -4010,7 +4012,7 @@ requires-dist = [
     { name = "easyocr", marker = "extra == 'ml'", specifier = ">=1.7.0" },
     { name = "jsonschema", specifier = ">=4.25.1" },
     { name = "keyring", specifier = ">=24.0.0" },
-    { name = "llama-cpp-python", marker = "extra == 'ml'", specifier = ">=0.3.34" },
+    { name = "llama-cpp-python", marker = "extra == 'llm'", specifier = ">=0.3.34" },
     { name = "numpy" },
     { name = "onnxruntime", marker = "extra == 'ml'", specifier = ">=1.28.0" },
     { name = "openpyxl" },
@@ -4035,7 +4037,7 @@ requires-dist = [
     { name = "watchdog", specifier = ">=6.0.0" },
     { name = "xlrd" },
 ]
-provides-extras = ["ml"]
+provides-extras = ["ml", "llm"]
 
 [package.metadata.requires-dev]
 build = [

@@ -593,7 +593,8 @@ def _prepare_cli_target_directory(
             if requested_ml:
                 print(
                     "Warning: Machine learning features requested, but ML dependencies are not installed.\n"
-                    "To enable ML features, please install the 'ml' extra group: uv sync --extra ml (or pip install '.[ml]')\n"
+                    "To enable ML features, install the 'ml' extra (and 'llm' for local GGUF naming): "
+                    "uv sync --extra ml --extra llm (or pip install '.[ml,llm]')\n"
                     "Proceeding in offline fallback mode.",
                     file=sys.stderr,
                 )

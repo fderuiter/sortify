@@ -12,6 +12,9 @@ import threading
 from app.core.network_guard import block_external_network
 from app.core.network_guard import install as apply_global_socket_sandbox
 
+_onnx_thread_limits_applied = False
+_onnx_patched_session_cls: object | None = None
+
 
 class SharedModelRegistry:
     """Centralized registry for caching heavy model references (e.g. generative model, EasyOCR reader)."""
@@ -112,17 +115,19 @@ class SharedModelRegistry:
 
     def apply_onnx_thread_limits(self):
         """Apply thread limits dynamically to all initialized ONNX runtime sessions."""
+        global _onnx_thread_limits_applied, _onnx_patched_session_cls
         try:
             import onnxruntime as ort
 
-            if not hasattr(ort.InferenceSession, "_original_init"):
+            if (
+                not _onnx_thread_limits_applied
+                or _onnx_patched_session_cls is not ort.InferenceSession
+            ):
                 original_init = ort.InferenceSession.__init__
-                ort.InferenceSession._original_init = original_init
-
-                registry_instance = self
 
                 def wrapped_init(sess, model_path, sess_options=None, *args, **kwargs):
-                    thread_limit = registry_instance.get_thread_limit()
+                    active_registry = SharedModelRegistry._instance or self
+                    thread_limit = active_registry.get_thread_limit()
                     if sess_options is None:
                         sess_options = ort.SessionOptions()
                     sess_options.intra_op_num_threads = thread_limit
@@ -130,6 +135,8 @@ class SharedModelRegistry:
                     original_init(sess, model_path, sess_options, *args, **kwargs)
 
                 ort.InferenceSession.__init__ = wrapped_init
+                _onnx_thread_limits_applied = True
+                _onnx_patched_session_cls = ort.InferenceSession
         except ImportError:
             pass
 
@@ -444,7 +451,6 @@ class SharedModelRegistry:
                         model = AutoModelForSeq2SeqLM.from_pretrained(
                             model_path, local_files_only=True
                         )
-                        task = "text2text-generation"
                     except Exception:
                         logging.debug(
                             "Not a seq2seq model; loading as causal LM", exc_info=True
@@ -452,14 +458,13 @@ class SharedModelRegistry:
                         model = AutoModelForCausalLM.from_pretrained(
                             model_path, local_files_only=True
                         )
-                        task = "text-generation"
-
-                    quantized_model = torch.quantization.quantize_dynamic(
-                        model, {torch.nn.Linear}, dtype=torch.qint8
-                    )
+                    task = "text-generation"
 
                     generator = pipeline(
-                        task, model=quantized_model, tokenizer=tokenizer, device=-1
+                        "text-generation",
+                        model=model,
+                        tokenizer=tokenizer,
+                        device=-1,
                     )
 
                     gen_tuple = (generator, task, tokenizer)

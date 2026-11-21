@@ -241,7 +241,7 @@ def main() -> int:
                 f"  - {v['file']}:{v['line']} imports '{v['module']}' -> package '{v['package']}' is NOT declared in pyproject.toml"
             )
         print(
-            "\nPlease add missing dependencies to project.dependencies, project.optional-dependencies.ml, or dependency-groups in pyproject.toml."
+            "\nPlease add missing dependencies to project.dependencies, project.optional-dependencies (ml/llm), or dependency-groups in pyproject.toml."
         )
         return 1
 

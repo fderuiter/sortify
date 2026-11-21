@@ -9,11 +9,17 @@ You need [uv](https://docs.astral.sh/uv/). It reads `.python-version` and instal
 ```bash
 git clone https://github.com/fderuiter/sortify.git
 cd sortify
-uv sync --all-groups      # app + dev, docs, notebooks and build groups
-uv run pre-commit install # run the hooks on every commit
+uv sync --all-groups --extra ml # app + dev/docs/notebooks/build groups + wheel-backed ML stack
+uv run pre-commit install       # run the hooks on every commit
 ```
 
-Add `--extra ml` to `uv sync` if you work on OCR, audio transcription, embeddings or LLM naming. Those libraries are imported lazily, so everything else runs without them.
+`--extra ml` installs prebuilt binary wheels (`torch`, `easyocr`, `onnxruntime`, `transformers`) for OCR, ONNX embeddings, and PyTorch classification without needing a C++ compiler, and is required by local `ty` type-checking hooks (`ty-check`) and CI's `type-check` job.
+
+Add `--extra llm` (`uv sync --all-groups --extra ml --extra llm`) when working on local GGUF folder naming (`llama-cpp-python`), full binary builds (`scripts/build.py --cpu`), or the offline bundle. Because `llama-cpp-python` builds from source (`sdist`), `--extra llm` requires CMake (`>=3.15`) and a C++17 compiler:
+
+- **Linux (Debian/Ubuntu):** `sudo apt-get install build-essential cmake` (or `gcc-c++`, `make`, and `cmake`)
+- **macOS:** `xcode-select --install && brew install cmake`
+- **Windows:** Visual Studio Build Tools with the **Desktop development with C++** workload (MSVC) and CMake (`winget install Kitware.CMake`)
 
 Dependency groups (PEP 735, in `pyproject.toml`):
 

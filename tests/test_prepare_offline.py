@@ -57,7 +57,7 @@ def _default_cpu_torch_wheel() -> MagicMock:
 def test_prepare_offline_cpu_success(
     mock_print, mock_mkdir, mock_archive, mock_rmtree, mock_run
 ):
-    """Test that prepare_offline.py compiles --extra ml --universal and succeeds with CPU wheels."""
+    """Test that prepare_offline.py compiles --extra ml --extra llm --universal and succeeds with CPU wheels."""
     with patch("sys.argv", ["prepare_offline.py", "--cpu"]):
         with patch("sys.exit", side_effect=SystemExit) as mock_exit:
             mock_requirements = _build_mock_requirements()
@@ -82,11 +82,15 @@ def test_prepare_offline_cpu_success(
                 # Verify subprocess.run invocations (compile, venv, download)
                 assert mock_run.call_count == 3
 
-                # Verify uv pip compile uses --extra ml, --universal, --generate-hashes,
-                # --index-strategy first-index, and --torch-backend cpu
+                # Verify uv pip compile uses --extra ml, --extra llm, --universal,
+                # --generate-hashes, --index-strategy first-index, and --torch-backend cpu
                 compile_cmd = mock_run.call_args_list[0][0][0]
-                assert "--extra" in compile_cmd
-                assert compile_cmd[compile_cmd.index("--extra") + 1] == "ml"
+                compiled_extras = [
+                    compile_cmd[idx + 1]
+                    for idx, token in enumerate(compile_cmd[:-1])
+                    if token == "--extra"
+                ]
+                assert compiled_extras == ["ml", "llm"]
                 assert "--universal" in compile_cmd
                 assert "--generate-hashes" in compile_cmd
                 assert "--index-strategy" in compile_cmd
@@ -139,6 +143,7 @@ def test_prepare_offline_frozen_skips_compile_and_succeeds(
     "manifest_kwargs",
     [
         {"omit_packages": {"easyocr", "llama-cpp-python"}},
+        {"omit_packages": {"llama-cpp-python"}},
         {"include_hashes": False},
         {
             "torch_lines": [
@@ -146,7 +151,12 @@ def test_prepare_offline_frozen_skips_compile_and_succeeds(
             ]
         },
     ],
-    ids=["missing_ml_packages", "missing_hashes", "zero_active_torch_entries"],
+    ids=[
+        "missing_ml_packages",
+        "missing_llm_package",
+        "missing_hashes",
+        "zero_active_torch_entries",
+    ],
 )
 @patch("scripts.prepare_offline.subprocess.run")
 @patch("scripts.prepare_offline.shutil.rmtree")

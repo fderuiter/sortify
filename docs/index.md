@@ -21,7 +21,8 @@ Install from source with [uv](https://docs.astral.sh/uv/) and Python 3.12:
 git clone https://github.com/fderuiter/sortify.git
 cd sortify
 uv sync                 # core install (TF-IDF offline clustering)
-uv sync --extra ml      # optional: OCR, audio transcription, ONNX embeddings, local LLM naming
+uv sync --extra ml      # optional: OCR, audio transcription, ONNX embeddings (prebuilt wheels)
+uv sync --extra llm     # optional: local GGUF LLM naming (requires CMake + C++ compiler)
 ```
 
 ### Terminal UI (TUI)

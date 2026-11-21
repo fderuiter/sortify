@@ -1366,12 +1366,22 @@ def gguf_worker_main(
             else:
                 task = {}
 
-            prompt = task.get("prompt", "")
-            max_tokens = task.get("max_tokens", 15)
+            prompt = str(task.get("prompt", ""))
+            raw_max_tokens = task.get("max_tokens", 15)
+            max_tokens: int | None = (
+                int(raw_max_tokens) if raw_max_tokens is not None else None
+            )
             grammar_str = task.get("grammar")
-            stop_seqs = task.get("stop")
-            if stop_seqs is None:
-                stop_seqs = task.get("stop_sequences")
+            raw_stop = task.get("stop")
+            if raw_stop is None:
+                raw_stop = task.get("stop_sequences")
+            stop_seqs: str | list[str] | None
+            if isinstance(raw_stop, str):
+                stop_seqs = raw_stop
+            elif isinstance(raw_stop, list):
+                stop_seqs = [str(item) for item in raw_stop]
+            else:
+                stop_seqs = None
 
             grammar = None
             if grammar_str:
@@ -1396,22 +1406,51 @@ def gguf_worker_main(
                             output_queue.put(err_obj)
                         continue
 
-            gen_kwargs = {"max_tokens": max_tokens, "echo": False}
-            if stop_seqs is not None:
-                gen_kwargs["stop"] = stop_seqs
-            if worker_token_biases:
-                gen_kwargs["logit_bias"] = worker_token_biases
+            logit_bias: dict[int, float] | None = (
+                worker_token_biases if worker_token_biases else None
+            )
 
             try:
-                if grammar:
-                    res = llm(prompt, grammar=grammar, **gen_kwargs)
+                if grammar is None and logit_bias is None:
+                    if stop_seqs is not None:
+                        res = llm(
+                            prompt,
+                            max_tokens=max_tokens,
+                            echo=False,
+                            stop=stop_seqs,
+                        )
+                    else:
+                        res = llm(prompt, max_tokens=max_tokens, echo=False)
+                elif stop_seqs is not None:
+                    res = llm(
+                        prompt,
+                        max_tokens=max_tokens,
+                        echo=False,
+                        stop=stop_seqs,
+                        grammar=grammar,
+                        logit_bias=logit_bias,
+                    )
                 else:
-                    res = llm(prompt, **gen_kwargs)
+                    res = llm(
+                        prompt,
+                        max_tokens=max_tokens,
+                        echo=False,
+                        grammar=grammar,
+                        logit_bias=logit_bias,
+                    )
             except Exception as e:
                 import logging
 
                 logging.error(f"Generation with model failed in worker: {e}")
                 err_obj = {"error": f"Generation failed: {e}"}
+                if session_key is not None and isinstance(raw_task, bytes):
+                    output_queue.put(encrypt_ipc_payload(err_obj, session_key))
+                else:
+                    output_queue.put(err_obj)
+                continue
+
+            if not isinstance(res, dict):
+                err_obj = {"error": "Generation returned unexpected stream response"}
                 if session_key is not None and isinstance(raw_task, bytes):
                     output_queue.put(encrypt_ipc_payload(err_obj, session_key))
                 else:

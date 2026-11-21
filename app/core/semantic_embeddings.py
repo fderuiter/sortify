@@ -653,6 +653,10 @@ class SemanticEmbeddingManager:
                             tokenizer = AutoTokenizer.from_pretrained(
                                 tokenizer_path, local_files_only=True
                             )
+                        if tokenizer is None:
+                            raise RuntimeError(
+                                f"Failed to load tokenizer from '{tokenizer_path}'"
+                            )
                         registry._models[tokenizer_key] = tokenizer
 
                     # Load/get ONNX session from registry (which applies thread limits)

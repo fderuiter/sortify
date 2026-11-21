@@ -158,16 +158,18 @@ def _evaluate_marker(marker_str: str) -> bool:
 def _load_required_project_packages(
     pyproject_path: Path | None = None,
 ) -> tuple[set[str], set[str]]:
-    """Load normalized base and `ml` optional package names from pyproject.toml."""
+    """Load normalized base and `ml`/`llm` optional package names from pyproject.toml."""
     candidate = pyproject_path or Path("pyproject.toml")
     if not candidate.is_file():
         candidate = Path(__file__).resolve().parent.parent / "pyproject.toml"
     data = tomllib.loads(candidate.read_bytes().decode("utf-8"))
     project = data.get("project", {})
     base_deps = {_extract_req_name(dep) for dep in project.get("dependencies", [])}
+    optional_deps = project.get("optional-dependencies", {})
     ml_deps = {
         _extract_req_name(dep)
-        for dep in project.get("optional-dependencies", {}).get("ml", [])
+        for extra in ("ml", "llm")
+        for dep in optional_deps.get(extra, [])
     }
     return base_deps, ml_deps
 
@@ -432,7 +434,7 @@ def main():
         shutil.rmtree(wheels_dir)
     wheels_dir.mkdir()
 
-    # 1. Compile requirements with CPU-only PyTorch and `ml` extras (unless --frozen)
+    # 1. Compile requirements with CPU-only PyTorch and `ml` + `llm` extras (unless --frozen)
     if is_frozen:
         print(f"Using frozen manifest at {reqs_file}...")
     else:
@@ -447,6 +449,8 @@ def main():
                 "pyproject.toml",
                 "--extra",
                 "ml",
+                "--extra",
+                "llm",
                 "--universal",
                 "--generate-hashes",
                 "--index-strategy",

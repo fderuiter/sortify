@@ -19,7 +19,8 @@ No release has been published yet, so run it from source. You need [uv](https://
 git clone https://github.com/fderuiter/sortify.git
 cd sortify
 uv sync                 # core install
-uv sync --extra ml      # optional: OCR, audio transcription, embeddings, LLM naming
+uv sync --extra ml      # optional: OCR, audio transcription, embeddings (prebuilt wheels)
+uv sync --extra llm     # optional: local GGUF LLM naming (requires CMake + C++ compiler)
 ```
 
 Once tagged releases exist, the release workflow publishes self-contained archives for Windows, Linux and macOS (`smart-autosorter-<OS>` with a SHA-256 checksum and SBOM).

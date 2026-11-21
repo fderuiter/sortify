@@ -768,3 +768,30 @@ def test_config_set_collection_and_optional_bool_parsing(tmp_path):
     )
     assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
     assert json.loads(stdout)["AI_CONSENT_GRANTED"] is None
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_sort_generative_warns_with_ml_and_llm_extra_recovery_hint(tmp_path):
+    """Test sort --strategy generative recovery hint mentions both ml and llm extras when ML is unavailable."""
+    src_dir = tmp_path / "src"
+    dest_dir = tmp_path / "dest"
+    create_sample_corpus(src_dir)
+
+    with patch("app.core.verifier.is_ml_available", return_value=False):
+        code, stdout, stderr = run_cli(
+            [
+                "sort",
+                str(src_dir),
+                "--dest-dir",
+                str(dest_dir),
+                "--dry-run",
+                "--strategy",
+                "generative",
+                "--json",
+            ],
+            env={"AUTOSORTER_APP_DIR": str(tmp_path / "app_cfg")},
+        )
+
+    assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
+    assert "uv sync --extra ml --extra llm" in stderr
+    assert ".[ml,llm]" in stderr

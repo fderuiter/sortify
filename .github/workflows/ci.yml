@@ -81,7 +81,7 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --frozen --all-groups
+        uv sync --frozen --all-groups --extra ml
 
     - name: Run ty Type Check
       run: |
@@ -448,7 +448,13 @@ jobs:
 
     - name: Install dependencies
       run: |
-        uv sync --frozen --all-groups --extra ml
+        uv sync --frozen --all-groups --extra ml --extra llm
+
+    - name: Enforce ty Warning Ceilings (ML + LLM)
+      run: |
+        for platform in linux darwin win32; do
+          uv run python scripts/check_ty_warnings.py --platform "$platform" --github-annotations
+        done
 
     - name: Heavy ML and Integration Tests
       shell: bash
