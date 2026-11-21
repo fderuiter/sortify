@@ -71,31 +71,31 @@ def tui_rollback_env(tmp_path, monkeypatch):
     history_mgr = store.history(autosorter_db, store.cache(db_worker))
     history_db_path = store.path
 
-    # Take snapshot
-    session_id = history_mgr.create_snapshot(str(base_dir))
+    # Start session
+    session_id = history_mgr.start_session(str(base_dir))
 
-    # Simulate moving files to target directory
+    # Simulate moving files to target directory and recording in canonical move ledger
+    import hashlib
+
     target_dir = base_dir / "Sorted"
     target_dir.mkdir()
     target1 = target_dir / "doc1.txt"
     target2 = target_dir / "doc2.txt"
 
-    shutil.move(str(file1), str(target1))
-    shutil.move(str(file2), str(target2))
+    hash1 = hashlib.sha256(file1.read_bytes()).hexdigest()
+    hash2 = hashlib.sha256(file2.read_bytes()).hexdigest()
 
-    # Log relocation steps in step ledger
-    history_mgr.log_step(
-        session_id=session_id,
-        source_path=str(file1),
-        target_path=str(target1),
-        file_hash="hash1",
+    seq1 = history_mgr.moves.record_intent(
+        session_id, str(file1), str(target1), src_sha256=hash1
     )
-    history_mgr.log_step(
-        session_id=session_id,
-        source_path=str(file2),
-        target_path=str(target2),
-        file_hash="hash2",
+    shutil.move(str(file1), str(target1))
+    history_mgr.moves.mark_done(session_id, seq1, str(target1))
+
+    seq2 = history_mgr.moves.record_intent(
+        session_id, str(file2), str(target2), src_sha256=hash2
     )
+    shutil.move(str(file2), str(target2))
+    history_mgr.moves.mark_done(session_id, seq2, str(target2))
 
     sessions = history_mgr.get_sessions()
     for s in sessions:

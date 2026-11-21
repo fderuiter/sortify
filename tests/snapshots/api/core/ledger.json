@@ -1,15 +1,10 @@
 {
   "_metadata": {
-    "checksum": "e219caed35067a8972d3aee6b291e5c320a62a2e35a02358bc69e46bc62d62e1"
+    "checksum": "6029dc7b65c8fe25cce8cde03485e08bdb4c824fbb69341e9a55824709e9bda0"
   },
   "classes": [
     {
-      "class_name": "LedgerStatus",
-      "decorators": [],
-      "methods": []
-    },
-    {
-      "class_name": "TransactionLedger",
+      "class_name": "KeyAuditLedger",
       "decorators": [],
       "methods": [
         {
@@ -81,97 +76,6 @@
         {
           "async": false,
           "decorators": [],
-          "name": "get_pending_entries",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "Optional[str]",
-              "default": "None",
-              "name": "session_id"
-            },
-            {
-              "annotation": "bool",
-              "default": "False",
-              "name": "failed_only"
-            },
-            {
-              "annotation": "bool",
-              "default": "False",
-              "name": "aborted_only"
-            },
-            {
-              "annotation": "bool",
-              "default": "False",
-              "name": "include_failed"
-            }
-          ],
-          "returns": "list[dict]"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "log_intent",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "base_dir"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "source_path"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "dest_path"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "source_rel_path"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "dest_rel_path"
-            },
-            {
-              "annotation": "str",
-              "default": "''",
-              "name": "current_dest"
-            },
-            {
-              "annotation": "str",
-              "default": "''",
-              "name": "file_hash"
-            },
-            {
-              "annotation": "Optional[str]",
-              "default": "None",
-              "name": "entry_id"
-            }
-          ],
-          "returns": "str"
-        },
-        {
-          "async": false,
-          "decorators": [],
           "name": "log_key_audit",
           "parameters": [
             {
@@ -216,106 +120,6 @@
             }
           ],
           "returns": "str"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "purge_completed",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "Optional[str]",
-              "default": "None",
-              "name": "session_id"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "purge_failed",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "Optional[str]",
-              "default": "None",
-              "name": "session_id"
-            },
-            {
-              "annotation": "Optional[str]",
-              "default": "None",
-              "name": "status_filter"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "purge_session",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "reconcile_incomplete_transactions",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": null,
-              "default": "None",
-              "name": "db"
-            }
-          ],
-          "returns": "int"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "update_status",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "entry_id"
-            },
-            {
-              "annotation": "LedgerStatus | str",
-              "default": null,
-              "name": "status"
-            }
-          ],
-          "returns": "None"
         }
       ]
     }

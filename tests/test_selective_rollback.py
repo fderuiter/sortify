@@ -59,7 +59,7 @@ def selective_env(tmp_path, monkeypatch):
     autosorter_db = store.database(db_worker)
     history_mgr = store.history(autosorter_db, store.cache(db_worker))
 
-    session_id = history_mgr.create_snapshot(str(base_dir))
+    session_id = history_mgr.start_session(str(base_dir))
 
     target_dir = base_dir / "Sorted"
     target_dir.mkdir()
@@ -68,31 +68,25 @@ def selective_env(tmp_path, monkeypatch):
     target2 = target_dir / "file2.txt"
     target3 = target_dir / "file3.txt"
 
-    shutil.move(str(file1), str(target1))
-    shutil.move(str(file2), str(target2))
-    shutil.move(str(file3), str(target3))
+    import hashlib
 
-    step1 = history_mgr.log_step(
-        session_id=session_id,
-        source_path=str(file1),
-        target_path=str(target1),
-        original_path=str(file1),
-        original_filename="file1.txt",
-    )
-    step2 = history_mgr.log_step(
-        session_id=session_id,
-        source_path=str(file2),
-        target_path=str(target2),
-        original_path=str(file2),
-        original_filename="file2.txt",
-    )
-    step3 = history_mgr.log_step(
-        session_id=session_id,
-        source_path=str(file3),
-        target_path=str(target3),
-        original_path=str(file3),
-        original_filename="file3.txt",
-    )
+    def _record_and_move(src_p, dst_p):
+        data = src_p.read_bytes()
+        seq = history_mgr.moves.record_intent(
+            session_id,
+            str(src_p),
+            str(dst_p),
+            src_sha256=hashlib.sha256(data).hexdigest(),
+            size=len(data),
+        )
+        shutil.move(str(src_p), str(dst_p))
+        history_mgr.moves.mark_done(session_id, seq, str(dst_p))
+        return seq
+
+    step1 = _record_and_move(file1, target1)
+    step2 = _record_and_move(file2, target2)
+    step3 = _record_and_move(file3, target3)
+    history_mgr.complete_session(session_id)
 
     yield {
         "tmp_path": tmp_path,
@@ -185,7 +179,7 @@ def test_selective_rollback_execution_and_status(selective_env):
     assert sess["status"] == "rolled_back"
 
 
-def test_selective_rollback_creates_safety_snapshot(selective_env):
+def test_selective_rollback_takes_no_pre_undo_snapshot(selective_env):
     history_mgr = selective_env["history_mgr"]
     session_id = selective_env["session_id"]
     step1 = selective_env["step1"]
@@ -194,8 +188,7 @@ def test_selective_rollback_creates_safety_snapshot(selective_env):
     history_mgr.rollback(session_id, selected_step_ids=[step1])
     after_sessions = len(history_mgr.get_sessions())
 
-    # Safety snapshot added a session
-    assert after_sessions > before_sessions
+    assert after_sessions == before_sessions
 
 
 def test_sort_pipeline_undo_selective(selective_env):
@@ -341,32 +334,6 @@ def test_preview_rollback_subset_step_filtering(selective_env):
     assert res["total_operations"] == 1
     assert len(res["steps"]) == 1
     assert res["steps"][0]["step_id"] == step1
-
-
-def test_preview_rollback_snapshot_fallback(selective_env, tmp_path):
-    """Test preview_rollback snapshot fallback when step ledger has no recorded moves."""
-    history_mgr = selective_env["history_mgr"]
-    snap_dir = tmp_path / "snap_workspace"
-    snap_dir.mkdir()
-
-    # Create files for a snapshot session
-    snap_file1 = snap_dir / "snap1.txt"
-    snap_file2 = snap_dir / "snap2.txt"
-    snap_file1.write_text("snap 1 content")
-    snap_file2.write_text("snap 2 content")
-
-    session_id = history_mgr._create_snapshot_internal(str(snap_dir))
-
-    # Remove snap_file2 to test MISSING_TARGET in snapshot fallback
-    snap_file2.unlink()
-
-    res = history_mgr.preview_rollback(session_id)
-
-    assert res["session_id"] == session_id
-    assert res["total_operations"] == 2
-    assert res["summary"]["clean"] == 1
-    assert res["summary"]["missing_target"] == 1
-    assert res["has_missing"] is True
 
 
 @pytest.mark.anyio

@@ -15,7 +15,7 @@ from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, S
 
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveLayoutMixin
 from app.ui.modals.edit import DirectorySelectModal
 
 logger = logging.getLogger(__name__)
@@ -43,14 +43,21 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         border: thick $warning;
         width: 95%;
         max-width: 110;
-        min-width: 60;
-        height: 90%;
-        min-height: 22;
+        min-width: 40;
+        height: 92%;
+        min-height: 20;
         layout: vertical;
+        overflow-y: hidden;
     }
-    .narrow .quarantine-modal-box {
+    .compact .quarantine-modal-box, .narrow .quarantine-modal-box {
         padding: 0 1;
         width: 98%;
+        height: 94%;
+    }
+    .modal-body {
+        width: 100%;
+        height: 1fr;
+        overflow-y: auto;
     }
     .quarantine-title {
         text-style: bold;
@@ -61,31 +68,39 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         color: $text-muted;
         margin-bottom: 1;
     }
+    .compact .quarantine-subtitle {
+        margin-bottom: 0;
+    }
     .quarantine-filter-row {
-        height: 3;
+        width: 100%;
+        height: auto;
         margin-bottom: 1;
         layout: horizontal;
     }
+    .compact .quarantine-filter-row {
+        margin-bottom: 0;
+    }
     #quarantine-search-input {
-        width: 45%;
+        width: 1fr;
         margin-right: 1;
     }
     #quarantine-status-filter {
-        width: 30%;
+        width: 1fr;
         margin-right: 1;
     }
     #chk-select-all {
-        width: 22%;
+        width: auto;
+        min-width: 16;
         height: 3;
     }
     #lbl-selection-count {
-        width: 1fr;
-        padding-top: 1;
+        width: 100%;
         text-style: bold;
         color: $accent;
     }
     .quarantine-content-split {
         height: 1fr;
+        min-height: 8;
         layout: horizontal;
     }
     .narrow .quarantine-content-split {
@@ -94,8 +109,14 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     #quarantine-table-pane {
         width: 55%;
         height: 100%;
+        min-height: 6;
         border: solid $primary;
         margin-right: 1;
+    }
+    #quarantine-table {
+        width: 100%;
+        height: 1fr;
+        min-height: 5;
     }
     .narrow #quarantine-table-pane {
         width: 100%;
@@ -106,8 +127,9 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     #quarantine-detail-pane {
         width: 45%;
         height: 100%;
+        min-height: 6;
         border: solid $secondary;
-        padding: 1;
+        padding: 0 1;
         overflow-y: auto;
     }
     .narrow #quarantine-detail-pane {
@@ -129,13 +151,27 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         margin-bottom: 1;
     }
     .quarantine-button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
-        layout: horizontal;
-        align: right middle;
+        layout: grid;
+        grid-size: 3;
+        grid-columns: 1fr 1fr 1fr;
+        grid-gutter: 0 1;
+        height: auto;
+    }
+    .compact .quarantine-button-row {
+        margin-top: 0;
     }
     .quarantine-button-row Button {
-        margin-left: 1;
+        width: 100%;
+        min-width: 0;
+        margin: 0;
+    }
+    .compact .quarantine-button-row Button {
+        height: 1;
+        min-height: 1;
+        border: none;
     }
     Button:focus, Input:focus, Select:focus, DataTable:focus, Checkbox:focus {
         border: heavy $accent;
@@ -161,7 +197,7 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         """Compose quarantine vault modal widgets."""
-        with Vertical(classes="quarantine-modal-box"):
+        with ModalBox(classes="quarantine-modal-box modal-box"):
             yield Heading(
                 "Quarantine Vault & Compliance Audit Review [Ctrl+U]",
                 level=1,
@@ -173,58 +209,60 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 classes="quarantine-subtitle",
             )
 
-            with Horizontal(classes="quarantine-filter-row"):
-                inp = Input(
-                    placeholder="Search by job ID, filename, policy reason...",
-                    id="quarantine-search-input",
-                )
-                inp.tooltip = (
-                    "Filter quarantine records by job ID, filename, or policy reason"
-                )
-                yield inp
-
-                sel = Select(
-                    [
-                        ("ALL Statuses", "ALL"),
-                        ("STAGED", "STAGED"),
-                        ("QUARANTINED", "QUARANTINED"),
-                        ("IN_INSPECTION", "IN_INSPECTION"),
-                        ("RELEASED", "RELEASED"),
-                        ("DISMISSED", "DISMISSED"),
-                        ("DEAD_LETTER_QUEUE", "DEAD_LETTER_QUEUE"),
-                    ],
-                    value="ALL",
-                    id="quarantine-status-filter",
-                    allow_blank=False,
-                )
-                sel.tooltip = "Filter quarantine records by status"
-                yield sel
-
-                chk_all = Checkbox("Select All", id="chk-select-all", value=False)
-                chk_all.tooltip = "Select or deselect all visible quarantine records"
-                yield chk_all
-
-            with Horizontal(classes="quarantine-content-split"):
-                dt = DataTable(id="quarantine-table")
-                dt.tooltip = "Table of staged quarantine compliance records"
-                dt.cursor_type = "row"
-                with Vertical(id="quarantine-table-pane"):
-                    yield dt
-
-                with Vertical(id="quarantine-detail-pane"):
-                    lbl = Heading(
-                        "Select an item to view audit log & details",
-                        level=2,
-                        classes="quarantine-detail-header",
-                        id="quarantine-detail-title",
+            with Vertical(classes="modal-body"):
+                with Horizontal(classes="quarantine-filter-row"):
+                    inp = Input(
+                        placeholder="Search by job ID, filename, policy reason...",
+                        id="quarantine-search-input",
                     )
-                    lbl.tooltip = "Audit log and metadata details panel"
-                    yield lbl
-                    st = Static(
-                        "No quarantine item selected.", id="quarantine-detail-content"
+                    inp.tooltip = "Filter quarantine records by job ID, filename, or policy reason"
+                    yield inp
+
+                    sel = Select(
+                        [
+                            ("ALL Statuses", "ALL"),
+                            ("STAGED", "STAGED"),
+                            ("QUARANTINED", "QUARANTINED"),
+                            ("IN_INSPECTION", "IN_INSPECTION"),
+                            ("RELEASED", "RELEASED"),
+                            ("DISMISSED", "DISMISSED"),
+                            ("DEAD_LETTER_QUEUE", "DEAD_LETTER_QUEUE"),
+                        ],
+                        value="ALL",
+                        id="quarantine-status-filter",
+                        allow_blank=False,
                     )
-                    st.tooltip = "Structured audit log timeline view"
-                    yield st
+                    sel.tooltip = "Filter quarantine records by status"
+                    yield sel
+
+                    chk_all = Checkbox("Select All", id="chk-select-all", value=False)
+                    chk_all.tooltip = (
+                        "Select or deselect all visible quarantine records"
+                    )
+                    yield chk_all
+
+                with Horizontal(classes="quarantine-content-split"):
+                    dt = DataTable(id="quarantine-table")
+                    dt.tooltip = "Table of staged quarantine compliance records"
+                    dt.cursor_type = "row"
+                    with Vertical(id="quarantine-table-pane"):
+                        yield dt
+
+                    with Vertical(id="quarantine-detail-pane"):
+                        lbl = Heading(
+                            "Select an item to view audit log & details",
+                            level=2,
+                            classes="quarantine-detail-header",
+                            id="quarantine-detail-title",
+                        )
+                        lbl.tooltip = "Audit log and metadata details panel"
+                        yield lbl
+                        st = Static(
+                            "No quarantine item selected.",
+                            id="quarantine-detail-content",
+                        )
+                        st.tooltip = "Structured audit log timeline view"
+                        yield st
 
             with Horizontal(classes="quarantine-button-row"):
                 lbl_cnt = Label("Selected: 0/0", id="lbl-selection-count")

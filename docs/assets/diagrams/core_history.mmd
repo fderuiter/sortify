@@ -1,12 +1,12 @@
 flowchart TD
-    event("User Action / Move Event")
-    writer[["Encrypted DB Writer"]]
-    stack[("Reversible Operation Stack")]
-    view(["History Audit Query View"])
-    event --> writer
-    writer -->|Push Reversal Link| stack
-    stack -->|Query History| view
-    click event "docs/api_reference.md#appcorehistory" "History Event"
-    click writer "docs/api_reference.md#appcoredb" "DB Writer"
-    click stack tooltip "Undo Stack"
-    click view tooltip "History View"
+    moves[("Canonical MoveLedger (moves)")]
+    replay[["Reverse Move Replay Engine"]]
+    db[["Encrypted Document Metadata Sync"]]
+    audit(["Session History & Audit Export"])
+    moves -->|Replay Verified/Done| replay
+    replay -->|Restore Paths| db
+    moves -->|Query & Export| audit
+    click moves "docs/api_reference.md#appcoremoves" "Canonical Move Ledger"
+    click replay "docs/api_reference.md#appcorehistory" "Backwards Move Replay"
+    click db "docs/api_reference.md#appcoredb" "DB Path Sync"
+    click audit "docs/api_reference.md#appcorehistory" "History & Audit View"

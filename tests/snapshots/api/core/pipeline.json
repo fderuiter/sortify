@@ -1,8 +1,15 @@
 {
   "_metadata": {
-    "checksum": "8cd148118c49d127a51cff345416a2e16db1de0be62f35b7bb057629fec3613e"
+    "checksum": "f43fe1b6f326ecd08173c09e78fdbfda07e66c4661d7d71758b0461a1fadaa64"
   },
   "classes": [
+    {
+      "class_name": "DropPathIssue",
+      "decorators": [
+        "@dataclass(frozen=True)"
+      ],
+      "methods": []
+    },
     {
       "class_name": "IllegalStateTransitionError",
       "decorators": [],
@@ -62,6 +69,16 @@
               "annotation": null,
               "default": null,
               "name": "session"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "base_dir"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "settings"
             }
           ],
           "returns": null
@@ -95,6 +112,11 @@
               "annotation": null,
               "default": null,
               "name": "plan"
+            },
+            {
+              "annotation": "Callable[[Any], AbstractContextManager[Any]] | None",
+              "default": "None",
+              "name": "move_context"
             },
             {
               "annotation": null,
@@ -133,6 +155,31 @@
               "annotation": "int",
               "default": "50",
               "name": "chunk_size"
+            },
+            {
+              "annotation": "bool | None",
+              "default": "None",
+              "name": "fast_path_only"
+            },
+            {
+              "annotation": "list[str] | None",
+              "default": "None",
+              "name": "target_paths"
+            },
+            {
+              "annotation": "dict[str, Any] | None",
+              "default": "None",
+              "name": "jev_results"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "run_metadata_pass"
+            },
+            {
+              "annotation": "Collection[str] | None",
+              "default": "None",
+              "name": "bypassed_items"
             }
           ],
           "returns": "Any"
@@ -156,6 +203,11 @@
               "annotation": "bool",
               "default": "False",
               "name": "dry_run"
+            },
+            {
+              "annotation": "Callable[[Any], AbstractContextManager[Any]] | None",
+              "default": "None",
+              "name": "move_context"
             },
             {
               "annotation": null,
@@ -323,6 +375,47 @@
         }
       ],
       "returns": "tuple[str, list | None]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "reroot_plan",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "plan"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "dest_dir"
+        }
+      ],
+      "returns": "dict[str, Any]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "validate_drop_paths",
+      "parameters": [
+        {
+          "annotation": "Sequence[Any]",
+          "default": null,
+          "name": "paths"
+        },
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "settings"
+        },
+        {
+          "annotation": "Callable[[str], bool] | None",
+          "default": "None",
+          "name": "ignore_predicate"
+        }
+      ],
+      "returns": "tuple[list[str], list[DropPathIssue]]"
     }
   ]
 }

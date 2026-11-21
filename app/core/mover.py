@@ -5,7 +5,6 @@ This module is responsible for safely moving files to new directories.
 
 import asyncio
 import concurrent.futures
-import json
 import logging
 import os
 import shutil  # noqa: F401
@@ -20,7 +19,6 @@ from pydantic import BaseModel
 
 from app.core.domain_contracts import _get_val
 from app.core.exceptions import SortifyBaseError
-from app.core.ledger import LedgerStatus
 from app.core.lifecycle import LifecycleTelemetryMixin
 from app.core.link_manager import LinkManager
 from app.core.path_utils import is_junction_path, safe_relpath
@@ -521,11 +519,6 @@ def _resolve_pending_links(
     path_map: dict,
     db=None,
     session_id: str = None,
-    ledger=None,
-    history_manager=None,
-    db_updates_batch: list = None,
-    db_lock=None,
-    step_counter: list = None,
 ) -> None:
     """Secondary pass: resolve and update shortcut/link targets after all physical moves in batch complete."""
     if not pending_links:
@@ -732,24 +725,6 @@ def _restore_displaced(backup_path: str, dest_path: str) -> None:
         logging.warning(
             f"Overwrite failed and {dest_path} is now occupied; restored the original to {restored}."
         )
-
-
-def _log_displacement(history_manager, session_id, dest_path, backup_path) -> None:
-    """Record the displacement before the move that replaced it, so undo restores both."""
-    if not (history_manager and session_id and backup_path):
-        return
-    if not hasattr(history_manager, "log_step"):
-        return
-    try:
-        history_manager.log_step(
-            session_id=session_id,
-            source_path=dest_path,
-            target_path=backup_path,
-            original_path=dest_path,
-            original_filename=os.path.basename(dest_path),
-        )
-    except Exception as log_err:
-        logging.warning(f"Failed to log overwrite backup step: {log_err}")
 
 
 def _record_move_intent(moves, session_id, source_path, dest_path, src_sha256):
@@ -1213,10 +1188,8 @@ def _process_move_item(
     path_map: dict,
     runtime_settings,
     session_id: str,
-    ledger,
     history_manager,
     db_lock: threading.Lock,
-    step_counter: list,
     db_updates_batch: list,
     audit_records: list = None,
     pending_links: list = None,
@@ -1399,26 +1372,6 @@ def _process_move_item(
             pre_hash = get_file_hash(source_path)
         except Exception:
             pre_hash = ""
-    entry_id = f"{session_id}:{source_rel_path}" if session_id else None
-
-    if ledger and session_id:
-        with db_lock:
-            try:
-                ledger.log_intent(
-                    session_id=session_id,
-                    base_dir=base_dir,
-                    source_path=source_path,
-                    dest_path=dest_path,
-                    source_rel_path=source_rel_path,
-                    dest_rel_path=rel_dest,
-                    current_dest=current_dest,
-                    file_hash=file_hash or "",
-                    entry_id=entry_id,
-                )
-            except Exception as exc:
-                logging.warning(
-                    f"Failed to log move intent to transaction ledger: {exc}"
-                )
 
     link_info = LinkManager.get_link_info(source_path)
     if not link_info:
@@ -1472,11 +1425,6 @@ def _process_move_item(
                         ),
                     }
                 )
-            if ledger and entry_id:
-                try:
-                    ledger.update_status(entry_id, "COMPLETED")
-                except Exception:
-                    pass
         return True
 
     # The intent row is committed before anything on disk changes (ADR 0006).
@@ -1538,39 +1486,6 @@ def _process_move_item(
         displaced=displaced_path,
     )
 
-    if ledger and entry_id:
-        with db_lock:
-            try:
-                ledger.update_status(entry_id, LedgerStatus.MOVED_PHYSICAL)
-            except Exception as exc:
-                logging.warning(f"Failed to update transaction ledger status: {exc}")
-
-    if displaced_path:
-        with db_lock:
-            _log_displacement(
-                history_manager, session_id, overwritten_path, displaced_path
-            )
-
-    if history_manager and session_id and not _is_same_path(dest_path, source_path):
-        orig_filename = os.path.basename(source_path)
-        is_collision = bool(collision or (os.path.basename(dest_path) != orig_filename))
-        is_cross_vol = _is_cross_volume(source_path, dest_path)
-        with db_lock:
-            if hasattr(history_manager, "log_step"):
-                try:
-                    history_manager.log_step(
-                        session_id=session_id,
-                        source_path=source_path,
-                        target_path=dest_path,
-                        original_path=source_path,
-                        original_filename=orig_filename,
-                        is_cross_volume=is_cross_vol,
-                        is_collision_renamed=is_collision,
-                        file_hash=file_hash,
-                    )
-                except Exception as log_err:
-                    logging.warning(f"Failed to log relocation step: {log_err}")
-
     item_type = link_info["type"] if link_info else "file"
     step_hash = None
     if item_type == "file" and os.path.exists(dest_path):
@@ -1630,39 +1545,6 @@ def _process_move_item(
                 "args": (base_dir, source_rel_path, rel_dest),
             }
         )
-
-        if session_id:
-            step_num = step_counter[0]
-            step_counter[0] += 1
-            link_meta = None
-            if link_info:
-                link_meta = {
-                    "target": link_info.get("target"),
-                    "type": link_info["type"],
-                }
-
-            step_entry = {
-                "type": "transaction_step",
-                "args": (
-                    session_id,
-                    step_num,
-                    base_dir,
-                    source_rel_path,
-                    rel_dest,
-                    step_hash,
-                    item_type,
-                    json.dumps(link_meta) if link_meta else None,
-                ),
-            }
-            db_updates_batch.append(step_entry)
-
-        if ledger and entry_id:
-            try:
-                ledger.update_status(entry_id, "COMPLETED")
-            except Exception as exc:
-                logging.warning(
-                    f"Failed to update transaction ledger completion: {exc}"
-                )
 
     if audit_records is not None:
         post_hash = dest_file_hash
@@ -1790,7 +1672,6 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
         db_updates_batch: list[Any] = []
         audit_records: list[dict] = []
         pending_links: list = []
-        step_counter = [1]
         has_flushed_db = False
         summary: MoveResult | None = None
 
@@ -1813,21 +1694,21 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                 raise ValueError(f"Plan validation or confirmation failed: {warn_text}")
 
             if not resume and history_manager:
-                # Without a snapshot nothing could undo or roll back the moves, so
-                # refuse to start rather than move files under an unknown session.
+                # Without a registered session nothing could undo or roll back the
+                # moves, so refuse to start rather than move files untracked.
                 try:
-                    session_id = history_manager.create_snapshot(base_dir)
-                except Exception as snap_err:
+                    session_id = history_manager.start_session(base_dir)
+                except Exception as sess_err:
                     raise RuntimeError(
-                        f"Refusing to move files: could not create an undo snapshot for {base_dir}: {snap_err}"
-                    ) from snap_err
+                        f"Refusing to move files: could not register sort session for {base_dir}: {sess_err}"
+                    ) from sess_err
                 if not session_id:
                     raise RuntimeError(
-                        f"Refusing to move files: could not create an undo snapshot for {base_dir}."
+                        f"Refusing to move files: could not register sort session for {base_dir}."
                     )
-                logging.info(f"Created snapshot session {session_id} for {base_dir}")
+                logging.info(f"Started sort session {session_id} for {base_dir}")
             elif history_manager:
-                logging.info(f"Resuming snapshot session for {base_dir}")
+                logging.info(f"Resuming sort session for {base_dir}")
                 try:
                     sessions = history_manager.get_sessions()
                     for s in sessions:
@@ -1839,26 +1720,19 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                             break
                 except Exception:
                     pass
+                if not session_id and hasattr(history_manager, "start_session"):
+                    try:
+                        session_id = history_manager.start_session(base_dir)
+                    except Exception:
+                        pass
 
             if not session_id:
                 session_id = str(uuid.uuid4())
 
-            # No transaction spans the sort. Documents, steps and history share one
-            # store (ADR 0008), so a sort-long write lock would stall every step
-            # logged from a move thread. Each chunk's updates commit on their own,
-            # and unwind_session moves document paths back if the sort fails.
-            ledger = getattr(runtime_settings, "transaction_ledger", None)
-            if ledger is None:
-                try:
-                    from app.core.ledger import TransactionLedger
-
-                    ledger = TransactionLedger()
-                except Exception as ledger_err:
-                    logging.warning(
-                        f"Could not initialize TransactionLedger: {ledger_err}"
-                    )
-                    ledger = None
-
+            # No transaction spans the sort. Documents and move records share one
+            # store (ADR 0008), so a sort-long write lock would stall every move
+            # committed from a worker thread. Each chunk's updates commit on their own,
+            # and unwind_session replays moves backwards if the sort fails.
             moves_list = VerificationEngine.get_moves(base_dir, plan)
             path_map = {
                 os.path.normcase(os.path.abspath(src)): os.path.abspath(dst)
@@ -1996,10 +1870,8 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         path_map,
                         runtime_settings,
                         session_id,
-                        ledger,
                         history_manager,
                         db_lock,
-                        step_counter,
                         db_updates_batch,
                         audit_records,
                         pending_links,
@@ -2066,11 +1938,6 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         path_map=path_map,
                         db=db,
                         session_id=session_id,
-                        ledger=ledger,
-                        history_manager=history_manager,
-                        db_updates_batch=db_updates_batch,
-                        db_lock=db_lock,
-                        step_counter=step_counter,
                     )
                 cleanup_enabled = (
                     getattr(runtime_settings, "CLEANUP_EMPTY_FOLDERS", True)
@@ -2168,18 +2035,17 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         db_updates_batch.clear()
                         has_flushed_db = True
 
-                if ledger and session_id:
+                if (
+                    session_id
+                    and history_manager
+                    and hasattr(history_manager, "complete_session")
+                ):
                     try:
-                        ledger.purge_session(session_id)
-                    except Exception as purge_err:
+                        history_manager.complete_session(session_id)
+                    except Exception as complete_err:
                         logging.warning(
-                            f"Failed to purge finalized session ledger: {purge_err}"
+                            f"Failed to mark session {session_id} completed: {complete_err}"
                         )
-                if session_id and history_manager:
-                    try:
-                        history_manager.clear_step_ledger(session_id)
-                    except Exception:
-                        pass
 
                 self.transition_to(MoveEngineState.COMPLETED)
                 summary.state = self.state

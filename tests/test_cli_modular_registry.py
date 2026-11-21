@@ -62,18 +62,16 @@ def test_ledger_status_and_reconcile():
             assert data["status"] == "success"
             assert data["count"] == 0
 
-            # Create an entry directly in transaction ledger
-            from app.core.ledger import TransactionLedger
+            # Create an entry directly in canonical move ledger
+            from app.core.moves import MoveLedger
 
-            ledger_inst = TransactionLedger(db_path=ledger_db)
-            entry_id = ledger_inst.log_intent(
+            ledger_inst = MoveLedger(db_path=ledger_db, auto_init=True)
+            seq = ledger_inst.record_intent(
                 session_id="sess_101",
-                base_dir=str(tmp_path),
-                source_path=str(tmp_path / "src.txt"),
-                dest_path=str(tmp_path / "dest.txt"),
-                source_rel_path="src.txt",
-                dest_rel_path="dest.txt",
+                src=str(tmp_path / "src.txt"),
+                dst=str(tmp_path / "dest.txt"),
             )
+            entry_id = f"sess_101:{seq}"
 
             # 2. Status with pending entry
             code_pend, stdout_pend, stderr_pend = run_cli(

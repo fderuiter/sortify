@@ -187,8 +187,8 @@ def test_rollback_invalidates_cache(cache_test_env):
     base_dir, db, history, _ = cache_test_env
     db.upsert_document(base_dir, "doc1.txt", "hash1", "text1")
 
-    # Create a snapshot
-    session_id = history.create_snapshot(base_dir)
+    # Start a session
+    session_id = history.start_session(base_dir)
 
     # Populate cache
     db.get_all_documents(base_dir)

@@ -5,7 +5,7 @@ import os
 from typing import Any, Optional
 
 from rich.text import Text
-from textual import events, on
+from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
@@ -23,13 +23,15 @@ from textual.widgets import (
 
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveLayoutMixin
 from app.ui.widgets.density_slider import DensitySlider
 
 logger = logging.getLogger(__name__)
 
 
-class ExtractionPreviewModal(A11yMixin, ModalScreen[Optional[int]]):
+class ExtractionPreviewModal(
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[int]]
+):
     """Modal dialog for interactive visual inspection of PDF page extraction decisions."""
 
     BINDINGS = [
@@ -47,9 +49,19 @@ class ExtractionPreviewModal(A11yMixin, ModalScreen[Optional[int]]):
         border: thick $primary;
         width: 90%;
         max-width: 84;
-        min-width: 40;
+        min-width: 35;
         height: auto;
-        max-height: 90%;
+        max-height: 92%;
+        overflow-y: hidden;
+    }
+    .compact .preview-modal-box, .narrow .preview-modal-box {
+        padding: 0 1;
+        width: 96%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
         overflow-y: auto;
     }
     .modal-title {
@@ -62,7 +74,9 @@ class ExtractionPreviewModal(A11yMixin, ModalScreen[Optional[int]]):
         margin-bottom: 1;
     }
     .preview-table {
-        height: 10;
+        height: auto;
+        min-height: 6;
+        max-height: 10;
         margin-top: 1;
         margin-bottom: 1;
         border: solid $primary-lighten-2;
@@ -76,8 +90,10 @@ class ExtractionPreviewModal(A11yMixin, ModalScreen[Optional[int]]):
         margin-right: 1;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
+        height: auto;
         align: right middle;
     }
     """
@@ -92,45 +108,46 @@ class ExtractionPreviewModal(A11yMixin, ModalScreen[Optional[int]]):
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children widgets."""
-        with Vertical(classes="preview-modal-box"):
+        with ModalBox(classes="preview-modal-box modal-box"):
             yield Heading(
                 "PDF Extraction Strategy Preview",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
             )
-            yield Label(
-                f"File: {os.path.basename(self.file_path)}",
-                classes="file-path-label",
-            )
+            with Vertical(classes="modal-body"):
+                yield Label(
+                    f"File: {os.path.basename(self.file_path)}",
+                    classes="file-path-label",
+                )
 
-            yield Label("Density Threshold (chars/page):", classes="field-label")
-            with Horizontal(classes="threshold-row"):
-                thresh_inp = Input(
-                    value=str(self.current_threshold),
-                    placeholder="Density Threshold (chars/page)",
-                    name="Density Threshold",
-                    id="preview-input-threshold",
-                    classes="narrow-input",
-                )
-                thresh_inp.tooltip = (
-                    "Adjust PDF text density threshold in characters per page"
-                )
-                thresh_inp.label = "Density Threshold (chars/page)"
-                yield thresh_inp
-                slider = DensitySlider(
-                    value=self.current_threshold,
-                    min_value=0,
-                    max_value=500,
-                    step=5,
-                    announce_formatter=self._format_slider_announcement,
-                    id="preview-slider-threshold",
-                )
-                slider.tooltip = "Adjust PDF text density threshold slider"
-                yield slider
+                yield Label("Density Threshold (chars/page):", classes="field-label")
+                with Horizontal(classes="threshold-row"):
+                    thresh_inp = Input(
+                        value=str(self.current_threshold),
+                        placeholder="Density Threshold (chars/page)",
+                        name="Density Threshold",
+                        id="preview-input-threshold",
+                        classes="narrow-input",
+                    )
+                    thresh_inp.tooltip = (
+                        "Adjust PDF text density threshold in characters per page"
+                    )
+                    thresh_inp.label = "Density Threshold (chars/page)"
+                    yield thresh_inp
+                    slider = DensitySlider(
+                        value=self.current_threshold,
+                        min_value=0,
+                        max_value=500,
+                        step=5,
+                        announce_formatter=self._format_slider_announcement,
+                        id="preview-slider-threshold",
+                    )
+                    slider.tooltip = "Adjust PDF text density threshold slider"
+                    yield slider
 
-            yield DataTable(id="preview-table", classes="preview-table")
-            yield Label("", id="preview-summary-label")
+                yield DataTable(id="preview-table", classes="preview-table")
+                yield Label("", id="preview-summary-label")
 
             with Horizontal(classes="button-row"):
                 btn_cancel = Button(
@@ -146,6 +163,7 @@ class ExtractionPreviewModal(A11yMixin, ModalScreen[Optional[int]]):
 
     def on_mount(self) -> None:
         """Handle modal mount event and populate initial preview data."""
+        self._update_layout(self.size.width, self.size.height)
         self.announce("Opened PDF extraction strategy preview modal.")
         table = self.query_one("#preview-table", DataTable)
         table.add_columns("Page", "Embedded Chars", "Vector Paths", "Predicted Status")
@@ -275,11 +293,17 @@ class ExportReportModal(
         min-width: 30;
         height: auto;
         max-height: 90%;
-        overflow-y: auto;
+        overflow-y: hidden;
     }
-    .narrow .modal-box {
+    .compact .modal-box, .narrow .modal-box {
         padding: 0 1;
         width: 95%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -291,8 +315,10 @@ class ExportReportModal(
         margin-bottom: 1;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
+        height: auto;
         align: right middle;
     }
     Button:focus, Input:focus, Select:focus {
@@ -312,32 +338,33 @@ class ExportReportModal(
 
     def compose(self) -> ComposeResult:
         """Compose export report modal widgets."""
-        with Vertical(classes="modal-box"):
+        with ModalBox(classes="modal-box"):
             yield Heading(
                 "Export Simulation Report",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
             )
-            yield Label(
-                "Select output file path and report format:",
-                classes="modal-subtitle",
-            )
-            inp = Input(
-                value=self.default_path,
-                placeholder="Enter output path (e.g. ./report.html)...",
-                id="input-export-path",
-            )
-            inp.tooltip = "Enter path for exported dry-run simulation report"
-            yield inp
+            with Vertical(classes="modal-body"):
+                yield Label(
+                    "Select output file path and report format:",
+                    classes="modal-subtitle",
+                )
+                inp = Input(
+                    value=self.default_path,
+                    placeholder="Enter output path (e.g. ./report.html)...",
+                    id="input-export-path",
+                )
+                inp.tooltip = "Enter path for exported dry-run simulation report"
+                yield inp
 
-            fmt_select = Select(
-                [("HTML Report (*.html)", "html"), ("JSON Data (*.json)", "json")],
-                value=self.default_format,
-                id="select-export-format",
-                allow_blank=False,
-            )
-            yield fmt_select
+                fmt_select = Select(
+                    [("HTML Report (*.html)", "html"), ("JSON Data (*.json)", "json")],
+                    value=self.default_format,
+                    id="select-export-format",
+                    allow_blank=False,
+                )
+                yield fmt_select
 
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
@@ -374,7 +401,7 @@ class ExportReportModal(
         self.dismiss(None)
 
 
-class AuditReportModal(A11yMixin, ModalScreen[None]):
+class AuditReportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     """Interactive Modal Screen for Tabular Verification Tree & Multi-Format Audit Export."""
 
     BINDINGS = [
@@ -394,14 +421,21 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
         background: $panel;
         border: thick $primary;
         width: 95%;
-        max-width: 105;
-        min-width: 50;
-        height: 85%;
+        max-width: 108;
+        min-width: 40;
+        height: 90%;
         min-height: 20;
+        overflow-y: hidden;
     }
-    .narrow .audit-modal-box {
+    .compact .audit-modal-box, .narrow .audit-modal-box {
         padding: 0 1;
         width: 98%;
+        height: 94%;
+    }
+    .modal-body {
+        width: 100%;
+        height: 1fr;
+        overflow-y: auto;
     }
     .audit-title {
         text-style: bold;
@@ -412,17 +446,34 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
         color: $text-muted;
         margin-bottom: 1;
     }
+    .compact .audit-subtitle {
+        margin-bottom: 0;
+    }
     .audit-stats-row {
-        height: 3;
+        width: 100%;
+        height: auto;
         margin-bottom: 1;
-        align: center middle;
+        layout: horizontal;
+    }
+    .compact .audit-stats-row, .narrow .audit-stats-row {
+        margin-bottom: 0;
+        layout: grid;
+        grid-size: 3;
+        grid-columns: 1fr 1fr 1fr;
+        grid-gutter: 0 1;
     }
     .stat-card {
+        width: 1fr;
+        min-width: 0;
         padding: 0 1;
         margin-right: 1;
         border: solid $secondary;
         background: $surface;
-        min-width: 15;
+    }
+    .compact .stat-card, .narrow .stat-card {
+        border: none;
+        height: 1;
+        margin-right: 0;
     }
     .stat-pass {
         color: $success;
@@ -441,28 +492,61 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
         border: solid $secondary;
     }
     .filter-row {
-        height: 3;
+        width: 100%;
+        height: auto;
         margin-bottom: 1;
     }
+    .compact .filter-row {
+        margin-bottom: 0;
+    }
     #audit-search-input {
-        width: 60%;
+        width: 1fr;
         margin-right: 1;
     }
     #audit-status-filter {
-        width: 38%;
+        width: 26;
     }
     #audit-table, #failed-items-table {
-        height: 1fr;
+        width: 100%;
+        height: auto;
+        min-height: 7;
+        max-height: 16;
         margin-bottom: 1;
         border: solid $accent;
     }
+    .compact #audit-table, .compact #failed-items-table {
+        margin-bottom: 0;
+    }
     #audit-tabs {
-        height: 1fr;
+        height: auto;
+        min-height: 11;
         margin-bottom: 1;
     }
+    .compact #audit-tabs {
+        margin-bottom: 0;
+    }
     .button-row {
-        height: 3;
-        align: right middle;
+        dock: bottom;
+        width: 100%;
+        margin-top: 1;
+        layout: grid;
+        grid-size: 3;
+        grid-columns: 1fr 1fr 1fr;
+        grid-gutter: 0 1;
+        height: auto;
+    }
+    .compact .button-row {
+        margin-top: 0;
+    }
+    .button-row Button {
+        width: 100%;
+        min-width: 0;
+        margin: 0;
+    }
+    .compact .button-row Button {
+        height: 1;
+        min-height: 1;
+        border: none;
     }
     Button:focus, Input:focus, Select:focus, DataTable:focus {
         border: heavy $accent;
@@ -476,7 +560,7 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         """Compose verification audit report modal widgets."""
-        with Vertical(classes="audit-modal-box"):
+        with ModalBox(classes="audit-modal-box modal-box"):
             yield Heading(
                 "Post-Sort File Integrity Verification Audit Report",
                 level=1,
@@ -492,51 +576,56 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
             skip_cnt = self.report_data.get("skipped_count", 0)
             unverified_cnt = self.report_data.get("unverified_count", 0)
 
-            with Horizontal(classes="audit-stats-row"):
-                yield Static(f"Total: {total}", classes="stat-card")
-                yield Static(f"[PASS]: {pass_cnt}", classes="stat-card stat-pass")
-                yield Static(f"[FAIL]: {fail_cnt}", classes="stat-card stat-fail")
-                yield Static(f"[SKIPPED]: {skip_cnt}", classes="stat-card stat-skipped")
-                yield Static(
-                    f"[UNVERIFIED]: {unverified_cnt}",
-                    classes="stat-card stat-unverified",
-                )
+            with Vertical(classes="modal-body"):
+                with Horizontal(classes="audit-stats-row"):
+                    yield Static(f"Total: {total}", classes="stat-card")
+                    yield Static(f"[PASS]: {pass_cnt}", classes="stat-card stat-pass")
+                    yield Static(f"[FAIL]: {fail_cnt}", classes="stat-card stat-fail")
+                    yield Static(
+                        f"[SKIPPED]: {skip_cnt}", classes="stat-card stat-skipped"
+                    )
+                    yield Static(
+                        f"[UNVERIFIED]: {unverified_cnt}",
+                        classes="stat-card stat-unverified",
+                    )
 
-            with TabbedContent(initial="tab-all-records", id="audit-tabs"):
-                with TabPane("All Verification Records", id="tab-all-records"):
-                    with Horizontal(classes="filter-row"):
-                        inp = Input(
-                            placeholder="Search by filename or path...",
-                            id="audit-search-input",
-                        )
-                        inp.tooltip = "Filter verification results by filename or path"
-                        yield inp
+                with TabbedContent(initial="tab-all-records", id="audit-tabs"):
+                    with TabPane("All Verification Records", id="tab-all-records"):
+                        with Horizontal(classes="filter-row"):
+                            inp = Input(
+                                placeholder="Search by filename or path...",
+                                id="audit-search-input",
+                            )
+                            inp.tooltip = (
+                                "Filter verification results by filename or path"
+                            )
+                            yield inp
 
-                        status_sel = Select(
-                            [
-                                ("All Statuses", "ALL"),
-                                ("Verified Pass [PASS]", "VERIFIED_PASS"),
-                                ("Mismatch Fail [FAIL]", "MISMATCH_FAIL"),
-                                ("Skipped [SKIPPED]", "SKIPPED"),
-                                ("Unverified [UNVERIFIED]", "UNVERIFIED"),
-                            ],
-                            value="ALL",
-                            id="audit-status-filter",
-                            allow_blank=False,
-                        )
-                        status_sel.tooltip = "Filter results by verification status"
-                        yield status_sel
+                            status_sel = Select(
+                                [
+                                    ("All Statuses", "ALL"),
+                                    ("Verified Pass [PASS]", "VERIFIED_PASS"),
+                                    ("Mismatch Fail [FAIL]", "MISMATCH_FAIL"),
+                                    ("Skipped [SKIPPED]", "SKIPPED"),
+                                    ("Unverified [UNVERIFIED]", "UNVERIFIED"),
+                                ],
+                                value="ALL",
+                                id="audit-status-filter",
+                                allow_blank=False,
+                            )
+                            status_sel.tooltip = "Filter results by verification status"
+                            yield status_sel
 
-                    table = DataTable(id="audit-table")
-                    table.cursor_type = "row"
-                    table.tooltip = "Audit report tabular verification tree"
-                    yield table
+                        table = DataTable(id="audit-table")
+                        table.cursor_type = "row"
+                        table.tooltip = "Audit report tabular verification tree"
+                        yield table
 
-                with TabPane("Failed Items Queue", id="tab-failed-queue"):
-                    failed_table = DataTable(id="failed-items-table")
-                    failed_table.cursor_type = "row"
-                    failed_table.tooltip = "Dedicated Failed Items queue table"
-                    yield failed_table
+                    with TabPane("Failed Items Queue", id="tab-failed-queue"):
+                        failed_table = DataTable(id="failed-items-table")
+                        failed_table.cursor_type = "row"
+                        failed_table.tooltip = "Dedicated Failed Items queue table"
+                        yield failed_table
 
             with Horizontal(classes="button-row"):
                 btn_retry_sel = Button(
@@ -568,17 +657,6 @@ class AuditReportModal(A11yMixin, ModalScreen[None]):
                 btn_close = Button("Close", id="btn-close", variant="default")
                 btn_close.tooltip = "Close verification audit report dialog"
                 yield btn_close
-
-    def _update_layout(self, width: int, height: int = 24) -> None:
-        """Update layout based on viewport width and height breakpoint."""
-        if width < 80 or height < 24:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-
-    def on_resize(self, event: events.Resize) -> None:
-        """Handle viewport resize event."""
-        self._update_layout(event.size.width, event.size.height)
 
     def on_mount(self) -> None:
         """Initialize table rows, accessibility announcement, and initial focus."""

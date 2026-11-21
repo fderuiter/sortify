@@ -7,7 +7,7 @@ import pytest
 
 from app.core.crypto import CryptoManager, SessionCrypto
 from app.core.db_conn import get_db_connection
-from app.core.ledger import TransactionLedger, sanitize_audit_metadata
+from app.core.ledger import KeyAuditLedger, sanitize_audit_metadata
 from app.core.text_utils import contains_secrets
 
 
@@ -16,7 +16,7 @@ def test_key_audit_ledger_schema(tmp_path):
     ledger_path = str(tmp_path / "transaction_ledger.db")
 
     # Initialize ledger DB
-    TransactionLedger(ledger_path)
+    KeyAuditLedger(ledger_path)
 
     conn = get_db_connection(ledger_path)
     cursor = conn.cursor()
@@ -71,7 +71,7 @@ def test_rotate_database_key_audit_recording(tmp_path):
         )
         assert new_key is not None
 
-        ledger = TransactionLedger(ledger_path)
+        ledger = KeyAuditLedger(ledger_path)
         events = ledger.get_key_audit_events(session_id="session_rot_101")
 
         assert len(events) >= 1
@@ -105,7 +105,7 @@ def test_key_rotation_failure_audit_recording(tmp_path):
                     caller_metadata={"trigger": "schedule"},
                 )
 
-        ledger = TransactionLedger(ledger_path)
+        ledger = KeyAuditLedger(ledger_path)
         events = ledger.get_key_audit_events(session_id="failed_rot_session")
 
         assert len(events) == 1
@@ -132,7 +132,7 @@ def test_get_raw_key_export_audit_recording(tmp_path):
         )
         assert raw_key is not None
 
-        ledger = TransactionLedger(ledger_path)
+        ledger = KeyAuditLedger(ledger_path)
         events = ledger.get_key_audit_events(session_id="export_session_202")
 
         assert len(events) >= 1
@@ -168,7 +168,7 @@ def test_audit_records_contain_no_plain_text_keys_or_secrets(tmp_path):
             caller_metadata=sensitive_caller_metadata,
         )
 
-        ledger = TransactionLedger(ledger_path)
+        ledger = KeyAuditLedger(ledger_path)
         events = ledger.get_key_audit_events(session_id="sanitization_session")
         assert len(events) == 1
         meta = events[0]["metadata"]
@@ -219,7 +219,7 @@ def test_sanitize_audit_metadata_unit():
 def test_query_key_audit_events_filtering(tmp_path):
     """Verify historical event querying by session_id, event_type, db_path, and time range."""
     ledger_path = str(tmp_path / "transaction_ledger.db")
-    ledger = TransactionLedger(ledger_path)
+    ledger = KeyAuditLedger(ledger_path)
 
     hash1 = CryptoManager.derive_db_hash("/db/path1.db")
     hash2 = CryptoManager.derive_db_hash("/db/path2.db")
@@ -265,7 +265,7 @@ def test_audit_logging_failure_graceful_handling(tmp_path):
     crypto = SessionCrypto(key_path, db_path)
 
     with patch(
-        "app.core.ledger.TransactionLedger.log_key_audit",
+        "app.core.ledger.KeyAuditLedger.log_key_audit",
         side_effect=RuntimeError("Sidecar DB disk full"),
     ):
         raw_key = crypto.get_raw_key()

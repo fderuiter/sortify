@@ -132,8 +132,10 @@ flowchart TD
     core_store --> core_history
     core_store --> core_moves
     core_history --> core_moves
-    core_ledger --> core_db
+    core_mover --> core_moves
+    core_crypto --> core_ledger
     core_history --> core_db
+    core_session_catalog --> core_moves
     core_session_catalog --> core_store
     core_policy_engine --> core_quarantine_interceptor
     core_quarantine_interceptor --> core_domain_contracts

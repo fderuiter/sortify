@@ -147,7 +147,6 @@ def test_windows_shortcut_update_mocked(tmp_path):
         patch("app.core.mover.pylnk3", mock_pylnk3),
         patch("app.core.mover.os.path.exists") as mock_exists,
         patch("app.core.mover.os.path.lexists") as mock_lexists,
-        patch.object(history_manager, "create_snapshot"),
         patch("app.core.mover.os.remove") as mock_remove,
         patch(
             "app.core.resilient_file_ops.resilient_move",
@@ -263,7 +262,6 @@ def test_windows_shortcut_update_in_place_mocked(tmp_path):
         patch("app.core.mover.os.path.exists") as mock_exists,
         patch("app.core.mover.os.path.lexists") as mock_lexists,
         patch("app.core.mover.os.path.samefile") as mock_samefile,
-        patch.object(history_manager, "create_snapshot"),
         patch(
             "app.core.resilient_file_ops.resilient_move",
             side_effect=lambda src, dst: dst,
@@ -365,7 +363,6 @@ def test_windows_shortcut_update_exception(tmp_path, caplog):
         patch("app.core.mover.os.path.exists") as mock_exists,
         patch("app.core.mover.os.path.lexists") as mock_lexists,
         patch("app.core.mover.os.path.samefile") as mock_samefile,
-        patch.object(history_manager, "create_snapshot"),
         patch(
             "app.core.resilient_file_ops.resilient_move",
             side_effect=lambda src, dst: dst,

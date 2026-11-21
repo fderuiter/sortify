@@ -36,7 +36,7 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         align: center middle;
         background: rgba(0, 0, 0, 0.6);
     }
-    .modal-box {
+    .modal-frame {
         padding: 1 2;
         background: $panel;
         border: thick $primary;
@@ -45,11 +45,22 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         min-width: 30;
         height: auto;
         max-height: 90%;
-        overflow-y: auto;
+        overflow-y: hidden;
     }
-    .narrow .modal-box {
+    .compact .modal-frame {
         padding: 0 1;
-        width: 95%;
+        width: 96%;
+        max-height: 96%;
+    }
+    .narrow .modal-frame {
+        padding: 0 1;
+        width: 96%;
+    }
+    .modal-box {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -96,10 +107,18 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         color: $text-muted;
     }
     .preset-row {
+        width: 100%;
+        layout: grid;
+        grid-size: 3;
+        grid-gutter: 0 1;
         margin-top: 1;
         margin-bottom: 1;
         height: auto;
         min-height: 3;
+    }
+    .preset-row Button {
+        width: 100%;
+        min-width: 0;
     }
     .switch-row {
         margin-top: 1;
@@ -108,8 +127,11 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         align: left middle;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
+        height: auto;
+        min-height: 3;
         align: right middle;
     }
     Button:focus, Checkbox:focus, Switch:focus, Input:focus, .privacy-card:focus {
@@ -130,156 +152,163 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
-        with Vertical(classes="modal-box"):
-            yield Heading(
-                "Model Onboarding Wizard [Ctrl+W]",
-                level=1,
-                classes="modal-title",
-                id="modal-title",
-            )
-            yield Label("Welcome to Smart AutoSorter AI Pro TUI.")
-            yield Label("Enable AI semantic categorization consent below:")
+        with Vertical(classes="modal-frame"):
+            with Vertical(classes="modal-box modal-body"):
+                yield Heading(
+                    "Model Onboarding Wizard [Ctrl+W]",
+                    level=1,
+                    classes="modal-title",
+                    id="modal-title",
+                )
+                yield Label("Welcome to Smart AutoSorter AI Pro TUI.")
+                yield Label("Enable AI semantic categorization consent below:")
 
-            priv_card = Vertical(id="privacy-card", classes="privacy-card")
-            priv_card.can_focus = True
-            priv_card.tooltip = (
-                "Local-first privacy guarantees: 100% local model execution, "
-                "zero document cloud telemetry, and encrypted local SQLCipher storage"
-            )
-            with priv_card:
-                yield Label(
-                    "[100% On-Device & Offline]",
-                    classes="privacy-badge",
-                    id="privacy-badge",
+                priv_card = Vertical(id="privacy-card", classes="privacy-card")
+                priv_card.can_focus = True
+                priv_card.tooltip = (
+                    "Local-first privacy guarantees: 100% local model execution, "
+                    "zero document cloud telemetry, and encrypted local SQLCipher storage"
+                )
+                with priv_card:
+                    yield Label(
+                        "[100% On-Device & Offline]",
+                        classes="privacy-badge",
+                        id="privacy-badge",
+                    )
+                    yield Label(
+                        "Local-First Privacy Guarantees:",
+                        classes="privacy-title",
+                        id="privacy-card-title",
+                    )
+                    yield Label(
+                        "• 100% local model execution: ML classification and clustering run entirely on-device.",
+                        classes="privacy-guarantee",
+                        id="privacy-guarantee-local",
+                    )
+                    yield Label(
+                        "• Zero document cloud telemetry: Document contents and names are never sent to external servers.",
+                        classes="privacy-guarantee",
+                        id="privacy-guarantee-telemetry",
+                    )
+                    yield Label(
+                        "• Encrypted local SQLCipher storage: Databases, extracted text, and vectors are encrypted at rest.",
+                        classes="privacy-guarantee",
+                        id="privacy-guarantee-storage",
+                    )
+
+                consent_val = getattr(self.settings, "AI_CONSENT_GRANTED", None)
+                if consent_val is None:
+                    consent_val = False
+                yield LabeledSwitch(
+                    label="AI Consent Granted",
+                    value=bool(consent_val),
+                    switch_id="switch-consent",
+                    tooltip=(
+                        "Toggle AI consent for semantic document classification "
+                        "([100% On-Device & Offline]: 100% local model execution, "
+                        "zero document cloud telemetry, and encrypted local SQLCipher storage)"
+                    ),
+                )
+
+                yield Heading("Workspace Directory:", level=2, classes="field-label")
+                initial_dir = (
+                    self.current_dir
+                    if getattr(self, "current_dir", None) is not None
+                    else (getattr(getattr(self, "app", None), "base_dir", "") or "")
+                )
+                inp = Input(
+                    value=initial_dir,
+                    placeholder="Enter absolute workspace directory path...",
+                    id="input-dir",
+                )
+                inp.tooltip = "Enter target directory path to scan and organize"
+                yield inp
+                yield Static("", id="lbl-error", classes="error-banner")
+
+                yield Label("Quick Presets:", classes="preset-label")
+                with Horizontal(classes="preset-row"):
+                    p_demo = Button(
+                        "Demo Workspace", id="preset-demo", variant="default"
+                    )
+                    p_demo.tooltip = "Select sandbox demo workspace quick preset"
+                    yield p_demo
+                    p_dl = Button("Downloads", id="preset-downloads", variant="default")
+                    p_dl.tooltip = "Select user Downloads folder quick preset"
+                    yield p_dl
+                    p_docs = Button(
+                        "Documents", id="preset-documents", variant="default"
+                    )
+                    p_docs.tooltip = "Select user Documents folder quick preset"
+                    yield p_docs
+
+                btn_pg = Button(
+                    "Try Interactive Sample Playground",
+                    id="btn-open-playground",
+                    variant="primary",
+                )
+                btn_pg.tooltip = (
+                    "Preview sample documents and live rule classification matrix"
+                )
+                yield btn_pg
+
+                chk_sample = Checkbox(
+                    "Generate Sample Documents",
+                    value=False,
+                    id="chk-sample-corpus",
+                )
+                chk_sample.tooltip = (
+                    "Generate sample document corpus in active workspace directory"
+                )
+                yield chk_sample
+
+                yield Heading(
+                    "Starter Rule Template Packs:", level=2, classes="field-label"
                 )
                 yield Label(
-                    "Local-First Privacy Guarantees:",
-                    classes="privacy-title",
-                    id="privacy-card-title",
+                    "Select pre-built template packs to populate keyword rules & compliance policies:"
+                )
+
+                from app.core.rule_templates import get_starter_templates
+
+                for pack in get_starter_templates():
+                    is_default = pack.id in ("financial_tax", "personal_admin")
+                    chk = Checkbox(
+                        f"{pack.icon} {pack.title}",
+                        value=is_default,
+                        id=f"chk-template-{pack.id}",
+                    )
+                    chk.tooltip = pack.description
+                    yield chk
+
+                yield Heading(
+                    "Compliance Sensitivity Quarantine (Opt-In):",
+                    level=2,
+                    classes="field-label",
                 )
                 yield Label(
-                    "• 100% local model execution: ML classification and clustering run entirely on-device.",
-                    classes="privacy-guarantee",
-                    id="privacy-guarantee-local",
+                    "Enable automatic quarantine holds only if you want HIGH or CRITICAL sensitivity files staged for review:"
                 )
-                yield Label(
-                    "• Zero document cloud telemetry: Document contents and names are never sent to external servers.",
-                    classes="privacy-guarantee",
-                    id="privacy-guarantee-telemetry",
+                current_auto_ratings = {
+                    str(r).upper()
+                    for r in (
+                        getattr(self.settings, "AUTO_QUARANTINE_RATINGS", []) or []
+                    )
+                    if r
+                }
+                yield LabeledSwitch(
+                    label="Auto-Quarantine CRITICAL Sensitivity",
+                    value="CRITICAL" in current_auto_ratings,
+                    switch_id="switch-wizard-quarantine-critical",
+                    tooltip="Automatically hold CRITICAL sensitivity documents (e.g. clinical/medical records) in compliance quarantine",
                 )
-                yield Label(
-                    "• Encrypted local SQLCipher storage: Databases, extracted text, and vectors are encrypted at rest.",
-                    classes="privacy-guarantee",
-                    id="privacy-guarantee-storage",
+                yield LabeledSwitch(
+                    label="Auto-Quarantine HIGH Sensitivity",
+                    value="HIGH" in current_auto_ratings,
+                    switch_id="switch-wizard-quarantine-high",
+                    tooltip="Automatically hold HIGH sensitivity documents (e.g. financial, tax, legal, resume records) in compliance quarantine",
                 )
 
-            consent_val = getattr(self.settings, "AI_CONSENT_GRANTED", None)
-            if consent_val is None:
-                consent_val = False
-            yield LabeledSwitch(
-                label="AI Consent Granted",
-                value=bool(consent_val),
-                switch_id="switch-consent",
-                tooltip=(
-                    "Toggle AI consent for semantic document classification "
-                    "([100% On-Device & Offline]: 100% local model execution, "
-                    "zero document cloud telemetry, and encrypted local SQLCipher storage)"
-                ),
-            )
-
-            yield Heading("Workspace Directory:", level=2, classes="field-label")
-            initial_dir = (
-                self.current_dir
-                if getattr(self, "current_dir", None) is not None
-                else (getattr(getattr(self, "app", None), "base_dir", "") or "")
-            )
-            inp = Input(
-                value=initial_dir,
-                placeholder="Enter absolute workspace directory path...",
-                id="input-dir",
-            )
-            inp.tooltip = "Enter target directory path to scan and organize"
-            yield inp
-            yield Static("", id="lbl-error", classes="error-banner")
-
-            yield Label("Quick Presets:", classes="preset-label")
-            with Horizontal(classes="preset-row"):
-                p_demo = Button("Demo Workspace", id="preset-demo", variant="default")
-                p_demo.tooltip = "Select sandbox demo workspace quick preset"
-                yield p_demo
-                p_dl = Button("Downloads", id="preset-downloads", variant="default")
-                p_dl.tooltip = "Select user Downloads folder quick preset"
-                yield p_dl
-                p_docs = Button("Documents", id="preset-documents", variant="default")
-                p_docs.tooltip = "Select user Documents folder quick preset"
-                yield p_docs
-
-            btn_pg = Button(
-                "Try Interactive Sample Playground",
-                id="btn-open-playground",
-                variant="primary",
-            )
-            btn_pg.tooltip = (
-                "Preview sample documents and live rule classification matrix"
-            )
-            yield btn_pg
-
-            chk_sample = Checkbox(
-                "Generate Sample Documents",
-                value=False,
-                id="chk-sample-corpus",
-            )
-            chk_sample.tooltip = (
-                "Generate sample document corpus in active workspace directory"
-            )
-            yield chk_sample
-
-            yield Heading(
-                "Starter Rule Template Packs:", level=2, classes="field-label"
-            )
-            yield Label(
-                "Select pre-built template packs to populate keyword rules & compliance policies:"
-            )
-
-            from app.core.rule_templates import get_starter_templates
-
-            for pack in get_starter_templates():
-                is_default = pack.id in ("financial_tax", "personal_admin")
-                chk = Checkbox(
-                    f"{pack.icon} {pack.title}",
-                    value=is_default,
-                    id=f"chk-template-{pack.id}",
-                )
-                chk.tooltip = pack.description
-                yield chk
-
-            yield Heading(
-                "Compliance Sensitivity Quarantine (Opt-In):",
-                level=2,
-                classes="field-label",
-            )
-            yield Label(
-                "Enable automatic quarantine holds only if you want HIGH or CRITICAL sensitivity files staged for review:"
-            )
-            current_auto_ratings = {
-                str(r).upper()
-                for r in (getattr(self.settings, "AUTO_QUARANTINE_RATINGS", []) or [])
-                if r
-            }
-            yield LabeledSwitch(
-                label="Auto-Quarantine CRITICAL Sensitivity",
-                value="CRITICAL" in current_auto_ratings,
-                switch_id="switch-wizard-quarantine-critical",
-                tooltip="Automatically hold CRITICAL sensitivity documents (e.g. clinical/medical records) in compliance quarantine",
-            )
-            yield LabeledSwitch(
-                label="Auto-Quarantine HIGH Sensitivity",
-                value="HIGH" in current_auto_ratings,
-                switch_id="switch-wizard-quarantine-high",
-                tooltip="Automatically hold HIGH sensitivity documents (e.g. financial, tax, legal, resume records) in compliance quarantine",
-            )
-
-            yield Label("Status: Local embedded AI model weights verified.")
+                yield Label("Status: Local embedded AI model weights verified.")
 
             with Horizontal(classes="button-row"):
                 btn_finish = Button("Finish & Save", id="btn-finish", variant="primary")
@@ -354,7 +383,7 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     def on_mount(self) -> None:
         """Focus switch on mount and emit screen reader announcement."""
-        self._update_layout(self.size.width)
+        self._update_layout(self.size.width, self.size.height)
         try:
             self.query_one("#switch-consent", Switch).focus()
         except Exception:

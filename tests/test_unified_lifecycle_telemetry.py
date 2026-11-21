@@ -8,12 +8,12 @@ import pytest
 from app.core.daemon import ContinuousWatchdogDaemon, DaemonState, InvalidStateError
 from app.core.downloader import DownloadManager, DownloadState
 from app.core.history import SessionStateMachine
-from app.core.ledger import LedgerStatus, TransactionLedger
 from app.core.lifecycle import (
     LifecycleTelemetryMixin,
     sanitize_telemetry_payload,
 )
 from app.core.mover import AsyncMoveEngine, InvalidMoveStateError, MoveEngineState
+from app.core.moves import MoveLedger
 from app.core.pipeline import SortPipeline
 from app.plugins.clinical_compliance.cro_multi_study_pipeline import (
     CROMultiStudyPipeline,
@@ -358,17 +358,10 @@ class TestAsyncMoveEngineLifecycle:
                 pass
 
         class DummyHistoryManager:
-            def __init__(self):
-                self.steps = []
-                self.lock = threading.Lock()
-
-            def create_snapshot(self, base_dir):
+            def start_session(self, base_dir):
                 return "test-session-123"
 
-            def log_step(self, **kwargs):
-                self.steps.append(kwargs)
-
-            def clear_step_ledger(self, session_id):
+            def complete_session(self, session_id):
                 pass
 
         engine = AsyncMoveEngine()
@@ -389,49 +382,22 @@ class TestAsyncMoveEngineLifecycle:
         assert "move_finish" in event_types
 
 
-class TestTransactionLedgerLifecycle:
-    """Tests for TransactionLedger status changes and telemetry."""
+class TestMoveLedgerLifecycle:
+    """Tests for MoveLedger lifecycle mixin and reconciliation telemetry."""
 
     def test_ledger_inherits_lifecycle_mixin(self, tmp_path):
-        ledger = TransactionLedger(db_path=str(tmp_path / "ledger.db"))
+        ledger = MoveLedger(db_path=str(tmp_path / "ledger.db"), auto_init=True)
         assert isinstance(ledger, LifecycleTelemetryMixin)
 
-    def test_ledger_status_update_emits_telemetry(self, tmp_path):
-        ledger = TransactionLedger(db_path=str(tmp_path / "ledger.db"))
-        events = []
-        ledger.add_transition_listener(lambda evt: events.append(evt))
-
-        entry_id = ledger.log_intent(
-            session_id="sess_123",
-            base_dir=str(tmp_path),
-            source_path=str(tmp_path / "file1.txt"),
-            dest_path=str(tmp_path / "dest1.txt"),
-            source_rel_path="file1.txt",
-            dest_rel_path="dest1.txt",
-        )
-
-        ledger.update_status(entry_id, LedgerStatus.MOVED_PHYSICAL)
-
-        status_events = [
-            e for e in events if e.get("event_type") == "LEDGER_STATUS_CHANGED"
-        ]
-        assert len(status_events) == 1
-        assert status_events[0]["entry_id"] == entry_id
-        assert status_events[0]["old_status"] == LedgerStatus.PENDING.value
-        assert status_events[0]["new_status"] == LedgerStatus.MOVED_PHYSICAL.value
-
     def test_ledger_reconciliation_lifecycle_events(self, tmp_path):
-        ledger = TransactionLedger(db_path=str(tmp_path / "ledger.db"))
+        ledger = MoveLedger(db_path=str(tmp_path / "ledger.db"), auto_init=True)
         events = []
         ledger.add_transition_listener(lambda evt: events.append(evt))
 
-        ledger.log_intent(
+        ledger.record_intent(
             session_id="sess_rec",
-            base_dir=str(tmp_path),
-            source_path=str(tmp_path / "file_pending.txt"),
-            dest_path=str(tmp_path / "dest_pending.txt"),
-            source_rel_path="file_pending.txt",
-            dest_rel_path="dest_pending.txt",
+            src=str(tmp_path / "file_pending.txt"),
+            dst=str(tmp_path / "dest_pending.txt"),
         )
 
         reconciled = ledger.reconcile_incomplete_transactions()

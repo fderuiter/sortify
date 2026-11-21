@@ -19,13 +19,20 @@ from app.core.db_conn import DB_ERRORS, get_db_connection
 from app.core.exceptions import CryptoError
 from app.core.history import HistoryManager, _history_db_baseline
 from app.core.migrations import Migration, migrate
-from app.core.moves import import_step_ledger, migrate_add_moves
+from app.core.moves import (
+    import_sidecar_ledger,
+    import_step_ledger,
+    import_transaction_ledger,
+    migrate_add_moves,
+    migrate_import_legacy_moves,
+)
 
 STORE_FILENAME = "sortify.db"
 
 # Per-session files older versions wrote, in import order.
 LEGACY_HISTORY_DB = "history.db"
 LEGACY_MAIN_DB = "autosorter.db"
+LEGACY_SIDECAR_LEDGER_DB = "transaction_ledger.db"
 
 
 def _store_initial(conn) -> None:
@@ -46,6 +53,7 @@ def _store_initial(conn) -> None:
 STORE_MIGRATIONS = (
     Migration(1, "initial", _store_initial),
     Migration(2, "moves", migrate_add_moves),
+    Migration(3, "legacy_moves", migrate_import_legacy_moves),
 )
 
 
@@ -120,6 +128,10 @@ def import_legacy_sessions(store: Store, session_root: Path) -> int:
         )
         if (folder / name).is_file()
     ]
+    for folder in folders:
+        sidecar = folder / LEGACY_SIDECAR_LEDGER_DB
+        if sidecar.is_file() and _has_sidecar_moves(sidecar):
+            sources.append((sidecar, _copy_sidecar_ledger))
     sources.sort(key=lambda source: _mtime(source[0]), reverse=True)
     return sum(_import_one(store, source, copy) for source, copy in sources)
 
@@ -313,7 +325,29 @@ def _copy_main(src, dst, old_crypto, new_crypto) -> int:
         transform=_reencrypt("extracted_text", old_crypto, new_crypto, dst=dst),
     )
     count += _copy_table(src, dst, "transaction_ledger", skip=("id",))
+    count += import_transaction_ledger(dst)
     count += _copy_table(src, dst, "quarantine_records")
     # Vectors, TF-IDF tables, model metadata and classification caches are
     # derived from the documents and rebuilt on the next analysis.
     return count
+
+
+def _has_sidecar_moves(path: Path) -> bool:
+    try:
+        conn = get_db_connection(str(path))
+        has_table = conn.execute(
+            "SELECT 1 FROM sqlite_master WHERE type='table' AND name='transaction_ledger'"
+        ).fetchone()
+        if not has_table:
+            return False
+        return (
+            conn.execute("SELECT 1 FROM transaction_ledger LIMIT 1").fetchone()
+            is not None
+        )
+    except (*DB_ERRORS, OSError, CryptoError, ValueError):
+        return False
+
+
+def _copy_sidecar_ledger(src, dst, old_crypto, new_crypto) -> int:
+    del old_crypto, new_crypto
+    return import_sidecar_ledger(src, dst)

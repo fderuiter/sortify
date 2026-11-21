@@ -177,3 +177,34 @@ def test_global_clear_connection_cache_closes_all_connections(tmp_path):
     # Verify running thread connection is also closed
     with pytest.raises(Exception):
         running_thread_conn_ref[0].execute("SELECT 1")
+
+
+def test_get_db_connection_skips_path_resolve_on_cached_abs_path(tmp_path, monkeypatch):
+    import os
+    from pathlib import Path
+
+    db_path = str((tmp_path / "fast_lookup.db").resolve())
+    clear_connection_cache(only_current_and_inactive=False)
+
+    first_conn = get_db_connection(db_path)
+
+    resolve_calls = 0
+    orig_resolve = Path.resolve
+
+    def counting_resolve(self, *args, **kwargs):
+        nonlocal resolve_calls
+        if os.fspath(self) == db_path:
+            resolve_calls += 1
+        return orig_resolve(self, *args, **kwargs)
+
+    monkeypatch.setattr(Path, "resolve", counting_resolve)
+    second_conn = get_db_connection(db_path)
+    assert second_conn is first_conn
+    assert resolve_calls == 0
+
+    clear_connection_cache(only_current_and_inactive=True)
+    third_conn = get_db_connection(db_path)
+    assert third_conn is not first_conn
+    assert resolve_calls >= 1
+
+    clear_connection_cache(only_current_and_inactive=False)

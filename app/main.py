@@ -554,60 +554,53 @@ def _print_plan_for_humans(
     print("\n".join(lines))
 
 
-def _reroot_plan(plan, dest_dir: str) -> dict:
-    """Re-key a plan's relative entries under ``--dest-dir``; absolute keys stay."""
-    dest_base = Path(dest_dir).resolve()
-    dest_base.mkdir(parents=True, exist_ok=True)
-    plan_items = (
-        plan.plan.items()
-        if hasattr(plan, "plan") and isinstance(plan.plan, dict)
-        else plan.items()
-    )
-    re_rooted_plan = {}
-    for k, v in plan_items:
-        if os.path.isabs(k):
-            re_rooted_plan[k] = v
-        else:
-            re_rooted_plan[str(dest_base / k)] = v
-    return re_rooted_plan
-
-
-def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
-    """Execute document batch sorting or launch interactive TUI."""
-    import json
-    from pathlib import Path
-
-    apply_config_overrides(settings, args)
-
-    from app.core.verifier import is_ml_available
-
-    if not is_ml_available():
-        requested_ml = (
-            getattr(args, "strategy", None) == "generative"
-            or getattr(settings, "SORTING_STRATEGY", None) == "generative"
-            or getattr(settings, "AI_ASSISTED_NAMING", False)
-        )
-        if requested_ml:
-            print(
-                "Warning: Machine learning features requested, but ML dependencies are not installed.\n"
-                "To enable ML features, please install the 'ml' extra group: uv sync --extra ml (or pip install '.[ml]')\n"
-                "Proceeding in offline fallback mode.",
-                file=sys.stderr,
-            )
-
+def _maybe_launch_tui(
+    args: argparse.Namespace,
+    settings: AppSettings,
+    initial_dir: str | None = None,
+) -> None:
+    """Launch the interactive TUI and exit when ``--tui`` or ``--interactive`` is set."""
     if getattr(args, "tui", False) or getattr(args, "interactive", False):
         from app.ui.tui import run_tui
 
         run_tui(
             settings,
-            getattr(args, "directory", None),
+            initial_dir,
             skip_wizard=_extract_bool_arg(args, "skip_wizard"),
             non_interactive=_extract_bool_arg(args, "non_interactive"),
         )
         sys.exit(0)
 
-    is_json = getattr(args, "json", False)
 
+def _prepare_cli_target_directory(
+    args: argparse.Namespace,
+    settings: AppSettings,
+    *,
+    warn_if_ml_unavailable: bool = False,
+):
+    """Apply CLI overrides once, optionally launch TUI, and validate the target folder."""
+    apply_config_overrides(settings, args)
+
+    if warn_if_ml_unavailable:
+        from app.core.verifier import is_ml_available
+
+        if not is_ml_available():
+            requested_ml = (
+                getattr(args, "strategy", None) == "generative"
+                or getattr(settings, "SORTING_STRATEGY", None) == "generative"
+                or getattr(settings, "AI_ASSISTED_NAMING", False)
+            )
+            if requested_ml:
+                print(
+                    "Warning: Machine learning features requested, but ML dependencies are not installed.\n"
+                    "To enable ML features, please install the 'ml' extra group: uv sync --extra ml (or pip install '.[ml]')\n"
+                    "Proceeding in offline fallback mode.",
+                    file=sys.stderr,
+                )
+
+    _maybe_launch_tui(args, settings, getattr(args, "directory", None))
+
+    is_json = getattr(args, "json", False)
     try:
         target_path = resolve_preset_and_directory(args, settings)
     except ValueError as err:
@@ -625,10 +618,51 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
         )
 
     args.directory = str(target_path)
+    return target_path
+
+
+def _maybe_export_simulation_report(
+    args: argparse.Namespace,
+    plan: Any,
+    base_dir: str,
+) -> None:
+    """Export a JSON or HTML simulation report when ``--export-report`` is provided."""
+    export_report_path = getattr(args, "export_report", None)
+    if not export_report_path:
+        return
+
+    from app.core.simulation_exporter import SimulationExporter
+
+    fmt = getattr(args, "report_format", None)
+    if not fmt:
+        fmt = "json" if str(export_report_path).lower().endswith(".json") else "html"
+    fmt = str(fmt).lower()
+
+    exporter = SimulationExporter(plan, base_dir=base_dir)
+    if fmt == "json":
+        exporter.export_json(export_report_path)
+    else:
+        exporter.export_html(export_report_path)
+
+    if not getattr(args, "quiet", False):
+        print(
+            f"Exported simulation report ({fmt.upper()}) to '{export_report_path}'.",
+            file=sys.stderr,
+        )
+
+
+def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
+    """Execute document batch sorting or launch interactive TUI."""
+    import json
+    from pathlib import Path
+
+    target_path = _prepare_cli_target_directory(
+        args, settings, warn_if_ml_unavailable=True
+    )
 
     session = None
     try:
-        from app.core.pipeline import SortPipeline
+        from app.core.pipeline import SortPipeline, reroot_plan
         from app.core.session import AppSession
 
         session = AppSession(settings, base_dir=str(target_path))
@@ -640,36 +674,11 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
         json_output = getattr(args, "json", False)
 
         if dest_dir:
-            plan = _reroot_plan(plan, dest_dir)
+            plan = reroot_plan(plan, dest_dir)
             session.base_dir = str(Path(dest_dir).resolve())
 
         serializable_plan = _make_json_serializable(plan)
-
-        export_report_path = getattr(args, "export_report", None)
-        report_format = getattr(args, "report_format", None)
-        if export_report_path:
-            from app.core.simulation_exporter import SimulationExporter
-
-            fmt = report_format
-            if not fmt:
-                fmt = (
-                    "json"
-                    if str(export_report_path).lower().endswith(".json")
-                    else "html"
-                )
-            fmt = str(fmt).lower()
-
-            exporter = SimulationExporter(plan, base_dir=str(target_path))
-            if fmt == "json":
-                exporter.export_json(export_report_path)
-            else:
-                exporter.export_html(export_report_path)
-
-            if not getattr(args, "quiet", False):
-                print(
-                    f"Exported simulation report ({fmt.upper()}) to '{export_report_path}'.",
-                    file=sys.stderr,
-                )
+        _maybe_export_simulation_report(args, plan, base_dir=str(target_path))
 
         if dry_run:
             result = {
@@ -737,40 +746,7 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
     """Execute directory scanning and sorting analysis or launch interactive TUI."""
     import json
 
-    apply_config_overrides(settings, args)
-
-    if getattr(args, "tui", False) or getattr(args, "interactive", False):
-        from app.ui.tui import run_tui
-
-        run_tui(
-            settings,
-            getattr(args, "directory", None),
-            skip_wizard=_extract_bool_arg(args, "skip_wizard"),
-            non_interactive=_extract_bool_arg(args, "non_interactive"),
-        )
-        sys.exit(0)
-
-    is_json = getattr(args, "json", False)
-
-    try:
-        target_path = resolve_preset_and_directory(args, settings)
-    except ValueError as err:
-        emit_cli_error(
-            f"Error: {err}",
-            json_mode=is_json,
-            exit_code=1,
-        )
-
-    if not target_path.exists() or not target_path.is_dir():
-        emit_cli_error(
-            f"Error: Target directory '{target_path}' does not exist or is not a directory.",
-            json_mode=is_json,
-            exit_code=1,
-        )
-
-    args.directory = str(target_path)
-
-    apply_config_overrides(settings, args)
+    target_path = _prepare_cli_target_directory(args, settings)
 
     session = None
     try:
@@ -783,31 +759,7 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
         plan = SortPipeline(session).plan(files)
         serializable_plan = _make_json_serializable(plan)
 
-        export_report_path = getattr(args, "export_report", None)
-        report_format = getattr(args, "report_format", None)
-        if export_report_path:
-            from app.core.simulation_exporter import SimulationExporter
-
-            fmt = report_format
-            if not fmt:
-                fmt = (
-                    "json"
-                    if str(export_report_path).lower().endswith(".json")
-                    else "html"
-                )
-            fmt = str(fmt).lower()
-
-            exporter = SimulationExporter(plan, base_dir=str(target_path))
-            if fmt == "json":
-                exporter.export_json(export_report_path)
-            else:
-                exporter.export_html(export_report_path)
-
-            if not getattr(args, "quiet", False):
-                print(
-                    f"Exported simulation report ({fmt.upper()}) to '{export_report_path}'.",
-                    file=sys.stderr,
-                )
+        _maybe_export_simulation_report(args, plan, base_dir=str(target_path))
 
         result = {
             "status": "success",
@@ -1115,15 +1067,9 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
                 "base_dir": None,
             }
     elif latest_flag:
-        from app.core.history import UNDO_SNAPSHOT_STATUS
-
-        # Skip sorts already undone and the safety snapshots undo itself
-        # takes, so running `undo --latest` again reaches the previous sort.
+        # Skip sorts already undone, so running `undo --latest` again reaches the previous sort.
         undoable = [
-            s
-            for s in all_sessions
-            if str(s.get("status", "")).lower()
-            not in ("rolled_back", UNDO_SNAPSHOT_STATUS)
+            s for s in all_sessions if str(s.get("status", "")).lower() != "rolled_back"
         ]
         if undoable:
             target_session = undoable[0]
@@ -1177,18 +1123,9 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
     apply_config_overrides(settings, args)
     json_output = getattr(args, "json", False)
 
-    if getattr(args, "tui", False) or getattr(args, "interactive", False):
-        from app.ui.tui import run_tui
-
-        raw_p = getattr(args, "paths", None)
-        init_dir = getattr(args, "directory", None) or (raw_p[0] if raw_p else None)
-        run_tui(
-            settings,
-            init_dir,
-            skip_wizard=_extract_bool_arg(args, "skip_wizard"),
-            non_interactive=_extract_bool_arg(args, "non_interactive"),
-        )
-        sys.exit(0)
+    raw_p = getattr(args, "paths", None)
+    init_dir = getattr(args, "directory", None) or (raw_p[0] if raw_p else None)
+    _maybe_launch_tui(args, settings, init_dir)
 
     if getattr(args, "preset", None):
         print(
@@ -1204,31 +1141,29 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
             exit_code=1,
         )
 
-    validated_paths = []
-    for p in raw_paths:
-        clean_p = p.strip().strip("'\"")
-        if not clean_p:
-            continue
-        abs_p = os.path.abspath(clean_p)
-        if not os.path.exists(abs_p):
+    from app.core.pipeline import (
+        SortPipeline,
+        drop_scope,
+        reroot_plan,
+        validate_drop_paths,
+    )
+    from app.core.session import AppSession
+
+    validated_paths, issues = validate_drop_paths(raw_paths, settings=settings)
+    if issues:
+        first_issue = issues[0]
+        if first_issue.reason == "missing":
             emit_cli_error(
-                f"Error: Target path '{clean_p}' does not exist.",
+                f"Error: Target path '{first_issue.clean_path}' does not exist.",
                 json_mode=json_output,
                 exit_code=1,
             )
-
-        protected = getattr(settings, "PROTECTED_PATHS", [])
-        from app.core.mover import is_subpath_or_equal
-
-        for prot in protected:
-            if prot and is_subpath_or_equal(abs_p, prot):
-                emit_cli_error(
-                    f"Error: Target path '{clean_p}' is protected.",
-                    json_mode=json_output,
-                    exit_code=1,
-                )
-
-        validated_paths.append(abs_p)
+        elif first_issue.reason == "protected":
+            emit_cli_error(
+                f"Error: Target path '{first_issue.clean_path}' is protected.",
+                json_mode=json_output,
+                exit_code=1,
+            )
 
     if not validated_paths:
         emit_cli_error(
@@ -1242,9 +1177,6 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
     quiet = getattr(args, "quiet", False)
 
     processed_results = []
-    from app.core.pipeline import SortPipeline, drop_scope
-    from app.core.session import AppSession
-
     for path in validated_paths:
         base_dir, files = drop_scope(path)
 
@@ -1255,7 +1187,7 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
             plan = pipeline.plan(files)
 
             if dest_dir:
-                plan = _reroot_plan(plan, dest_dir)
+                plan = reroot_plan(plan, dest_dir)
 
             serializable_plan = _make_json_serializable(plan)
             if dry_run:
@@ -1842,9 +1774,10 @@ def _main_impl():
 
     # Automated headless startup reconciliation scan for incomplete file relocations
     try:
-        from app.core.ledger import TransactionLedger
+        from app.core.moves import MoveLedger
+        from app.core.store import open_store
 
-        ledger = TransactionLedger()
+        ledger = MoveLedger(str(open_store().path), auto_init=True)
         ledger.reconcile_incomplete_transactions()
     except Exception as exc:
         logging.warning(

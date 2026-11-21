@@ -201,3 +201,347 @@ def test_undo_reports_a_file_changed_since_the_sort_as_failed(session):
 def test_undo_of_an_unknown_session_raises(session):
     with pytest.raises(ValueError):
         SortPipeline(session).undo("no-such-session")
+
+
+def test_plan_fast_path_and_bypassed_items_options(tmp_path):
+    """SortPipeline.plan supports fast_path_only, target_paths, run_metadata_pass, and bypassed_items."""
+    from unittest import mock
+
+    from app.core.pipeline import PipelineLifecycleState
+
+    src = tmp_path / "src"
+    src.mkdir()
+    (src / "invoice_q1.txt").write_text("Quarterly invoice details.")
+    (src / "notes.txt").write_text("General research notes.")
+
+    settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = False
+    settings.KEYWORD_RULES = {"invoice": "Invoices"}
+
+    s = AppSession(settings, base_dir=str(src))
+    try:
+        pipeline = SortPipeline(s)
+        states: list[PipelineLifecycleState] = []
+        pipeline.add_state_change_hook(lambda _old, new, _ctx=None: states.append(new))
+
+        with mock.patch(
+            "app.core.extractor.build_corpus_generator"
+        ) as mock_build_corpus:
+            fast_plan = pipeline.plan(
+                ["invoice_q1.txt", "notes.txt"],
+                fast_path_only=True,
+                target_paths=["invoice_q1.txt"],
+                run_metadata_pass=True,
+            )
+            mock_build_corpus.assert_not_called()
+
+        assert "invoice_q1.txt" in _planned_sources(fast_plan)
+        assert "notes.txt" not in _planned_sources(fast_plan)
+        assert states == [
+            PipelineLifecycleState.PLANNING,
+            PipelineLifecycleState.PLANNED,
+        ]
+
+        partial_fit_spy = mock.MagicMock(wraps=s.partial_fit)
+        s.partial_fit = partial_fit_spy
+        slow_plan = pipeline.plan(
+            ["invoice_q1.txt", "notes.txt"],
+            fast_path_only=False,
+            run_metadata_pass=True,
+            bypassed_items={"invoice_q1.txt"},
+        )
+        assert partial_fit_spy.called
+        fitted_keys = {
+            k for call in partial_fit_spy.call_args_list for k in call.args[0].keys()
+        }
+        assert fitted_keys == {"notes.txt"}
+        assert "notes.txt" in _planned_sources(slow_plan)
+    finally:
+        s.close()
+
+
+def test_execute_move_context_wraps_execute_moves(session):
+    """SortPipeline.execute enters move_context around session.execute_moves."""
+    from contextlib import contextmanager
+
+    events: list[str] = []
+
+    @contextmanager
+    def record_context(plan):
+        assert plan
+        events.append("enter")
+        try:
+            yield
+        finally:
+            events.append("exit")
+
+    orig_execute = session.execute_moves
+
+    def wrapped_execute(plan, **kwargs):
+        assert events == ["enter"]
+        events.append("moves")
+        return orig_execute(plan, **kwargs)
+
+    session.execute_moves = wrapped_execute
+    pipeline = SortPipeline(session)
+    plan = pipeline.plan(["finance_doc.txt"])
+    result = pipeline.execute(plan, move_context=record_context)
+
+    assert result.ok
+    assert events == ["enter", "moves", "exit"]
+
+
+def test_reroot_plan_and_validate_drop_paths(tmp_path):
+    """reroot_plan and validate_drop_paths share consistent path handling."""
+    from app.core.pipeline import reroot_plan, validate_drop_paths
+
+    valid_file = tmp_path / "valid.txt"
+    valid_file.write_text("hello")
+    ignored_file = tmp_path / ".autosorter.tmp"
+    ignored_file.write_text("ignored")
+    protected_dir = tmp_path / "protected"
+    protected_dir.mkdir()
+    protected_file = protected_dir / "secret.txt"
+    protected_file.write_text("secret")
+
+    settings = AppSettings()
+    settings.PROTECTED_PATHS = [str(protected_dir)]
+
+    validated, issues = validate_drop_paths(
+        [
+            f"'{valid_file}'",
+            str(tmp_path / "missing.txt"),
+            str(ignored_file),
+            str(protected_file),
+            "   ",
+        ],
+        settings=settings,
+        ignore_predicate=lambda p: p.endswith(".autosorter.tmp"),
+    )
+
+    assert validated == [str(valid_file.resolve())]
+    assert [i.reason for i in issues] == ["missing", "ignored", "protected"]
+
+    dest_dir = tmp_path / "out_dest"
+    abs_target = str((tmp_path / "already_abs").resolve())
+    rerooted = reroot_plan(
+        {"Docs": ["valid.txt"], abs_target: ["other.txt"]},
+        str(dest_dir),
+    )
+    assert dest_dir.is_dir()
+    assert str(dest_dir.resolve() / "Docs") in rerooted
+    assert abs_target in rerooted
+
+
+@pytest.mark.anyio
+async def test_ipc_drop_validates_paths_once_and_daemon_emits_pipeline_telemetry(
+    tmp_path, monkeypatch
+):
+    """DaemonIPCServer._handle_drop_rpc validates paths once, and daemon sorting emits pipeline telemetry."""
+    import threading
+    from unittest import mock
+
+    import app.core.pipeline as pipeline_mod
+    from app.core.daemon import ContinuousWatchdogDaemon
+    from app.core.db_conn import clear_connection_cache
+    from app.core.ipc import DaemonIPCServer
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app_dir"))
+    src = tmp_path / "watched"
+    src.mkdir()
+    dropped = tmp_path / "dropped_doc.txt"
+    dropped.write_text("Finance report and budget summary.")
+
+    settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = False
+    daemon = ContinuousWatchdogDaemon(settings, str(src))
+    ipc_server = DaemonIPCServer(daemon)
+
+    try:
+        with mock.patch.object(
+            pipeline_mod,
+            "validate_drop_paths",
+            wraps=pipeline_mod.validate_drop_paths,
+        ) as spy_validate:
+            res = await ipc_server._handle_drop_rpc(
+                {"paths": [str(dropped)], "dry_run": True}
+            )
+            assert spy_validate.call_count == 1
+            assert res["status"] == "success"
+            assert res["processed_count"] == 1
+            assert res["validated_paths"] == [str(dropped.resolve())]
+
+        (src / "invoice_100.txt").write_text("Invoice total 100")
+        settings.KEYWORD_RULES = {"invoice": "Invoices"}
+        daemon._is_running = True
+        telemetry_events: list[dict] = []
+        daemon.add_telemetry_hook(
+            lambda evt, payload: (
+                telemetry_events.append(payload)
+                if evt == "pipeline_state_change"
+                else None
+            )
+        )
+        with mock.patch.object(AppSettings, "load", lambda _self: None):
+            daemon._run_sorting_sync(threading.Event())
+
+        observed_states = [e["new_state"] for e in telemetry_events]
+        assert "planning" in observed_states
+        assert "planned" in observed_states
+        assert "executing" in observed_states
+        assert "completed" in observed_states
+    finally:
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_handle_scan_command_applies_config_overrides_once(
+    tmp_path, monkeypatch, capsys
+):
+    """handle_scan_command applies CLI overrides once and exports simulation reports via shared helper."""
+    import argparse
+
+    import app.main as main_mod
+
+    target = tmp_path / "scan_dir"
+    target.mkdir()
+    (target / "doc.txt").write_text("Software python engineering")
+    report_file = tmp_path / "sim_report.json"
+
+    settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = False
+
+    override_calls: list[int] = []
+    orig_apply = main_mod.apply_config_overrides
+
+    def tracked_apply(s, a):
+        override_calls.append(1)
+        return orig_apply(s, a)
+
+    monkeypatch.setattr(main_mod, "apply_config_overrides", tracked_apply)
+
+    args = argparse.Namespace(
+        directory=str(target),
+        preset=None,
+        tui=False,
+        interactive=False,
+        json=True,
+        quiet=True,
+        export_report=str(report_file),
+        report_format="json",
+    )
+
+    with pytest.raises(SystemExit) as exc_info:
+        main_mod.handle_scan_command(args, settings)
+
+    assert exc_info.value.code == 0
+    assert len(override_calls) == 1
+    assert report_file.is_file()
+    captured = capsys.readouterr()
+    assert '"status": "success"' in captured.out
+
+
+def test_daemon_process_dropped_items_and_reload_settings(tmp_path, monkeypatch):
+    """ContinuousWatchdogDaemon.process_dropped_items and _reload_settings cover shared validation and timer flushing."""
+    from unittest import mock
+
+    from app.core.daemon import ContinuousWatchdogDaemon
+    from app.core.db_conn import clear_connection_cache
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app_dir"))
+    watched = tmp_path / "watched"
+    watched.mkdir()
+    drop_dir = tmp_path / "drop_src"
+    drop_dir.mkdir()
+    valid_doc = drop_dir / "invoice_doc.txt"
+    valid_doc.write_text("Invoice banking financial report")
+    ignored_doc = drop_dir / "sortify.db"
+    ignored_doc.write_text("db")
+    prot_dir = tmp_path / "protected"
+    prot_dir.mkdir()
+    prot_doc = prot_dir / "secret.txt"
+    prot_doc.write_text("secret")
+
+    settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = False
+    settings.PROTECTED_PATHS = [str(prot_dir)]
+    daemon = ContinuousWatchdogDaemon(settings, str(watched))
+
+    try:
+        mock_timer = mock.MagicMock()
+        object.__setattr__(settings, "_save_timer", mock_timer)
+        with (
+            mock.patch.object(AppSettings, "_save") as mock_save,
+            mock.patch.object(AppSettings, "load") as mock_load,
+        ):
+            daemon._reload_settings()
+            mock_timer.cancel.assert_called_once()
+            mock_save.assert_called_once()
+            mock_load.assert_called_once()
+
+        object.__setattr__(settings, "_save_timer", None)
+        with mock.patch.object(AppSettings, "load", side_effect=OSError("disk busy")):
+            daemon._reload_settings(log_error=False)
+            daemon._reload_settings(log_error=True)
+
+        result = daemon.process_dropped_items(
+            [
+                str(valid_doc),
+                str(tmp_path / "missing_doc.txt"),
+                str(ignored_doc),
+                str(prot_doc),
+            ],
+            dry_run=False,
+        )
+        assert result["status"] == "success"
+        assert result["processed_count"] == 1
+        assert len(result["errors"]) == 2
+        assert any("Path does not exist:" in e for e in result["errors"])
+        assert any("Protected path blocked:" in e for e in result["errors"])
+        moved_files = list(drop_dir.rglob("invoice_doc.txt"))
+        assert len(moved_files) == 1
+        assert len(moved_files[0].relative_to(drop_dir).parts) == 2
+    finally:
+        daemon.stop()
+        clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_plan_relativizes_dropped_file_items_under_base_dir(tmp_path, monkeypatch):
+    """SortPipeline.plan relativizes absolute dropped file paths (POSIX and Windows drive paths) under base_dir."""
+    from app.core.pipeline import _relativize_items_to_base
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app_dir"))
+    drop_dir = tmp_path / "drop_src"
+    drop_dir.mkdir()
+    dropped_file = drop_dir / "invoice_doc.txt"
+    dropped_file.write_text("Invoice banking financial report")
+
+    base, files = drop_scope(str(dropped_file))
+    settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = False
+    s = AppSession(settings, base_dir=base)
+    try:
+        plan, result = SortPipeline(s).run(files)
+        assert plan
+        assert result.ok
+        moved_files = list(drop_dir.rglob("invoice_doc.txt"))
+        assert len(moved_files) == 1
+        assert len(moved_files[0].relative_to(drop_dir).parts) == 2
+    finally:
+        s.close()
+
+    win_base = r"C:\Users\runneradmin\AppData\Local\Temp\drop_src"
+    win_items = [
+        r"C:\Users\runneradmin\AppData\Local\Temp\drop_src\invoice_doc.txt",
+        r"C:\Users\runneradmin\AppData\Local\Temp\drop_src\sub\report.txt",
+        r"C:\Users\runneradmin\Other\external.txt",
+        r"C:\Users\runneradmin\Other::ns_doc.txt",
+        "already_rel.txt",
+    ]
+    assert _relativize_items_to_base(win_items, win_base) == [
+        "invoice_doc.txt",
+        r"sub\report.txt",
+        r"C:\Users\runneradmin\Other\external.txt",
+        r"C:\Users\runneradmin\Other::ns_doc.txt",
+        "already_rel.txt",
+    ]

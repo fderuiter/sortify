@@ -1,6 +1,5 @@
 """Unit tests for user-namespaced session storage path resolution, sanitization, and session recovery isolation."""
 
-import json
 import os
 import stat
 from unittest import mock
@@ -125,35 +124,35 @@ async def test_session_recovery_scans_only_active_user_root(monkeypatch, tmp_pat
     monkeypatch.delenv("AUTOSORTER_APP_DIR", raising=False)
     monkeypatch.setattr("tempfile.gettempdir", lambda: str(tmp_path))
 
+    import sqlite3
+    from contextlib import closing
+
+    from app.core.history import HISTORY_DB_MIGRATIONS
+    from app.core.migrations import migrate
+
+    def _seed_abandoned_db(session_dir, sid, bdir):
+        session_dir.mkdir(parents=True, exist_ok=True)
+        with closing(sqlite3.connect(session_dir / "history.db")) as conn:
+            migrate(conn, HISTORY_DB_MIGRATIONS, label="history")
+            conn.execute(
+                "INSERT INTO sessions (session_id, timestamp, base_dir, status) "
+                "VALUES (?, 1.0, ?, 'active')",
+                (sid, bdir),
+            )
+            conn.execute(
+                "INSERT INTO moves (session_id, seq, src, dst, state, created_at, updated_at) "
+                "VALUES (?, 1, ?, ?, 'done', 1.0, 1.0)",
+                (sid, f"{bdir}/a.txt", f"{bdir}/Out/a.txt"),
+            )
+            conn.commit()
+
     # Setup User A session directory with an abandoned session
     user_a_base = tmp_path / "autosorter_sessions_usera"
-    user_a_session = user_a_base / "session_a1"
-    user_a_session.mkdir(parents=True, exist_ok=True)
-    journal_a = user_a_session / "rollback_journal.json"
-    journal_a.write_text(
-        json.dumps(
-            {
-                "session_id": "session_a1",
-                "safety_session_id": "safety_a1",
-                "base_dir": "/tmp/a",
-            }
-        )
-    )
+    _seed_abandoned_db(user_a_base / "session_a1", "session_a1", "/tmp/a")
 
     # Setup User B session directory with an abandoned session
     user_b_base = tmp_path / "autosorter_sessions_userb"
-    user_b_session = user_b_base / "session_b1"
-    user_b_session.mkdir(parents=True, exist_ok=True)
-    journal_b = user_b_session / "rollback_journal.json"
-    journal_b.write_text(
-        json.dumps(
-            {
-                "session_id": "session_b1",
-                "safety_session_id": "safety_b1",
-                "base_dir": "/tmp/b",
-            }
-        )
-    )
+    _seed_abandoned_db(user_b_base / "session_b1", "session_b1", "/tmp/b")
 
     # Lock User A's directory if on POSIX to test permission resilience
     if hasattr(os, "chmod"):

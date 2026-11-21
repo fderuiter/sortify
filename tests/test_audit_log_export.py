@@ -33,8 +33,9 @@ def test_history_env(tmp_path, monkeypatch):
     session_id = str(uuid.uuid4())
     base_dir = str(tmp_path / "target_dir")
     os.makedirs(base_dir, exist_ok=True)
+    history_mgr.start_session(base_dir, session_id=session_id)
 
-    # Log several steps into history manager
+    # Record moves in the canonical move ledger
     src1 = os.path.join(base_dir, "doc1.txt")
     dst1 = os.path.join(base_dir, "Docs", "doc1.txt")
     hash1 = "a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890"
@@ -43,19 +44,12 @@ def test_history_env(tmp_path, monkeypatch):
     dst2 = os.path.join(base_dir, "Images", "image.png")
     hash2 = "b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890a1b2c3d4e5f67890a1"
 
-    history_mgr.log_step(
-        session_id=session_id,
-        source_path=src1,
-        target_path=dst1,
-        file_hash=hash1,
-    )
+    seq1 = history_mgr.moves.record_intent(session_id, src1, dst1, src_sha256=hash1)
+    history_mgr.moves.mark_done(session_id, seq1, dst1)
 
-    history_mgr.log_step(
-        session_id=session_id,
-        source_path=src2,
-        target_path=dst2,
-        file_hash=hash2,
-    )
+    seq2 = history_mgr.moves.record_intent(session_id, src2, dst2, src_sha256=hash2)
+    history_mgr.moves.mark_done(session_id, seq2, dst2)
+    history_mgr.complete_session(session_id)
 
     yield {
         "session_id": session_id,
@@ -231,11 +225,22 @@ def test_export_audit_log_all_sessions(tmp_path, monkeypatch):
     db_worker = DBWorker()
     hm = _store_history(tmp_path, monkeypatch, db_worker)
 
-    s1_id = str(uuid.uuid4())
-    s2_id = str(uuid.uuid4())
-    hm.log_step(s1_id, "/src/a.txt", "/dst/a.txt", file_hash="hash_a")
-    hm.log_step(s1_id, "/src/b.txt", "/dst/b.txt", file_hash="hash_b")
-    hm.log_step(s2_id, "/src/c.txt", "/dst/c.txt", file_hash="hash_c")
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    s1_id = hm.start_session(str(src_dir))
+    s2_id = hm.start_session(str(src_dir))
+    seq_a = hm.moves.record_intent(
+        s1_id, "/src/a.txt", "/dst/a.txt", src_sha256="hash_a"
+    )
+    hm.moves.mark_done(s1_id, seq_a, "/dst/a.txt")
+    seq_b = hm.moves.record_intent(
+        s1_id, "/src/b.txt", "/dst/b.txt", src_sha256="hash_b"
+    )
+    hm.moves.mark_done(s1_id, seq_b, "/dst/b.txt")
+    seq_c = hm.moves.record_intent(
+        s2_id, "/src/c.txt", "/dst/c.txt", src_sha256="hash_c"
+    )
+    hm.moves.mark_done(s2_id, seq_c, "/dst/c.txt")
 
     json_out = str(tmp_path / "aggregated.json")
     res = hm.export_audit_log(json_out, session_id=None, format="json")
@@ -257,11 +262,14 @@ def test_cli_ledger_export_without_session_id(tmp_path, monkeypatch):
     """Test CLI ledger export when session_id is omitted (aggregates all sessions)."""
     db_worker = DBWorker()
     hm = _store_history(tmp_path, monkeypatch, db_worker)
-    db_path = hm.db_path
-    s1_id = str(uuid.uuid4())
-    s2_id = str(uuid.uuid4())
-    hm.log_step(s1_id, "/src/1.txt", "/dst/1.txt", file_hash="h1")
-    hm.log_step(s2_id, "/src/2.txt", "/dst/2.txt", file_hash="h2")
+    src_dir = tmp_path / "src"
+    src_dir.mkdir()
+    s1_id = hm.start_session(str(src_dir))
+    s2_id = hm.start_session(str(src_dir))
+    seq1 = hm.moves.record_intent(s1_id, "/src/1.txt", "/dst/1.txt", src_sha256="h1")
+    hm.moves.mark_done(s1_id, seq1, "/dst/1.txt")
+    seq2 = hm.moves.record_intent(s2_id, "/src/2.txt", "/dst/2.txt", src_sha256="h2")
+    hm.moves.mark_done(s2_id, seq2, "/dst/2.txt")
 
     csv_out = str(tmp_path / "cli_all.csv")
 
