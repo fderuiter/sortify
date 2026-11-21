@@ -2266,95 +2266,77 @@
 </ol>
 <hr />
 <h2 id="architectural-overview">Architectural Overview</h2>
-<p>Sortify implements a two-phase transaction logging pattern to guarantee file system integrity and prevent data loss during moves:</p>
+<p>Sortify implements an append-only canonical move ledger (<code>moves</code> table, ADR 0006) in the unified application store (<code>sortify.db</code>, ADR 0008) to guarantee filesystem integrity and prevent data loss during moves:</p>
 <ul>
-<li><strong>Sidecar Ledger Database</strong>: The ledger is maintained as an independent SQLite database in WAL mode (<code>transaction_ledger.db</code>), separate from the main application metadata database. By default, it resides at <code>~/.autosorter/transaction_ledger.db</code> (or <code>$AUTOSORTER_APP_DIR/transaction_ledger.db</code>).</li>
+<li><strong>Unified Application Store</strong>: By default, the <code>moves</code> table lives inside <code>~/.autosorter/sortify.db</code> (or <code>$AUTOSORTER_APP_DIR/sortify.db</code>). Existing historical records from older <code>step_ledger</code>, <code>transaction_ledger</code>, and sidecar <code>transaction_ledger.db</code> stores are automatically imported into <code>moves</code> during store migrations (<code>app/core/store.py</code>, <code>app/core/moves.py</code>).</li>
 <li><strong>Two-Phase Commit</strong>:</li>
-<li><strong>Intent Logging</strong>: Before moving any physical bytes on disk, Sortify records an entry in the ledger with status <code>PENDING</code> via <code>app/core/ledger.py</code>.</li>
-<li><strong>Physical Move</strong>: The file is moved on disk. Upon completion of the move, the entry status is updated to <code>MOVED_PHYSICAL</code>.</li>
-<li><strong>Metadata Index Update</strong>: The main SQLCipher database is updated with the document's new location. Once updated, the ledger status transitions to <code>COMPLETED</code> and the ledger entry is cleaned up.</li>
-<li><strong>Headless Interruption</strong>: If the process crashes while an entry is in <code>PENDING</code> or <code>MOVED_PHYSICAL</code>, the next startup or operator reconciliation command evaluates physical disk state against the ledger record to safely roll forward or roll back.</li>
+<li><strong>Intent Logging</strong>: Before moving any physical bytes on disk, Sortify commits an <code>intent</code> row (reported by CLI status as <code>PENDING</code>) via <code>MoveLedger.record_intent</code> in <code>app/core/moves.py</code>.</li>
+<li><strong>Physical Move &amp; Verification</strong>: Any preexisting destination file is safely displaced before overwrite (ADR 0005), the file is moved on disk, and the row transitions to <code>done</code> and <code>verified</code> once content hashes match.</li>
+<li><strong>Failure &amp; Interruption Handling</strong>: If a process crashes while a row is in <code>intent</code> (<code>PENDING</code>), the next startup or operator <code>ledger reconcile</code> command evaluates physical disk state against the recorded SHA-256 hash to roll forward (<code>done</code>) or record a structured terminal failure (<code>ABORTED</code>, <code>FAILED_CONFLICT</code>, or <code>FAILED_MISSING</code>).</li>
 </ul>
 <hr />
 <h2 id="transaction-lifecycle-and-state-transitions">Transaction Lifecycle and State Transitions</h2>
-<p>Defined in <code>app/core/ledger.py:L41-L85</code>, the ledger defines seven statuses across non-terminal and terminal states.</p>
+<p>Defined in <code>app/core/moves.py</code>, <code>MoveLedger</code> persists four canonical states (<code>intent</code>, <code>done</code>, <code>verified</code>, <code>failed</code>) and surfaces operator-facing status codes in <code>smart-autosorter ledger</code>:</p>
 <div class="highlight"><pre><span></span><code>                  +-------------------------+
-                  |         PENDING         |
+                  |    intent (PENDING)     |
                   +-------------------------+
-                     /   |       |       \
-                    /    |       |        \
-                   v     |       |         v
-     +----------------+  |       |   +-------------------+
-     | MOVED_PHYSICAL |  |       |   |      ABORTED      | (Terminal)
-     +----------------+  |       |   +-------------------+
-        /    |    \      |       |
-       /     |     \     |       |
-      v      |      v    v       v
-+-----------+|   +--------------------+   +-------------------+
-| COMPLETED ||   | RECONCILED_SUCCESS |   |  FAILED_CONFLICT  | (Terminal)
-+-----------+|   +--------------------+   +-------------------+
- (Terminal)  |         (Terminal)                   ^
-             |                                      |
-             +--------------------------------------+
-             |
-             v
-   +-------------------+
-   |  FAILED_MISSING   | (Terminal)
-   +-------------------+
+                     /       |           \
+                    /        |            \
+                   v         |             v
+      +----------------+     |       +-------------------+
+      |      done      |     |       |      ABORTED      | (failed)
+      +----------------+     |       +-------------------+
+              |              |
+              v              +------------------+
+      +----------------+     |                  |
+      |    verified    |     v                  v
+      +----------------+ +-------------------+ +-------------------+
+       (Completed)       |  FAILED_CONFLICT  | |  FAILED_MISSING   |
+                         +-------------------+ +-------------------+
 </code></pre></div>
 <h3 id="status-definitions">Status Definitions</h3>
 <table>
 <thead>
 <tr>
 <th>Status</th>
-<th>Category</th>
+<th>Underlying <code>moves.state</code></th>
 <th>Description</th>
 </tr>
 </thead>
 <tbody>
 <tr>
 <td><code>PENDING</code></td>
-<td>Non-Terminal</td>
-<td>Move intent logged to sidecar ledger prior to beginning physical disk operation.</td>
+<td><code>intent</code></td>
+<td>Move intent committed to <code>moves</code> prior to completing physical disk relocation.</td>
 </tr>
 <tr>
-<td><code>MOVED_PHYSICAL</code></td>
-<td>Non-Terminal</td>
-<td>File was physically relocated on disk, but main database record was not yet committed.</td>
-</tr>
-<tr>
-<td><code>COMPLETED</code></td>
-<td>Terminal</td>
-<td>Standard completion: file physically relocated and application database record committed.</td>
-</tr>
-<tr>
-<td><code>RECONCILED_SUCCESS</code></td>
-<td>Terminal</td>
-<td>Automated reconciliation detected the destination file intact on disk and updated database records.</td>
+<td><code>COMPLETED</code> / <code>RECONCILED_SUCCESS</code></td>
+<td><code>done</code> / <code>verified</code></td>
+<td>File physically relocated on disk (and hash-verified or rolled forward during reconciliation) with document metadata updated.</td>
 </tr>
 <tr>
 <td><code>ABORTED</code></td>
-<td>Terminal</td>
+<td><code>failed</code></td>
 <td>Move cancelled prior to physical transfer, or identical duplicate destination removed and source preserved.</td>
 </tr>
 <tr>
 <td><code>FAILED_CONFLICT</code></td>
-<td>Terminal</td>
+<td><code>failed</code></td>
 <td>Reconciliation encountered both source and destination files with differing contents; both preserved to avoid loss.</td>
 </tr>
 <tr>
 <td><code>FAILED_MISSING</code></td>
-<td>Terminal</td>
+<td><code>failed</code></td>
 <td>Reconciliation found that neither the source file nor destination file exists on disk.</td>
 </tr>
 </tbody>
 </table>
 <h3 id="allowed-state-transitions">Allowed State Transitions</h3>
-<p>Transitions are strictly validated by <code>ALLOWED_TRANSITIONS</code> in <code>app/core/ledger.py</code>:</p>
+<p>Transitions are strictly validated by <code>_ALLOWED_FROM</code> in <code>app/core/moves.py</code>:</p>
 <ul>
-<li><strong>From <code>PENDING</code></strong>: Allowed to transition to <code>MOVED_PHYSICAL</code>, <code>COMPLETED</code>, <code>RECONCILED_SUCCESS</code>, <code>ABORTED</code>, <code>FAILED_CONFLICT</code>, or <code>FAILED_MISSING</code>.</li>
-<li><strong>From <code>MOVED_PHYSICAL</code></strong>: Allowed to transition to <code>COMPLETED</code>, <code>RECONCILED_SUCCESS</code>, <code>ABORTED</code>, <code>FAILED_CONFLICT</code>, or <code>FAILED_MISSING</code>.</li>
-<li><strong>Terminal States</strong>: <code>COMPLETED</code>, <code>RECONCILED_SUCCESS</code>, <code>ABORTED</code>, <code>FAILED_CONFLICT</code>, and <code>FAILED_MISSING</code> allow <strong>no further transitions</strong> (<code>frozenset()</code>). Once an entry reaches a terminal state, its record is immutable until purged.</li>
+<li><strong>From <code>intent</code> (<code>PENDING</code>)</strong>: Allowed to transition to <code>done</code> (including reconciled roll-forward) or <code>failed</code> (<code>ABORTED</code>, <code>FAILED_CONFLICT</code>, <code>FAILED_MISSING</code>, or move error).</li>
+<li><strong>From <code>done</code></strong>: Allowed to transition to <code>verified</code> once destination SHA-256 matches <code>src_sha256</code>.</li>
+<li><strong>Terminal States</strong>: <code>verified</code> and <code>failed</code> allow no further state transitions. Records remain auditable in <code>moves</code> until explicitly purged.</li>
 </ul>
 <hr />
 <h2 id="cli-reference-and-practical-invocations">CLI Reference and Practical Invocations</h2>
@@ -2362,7 +2344,7 @@
 <h3 id="common-flags">Common Flags</h3>
 <p>These flags apply to <code>smart-autosorter ledger</code> and all its subcommands:</p>
 <ul>
-<li><code>--ledger-db PATH</code>: Path to a custom sidecar transaction ledger database file. Defaults to <code>~/.autosorter/transaction_ledger.db</code>.</li>
+<li><code>--ledger-db PATH</code>: Optional path to a standalone SQLite database file containing a <code>moves</code> table. Defaults to the unified application store (<code>~/.autosorter/sortify.db</code> or <code>$AUTOSORTER_APP_DIR/sortify.db</code>).</li>
 <li><code>-q</code>, <code>--quiet</code>: Suppress human-readable informational banners and status summaries.</li>
 <li><code>--no-color</code>: Disable ANSI color escape codes (recommended for cron and headless log collection).</li>
 <li><code>--json</code>: Output response payloads in structured, machine-parseable JSON format on standard output.</li>
@@ -2741,7 +2723,8 @@ rm<span class="w"> </span>-f<span class="w"> </span>/data/staging/.autosorter.pi
 <ul>
 <li><strong>Interactive Session Recovery Guide</strong>: <a href="../../troubleshooting/#session-recovery">Troubleshooting Guide</a></li>
 <li><strong>Configuration &amp; Maintenance Reference</strong>: <a href="../../admin_guide/">Administrator Guide</a></li>
-<li><strong>Core Ledger Implementation</strong>: <code>app/core/ledger.py</code></li>
+<li><strong>Canonical Move Ledger Implementation</strong>: <code>app/core/moves.py</code></li>
+<li><strong>Key Lifecycle Audit Ledger</strong>: <code>app/core/ledger.py</code></li>
 <li><strong>CLI Ledger Command Implementation</strong>: <code>app/cli/ledger_cli.py</code></li>
 <li><strong>IPC Server &amp; Lock Management</strong>: <code>app/core/ipc.py</code></li>
 </ul>
