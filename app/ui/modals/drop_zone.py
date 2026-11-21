@@ -536,7 +536,7 @@ class DropZoneModal(
             abs_p = os.path.abspath(item)
             if os.path.isdir(abs_p):
                 # The scanner returns paths relative to the folder it walked.
-                files = get_files_recursively(abs_p)
+                files = get_files_recursively(abs_p, settings=self.settings)
                 for f_path in files:
                     self._add_single_file_to_staging(
                         os.path.join(abs_p, f_path), protected
@@ -851,7 +851,9 @@ class DropZoneModal(
             groups: dict[str, list[str]] = {}
             for path in target_paths:
                 if os.path.isdir(path):
-                    groups.setdefault(path, []).extend(get_files_recursively(path))
+                    groups.setdefault(path, []).extend(
+                        get_files_recursively(path, settings=self.settings)
+                    )
                 else:
                     groups.setdefault(os.path.dirname(path), []).append(
                         os.path.basename(path)

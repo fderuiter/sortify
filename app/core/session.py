@@ -117,11 +117,51 @@ class AppSession:
                     )
                     setattr(strat, "base_dir", self.base_dir)
             else:
-                strategy_name = (
-                    "generative"
-                    if getattr(self.settings, "AI_ASSISTED_NAMING", False)
-                    else "default"
+                is_generative = configured_strat == "generative" or bool(
+                    getattr(self.settings, "AI_ASSISTED_NAMING", False)
                 )
+                strategy_name = "generative" if is_generative else "default"
+                if is_generative:
+                    from app.core.analyzer_strategies import clustering_registry
+
+                    gen_strat = clustering_registry.get_strategy("generative")
+                    gen_model_path = None
+                    if self.settings.AI_CONSENT_GRANTED:
+                        env_gen_path = os.environ.get("GENERATIVE_NAMING_PATH")
+                        gen_candidates = []
+                        if env_gen_path:
+                            gen_candidates.append(env_gen_path)
+                        if mei_dir:
+                            gen_candidates.append(
+                                os.path.join(
+                                    mei_dir, "offline_bundle", "generative_naming"
+                                )
+                            )
+                        gen_candidates.append(
+                            os.path.join(
+                                base_path, "offline_bundle", "generative_naming"
+                            )
+                        )
+                        gen_candidates.append(str(get_app_dir() / "generative_naming"))
+                        for cand in gen_candidates:
+                            if cand and os.path.exists(cand):
+                                gen_model_path = cand
+                                break
+                        if (
+                            not gen_model_path
+                            and active_model_path
+                            and os.path.isdir(active_model_path)
+                        ):
+                            try:
+                                if any(
+                                    fn.endswith(".gguf")
+                                    for fn in os.listdir(active_model_path)
+                                ):
+                                    gen_model_path = active_model_path
+                            except OSError:
+                                pass
+                    if gen_strat is not None and hasattr(gen_strat, "model_path"):
+                        setattr(gen_strat, "model_path", gen_model_path)
 
             self.analyzer = IncrementalAnalyzer(
                 self.settings.MAX_FOLDERS,
@@ -214,6 +254,8 @@ class AppSession:
         fast_path_only: bool = False,
         target_paths: list[str] | None = None,
         jev_results: dict[str, Any] | None = None,
+        existing_folders: list[str] | None = None,
+        dest_dir: str | None = None,
     ):
         """Generate sorting plan from analyzer."""
         if hasattr(self, "lifecycle_state"):
@@ -252,6 +294,8 @@ class AppSession:
             target_paths=target_paths,
             jev_results=jev_results,
             source_dirs=self.source_dirs,
+            existing_folders=existing_folders,
+            dest_dir=dest_dir,
         )
         if (
             hasattr(self, "lifecycle_state")

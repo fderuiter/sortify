@@ -636,23 +636,26 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
 
         # Also ignore any temporary folder/session folders
         from app.core.path_utils import get_session_base_dir
+        from app.core.scanner import ScanFilter
 
         session_base = get_session_base_dir()
         if session_base.name in norm_path or str(session_base) in norm_path:
             return True
 
-        # Suffix matching on lowercase file extensions using IGNORED_EXTENSIONS configuration
-        ignored_exts = getattr(
-            self.settings, "IGNORED_EXTENSIONS", [".crdownload", ".tmp", ".download"]
+        scan_filter = ScanFilter.from_settings(
+            self.settings,
+            base_dir=self.base_dir,
         )
-        lower_path = norm_path.lower()
-        for ext in ignored_exts:
-            if ext and isinstance(ext, str) and ext.strip():
-                ext_clean = ext.strip().lower()
-                if not ext_clean.startswith("."):
-                    ext_clean = f".{ext_clean}"
-                if lower_path.endswith(ext_clean):
-                    return True
+        if (
+            scan_filter.check_path(
+                norm_path,
+                base_dir=self.base_dir,
+                check_depth=bool(self.base_dir),
+                check_hidden=True,
+            )
+            is not None
+        ):
+            return True
 
         return False
 
@@ -1229,7 +1232,11 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         token = cancel_token or self._cancel_event
 
         def _scan():
-            files = get_files_recursively(self.base_dir)
+            from app.core.scanner import ScanFilter, active_scan_filter
+
+            sf = ScanFilter.from_settings(self.settings, base_dir=self.base_dir)
+            with active_scan_filter(sf):
+                files = get_files_recursively(self.base_dir)
             return [f for f in files if not self.should_ignore_path(f)]
 
         scanned_files = await asyncio.to_thread(_scan)
@@ -1628,10 +1635,17 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             app_session = AppSession(self.settings, self.base_dir)
             pipeline = self._build_pipeline(app_session)
 
+            from app.core.scanner import ScanFilter, active_scan_filter
+
+            daemon_scan_filter = ScanFilter.from_settings(
+                self.settings, base_dir=self.base_dir
+            )
+
             # PHASE 1: Fast-Path (Deterministic Rules)
             if cancel_check():
                 return
-            files = get_files_recursively(self.base_dir)
+            with active_scan_filter(daemon_scan_filter):
+                files = get_files_recursively(self.base_dir)
             files = [f for f in files if not self.should_ignore_path(f)]
 
             if not files:
@@ -1658,7 +1672,8 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
 
             # REFRESH STATE: Refresh scanned directory state & update file paths in memory to prevent path corruption
             app_session.db.invalidate_cache()
-            files = get_files_recursively(self.base_dir)
+            with active_scan_filter(daemon_scan_filter):
+                files = get_files_recursively(self.base_dir)
             files = [f for f in files if not self.should_ignore_path(f)]
 
             if not files:

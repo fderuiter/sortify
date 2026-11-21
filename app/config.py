@@ -211,6 +211,15 @@ class Settings(BaseSettings):
             "destination category directories."
         ),
     )
+    SCAN_MAX_DEPTH: int = Field(
+        default=0,
+        ge=0,
+        le=20,
+        description=(
+            "Maximum subfolder recursion depth when scanning directories "
+            "(integer from 0 to 20 levels; 0 scans top-level files only)."
+        ),
+    )
     MAX_FOLDERS: int = Field(
         default=12,
         gt=0,

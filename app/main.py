@@ -665,17 +665,18 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
         from app.core.pipeline import SortPipeline, reroot_plan
         from app.core.session import AppSession
 
-        session = AppSession(settings, base_dir=str(target_path))
-        pipeline = SortPipeline(session)
-        plan = pipeline.plan()
-
         dest_dir = getattr(args, "dest_dir", None)
+        dest_abs = str(Path(dest_dir).resolve()) if dest_dir else None
         dry_run = getattr(args, "dry_run", False)
         json_output = getattr(args, "json", False)
 
+        session = AppSession(settings, base_dir=str(target_path))
+        pipeline = SortPipeline(session)
+        plan = pipeline.plan(dest_dir=dest_abs)
+
         if dest_dir:
             plan = reroot_plan(plan, dest_dir)
-            session.base_dir = str(Path(dest_dir).resolve())
+            session.base_dir = dest_abs
 
         serializable_plan = _make_json_serializable(plan)
         _maybe_export_simulation_report(args, plan, base_dir=str(target_path))
@@ -755,7 +756,7 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
         from app.core.session import AppSession
 
         session = AppSession(settings, base_dir=str(target_path))
-        files = get_files_recursively(str(target_path))
+        files = get_files_recursively(str(target_path), settings=settings)
         plan = SortPipeline(session).plan(files)
         serializable_plan = _make_json_serializable(plan)
 
@@ -1184,7 +1185,8 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
         try:
             session = AppSession(settings, base_dir=base_dir)
             pipeline = SortPipeline(session)
-            plan = pipeline.plan(files)
+            dest_abs = str(os.path.abspath(dest_dir)) if dest_dir else None
+            plan = pipeline.plan(files, dest_dir=dest_abs)
 
             if dest_dir:
                 plan = reroot_plan(plan, dest_dir)

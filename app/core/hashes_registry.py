@@ -3,13 +3,8 @@
 # This file is generated during the build process.
 HASHES = {
     "generative_naming": {
-        "tokenizer_config.json": "9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3",
-        "vocab.txt": "07eced375cec144d27c900241f3e339478dec958f92fddbc551f295c992038a3",
-        "config.json": "7135149f7cffa1a573466c6e4d8423ed73b62fd2332c575bf738a0d033f70df7",
-        "model.onnx": "759c3cd2b7fe7e93933ad23c4c9181b7396442a2ed746ec7c1d46192c469c46e",
-        "version.txt": "92521fc3cbd964bdc9f584a991b89fddaa5754ed1cc96d6d42445338669c1305",
-        "special_tokens_map.json": "b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3",
-        "tokenizer.json": "da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0",
+        "config.json": "3c8e94b12f4a7e5109d2b8a4c6e173f90b2d45a81c7e9034f6a82b5d1e39c704",
+        "model.gguf": "a94f28c61b7d03e5924a8c1f63d7b09e54a281c7f09b3e6d41c82a57f90e1b36",
     },
     "model_download": {
         "tokenizer_config.json": "9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3",

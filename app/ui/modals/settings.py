@@ -509,6 +509,17 @@ class SettingsModal(
                             tooltip="Maintain source directory levels and folder structure during classification",
                         )
 
+                        yield Label(
+                            "Max Scan Depth (0 = top-level only):",
+                            classes="field-label",
+                        )
+                        inp_scan_depth = Input(
+                            value=str(getattr(self.settings, "SCAN_MAX_DEPTH", 0)),
+                            id="input-scan-max-depth",
+                        )
+                        inp_scan_depth.tooltip = "Maximum subfolder depth to scan (0 keeps subfolders untouched)"
+                        yield inp_scan_depth
+
                     with TabPane("AI & Privacy Settings", id="tab-ai-privacy"):
                         yield Heading(
                             "Sorting Strategy:", level=2, classes="field-label"
@@ -1039,6 +1050,28 @@ class SettingsModal(
         except Exception:
             preserve_hier = bool(getattr(self.settings, "PRESERVE_HIERARCHY", False))
 
+        try:
+            scan_depth_str = self.query_one(
+                "#input-scan-max-depth", Input
+            ).value.strip()
+        except Exception:
+            scan_depth_str = str(getattr(self.settings, "SCAN_MAX_DEPTH", 0))
+        try:
+            scan_max_depth = int(scan_depth_str)
+            if not (0 <= scan_max_depth <= 20):
+                raise ValueError("Max Scan Depth must be between 0 and 20.")
+        except ValueError:
+            self._show_help_button(help_url)
+            from app.ui.notifications import notify
+
+            err_text = (
+                f"Invalid Max Scan Depth '{scan_depth_str}'. "
+                "Expected an integer from 0 to 20."
+            )
+            notify(f"Settings error: {err_text}", type="error", help_url=help_url)
+            self.announce(f"Settings error: {err_text}", help_url=help_url)
+            return
+
         res = {
             "PROTECTED_PATHS": p_list,
             "IGNORED_EXTENSIONS": i_list,
@@ -1047,6 +1080,7 @@ class SettingsModal(
             "PDF_TEXT_DENSITY_THRESHOLD": pdf_density,
             "CONFLICT_POLICY": conflict_pol,
             "SORTING_STRATEGY": strat,
+            "AI_ASSISTED_NAMING": strat == "generative",
             "CLINICAL_SMART_RENAMING": clin_renaming,
             "CONTEXTUAL_RENAMING": ctx_renaming,
             "AI_CONSENT_GRANTED": ai_consent,
@@ -1054,6 +1088,7 @@ class SettingsModal(
             "ENABLE_CHARACTER_KEY_SHORTCUTS": char_shortcuts,
             "CLEANUP_EMPTY_FOLDERS": cleanup_empty,
             "PRESERVE_HIERARCHY": preserve_hier,
+            "SCAN_MAX_DEPTH": scan_max_depth,
             "AUTO_QUARANTINE_RATINGS": auto_quarantine_ratings,
             "QUARANTINE_DIR_NAME": q_dir_str,
         }

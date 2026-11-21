@@ -1565,6 +1565,20 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
                 }
             )
 
+        learned_rules = getattr(self.settings, "LEARNED_RULES", {}) or {}
+        for kw, target in sorted(learned_rules.items()):
+            rules.append(
+                {
+                    "kind": "learned",
+                    "status": "Active",
+                    "type": "learned",
+                    "pattern": str(kw),
+                    "target_folder": str(target),
+                    "priority": 0,
+                    "original_key": kw,
+                }
+            )
+
         policies = getattr(self.settings, "POLICIES", []) or []
         for idx, pol in enumerate(policies):
             if isinstance(pol, dict):
@@ -1657,6 +1671,17 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
             if hasattr(self.settings, "flush"):
                 self.settings.flush()
             msg = f"Toggled keyword rule '{kw}' to {new_status}."
+        elif rule["kind"] == "learned":
+            kw = rule["original_key"]
+            learned_rules = dict(getattr(self.settings, "LEARNED_RULES", {}) or {})
+            dis_rules = dict(getattr(self.settings, "DISABLED_KEYWORD_RULES", {}) or {})
+            target = learned_rules.pop(kw, rule["target_folder"])
+            dis_rules[kw] = target
+            self.settings.LEARNED_RULES = learned_rules
+            self.settings.DISABLED_KEYWORD_RULES = dis_rules
+            if hasattr(self.settings, "flush"):
+                self.settings.flush()
+            msg = f"Toggled learned rule '{kw}' to Disabled."
         elif rule["kind"] == "policy":
             policies = [dict(p) for p in getattr(self.settings, "POLICIES", []) or []]
             idx = rule["policy_idx"]
@@ -1726,6 +1751,16 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
                 if hasattr(self.settings, "flush"):
                     self.settings.flush()
                 msg = f"Updated rule '{new_pattern}' target folder to '{new_target}'."
+            elif rule["kind"] == "learned":
+                old_key = rule["original_key"]
+                learned_dict = dict(getattr(self.settings, "LEARNED_RULES", {}) or {})
+                if old_key in learned_dict and old_key != new_pattern:
+                    del learned_dict[old_key]
+                learned_dict[new_pattern] = new_target
+                self.settings.LEARNED_RULES = learned_dict
+                if hasattr(self.settings, "flush"):
+                    self.settings.flush()
+                msg = f"Updated learned rule '{new_pattern}' target folder to '{new_target}'."
             elif rule["kind"] == "policy":
                 policies = [
                     dict(p) for p in getattr(self.settings, "POLICIES", []) or []
@@ -1781,6 +1816,14 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
                 if hasattr(self.settings, "flush"):
                     self.settings.flush()
                 msg = f"Deleted rule '{pattern}' from settings."
+            elif rule["kind"] == "learned":
+                key = rule["original_key"]
+                learned_dict = dict(getattr(self.settings, "LEARNED_RULES", {}) or {})
+                learned_dict.pop(key, None)
+                self.settings.LEARNED_RULES = learned_dict
+                if hasattr(self.settings, "flush"):
+                    self.settings.flush()
+                msg = f"Deleted learned rule '{pattern}' from settings."
             elif rule["kind"] == "policy":
                 policies = [
                     dict(p) for p in getattr(self.settings, "POLICIES", []) or []

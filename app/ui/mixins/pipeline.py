@@ -140,7 +140,9 @@ class SortPipelineMixin:
             s_dirs = getattr(self, "source_dirs", None) or (
                 [self.base_dir] if self.base_dir else []
             )
-            files = get_files_from_sources(s_dirs)
+            files = get_files_from_sources(
+                s_dirs, settings=getattr(self, "settings", None)
+            )
 
             from app.core.metadata import MetadataPass
 

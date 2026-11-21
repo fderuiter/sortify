@@ -115,10 +115,8 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
     from app.core.hashes_registry import HASHES
 
     original_hashes_model_download = HASHES["model_download"]["model.onnx"]
-    original_hashes_generative_naming = HASHES["generative_naming"]["model.onnx"]
 
     HASHES["model_download"]["model.onnx"] = mock_hash
-    HASHES["generative_naming"]["model.onnx"] = mock_hash
     try:
         # Start with active sandbox on initiator thread
         with block_external_network(reason="enterprise restriction"):
@@ -143,7 +141,6 @@ def test_model_downloader_bypasses_sandbox(tmp_path):
     finally:
         registry._expected_hashes = original_expected_hashes
         HASHES["model_download"]["model.onnx"] = original_hashes_model_download
-        HASHES["generative_naming"]["model.onnx"] = original_hashes_generative_naming
 
 
 def test_localhost_connections_succeed_under_sandbox():

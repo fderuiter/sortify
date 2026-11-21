@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "e938c0b2fef8d09998d9b06e84a26deb1591a294c39de5826fc02c1f9b84fa8e"
+    "checksum": "dc2d040bfbc63ccdb9ac597eb261fc484e4cba99927817b2fbbe9a0fe71e36b5"
   },
   "classes": [
     {
@@ -107,6 +107,16 @@
               "annotation": "Optional[list[str]]",
               "default": "None",
               "name": "source_dirs"
+            },
+            {
+              "annotation": "Optional[list[str]]",
+              "default": "None",
+              "name": "existing_folders"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "dest_dir"
             }
           ],
           "returns": "SortingPlan"

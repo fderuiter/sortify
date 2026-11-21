@@ -1,9 +1,336 @@
 {
   "_metadata": {
-    "checksum": "b9c706c7bf4ce13e59575df6acde0b89764f08e5e14ae4aa065aeeab3148fcc9"
+    "checksum": "2bdc97818b05a1eceed50ff3798f3758ed7d405e09c51375da97d3e6a627c87f"
   },
-  "classes": [],
+  "classes": [
+    {
+      "class_name": "ScanFilter",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "__init__",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[list[str] | tuple[str, ...]]",
+              "default": "None",
+              "name": "protected_paths"
+            },
+            {
+              "annotation": "Optional[list[str] | tuple[str, ...]]",
+              "default": "None",
+              "name": "ignored_extensions"
+            },
+            {
+              "annotation": "Optional[tuple[str, ...]]",
+              "default": "None",
+              "name": "quarantine_prefixes"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "include_hidden"
+            },
+            {
+              "annotation": "Optional[int]",
+              "default": "None",
+              "name": "max_depth"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "base_dir"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "can_descend_dir",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "dir_abs_path"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "dir_rel_path"
+            },
+            {
+              "annotation": "int",
+              "default": null,
+              "name": "current_depth"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "base_dir"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "check_path",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "path_str"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "base_dir"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "check_depth"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "check_hidden"
+            }
+          ],
+          "returns": "Optional[str]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "exceeds_max_depth",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "rel_file_path"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "base_dir"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@classmethod"
+          ],
+          "name": "from_settings",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "settings"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "base_dir"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "include_hidden"
+            },
+            {
+              "annotation": "Optional[int]",
+              "default": "None",
+              "name": "max_depth"
+            }
+          ],
+          "returns": "'ScanFilter'"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "has_ignored_extension",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "path_str"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_app_bundle",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "path_str"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "base_dir"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_hidden",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "path_str"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "base_dir"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_protected",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "path_str"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "base_dir"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_quarantine",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "path_str"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "base_dir"
+            }
+          ],
+          "returns": "bool"
+        }
+      ]
+    }
+  ],
   "functions": [
+    {
+      "async": false,
+      "decorators": [
+        "@contextlib.contextmanager"
+      ],
+      "name": "active_scan_filter",
+      "parameters": [
+        {
+          "annotation": "'ScanFilter'",
+          "default": null,
+          "name": "scan_filter"
+        }
+      ],
+      "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "discover_existing_folders",
+      "parameters": [
+        {
+          "annotation": "Optional[str]",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "Optional[str]",
+          "default": "None",
+          "name": "dest_dir"
+        },
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "settings"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "include_hidden"
+        }
+      ],
+      "returns": "list[str]"
+    },
     {
       "async": false,
       "decorators": [],
@@ -18,6 +345,21 @@
           "annotation": "bool",
           "default": "False",
           "name": "include_hidden"
+        },
+        {
+          "annotation": "Optional[int]",
+          "default": "None",
+          "name": "max_depth"
+        },
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "settings"
+        },
+        {
+          "annotation": "Optional[ScanFilter]",
+          "default": "None",
+          "name": "scan_filter"
         }
       ],
       "returns": "list[str]"
@@ -41,6 +383,21 @@
           "annotation": "bool",
           "default": "False",
           "name": "include_hidden"
+        },
+        {
+          "annotation": "Optional[int]",
+          "default": "None",
+          "name": "max_depth"
+        },
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "settings"
+        },
+        {
+          "annotation": "Optional[ScanFilter]",
+          "default": "None",
+          "name": "scan_filter"
         }
       ],
       "returns": "list"
