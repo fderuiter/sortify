@@ -13,28 +13,11 @@ import hashlib
 import os
 import tempfile
 
-from hypothesis import HealthCheck, given, settings
-from hypothesis import strategies as st
-
 from app.core.mover import execute_moves
 
 
 class KeepBothSettings:
     CONFLICT_POLICY = "rename"
-
-
-# Few names and folders, so collisions and shared parents come up often.
-_DIRS = st.lists(st.sampled_from(["a", "b", "deep"]), max_size=2)
-_NAMES = st.sampled_from(["report.txt", "photo.jpg", "notes.md", "data"])
-_CONTENTS = st.sampled_from([b"", b"same bytes", b"other", b"\x00\xffbinary"])
-_CATEGORIES = st.sampled_from(["Finance", "Photos", "Docs"])
-
-_FILES = st.lists(
-    st.tuples(_DIRS, _NAMES, _CONTENTS, _CATEGORIES),
-    min_size=1,
-    max_size=8,
-    unique_by=lambda f: (tuple(f[0]), f[1]),
-)
 
 
 def _manifest(base_dir):
@@ -57,45 +40,65 @@ def _all_bytes(manifest):
     return sorted(manifest.values())
 
 
-@settings(
-    max_examples=25,
-    deadline=None,
-    derandomize=True,
-    # Each example sorts a fresh folder made below, so sharing the
-    # fixture's database and history across examples is intended.
-    suppress_health_check=[HealthCheck.function_scoped_fixture],
-)
-@given(files=_FILES)
-def test_sort_then_undo_restores_every_file(test_history_env, files):
+def test_sort_then_undo_restores_every_file(test_history_env):
+    from hypothesis import HealthCheck, given, settings
+    from hypothesis import strategies as st
+
+    # Few names and folders, so collisions and shared parents come up often.
+    dirs_st = st.lists(st.sampled_from(["a", "b", "deep"]), max_size=2)
+    names_st = st.sampled_from(["report.txt", "photo.jpg", "notes.md", "data"])
+    contents_st = st.sampled_from([b"", b"same bytes", b"other", b"\x00\xffbinary"])
+    categories_st = st.sampled_from(["Finance", "Photos", "Docs"])
+
+    files_st = st.lists(
+        st.tuples(dirs_st, names_st, contents_st, categories_st),
+        min_size=1,
+        max_size=8,
+        unique_by=lambda f: (tuple(f[0]), f[1]),
+    )
+
     tmp_root, db, _cache, history_manager, _worker = test_history_env
-    base_dir = tempfile.mkdtemp(dir=tmp_root)
 
-    plan = {}
-    for i, (dirs, name, content, category) in enumerate(files):
-        rel = "/".join(["inbox", *dirs, name])
-        path = os.path.join(base_dir, *rel.split("/"))
-        os.makedirs(os.path.dirname(path), exist_ok=True)
-        with open(path, "wb") as fh:
-            fh.write(content)
-        plan.setdefault(category, {})[f"{i}-{name}"] = {
-            "__type__": "file",
-            "relative_source": f"../{rel}",
-            "target_filename": name,
-        }
-    before = _manifest(base_dir)
+    @settings(
+        max_examples=25,
+        deadline=None,
+        derandomize=True,
+        # Each example sorts a fresh folder made below, so sharing the
+        # fixture's database and history across examples is intended.
+        suppress_health_check=[HealthCheck.function_scoped_fixture],
+    )
+    @given(files=files_st)
+    def _check(files):
+        base_dir = tempfile.mkdtemp(dir=tmp_root)
 
-    execute_moves(base_dir, plan, db, history_manager, KeepBothSettings())
-    sorted_state = _manifest(base_dir)
-    # The sort itself keeps every byte, collision renames included.
-    assert _all_bytes(sorted_state) == _all_bytes(before)
-    assert not any(p.startswith("inbox/") for p in sorted_state)
+        plan = {}
+        for i, (dirs, name, content, category) in enumerate(files):
+            rel = "/".join(["inbox", *dirs, name])
+            path = os.path.join(base_dir, *rel.split("/"))
+            os.makedirs(os.path.dirname(path), exist_ok=True)
+            with open(path, "wb") as fh:
+                fh.write(content)
+            plan.setdefault(category, {})[f"{i}-{name}"] = {
+                "__type__": "file",
+                "relative_source": f"../{rel}",
+                "target_filename": name,
+            }
+        before = _manifest(base_dir)
 
-    # Sessions from earlier examples share this history, so pick ours by folder.
-    (session_id,) = [
-        s["session_id"]
-        for s in history_manager.get_sessions()
-        if os.path.normpath(s["base_dir"]) == os.path.normpath(base_dir)
-    ]
-    history_manager.rollback(session_id)
+        execute_moves(base_dir, plan, db, history_manager, KeepBothSettings())
+        sorted_state = _manifest(base_dir)
+        # The sort itself keeps every byte, collision renames included.
+        assert _all_bytes(sorted_state) == _all_bytes(before)
+        assert not any(p.startswith("inbox/") for p in sorted_state)
 
-    assert _manifest(base_dir) == before
+        # Sessions from earlier examples share this history, so pick ours by folder.
+        (session_id,) = [
+            s["session_id"]
+            for s in history_manager.get_sessions()
+            if os.path.normpath(s["base_dir"]) == os.path.normpath(base_dir)
+        ]
+        history_manager.rollback(session_id)
+
+        assert _manifest(base_dir) == before
+
+    _check()

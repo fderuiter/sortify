@@ -9,7 +9,6 @@ These tests verify:
 from unittest.mock import patch
 
 import pytest
-from sklearn.feature_extraction.text import TfidfVectorizer
 
 from app.core.analyzer_strategies import RecursiveKMeansStrategy
 
@@ -45,6 +44,8 @@ def test_imputed_vector_fallback_partial_missing():
     strategy = RecursiveKMeansStrategy()
 
     # Track TfidfVectorizer instantiations to distinguish between keyword generation and clustering fallback
+    from sklearn.feature_extraction.text import TfidfVectorizer
+
     init_max_features = []
     original_init = TfidfVectorizer.__init__
 
@@ -96,6 +97,8 @@ def test_imputed_vector_fallback_100_percent_missing():
     strategy = RecursiveKMeansStrategy()
 
     # Track TfidfVectorizer instantiations
+    from sklearn.feature_extraction.text import TfidfVectorizer
+
     init_max_features = []
     original_init = TfidfVectorizer.__init__
 

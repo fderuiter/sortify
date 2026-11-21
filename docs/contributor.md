@@ -15,10 +15,10 @@ uv run pre-commit install
 
 Add `--extra ml` to also install the optional OCR, audio and embedding libraries.
 
-Once the setup is complete, verify your environment by running the test suite:
+Once the setup is complete, verify your environment by running the fast test suite (`pytest` runs serially by default for single-file feedback; pass `-n auto` to parallelize across workers):
 
 ```bash
-uv run pytest -m "not slow"
+uv run pytest -m "not slow" -n auto
 ```
 
 ## CLI Demo Mode

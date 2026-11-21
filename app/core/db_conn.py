@@ -77,6 +77,8 @@ def clear_connection_cache(only_current_and_inactive: bool = True):
     global _connection_cache
     import gc
 
+    closed_any = False
+    conn = None
     with _cache_lock:
         if only_current_and_inactive:
             calling_thread_id = threading.get_ident()
@@ -92,6 +94,7 @@ def clear_connection_cache(only_current_and_inactive: bool = True):
             for key in keys_to_remove:
                 conn = _connection_cache.pop(key, None)
                 if conn:
+                    closed_any = True
                     try:
                         conn.close()
                     except Exception:
@@ -104,6 +107,7 @@ def clear_connection_cache(only_current_and_inactive: bool = True):
                 _raw_key_to_abs.pop(rk, None)
         else:
             for k, conn in _connection_cache.items():
+                closed_any = True
                 try:
                     try:
                         conn.execute("PRAGMA wal_checkpoint(TRUNCATE)")
@@ -116,7 +120,9 @@ def clear_connection_cache(only_current_and_inactive: bool = True):
             _raw_key_to_abs.clear()
             with _path_locks_lock:
                 _path_init_locks.clear()
-    gc.collect()
+    conn = None
+    if closed_any:
+        gc.collect()
 
 
 def clear_dead_thread_connections():

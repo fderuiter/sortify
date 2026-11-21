@@ -235,7 +235,7 @@ pythonpath = [
   "."
 ]
 timeout = 360
-addopts = "-n auto --dist=loadgroup"
+addopts = "--dist=loadgroup"
 markers = [
     "slow: marks tests as slow / heavy ML, snapshot, or integration tests (deselect with '-m \"not slow\"')",
     "integration: marks integration tests",

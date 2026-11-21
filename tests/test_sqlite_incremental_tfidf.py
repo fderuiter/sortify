@@ -5,7 +5,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from sklearn.feature_extraction.text import TfidfVectorizer
 
 from app.core.analyzer_strategies import GenerativeNamingStrategy
 from app.core.db import Database
@@ -160,6 +159,8 @@ def test_mathematical_equivalence():
                 manual_vectors[filepath] = vec
 
             # Compute TF-IDF using scikit-learn's TfidfVectorizer
+            from sklearn.feature_extraction.text import TfidfVectorizer
+
             vectorizer = TfidfVectorizer(
                 stop_words="english", max_features=1000, sublinear_tf=True
             )

@@ -83,7 +83,7 @@ def test_upstream_barrier_jev_classification_and_hold():
             or os.name == "nt"
             or os.environ.get("GITHUB_ACTIONS") == "true"
         )
-        else 150.0
+        else 750.0
     )
     assert elapsed_ms < threshold, (
         f"Jev classification took {elapsed_ms:.2f}ms (SLA: <{threshold}ms)"

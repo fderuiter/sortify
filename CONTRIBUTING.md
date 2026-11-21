@@ -28,8 +28,8 @@ Dependency groups (PEP 735, in `pyproject.toml`):
 
 ```bash
 uv run smart-autosorter --demo          # end-to-end run on a generated sample corpus
-uv run pytest -m "not slow"             # fast suite, parallel by default (pytest-xdist)
-uv run pytest -m slow -n 0              # ML, snapshot and integration tests
+uv run pytest -m "not slow" -n auto     # fast suite in parallel (pytest runs serially by default)
+uv run pytest -m slow                   # ML, snapshot and integration tests (serial by default)
 uv run ruff check . && uv run ruff format .
 uv run ty check                         # type check app/ (config in pyproject.toml)
 uv run pre-commit run --all-files       # every hook, same as CI's static checks

@@ -10,7 +10,6 @@ from pathlib import Path
 from unittest.mock import patch
 
 import pytest
-from sklearn.feature_extraction.text import TfidfVectorizer
 
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.analyzer_strategies import RecursiveKMeansStrategy
@@ -169,6 +168,8 @@ def test_fallback_to_tfidf_when_onnx_missing_or_corrupt(temp_env):
 
     # Case 1: Initialize analyzer with a non-existent model path (entirely missing model files)
     import os
+
+    from sklearn.feature_extraction.text import TfidfVectorizer
 
     from app.core.semantic_embeddings import ModelProperties
 

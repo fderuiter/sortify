@@ -1,7 +1,5 @@
 from unittest.mock import MagicMock, patch
 
-from sklearn.feature_extraction.text import TfidfVectorizer
-
 from app.core.analyzer_strategies import GenerativeNamingStrategy
 from app.core.db import Database
 from app.core.db_worker import DBWorker
@@ -38,6 +36,8 @@ def test_tfidf_vocabulary_fitted_exclusively_on_historical(tmp_path):
         strategy.generator = MagicMock()
 
         # Capture TfidfVectorizer instances to verify parameters and behavior
+        from sklearn.feature_extraction.text import TfidfVectorizer
+
         original_fit_transform = TfidfVectorizer.fit_transform
         original_transform = TfidfVectorizer.transform
 
@@ -116,6 +116,8 @@ def test_sublinear_tf_scaling_and_full_text_use(tmp_path):
         strategy.generator = MagicMock()
 
         captured_target_text = []
+        from sklearn.feature_extraction.text import TfidfVectorizer
+
         original_build_analyzer = TfidfVectorizer.build_analyzer
 
         def spy_build_analyzer(self_vec):

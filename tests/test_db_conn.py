@@ -159,3 +159,62 @@ def test_import_works_without_stdlib_sqlite3():
         "assert all(isinstance(e, type) for e in d.DB_ERRORS)"
     )
     subprocess.run([sys.executable, "-c", code], check=True)
+
+
+def test_clear_connection_cache_skips_gc_when_empty():
+    """Verify clear_connection_cache skips gc.collect() when zero connections close."""
+    clear_connection_cache(only_current_and_inactive=False)
+
+    with patch("gc.collect") as mock_collect:
+        clear_connection_cache(only_current_and_inactive=False)
+        clear_connection_cache(only_current_and_inactive=True)
+        mock_collect.assert_not_called()
+
+
+def test_clear_connection_cache_runs_gc_only_when_connections_close(tmp_path):
+    """Verify clear_connection_cache runs gc.collect() iff at least one connection closes."""
+    import threading
+
+    from app.core.crypto import SessionCrypto
+
+    db_file = tmp_path / "test_gc_guard.db"
+    key_file = tmp_path / "test_gc_guard.key"
+    key_file.write_text("gc_guard_secret_key_123", encoding="utf-8")
+    crypto = SessionCrypto(key_file, db_file)
+
+    with patch("app.core.path_utils.resolve_db_crypto", return_value=crypto):
+        clear_connection_cache(only_current_and_inactive=False)
+
+        # 1. Closing a connection on the current thread (selective mode) triggers GC.
+        conn = get_db_connection(str(db_file))
+        assert conn is not None
+        del conn
+        with patch("gc.collect") as mock_collect:
+            clear_connection_cache(only_current_and_inactive=True)
+            mock_collect.assert_called_once()
+
+        # 2. Selective cleanup from another thread while the owner thread is alive closes 0
+        # connections and must skip GC; global cleanup closes it and triggers GC.
+        opened = threading.Event()
+        release = threading.Event()
+
+        def hold_connection():
+            worker_conn = get_db_connection(str(db_file))
+            worker_conn.execute("SELECT 1;").fetchone()
+            opened.set()
+            release.wait(timeout=5.0)
+
+        holder = threading.Thread(target=hold_connection)
+        holder.start()
+        try:
+            assert opened.wait(timeout=5.0)
+            with patch("gc.collect") as mock_collect:
+                clear_connection_cache(only_current_and_inactive=True)
+                mock_collect.assert_not_called()
+        finally:
+            release.set()
+            holder.join(timeout=5.0)
+
+        with patch("gc.collect") as mock_collect:
+            clear_connection_cache(only_current_and_inactive=False)
+            mock_collect.assert_called_once()

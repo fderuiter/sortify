@@ -8,8 +8,6 @@ import keyring
 import pytest
 from keyring.backend import KeyringBackend
 
-from app.core.db_conn import clear_connection_cache
-
 os.environ.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
 
 # Clear pre-loaded standard database modules to prevent library collision
@@ -112,81 +110,106 @@ def embedding_test_defaults(monkeypatch):
     )
 
 
-@pytest.fixture(autouse=True)
-def cleanup_db_connections():
-    """Ensure database connections are closed after each test to prevent Windows file locking issues."""
-    yield
-    try:
-        from app.core.semantic_embeddings import SemanticEmbeddingManager
+def _cleanup_test_app_dir_files() -> None:
+    """Remove per-test files from the isolated app directory if present."""
+    import shutil
 
-        SemanticEmbeddingManager.stop_all()
+    app_config = sys.modules.get("app.config")
+    app_dir_env = os.environ.get("AUTOSORTER_APP_DIR")
+    if app_config is not None:
+        try:
+            app_dir = app_config.get_app_dir()
+        except Exception:
+            return
+    elif app_dir_env:
+        app_dir = Path(app_dir_env)
+    else:
+        return
+
+    try:
+        for filename in (
+            "settings.json",
+            "sortify.db",
+            "rollback_journal.json",
+            "transaction_ledger.db",
+        ):
+            target = app_dir / filename
+            if target.exists():
+                target.unlink()
+        sessions_dir = app_dir / "sessions"
+        if sessions_dir.exists():
+            shutil.rmtree(sessions_dir, ignore_errors=True)
     except Exception:
         pass
-    clear_connection_cache(only_current_and_inactive=False)
+
+
+def _reset_imported_singletons() -> None:
+    """Reset optional subsystem singletons only when already imported in sys.modules."""
+    app_config = sys.modules.get("app.config")
+    if app_config is not None:
+        app_config.AppSettings.clear_observers()
+
+    downloader = sys.modules.get("app.core.downloader")
+    if downloader is not None:
+        downloader.DownloadManager.reset_instance()
+
+    model_registry = sys.modules.get("app.core.model_registry")
+    if model_registry is not None:
+        model_registry.SharedModelRegistry._instance = None
+
+    network_guard = sys.modules.get("app.core.network_guard")
+    if network_guard is not None:
+        network_guard._thread_local.sandboxed = False
+        network_guard._thread_local.reason = ""
+
+    worker_pool = sys.modules.get("app.core.worker_pool")
+    if worker_pool is not None and worker_pool.SharedWorkerPool._instance is not None:
+        try:
+            worker_pool.SharedWorkerPool._instance.shutdown(wait=False)
+        except Exception:
+            pass
+        worker_pool.SharedWorkerPool._instance = None
 
 
 @pytest.fixture(autouse=True)
 def reset_shared_registry():
-    """Reset singletons (SharedModelRegistry, SharedWorkerPool, DownloadManager) and AppSettings observers before and after each test to prevent test pollution."""
-    import shutil
+    """Reset imported singletons and isolated app-dir files before and after each test."""
+    _cleanup_test_app_dir_files()
+    _reset_imported_singletons()
+    yield
+    _cleanup_test_app_dir_files()
+    _reset_imported_singletons()
 
-    from app.config import AppSettings, get_app_dir
-    from app.core.db_conn import clear_connection_cache
-    from app.core.downloader import DownloadManager
-    from app.core.network_guard import _thread_local
-    from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
 
-    def _cleanup_test_app_dir():
-        # Some older UI tests do not close their AppSession. Drain managed
-        # services before deleting their stores, just as other singletons reset.
-        from app.core import services
+@pytest.fixture(autouse=True)
+def cleanup_db_connections(reset_shared_registry):
+    """Stop active background workers and close cached DB connections once per test teardown."""
+    yield
+    semantic_embeddings = sys.modules.get("app.core.semantic_embeddings")
+    if semantic_embeddings is not None:
+        try:
+            semantic_embeddings.SemanticEmbeddingManager.stop_all()
+        except Exception:
+            pass
 
+    # Drain managed services before closing cached connections and unlinking app-dir stores.
+    services = sys.modules.get("app.core.services")
+    if services is not None:
         for graph in list(services._services.values()):
             graph.worker.stop(stop_embeddings=False)
         services._services.clear()
-        clear_connection_cache(only_current_and_inactive=False)
-        try:
-            app_dir = get_app_dir()
-            for filename in (
-                "settings.json",
-                "sortify.db",
-                "rollback_journal.json",
-                "transaction_ledger.db",
-            ):
-                target = app_dir / filename
-                if target.exists():
-                    target.unlink()
-            sessions_dir = app_dir / "sessions"
-            if sessions_dir.exists():
-                shutil.rmtree(sessions_dir, ignore_errors=True)
-        except Exception:
-            pass
 
-    _cleanup_test_app_dir()
-    AppSettings.clear_observers()
-    DownloadManager.reset_instance()
-    SharedModelRegistry._instance = None
-    _thread_local.sandboxed = False
-    _thread_local.reason = ""
-    if SharedWorkerPool._instance is not None:
+    worker_pool = sys.modules.get("app.core.worker_pool")
+    if worker_pool is not None and worker_pool.SharedWorkerPool._instance is not None:
         try:
-            SharedWorkerPool._instance.shutdown(wait=False)
+            worker_pool.SharedWorkerPool._instance.shutdown(wait=False)
         except Exception:
             pass
-        SharedWorkerPool._instance = None
-    yield
-    _cleanup_test_app_dir()
-    AppSettings.clear_observers()
-    DownloadManager.reset_instance()
-    SharedModelRegistry._instance = None
-    _thread_local.sandboxed = False
-    _thread_local.reason = ""
-    if SharedWorkerPool._instance is not None:
-        try:
-            SharedWorkerPool._instance.shutdown(wait=False)
-        except Exception:
-            pass
-        SharedWorkerPool._instance = None
+        worker_pool.SharedWorkerPool._instance = None
+
+    from app.core import db_conn
+
+    db_conn.clear_connection_cache(only_current_and_inactive=False)
 
 
 @pytest.fixture(scope="session", autouse=True)

@@ -4,9 +4,6 @@ from pathlib import Path
 
 import numpy as np
 import pytest
-from scipy.sparse import csr_matrix
-from sklearn.feature_extraction.text import TfidfTransformer, TfidfVectorizer
-from sklearn.preprocessing import normalize
 
 from app.core.analyzer import IncrementalAnalyzer
 from app.core.db import Database
@@ -102,6 +99,13 @@ def test_db_backed_sparse_csr_reconstruction_and_math():
                         rows.append(row_idx)
                         cols.append(col_idx)
                         data.append(weight)
+
+            from scipy.sparse import csr_matrix
+            from sklearn.feature_extraction.text import (
+                TfidfTransformer,
+                TfidfVectorizer,
+            )
+            from sklearn.preprocessing import normalize
 
             expected_vectors = csr_matrix(
                 (data, (rows, cols)), shape=(len(hist_filepaths), len(vocab))
