@@ -15,6 +15,7 @@ from app.cli.error_emitter import emit_cli_error
 from app.config import AppSettings
 from app.core.domain_contracts import _make_json_serializable
 from app.core.path_utils import is_packaged
+from app.core.pipeline import reroot_plan
 from app.core.plan_format import format_plan_tree
 from app.core.session_catalog import list_sessions
 from app.frozen_runtime import prepare_frozen_windows_runtime
@@ -554,20 +555,33 @@ def _print_plan_for_humans(
     print("\n".join(lines))
 
 
+_reroot_plan = reroot_plan
+
+
 def _maybe_launch_tui(
     args: argparse.Namespace,
     settings: AppSettings,
     initial_dir: str | None = None,
+    *,
+    open_dropzone: bool = False,
+    initial_drop_paths: list[str] | None = None,
 ) -> None:
     """Launch the interactive TUI and exit when ``--tui`` or ``--interactive`` is set."""
     if getattr(args, "tui", False) or getattr(args, "interactive", False):
         from app.ui.tui import run_tui
 
+        tui_kwargs: dict[str, Any] = {
+            "skip_wizard": _extract_bool_arg(args, "skip_wizard"),
+            "non_interactive": _extract_bool_arg(args, "non_interactive"),
+        }
+        if open_dropzone:
+            tui_kwargs["open_dropzone"] = True
+        if initial_drop_paths is not None:
+            tui_kwargs["initial_drop_paths"] = initial_drop_paths
         run_tui(
             settings,
             initial_dir,
-            skip_wizard=_extract_bool_arg(args, "skip_wizard"),
-            non_interactive=_extract_bool_arg(args, "non_interactive"),
+            **tui_kwargs,
         )
         sys.exit(0)
 
@@ -674,7 +688,7 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
         json_output = getattr(args, "json", False)
 
         if dest_dir:
-            plan = reroot_plan(plan, dest_dir)
+            plan = reroot_plan(plan, dest_dir, source_dir=str(target_path))
             session.base_dir = str(Path(dest_dir).resolve())
 
         serializable_plan = _make_json_serializable(plan)
@@ -1124,8 +1138,29 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
     json_output = getattr(args, "json", False)
 
     raw_p = getattr(args, "paths", None)
-    init_dir = getattr(args, "directory", None) or (raw_p[0] if raw_p else None)
-    _maybe_launch_tui(args, settings, init_dir)
+    dest_arg = getattr(args, "dest_dir", None)
+    dir_arg = getattr(args, "directory", None)
+    init_dir: str | None = None
+    if dest_arg:
+        init_dir = str(Path(dest_arg).expanduser().resolve())
+    elif dir_arg:
+        abs_dir = os.path.abspath(os.path.expanduser(str(dir_arg)))
+        init_dir = abs_dir if os.path.isdir(abs_dir) else os.path.dirname(abs_dir)
+    elif raw_p:
+        first_clean = str(raw_p[0]).strip().strip("'\"")
+        if first_clean:
+            abs_first = os.path.abspath(os.path.expanduser(first_clean))
+            init_dir = (
+                abs_first if os.path.isdir(abs_first) else os.path.dirname(abs_first)
+            )
+
+    _maybe_launch_tui(
+        args,
+        settings,
+        init_dir,
+        open_dropzone=True,
+        initial_drop_paths=list(raw_p) if raw_p else [],
+    )
 
     if getattr(args, "preset", None):
         print(
@@ -1141,8 +1176,10 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
             exit_code=1,
         )
 
+    from app.core.mover import is_subpath_or_equal
     from app.core.pipeline import (
         SortPipeline,
+        _relativize_items_to_base,
         drop_scope,
         reroot_plan,
         validate_drop_paths,
@@ -1173,27 +1210,60 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
         )
 
     dest_dir = getattr(args, "dest_dir", None)
+    resolved_dest: str | None = None
+    if dest_dir:
+        resolved_dest = str(Path(dest_dir).expanduser().resolve())
+        protected_paths = getattr(settings, "PROTECTED_PATHS", []) or []
+        if isinstance(protected_paths, (list, tuple, set)) and any(
+            prot and is_subpath_or_equal(resolved_dest, prot)
+            for prot in protected_paths
+        ):
+            emit_cli_error(
+                f"Error: Destination path '{dest_dir}' is protected.",
+                json_mode=json_output,
+                exit_code=1,
+            )
+        if os.path.exists(resolved_dest) and not os.path.isdir(resolved_dest):
+            emit_cli_error(
+                f"Error: Destination path '{dest_dir}' is not a directory.",
+                json_mode=json_output,
+                exit_code=1,
+            )
+
     dry_run = getattr(args, "dry_run", False)
     quiet = getattr(args, "quiet", False)
 
     processed_results = []
     for path in validated_paths:
         base_dir, files = drop_scope(path)
+        norm_files = (
+            _relativize_items_to_base(files, base_dir) if files is not None else None
+        )
 
         session = None
         try:
             session = AppSession(settings, base_dir=base_dir)
             pipeline = SortPipeline(session)
-            plan = pipeline.plan(files)
+            plan = pipeline.plan(norm_files)
 
-            if dest_dir:
-                plan = reroot_plan(plan, dest_dir)
+            if resolved_dest:
+                plan = reroot_plan(plan, resolved_dest, source_dir=base_dir)
+                session.base_dir = resolved_dest
 
             serializable_plan = _make_json_serializable(plan)
             if dry_run:
                 summary = {"status": "dry_run", "plan": serializable_plan}
             else:
+                src_was_dir = os.path.isdir(base_dir)
                 summary = pipeline.execute(plan).summary
+                if (
+                    resolved_dest
+                    and src_was_dir
+                    and os.path.normcase(os.path.abspath(resolved_dest))
+                    != os.path.normcase(os.path.abspath(base_dir))
+                    and not os.path.exists(base_dir)
+                ):
+                    os.makedirs(base_dir, exist_ok=True)
 
             processed_results.append(
                 {

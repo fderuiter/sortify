@@ -768,3 +768,136 @@ def test_config_set_collection_and_optional_bool_parsing(tmp_path):
     )
     assert code == 0, f"Expected exit code 0, got {code}. Stderr: {stderr}"
     assert json.loads(stdout)["AI_CONSENT_GRANTED"] is None
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_drop_subcommand_dest_dir_live_and_undo(tmp_path):
+    """drop --dest-dir moves dropped files and folders into dest_dir and undo --latest restores them."""
+    env = {"AUTOSORTER_APP_DIR": str(tmp_path / "app_drop_dest")}
+    src_dir = tmp_path / "drop_sources"
+    (src_dir / "nested").mkdir(parents=True)
+    standalone_doc = tmp_path / "standalone_invoice.txt"
+    standalone_doc.write_text("Quarterly invoice and accounting payment balance")
+    nested_zip = src_dir / "nested" / "release_bundle.zip"
+    nested_zip.write_bytes(b"PK\x03\x04")
+
+    dest_dir = tmp_path / "sorted_target"
+    dest_dir.mkdir()
+
+    code, stdout, stderr = run_cli(
+        [
+            "drop",
+            str(standalone_doc),
+            str(src_dir),
+            "--dest-dir",
+            str(dest_dir),
+            "--json",
+        ],
+        env=env,
+    )
+    assert code == 0, f"drop --dest-dir failed ({code}): {stderr}"
+    payload = json.loads(stdout)
+    assert payload["status"] == "success"
+    assert payload["processed_count"] == 2
+    for res_entry in payload["results"]:
+        audit = res_entry["summary"]["audit_report"]
+        assert audit["mismatch_fail_count"] == 0
+        assert audit["failed_items"] == []
+
+    dest_files = {p.name for p in dest_dir.rglob("*") if p.is_file()}
+    assert dest_files == {"standalone_invoice.txt", "release_bundle.zip"}
+    assert not standalone_doc.exists()
+    assert not nested_zip.exists()
+
+    # Roll back both drop sessions (latest first, then the preceding session)
+    for _ in range(2):
+        u_code, u_out, u_err = run_cli(["undo", "--latest", "--json"], env=env)
+        assert u_code == 0, f"undo failed: {u_err}"
+        assert json.loads(u_out)["status"] == "success"
+
+    assert standalone_doc.exists()
+    assert nested_zip.exists()
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_drop_subcommand_dest_dir_blocks_protected_path(tmp_path):
+    """drop --dest-dir exits with code 1 when destination is inside PROTECTED_PATHS."""
+    app_dir = tmp_path / "app_prot_dest"
+    env = {"AUTOSORTER_APP_DIR": str(app_dir)}
+    prot_dir = tmp_path / "protected_zone"
+    prot_dir.mkdir()
+
+    cfg_code, _, cfg_err = run_cli(
+        ["config", "--set", "PROTECTED_PATHS", json.dumps([str(prot_dir)]), "--json"],
+        env=env,
+    )
+    assert cfg_code == 0, cfg_err
+
+    src_file = tmp_path / "note.txt"
+    src_file.write_text("Some notes")
+
+    code, stdout, stderr = run_cli(
+        [
+            "drop",
+            str(src_file),
+            "--dest-dir",
+            str(prot_dir / "subdir"),
+            "--json",
+        ],
+        env=env,
+    )
+    assert code == 1
+    err_data = json.loads(stdout or stderr)
+    assert err_data["status"] == "error"
+    assert "protected" in err_data["message"].lower()
+    assert src_file.exists()
+
+
+@pytest.mark.xdist_group(name="cli_subcommands")
+def test_drop_subcommand_tui_resolves_directory_and_passes_dropzone_args(
+    tmp_path, monkeypatch
+):
+    """drop <file> --tui passes parent/dest directory (never file path) and open_dropzone=True to run_tui."""
+    import app.ui.tui
+
+    captured: list[dict] = []
+
+    def fake_run_tui(settings, initial_dir=None, **kwargs):
+        captured.append({"initial_dir": initial_dir, **kwargs})
+
+    monkeypatch.setattr(app.ui.tui, "run_tui", fake_run_tui)
+    env = {"AUTOSORTER_APP_DIR": str(tmp_path / "app_drop_tui")}
+
+    src_dir = tmp_path / "inbox"
+    src_dir.mkdir()
+    dropped_file = src_dir / "report.pdf"
+    dropped_file.write_text("Report body")
+    dest_dir = tmp_path / "dest"
+    dest_dir.mkdir()
+
+    code1, _, stderr1 = run_cli(
+        ["drop", str(dropped_file), "--tui", "--skip-wizard"],
+        env=env,
+    )
+    assert code1 == 0, stderr1
+    assert len(captured) == 1
+    assert captured[0]["initial_dir"] == str(src_dir.resolve())
+    assert captured[0]["open_dropzone"] is True
+    assert captured[0]["initial_drop_paths"] == [str(dropped_file)]
+
+    code2, _, stderr2 = run_cli(
+        [
+            "drop",
+            str(dropped_file),
+            "--dest-dir",
+            str(dest_dir),
+            "--tui",
+            "--skip-wizard",
+        ],
+        env=env,
+    )
+    assert code2 == 0, stderr2
+    assert len(captured) == 2
+    assert captured[1]["initial_dir"] == str(dest_dir.resolve())
+    assert captured[1]["open_dropzone"] is True
+    assert captured[1]["initial_drop_paths"] == [str(dropped_file)]

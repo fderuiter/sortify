@@ -171,19 +171,121 @@ def validate_drop_paths(
     return validated_paths, issues
 
 
-def reroot_plan(plan: Any, dest_dir: str) -> dict[str, Any]:
-    """Re-key a plan's relative entries under ``dest_dir``; absolute keys stay."""
+def _bind_plan_sources(
+    node: Any,
+    source_dir: str,
+    active_parent_path: str = "",
+    depth: int = 0,
+) -> Any:
+    """Recursively copy plan nodes and bind resolved ``source_path`` before re-keying."""
+    from app.core.domain_contracts import _get_val
+    from app.core.mover import _resolve_source_path
+
+    curr = node.plan if hasattr(node, "plan") and isinstance(node.plan, dict) else node
+    if not isinstance(curr, dict):
+        return node
+
+    bound: dict[str, Any] = {}
+    for key, content in curr.items():
+        if str(key).startswith("__"):
+            bound[key] = content
+            continue
+        node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
+        is_file_leaf = (
+            content is None
+            or node_type == "file"
+            or (
+                isinstance(content, dict)
+                and node_type != "directory"
+                and (
+                    "relative_source" in content
+                    or "target_filename" in content
+                    or "routed_by" in content
+                )
+            )
+        )
+        if is_file_leaf:
+            eff_source_dir = source_dir or str(_get_val(content, "source_root") or "")
+            if content is None:
+                if eff_source_dir:
+                    resolved = _resolve_source_path(
+                        eff_source_dir, key, content, active_parent_path, depth
+                    )
+                    bound[key] = {
+                        "__type__": "file",
+                        "relative_source": key,
+                        "source_root": eff_source_dir,
+                        "source_path": resolved,
+                    }
+                else:
+                    bound[key] = None
+            else:
+                copied: dict[str, Any] = (
+                    content.model_dump(by_alias=True)
+                    if hasattr(content, "model_dump") and not isinstance(content, dict)
+                    else dict(content)
+                )
+                existing_sp = copied.get("source_path")
+                if existing_sp and os.path.isabs(str(existing_sp)):
+                    resolved_sp: str | None = os.path.normpath(str(existing_sp))
+                elif eff_source_dir:
+                    resolved_sp = _resolve_source_path(
+                        eff_source_dir, key, copied, active_parent_path, depth
+                    )
+                    if not os.path.lexists(resolved_sp):
+                        candidate_by_key = os.path.normpath(
+                            os.path.join(eff_source_dir, str(key))
+                        )
+                        if os.path.lexists(candidate_by_key):
+                            resolved_sp = candidate_by_key
+                else:
+                    resolved_sp = None
+                if resolved_sp:
+                    copied["source_path"] = resolved_sp
+                if eff_source_dir and not copied.get("source_root"):
+                    copied["source_root"] = eff_source_dir
+                bound[key] = copied
+        elif isinstance(content, dict):
+            next_parent = (
+                active_parent_path
+                if os.path.isabs(key)
+                else (
+                    os.path.join(active_parent_path, key) if active_parent_path else key
+                )
+            )
+            bound[key] = _bind_plan_sources(content, source_dir, next_parent, depth + 1)
+        else:
+            bound[key] = content
+    return bound
+
+
+def reroot_plan(
+    plan: Any, dest_dir: str, source_dir: str | None = None
+) -> dict[str, Any]:
+    """Re-key a plan's relative entries under ``dest_dir`` and bind ``source_path``."""
+    from app.core.domain_contracts import _get_val
+
     dest_base = Path(dest_dir).resolve()
     dest_base.mkdir(parents=True, exist_ok=True)
+    bound_plan = _bind_plan_sources(plan, source_dir or "")
     plan_items = (
-        plan.plan.items()
-        if hasattr(plan, "plan") and isinstance(plan.plan, dict)
-        else plan.items()
+        bound_plan.plan.items()
+        if hasattr(bound_plan, "plan") and isinstance(bound_plan.plan, dict)
+        else bound_plan.items()
     )
     re_rooted_plan: dict[str, Any] = {}
     for key, value in plan_items:
+        node_type = _get_val(value, "node_type") or _get_val(value, "__type__")
+        is_root_file = value is None or node_type == "file"
         if os.path.isabs(key):
             re_rooted_plan[key] = value
+        elif is_root_file:
+            if isinstance(value, dict) and not value.get("destination_override"):
+                file_val = dict(value)
+                file_val["destination_override"] = str(dest_base)
+                re_rooted_plan[key] = file_val
+            else:
+                re_rooted_plan[key] = value
         else:
             re_rooted_plan[str(dest_base / key)] = value
     return re_rooted_plan
