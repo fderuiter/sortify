@@ -1,6 +1,5 @@
 """The sort sessions recorded in the app store (ADR 0008)."""
 
-import json
 import logging
 import os
 from pathlib import Path
@@ -9,8 +8,6 @@ logger = logging.getLogger(__name__)
 
 # Statuses of a session whose moves never finished.
 UNFINISHED_STATUSES = ("active", "uncommitted", "failed", "partially_rolled_back")
-
-ROLLBACK_JOURNAL = "rollback_journal.json"
 
 
 def _count(conn, table: str, session_id: str) -> int:
@@ -27,136 +24,43 @@ def list_sessions(store=None) -> list:
     """Return every session in the store, newest first.
 
     Each entry carries the session's id, timestamp, base folder, status and
-    how many steps and snapshot files it recorded.
+    how many moves and distinct moved files it recorded in ``moves``.
     """
-    from app.core.db_conn import DB_ERRORS, get_db_connection
+    from app.core.moves import query_session_summaries
     from app.core.store import open_store
 
     store = store or open_store()
-    conn = get_db_connection(str(store.path))
-    query = (
-        "SELECT "
-        "s.session_id, s.timestamp, s.base_dir, s.status, "
-        "COALESCE(st.step_count, 0) AS step_count, "
-        "COALESCE(sf.file_count, 0) AS file_count "
-        "FROM sessions s "
-        "LEFT JOIN ("
-        "    SELECT session_id, COUNT(*) AS step_count FROM step_ledger GROUP BY session_id"
-        ") st ON s.session_id = st.session_id "
-        "LEFT JOIN ("
-        "    SELECT session_id, COUNT(*) AS file_count FROM snapshot_files GROUP BY session_id"
-        ") sf ON s.session_id = sf.session_id "
-        "ORDER BY s.timestamp DESC"
-    )
-    with conn:
-        try:
-            rows = conn.execute(query).fetchall()
-        except DB_ERRORS:
-            existing_tables = {
-                r[0]
-                for r in conn.execute(
-                    "SELECT name FROM sqlite_master WHERE type='table'"
-                ).fetchall()
-            }
-            has_steps = "step_ledger" in existing_tables
-            has_files = "snapshot_files" in existing_tables
-            step_join = (
-                "LEFT JOIN (SELECT session_id, COUNT(*) AS step_count FROM step_ledger GROUP BY session_id) st ON s.session_id = st.session_id "
-                if has_steps
-                else ""
-            )
-            file_join = (
-                "LEFT JOIN (SELECT session_id, COUNT(*) AS file_count FROM snapshot_files GROUP BY session_id) sf ON s.session_id = sf.session_id "
-                if has_files
-                else ""
-            )
-            step_col = (
-                "COALESCE(st.step_count, 0) AS step_count"
-                if has_steps
-                else "0 AS step_count"
-            )
-            file_col = (
-                "COALESCE(sf.file_count, 0) AS file_count"
-                if has_files
-                else "0 AS file_count"
-            )
-            fallback_query = (
-                f"SELECT s.session_id, s.timestamp, s.base_dir, s.status, {step_col}, {file_col} "
-                f"FROM sessions s {step_join} {file_join} "
-                "ORDER BY s.timestamp DESC"
-            )
-            rows = conn.execute(fallback_query).fetchall()
-
-        return [
-            {
-                "session_id": sid,
-                "timestamp": ts,
-                "base_dir": base_dir,
-                "status": status,
-                "step_count": step_count,
-                "file_count": file_count,
-                "history_db_path": str(store.path),
-            }
-            for sid, ts, base_dir, status, step_count, file_count in rows
-        ]
+    rows = query_session_summaries(str(store.path))
+    return [
+        {
+            "session_id": sid,
+            "timestamp": ts,
+            "base_dir": base_dir,
+            "status": status,
+            "step_count": step_count,
+            "file_count": file_count,
+            "history_db_path": str(store.path),
+        }
+        for sid, ts, base_dir, status, step_count, file_count in rows
+    ]
 
 
 def _has_files(folder: str) -> bool:
     return any(files for _root, _dirs, files in os.walk(folder))
 
 
-def _journal_entry(journal_path: Path) -> dict | None:
-    try:
-        with open(journal_path, "r", encoding="utf-8") as f:
-            jdata = json.load(f)
-    except (OSError, ValueError):
-        logger.warning("Skipping unreadable rollback journal %s", journal_path)
-        return None
-    return {
-        "session_id": jdata.get("session_id"),
-        "safety_session_id": jdata.get("safety_session_id"),
-        "base_dir": jdata.get("base_dir"),
-        "journal_path": str(journal_path),
-        "is_rollback_recovery": True,
-        "status": "interrupted_rollback",
-    }
-
-
-def _rollback_journals(store, session_root: Path | None) -> list[Path]:
-    """Return the store's rollback journal, then any that older versions left behind."""
-    journals = [store.app_dir / ROLLBACK_JOURNAL]
-    if session_root is None:
-        from app.core.path_utils import get_session_base_dir
-
-        session_root = get_session_base_dir()
-    try:
-        journals += [d / ROLLBACK_JOURNAL for d in session_root.iterdir() if d.is_dir()]
-    except OSError:
-        logger.warning("Could not list session folders in %s", session_root)
-    return [j for j in journals if j.is_file()]
-
-
 def find_abandoned_sessions(store=None, session_root: Path | None = None) -> list:
     """Return the sessions a crash left unfinished, newest first.
 
-    An interrupted rollback, found by its journal, comes first. Then come
-    sessions whose moves never finished: one with recorded steps can be resumed
-    or rolled back, and one without steps is listed only when files are still
-    in its safety folder.
+    A session with recorded moves can be resumed or rolled back, and one
+    without moves is listed when it is in a failed/partially rolled-back state
+    or when files are still in its ``.branches`` safety folder.
     """
     from app.core.db_conn import get_db_connection
     from app.core.store import open_store
 
     store = store or open_store()
     abandoned = []
-
-    for journal in _rollback_journals(store, session_root):
-        entry = _journal_entry(journal)
-        if entry:
-            if journal.parent != store.app_dir:
-                # An older version's session folder, removed once recovered.
-                entry["session_dir"] = str(journal.parent)
-            abandoned.append(entry)
 
     conn = get_db_connection(str(store.path))
     with conn:
@@ -166,10 +70,7 @@ def find_abandoned_sessions(store=None, session_root: Path | None = None) -> lis
             f"WHERE status IN ({placeholders}) ORDER BY timestamp DESC",
             UNFINISHED_STATUSES,
         ).fetchall()
-        steps = {
-            sid: _count(conn, "step_ledger", sid) or _count(conn, "moves", sid)
-            for sid, _b, _s in rows
-        }
+        steps = {sid: _count(conn, "moves", sid) for sid, _b, _s in rows}
 
     for sid, base_dir, status in rows:
         branch_dir = os.path.join(base_dir, ".branches", sid) if base_dir else ""
@@ -246,11 +147,5 @@ def roll_back_abandoned_session(settings, session_info: dict) -> bool:
 
 def forget_abandoned_session(session_info: dict, store=None) -> None:
     """Leave an unfinished session as it is and stop offering to recover it."""
-    journal_path = session_info.get("journal_path")
-    if journal_path:
-        try:
-            os.remove(journal_path)
-        except OSError:
-            logger.warning("Could not remove rollback journal %s", journal_path)
-    elif session_info.get("session_id"):
+    if session_info.get("session_id"):
         mark_session_abandoned(session_info["session_id"], store=store)

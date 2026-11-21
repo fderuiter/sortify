@@ -31,14 +31,49 @@ def base_dir(tmp_path):
 
 def _legacy_session(session_dir, worker, base_dir, text):
     """Write a session folder the way older versions did: one database of each kind."""
+    import uuid
+
     session_dir.mkdir(parents=True)
     db = Database(session_dir / "autosorter.db", worker)
     cache = CacheManager(str(session_dir / "cache.db"), worker)
     history = HistoryManager(db, cache, str(session_dir / "history.db"))
     db.upsert_document(base_dir, "invoice.txt", "hash-1", text)
     db.set_user_verified_target_path(base_dir, "invoice.txt", "Finance")
-    session_id = history.create_snapshot(base_dir)
-    history.log_step(session_id, f"{base_dir}/invoice.txt", f"{base_dir}/Finance/x")
+
+    session_id = str(uuid.uuid4())
+    session_crypto = resolve_db_crypto(session_dir / "autosorter.db")
+    enc_text = session_crypto.encrypt_text(text)
+
+    def _seed_legacy_history():
+        conn = get_db_connection(history.db_path)
+        with conn:
+            conn.execute(
+                "INSERT INTO sessions (session_id, timestamp, base_dir, status) "
+                "VALUES (?, 100.0, ?, 'completed')",
+                (session_id, base_dir),
+            )
+            conn.execute(
+                "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) "
+                "VALUES (?, 'invoice.txt', 1, 10, 100.0)",
+                (session_id,),
+            )
+            conn.execute(
+                "INSERT INTO snapshot_documents (session_id, filepath, file_hash, extracted_text, user_verified_target_path) "
+                "VALUES (?, 'invoice.txt', 'hash-1', ?, 'Finance')",
+                (session_id, enc_text),
+            )
+            conn.execute(
+                "INSERT INTO step_ledger (session_id, source_path, target_path, original_path, timestamp) "
+                "VALUES (?, ?, ?, ?, 100.0)",
+                (
+                    session_id,
+                    f"{base_dir}/invoice.txt",
+                    f"{base_dir}/Finance/x",
+                    f"{base_dir}/invoice.txt",
+                ),
+            )
+
+    worker.execute_write(_seed_legacy_history)
     return session_id
 
 

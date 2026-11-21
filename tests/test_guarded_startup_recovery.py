@@ -76,7 +76,7 @@ def test_unrecoverable_error_preserves_safety_storage_and_session(
 
     settings = Settings()
     app_session = AppSession(settings, base_dir)
-    session_id = app_session.history_manager.create_snapshot(base_dir)
+    session_id = app_session.history_manager.start_session(base_dir)
 
     # Move original file to safety storage branch folder
     branch_dir = os.path.join(base_dir, ".branches", session_id)
@@ -113,7 +113,7 @@ def test_trapped_files_redetected_on_subsequent_scan(tmp_path, mock_session_base
 
     settings = Settings()
     app_session = AppSession(settings, base_dir)
-    session_id = app_session.history_manager.create_snapshot(base_dir)
+    session_id = app_session.history_manager.start_session(base_dir)
 
     branch_dir = os.path.join(base_dir, ".branches", session_id)
     os.makedirs(branch_dir, exist_ok=True)
@@ -143,7 +143,7 @@ def test_recovery_completes_and_cleans_up_after_fixing_permissions(
 
     settings = Settings()
     app_session = AppSession(settings, base_dir)
-    session_id = app_session.history_manager.create_snapshot(base_dir)
+    session_id = app_session.history_manager.start_session(base_dir)
 
     branch_dir = os.path.join(base_dir, ".branches", session_id)
     os.makedirs(branch_dir, exist_ok=True)

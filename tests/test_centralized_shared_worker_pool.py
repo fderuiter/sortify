@@ -31,18 +31,10 @@ class DummyDB:
 
 
 class DummyHistoryManager:
-    def __init__(self):
-        self.steps = []
-        self.lock = threading.Lock()
-
-    def create_snapshot(self, base_dir):
+    def start_session(self, base_dir):
         return "test-session-centralized"
 
-    def log_step(self, **kwargs):
-        with self.lock:
-            self.steps.append(kwargs)
-
-    def clear_step_ledger(self, session_id):
+    def complete_session(self, session_id):
         pass
 
 

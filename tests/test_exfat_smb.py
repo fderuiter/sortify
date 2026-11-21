@@ -37,13 +37,19 @@ def test_rollback_zero_inode(test_history_env):
         return MockStatResult(st)
 
     with patch("os.stat", side_effect=mock_stat):
-        session_id = history_manager.create_snapshot(base_dir)
+        session_id = history_manager.start_session(base_dir)
 
-        # Move files around
+        # Move files around and record in canonical move ledger
         folder_dir = os.path.join(base_dir, "folder")
         os.makedirs(folder_dir, exist_ok=True)
-        shutil.move(file1_src, os.path.join(folder_dir, "doc1.txt"))
-        shutil.move(file2_src, os.path.join(folder_dir, "doc2.txt"))
+        dst1 = os.path.join(folder_dir, "doc1.txt")
+        dst2 = os.path.join(folder_dir, "doc2.txt")
+        seq1 = history_manager.moves.record_intent(session_id, file1_src, dst1)
+        shutil.move(file1_src, dst1)
+        history_manager.moves.mark_done(session_id, seq1, dst1)
+        seq2 = history_manager.moves.record_intent(session_id, file2_src, dst2)
+        shutil.move(file2_src, dst2)
+        history_manager.moves.mark_done(session_id, seq2, dst2)
 
         # Rollback using the zero-inode environment
         history_manager.rollback(session_id)

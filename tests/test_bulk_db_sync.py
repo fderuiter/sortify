@@ -23,8 +23,11 @@ class MockDB:
 
 
 class MockHistoryManager:
-    def create_snapshot(self, base_dir):
+    def start_session(self, base_dir):
         return "snap-123"
+
+    def complete_session(self, session_id):
+        pass
 
 
 @pytest.fixture
@@ -76,12 +79,11 @@ def test_successful_folder_relocation(tmp_path, db, history_manager, monkeypatch
     # execute_batch_updates should be called exactly once
     assert db.execute_batch_updates_called == 1
 
-    # Should have 6 updates (verified_target + document_path + transaction_step for each file)
-    assert len(db.last_batch) == 6
+    # Should have 4 updates (verified_target + document_path for each file)
+    assert len(db.last_batch) == 4
     types = [u["type"] for u in db.last_batch]
     assert types.count("verified_target") == 2
     assert types.count("document_path") == 2
-    assert types.count("transaction_step") == 2
 
 
 def test_interrupted_folder_relocation(tmp_path, db, history_manager, monkeypatch):
@@ -132,9 +134,9 @@ def test_interrupted_folder_relocation(tmp_path, db, history_manager, monkeypatc
     # execute_batch_updates should be called exactly once in the exception handler
     assert db.execute_batch_updates_called == 1
 
-    # Since file2 failed, its document_path, verified_target, and transaction_step updates will NOT be in the batch.
+    # Since file2 failed, its document_path and verified_target updates will NOT be in the batch.
     # The batch should only contain updates for file1 (which succeeded).
-    assert len(db.last_batch) == 3
+    assert len(db.last_batch) == 2
     for item in db.last_batch:
         assert "file1.txt" in str(item["args"])
         assert "file2.txt" not in str(item["args"])
@@ -226,11 +228,11 @@ def test_chunked_batching_120_files(tmp_path, db, history_manager, monkeypatch):
     assert db.execute_batch_updates_called == 3
     assert len(batch_history) == 3
 
-    # Check batch sizes in terms of items (3 items per file: verified_target + document_path + transaction_step)
-    assert len(batch_history[0]) == 150
-    assert len(batch_history[1]) == 150
-    assert len(batch_history[2]) == 60
-    assert len(db.updates) == 360
+    # Check batch sizes in terms of items (2 items per file: verified_target + document_path)
+    assert len(batch_history[0]) == 100
+    assert len(batch_history[1]) == 100
+    assert len(batch_history[2]) == 40
+    assert len(db.updates) == 240
 
 
 def test_interrupted_large_move_preserves_committed_chunks(

@@ -1,12 +1,12 @@
 flowchart TD
-    entry("File Relocation Ledger Record")
-    hashreg{Hashes Registry Validator}
-    db[("Immutable SQLite Ledger Table")]
-    provenance(["Export Provenance Manifest"])
-    entry -->|Verify Hash| hashreg
-    hashreg -->|Commit Entry| db
-    db --> provenance
-    click entry "docs/api_reference.md#appcoreledger" "Ledger Entry"
-    click hashreg "docs/api_reference.md#appcorehashes_registry" "Hash Validator"
-    click db "docs/api_reference.md#appcoredb" "Ledger Table"
-    click provenance tooltip "Provenance Output"
+    crypto_event("Key Export / Rotation Event")
+    sanitizer{Secret Metadata Redactor}
+    audit_table[("Append-Only key_audit_ledger")]
+    audit_query(["Key Audit Trail Query"])
+    crypto_event -->|Redact Secrets| sanitizer
+    sanitizer -->|Commit Event| audit_table
+    audit_table --> audit_query
+    click crypto_event "docs/api_reference.md#appcorecrypto" "Key Lifecycle Event"
+    click sanitizer "docs/api_reference.md#appcoreledger" "sanitize_audit_metadata"
+    click audit_table "docs/api_reference.md#appcoreledger" "Key Audit Table"
+    click audit_query "docs/api_reference.md#appcoreledger" "get_key_audit_events"

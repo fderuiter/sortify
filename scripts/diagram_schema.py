@@ -838,8 +838,10 @@ def _create_core_architecture_spec() -> ComponentDiagramSpec:
             DiagramEdge(source="core_store", target="core_history"),
             DiagramEdge(source="core_store", target="core_moves"),
             DiagramEdge(source="core_history", target="core_moves"),
-            DiagramEdge(source="core_ledger", target="core_db"),
+            DiagramEdge(source="core_mover", target="core_moves"),
+            DiagramEdge(source="core_crypto", target="core_ledger"),
             DiagramEdge(source="core_history", target="core_db"),
+            DiagramEdge(source="core_session_catalog", target="core_moves"),
             DiagramEdge(source="core_session_catalog", target="core_store"),
             DiagramEdge(
                 source="core_policy_engine", target="core_quarantine_interceptor"
@@ -4520,41 +4522,43 @@ def _create_core_history_spec() -> ComponentDiagramSpec:
     """Build core_history diagram specification."""
     return ComponentDiagramSpec(
         id="core_history",
-        title="History & Audit Trail Subsystem Workflow",
+        title="History & Reverse-Replay Undo Workflow",
         diagram_type="flowchart",
         direction="TD",
         nodes=[
             DiagramNode(
-                id="event",
-                label="User Action / Move Event",
-                shape="round",
-                url="docs/api_reference.md#appcorehistory",
-                tooltip="History Event",
+                id="moves",
+                label="Canonical MoveLedger (moves)",
+                shape="database",
+                url="docs/api_reference.md#appcoremoves",
+                tooltip="Canonical Move Ledger",
             ),
             DiagramNode(
-                id="writer",
-                label="Encrypted DB Writer",
+                id="replay",
+                label="Reverse Move Replay Engine",
+                shape="subroutine",
+                url="docs/api_reference.md#appcorehistory",
+                tooltip="Backwards Move Replay",
+            ),
+            DiagramNode(
+                id="db",
+                label="Encrypted Document Metadata Sync",
                 shape="subroutine",
                 url="docs/api_reference.md#appcoredb",
-                tooltip="DB Writer",
+                tooltip="DB Path Sync",
             ),
             DiagramNode(
-                id="stack",
-                label="Reversible Operation Stack",
-                shape="database",
-                tooltip="Undo Stack",
-            ),
-            DiagramNode(
-                id="view",
-                label="History Audit Query View",
+                id="audit",
+                label="Session History & Audit Export",
                 shape="stadium",
-                tooltip="History View",
+                url="docs/api_reference.md#appcorehistory",
+                tooltip="History & Audit View",
             ),
         ],
         edges=[
-            DiagramEdge(source="event", target="writer"),
-            DiagramEdge(source="writer", target="stack", label="Push Reversal Link"),
-            DiagramEdge(source="stack", target="view", label="Query History"),
+            DiagramEdge(source="moves", target="replay", label="Replay Verified/Done"),
+            DiagramEdge(source="replay", target="db", label="Restore Paths"),
+            DiagramEdge(source="moves", target="audit", label="Query & Export"),
         ],
     )
 
@@ -4563,42 +4567,45 @@ def _create_core_ledger_spec() -> ComponentDiagramSpec:
     """Build core_ledger diagram specification."""
     return ComponentDiagramSpec(
         id="core_ledger",
-        title="Ledger Persistence Subsystem Workflow",
+        title="Key Lifecycle Audit & Redaction Workflow",
         diagram_type="flowchart",
         direction="TD",
         nodes=[
             DiagramNode(
-                id="entry",
-                label="File Relocation Ledger Record",
+                id="crypto_event",
+                label="Key Export / Rotation Event",
                 shape="round",
-                url="docs/api_reference.md#appcoreledger",
-                tooltip="Ledger Entry",
+                url="docs/api_reference.md#appcorecrypto",
+                tooltip="Key Lifecycle Event",
             ),
             DiagramNode(
-                id="hashreg",
-                label="Hashes Registry Validator",
+                id="sanitizer",
+                label="Secret Metadata Redactor",
                 shape="rhombus",
-                url="docs/api_reference.md#appcorehashes_registry",
-                tooltip="Hash Validator",
+                url="docs/api_reference.md#appcoreledger",
+                tooltip="sanitize_audit_metadata",
             ),
             DiagramNode(
-                id="db",
-                label="Immutable SQLite Ledger Table",
+                id="audit_table",
+                label="Append-Only key_audit_ledger",
                 shape="database",
-                url="docs/api_reference.md#appcoredb",
-                tooltip="Ledger Table",
+                url="docs/api_reference.md#appcoreledger",
+                tooltip="Key Audit Table",
             ),
             DiagramNode(
-                id="provenance",
-                label="Export Provenance Manifest",
+                id="audit_query",
+                label="Key Audit Trail Query",
                 shape="stadium",
-                tooltip="Provenance Output",
+                url="docs/api_reference.md#appcoreledger",
+                tooltip="get_key_audit_events",
             ),
         ],
         edges=[
-            DiagramEdge(source="entry", target="hashreg", label="Verify Hash"),
-            DiagramEdge(source="hashreg", target="db", label="Commit Entry"),
-            DiagramEdge(source="db", target="provenance"),
+            DiagramEdge(
+                source="crypto_event", target="sanitizer", label="Redact Secrets"
+            ),
+            DiagramEdge(source="sanitizer", target="audit_table", label="Commit Event"),
+            DiagramEdge(source="audit_table", target="audit_query"),
         ],
     )
 

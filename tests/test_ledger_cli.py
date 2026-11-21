@@ -11,33 +11,27 @@ from app.cli import handle_cli_command, register_cli_subcommands
 from app.cli.ledger_cli import handle_ledger_command, register_subparser
 from app.config import AppSettings
 from app.core.exceptions import AuditExportError
-from app.core.ledger import TransactionLedger
+from app.core.moves import STATUS_FAILED_CONFLICT, MoveLedger, format_move_failure
 
 
 @pytest.fixture
 def temp_ledger(tmp_path):
-    """Create isolated SQLite transaction ledger for CLI testing."""
+    """Create isolated SQLite move ledger for CLI testing."""
     db_path = str(tmp_path / "test_ledger.db")
-    ledger = TransactionLedger(db_path=db_path)
+    ledger = MoveLedger(db_path=db_path, auto_init=True)
     # Seed sample records
-    e1 = ledger.log_intent(
+    ledger.record_intent(
         session_id="sess_alpha",
-        base_dir=str(tmp_path),
-        source_path=str(tmp_path / "file1.txt"),
-        dest_path=str(tmp_path / "dest1.txt"),
-        source_rel_path="file1.txt",
-        dest_rel_path="dest1.txt",
+        src=str(tmp_path / "file1.txt"),
+        dst=str(tmp_path / "dest1.txt"),
     )
-    e2 = ledger.log_intent(
+    seq2 = ledger.record_intent(
         session_id="sess_beta",
-        base_dir=str(tmp_path),
-        source_path=str(tmp_path / "file2.txt"),
-        dest_path=str(tmp_path / "dest2.txt"),
-        source_rel_path="file2.txt",
-        dest_rel_path="dest2.txt",
+        src=str(tmp_path / "file2.txt"),
+        dst=str(tmp_path / "dest2.txt"),
     )
     # Mark second move as failed
-    ledger.update_status(e2, "FAILED_CONFLICT")
+    ledger.mark_failed("sess_beta", seq2, format_move_failure(STATUS_FAILED_CONFLICT))
     return db_path, ledger
 
 

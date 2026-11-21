@@ -1,5 +1,6 @@
-"""History management module for snapshotting and rollback."""
+"""Session history, lifecycle state machine, and reverse-replay undo (ADR 0006)."""
 
+import csv
 import json
 import logging
 import os
@@ -7,7 +8,7 @@ import time
 import uuid
 from collections.abc import Callable, Collection, Generator
 from contextlib import contextmanager
-from functools import partial
+from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Optional
 
@@ -15,14 +16,15 @@ from app.core.db_conn import DB_ERRORS, get_db_connection
 from app.core.exceptions import InvalidStateTransitionError
 from app.core.lifecycle import LifecycleTelemetryMixin
 from app.core.migrations import Migration, add_missing_columns, migrate
-from app.core.moves import FAILED, INTENT, Move, MoveLedger, migrate_add_moves
-from app.core.path_utils import is_junction_path, safe_relpath
-from app.core.resilient_file_ops import verify_file_hash
-
-try:
-    import pylnk3
-except ImportError:
-    pylnk3 = None
+from app.core.moves import (
+    FAILED,
+    INTENT,
+    Move,
+    MoveLedger,
+    migrate_add_moves,
+    migrate_import_legacy_moves,
+)
+from app.core.path_utils import safe_relpath
 
 # Valid session lifecycle statuses
 ACTIVE = "active"
@@ -30,7 +32,6 @@ COMPLETED = "completed"
 ROLLED_BACK = "rolled_back"
 PARTIALLY_ROLLED_BACK = "partially_rolled_back"
 FAILED_STATUS = "failed"
-UNDO_SNAPSHOT = "undo_snapshot"
 ABANDONED = "abandoned"
 UNCOMMITTED = "uncommitted"
 
@@ -40,7 +41,6 @@ ALL_SESSION_STATUSES: set[str] = {
     ROLLED_BACK,
     PARTIALLY_ROLLED_BACK,
     FAILED_STATUS,
-    UNDO_SNAPSHOT,
     ABANDONED,
     UNCOMMITTED,
 }
@@ -53,7 +53,6 @@ TRANSITION_MATRIX: dict[str, set[str]] = {
         ROLLED_BACK,
         PARTIALLY_ROLLED_BACK,
         FAILED_STATUS,
-        UNDO_SNAPSHOT,
         ABANDONED,
     },
     COMPLETED: {
@@ -76,12 +75,6 @@ TRANSITION_MATRIX: dict[str, set[str]] = {
         ABANDONED,
         ACTIVE,
         COMPLETED,
-    },
-    UNDO_SNAPSHOT: {
-        UNDO_SNAPSHOT,
-        ROLLED_BACK,
-        FAILED_STATUS,
-        ABANDONED,
     },
     ABANDONED: {
         ABANDONED,
@@ -339,10 +332,6 @@ class SessionStateMachine(LifecycleTelemetryMixin):
                 conn.close()
 
 
-# Session status of the safety snapshot an undo takes before it touches files.
-UNDO_SNAPSHOT_STATUS = UNDO_SNAPSHOT
-
-
 def _robust_move(src, dst):
     """Safely move a file, retrying on temporary Windows sharing violations and file locks."""
     from app.core.resilient_file_ops import resilient_move
@@ -368,6 +357,8 @@ def _purge_overwrite_backups(base_dir: str, session_id: str) -> None:
     from app.core.mover import OVERWRITE_BACKUP_DIR, overwrite_backup_dir
     from app.core.resilient_file_ops import resilient_rmtree
 
+    if not base_dir:
+        return
     backup_dir = overwrite_backup_dir(base_dir, session_id)
     if not os.path.isdir(backup_dir) or os.path.islink(backup_dir):
         return
@@ -378,82 +369,6 @@ def _purge_overwrite_backups(base_dir: str, session_id: str) -> None:
             os.rmdir(root)
     except OSError as err:
         logging.warning(f"Could not purge overwrite backups in {backup_dir}: {err}")
-
-
-class RollbackBatchTransaction:
-    """Manages chunked transaction commits with savepoints during rollback."""
-
-    def __init__(self, conn: Any, batch_size: int = 50) -> None:
-        self.conn = conn
-        self.batch_size = batch_size
-        self.op_count = 0
-        self.total_committed = 0
-        self._sp_counter = 0
-        self.current_savepoint: str | None = None
-
-    def begin_batch(self) -> None:
-        """Create a savepoint before a batch of operations if none active."""
-        if self.current_savepoint is None:
-            self.current_savepoint = f"rollback_batch_{self._sp_counter}"
-            self._sp_counter += 1
-            self.conn.execute(f"SAVEPOINT {self.current_savepoint}")
-            self.op_count = 0
-
-    def execute(self, query: str, params: tuple | list = ()):
-        """Execute a query within the current batch savepoint."""
-        self.begin_batch()
-        return self.conn.execute(query, params)
-
-    def executemany(self, query: str, seq_of_params):
-        """Execute multiple queries within the current batch savepoint."""
-        self.begin_batch()
-        return self.conn.executemany(query, seq_of_params)
-
-    def step(self) -> None:
-        """Mark completion of an operation/move and commit if batch_size reached."""
-        self.op_count += 1
-        if self.op_count >= self.batch_size:
-            self.commit_batch()
-
-    def commit_batch(self) -> None:
-        """Commit the current batch and release the savepoint."""
-        if self.current_savepoint is not None:
-            self.conn.execute(f"RELEASE SAVEPOINT {self.current_savepoint}")
-            self.conn.commit()
-            self.total_committed += self.op_count
-            self.current_savepoint = None
-            self.op_count = 0
-
-    def rollback_batch(self) -> None:
-        """Rollback to the current savepoint and release it."""
-        if self.current_savepoint is not None:
-            try:
-                self.conn.execute(f"ROLLBACK TO SAVEPOINT {self.current_savepoint}")
-                self.conn.execute(f"RELEASE SAVEPOINT {self.current_savepoint}")
-                self.conn.commit()
-            except Exception as e:
-                logging.warning(
-                    f"Error rolling back savepoint {self.current_savepoint}: {e}"
-                )
-            finally:
-                self.current_savepoint = None
-                self.op_count = 0
-
-    def flush(self) -> None:
-        """Flush and commit any remaining operations."""
-        if self.op_count > 0 or self.current_savepoint is not None:
-            self.commit_batch()
-
-    def __enter__(self) -> "RollbackBatchTransaction":
-        """Enter the context manager."""
-        return self
-
-    def __exit__(self, exc_type: Any, exc_val: Any, exc_tb: Any) -> None:
-        """Exit the context manager, rolling back on error or flushing on success."""
-        if exc_type is not None:
-            self.rollback_batch()
-        else:
-            self.flush()
 
 
 def _move_aside_blocking_parents(path: str, base_dir: str, db_conn) -> None:
@@ -476,12 +391,7 @@ def _move_aside_blocking_parents(path: str, base_dir: str, db_conn) -> None:
         _robust_move(current, safe_current)
         rel_current = safe_relpath(current, base_dir).replace("\\", "/")
         rel_safe = safe_relpath(safe_current, base_dir).replace("\\", "/")
-        if isinstance(db_conn, RollbackBatchTransaction):
-            db_conn.execute(
-                "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                (rel_safe, base_dir, rel_current, rel_current),
-            )
-        elif getattr(db_conn, "in_transaction", False) or not hasattr(
+        if getattr(db_conn, "in_transaction", False) or not hasattr(
             db_conn, "__enter__"
         ):
             db_conn.execute(
@@ -551,6 +461,47 @@ def _find_moved_file(move: Move, claimed: set[str]) -> str | None:
         ):
             return candidate
     return None
+
+
+def _restore_trapped_branch_files(
+    base_dir: str,
+    session_id: str,
+    docs_conn,
+    failures: list[Exception],
+) -> int:
+    """Restore any files parked in ``<base_dir>/.branches/<session_id>`` back into ``base_dir``."""
+    from app.core.resilient_file_ops import resilient_move, resilient_rmtree
+
+    branch_dir = os.path.join(base_dir, ".branches", session_id)
+    if not os.path.isdir(branch_dir) or os.path.islink(branch_dir):
+        return 0
+
+    restored_count = 0
+    for root, _dirs, files in os.walk(branch_dir):
+        for fname in files:
+            trapped_src = os.path.join(root, fname)
+            rel_path = os.path.relpath(trapped_src, branch_dir)
+            restore_dst = os.path.join(base_dir, rel_path)
+            try:
+                _move_aside_blocking_parents(restore_dst, base_dir, docs_conn)
+                os.makedirs(os.path.dirname(restore_dst), exist_ok=True)
+                resilient_move(trapped_src, restore_dst)
+                restored_count += 1
+            except Exception as err:  # noqa: BLE001 - preserve safety branch on any move error
+                logging.error(
+                    f"Failed to restore trapped branch file {trapped_src}: {err}"
+                )
+                failures.append(err)
+
+    if not failures:
+        try:
+            resilient_rmtree(branch_dir)
+            branches_root = os.path.join(base_dir, ".branches")
+            if os.path.isdir(branches_root) and not os.listdir(branches_root):
+                os.rmdir(branches_root)
+        except OSError as err:
+            logging.warning(f"Could not clean up safety branch {branch_dir}: {err}")
+    return restored_count
 
 
 def _history_db_baseline(conn) -> None:
@@ -647,17 +598,16 @@ def _history_db_baseline(conn) -> None:
 HISTORY_DB_MIGRATIONS = (
     Migration(1, "baseline", _history_db_baseline),
     Migration(2, "moves", migrate_add_moves),
+    Migration(3, "legacy_moves", migrate_import_legacy_moves),
 )
 
 
 class HistoryManager:
-    """Manages full directory snapshots and rollback functionality."""
+    """Manages sort session registration, canonical move queries, and replay-based undo."""
 
     def __init__(
         self, db, cache_manager, db_path=None, migrations=HISTORY_DB_MIGRATIONS
     ):
-        from pathlib import Path
-
         self.db = db
         self.cache_manager = cache_manager
         self.db_path = db_path or str(Path(db.db_path).parent / "history.db")
@@ -690,200 +640,51 @@ class HistoryManager:
             metadata=metadata,
         )
 
-    def _create_snapshot_internal(self, base_dir: str) -> str:
-        session_id = str(uuid.uuid4())
+    def _start_session_internal(
+        self, base_dir: str, session_id: Optional[str] = None
+    ) -> str:
+        if not base_dir or not os.path.isdir(base_dir):
+            raise OSError(f"Base directory does not exist: {base_dir}")
+
+        sid = str(session_id) if session_id else str(uuid.uuid4())
         timestamp = time.time()
 
-        from app.core.link_manager import LinkManager
-        from app.core.scanner import get_files_recursively
+        policies = None
+        try:
+            from app.config import AppSettings
 
-        files = get_files_recursively(base_dir)
+            policies = getattr(AppSettings(), "RETENTION_POLICIES", None)
+        except Exception:  # noqa: BLE001
+            policies = None
 
         conn = get_db_connection(self.db_path)
         with conn:
             conn.execute(
                 "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
-                (session_id, timestamp, base_dir, "active"),
+                (sid, timestamp, base_dir, ACTIVE),
             )
-
-            # 1. Snapshot Files
-            file_records = []
-            for rel_path in files:
-                abs_path = os.path.join(base_dir, rel_path)
-                try:
-                    st = os.lstat(abs_path)
-                    is_symlink = 1 if os.path.islink(abs_path) else 0
-                    is_junc = 1 if is_junction_path(abs_path) else 0
-                    is_lnk = 1 if abs_path.lower().endswith(".lnk") else 0
-                    is_link_entity = bool(is_symlink or is_junc or is_lnk)
-
-                    link_type = None
-                    link_target = None
-                    arguments = None
-                    description = None
-                    icon_file = None
-                    icon_index = 0
-                    work_dir = None
-                    window_mode = None
-
-                    if is_junc:
-                        link_type = "junction"
-                        try:
-                            link_target = os.readlink(abs_path)
-                        except OSError:
-                            info = LinkManager.get_link_info(abs_path)
-                            if info:
-                                link_target = info.get("target")
-                    elif is_symlink:
-                        link_type = "symlink"
-                        try:
-                            link_target = os.readlink(abs_path)
-                        except OSError:
-                            pass
-                    elif is_lnk:
-                        link_type = "lnk"
-                        if pylnk3:
-                            try:
-                                parsed = pylnk3.parse(abs_path)
-                                link_target = parsed.path
-                                arguments = parsed.arguments
-                                description = parsed.description
-                                icon_file = parsed.icon
-                                icon_index = getattr(parsed, "icon_index", 0)
-                                work_dir = parsed.work_dir
-                                window_mode = parsed.window_mode
-                            except Exception:
-                                info = LinkManager.get_link_info(abs_path)
-                                if info:
-                                    link_target = info.get("target")
-                        else:
-                            info = LinkManager.get_link_info(abs_path)
-                            if info:
-                                link_target = info.get("target")
-
-                    file_hash = None
-                    if not is_link_entity and st.st_size > 0:
-                        try:
-                            from app.core.extractor import get_file_hash
-
-                            file_hash = get_file_hash(abs_path)
-                        except Exception:
-                            pass
-
-                    file_records.append(
-                        (
-                            session_id,
-                            rel_path.replace("\\", "/"),
-                            st.st_ino,
-                            st.st_size,
-                            st.st_mtime,
-                            is_symlink,
-                            is_symlink
-                            and (
-                                link_target or os.readlink(abs_path)
-                                if is_symlink
-                                else None
-                            )
-                            or link_target,
-                            link_type,
-                            arguments,
-                            description,
-                            icon_file,
-                            icon_index,
-                            work_dir,
-                            window_mode,
-                            file_hash,
-                        )
-                    )
-                except OSError:
-                    continue
-            if file_records:
-                conn.executemany(
-                    """
-                    INSERT INTO snapshot_files (
-                        session_id, original_rel_path, inode, size, mtime, 
-                        is_symlink, symlink_target, link_type, arguments, 
-                        description, icon_file, icon_index, work_dir, 
-                        window_mode, file_hash
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    file_records,
-                )
-
-            # 2. Snapshot Cache
-            cache_conn = self.cache_manager._get_conn()
-            with cache_conn:
-                cur = cache_conn.execute(
-                    "SELECT corpus, locked_files, index_to_word, manual_folders FROM directory_cache WHERE source_directory = ?",
-                    (base_dir,),
-                )
-                row = cur.fetchone()
-            if row:
-                conn.execute(
-                    "INSERT INTO snapshot_cache (session_id, corpus, locked_files, index_to_word, manual_folders) VALUES (?, ?, ?, ?, ?)",
-                    (session_id, row[0], row[1], row[2], row[3]),
-                )
-
-            # 3. Snapshot DB
-            docs = []
-            db_conn = get_db_connection(self.db.db_path)
-            with db_conn:
-                try:
-                    cur = db_conn.execute(
-                        "SELECT filepath, file_hash, extracted_text, user_verified_target_path FROM documents WHERE base_dir = ?",
-                        (base_dir,),
-                    )
-                    for r in cur.fetchall():
-                        docs.append(
-                            (
-                                session_id,
-                                r[0].replace("\\", "/"),
-                                r[1],
-                                r[2],
-                                r[3] if len(r) > 3 else None,
-                            )
-                        )
-                except Exception:
-                    cur = db_conn.execute(
-                        "SELECT filepath, file_hash, extracted_text FROM documents WHERE base_dir = ?",
-                        (base_dir,),
-                    )
-                    for r in cur.fetchall():
-                        docs.append(
-                            (session_id, r[0].replace("\\", "/"), r[1], r[2], None)
-                        )
-            if docs:
-                try:
-                    conn.executemany(
-                        "INSERT INTO snapshot_documents (session_id, filepath, file_hash, extracted_text, user_verified_target_path) VALUES (?, ?, ?, ?, ?)",
-                        docs,
-                    )
-                except Exception:
-                    conn.executemany(
-                        "INSERT INTO snapshot_documents (session_id, filepath, file_hash, extracted_text) VALUES (?, ?, ?, ?)",
-                        [d[:4] for d in docs],
-                    )
-
-            # Prune expired snapshots based on configured age retention limit
-            policies = None
-            try:
-                from app.config import AppSettings
-
-                app_settings = AppSettings()
-                policies = getattr(app_settings, "POLICIES", None)
-            except Exception:
-                pass
             self._prune_snapshots(conn, policies=policies)
+        return sid
 
-        return session_id
+    def start_session(self, base_dir: str, session_id: Optional[str] = None) -> str:
+        """Register a new sort session in ``sessions`` without walking ``base_dir``."""
 
-    def create_snapshot(self, base_dir: str) -> str:
-        """Create a complete snapshot of the directory tree and its metadata."""
-
-        def _write():
-            return self._create_snapshot_internal(base_dir)
+        def _write() -> str:
+            return self._start_session_internal(base_dir, session_id=session_id)
 
         return self.db.worker.execute_write(_write)
+
+    def complete_session(self, session_id: str) -> None:
+        """Mark ``session_id`` as ``completed`` while keeping its ``moves`` ledger intact."""
+        if not session_id:
+            return
+
+        def _write() -> None:
+            conn = get_db_connection(self.db_path)
+            with conn:
+                self._transition_session_status(session_id, COMPLETED, conn=conn)
+
+        self.db.worker.execute_write(_write)
 
     def _prune_snapshots(self, conn, retention_days=None, limit=None, policies=None):
         if retention_days is None:
@@ -911,21 +712,28 @@ class HistoryManager:
             ):
                 continue
 
-            # Never prune divergent history branches that contain unmerged user data
-            branch_dir = os.path.join(base_dir, ".branches", sid)
-            if os.path.exists(branch_dir) and os.listdir(branch_dir):
-                continue
+            if base_dir:
+                branch_dir = os.path.join(base_dir, ".branches", sid)
+                if os.path.exists(branch_dir) and os.listdir(branch_dir):
+                    continue
 
             if policies:
                 retained_by_policy = False
                 try:
                     from app.core.policy_engine import PolicyEngine
 
-                    cur_files = conn.execute(
-                        "SELECT original_rel_path FROM snapshot_files WHERE session_id = ?",
+                    cur_moves = conn.execute(
+                        "SELECT src, dst FROM moves WHERE session_id = ?",
                         (sid,),
                     ).fetchall()
-                    file_paths = [r[0] for r in cur_files] or [base_dir]
+                    file_paths: list[str] = []
+                    for src_p, dst_p in cur_moves:
+                        if src_p:
+                            file_paths.append(src_p)
+                        if dst_p:
+                            file_paths.append(dst_p)
+                    if not file_paths and base_dir:
+                        file_paths = [base_dir]
 
                     for rule in policies:
                         act = (
@@ -949,577 +757,66 @@ class HistoryManager:
                             break
                 except Exception as ex:
                     logging.warning(
-                        f"Error evaluating policies during snapshot pruning: {ex}"
+                        f"Error evaluating policies during session pruning: {ex}"
                     )
                 if retained_by_policy:
                     continue
 
-            conn.execute("DELETE FROM snapshot_files WHERE session_id = ?", (sid,))
-            conn.execute("DELETE FROM snapshot_cache WHERE session_id = ?", (sid,))
-            conn.execute("DELETE FROM snapshot_documents WHERE session_id = ?", (sid,))
-            conn.execute("DELETE FROM step_ledger WHERE session_id = ?", (sid,))
+            for legacy_table in (
+                "snapshot_files",
+                "snapshot_cache",
+                "snapshot_documents",
+                "step_ledger",
+            ):
+                try:
+                    conn.execute(
+                        f"DELETE FROM {legacy_table} WHERE session_id = ?", (sid,)
+                    )
+                except DB_ERRORS:
+                    pass
             conn.execute("DELETE FROM moves WHERE session_id = ?", (sid,))
             conn.execute("DELETE FROM sessions WHERE session_id = ?", (sid,))
             _purge_overwrite_backups(base_dir, sid)
 
     def get_sessions(self) -> list[dict[str, Any]]:
-        """Retrieve a list of all historical sessions, ordered by time."""
-        conn = get_db_connection(self.db_path)
-        query = (
-            "SELECT "
-            "s.session_id, s.timestamp, s.base_dir, s.status, "
-            "COALESCE(st.step_count, 0) AS step_count, "
-            "COALESCE(sf.file_count, 0) AS file_count "
-            "FROM sessions s "
-            "LEFT JOIN ("
-            "    SELECT session_id, COUNT(*) AS step_count FROM step_ledger GROUP BY session_id"
-            ") st ON s.session_id = st.session_id "
-            "LEFT JOIN ("
-            "    SELECT session_id, COUNT(*) AS file_count FROM snapshot_files GROUP BY session_id"
-            ") sf ON s.session_id = sf.session_id "
-            "ORDER BY s.timestamp DESC"
-        )
-        with conn:
-            try:
-                rows = conn.execute(query).fetchall()
-            except DB_ERRORS:
-                existing_tables = {
-                    r[0]
-                    for r in conn.execute(
-                        "SELECT name FROM sqlite_master WHERE type='table'"
-                    ).fetchall()
-                }
-                has_steps = "step_ledger" in existing_tables
-                has_files = "snapshot_files" in existing_tables
-                step_join = (
-                    "LEFT JOIN (SELECT session_id, COUNT(*) AS step_count FROM step_ledger GROUP BY session_id) st ON s.session_id = st.session_id "
-                    if has_steps
-                    else ""
-                )
-                file_join = (
-                    "LEFT JOIN (SELECT session_id, COUNT(*) AS file_count FROM snapshot_files GROUP BY session_id) sf ON s.session_id = sf.session_id "
-                    if has_files
-                    else ""
-                )
-                step_col = (
-                    "COALESCE(st.step_count, 0) AS step_count"
-                    if has_steps
-                    else "0 AS step_count"
-                )
-                file_col = (
-                    "COALESCE(sf.file_count, 0) AS file_count"
-                    if has_files
-                    else "0 AS file_count"
-                )
-                fallback_query = (
-                    f"SELECT s.session_id, s.timestamp, s.base_dir, s.status, {step_col}, {file_col} "
-                    f"FROM sessions s {step_join} {file_join} "
-                    "ORDER BY s.timestamp DESC"
-                )
-                rows = conn.execute(fallback_query).fetchall()
+        """Retrieve a list of all historical sessions, newest first, with canonical move counts."""
+        from app.core.moves import query_session_summaries
 
-            return [
-                {
-                    "session_id": sid,
-                    "timestamp": ts,
-                    "base_dir": b_dir,
-                    "status": status,
-                    "step_count": step_count,
-                    "file_count": file_count,
-                }
-                for sid, ts, b_dir, status, step_count, file_count in rows
-            ]
-
-    def check_missing_files(self, session_id: str) -> list[str]:
-        """Check if any files from the snapshot are missing from the disk."""
-        conn = get_db_connection(self.db_path)
-        with conn:
-            cur = conn.execute(
-                "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
-            )
-            row = cur.fetchone()
-            if not row:
-                raise ValueError("Session not found")
-            base_dir = row[0]
-
-            try:
-                cur = conn.execute(
-                    "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash, link_type FROM snapshot_files WHERE session_id = ?",
-                    (session_id,),
-                )
-                snapshot_files = cur.fetchall()
-            except Exception:
-                try:
-                    cur = conn.execute(
-                        "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash FROM snapshot_files WHERE session_id = ?",
-                        (session_id,),
-                    )
-                    snapshot_files = [(*row, None) for row in cur.fetchall()]
-                except Exception:
-                    cur = conn.execute(
-                        "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?",
-                        (session_id,),
-                    )
-                    snapshot_files = [(*row, None, None) for row in cur.fetchall()]
-
-        from app.core.scanner import get_files_recursively
-
-        current_files = get_files_recursively(base_dir, include_hidden=True)
-
-        inode_counts: dict[Any, Any] = {}
-        current_inodes: dict[Any, Any] = {}
-        active_files_by_rel_path: dict[Any, Any] = {}
-        active_files_by_sig: dict[Any, Any] = {}
-        inodes_reliable = True
-
-        for rel_path in current_files:
-            abs_path = os.path.join(base_dir, rel_path)
-            try:
-                st = os.lstat(abs_path)
-            except OSError:
-                continue
-
-            ino = st.st_ino
-            size = st.st_size
-            mtime = st.st_mtime
-            is_symlink = 1 if os.path.islink(abs_path) else 0
-            symlink_target = os.readlink(abs_path) if is_symlink else None
-
-            inode_counts[ino] = inode_counts.get(ino, 0) + 1
-            if ino == 0 or inode_counts[ino] > 1:
-                inodes_reliable = False
-
-            sig = (size, mtime, is_symlink, symlink_target)
-            current_inodes[ino] = (abs_path, sig)
-            active_files_by_rel_path[rel_path.lower().replace("\\", "/")] = sig
-
-            if sig not in active_files_by_sig:
-                active_files_by_sig[sig] = []
-            active_files_by_sig[sig].append(abs_path)
-
-        verify_hash = partial(verify_file_hash, recovery=False)
-
-        missing = []
-        for (
-            rel_path,
-            inode,
-            size,
-            mtime,
-            is_symlink,
-            symlink_target,
-            file_hash,
-            link_type,
-        ) in snapshot_files:
-            is_lnk = (
-                1 if (link_type == "lnk" or rel_path.lower().endswith(".lnk")) else 0
-            )
-            is_link_entity = bool(is_symlink or is_lnk)
-
-            found = False
-            target_sig = (size, mtime, is_symlink, symlink_target)
-
-            if inodes_reliable and inode in current_inodes:
-                abs_path, current_sig = current_inodes[inode]
-                if is_link_entity:
-                    del current_inodes[inode]
-                    found = True
-                else:
-                    if current_sig[2] == is_symlink:
-                        if not is_symlink or current_sig[3] == symlink_target:
-                            if verify_hash(abs_path, file_hash, size):
-                                del current_inodes[inode]
-                                found = True
-
-            if not found:
-                # Fallback Step A
-                curr_sig = active_files_by_rel_path.get(
-                    rel_path.lower().replace("\\", "/")
-                )
-                if is_link_entity:
-                    if curr_sig is not None:
-                        found = True
-                else:
-                    if curr_sig == target_sig:
-                        abs_path = os.path.join(base_dir, rel_path)
-                        if verify_hash(abs_path, file_hash, size):
-                            if (
-                                curr_sig in active_files_by_sig
-                                and abs_path in active_files_by_sig[curr_sig]
-                            ):
-                                active_files_by_sig[curr_sig].remove(abs_path)
-                            found = True
-                if not found:
-                    # Fallback Step B
-                    if not is_link_entity:
-                        if (
-                            target_sig in active_files_by_sig
-                            and active_files_by_sig[target_sig]
-                        ):
-                            for idx, cand_path in enumerate(
-                                active_files_by_sig[target_sig]
-                            ):
-                                if verify_hash(cand_path, file_hash, size):
-                                    active_files_by_sig[target_sig].pop(idx)
-                                    found = True
-                                    break
-
-            if not found:
-                if not is_link_entity:
-                    missing.append(rel_path)
-
-        return missing
-
-    def _rollback_from_steps(
-        self,
-        session_id: str,
-        steps: list,
-        base_dir: str,
-        safety_session_id: str | None = None,
-        ignore_missing: bool = False,
-    ):
-        """Replay recorded transaction ledger step entries in reverse order."""
-        import json
-        import logging
-        from pathlib import Path
-
-        from app.core.resilient_file_ops import resilient_remove
-
-        verify_hash = verify_file_hash
-
-        reverse_steps = sorted(steps, key=lambda s: s["step_number"], reverse=True)
-
-        # Write rollback journal before executing file reversals
-        try:
-            journal_path = Path(self.db_path).parent / "rollback_journal.json"
-            journal_data = {
-                "session_id": session_id,
-                "safety_session_id": safety_session_id,
-                "base_dir": base_dir,
-                "steps": reverse_steps,
+        rows = query_session_summaries(self.db_path)
+        return [
+            {
+                "session_id": sid,
+                "timestamp": ts,
+                "base_dir": b_dir,
+                "status": status,
+                "step_count": step_count,
+                "file_count": file_count,
             }
-            with open(journal_path, "w") as f:
-                json.dump(journal_data, f, indent=2)
-        except Exception as ex:
-            logging.warning(f"Failed to write rollback journal: {ex}")
-
-        db_conn = get_db_connection(self.db.db_path)
-
-        failed_steps = []
-        for step in reverse_steps:
-            source_path = step["source_path"]
-            destination_path = step["destination_path"]
-            file_hash = step["file_hash"]
-            item_type = step.get("item_type") or "file"
-            meta = json.loads(step["metadata"]) if step.get("metadata") else {}
-
-            curr_abs = os.path.normpath(os.path.join(base_dir, destination_path))
-            orig_abs = os.path.normpath(os.path.join(base_dir, source_path))
-
-            try:
-                # Pre-step content integrity check
-                if item_type == "file" and file_hash:
-                    if os.path.exists(curr_abs):
-                        if not verify_hash(curr_abs, file_hash):
-                            logging.error(
-                                f"Pre-step file hash mismatch for {destination_path}. Halting step replay and restoring state from safety snapshot."
-                            )
-                            if safety_session_id:
-                                self._rollback_from_snapshot_internal(
-                                    safety_session_id, ignore_missing=True
-                                )
-                            raise ValueError(
-                                f"Rollback halted: file hash mismatch detected for {destination_path}. Disk state restored from safety snapshot."
-                            )
-                    elif not ignore_missing:
-                        logging.error(
-                            f"Pre-step file missing at {destination_path}. Halting step replay and restoring state from safety snapshot."
-                        )
-                        if safety_session_id:
-                            self._rollback_from_snapshot_internal(
-                                safety_session_id, ignore_missing=True
-                            )
-                        raise ValueError(
-                            f"Rollback halted: file missing at {destination_path}. Disk state restored from safety snapshot."
-                        )
-                    elif not os.path.exists(orig_abs):
-                        # Deleted since the sort and not already back: nothing to restore.
-                        logging.warning(
-                            f"Skipping {destination_path}: it no longer exists."
-                        )
-                        continue
-
-                # Replay step reversal
-                if item_type == "file":
-                    if curr_abs != orig_abs and os.path.exists(curr_abs):
-                        _move_aside_blocking_parents(orig_abs, base_dir, db_conn)
-                        os.makedirs(os.path.dirname(orig_abs), exist_ok=True)
-                        if os.path.exists(orig_abs) and not os.path.samefile(
-                            curr_abs, orig_abs
-                        ):
-                            from app.core.mover import get_safe_path
-
-                            safe_orig = get_safe_path(
-                                os.path.dirname(orig_abs), os.path.basename(orig_abs)
-                            )
-                            _robust_move(orig_abs, safe_orig)
-                        _robust_move(curr_abs, orig_abs)
-
-                elif item_type in ("symlink", "junction"):
-                    if os.path.lexists(curr_abs) or is_junction_path(curr_abs):
-                        try:
-                            resilient_remove(curr_abs)
-                        except OSError:
-                            pass
-                    target_link = meta.get("target") if meta else None
-                    if target_link:
-                        os.makedirs(os.path.dirname(orig_abs), exist_ok=True)
-                        if item_type == "junction":
-                            from app.core.mover import _create_junction
-
-                            _create_junction(target_link, orig_abs)
-                        else:
-                            os.symlink(target_link, orig_abs)
-
-                elif item_type == "lnk":
-                    if os.path.lexists(curr_abs):
-                        try:
-                            resilient_remove(curr_abs)
-                        except OSError:
-                            pass
-                    os.makedirs(os.path.dirname(orig_abs), exist_ok=True)
-                    target_link = meta.get("target") if meta else None
-                    if pylnk3 and target_link:
-                        kwargs = {
-                            k: v
-                            for k, v in meta.items()
-                            if k
-                            in (
-                                "arguments",
-                                "description",
-                                "icon_file",
-                                "icon_index",
-                                "work_dir",
-                                "window_mode",
-                            )
-                        }
-                        pylnk3.for_file(target_link, lnk_name=orig_abs, **kwargs)
-
-                # Post-step content integrity check
-                if item_type == "file" and file_hash:
-                    if not verify_hash(orig_abs, file_hash):
-                        logging.error(
-                            f"Post-step file hash mismatch for {source_path}. Halting step replay and restoring state from safety snapshot."
-                        )
-                        if safety_session_id:
-                            self._rollback_from_snapshot_internal(
-                                safety_session_id, ignore_missing=True
-                            )
-                        raise ValueError(
-                            f"Rollback halted: post-step file hash mismatch for {source_path}. Disk state restored from safety snapshot."
-                        )
-
-                # Update core database
-                with db_conn:
-                    db_conn.execute(
-                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                        (source_path, base_dir, destination_path, destination_path),
-                    )
-            except Exception as step_err:
-                logging.error(f"Failed step reversal: {step_err}")
-                failed_steps.append((step, step_err))
-
-        if failed_steps:
-            first_err = failed_steps[0][1]
-            try:
-                self._transition_session_status(
-                    session_id,
-                    "failed",
-                    error_details=str(first_err),
-                    metadata={"failed_steps_count": len(failed_steps)},
-                )
-            except Exception as st_err:  # noqa: BLE001
-                logging.warning(
-                    f"Could not transition session {session_id} to failed: {st_err}"
-                )
-            if isinstance(first_err, ValueError):
-                raise first_err
-            raise PermissionError(
-                f"Recovery incomplete: {len(failed_steps)} step(s) failed during rollback. Error: {first_err}"
-            )
-
-        self._transition_session_status(session_id, "rolled_back")
-
-        # Every step reversed, so the journal no longer describes unfinished work.
-        try:
-            journal_path = Path(self.db_path).parent / "rollback_journal.json"
-            if journal_path.exists():
-                journal_path.unlink()
-        except Exception as ex:
-            logging.warning(f"Failed to delete rollback journal: {ex}")
-
-    def _mark_undo_snapshot(self, session_id: str) -> None:
-        """Label a pre-undo safety snapshot so it is never mistaken for a sort.
-
-        Left "active", the startup scan reports it as interrupted work; marked
-        "completed", ``undo --latest`` picks it instead of the previous sort.
-        """
-        self._transition_session_status(session_id, UNDO_SNAPSHOT_STATUS)
-
-    def log_step(
-        self,
-        session_id: str,
-        source_path: str,
-        target_path: str,
-        original_path: str = None,
-        original_filename: str = None,
-        is_cross_volume: bool = False,
-        is_collision_renamed: bool = False,
-        file_hash: str = None,
-    ) -> int:
-        """Log a single file relocation step in real time into the persistent history database."""
-        if not session_id:
-            return 0
-        norm_src = os.path.normpath(source_path)
-        norm_dst = os.path.normpath(target_path)
-        orig_path = os.path.normpath(original_path or source_path)
-        orig_name = original_filename or os.path.basename(orig_path)
-        ts = time.time()
-
-        conn = get_db_connection(self.db_path)
-        with conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO step_ledger (
-                    session_id, source_path, target_path, original_path,
-                    original_filename, is_cross_volume, is_collision_renamed,
-                    file_hash, timestamp, status
-                ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, 'completed')
-                """,
-                (
-                    session_id,
-                    norm_src,
-                    norm_dst,
-                    orig_path,
-                    orig_name,
-                    1 if is_cross_volume else 0,
-                    1 if is_collision_renamed else 0,
-                    file_hash,
-                    ts,
-                ),
-            )
-            return cursor.lastrowid
-
-    def get_step_ledger(self, session_id: str) -> list[dict[str, Any]]:
-        """Retrieve all recorded relocation steps for a session in chronological order."""
-        conn = get_db_connection(self.db_path)
-        with conn:
-            cursor = conn.execute(
-                """
-                SELECT step_id, session_id, source_path, target_path, original_path,
-                       original_filename, is_cross_volume, is_collision_renamed,
-                       file_hash, timestamp, status
-                FROM step_ledger
-                WHERE session_id = ?
-                ORDER BY step_id ASC
-                """,
-                (session_id,),
-            )
-            rows = cursor.fetchall()
-            return [
-                {
-                    "step_id": r[0],
-                    "session_id": r[1],
-                    "source_path": r[2],
-                    "target_path": r[3],
-                    "original_path": r[4],
-                    "original_filename": r[5],
-                    "is_cross_volume": bool(r[6]),
-                    "is_collision_renamed": bool(r[7]),
-                    "file_hash": r[8],
-                    "timestamp": r[9],
-                    "status": r[10],
-                }
-                for r in rows
-            ]
+            for sid, ts, b_dir, status, step_count, file_count in rows
+        ]
 
     def get_session_moves(self, session_id: str) -> list[dict[str, Any]]:
-        """Retrieve itemized recorded file moves for a session."""
+        """Retrieve itemized recorded file moves for ``session_id`` from canonical ``moves``."""
         moves = self.moves.list_moves(session_id)
-        if moves:
-            active_moves = [m for m in moves if m.state not in (INTENT, FAILED)]
-            items = []
-            for m in active_moves:
-                sz = m.size
-                if sz is None and m.dst and os.path.exists(m.dst):
-                    try:
-                        sz = os.path.getsize(m.dst)
-                    except OSError:
-                        sz = None
-                items.append(
-                    {
-                        "step_id": m.seq,
-                        "source_path": m.src,
-                        "target_path": m.dst,
-                        "size": sz,
-                        "status": m.state,
-                    }
-                )
-            return items
-
-        steps = self.get_step_ledger(session_id)
-        if steps:
-            items = []
-            for s in steps:
-                sz = None
-                t_path = s.get("target_path") or ""
-                if t_path and os.path.exists(t_path):
-                    try:
-                        sz = os.path.getsize(t_path)
-                    except OSError:
-                        sz = None
-                items.append(
-                    {
-                        "step_id": s["step_id"],
-                        "source_path": s.get("source_path")
-                        or s.get("original_path")
-                        or "",
-                        "target_path": t_path,
-                        "size": sz,
-                        "status": s.get("status") or "completed",
-                    }
-                )
-            return items
-
-        tx_steps = self.db.get_transaction_steps(session_id)
-        if tx_steps:
-            items = []
-            for idx, s in enumerate(tx_steps, 1):
-                t_path = s.get("target") or s.get("target_path") or ""
-                sz = None
-                if t_path and os.path.exists(t_path):
-                    try:
-                        sz = os.path.getsize(t_path)
-                    except OSError:
-                        sz = None
-                items.append(
-                    {
-                        "step_id": s.get("step_id", idx),
-                        "source_path": s.get("source") or s.get("source_path") or "",
-                        "target_path": t_path,
-                        "size": sz,
-                        "status": "completed",
-                    }
-                )
-            return items
-
-        return []
-
-    def clear_step_ledger(self, session_id: str):
-        """Clean up temporary ledger records upon successful completion of a batch move operation."""
-        conn = get_db_connection(self.db_path)
-        with conn:
-            conn.execute("DELETE FROM step_ledger WHERE session_id = ?", (session_id,))
-            self._transition_session_status(session_id, "completed", conn=conn)
+        active_moves = [m for m in moves if m.state not in (INTENT, FAILED)]
+        items = []
+        for m in active_moves:
+            sz = m.size
+            if sz is None and m.dst and os.path.exists(m.dst):
+                try:
+                    sz = os.path.getsize(m.dst)
+                except OSError:
+                    sz = None
+            items.append(
+                {
+                    "step_id": m.seq,
+                    "source_path": m.src,
+                    "target_path": m.dst,
+                    "size": sz,
+                    "status": m.state,
+                }
+            )
+        return items
 
     def export_audit_log(
         self,
@@ -1528,25 +825,12 @@ class HistoryManager:
         format: Any = None,
         base_dir: Optional[str] = None,
     ) -> dict[str, Any]:
-        """Export session history records into standard CSV or JSON audit log formats."""
-        import csv
-        import json
-        from datetime import datetime, timezone
-
-        db_paths: list[str] = []
-        if self.db_path:
-            p_abs = str(Path(self.db_path).resolve())
-            if os.path.exists(p_abs):
-                db_paths.append(p_abs)
-
-        if not db_paths and self.db_path:
-            db_paths.append(str(Path(self.db_path).resolve()))
-
+        """Export canonical session and move records into standard CSV or JSON audit log formats."""
         sessions_map: dict[str, dict[str, Any]] = {}
         steps: list[dict[str, Any]] = []
-        seen_step_keys = set()
 
-        for db_p in db_paths:
+        if self.db_path:
+            db_p = str(Path(self.db_path).resolve())
             try:
                 conn = get_db_connection(db_p)
                 with conn:
@@ -1570,34 +854,40 @@ class HistoryManager:
                             }
 
                     if session_id:
-                        cur_steps = conn.execute(
+                        cur_moves = conn.execute(
                             """
-                            SELECT step_id, session_id, source_path, target_path, original_path,
-                                   original_filename, is_cross_volume, is_collision_renamed,
-                                   file_hash, timestamp, status
-                            FROM step_ledger
+                            SELECT seq, session_id, src, dst, src_sha256, state,
+                                   created_at, updated_at
+                            FROM moves
                             WHERE session_id = ?
-                            ORDER BY step_id ASC
+                            ORDER BY seq ASC
                             """,
                             (session_id,),
                         )
                     else:
-                        cur_steps = conn.execute(
+                        cur_moves = conn.execute(
                             """
-                            SELECT step_id, session_id, source_path, target_path, original_path,
-                                   original_filename, is_cross_volume, is_collision_renamed,
-                                   file_hash, timestamp, status
-                            FROM step_ledger
-                            ORDER BY session_id ASC, step_id ASC
+                            SELECT seq, session_id, src, dst, src_sha256, state,
+                                   created_at, updated_at
+                            FROM moves
+                            ORDER BY created_at ASC, session_id ASC, seq ASC
                             """
                         )
-                    for r in cur_steps.fetchall():
-                        step_key = (r[1], r[0], r[2], r[3])
-                        if step_key in seen_step_keys:
-                            continue
-                        seen_step_keys.add(step_key)
-
-                        ts = r[9]
+                    for (
+                        seq,
+                        sid,
+                        src,
+                        dst,
+                        src_sha256,
+                        state,
+                        created_at,
+                        updated_at,
+                    ) in cur_moves.fetchall():
+                        ts = (
+                            updated_at
+                            if updated_at is not None
+                            else (created_at or 0.0)
+                        )
                         ts_iso = ""
                         if ts:
                             try:
@@ -1606,69 +896,39 @@ class HistoryManager:
                                 ).isoformat()
                             except Exception:
                                 pass
+                        if state in ("done", "verified"):
+                            audit_status = "completed"
+                        elif state == INTENT:
+                            audit_status = "pending"
+                        else:
+                            audit_status = "failed"
+
+                        src_str = src or ""
+                        dst_str = dst or ""
                         steps.append(
                             {
-                                "step_id": r[0],
-                                "session_id": r[1],
-                                "source_path": r[2] or "",
-                                "target_path": r[3] or "",
-                                "original_path": r[4] or "",
-                                "original_filename": r[5] or "",
-                                "is_cross_volume": bool(r[6]),
-                                "is_collision_renamed": bool(r[7]),
-                                "file_hash": r[8] or "",
-                                "timestamp": r[9] or 0.0,
+                                "step_id": int(seq),
+                                "session_id": sid,
+                                "source_path": src_str,
+                                "target_path": dst_str,
+                                "original_path": src_str,
+                                "original_filename": os.path.basename(src_str),
+                                "is_cross_volume": False,
+                                "is_collision_renamed": os.path.basename(src_str)
+                                != os.path.basename(dst_str),
+                                "file_hash": src_sha256 or "",
+                                "timestamp": ts,
                                 "timestamp_iso": ts_iso,
-                                "status": r[10] or "completed",
+                                "status": audit_status,
                             }
                         )
-            except Exception:
+            except DB_ERRORS:
                 pass
 
         sessions = sorted(
             sessions_map.values(), key=lambda s: s.get("timestamp") or 0.0, reverse=True
         )
-
         steps.sort(key=lambda s: (s.get("timestamp") or 0.0, s.get("step_id") or 0))
-
-        if not steps:
-            try:
-                from app.core.ledger import TransactionLedger
-
-                tx_ledger = TransactionLedger()
-                pending = tx_ledger.get_pending_entries(session_id=session_id)
-                for idx, entry in enumerate(pending, 1):
-                    ts = entry.get("updated_at") or entry.get("created_at") or 0.0
-                    ts_iso = ""
-                    if ts:
-                        try:
-                            ts_iso = datetime.fromtimestamp(
-                                ts, tz=timezone.utc
-                            ).isoformat()
-                        except Exception:
-                            pass
-                    steps.append(
-                        {
-                            "step_id": idx,
-                            "session_id": entry.get("session_id")
-                            or session_id
-                            or "unknown",
-                            "source_path": entry.get("source_path") or "",
-                            "target_path": entry.get("dest_path") or "",
-                            "original_path": entry.get("source_path") or "",
-                            "original_filename": os.path.basename(
-                                entry.get("source_path") or ""
-                            ),
-                            "is_cross_volume": False,
-                            "is_collision_renamed": False,
-                            "file_hash": entry.get("file_hash") or "",
-                            "timestamp": ts,
-                            "timestamp_iso": ts_iso,
-                            "status": entry.get("status") or "pending",
-                        }
-                    )
-            except Exception:
-                pass
 
         if session_id and not sessions and not steps:
             raise ValueError(f"Session '{session_id}' not found in history database.")
@@ -1685,22 +945,13 @@ class HistoryManager:
                 f"Unsupported export format '{fmt}'. Supported formats are 'csv' and 'json'."
             )
 
-        effective_base = base_dir
-        if not effective_base and session_id and session_id in sessions_map:
-            effective_base = sessions_map[session_id].get("base_dir")
-        if not effective_base:
-            for s_info in sessions_map.values():
-                if s_info.get("base_dir"):
-                    effective_base = s_info["base_dir"]
-                    break
-
         from app.core.audit_reporter import (
             _open_secure_export_file,
             _validate_and_resolve_export_path,
         )
 
         abs_output_path = _validate_and_resolve_export_path(
-            output_path, base_dir=effective_base
+            output_path, base_dir=base_dir
         )
 
         if fmt == "csv":
@@ -1746,7 +997,7 @@ class HistoryManager:
         db=None,
         selected_step_ids: Optional[Collection[int | str]] = None,
     ) -> int:
-        """Unwind completed relocation steps in exact reverse chronological order using step ledger."""
+        """Unwind completed relocation steps in reverse order using the canonical move ledger."""
         return self._unwind_session_internal(
             session_id, db=db, selected_step_ids=selected_step_ids
         )
@@ -1757,174 +1008,24 @@ class HistoryManager:
         db=None,
         selected_step_ids: Optional[Collection[int | str]] = None,
     ) -> int:
-        if db:
+        if db and hasattr(db, "invalidate_cache"):
             db.invalidate_cache()
-        if moves := self.moves.list_moves(session_id):
-            if selected_step_ids is not None:
-                sel_set = {str(x) for x in selected_step_ids}
-                moves_to_unwind = [m for m in moves if str(m.seq) in sel_set]
-                active_moves = [m for m in moves if m.state not in (INTENT, FAILED)]
-                is_partial = len(moves_to_unwind) < len(active_moves)
-            else:
-                moves_to_unwind = moves
-                is_partial = False
-
-            if not moves_to_unwind:
-                return 0
-
-            return self._replay_moves_backwards(
-                session_id, moves_to_unwind, db=db, is_partial=is_partial
-            )
-
-        steps = self.get_step_ledger(session_id)
+        moves = self.moves.list_moves(session_id)
         if selected_step_ids is not None:
             sel_set = {str(x) for x in selected_step_ids}
-            steps_to_unwind = (
-                [s for s in steps if str(s["step_id"]) in sel_set] if steps else []
-            )
-            is_partial = bool(not steps or len(steps_to_unwind) < len(steps))
+            moves_to_unwind = [m for m in moves if str(m.seq) in sel_set]
+            active_moves = [m for m in moves if m.state not in (INTENT, FAILED)]
+            is_partial = len(moves_to_unwind) < len(active_moves) or not active_moves
+            if not moves_to_unwind:
+                self._transition_session_status(session_id, PARTIALLY_ROLLED_BACK)
+                return 0
         else:
-            steps_to_unwind = steps
+            moves_to_unwind = moves
             is_partial = False
 
-        conn = get_db_connection(self.db_path)
-        snapshot_files = set()
-        base_dir = None
-        with conn:
-            cur = conn.execute(
-                "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
-            )
-            row = cur.fetchone()
-            base_dir = row[0] if row else None
-
-            cur = conn.execute(
-                "SELECT original_rel_path FROM snapshot_files WHERE session_id = ?",
-                (session_id,),
-            )
-            snapshot_files = {r[0] for r in cur.fetchall()}
-
-        unwound_count = 0
-        from app.core.resilient_file_ops import resilient_move
-
-        target_dirs_to_clean = set()
-
-        failed_unwinds = []
-        if not steps_to_unwind and not snapshot_files:
-            if selected_step_ids is None and not steps:
-                return self._rollback_from_snapshot_internal(
-                    session_id,
-                    base_dir=base_dir,
-                    ignore_missing=True,
-                    is_partial=is_partial,
-                )
-            return 0
-
-        if steps_to_unwind:
-            # Exact reverse chronological order
-            steps_reverse = sorted(
-                steps_to_unwind, key=lambda s: s["step_id"], reverse=True
-            )
-
-            for step in steps_reverse:
-                target_path = step["target_path"]
-                source_path = step["source_path"]
-
-                if os.path.lexists(target_path):
-                    target_dirs_to_clean.add(os.path.dirname(target_path))
-                    os.makedirs(os.path.dirname(source_path), exist_ok=True)
-
-                    try:
-                        from app.core.resilient_file_ops import same_file_content
-
-                        if os.path.lexists(source_path) and same_file_content(
-                            source_path, target_path
-                        ):
-                            # An identical copy is already back in place.
-                            from app.core.resilient_file_ops import resilient_remove
-
-                            resilient_remove(target_path)
-                        else:
-                            # resilient_move never replaces an existing file: if
-                            # something else now occupies source_path, the moved
-                            # file is restored next to it under a suffixed name.
-                            restored_path = resilient_move(target_path, source_path)
-                            if not _is_same_restored_path(restored_path, source_path):
-                                logging.warning(
-                                    f"Undo conflict: {source_path} is occupied by a different file; "
-                                    f"restored {target_path} to {restored_path} instead."
-                                )
-                                source_path = restored_path
-                        unwound_count += 1
-
-                        if db and base_dir:
-                            try:
-                                rel_target = safe_relpath(
-                                    target_path, base_dir
-                                ).replace("\\", "/")
-                                rel_source = safe_relpath(
-                                    source_path, base_dir
-                                ).replace("\\", "/")
-                                db.update_document_path(
-                                    base_dir, rel_target, rel_source
-                                )
-                            except Exception:
-                                pass
-                    except Exception as move_err:
-                        logging.error(
-                            f"Failed to unwind step {step['step_id']}: {move_err}"
-                        )
-                        failed_unwinds.append((step, move_err))
-        elif snapshot_files:
-            return self._rollback_from_snapshot_internal(
-                session_id, base_dir=base_dir, is_partial=is_partial
-            )
-
-        if failed_unwinds:
-            first_err = failed_unwinds[0][1]
-            try:
-                self._transition_session_status(
-                    session_id,
-                    "failed",
-                    error_details=str(first_err),
-                    metadata={"failed_unwinds_count": len(failed_unwinds)},
-                )
-            except Exception as st_err:  # noqa: BLE001
-                logging.warning(
-                    f"Could not transition session {session_id} to failed: {st_err}"
-                )
-            raise PermissionError(
-                f"Recovery incomplete: {len(failed_unwinds)} step(s) failed to unwind. Error: {first_err}"
-            )
-
-        if base_dir and os.path.exists(base_dir):
-            _remove_staging_leftovers(base_dir)
-
-        if base_dir:
-            from app.core.mover import _prune_emptied_dirs
-
-            _prune_emptied_dirs(target_dirs_to_clean, base_dir)
-
-        status_to_set = "partially_rolled_back" if is_partial else "rolled_back"
-
-        conn = get_db_connection(self.db_path)
-        with conn:
-            self._transition_session_status(session_id, status_to_set, conn=conn)
-            unwound_ids = [s["step_id"] for s in steps_to_unwind]
-            if is_partial and unwound_ids:
-                placeholders = ",".join("?" for _ in unwound_ids)
-                conn.execute(
-                    f"DELETE FROM step_ledger WHERE session_id = ? AND step_id IN ({placeholders})",
-                    [session_id] + unwound_ids,
-                )
-            elif not is_partial:
-                conn.execute(
-                    "DELETE FROM step_ledger WHERE session_id = ?", (session_id,)
-                )
-
-        if db:
-            db.invalidate_cache()
-
-        return unwound_count
+        return self._replay_moves_backwards(
+            session_id, moves_to_unwind, db=db, is_partial=is_partial
+        )
 
     def _replay_moves_backwards(
         self,
@@ -1932,7 +1033,7 @@ class HistoryManager:
         moves: list[Move],
         db=None,
         is_partial: bool = False,
-    ):
+    ) -> int:
         """Undo a session by walking its ``moves`` rows from last to first (ADR 0006).
 
         Each moved file goes back to ``src``, and any file its move displaced
@@ -1961,7 +1062,7 @@ class HistoryManager:
         dirs_to_prune = set()
         restored = 0
         conflicts = []
-        failures = []
+        failures: list[Exception] = []
         for move in reversed(moves):
             # The sort may have created the destination folder even if the move failed.
             dirs_to_prune.add(os.path.dirname(move.dst))
@@ -2016,9 +1117,14 @@ class HistoryManager:
                             f"Undo conflict: {move.dst} is occupied; restored the file "
                             f"an overwrite displaced to {put_back} instead."
                         )
-            except Exception as err:
+            except Exception as err:  # noqa: BLE001
                 logging.error(f"Failed to undo move {session_id}#{move.seq}: {err}")
                 failures.append(err)
+
+        if base_dir and not is_partial:
+            restored += _restore_trapped_branch_files(
+                base_dir, session_id, docs_conn, failures
+            )
 
         if base_dir and os.path.exists(base_dir):
             _remove_staging_leftovers(base_dir)
@@ -2028,7 +1134,7 @@ class HistoryManager:
             try:
                 self._transition_session_status(
                     session_id,
-                    "failed",
+                    FAILED_STATUS,
                     error_details=str(failures[0]),
                     metadata={"failures_count": len(failures)},
                 )
@@ -2044,7 +1150,7 @@ class HistoryManager:
             try:
                 self._transition_session_status(
                     session_id,
-                    "failed",
+                    FAILED_STATUS,
                     error_details=f"Rollback incomplete: file hash mismatch for {len(conflicts)} file(s)",
                     metadata={"conflicts_count": len(conflicts)},
                 )
@@ -2057,7 +1163,7 @@ class HistoryManager:
                 f"that changed since the sort, left in place (e.g. {conflicts[0]})."
             )
 
-        status_to_set = "partially_rolled_back" if is_partial else "rolled_back"
+        status_to_set = PARTIALLY_ROLLED_BACK if is_partial else ROLLED_BACK
         unwound_seqs = [m.seq for m in moves]
 
         with conn:
@@ -2068,713 +1174,18 @@ class HistoryManager:
                     f"DELETE FROM moves WHERE session_id = ? AND seq IN ({placeholders})",
                     [session_id] + unwound_seqs,
                 )
-                conn.execute(
-                    f"DELETE FROM step_ledger WHERE session_id = ? AND step_id IN ({placeholders})",
-                    [session_id] + unwound_seqs,
-                )
-            elif not is_partial:
-                conn.execute(
-                    "DELETE FROM step_ledger WHERE session_id = ?", (session_id,)
-                )
 
-        if db:
+        if db and hasattr(db, "invalidate_cache"):
             db.invalidate_cache()
+        try:
+            from app.core.shared_registry import SharedModelRegistry
+
+            jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
+            if jev_engine and hasattr(jev_engine, "clear_cache"):
+                jev_engine.clear_cache()
+        except Exception:  # noqa: BLE001
+            pass
         return restored
-
-    def _rollback_from_snapshot_internal(
-        self,
-        session_id: str,
-        base_dir: Optional[str] = None,
-        safety_session_id: Optional[str] = None,
-        ignore_missing: bool = False,
-        is_partial: bool = False,
-    ):
-        conn = get_db_connection(self.db_path)
-        if not base_dir:
-            with conn:
-                cur = conn.execute(
-                    "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
-                )
-                row = cur.fetchone()
-                if not row:
-                    raise ValueError("Session not found")
-                base_dir = row[0]
-
-        if not safety_session_id:
-            safety_session_id = self._create_snapshot_internal(base_dir)
-            self._mark_undo_snapshot(safety_session_id)
-
-        with conn:
-            try:
-                cur = conn.execute(
-                    """
-                    SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash,
-                           link_type, arguments, description, icon_file, icon_index, work_dir, window_mode
-                    FROM snapshot_files WHERE session_id = ?
-                    """,
-                    (session_id,),
-                )
-                snapshot_files = cur.fetchall()
-            except Exception:
-                try:
-                    cur = conn.execute(
-                        "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target, file_hash FROM snapshot_files WHERE session_id = ?",
-                        (session_id,),
-                    )
-                    snapshot_files = [
-                        (*row, None, None, None, None, 0, None, None)
-                        for row in cur.fetchall()
-                    ]
-                except Exception:
-                    cur = conn.execute(
-                        "SELECT original_rel_path, inode, size, mtime, is_symlink, symlink_target FROM snapshot_files WHERE session_id = ?",
-                        (session_id,),
-                    )
-                    snapshot_files = [
-                        (*row, None, None, None, None, None, 0, None, None)
-                        for row in cur.fetchall()
-                    ]
-
-            from app.core.scanner import get_files_recursively
-
-            current_files = get_files_recursively(base_dir, include_hidden=True)
-
-            with conn:
-                inode_counts: dict[Any, Any] = {}
-                current_inodes: dict[Any, Any] = {}
-                active_files_by_rel_path: dict[Any, Any] = {}
-                active_files_by_sig: dict[Any, Any] = {}
-                active_files_by_size: dict[Any, Any] = {}
-                inodes_reliable = True
-
-                for rel_path in current_files:
-                    abs_path = os.path.join(base_dir, rel_path)
-                    try:
-                        st = os.lstat(abs_path)
-                    except OSError:
-                        continue
-
-                    ino = st.st_ino
-                    size = st.st_size
-                    mtime = st.st_mtime
-                    is_symlink = 1 if os.path.islink(abs_path) else 0
-                    symlink_target = os.readlink(abs_path) if is_symlink else None
-
-                    inode_counts[ino] = inode_counts.get(ino, 0) + 1
-                    if ino == 0 or inode_counts[ino] > 1:
-                        inodes_reliable = False
-
-                    sig = (size, mtime, is_symlink, symlink_target)
-                    current_inodes[ino] = (abs_path, sig)
-                    active_files_by_rel_path[rel_path.lower().replace("\\", "/")] = sig
-
-                    if sig not in active_files_by_sig:
-                        active_files_by_sig[sig] = []
-                    active_files_by_sig[sig].append(abs_path)
-
-                    if size not in active_files_by_size:
-                        active_files_by_size[size] = []
-                    active_files_by_size[size].append(abs_path)
-
-                # First compute all intended moves
-                moves = []
-
-                verify_hash = verify_file_hash
-
-                symlinks_to_restore = []
-                shortcuts_to_restore = []
-                for (
-                    rel_path,
-                    inode,
-                    size,
-                    mtime,
-                    is_symlink,
-                    symlink_target,
-                    file_hash,
-                    link_type,
-                    arguments,
-                    description,
-                    icon_file,
-                    icon_index,
-                    work_dir,
-                    window_mode,
-                ) in snapshot_files:
-                    target_abs = os.path.join(base_dir, rel_path)
-                    current_abs = None
-                    target_sig = (size, mtime, is_symlink, symlink_target)
-
-                    is_lnk = (
-                        1
-                        if (link_type == "lnk" or rel_path.lower().endswith(".lnk"))
-                        else 0
-                    )
-                    is_link_entity = bool(is_symlink or is_lnk)
-
-                    if inodes_reliable and inode in current_inodes:
-                        abs_path, current_sig = current_inodes[inode]
-                        if is_link_entity:
-                            current_abs = abs_path
-                            del current_inodes[inode]
-                        else:
-                            if current_sig[2] == is_symlink:
-                                if not is_symlink or current_sig[3] == symlink_target:
-                                    if verify_hash(abs_path, file_hash, size):
-                                        current_abs = abs_path
-                                        del current_inodes[inode]
-
-                    if not current_abs:
-                        curr_sig = active_files_by_rel_path.get(
-                            rel_path.lower().replace("\\", "/")
-                        )
-                        if is_link_entity:
-                            if curr_sig is not None:
-                                current_abs = target_abs
-                        else:
-                            if curr_sig == target_sig:
-                                candidate_abs = target_abs
-                                if verify_hash(candidate_abs, file_hash, size):
-                                    current_abs = candidate_abs
-                                    if (
-                                        curr_sig in active_files_by_sig
-                                        and current_abs in active_files_by_sig[curr_sig]
-                                    ):
-                                        active_files_by_sig[curr_sig].remove(
-                                            current_abs
-                                        )
-                        if not current_abs:
-                            if not is_link_entity:
-                                if (
-                                    target_sig in active_files_by_sig
-                                    and active_files_by_sig[target_sig]
-                                ):
-                                    for idx, cand_path in enumerate(
-                                        active_files_by_sig[target_sig]
-                                    ):
-                                        if verify_hash(cand_path, file_hash, size):
-                                            current_abs = active_files_by_sig[
-                                                target_sig
-                                            ].pop(idx)
-                                            break
-                                if not current_abs:
-                                    if (
-                                        size in active_files_by_size
-                                        and active_files_by_size[size]
-                                    ):
-                                        for idx, cand_path in enumerate(
-                                            active_files_by_size[size]
-                                        ):
-                                            if verify_hash(cand_path, file_hash, size):
-                                                current_abs = active_files_by_size[
-                                                    size
-                                                ].pop(idx)
-                                                break
-
-                    if not current_abs:
-                        if not is_link_entity and not ignore_missing:
-                            raise ValueError(
-                                f"Rollback validation failed: file hash mismatch or missing for {rel_path}"
-                            )
-
-                    if is_link_entity:
-                        if current_abs and current_abs != target_abs:
-                            try:
-                                from app.core.resilient_file_ops import resilient_remove
-
-                                resilient_remove(current_abs)
-                            except OSError:
-                                pass
-                        if is_symlink or link_type == "junction":
-                            symlinks_to_restore.append(
-                                (target_abs, symlink_target, link_type)
-                            )
-                        elif is_lnk:
-                            shortcuts_to_restore.append(
-                                (
-                                    target_abs,
-                                    symlink_target,
-                                    arguments,
-                                    description,
-                                    icon_file,
-                                    icon_index,
-                                    work_dir,
-                                    window_mode,
-                                )
-                            )
-                    else:
-                        if current_abs:
-                            same_file = False
-                            if os.path.exists(current_abs) and os.path.exists(
-                                target_abs
-                            ):
-                                try:
-                                    same_file = os.path.samefile(
-                                        current_abs, target_abs
-                                    )
-                                except OSError:
-                                    pass
-                            if not same_file:
-                                if current_abs != target_abs:
-                                    moves.append((current_abs, target_abs))
-
-                planned_target_rels = {
-                    safe_relpath(m[1], base_dir).lower().replace("\\", "/")
-                    for m in moves
-                }
-
-                try:
-                    cur = conn.execute(
-                        "SELECT filepath, file_hash, extracted_text, user_verified_target_path FROM snapshot_documents WHERE session_id = ?",
-                        (session_id,),
-                    )
-                    snapshot_docs = cur.fetchall()
-                    snapshot_docs_dict = {
-                        r[0].replace("\\", "/"): (
-                            r[0].replace("\\", "/"),
-                            r[1],
-                            r[2],
-                            r[3] if len(r) > 3 else None,
-                        )
-                        for r in snapshot_docs
-                    }
-                except Exception:
-                    cur = conn.execute(
-                        "SELECT filepath, file_hash, extracted_text FROM snapshot_documents WHERE session_id = ?",
-                        (session_id,),
-                    )
-                    snapshot_docs = cur.fetchall()
-                    snapshot_docs_dict = {
-                        r[0].replace("\\", "/"): (
-                            r[0].replace("\\", "/"),
-                            r[1],
-                            r[2],
-                            None,
-                        )
-                        for r in snapshot_docs
-                    }
-
-                # Write rollback journal before any modifications or relocations
-                try:
-                    import json
-                    from pathlib import Path
-
-                    journal_path = Path(self.db_path).parent / "rollback_journal.json"
-                    journal_data = {
-                        "session_id": session_id,
-                        "safety_session_id": safety_session_id,
-                        "base_dir": base_dir,
-                        "moves": moves,
-                        "symlinks": symlinks_to_restore,
-                        "shortcuts": shortcuts_to_restore,
-                    }
-                    with open(journal_path, "w") as f:
-                        json.dump(journal_data, f, indent=2)
-                except Exception as ex:
-                    import logging
-
-                    logging.warning(f"Failed to write rollback journal: {ex}")
-
-                # 1. Pre-Move Synchronization
-                db_conn = get_db_connection(self.db.db_path)
-                with db_conn:
-                    docs_to_upsert = []
-                    for fp, r in snapshot_docs_dict.items():
-                        if fp.lower().replace("\\", "/") not in planned_target_rels:
-                            verified_target = r[3] if len(r) > 3 else None
-                            docs_to_upsert.append(
-                                (base_dir, r[0], r[1], r[2], verified_target)
-                            )
-                    if docs_to_upsert:
-                        db_conn.executemany(
-                            """
-                            INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, user_verified_target_path)
-                        VALUES (?, ?, ?, ?, ?)
-                        ON CONFLICT(base_dir, filepath) DO UPDATE SET
-                             file_hash=excluded.file_hash,
-                             extracted_text=excluded.extracted_text,
-                             user_verified_target_path=excluded.user_verified_target_path
-                            """,
-                            docs_to_upsert,
-                        )
-
-                # Execute moves safely to avoid overwriting during cyclic renames
-                db_conn = get_db_connection(self.db.db_path)
-                batch = RollbackBatchTransaction(db_conn, batch_size=50)
-                try:
-                    source_paths_map: dict[str, list[int]] = {}
-                    for idx, (m_src, _) in enumerate(moves):
-                        source_paths_map.setdefault(
-                            _normalize_restored_path(m_src), []
-                        ).append(idx)
-
-                    failed_moves = []
-                    for move_idx, (src, dst) in enumerate(moves):
-                        try:
-                            from app.core.mover import get_safe_path
-
-                            _move_aside_blocking_parents(dst, base_dir, batch)
-
-                            os.makedirs(os.path.dirname(dst), exist_ok=True)
-                            if os.path.islink(dst):
-                                try:
-                                    from app.core.resilient_file_ops import (
-                                        resilient_remove,
-                                    )
-
-                                    resilient_remove(dst)
-                                except OSError:
-                                    pass
-
-                            rel_src = safe_relpath(src, base_dir).replace("\\", "/")
-                            rel_dst = safe_relpath(dst, base_dir).replace("\\", "/")
-
-                            if os.path.exists(dst) and not os.path.samefile(src, dst):
-                                norm_dst = _normalize_restored_path(dst)
-                                matching_indices = source_paths_map.get(norm_dst, [])
-                                pending_indices = [
-                                    i for i in matching_indices if i > move_idx
-                                ]
-                                is_cyclic = bool(pending_indices)
-
-                                if is_cyclic:
-                                    # Cyclic rename conflict -> isolate to safe transient path
-                                    source_paths_map.pop(norm_dst, None)
-                                    branch_rel_temp = os.path.join(
-                                        ".branches", safety_session_id, rel_dst
-                                    ).replace("\\", "/")
-                                    temp_dst = os.path.join(base_dir, branch_rel_temp)
-                                    os.makedirs(
-                                        os.path.dirname(temp_dst), exist_ok=True
-                                    )
-                                    _robust_move(dst, temp_dst)
-
-                                    batch.execute(
-                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                        (
-                                            branch_rel_temp,
-                                            base_dir,
-                                            rel_dst,
-                                            rel_dst,
-                                        ),
-                                    )
-
-                                    for i in pending_indices:
-                                        moves[i] = (temp_dst, moves[i][1])
-
-                                    norm_temp_dst = _normalize_restored_path(temp_dst)
-                                    source_paths_map.setdefault(
-                                        norm_temp_dst, []
-                                    ).extend(pending_indices)
-                                else:
-                                    # Non-cyclic inline rename (Requirement 2)
-                                    safe_dst = get_safe_path(
-                                        os.path.dirname(dst), os.path.basename(dst)
-                                    )
-                                    _robust_move(dst, safe_dst)
-
-                                    safe_rel = safe_relpath(safe_dst, base_dir).replace(
-                                        "\\", "/"
-                                    )
-                                    batch.execute(
-                                        "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                        (safe_rel, base_dir, rel_dst, rel_dst),
-                                    )
-                                    batch.execute(
-                                        "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
-                                        (
-                                            safe_rel,
-                                            len(rel_dst) + 1,
-                                            base_dir,
-                                            rel_dst + "/%",
-                                            rel_dst + "/%",
-                                        ),
-                                    )
-
-                                _robust_move(src, dst)
-                            else:
-                                if not os.path.exists(dst):
-                                    _robust_move(src, dst)
-
-                            batch.execute(
-                                "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                (base_dir, rel_src, rel_src),
-                            )
-                            rel_dst_norm = rel_dst.replace("\\", "/")
-                            snapshot_doc = (
-                                snapshot_docs_dict.get(rel_dst_norm)
-                                or snapshot_docs_dict.get(rel_dst)
-                                or snapshot_docs_dict.get(rel_dst.replace("/", "\\"))
-                            )
-                            if snapshot_doc:
-                                verified_target = (
-                                    snapshot_doc[3] if len(snapshot_doc) > 3 else None
-                                )
-                                batch.execute(
-                                    """
-                                    INSERT INTO documents (base_dir, filepath, file_hash, extracted_text, user_verified_target_path)
-                        VALUES (?, ?, ?, ?, ?)
-                        ON CONFLICT(base_dir, filepath) DO UPDATE SET
-                            file_hash=excluded.file_hash,
-                            extracted_text=excluded.extracted_text,
-                            user_verified_target_path=excluded.user_verified_target_path
-                                    """,
-                                    (
-                                        base_dir,
-                                        rel_dst,
-                                        snapshot_doc[1],
-                                        snapshot_doc[2],
-                                        verified_target,
-                                    ),
-                                )
-                            batch.step()
-                        except Exception as move_err:
-                            import logging
-
-                            logging.error(
-                                f"Failed to move {src} to {dst} during recovery: {move_err}"
-                            )
-                            failed_moves.append((src, dst, move_err))
-
-                    batch.flush()
-
-                    if failed_moves:
-                        first_err = failed_moves[0][2]
-                        raise PermissionError(
-                            f"Recovery incomplete: {len(failed_moves)} file(s) failed to restore. Safety storage preserved. Error: {first_err}"
-                        )
-
-                    # Restore symlinks and junctions after standard files
-                    for target_abs, symlink_target, l_type in symlinks_to_restore:
-                        if (
-                            os.path.exists(target_abs)
-                            or os.path.islink(target_abs)
-                            or is_junction_path(target_abs)
-                        ):
-                            if os.path.islink(target_abs) or is_junction_path(
-                                target_abs
-                            ):
-                                try:
-                                    from app.core.resilient_file_ops import (
-                                        resilient_remove,
-                                    )
-
-                                    resilient_remove(target_abs)
-                                except OSError:
-                                    pass
-                            else:
-                                from app.core.mover import get_safe_path
-
-                                safe_path = get_safe_path(
-                                    os.path.dirname(target_abs),
-                                    os.path.basename(target_abs),
-                                )
-                                _robust_move(target_abs, safe_path)
-
-                                rel_target = safe_relpath(target_abs, base_dir).replace(
-                                    "\\", "/"
-                                )
-                                rel_safe = safe_relpath(safe_path, base_dir).replace(
-                                    "\\", "/"
-                                )
-                                batch.execute(
-                                    "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                    (rel_safe, base_dir, rel_target, rel_target),
-                                )
-                                batch.execute(
-                                    "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
-                                    (
-                                        rel_safe,
-                                        len(rel_target) + 1,
-                                        base_dir,
-                                        rel_target + "/%",
-                                        rel_target + "/%",
-                                    ),
-                                )
-                                batch.step()
-                        try:
-                            os.makedirs(os.path.dirname(target_abs), exist_ok=True)
-                            if l_type == "junction":
-                                from app.core.mover import _create_junction
-
-                                _create_junction(symlink_target, target_abs)
-                            else:
-                                os.symlink(symlink_target, target_abs)
-                        except OSError as e:
-                            import logging
-
-                            logging.warning(
-                                f"Failed to recreate link at {target_abs}: {e}"
-                            )
-
-                    batch.flush()
-
-                    # Restore Windows shortcuts after standard files and symlinks
-                    for (
-                        target_abs,
-                        lnk_target,
-                        arguments,
-                        description,
-                        icon_file,
-                        icon_index,
-                        work_dir,
-                        window_mode,
-                    ) in shortcuts_to_restore:
-                        if os.path.exists(target_abs) or os.path.islink(target_abs):
-                            if os.path.islink(
-                                target_abs
-                            ) or target_abs.lower().endswith(".lnk"):
-                                try:
-                                    from app.core.resilient_file_ops import (
-                                        resilient_remove,
-                                    )
-
-                                    resilient_remove(target_abs)
-                                except OSError:
-                                    pass
-                            else:
-                                from app.core.mover import get_safe_path
-
-                                safe_path = get_safe_path(
-                                    os.path.dirname(target_abs),
-                                    os.path.basename(target_abs),
-                                )
-                                _robust_move(target_abs, safe_path)
-
-                                rel_target = safe_relpath(target_abs, base_dir).replace(
-                                    "\\", "/"
-                                )
-                                rel_safe = safe_relpath(safe_path, base_dir).replace(
-                                    "\\", "/"
-                                )
-                                batch.execute(
-                                    "UPDATE documents SET filepath = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                                    (rel_safe, base_dir, rel_target, rel_target),
-                                )
-                                batch.execute(
-                                    "UPDATE documents SET filepath = ? || SUBSTR(filepath, ?) WHERE base_dir = ? AND (filepath LIKE ? OR REPLACE(filepath, '\\', '/') LIKE ?)",
-                                    (
-                                        rel_safe,
-                                        len(rel_target) + 1,
-                                        base_dir,
-                                        rel_target + "/%",
-                                        rel_target + "/%",
-                                    ),
-                                )
-                                batch.step()
-                        try:
-                            if pylnk3 and lnk_target:
-                                os.makedirs(os.path.dirname(target_abs), exist_ok=True)
-                                kwargs = {
-                                    "arguments": arguments,
-                                    "description": description,
-                                    "icon_file": icon_file,
-                                    "icon_index": icon_index or 0,
-                                    "work_dir": work_dir,
-                                    "window_mode": window_mode,
-                                }
-                                pylnk3.for_file(
-                                    lnk_target, lnk_name=target_abs, **kwargs
-                                )
-                            else:
-                                os.makedirs(os.path.dirname(target_abs), exist_ok=True)
-                                with open(target_abs, "w") as f:
-                                    f.write("")
-                        except Exception as e:
-                            import logging
-
-                            logging.warning(
-                                f"Failed to recreate Windows shortcut at {target_abs}: {e}"
-                            )
-
-                    batch.flush()
-
-                except Exception as e:
-                    batch.rollback_batch()
-                    try:
-                        self._transition_session_status(
-                            session_id, "failed", conn=conn, error_details=str(e)
-                        )
-                        conn.commit()
-                    except Exception:  # noqa: BLE001
-                        pass
-                    raise e
-
-                # Only remove staging files this tool created; never files that
-                # merely weren't in the snapshot (hidden files, new downloads).
-                _remove_staging_leftovers(base_dir)
-
-                # Clean empty directories
-                from app.config import AppSettings
-                from app.core.mover import _remove_empty_dirs
-
-                try:
-                    app_settings = AppSettings()
-                    protected_paths = getattr(app_settings, "PROTECTED_PATHS", [])
-                    protected_paths = [os.path.normpath(p) for p in protected_paths]
-                except Exception:
-                    protected_paths = None
-
-                for entry in os.listdir(base_dir):
-                    entry_path = os.path.join(base_dir, entry)
-                    if os.path.isdir(entry_path):
-                        try:
-                            _remove_empty_dirs(entry_path, protected_paths)
-                        except Exception:
-                            pass
-
-                # Restore Cache
-                cur = conn.execute(
-                    "SELECT corpus, locked_files, index_to_word, manual_folders FROM snapshot_cache WHERE session_id = ?",
-                    (session_id,),
-                )
-                row = cur.fetchone()
-                cache_conn = self.cache_manager._get_conn()
-                with cache_conn:
-                    if row:
-                        cache_conn.execute(
-                            """
-                            INSERT INTO directory_cache (source_directory, corpus, locked_files, index_to_word, manual_folders)
-                            VALUES (?, ?, ?, ?, ?)
-                            ON CONFLICT(source_directory) DO UPDATE SET
-                                corpus=excluded.corpus,
-                                locked_files=excluded.locked_files,
-                                index_to_word=excluded.index_to_word,
-                                manual_folders=excluded.manual_folders
-                            """,
-                            (base_dir, row[0], row[1], row[2], row[3]),
-                        )
-                    else:
-                        cache_conn.execute(
-                            "DELETE FROM directory_cache WHERE source_directory = ?",
-                            (base_dir,),
-                        )
-
-                snapshot_status = (
-                    "partially_rolled_back" if is_partial else "rolled_back"
-                )
-                self._transition_session_status(session_id, snapshot_status, conn=conn)
-                self.db.invalidate_cache(base_dir)
-                try:
-                    from app.core.shared_registry import SharedModelRegistry
-
-                    jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
-                    if jev_engine and hasattr(jev_engine, "clear_cache"):
-                        jev_engine.clear_cache()
-                except Exception:
-                    pass
-
-                # Clean delete of rollback journal file
-                try:
-                    from pathlib import Path
-
-                    journal_path = Path(self.db_path).parent / "rollback_journal.json"
-                    if journal_path.exists():
-                        journal_path.unlink()
-                except Exception as ex:
-                    import logging
-
-                    logging.warning(f"Failed to delete rollback journal: {ex}")
-
-        return len(moves)
 
     def rollback(
         self,
@@ -2782,75 +1193,30 @@ class HistoryManager:
         ignore_missing: bool = False,
         selected_step_ids: Optional[Collection[int | str]] = None,
     ):
-        """Revert directory and metadata state using recorded transaction ledger steps or snapshot."""
-        self.db.invalidate_cache()
+        """Undo a session solely by replaying its recorded moves backwards (ADR 0006)."""
+        if hasattr(self.db, "invalidate_cache"):
+            self.db.invalidate_cache()
 
         def _write():
             conn = get_db_connection(self.db_path)
-            step_count = 0
-            base_dir = None
-            with conn:
-                try:
-                    cur = conn.execute(
-                        "SELECT COUNT(*) FROM step_ledger WHERE session_id = ?",
-                        (session_id,),
-                    )
-                    step_count = cur.fetchone()[0]
-                except Exception:
-                    step_count = 0
-
-                cur = conn.execute(
-                    "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
-                )
-                row = cur.fetchone()
-                if not row:
-                    raise ValueError("Session not found")
-                base_dir = row[0]
-
-            # Pre-rollback safety snapshot created BEFORE any file system write operation
-            safety_session_id = None
-            if os.path.exists(base_dir):
-                safety_session_id = self._create_snapshot_internal(base_dir)
-                self._mark_undo_snapshot(safety_session_id)
+            row = conn.execute(
+                "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
+            ).fetchone()
+            if not row:
+                raise ValueError("Session not found")
 
             try:
-                if step_count > 0 or self.moves.list_moves(session_id):
-                    result = self._unwind_session_internal(
-                        session_id, db=self.db, selected_step_ids=selected_step_ids
-                    )
-                elif steps := self.db.get_transaction_steps(session_id):
-                    result = self._rollback_from_steps(
-                        session_id,
-                        steps,
-                        base_dir,
-                        safety_session_id,
-                        ignore_missing=ignore_missing,
-                    )
-                else:
-                    missing = self.check_missing_files(session_id)
-                    if missing and not ignore_missing:
-                        raise ValueError(
-                            f"Cannot rollback: {len(missing)} files from the snapshot are missing from the disk (e.g., {missing[0]})."
-                        )
-                    result = self._rollback_from_snapshot_internal(
-                        session_id,
-                        base_dir=base_dir,
-                        safety_session_id=safety_session_id,
-                        ignore_missing=ignore_missing,
-                        is_partial=bool(selected_step_ids is not None),
-                    )
-
-                if safety_session_id:
-                    self._mark_undo_snapshot(safety_session_id)
-                return result
+                return self._unwind_session_internal(
+                    session_id, db=self.db, selected_step_ids=selected_step_ids
+                )
             except Exception as exc:
                 try:
                     self._transition_session_status(
-                        session_id, "failed", error_details=str(exc)
+                        session_id, FAILED_STATUS, error_details=str(exc)
                     )
                 except Exception:  # noqa: BLE001
                     pass
-                raise exc
+                raise
 
         return self.db.worker.execute_write(_write)
 
@@ -2860,16 +1226,7 @@ class HistoryManager:
         selected_step_ids: Optional[Collection[int | str]] = None,
         ignore_missing: bool = False,
     ) -> dict[str, Any]:
-        """Simulate pre-flight session rollback without making any disk modifications.
-
-        Analyzes selected steps and categorizes status into:
-        - CLEAN: Target file exists and original source path is clear for restoration.
-        - IDENTICAL_EXISTS: Target file and source path both exist with identical content;
-          target copy will be removed upon rollback.
-        - COLLISION: Destination source path is occupied by a different file.
-          Predicts suffixed restoration target path.
-        - MISSING_TARGET: Source sorted file is missing on disk at target path.
-        """
+        """Simulate pre-flight session rollback without making any disk modifications."""
         all_moves = self.get_session_moves(session_id)
         if selected_step_ids is not None:
             sel_set = {str(x) for x in selected_step_ids}
@@ -2888,105 +1245,63 @@ class HistoryManager:
         collision_count = 0
         missing_count = 0
 
-        if not steps_to_analyze and not all_moves:
-            conn = get_db_connection(self.db_path)
-            base_dir = None
-            snapshot_files = []
-            with conn:
-                cur = conn.execute(
-                    "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
-                )
-                row = cur.fetchone()
-                base_dir = row[0] if row else None
+        for step in steps_to_analyze:
+            step_id = step.get("step_id")
+            source_path = step.get("source_path") or step.get("original_path") or ""
+            target_path = step.get("target_path") or ""
+            size = step.get("size")
 
-                cur = conn.execute(
-                    "SELECT original_rel_path FROM snapshot_files WHERE session_id = ?",
-                    (session_id,),
-                )
-                snapshot_files = [r[0] for r in cur.fetchall()]
+            target_exists = bool(target_path and os.path.lexists(target_path))
+            source_exists = bool(source_path and os.path.lexists(source_path))
 
-            for idx, rel_path in enumerate(snapshot_files, 1):
-                abs_path = os.path.join(base_dir, rel_path) if base_dir else rel_path
-                target_exists = os.path.lexists(abs_path)
-                if target_exists:
-                    st = "CLEAN"
-                    clean_count += 1
-                    det = "Ready for clean restoration from snapshot"
-                else:
-                    st = "MISSING_TARGET"
-                    missing_count += 1
-                    det = "Snapshot target file missing on disk"
-
-                analyzed_steps.append(
-                    {
-                        "step_id": idx,
-                        "source_path": abs_path,
-                        "target_path": abs_path,
-                        "restoration_path": abs_path,
-                        "status": st,
-                        "collision": False,
-                        "size": os.path.getsize(abs_path) if target_exists else None,
-                        "detail": det,
-                    }
-                )
-        else:
-            for step in steps_to_analyze:
-                step_id = step.get("step_id")
-                source_path = step.get("source_path") or step.get("original_path") or ""
-                target_path = step.get("target_path") or ""
-                size = step.get("size")
-
-                target_exists = bool(target_path and os.path.lexists(target_path))
-                source_exists = bool(source_path and os.path.lexists(source_path))
-
-                if not target_exists:
-                    st = "MISSING_TARGET"
+            if not target_exists:
+                st = "MISSING_TARGET"
+                is_coll = False
+                restoration_path = source_path
+                det = "Sorted target file is missing on disk"
+                missing_count += 1
+            elif source_exists:
+                if same_file_content(source_path, target_path):
+                    st = "IDENTICAL_EXISTS"
                     is_coll = False
                     restoration_path = source_path
-                    det = "Sorted target file is missing on disk"
-                    missing_count += 1
-                elif source_exists:
-                    if same_file_content(source_path, target_path):
-                        st = "IDENTICAL_EXISTS"
-                        is_coll = False
-                        restoration_path = source_path
-                        det = "Identical copy exists at original path; sorted file will be removed"
-                        identical_count += 1
-                    else:
-                        st = "COLLISION"
-                        is_coll = True
-                        dest_dir = os.path.dirname(source_path) or "."
-                        orig_filename = os.path.basename(source_path)
-                        restoration_path = os.path.normpath(
-                            get_safe_path(dest_dir, orig_filename, target_path)
-                        )
-                        det = f"Original path is occupied by a different file; will restore as {os.path.basename(restoration_path)}"
-                        collision_count += 1
+                    det = "Identical copy exists at original path; sorted file will be removed"
+                    identical_count += 1
                 else:
-                    st = "CLEAN"
-                    is_coll = False
-                    restoration_path = source_path
-                    det = "Ready for clean restoration"
-                    clean_count += 1
+                    st = "COLLISION"
+                    is_coll = True
+                    dest_dir = os.path.dirname(source_path) or "."
+                    orig_filename = os.path.basename(source_path)
+                    restoration_path = os.path.normpath(
+                        get_safe_path(dest_dir, orig_filename, target_path)
+                    )
+                    det = f"Original path is occupied by a different file; will restore as {os.path.basename(restoration_path)}"
+                    collision_count += 1
+            else:
+                st = "CLEAN"
+                is_coll = False
+                restoration_path = source_path
+                det = "Ready for clean restoration"
+                clean_count += 1
 
-                if size is None and target_exists:
-                    try:
-                        size = os.path.getsize(target_path)
-                    except OSError:
-                        size = None
+            if size is None and target_exists:
+                try:
+                    size = os.path.getsize(target_path)
+                except OSError:
+                    size = None
 
-                analyzed_steps.append(
-                    {
-                        "step_id": step_id,
-                        "source_path": source_path,
-                        "target_path": target_path,
-                        "restoration_path": restoration_path,
-                        "status": st,
-                        "collision": is_coll,
-                        "size": size,
-                        "detail": det,
-                    }
-                )
+            analyzed_steps.append(
+                {
+                    "step_id": step_id,
+                    "source_path": source_path,
+                    "target_path": target_path,
+                    "restoration_path": restoration_path,
+                    "status": st,
+                    "collision": is_coll,
+                    "size": size,
+                    "detail": det,
+                }
+            )
 
         total = len(analyzed_steps)
         return {

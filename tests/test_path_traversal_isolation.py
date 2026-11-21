@@ -149,7 +149,6 @@ def test_runtime_boundary_violation_raises_value_error_and_rolls_back():
         }
 
         mock_history = MagicMock()
-        mock_ledger = MagicMock()
 
         with pytest.raises(ValueError, match="Runtime boundary violation"):
             _process_move_item(
@@ -157,10 +156,8 @@ def test_runtime_boundary_violation_raises_value_error_and_rolls_back():
                 base_dir=base_dir,
                 db=None,
                 runtime_settings=None,
-                ledger=mock_ledger,
                 history_manager=mock_history,
                 db_lock=threading.Lock(),
-                step_counter=[0],
                 db_updates_batch=[],
                 path_map={},
                 session_id="test_session",

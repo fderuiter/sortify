@@ -37,8 +37,8 @@ def test_sort_refuses_without_snapshot(test_history_env, snapshot_patch):
         with open(os.path.join(base_dir, name), "w") as fh:
             fh.write(name)
 
-    with patch.object(history_manager, "create_snapshot", **snapshot_patch):
-        with pytest.raises(RuntimeError, match="undo snapshot"):
+    with patch.object(history_manager, "start_session", **snapshot_patch):
+        with pytest.raises(RuntimeError, match="session"):
             execute_moves(base_dir, _plan(names), db, history_manager)
 
     for name in names:

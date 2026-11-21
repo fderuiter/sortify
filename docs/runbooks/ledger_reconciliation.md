@@ -31,66 +31,56 @@ When headless sorting jobs or background daemon tasks are interrupted—due to s
 
 ## Architectural Overview
 
-Sortify implements a two-phase transaction logging pattern to guarantee file system integrity and prevent data loss during moves:
+Sortify implements an append-only canonical move ledger (`moves` table, ADR 0006) in the unified application store (`sortify.db`, ADR 0008) to guarantee filesystem integrity and prevent data loss during moves:
 
-- **Sidecar Ledger Database**: The ledger is maintained as an independent SQLite database in WAL mode (`transaction_ledger.db`), separate from the main application metadata database. By default, it resides at `~/.autosorter/transaction_ledger.db` (or `$AUTOSORTER_APP_DIR/transaction_ledger.db`).
+- **Unified Application Store**: By default, the `moves` table lives inside `~/.autosorter/sortify.db` (or `$AUTOSORTER_APP_DIR/sortify.db`). Existing historical records from older `step_ledger`, `transaction_ledger`, and sidecar `transaction_ledger.db` stores are automatically imported into `moves` during store migrations (`app/core/store.py`, `app/core/moves.py`).
 - **Two-Phase Commit**:
-  1. **Intent Logging**: Before moving any physical bytes on disk, Sortify records an entry in the ledger with status `PENDING` via `app/core/ledger.py`.
-  2. **Physical Move**: The file is moved on disk. Upon completion of the move, the entry status is updated to `MOVED_PHYSICAL`.
-  3. **Metadata Index Update**: The main SQLCipher database is updated with the document's new location. Once updated, the ledger status transitions to `COMPLETED` and the ledger entry is cleaned up.
-- **Headless Interruption**: If the process crashes while an entry is in `PENDING` or `MOVED_PHYSICAL`, the next startup or operator reconciliation command evaluates physical disk state against the ledger record to safely roll forward or roll back.
+  1. **Intent Logging**: Before moving any physical bytes on disk, Sortify commits an `intent` row (reported by CLI status as `PENDING`) via `MoveLedger.record_intent` in `app/core/moves.py`.
+  2. **Physical Move & Verification**: Any preexisting destination file is safely displaced before overwrite (ADR 0005), the file is moved on disk, and the row transitions to `done` and `verified` once content hashes match.
+  3. **Failure & Interruption Handling**: If a process crashes while a row is in `intent` (`PENDING`), the next startup or operator `ledger reconcile` command evaluates physical disk state against the recorded SHA-256 hash to roll forward (`done`) or record a structured terminal failure (`ABORTED`, `FAILED_CONFLICT`, or `FAILED_MISSING`).
 
 ---
 
 ## Transaction Lifecycle and State Transitions
 
-Defined in `app/core/ledger.py:L41-L85`, the ledger defines seven statuses across non-terminal and terminal states.
+Defined in `app/core/moves.py`, `MoveLedger` persists four canonical states (`intent`, `done`, `verified`, `failed`) and surfaces operator-facing status codes in `smart-autosorter ledger`:
 
 ```
                   +-------------------------+
-                  |         PENDING         |
+                  |    intent (PENDING)     |
                   +-------------------------+
-                     /   |       |       \
-                    /    |       |        \
-                   v     |       |         v
-     +----------------+  |       |   +-------------------+
-     | MOVED_PHYSICAL |  |       |   |      ABORTED      | (Terminal)
-     +----------------+  |       |   +-------------------+
-        /    |    \      |       |
-       /     |     \     |       |
-      v      |      v    v       v
-+-----------+|   +--------------------+   +-------------------+
-| COMPLETED ||   | RECONCILED_SUCCESS |   |  FAILED_CONFLICT  | (Terminal)
-+-----------+|   +--------------------+   +-------------------+
- (Terminal)  |         (Terminal)                   ^
-             |                                      |
-             +--------------------------------------+
-             |
-             v
-   +-------------------+
-   |  FAILED_MISSING   | (Terminal)
-   +-------------------+
+                     /       |           \
+                    /        |            \
+                   v         |             v
+      +----------------+     |       +-------------------+
+      |      done      |     |       |      ABORTED      | (failed)
+      +----------------+     |       +-------------------+
+              |              |
+              v              +------------------+
+      +----------------+     |                  |
+      |    verified    |     v                  v
+      +----------------+ +-------------------+ +-------------------+
+       (Completed)       |  FAILED_CONFLICT  | |  FAILED_MISSING   |
+                         +-------------------+ +-------------------+
 ```
 
 ### Status Definitions
 
-| Status | Category | Description |
+| Status | Underlying `moves.state` | Description |
 |---|---|---|
-| `PENDING` | Non-Terminal | Move intent logged to sidecar ledger prior to beginning physical disk operation. |
-| `MOVED_PHYSICAL` | Non-Terminal | File was physically relocated on disk, but main database record was not yet committed. |
-| `COMPLETED` | Terminal | Standard completion: file physically relocated and application database record committed. |
-| `RECONCILED_SUCCESS` | Terminal | Automated reconciliation detected the destination file intact on disk and updated database records. |
-| `ABORTED` | Terminal | Move cancelled prior to physical transfer, or identical duplicate destination removed and source preserved. |
-| `FAILED_CONFLICT` | Terminal | Reconciliation encountered both source and destination files with differing contents; both preserved to avoid loss. |
-| `FAILED_MISSING` | Terminal | Reconciliation found that neither the source file nor destination file exists on disk. |
+| `PENDING` | `intent` | Move intent committed to `moves` prior to completing physical disk relocation. |
+| `COMPLETED` / `RECONCILED_SUCCESS` | `done` / `verified` | File physically relocated on disk (and hash-verified or rolled forward during reconciliation) with document metadata updated. |
+| `ABORTED` | `failed` | Move cancelled prior to physical transfer, or identical duplicate destination removed and source preserved. |
+| `FAILED_CONFLICT` | `failed` | Reconciliation encountered both source and destination files with differing contents; both preserved to avoid loss. |
+| `FAILED_MISSING` | `failed` | Reconciliation found that neither the source file nor destination file exists on disk. |
 
 ### Allowed State Transitions
 
-Transitions are strictly validated by `ALLOWED_TRANSITIONS` in `app/core/ledger.py`:
+Transitions are strictly validated by `_ALLOWED_FROM` in `app/core/moves.py`:
 
-- **From `PENDING`**: Allowed to transition to `MOVED_PHYSICAL`, `COMPLETED`, `RECONCILED_SUCCESS`, `ABORTED`, `FAILED_CONFLICT`, or `FAILED_MISSING`.
-- **From `MOVED_PHYSICAL`**: Allowed to transition to `COMPLETED`, `RECONCILED_SUCCESS`, `ABORTED`, `FAILED_CONFLICT`, or `FAILED_MISSING`.
-- **Terminal States**: `COMPLETED`, `RECONCILED_SUCCESS`, `ABORTED`, `FAILED_CONFLICT`, and `FAILED_MISSING` allow **no further transitions** (`frozenset()`). Once an entry reaches a terminal state, its record is immutable until purged.
+- **From `intent` (`PENDING`)**: Allowed to transition to `done` (including reconciled roll-forward) or `failed` (`ABORTED`, `FAILED_CONFLICT`, `FAILED_MISSING`, or move error).
+- **From `done`**: Allowed to transition to `verified` once destination SHA-256 matches `src_sha256`.
+- **Terminal States**: `verified` and `failed` allow no further state transitions. Records remain auditable in `moves` until explicitly purged.
 
 ---
 
@@ -102,7 +92,7 @@ The `smart-autosorter ledger` command group is defined in `app/cli/ledger_cli.py
 
 These flags apply to `smart-autosorter ledger` and all its subcommands:
 
-- `--ledger-db PATH`: Path to a custom sidecar transaction ledger database file. Defaults to `~/.autosorter/transaction_ledger.db`.
+- `--ledger-db PATH`: Optional path to a standalone SQLite database file containing a `moves` table. Defaults to the unified application store (`~/.autosorter/sortify.db` or `$AUTOSORTER_APP_DIR/sortify.db`).
 - `-q`, `--quiet`: Suppress human-readable informational banners and status summaries.
 - `--no-color`: Disable ANSI color escape codes (recommended for cron and headless log collection).
 - `--json`: Output response payloads in structured, machine-parseable JSON format on standard output.
@@ -533,6 +523,7 @@ rm -f /data/staging/.autosorter.pid
 
 - **Interactive Session Recovery Guide**: [Troubleshooting Guide](../troubleshooting.md#session-recovery)
 - **Configuration & Maintenance Reference**: [Administrator Guide](../admin_guide.md)
-- **Core Ledger Implementation**: `app/core/ledger.py`
+- **Canonical Move Ledger Implementation**: `app/core/moves.py`
+- **Key Lifecycle Audit Ledger**: `app/core/ledger.py`
 - **CLI Ledger Command Implementation**: `app/cli/ledger_cli.py`
 - **IPC Server & Lock Management**: `app/core/ipc.py`

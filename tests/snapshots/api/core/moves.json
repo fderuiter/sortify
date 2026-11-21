@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "b85c617fa2077a0847e012fbbd9a8680656ebc6502bdd2784ee4a5ed8d97fc5f"
+    "checksum": "f6e3bef7627d793ae00ad2c34f32bf41017f610c38e9ac847229a78208bfd85d"
   },
   "classes": [
     {
@@ -33,9 +33,47 @@
               "annotation": "_Writer | None",
               "default": "None",
               "name": "writer"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "auto_init"
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_pending_entries",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "session_id"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "include_failed"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "failed_only"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "aborted_only"
+            }
+          ],
+          "returns": "list[dict[str, Any]]"
         },
         {
           "async": false,
@@ -142,6 +180,83 @@
         {
           "async": false,
           "decorators": [],
+          "name": "purge_completed",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "session_id"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "purge_failed",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "session_id"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "status_filter"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "purge_session",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "reconcile_incomplete_transactions",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "db"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "record_displacement",
           "parameters": [
             {
@@ -225,7 +340,69 @@
     {
       "async": false,
       "decorators": [],
+      "name": "decode_move_failure",
+      "parameters": [
+        {
+          "annotation": "str | None",
+          "default": null,
+          "name": "error"
+        }
+      ],
+      "returns": "tuple[str, str | None]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "format_move_failure",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "status_code"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "reason"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "import_sidecar_ledger",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "src_conn"
+        },
+        {
+          "annotation": null,
+          "default": null,
+          "name": "dst_conn"
+        }
+      ],
+      "returns": "int"
+    },
+    {
+      "async": false,
+      "decorators": [],
       "name": "import_step_ledger",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "conn"
+        }
+      ],
+      "returns": "int"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "import_transaction_ledger",
       "parameters": [
         {
           "annotation": null,
@@ -247,6 +424,32 @@
         }
       ],
       "returns": "None"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "migrate_import_legacy_moves",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "conn"
+        }
+      ],
+      "returns": "None"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "query_session_summaries",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "db_path"
+        }
+      ],
+      "returns": "list[tuple[str, float | None, str | None, str | None, int, int]]"
     }
   ]
 }

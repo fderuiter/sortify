@@ -163,7 +163,8 @@ def test_batch_moves_execute_without_invalid_path_errors():
 
         settings = AppSettings()
         history_mgr = MagicMock(spec=HistoryManager)
-        history_mgr.create_snapshot.return_value = "test_session"
+        history_mgr.start_session.return_value = "test_session"
+        history_mgr.moves = None
 
         # Verify plan first to sanitize keys
         result = VerificationEngine.verify_plan_integrity(tmp_dir, plan)

@@ -76,15 +76,6 @@ def test_rollback_without_a_folder_or_session_id_does_nothing(tmp_path):
     assert (tmp_path / "sessions" / "sess_1").exists()
 
 
-def test_forget_removes_a_leftover_rollback_journal(tmp_path):
-    journal = tmp_path / "rollback_journal.json"
-    journal.write_text("{}")
-    with patch("app.core.session_catalog.mark_session_abandoned") as mark:
-        forget_abandoned_session({"session_id": "s", "journal_path": str(journal)})
-    assert not journal.exists()
-    mark.assert_not_called()
-
-
 def test_forget_marks_a_store_session_abandoned():
     store = object()
     with patch("app.core.session_catalog.mark_session_abandoned") as mark:

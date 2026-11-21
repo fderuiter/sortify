@@ -561,7 +561,7 @@ class SessionCrypto:
         if not getattr(_audit_thread_local, "in_key_audit_logging", False):
             try:
                 _audit_thread_local.in_key_audit_logging = True
-                from app.core.ledger import TransactionLedger
+                from app.core.ledger import KeyAuditLedger
 
                 db_hash = CryptoManager.derive_db_hash(self.db_path)
                 meta: dict[str, Any] = {
@@ -572,7 +572,7 @@ class SessionCrypto:
                     meta.update(caller_context)
 
                 status = "SUCCESS" if key_val is not None else "NOT_FOUND"
-                TransactionLedger().log_key_audit(
+                KeyAuditLedger().log_key_audit(
                     event_type="KEY_EXPORT",
                     db_path_hash=db_hash,
                     session_id=session_id,
@@ -821,9 +821,9 @@ class SessionCrypto:
                 if not getattr(_audit_thread_local, "in_key_audit_logging", False):
                     try:
                         _audit_thread_local.in_key_audit_logging = True
-                        from app.core.ledger import TransactionLedger
+                        from app.core.ledger import KeyAuditLedger
 
-                        TransactionLedger().log_key_audit(
+                        KeyAuditLedger().log_key_audit(
                             event_type="KEY_ROTATION",
                             db_path_hash=db_hash,
                             session_id=session_id,
@@ -845,11 +845,11 @@ class SessionCrypto:
                 if not getattr(_audit_thread_local, "in_key_audit_logging", False):
                     try:
                         _audit_thread_local.in_key_audit_logging = True
-                        from app.core.ledger import TransactionLedger
+                        from app.core.ledger import KeyAuditLedger
 
                         fail_meta = dict(meta)
                         fail_meta["error"] = str(rotation_err)
-                        TransactionLedger().log_key_audit(
+                        KeyAuditLedger().log_key_audit(
                             event_type="KEY_ROTATION",
                             db_path_hash=db_hash,
                             session_id=session_id,

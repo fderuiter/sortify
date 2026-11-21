@@ -1503,39 +1503,6 @@ class Database:
                                 True,
                                 term_counts=counts,
                             )
-            elif item["type"] == "transaction_step":
-                (
-                    session_id,
-                    step_number,
-                    base_dir,
-                    source_path,
-                    destination_path,
-                    file_hash,
-                    item_type,
-                    metadata,
-                ) = item["args"]
-                session_id = str(session_id)
-                import time
-
-                conn.execute(
-                    """
-                    INSERT INTO transaction_ledger (
-                        session_id, step_number, base_dir, source_path, destination_path,
-                        file_hash, item_type, metadata, timestamp
-                    ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        session_id,
-                        step_number,
-                        base_dir,
-                        source_path.replace("\\", "/"),
-                        destination_path.replace("\\", "/"),
-                        file_hash,
-                        item_type,
-                        metadata,
-                        time.time(),
-                    ),
-                )
 
     def execute_batch_updates(self, updates):
         """Execute all collected database updates in a single unified database transaction."""
@@ -1605,37 +1572,6 @@ class Database:
             self.invalidate_cache()
 
         self.worker.execute_write(_write)
-
-    def get_transaction_steps(self, session_id: str) -> list:
-        """Retrieve recorded transaction steps for a given session, ordered by step_number ASC."""
-        conn = get_db_connection(self.db_path)
-        with conn:
-            cursor = conn.execute(
-                """
-                SELECT id, session_id, step_number, base_dir, source_path, destination_path,
-                       file_hash, item_type, metadata, timestamp
-                FROM transaction_ledger
-                WHERE session_id = ?
-                ORDER BY step_number ASC
-                """,
-                (session_id,),
-            )
-            rows = cursor.fetchall()
-            return [
-                {
-                    "id": r[0],
-                    "session_id": r[1],
-                    "step_number": r[2],
-                    "base_dir": r[3],
-                    "source_path": r[4],
-                    "destination_path": r[5],
-                    "file_hash": r[6],
-                    "item_type": r[7],
-                    "metadata": r[8],
-                    "timestamp": r[9],
-                }
-                for r in rows
-            ]
 
     def clear(self, base_dir=None):
         """Clear documents from the database. If base_dir is provided, only clear those."""
