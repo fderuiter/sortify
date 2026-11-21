@@ -368,10 +368,10 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
 def _maybe_provision_model_for_cli_consent(
     args: argparse.Namespace, settings: AppSettings
 ) -> None:
-    """Initiate model verification/download with terminal progress when --accept-ai-consent is passed."""
+    """Initiate model verification/download with terminal progress on top-level --accept-ai-consent setup."""
     if not _extract_bool_arg(args, "accept_ai_consent"):
         return
-    if getattr(args, "subcommand", None) == "model":
+    if getattr(args, "subcommand", None) is not None:
         return
     if getattr(args, "_cli_consent_model_checked", False):
         return
@@ -633,7 +633,6 @@ def _prepare_cli_target_directory(
 ):
     """Apply CLI overrides once, optionally launch TUI, and validate the target folder."""
     apply_config_overrides(settings, args)
-    _maybe_provision_model_for_cli_consent(args, settings)
 
     if warn_if_ml_unavailable:
         from app.core.verifier import is_ml_available

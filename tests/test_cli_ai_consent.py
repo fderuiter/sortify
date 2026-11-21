@@ -312,3 +312,56 @@ def test_bare_cli_accept_ai_consent_non_interactive_json(tmp_path, capsys):
     data = json.loads(capsys.readouterr().out)
     assert data == {"status": "success", "ai_consent_granted": True}
     assert AppSettings(filepath=settings_file).AI_CONSENT_GRANTED is True
+
+
+def test_subcommand_accept_ai_consent_persists_without_blocking_download(tmp_path):
+    """Operational subcommands with `--accept-ai-consent` persist consent without blocking on remote model download."""
+    import sys
+
+    import pytest
+
+    from app.main import _main_impl, _maybe_provision_model_for_cli_consent
+
+    settings_file = str(tmp_path / "settings.json")
+    workspace = tmp_path / "workspace"
+    workspace.mkdir()
+    (workspace / "invoice_2025.txt").write_text(
+        "Quarterly tax invoice 1099 payment statement.", encoding="utf-8"
+    )
+
+    parser = build_parser()
+    sub_args = parser.parse_args(
+        ["sort", str(workspace), "--accept-ai-consent", "--non-interactive"]
+    )
+    settings = AppSettings(filepath=settings_file)
+    apply_config_overrides(settings, sub_args)
+
+    with patch("app.core.downloader.provision_model_cli") as mock_prov:
+        _maybe_provision_model_for_cli_consent(sub_args, settings)
+        mock_prov.assert_not_called()
+
+    with (
+        patch(
+            "app.main.AppSettings",
+            side_effect=lambda *a, **kw: AppSettings(filepath=settings_file),
+        ),
+        patch("app.core.downloader.provision_model_cli") as mock_prov_main,
+        patch.object(
+            sys,
+            "argv",
+            [
+                "smart-autosorter",
+                "scan",
+                str(workspace),
+                "--accept-ai-consent",
+                "--non-interactive",
+                "--quiet",
+            ],
+        ),
+        pytest.raises(SystemExit) as excinfo,
+    ):
+        _main_impl()
+
+    assert excinfo.value.code == 0
+    mock_prov_main.assert_not_called()
+    assert AppSettings(filepath=settings_file).AI_CONSENT_GRANTED is True
