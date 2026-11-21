@@ -16,7 +16,7 @@ from app.core.path_utils import scrub_user_home_paths
 from app.core.text_utils import sanitize_secret_patterns
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveLayoutMixin
 from app.ui.notifications import TROUBLESHOOTING_URL, notify
 
 logger = logging.getLogger(__name__)
@@ -45,11 +45,17 @@ class SessionRecoveryModal(
         min-width: 30;
         height: auto;
         max-height: 90%;
-        overflow-y: auto;
+        overflow-y: hidden;
     }
-    .narrow .modal-box {
+    .compact .modal-box, .narrow .modal-box {
         padding: 0 1;
-        width: 95%;
+        width: 96%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -57,9 +63,28 @@ class SessionRecoveryModal(
         margin-bottom: 1;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
-        align: right middle;
+        layout: grid;
+        grid-size: 4;
+        grid-columns: 1fr 1fr 1fr 1fr;
+        grid-gutter: 0 1;
+        height: auto;
+    }
+    .compact .button-row, .narrow .button-row {
+        grid-size: 2;
+        grid-columns: 1fr 1fr;
+    }
+    .button-row Button {
+        width: 100%;
+        min-width: 0;
+        margin: 0;
+    }
+    .compact .button-row Button {
+        height: 1;
+        min-height: 1;
+        border: none;
     }
     Button:focus {
         border: heavy $accent;
@@ -73,19 +98,22 @@ class SessionRecoveryModal(
 
     def compose(self) -> ComposeResult:
         """Compose session recovery modal children."""
-        with Vertical(classes="modal-box"):
+        with ModalBox(classes="modal-box"):
             yield Heading(
                 "Interrupted Session Detected",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
             )
-            yield Label(f"Session ID: {self.session_info.get('session_id', 'Unknown')}")
-            yield Label(
-                f"Target Directory: {self.session_info.get('base_dir', 'Unknown')}"
-            )
-            yield Label(f"Status: {self.session_info.get('status', 'Unknown')}")
-            yield Heading("Select session recovery action:", level=2)
+            with Vertical(classes="modal-body"):
+                yield Label(
+                    f"Session ID: {self.session_info.get('session_id', 'Unknown')}"
+                )
+                yield Label(
+                    f"Target Directory: {self.session_info.get('base_dir', 'Unknown')}"
+                )
+                yield Label(f"Status: {self.session_info.get('status', 'Unknown')}")
+                yield Heading("Select session recovery action:", level=2)
 
             with Horizontal(classes="button-row"):
                 btn_clean = Button("Clean", id="btn-clean", variant="error")
@@ -190,11 +218,23 @@ class MultiSessionRecoveryModal(
         min-width: 30;
         height: auto;
         max-height: 90%;
+        overflow-y: hidden;
+    }
+    .compact .modal-box, .narrow .modal-box {
+        padding: 0 1;
+        width: 96%;
+        max-height: 96%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
         overflow-y: auto;
     }
-    .narrow .modal-box {
-        padding: 0 1;
-        width: 95%;
+    .modal-footer {
+        dock: bottom;
+        width: 100%;
+        height: auto;
     }
     .modal-title {
         text-style: bold;
@@ -205,25 +245,64 @@ class MultiSessionRecoveryModal(
         color: $text-muted;
         margin-bottom: 1;
     }
+    .compact .modal-subtitle {
+        margin-bottom: 0;
+    }
     #sessions-table {
-        height: 6;
-        min-height: 4;
+        height: auto;
+        min-height: 6;
+        max-height: 10;
         border: solid $primary;
         margin-bottom: 1;
+    }
+    .compact #sessions-table {
+        margin-bottom: 0;
     }
     #lbl-selected-session {
         text-style: bold;
         color: $accent;
         margin-bottom: 1;
     }
+    .compact #lbl-selected-session {
+        margin-bottom: 0;
+    }
     .actions-heading {
         margin-top: 1;
         margin-bottom: 0;
     }
+    .compact .actions-heading {
+        margin-top: 0;
+    }
     .button-row {
+        width: 100%;
         margin-top: 1;
-        height: 3;
+        height: auto;
         align: right middle;
+    }
+    .compact .button-row {
+        margin-top: 0;
+    }
+    .batch-button-row {
+        layout: grid;
+        grid-size: 2;
+        grid-columns: 1fr 1fr;
+        grid-gutter: 0 1;
+    }
+    .item-button-row {
+        layout: grid;
+        grid-size: 3;
+        grid-columns: 1fr 1fr 1fr;
+        grid-gutter: 0 1;
+    }
+    .button-row Button {
+        width: 100%;
+        min-width: 0;
+        margin: 0;
+    }
+    .compact .button-row Button {
+        height: 1;
+        min-height: 1;
+        border: none;
     }
     Button:focus, DataTable:focus {
         border: heavy $accent;
@@ -247,71 +326,83 @@ class MultiSessionRecoveryModal(
 
     def compose(self) -> ComposeResult:
         """Compose multi-session recovery modal widgets."""
-        with Vertical(classes="modal-box"):
+        with ModalBox(classes="modal-box"):
             yield Heading(
                 "Multiple Interrupted Sessions Detected",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
             )
-            yield Label(
-                "Sortify detected multiple interrupted sessions. Review or perform batch recovery:",
-                classes="modal-subtitle",
-                id="modal-subtitle",
-            )
-
-            yield DataTable(id="sessions-table")
-
-            yield Label(
-                "Selected: None",
-                id="lbl-selected-session",
-            )
-
-            yield Heading("Batch Actions:", level=2, classes="actions-heading")
-            with Horizontal(classes="button-row"):
-                btn_rollback_all = Button(
-                    "Rollback All", id="btn-rollback-all", variant="warning"
+            with Vertical(classes="modal-body"):
+                yield Label(
+                    "Sortify detected multiple interrupted sessions. Review or perform batch recovery:",
+                    classes="modal-subtitle",
+                    id="modal-subtitle",
                 )
-                btn_rollback_all.tooltip = (
-                    "Rollback uncommitted operations across all abandoned sessions"
+
+                yield DataTable(id="sessions-table")
+
+                yield Label(
+                    "Selected: None",
+                    id="lbl-selected-session",
                 )
-                yield btn_rollback_all
 
-                btn_clean_all = Button("Clean All", id="btn-clean-all", variant="error")
-                btn_clean_all.tooltip = (
-                    "Discard all abandoned sessions and clean records"
+            with Vertical(classes="modal-footer"):
+                yield Heading("Batch Actions:", level=2, classes="actions-heading")
+                with Horizontal(classes="button-row batch-button-row"):
+                    btn_rollback_all = Button(
+                        "Rollback All", id="btn-rollback-all", variant="warning"
+                    )
+                    btn_rollback_all.tooltip = (
+                        "Rollback uncommitted operations across all abandoned sessions"
+                    )
+                    yield btn_rollback_all
+
+                    btn_clean_all = Button(
+                        "Clean All", id="btn-clean-all", variant="error"
+                    )
+                    btn_clean_all.tooltip = (
+                        "Discard all abandoned sessions and clean records"
+                    )
+                    yield btn_clean_all
+
+                yield Heading(
+                    "Item Actions (Selected Session):",
+                    level=2,
+                    classes="actions-heading",
                 )
-                yield btn_clean_all
+                with Horizontal(classes="button-row item-button-row"):
+                    btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
+                    btn_cancel.tooltip = "Cancel recovery dialog"
+                    yield btn_cancel
 
-            yield Heading(
-                "Item Actions (Selected Session):", level=2, classes="actions-heading"
-            )
-            with Horizontal(classes="button-row"):
-                btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
-                btn_cancel.tooltip = "Cancel recovery dialog"
-                yield btn_cancel
+                    btn_help = Button("Help", id="btn-help", variant="default")
+                    btn_help.tooltip = "Open session recovery troubleshooting guide"
+                    yield btn_help
 
-                btn_help = Button("Help", id="btn-help", variant="default")
-                btn_help.tooltip = "Open session recovery troubleshooting guide"
-                yield btn_help
+                    btn_clean = Button("Clean", id="btn-clean", variant="error")
+                    btn_clean.tooltip = (
+                        "Discard selected session files and clean record"
+                    )
+                    yield btn_clean
 
-                btn_clean = Button("Clean", id="btn-clean", variant="error")
-                btn_clean.tooltip = "Discard selected session files and clean record"
-                yield btn_clean
+                    btn_rollback = Button(
+                        "Rollback", id="btn-rollback", variant="warning"
+                    )
+                    btn_rollback.tooltip = (
+                        "Rollback partial file moves for selected session"
+                    )
+                    yield btn_rollback
 
-                btn_rollback = Button("Rollback", id="btn-rollback", variant="warning")
-                btn_rollback.tooltip = (
-                    "Rollback partial file moves for selected session"
-                )
-                yield btn_rollback
-
-                btn_resume = Button("Resume", id="btn-resume", variant="primary")
-                btn_resume.tooltip = "Resume pending file moves for selected session"
-                yield btn_resume
+                    btn_resume = Button("Resume", id="btn-resume", variant="primary")
+                    btn_resume.tooltip = (
+                        "Resume pending file moves for selected session"
+                    )
+                    yield btn_resume
 
     def on_mount(self) -> None:
         """Initialize table columns, populate rows, and announce session count."""
-        self._update_layout(self.size.width)
+        self._update_layout(self.size.width, self.size.height)
         table = self.query_one("#sessions-table", DataTable)
         table.cursor_type = "row"
         table.add_columns("Session ID", "Target Directory", "Step Count", "Status")
@@ -483,7 +574,9 @@ class MultiSessionRecoveryModal(
         self.dismiss(None)
 
 
-class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[dict[str, Any]]]):
+class RollbackConfirmModal(
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict[str, Any]]]
+):
     """Two-stage interactive confirmation modal dialog before executing session rollback."""
 
     BINDINGS = [
@@ -500,17 +593,30 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[dict[str, Any]]]):
         padding: 1 2;
         background: $panel;
         border: thick $warning;
-        width: 90%;
-        max-width: 95;
-        height: 85%;
-        max-height: 85%;
+        width: 92%;
+        max-width: 98;
+        height: 90%;
+        max-height: 92%;
+        overflow-y: hidden;
+    }
+    .compact .confirm-box, .narrow .confirm-box {
+        padding: 0 1;
+        width: 98%;
+        height: 94%;
+        max-height: 96%;
     }
     #stage-1-container, #stage-2-container {
         width: 100%;
         height: 100%;
+        overflow-y: hidden;
     }
     #stage-2-container {
         display: none;
+    }
+    .modal-body {
+        width: 100%;
+        height: 1fr;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -528,40 +634,89 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[dict[str, Any]]]):
         display: none;
     }
     .controls-row {
-        height: 3;
+        width: 100%;
+        height: auto;
         margin-top: 1;
         margin-bottom: 1;
         layout: horizontal;
     }
+    .compact .controls-row, .narrow .controls-row {
+        layout: vertical;
+        margin-top: 0;
+        margin-bottom: 0;
+    }
     #rollback-search-input {
-        width: 40%;
+        width: 1fr;
         margin-right: 1;
     }
+    .compact #rollback-search-input, .narrow #rollback-search-input {
+        width: 100%;
+        margin-right: 0;
+    }
+    .bulk-actions-row {
+        width: auto;
+        height: auto;
+        layout: horizontal;
+    }
+    .compact .bulk-actions-row, .narrow .bulk-actions-row {
+        width: 100%;
+        layout: grid;
+        grid-size: 3;
+        grid-columns: 1fr 1fr 1fr;
+        grid-gutter: 0 1;
+    }
     .bulk-btn {
+        min-width: 12;
         margin-right: 1;
+    }
+    .compact .bulk-btn, .narrow .bulk-btn {
+        width: 100%;
+        min-width: 0;
+        margin-right: 0;
+        height: 1;
+        min-height: 1;
+        border: none;
     }
     #lbl-selection-count {
         text-style: bold;
         color: $accent;
         margin-bottom: 1;
     }
+    .compact #lbl-selection-count {
+        margin-bottom: 0;
+    }
     #rollback-items-table, #dryrun-diff-table {
-        height: 1fr;
+        width: 100%;
+        height: auto;
+        min-height: 7;
+        max-height: 14;
         border: solid $primary;
         margin-bottom: 1;
     }
+    .compact #rollback-items-table, .compact #dryrun-diff-table {
+        margin-bottom: 0;
+    }
     .summary-bar {
-        height: 3;
+        width: 100%;
+        height: auto;
         margin-top: 1;
         margin-bottom: 1;
         background: $surface;
         border: solid $accent;
         padding: 0 1;
-        align: center middle;
         layout: horizontal;
     }
+    .compact .summary-bar, .narrow .summary-bar {
+        margin-top: 0;
+        margin-bottom: 0;
+        layout: grid;
+        grid-size: 2;
+        grid-columns: 1fr 1fr;
+        grid-gutter: 0 1;
+    }
     .summary-stat {
-        margin-right: 2;
+        width: 1fr;
+        margin-right: 1;
         text-style: bold;
     }
     .summary-stat.clean {
@@ -576,16 +731,38 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[dict[str, Any]]]):
     .warning-box {
         margin-top: 1;
         margin-bottom: 1;
-        padding: 1;
+        padding: 0 1;
         background: $boost;
         border: dashed $warning;
         color: $text;
         height: auto;
     }
+    .compact .warning-box {
+        margin-top: 0;
+        margin-bottom: 0;
+    }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
-        align: right middle;
+        layout: grid;
+        grid-size: 3;
+        grid-columns: 1fr 1fr 1fr;
+        grid-gutter: 0 1;
+        height: auto;
+    }
+    .compact .button-row {
+        margin-top: 0;
+    }
+    .button-row Button {
+        width: 100%;
+        min-width: 0;
+        margin: 0;
+    }
+    .compact .button-row Button {
+        height: 1;
+        min-height: 1;
+        border: none;
     }
     Button:focus, Input:focus, DataTable:focus {
         border: heavy $accent;
@@ -610,7 +787,7 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[dict[str, Any]]]):
         ts = self.session_info.get("timestamp")
         ts_str = time.strftime("%Y-%m-%d %H:%M:%S", time.localtime(ts)) if ts else "N/A"
 
-        with Vertical(classes="confirm-box"):
+        with ModalBox(classes="confirm-box modal-box"):
             # Stage 1 Container: Step Selection
             with Vertical(id="stage-1-container"):
                 yield Heading(
@@ -625,50 +802,54 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[dict[str, Any]]]):
                 )
                 yield Static("", id="rollback-error-banner", classes="error-banner")
 
-                with Horizontal(classes="controls-row"):
-                    yield Input(
-                        placeholder="Search paths or status to filter...",
-                        id="rollback-search-input",
-                    )
-                    yield Button(
-                        "Select All",
-                        id="btn-select-all",
-                        classes="bulk-btn",
-                        variant="primary",
-                    )
-                    yield Button(
-                        "Deselect All",
-                        id="btn-deselect-all",
-                        classes="bulk-btn",
-                        variant="default",
-                    )
-                    yield Button(
-                        "Invert Selection",
-                        id="btn-invert-selection",
-                        classes="bulk-btn",
-                        variant="default",
-                    )
+                with Vertical(classes="modal-body"):
+                    with Horizontal(classes="controls-row"):
+                        yield Input(
+                            placeholder="Search paths or status to filter...",
+                            id="rollback-search-input",
+                        )
+                        with Horizontal(classes="bulk-actions-row"):
+                            yield Button(
+                                "Select All",
+                                id="btn-select-all",
+                                classes="bulk-btn",
+                                variant="primary",
+                            )
+                            yield Button(
+                                "Deselect All",
+                                id="btn-deselect-all",
+                                classes="bulk-btn",
+                                variant="default",
+                            )
+                            yield Button(
+                                "Invert Selection",
+                                id="btn-invert-selection",
+                                classes="bulk-btn",
+                                variant="default",
+                            )
 
-                yield Label("Selected for Rollback: 0 items", id="lbl-selection-count")
-
-                yield DataTable(id="rollback-items-table")
-
-                with Vertical(classes="warning-box"):
                     yield Label(
-                        "⚠️ Warning: Rolling back will restore checked files to their original locations. Unchecked files will remain in target folders."
+                        "Selected for Rollback: 0 items", id="lbl-selection-count"
                     )
 
-                if self.session_info.get("step_count"):
-                    yield Label(
-                        "Files that are no longer at their sorted location are skipped.",
-                        id="lbl-confirm-missing",
-                    )
-                else:
-                    yield Checkbox(
-                        "Roll back even if some sorted files are missing (they are skipped)",
-                        value=False,
-                        id="chk-ignore-missing",
-                    )
+                    yield DataTable(id="rollback-items-table")
+
+                    with Vertical(classes="warning-box"):
+                        yield Label(
+                            "⚠️ Warning: Rolling back will restore checked files to their original locations. Unchecked files will remain in target folders."
+                        )
+
+                    if self.session_info.get("step_count"):
+                        yield Label(
+                            "Files that are no longer at their sorted location are skipped.",
+                            id="lbl-confirm-missing",
+                        )
+                    else:
+                        yield Checkbox(
+                            "Roll back even if some sorted files are missing (they are skipped)",
+                            value=False,
+                            id="chk-ignore-missing",
+                        )
 
                 with Horizontal(classes="button-row"):
                     yield Button("Cancel", id="btn-cancel-rollback", variant="default")
@@ -696,33 +877,36 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[dict[str, Any]]]):
                     id="lbl-dryrun-sid",
                 )
 
-                with Horizontal(classes="summary-bar", id="dryrun-summary-bar"):
-                    yield Label(
-                        "Total Operations: 0",
-                        id="lbl-summary-total",
-                        classes="summary-stat",
-                    )
-                    yield Label(
-                        "Clean: 0", id="lbl-summary-clean", classes="summary-stat clean"
-                    )
-                    yield Label(
-                        "Collisions: 0",
-                        id="lbl-summary-collisions",
-                        classes="summary-stat collision",
-                    )
-                    yield Label(
-                        "Missing Targets: 0",
-                        id="lbl-summary-missing",
-                        classes="summary-stat missing",
-                    )
+                with Vertical(classes="modal-body"):
+                    with Horizontal(classes="summary-bar", id="dryrun-summary-bar"):
+                        yield Label(
+                            "Total Operations: 0",
+                            id="lbl-summary-total",
+                            classes="summary-stat",
+                        )
+                        yield Label(
+                            "Clean: 0",
+                            id="lbl-summary-clean",
+                            classes="summary-stat clean",
+                        )
+                        yield Label(
+                            "Collisions: 0",
+                            id="lbl-summary-collisions",
+                            classes="summary-stat collision",
+                        )
+                        yield Label(
+                            "Missing Targets: 0",
+                            id="lbl-summary-missing",
+                            classes="summary-stat missing",
+                        )
 
-                yield DataTable(id="dryrun-diff-table")
+                    yield DataTable(id="dryrun-diff-table")
 
-                with Vertical(classes="warning-box", id="dryrun-warning-box"):
-                    yield Label(
-                        "Review target restoration paths above before executing rollback.",
-                        id="lbl-dryrun-warning",
-                    )
+                    with Vertical(classes="warning-box", id="dryrun-warning-box"):
+                        yield Label(
+                            "Review target restoration paths above before executing rollback.",
+                            id="lbl-dryrun-warning",
+                        )
 
                 with Horizontal(classes="button-row"):
                     yield Button(
@@ -741,6 +925,7 @@ class RollbackConfirmModal(A11yMixin, ModalScreen[Optional[dict[str, Any]]]):
 
     def on_mount(self) -> None:
         """Initialize items, populate tables and focus controls on mount."""
+        self._update_layout(self.size.width, self.size.height)
         sid = self.session_info.get("session_id")
         if not self.all_items and sid:
             try:
@@ -1166,6 +1351,14 @@ class RollbackErrorModal(A11yMixin, ModalScreen[None]):
         width: 85%;
         max-width: 75;
         height: auto;
+        max-height: 90%;
+        overflow-y: hidden;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -1178,8 +1371,10 @@ class RollbackErrorModal(A11yMixin, ModalScreen[None]):
         color: $text;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
+        height: auto;
         align: right middle;
     }
     """
@@ -1191,13 +1386,14 @@ class RollbackErrorModal(A11yMixin, ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         """Compose error modal widgets."""
-        with Vertical(classes="error-box"):
+        with ModalBox(classes="error-box modal-box"):
             yield Heading(
                 self.error_title, level=1, classes="modal-title", id="error-title"
             )
-            yield Label(
-                self.error_message, classes="error-text", id="lbl-error-message"
-            )
+            with Vertical(classes="modal-body"):
+                yield Label(
+                    self.error_message, classes="error-text", id="lbl-error-message"
+                )
             with Horizontal(classes="button-row"):
                 yield Button("Close", id="btn-close-error", variant="primary")
 
@@ -1234,34 +1430,61 @@ class HistoryModal(
         max-width: 90;
         min-width: 40;
         height: auto;
-        max-height: 90%;
-        overflow-y: auto;
+        max-height: 92%;
+        overflow-y: hidden;
     }
-    .narrow .modal-box {
+    .compact .modal-box, .narrow .modal-box {
         padding: 0 1;
-        width: 95%;
+        width: 96%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
         color: $accent;
         margin-bottom: 1;
     }
+    .compact .modal-title {
+        margin-bottom: 0;
+    }
     .modal-subtitle {
         color: $text-muted;
         margin-bottom: 1;
     }
+    .compact .modal-subtitle {
+        margin-bottom: 0;
+    }
     .details-box {
         margin-top: 1;
         margin-bottom: 1;
-        padding: 1;
+        padding: 0 1;
         background: $boost;
         border: solid $accent;
         color: $text;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
-        align: right middle;
+        layout: grid;
+        grid-size: 3;
+        grid-columns: 1fr 1fr 1fr;
+        grid-gutter: 0 1;
+        height: auto;
+    }
+    .button-row Button {
+        width: 100%;
+        min-width: 0;
+        margin: 0;
+    }
+    .compact .button-row Button {
+        height: 1;
+        min-height: 1;
+        border: none;
     }
     Button:focus, Input:focus, Select:focus {
         border: heavy $accent;
@@ -1285,74 +1508,73 @@ class HistoryModal(
 
     def compose(self) -> ComposeResult:
         """Compose history view, export, and rollback modal widgets."""
-        with Vertical(classes="modal-box"):
+        with ModalBox(classes="modal-box"):
             yield Heading(
                 "Session History & Rollback Controls [Ctrl+Y]",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
             )
-            yield Label(
-                "Select a session row to export audit log or perform session rollback:",
-                classes="modal-subtitle",
-            )
-
-            options = [("All Sessions (Aggregate Audit Log)", "all")]
-            for s in self.sessions:
-                sid = s.get("session_id", "unknown")
-                b_dir = s.get("base_dir") or "N/A"
-                status = s.get("status") or "completed"
-                step_cnt = s.get("step_count") or s.get("file_count") or 0
-                options.append(
-                    (
-                        f"{sid[:8]}... | {status.upper()} | {step_cnt} file(s) | {b_dir}",
-                        sid,
-                    )
+            with Vertical(classes="modal-body"):
+                yield Label(
+                    "Select a session row to export audit log or perform session rollback:",
+                    classes="modal-subtitle",
                 )
 
-            if len(options) == 1 and not self.sessions:
-                options = [("No historical sessions found", "none")]
+                options = [("All Sessions (Aggregate Audit Log)", "all")]
+                for s in self.sessions:
+                    sid = s.get("session_id", "unknown")
+                    b_dir = s.get("base_dir") or "N/A"
+                    status = s.get("status") or "completed"
+                    step_cnt = s.get("step_count") or s.get("file_count") or 0
+                    options.append(
+                        (
+                            f"{sid[:8]}... | {status.upper()} | {step_cnt} file(s) | {b_dir}",
+                            sid,
+                        )
+                    )
 
-            select_sess = Select(
-                options,
-                value=options[0][1] if options else "none",
-                id="select-history-session",
-                allow_blank=False,
-            )
-            select_sess.tooltip = (
-                "Select historical session row for audit log export or session rollback"
-            )
-            yield select_sess
+                if len(options) == 1 and not self.sessions:
+                    options = [("No historical sessions found", "none")]
 
-            yield Label("Session Details:", classes="modal-subtitle")
-            yield Label(
-                "Select a session above to view details.",
-                id="lbl-session-details",
-                classes="details-box",
-            )
+                select_sess = Select(
+                    options,
+                    value=options[0][1] if options else "none",
+                    id="select-history-session",
+                    allow_blank=False,
+                )
+                select_sess.tooltip = "Select historical session row for audit log export or session rollback"
+                yield select_sess
 
-            yield Label("Output File Path (Audit Log Export):")
-            inp_path = Input(
-                value="./audit_log.csv",
-                placeholder="Enter export path (e.g. ./audit_log.csv)...",
-                id="input-history-path",
-            )
-            inp_path.tooltip = (
-                "Enter target output path for exported session audit log file"
-            )
-            yield inp_path
+                yield Label("Session Details:", classes="modal-subtitle")
+                yield Label(
+                    "Select a session above to view details.",
+                    id="lbl-session-details",
+                    classes="details-box",
+                )
 
-            yield Label("Export Format:")
-            fmt_select = Select(
-                [("CSV Format (*.csv)", "csv"), ("JSON Format (*.json)", "json")],
-                value="csv",
-                id="select-history-format",
-                allow_blank=False,
-            )
-            fmt_select.tooltip = "Select audit log output format"
-            yield fmt_select
+                yield Label("Output File Path (Audit Log Export):")
+                inp_path = Input(
+                    value="./audit_log.csv",
+                    placeholder="Enter export path (e.g. ./audit_log.csv)...",
+                    id="input-history-path",
+                )
+                inp_path.tooltip = (
+                    "Enter target output path for exported session audit log file"
+                )
+                yield inp_path
 
-            yield Label("", id="lbl-rollback-status")
+                yield Label("Export Format:")
+                fmt_select = Select(
+                    [("CSV Format (*.csv)", "csv"), ("JSON Format (*.json)", "json")],
+                    value="csv",
+                    id="select-history-format",
+                    allow_blank=False,
+                )
+                fmt_select.tooltip = "Select audit log output format"
+                yield fmt_select
+
+                yield Label("", id="lbl-rollback-status")
 
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")

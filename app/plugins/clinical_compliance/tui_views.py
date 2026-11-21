@@ -15,6 +15,7 @@ from textual.widgets import Button, Input, Log, ProgressBar
 
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
+from app.ui.layout import ModalBox
 from app.ui.notifications import TROUBLESHOOTING_URL
 
 logger = logging.getLogger(__name__)
@@ -41,6 +42,17 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
         min-width: 30;
         height: auto;
         max-height: 90%;
+        overflow-y: hidden;
+    }
+    .compact .modal-box, .narrow .modal-box {
+        padding: 0 1;
+        width: 96%;
+        max-height: 96%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
         overflow-y: auto;
     }
     .modal-title {
@@ -54,14 +66,18 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
         width: 100%;
     }
     .log-area {
-        height: 10;
+        height: 8;
+        min-height: 5;
         border: solid $accent;
         margin-top: 1;
         margin-bottom: 1;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
         align: right middle;
-        height: 3;
+        height: auto;
+        min-height: 3;
         margin-top: 1;
     }
     .button-row Button {
@@ -81,47 +97,48 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
-        with Vertical(classes="modal-box"):
-            yield Heading(
-                "CRO Multi-Study Forensic Ingestion",
-                level=1,
-                classes="modal-title",
-                id="modal-title",
-            )
-            yield Heading("Source Storage Drive / Archive Root:", level=2)
-            inp_src = Input(
-                value=self.base_dir,
-                placeholder="Select source drive to scan...",
-                id="input-source",
-            )
-            inp_src.tooltip = "Source storage drive path or archive directory root"
-            yield inp_src
+        with ModalBox(classes="modal-box"):
+            with Vertical(classes="modal-body"):
+                yield Heading(
+                    "CRO Multi-Study Forensic Ingestion",
+                    level=1,
+                    classes="modal-title",
+                    id="modal-title",
+                )
+                yield Heading("Source Storage Drive / Archive Root:", level=2)
+                inp_src = Input(
+                    value=self.base_dir,
+                    placeholder="Select source drive to scan...",
+                    id="input-source",
+                )
+                inp_src.tooltip = "Source storage drive path or archive directory root"
+                yield inp_src
 
-            yield Heading("Target Audit Output Folder:", level=2)
-            default_target = (
-                (Path(self.base_dir) / "CRO_Audit_Output").as_posix()
-                if self.base_dir
-                else ""
-            )
-            inp_tgt = Input(
-                value=default_target,
-                placeholder="Select target output folder...",
-                id="input-target",
-            )
-            inp_tgt.tooltip = (
-                "Target output directory path for CRO forensic audit files"
-            )
-            yield inp_tgt
+                yield Heading("Target Audit Output Folder:", level=2)
+                default_target = (
+                    (Path(self.base_dir) / "CRO_Audit_Output").as_posix()
+                    if self.base_dir
+                    else ""
+                )
+                inp_tgt = Input(
+                    value=default_target,
+                    placeholder="Select target output folder...",
+                    id="input-target",
+                )
+                inp_tgt.tooltip = (
+                    "Target output directory path for CRO forensic audit files"
+                )
+                yield inp_tgt
 
-            pb = ProgressBar(total=100, show_percentage=True, id="progress-bar")
-            pb.tooltip = "Live execution progress for CRO forensic ingestion worker"
-            yield pb
+                pb = ProgressBar(total=100, show_percentage=True, id="progress-bar")
+                pb.tooltip = "Live execution progress for CRO forensic ingestion worker"
+                yield pb
 
-            log_w = Log(classes="log-area", id="log-widget")
-            log_w.tooltip = (
-                "Live execution log output for CRO forensic ingestion worker"
-            )
-            yield log_w
+                log_w = Log(classes="log-area", id="log-widget")
+                log_w.tooltip = (
+                    "Live execution log output for CRO forensic ingestion worker"
+                )
+                yield log_w
 
             with Horizontal(classes="button-row"):
                 btn_close = Button("Close", id="btn-close", variant="default")
@@ -172,13 +189,22 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
         self.cancel_worker()
 
     def _update_layout(self, width: int) -> None:
-        """Update modal layout based on viewport width breakpoint."""
+        """Update modal layout based on viewport width and height breakpoints."""
         self.set_class(width < 80, "narrow")
+        size_height = getattr(getattr(self, "size", None), "height", 0)
+        app_height = getattr(
+            getattr(getattr(self, "app", None), "size", None), "height", 0
+        )
+        effective_height = (
+            size_height if size_height > 0 else (app_height if app_height > 0 else 24)
+        )
+        self.set_class(width <= 100 or effective_height <= 30, "compact")
 
     def on_resize(self, event: events.Resize) -> None:
         """Handle modal viewport resize event."""
-        w = event.size.width
-        self._update_layout(w)
+        self.set_class(event.size.width < 80, "narrow")
+        self.set_class(event.size.width <= 100 or event.size.height <= 30, "compact")
+        self._update_layout(event.size.width)
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit announcement."""

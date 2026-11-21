@@ -12,7 +12,7 @@ from textual.widgets import Button, Input, Label, ProgressBar
 
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveLayoutMixin
 
 
 def _is_onnxruntime_available() -> bool:
@@ -44,26 +44,38 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         padding: 0 1;
         background: $panel;
         border: thick $primary;
-        width: 96%;
-        max-width: 78;
+        width: 92%;
+        max-width: 88;
         min-width: 30;
+        height: auto;
+        max-height: 92%;
+        overflow-y: hidden;
+    }
+    .compact .modal-box, .narrow .modal-box {
+        padding: 0 1;
+        width: 96%;
+    }
+    .modal-body {
+        width: 100%;
         height: auto;
         max-height: 100%;
         overflow-y: auto;
-    }
-    .narrow .modal-box {
-        padding: 0 1;
-        width: 98%;
     }
     .modal-title {
         text-style: bold;
         color: $accent;
         margin-bottom: 0;
     }
+    .compact .modal-title {
+        margin-bottom: 0;
+    }
     .field-label {
         margin-top: 0;
         color: $text;
         text-style: bold;
+    }
+    .compact .field-label {
+        margin-top: 0;
     }
     .info-label {
         margin-top: 0;
@@ -84,19 +96,31 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         color: $warning;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
+        margin-top: 1;
         layout: grid;
         grid-size: 3;
+        grid-columns: 1fr 1fr 1fr;
         grid-gutter: 0 1;
-        margin-top: 0;
-        width: 100%;
         height: auto;
     }
-    .button-row Button {
-        width: 100%;
-        min-width: 8;
+    .compact .button-row {
+        margin-top: 0;
     }
     .narrow .button-row {
         grid-size: 2;
+        grid-columns: 1fr 1fr;
+    }
+    .button-row Button {
+        width: 100%;
+        min-width: 0;
+        margin: 0;
+    }
+    .compact .button-row Button {
+        height: 1;
+        min-height: 1;
+        border: none;
     }
     Button:focus, Input:focus {
         border: heavy $accent;
@@ -121,7 +145,7 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
-        with Vertical(classes="modal-box"):
+        with ModalBox(classes="modal-box"):
             yield Heading(
                 "Interactive Model Management",
                 level=1,
@@ -129,44 +153,51 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 id="modal-title",
             )
 
-            yield Heading("Model Status:", level=2, classes="field-label")
-            yield Label(
-                "Status: Checking...", id="lbl-model-status", classes="info-label"
-            )
-            yield Label(
-                "Location: Checking...", id="lbl-model-path", classes="path-label"
-            )
-            yield Label("Size on Disk: 0 MB", id="lbl-model-size", classes="info-label")
-            yield Label(
-                "Verification: Checking...", id="lbl-model-hash", classes="info-label"
-            )
-            yield Label(
-                "",
-                id="lbl-ml-guidance",
-                classes="guidance-label",
-                markup=False,
-            )
+            with Vertical(classes="modal-body"):
+                yield Heading("Model Status:", level=2, classes="field-label")
+                yield Label(
+                    "Status: Checking...", id="lbl-model-status", classes="info-label"
+                )
+                yield Label(
+                    "Location: Checking...", id="lbl-model-path", classes="path-label"
+                )
+                yield Label(
+                    "Size on Disk: 0 MB", id="lbl-model-size", classes="info-label"
+                )
+                yield Label(
+                    "Verification: Checking...",
+                    id="lbl-model-hash",
+                    classes="info-label",
+                )
+                yield Label(
+                    "",
+                    id="lbl-ml-guidance",
+                    classes="guidance-label",
+                    markup=False,
+                )
 
-            yield Heading(
-                "Download Progress & Throughput:", level=2, classes="field-label"
-            )
-            pb = ProgressBar(total=100, show_percentage=True, id="progress-bar")
-            pb.tooltip = "Active model download percentage progress"
-            yield pb
+                yield Heading(
+                    "Download Progress & Throughput:", level=2, classes="field-label"
+                )
+                pb = ProgressBar(total=100, show_percentage=True, id="progress-bar")
+                pb.tooltip = "Active model download percentage progress"
+                yield pb
 
-            lbl_progress = Label("Idle", id="lbl-progress-status", classes="info-label")
-            lbl_progress.tooltip = "Current download stage and throughput metrics"
-            yield lbl_progress
+                lbl_progress = Label(
+                    "Idle", id="lbl-progress-status", classes="info-label"
+                )
+                lbl_progress.tooltip = "Current download stage and throughput metrics"
+                yield lbl_progress
 
-            yield Heading("Network Proxy Options:", level=2, classes="field-label")
-            proxy_val = getattr(self.settings, "PROXY", "") if self.settings else ""
-            inp_proxy = Input(
-                value=proxy_val,
-                placeholder="http://proxy.example.com:8080",
-                id="input-proxy",
-            )
-            inp_proxy.tooltip = "HTTP/HTTPS proxy URL for model weight transfers"
-            yield inp_proxy
+                yield Heading("Network Proxy Options:", level=2, classes="field-label")
+                proxy_val = getattr(self.settings, "PROXY", "") if self.settings else ""
+                inp_proxy = Input(
+                    value=proxy_val,
+                    placeholder="http://proxy.example.com:8080",
+                    id="input-proxy",
+                )
+                inp_proxy.tooltip = "HTTP/HTTPS proxy URL for model weight transfers"
+                yield inp_proxy
 
             with Horizontal(classes="button-row"):
                 btn_start = Button("Start Download", id="btn-start", variant="primary")

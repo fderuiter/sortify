@@ -12,7 +12,7 @@ from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select
 
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveLayoutMixin
 
 
 class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
@@ -32,20 +32,29 @@ class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         background: $panel;
         border: thick $primary;
         width: 90%;
-        max-width: 80;
+        max-width: 88;
         min-width: 30;
         height: auto;
-        max-height: 90%;
-        overflow-y: auto;
+        max-height: 92%;
+        overflow-y: hidden;
     }
-    .narrow .modal-box {
+    .compact .modal-box, .narrow .modal-box {
         padding: 0 1;
-        width: 95%;
+        width: 96%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
         color: $accent;
         margin-bottom: 1;
+    }
+    .compact .modal-title {
+        margin-bottom: 0;
     }
     .field-label {
         margin-top: 1;
@@ -59,14 +68,34 @@ class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         border: solid $accent;
         height: auto;
     }
+    .compact .template-card {
+        margin-top: 0;
+        margin-bottom: 0;
+    }
     .template-desc {
         color: $text-muted;
         margin-left: 3;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
-        align: right middle;
+        layout: grid;
+        grid-size: 2;
+        grid-columns: 1fr 1fr;
+        grid-gutter: 0 1;
+        height: auto;
+    }
+    .button-row Button {
+        width: 100%;
+        min-width: 0;
+        margin: 0;
+    }
+    .compact .button-row Button {
+        height: 1;
+        min-height: 1;
+        border: none;
+        margin-bottom: 0;
     }
     Button:focus, Checkbox:focus {
         border: heavy $accent;
@@ -80,29 +109,30 @@ class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         """Compose template gallery children."""
-        with Vertical(classes="modal-box"):
+        with ModalBox(classes="modal-box"):
             yield Heading(
                 "Starter Rule Template Gallery",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
             )
-            yield Label(
-                "Select starter template packs to apply. Template rules merge safely without overwriting custom rules:"
-            )
+            with Vertical(classes="modal-body"):
+                yield Label(
+                    "Select starter template packs to apply. Template rules merge safely without overwriting custom rules:"
+                )
 
-            from app.core.rule_templates import get_starter_templates
+                from app.core.rule_templates import get_starter_templates
 
-            for pack in get_starter_templates():
-                with Vertical(classes="template-card"):
-                    chk = Checkbox(
-                        f"{pack.icon} {pack.title}",
-                        value=False,
-                        id=f"chk-gallery-{pack.id}",
-                    )
-                    chk.tooltip = pack.description
-                    yield chk
-                    yield Label(pack.description, classes="template-desc")
+                for pack in get_starter_templates():
+                    with Vertical(classes="template-card"):
+                        chk = Checkbox(
+                            f"{pack.icon} {pack.title}",
+                            value=False,
+                            id=f"chk-gallery-{pack.id}",
+                        )
+                        chk.tooltip = pack.description
+                        yield chk
+                        yield Label(pack.description, classes="template-desc")
 
             with Horizontal(classes="button-row"):
                 btn_close = Button("Close", id="btn-close-gallery", variant="default")
@@ -248,11 +278,17 @@ class ExportRulesModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Pa
         min-width: 35;
         height: auto;
         max-height: 90%;
-        overflow-y: auto;
+        overflow-y: hidden;
     }
-    .narrow .modal-box {
+    .compact .modal-box, .narrow .modal-box {
         padding: 0 1;
         width: 95%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -279,8 +315,10 @@ class ExportRulesModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Pa
         margin-top: 1;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
+        height: auto;
         align: right middle;
     }
     Button:focus, Input:focus, Select:focus {
@@ -298,43 +336,44 @@ class ExportRulesModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Pa
         kw_count = len(getattr(self.settings, "KEYWORD_RULES", {}) or {})
         pol_count = len(getattr(self.settings, "POLICIES", []) or [])
 
-        with Vertical(classes="modal-box"):
+        with ModalBox(classes="modal-box"):
             yield Heading(
                 "Export Active Rules",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
             )
-            yield Label(
-                f"Export {kw_count} active keyword rule(s) and {pol_count} policy rule(s) to disk:",
-                id="lbl-export-summary",
-                classes="summary-text",
-            )
+            with Vertical(classes="modal-body"):
+                yield Label(
+                    f"Export {kw_count} active keyword rule(s) and {pol_count} policy rule(s) to disk:",
+                    id="lbl-export-summary",
+                    classes="summary-text",
+                )
 
-            yield Label("Export Format:", classes="field-label")
-            yield Select(
-                [
-                    ("Sortify JSON (*.json)", "sortify_json"),
-                    ("Hazel Rules (*.hazelrules)", "hazel"),
-                    ("DropIt Configuration (*.ini)", "dropit_ini"),
-                ],
-                value="sortify_json",
-                id="select-export-format",
-                allow_blank=False,
-            )
+                yield Label("Export Format:", classes="field-label")
+                yield Select(
+                    [
+                        ("Sortify JSON (*.json)", "sortify_json"),
+                        ("Hazel Rules (*.hazelrules)", "hazel"),
+                        ("DropIt Configuration (*.ini)", "dropit_ini"),
+                    ],
+                    value="sortify_json",
+                    id="select-export-format",
+                    allow_blank=False,
+                )
 
-            yield Label("Destination File Path:", classes="field-label")
-            yield Input(
-                placeholder="/path/to/exported_rules.json",
-                value="exported_rules.json",
-                id="input-export-path",
-            )
+                yield Label("Destination File Path:", classes="field-label")
+                yield Input(
+                    placeholder="/path/to/exported_rules.json",
+                    value="exported_rules.json",
+                    id="input-export-path",
+                )
 
-            yield Label(
-                "",
-                id="lbl-export-status",
-                classes="status-text",
-            )
+                yield Label(
+                    "",
+                    id="lbl-export-status",
+                    classes="status-text",
+                )
 
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel-export", variant="default")
@@ -467,25 +506,51 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
         background: $panel;
         border: thick $primary;
         width: 90%;
-        max-width: 85;
+        max-width: 88;
         min-width: 35;
         height: auto;
-        max-height: 90%;
-        overflow-y: auto;
+        max-height: 92%;
+        overflow-y: hidden;
     }
-    .narrow .modal-box {
+    .compact .modal-box, .narrow .modal-box {
         padding: 0 1;
-        width: 95%;
+        width: 96%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
         color: $accent;
         margin-bottom: 1;
     }
+    .compact .modal-title {
+        margin-bottom: 0;
+    }
     .input-row {
+        width: 100%;
         margin-top: 1;
         margin-bottom: 1;
         height: auto;
+        align: left middle;
+    }
+    .compact .input-row {
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+    #input-rule-file-path {
+        width: 1fr;
+        margin-right: 1;
+    }
+    #btn-parse-rule-file {
+        width: auto;
+        min-width: 14;
+    }
+    #select-bulk-conflict-strategy {
+        width: 1fr;
     }
     .preview-card {
         margin-top: 1;
@@ -493,8 +558,16 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
         padding: 0 1;
         border: solid $accent;
         height: auto;
-        max-height: 12;
-        overflow-y: auto;
+    }
+    .compact .preview-card {
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+    #dt-imported-keywords, #dt-imported-policies, #dt-rule-conflicts {
+        width: 100%;
+        height: auto;
+        min-height: 5;
+        max-height: 10;
     }
     .warning-text {
         color: $warning;
@@ -505,10 +578,22 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
         margin-top: 1;
         text-style: bold;
     }
+    .compact .status-text, .compact .warning-text {
+        margin-top: 0;
+    }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
+        height: auto;
         align: right middle;
+    }
+    .compact .button-row {
+        margin-top: 0;
+    }
+    .button-row Button {
+        min-width: 10;
+        margin-left: 1;
     }
     Button:focus, Input:focus {
         border: heavy $accent;
@@ -525,72 +610,73 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
 
     def compose(self) -> ComposeResult:
         """Compose rule import modal children."""
-        with Vertical(classes="modal-box"):
+        with ModalBox(classes="modal-box"):
             yield Heading(
                 "Import External Rules",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
             )
-            yield Label(
-                "Select a Hazel .hazelrules, DropIt XML/JSON profile, or TagSpaces taggroup.json file to import:"
-            )
-
-            with Horizontal(classes="input-row"):
-                yield Input(
-                    placeholder="/path/to/rules.hazelrules, profile.xml/json, or taggroup.json",
-                    id="input-rule-file-path",
-                )
-                btn_parse = Button(
-                    "Parse File", id="btn-parse-rule-file", variant="primary"
-                )
-                btn_parse.tooltip = "Parse selected rule file and display preview"
-                yield btn_parse
-
-            yield Label(
-                "Enter file path and click 'Parse File' to preview extracted rules.",
-                id="lbl-import-status",
-                classes="status-text",
-            )
-
-            with Vertical(id="container-rule-preview", classes="preview-card"):
+            with Vertical(classes="modal-body"):
                 yield Label(
-                    "Imported Keywords:",
-                    classes="status-text",
-                    id="lbl-imported-keywords",
+                    "Select a Hazel .hazelrules, DropIt XML/JSON profile, or TagSpaces taggroup.json file to import:"
                 )
-                yield DataTable(id="dt-imported-keywords")
-                yield Label(
-                    "Imported Policies:",
-                    classes="status-text",
-                    id="lbl-imported-policies",
-                )
-                yield DataTable(id="dt-imported-policies")
 
-                with Vertical(id="container-conflicts-section"):
-                    yield Label(
-                        "⚠️ Detected Rule Conflicts:",
-                        classes="warning-text",
-                        id="lbl-conflict-header",
+                with Horizontal(classes="input-row"):
+                    yield Input(
+                        placeholder="/path/to/rules.hazelrules, profile.xml/json, or taggroup.json",
+                        id="input-rule-file-path",
                     )
-                    with Horizontal(classes="input-row", id="row-bulk-strategy"):
-                        yield Label("Bulk Resolution Strategy: ")
-                        yield Select(
-                            [
-                                ("Keep Existing (Skip Conflicts)", "keep_existing"),
-                                ("Overwrite Existing Rules", "overwrite"),
-                                ("Skip Conflicting Rules", "skip_conflicting"),
-                            ],
-                            value="keep_existing",
-                            id="select-bulk-conflict-strategy",
-                            allow_blank=False,
+                    btn_parse = Button(
+                        "Parse File", id="btn-parse-rule-file", variant="primary"
+                    )
+                    btn_parse.tooltip = "Parse selected rule file and display preview"
+                    yield btn_parse
+
+                yield Label(
+                    "Enter file path and click 'Parse File' to preview extracted rules.",
+                    id="lbl-import-status",
+                    classes="status-text",
+                )
+
+                with Vertical(id="container-rule-preview", classes="preview-card"):
+                    yield Label(
+                        "Imported Keywords:",
+                        classes="status-text",
+                        id="lbl-imported-keywords",
+                    )
+                    yield DataTable(id="dt-imported-keywords")
+                    yield Label(
+                        "Imported Policies:",
+                        classes="status-text",
+                        id="lbl-imported-policies",
+                    )
+                    yield DataTable(id="dt-imported-policies")
+
+                    with Vertical(id="container-conflicts-section"):
+                        yield Label(
+                            "⚠️ Detected Rule Conflicts:",
+                            classes="warning-text",
+                            id="lbl-conflict-header",
                         )
-                    yield Label(
-                        "Conflict Resolution Table (Click or press Space/Enter on a row to cycle individual resolution):"
-                    )
-                    yield DataTable(id="dt-rule-conflicts")
+                        with Horizontal(classes="input-row", id="row-bulk-strategy"):
+                            yield Label("Bulk Resolution Strategy: ")
+                            yield Select(
+                                [
+                                    ("Keep Existing (Skip Conflicts)", "keep_existing"),
+                                    ("Overwrite Existing Rules", "overwrite"),
+                                    ("Skip Conflicting Rules", "skip_conflicting"),
+                                ],
+                                value="keep_existing",
+                                id="select-bulk-conflict-strategy",
+                                allow_blank=False,
+                            )
+                        yield Label(
+                            "Conflict Resolution Table (Click or press Space/Enter on a row to cycle individual resolution):"
+                        )
+                        yield DataTable(id="dt-rule-conflicts")
 
-                yield Vertical(id="container-import-warnings")
+                    yield Vertical(id="container-import-warnings")
 
             with Horizontal(classes="button-row"):
                 btn_close = Button("Cancel", id="btn-close-importer", variant="default")
@@ -908,6 +994,16 @@ class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]
         min-width: 30;
         height: auto;
         max-height: 90%;
+        overflow-y: hidden;
+    }
+    .compact .rule-edit-box, .narrow .rule-edit-box {
+        padding: 0 1;
+        width: 95%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
         overflow-y: auto;
     }
     .modal-title {
@@ -930,8 +1026,10 @@ class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]
         display: block;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
+        height: auto;
         align: right middle;
     }
     Button:focus, Input:focus {
@@ -953,23 +1051,24 @@ class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]
 
     def compose(self) -> ComposeResult:
         """Compose rule editor inputs and action buttons."""
-        with Vertical(classes="rule-edit-box"):
+        with ModalBox(classes="rule-edit-box modal-box"):
             yield Heading(
                 self.title_text, level=1, classes="modal-title", id="modal-title"
             )
-            yield Label("Pattern / Keyword:", classes="field-label")
-            yield Input(
-                value=self.initial_pattern,
-                placeholder="e.g. invoice or receipt",
-                id="input-rule-pattern",
-            )
-            yield Label("Target Folder:", classes="field-label")
-            yield Input(
-                value=self.initial_target,
-                placeholder="e.g. Finances/Invoices",
-                id="input-rule-target",
-            )
-            yield Label("", classes="error-label", id="lbl-rule-error")
+            with Vertical(classes="modal-body"):
+                yield Label("Pattern / Keyword:", classes="field-label")
+                yield Input(
+                    value=self.initial_pattern,
+                    placeholder="e.g. invoice or receipt",
+                    id="input-rule-pattern",
+                )
+                yield Label("Target Folder:", classes="field-label")
+                yield Input(
+                    value=self.initial_target,
+                    placeholder="e.g. Finances/Invoices",
+                    id="input-rule-target",
+                )
+                yield Label("", classes="error-label", id="lbl-rule-error")
             with Horizontal(classes="button-row"):
                 btn_cancel = Button(
                     "Cancel", id="btn-cancel-edit-rule", variant="default"
@@ -1051,6 +1150,13 @@ class DeleteRuleConfirmModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[bool]
         min-width: 30;
         height: auto;
         max-height: 90%;
+        overflow-y: hidden;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -1058,8 +1164,10 @@ class DeleteRuleConfirmModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[bool]
         margin-bottom: 1;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
+        height: auto;
         align: right middle;
     }
     Button:focus {
@@ -1074,18 +1182,19 @@ class DeleteRuleConfirmModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[bool]
 
     def compose(self) -> ComposeResult:
         """Compose confirmation dialog children."""
-        with Vertical(classes="delete-confirm-box"):
+        with ModalBox(classes="delete-confirm-box modal-box"):
             yield Heading(
                 "Confirm Delete Rule",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
             )
-            yield Label(
-                f"Are you sure you want to delete rule '{self.rule_pattern}'?\n"
-                "This action cannot be undone.",
-                id="lbl-delete-confirm-text",
-            )
+            with Vertical(classes="modal-body"):
+                yield Label(
+                    f"Are you sure you want to delete rule '{self.rule_pattern}'?\n"
+                    "This action cannot be undone.",
+                    id="lbl-delete-confirm-text",
+                )
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel-delete", variant="default")
                 btn_cancel.tooltip = "Cancel and keep this rule"
@@ -1143,20 +1252,34 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
         background: $panel;
         border: thick $primary;
         width: 90%;
-        max-width: 80;
+        max-width: 88;
         min-width: 35;
         height: auto;
-        max-height: 90%;
+        max-height: 92%;
+        overflow-y: hidden;
+    }
+    .compact .rule-manager-box, .narrow .rule-manager-box {
+        padding: 0 1;
+        width: 96%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
         overflow-y: auto;
     }
-    .narrow .rule-manager-box {
-        padding: 0 1;
-        width: 95%;
+    .modal-footer {
+        dock: bottom;
+        width: 100%;
+        height: auto;
     }
     .modal-title {
         text-style: bold;
         color: $accent;
         margin-bottom: 1;
+    }
+    .compact .modal-title {
+        margin-bottom: 0;
     }
     #rules-table {
         height: auto;
@@ -1165,20 +1288,36 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
         margin-top: 1;
         margin-bottom: 1;
     }
+    .compact #rules-table {
+        margin-top: 0;
+        margin-bottom: 0;
+    }
     .button-row {
+        width: 100%;
         margin-top: 1;
+        layout: grid;
+        grid-size: 4;
+        grid-columns: 1fr 1fr 1fr 1fr;
+        grid-gutter: 0 1;
         height: auto;
-        align: right middle;
+    }
+    .compact .button-row, .narrow .button-row {
+        margin-top: 0;
+        grid-size: 2;
+        grid-columns: 1fr 1fr;
     }
     .button-row Button {
-        min-width: 8;
+        width: 100%;
+        min-width: 0;
         padding: 0 1;
-        margin-left: 1;
+        margin: 0;
     }
-    .narrow .button-row Button {
-        min-width: 4;
-        padding: 0 0;
-        margin-left: 1;
+    .compact .button-row Button, .narrow .button-row Button {
+        height: 1;
+        min-height: 1;
+        border: none;
+        padding: 0;
+        margin: 0;
     }
     Button:focus, DataTable:focus {
         border: heavy $accent;
@@ -1193,59 +1332,67 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
 
     def compose(self) -> ComposeResult:
         """Compose active rule manager children."""
-        with Vertical(classes="rule-manager-box"):
+        with ModalBox(classes="rule-manager-box modal-box"):
             yield Heading(
                 "Active Rule Manager",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
             )
-            yield Label(
-                "Manage keyword rules and policies. Select a rule to edit, toggle, or delete:",
-                id="lbl-rules-desc",
-            )
-            yield DataTable(id="rules-table")
-            with Horizontal(classes="button-row"):
-                btn_toggle = Button(
-                    "Toggle Status", id="btn-toggle-rule", variant="default"
+            with Vertical(classes="modal-body"):
+                yield Label(
+                    "Manage keyword rules and policies. Select a rule to edit, toggle, or delete:",
+                    id="lbl-rules-desc",
                 )
-                btn_toggle.tooltip = "Toggle active/disabled status of selected rule"
-                yield btn_toggle
-                btn_delete = Button(
-                    "Delete Rule", id="btn-delete-rule", variant="error"
-                )
-                btn_delete.tooltip = "Delete selected rule after confirmation"
-                yield btn_delete
-                btn_edit = Button("Edit Rule", id="btn-edit-rule", variant="default")
-                btn_edit.tooltip = "Edit pattern or destination folder of selected rule"
-                yield btn_edit
-                btn_add = Button("Add Rule", id="btn-add-rule", variant="primary")
-                btn_add.tooltip = "Add a new keyword rule"
-                yield btn_add
+                yield DataTable(id="rules-table")
+            with Vertical(classes="modal-footer"):
+                with Horizontal(classes="button-row"):
+                    btn_toggle = Button(
+                        "Toggle Status", id="btn-toggle-rule", variant="default"
+                    )
+                    btn_toggle.tooltip = (
+                        "Toggle active/disabled status of selected rule"
+                    )
+                    yield btn_toggle
+                    btn_delete = Button(
+                        "Delete Rule", id="btn-delete-rule", variant="error"
+                    )
+                    btn_delete.tooltip = "Delete selected rule after confirmation"
+                    yield btn_delete
+                    btn_edit = Button(
+                        "Edit Rule", id="btn-edit-rule", variant="default"
+                    )
+                    btn_edit.tooltip = (
+                        "Edit pattern or destination folder of selected rule"
+                    )
+                    yield btn_edit
+                    btn_add = Button("Add Rule", id="btn-add-rule", variant="primary")
+                    btn_add.tooltip = "Add a new keyword rule"
+                    yield btn_add
 
-            with Horizontal(classes="button-row"):
-                btn_close = Button("Close", id="btn-close-rules", variant="default")
-                btn_close.tooltip = "Close active rule manager"
-                yield btn_close
-                btn_import = Button(
-                    "Import Rules", id="btn-import-rules", variant="default"
-                )
-                btn_import.tooltip = "Import rules from Hazel, DropIt, or TagSpaces"
-                yield btn_import
-                btn_export = Button(
-                    "Export Rules", id="btn-export-rules", variant="default"
-                )
-                btn_export.tooltip = (
-                    "Export active rules to Sortify JSON, Hazel, or DropIt"
-                )
-                yield btn_export
-                btn_browse = Button(
-                    "Browse Templates",
-                    id="btn-browse-templates",
-                    variant="primary",
-                )
-                btn_browse.tooltip = "Browse and apply starter rule templates"
-                yield btn_browse
+                with Horizontal(classes="button-row"):
+                    btn_close = Button("Close", id="btn-close-rules", variant="default")
+                    btn_close.tooltip = "Close active rule manager"
+                    yield btn_close
+                    btn_import = Button(
+                        "Import Rules", id="btn-import-rules", variant="default"
+                    )
+                    btn_import.tooltip = "Import rules from Hazel, DropIt, or TagSpaces"
+                    yield btn_import
+                    btn_export = Button(
+                        "Export Rules", id="btn-export-rules", variant="default"
+                    )
+                    btn_export.tooltip = (
+                        "Export active rules to Sortify JSON, Hazel, or DropIt"
+                    )
+                    yield btn_export
+                    btn_browse = Button(
+                        "Browse Templates",
+                        id="btn-browse-templates",
+                        variant="primary",
+                    )
+                    btn_browse.tooltip = "Browse and apply starter rule templates"
+                    yield btn_browse
 
     def on_mount(self) -> None:
         """Set up columns and load rules on mount."""

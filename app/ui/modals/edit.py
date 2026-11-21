@@ -15,7 +15,7 @@ from textual.widgets import Button, Input, Label, Select, Static
 from app.core.path_utils import _is_absolute_path
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveLayoutMixin
 
 logger = logging.getLogger(__name__)
 
@@ -95,11 +95,22 @@ class RenameModal(
         min-width: 30;
         height: auto;
         max-height: 90%;
-        overflow-y: auto;
+        overflow-y: hidden;
+    }
+    .compact .modal-box {
+        padding: 0 1;
+        width: 96%;
+        max-height: 96%;
     }
     .narrow .modal-box {
         padding: 0 1;
-        width: 95%;
+        width: 96%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -127,9 +138,15 @@ class RenameModal(
         text-style: bold;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
+        height: auto;
+        min-height: 3;
         align: right middle;
+    }
+    .button-row Button {
+        margin-left: 1;
     }
     Button:focus, Input:focus {
         border: heavy $accent;
@@ -302,53 +319,55 @@ class RenameModal(
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
-        with Vertical(classes="modal-box"):
-            yield Heading(
-                self.modal_title,
-                level=1,
-                classes="modal-title",
-                id="modal-title",
-            )
-            if self.files:
-                yield Label(
-                    f"Batch renaming {len(self.files)} files. Sequential index starts at {self.seq:02d}.",
-                    classes="modal-subtitle",
+        with ModalBox(classes="modal-box"):
+            with Vertical(classes="modal-body"):
+                yield Heading(
+                    self.modal_title,
+                    level=1,
+                    classes="modal-title",
+                    id="modal-title",
                 )
-            elif self.extension:
+                if self.files:
+                    yield Label(
+                        f"Batch renaming {len(self.files)} files. Sequential index starts at {self.seq:02d}.",
+                        classes="modal-subtitle",
+                    )
+                elif self.extension:
+                    yield Label(
+                        f"Extension '{self.extension}' is locked unless modified in template",
+                        classes="modal-subtitle",
+                    )
                 yield Label(
-                    f"Extension '{self.extension}' is locked unless modified in template",
-                    classes="modal-subtitle",
+                    "Tokens: {date}, {category}, {original}, {extension}, {seq}",
+                    classes="token-help",
                 )
-            yield Label(
-                "Tokens: {date}, {category}, {original}, {extension}, {seq}",
-                classes="token-help",
-            )
-            inp = Input(
-                value=self.current_name,
-                placeholder="Enter new name or pattern (e.g. {date}_{category}_{original})...",
-                id="input-name",
-            )
-            inp.tooltip = "Enter new file or folder name or pattern template"
-            yield inp
+                inp = Input(
+                    value=self.current_name,
+                    placeholder="Enter new name or pattern (e.g. {date}_{category}_{original})...",
+                    id="input-name",
+                )
+                inp.tooltip = "Enter new file or folder name or pattern template"
+                yield inp
 
-            yield Heading(
-                "Optional Destination Path Override (relative or absolute):", level=2
-            )
-            dest_inp = Input(
-                value=self.destination_override,
-                placeholder="e.g. /external/backup, D:\\Archive, or subcategory...",
-                id="input-destination",
-            )
-            dest_inp.tooltip = "Enter optional destination directory path override (absolute or relative)"
-            yield dest_inp
+                yield Heading(
+                    "Optional Destination Path Override (relative or absolute):",
+                    level=2,
+                )
+                dest_inp = Input(
+                    value=self.destination_override,
+                    placeholder="e.g. /external/backup, D:\\Archive, or subcategory...",
+                    id="input-destination",
+                )
+                dest_inp.tooltip = "Enter optional destination directory path override (absolute or relative)"
+                yield dest_inp
 
-            yield Label("", id="warning-collision", classes="modal-warning")
+                yield Label("", id="warning-collision", classes="modal-warning")
 
-            yield Label(
-                f"Preview: {self._evaluate_preview(self.current_name)}",
-                id="label-preview",
-                classes="modal-preview",
-            )
+                yield Label(
+                    f"Preview: {self._evaluate_preview(self.current_name)}",
+                    id="label-preview",
+                    classes="modal-preview",
+                )
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel rename action and close dialog"
@@ -359,7 +378,7 @@ class RenameModal(
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit screen reader announcement."""
-        self._update_layout(self.size.width)
+        self._update_layout(self.size.width, self.size.height)
         self.query_one("#input-name", Input).focus()
         self.announce(
             f"Opened rename dialog for '{self.modal_title}'. Enter new name or pattern and press Enter or click Rename."
@@ -664,11 +683,22 @@ class NewFolderModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]
         min-width: 30;
         height: auto;
         max-height: 90%;
-        overflow-y: auto;
+        overflow-y: hidden;
+    }
+    .compact .modal-box {
+        padding: 0 1;
+        width: 96%;
+        max-height: 96%;
     }
     .narrow .modal-box {
         padding: 0 1;
-        width: 95%;
+        width: 96%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -676,9 +706,15 @@ class NewFolderModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]
         margin-bottom: 1;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
+        height: auto;
+        min-height: 3;
         align: right middle;
+    }
+    .button-row Button {
+        margin-left: 1;
     }
     Button:focus, Input:focus {
         border: heavy $accent;
@@ -688,19 +724,20 @@ class NewFolderModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
-        with Vertical(classes="modal-box"):
-            yield Heading(
-                "Create New Target Folder",
-                level=1,
-                classes="modal-title",
-                id="modal-title",
-            )
-            inp = Input(
-                placeholder="e.g. Financials, Contracts, Invoices",
-                id="input-folder-name",
-            )
-            inp.tooltip = "Enter new target folder category name"
-            yield inp
+        with ModalBox(classes="modal-box"):
+            with Vertical(classes="modal-body"):
+                yield Heading(
+                    "Create New Target Folder",
+                    level=1,
+                    classes="modal-title",
+                    id="modal-title",
+                )
+                inp = Input(
+                    placeholder="e.g. Financials, Contracts, Invoices",
+                    id="input-folder-name",
+                )
+                inp.tooltip = "Enter new target folder category name"
+                yield inp
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel folder creation and close dialog"
@@ -711,7 +748,7 @@ class NewFolderModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit screen reader announcement."""
-        self._update_layout(self.size.width)
+        self._update_layout(self.size.width, self.size.height)
         self.query_one("#input-folder-name", Input).focus()
         self.announce("Opened create new target folder dialog.")
 
@@ -758,11 +795,22 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
         min-width: 30;
         height: auto;
         max-height: 90%;
-        overflow-y: auto;
+        overflow-y: hidden;
+    }
+    .compact .modal-box {
+        padding: 0 1;
+        width: 96%;
+        max-height: 96%;
     }
     .narrow .modal-box {
         padding: 0 1;
-        width: 95%;
+        width: 96%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -782,9 +830,15 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
         margin-bottom: 1;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
+        height: auto;
+        min-height: 3;
         align: right middle;
+    }
+    .button-row Button {
+        margin-left: 1;
     }
     Button:focus, Input:focus, Select:focus {
         border: heavy $accent;
@@ -810,29 +864,30 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
-        with Vertical(classes="modal-box"):
-            yield Heading(
-                f"Reassign {self.count} Selected File(s)",
-                level=1,
-                classes="modal-title",
-                id="modal-title",
-            )
-            yield Heading("Select Existing Target Folder:", level=2)
-            options = [(f, f) for f in sorted(self.existing_folders)]
-            if options:
-                yield Select(options, prompt="Choose folder...", id="select-folder")
-            yield Heading(
-                "Or Enter Target Category / External Directory Path:", level=2
-            )
-            inp = Input(
-                placeholder="e.g. Drafts, /Volumes/Backup, or D:\\External\\Archive",
-                id="input-target-folder",
-            )
-            inp.tooltip = (
-                "Enter relative folder name or absolute external directory path"
-            )
-            yield inp
-            yield Label("", id="warning-collision", classes="modal-warning")
+        with ModalBox(classes="modal-box"):
+            with Vertical(classes="modal-body"):
+                yield Heading(
+                    f"Reassign {self.count} Selected File(s)",
+                    level=1,
+                    classes="modal-title",
+                    id="modal-title",
+                )
+                yield Heading("Select Existing Target Folder:", level=2)
+                options = [(f, f) for f in sorted(self.existing_folders)]
+                if options:
+                    yield Select(options, prompt="Choose folder...", id="select-folder")
+                yield Heading(
+                    "Or Enter Target Category / External Directory Path:", level=2
+                )
+                inp = Input(
+                    placeholder="e.g. Drafts, /Volumes/Backup, or D:\\External\\Archive",
+                    id="input-target-folder",
+                )
+                inp.tooltip = (
+                    "Enter relative folder name or absolute external directory path"
+                )
+                yield inp
+                yield Label("", id="warning-collision", classes="modal-warning")
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel reassign dialog"
@@ -843,7 +898,7 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit announcement."""
-        self._update_layout(self.size.width)
+        self._update_layout(self.size.width, self.size.height)
         self.query_one("#input-target-folder", Input).focus()
         self.announce(f"Opened bulk reassign dialog for {self.count} items.")
         self._check_collision_and_update_ui()
@@ -1016,11 +1071,22 @@ class DirectorySelectModal(
         min-width: 30;
         height: auto;
         max-height: 90%;
-        overflow-y: auto;
+        overflow-y: hidden;
+    }
+    .compact .modal-box {
+        padding: 0 1;
+        width: 96%;
+        max-height: 96%;
     }
     .narrow .modal-box {
         padding: 0 1;
-        width: 95%;
+        width: 96%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -1032,10 +1098,18 @@ class DirectorySelectModal(
         text-style: bold;
     }
     .preset-row {
+        width: 100%;
+        layout: grid;
+        grid-size: 3;
+        grid-gutter: 0 1;
         margin-top: 1;
         margin-bottom: 1;
         height: auto;
         min-height: 3;
+    }
+    .preset-row Button {
+        width: 100%;
+        min-width: 0;
     }
     .sources-list {
         margin-top: 1;
@@ -1045,9 +1119,21 @@ class DirectorySelectModal(
         padding: 0 1;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
+        layout: grid;
+        grid-size: 4;
+        grid-gutter: 0 1;
         margin-top: 1;
-        height: 3;
-        align: right middle;
+        height: auto;
+        min-height: 3;
+    }
+    .compact .button-row, .narrow .button-row {
+        grid-size: 2;
+    }
+    .button-row Button {
+        width: 100%;
+        min-width: 0;
     }
     Button:focus, Input:focus {
         border: heavy $accent;
@@ -1124,38 +1210,43 @@ class DirectorySelectModal(
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
-        with Vertical(classes="modal-box"):
-            yield Heading(
-                "Select Target Directory",
-                level=1,
-                classes="modal-title",
-                id="modal-title",
-            )
-            inp = Input(
-                value=self.current_dir,
-                placeholder="Enter absolute directory path...",
-                id="input-dir",
-            )
-            inp.tooltip = "Enter absolute target directory path to scan"
-            yield inp
-            yield Static("", id="lbl-error", classes="error-banner")
-            yield Label("Selected Sources:", id="lbl-sources")
-            yield Static(
-                self._format_sources_display(),
-                id="static-sources-list",
-                classes="sources-list",
-            )
-            yield Label("Quick Presets:")
-            with Horizontal(classes="preset-row"):
-                p_demo = Button("Demo Workspace", id="preset-demo", variant="default")
-                p_demo.tooltip = "Select sandbox demo workspace quick preset"
-                yield p_demo
-                p_dl = Button("Downloads", id="preset-downloads", variant="default")
-                p_dl.tooltip = "Select user Downloads folder quick preset"
-                yield p_dl
-                p_docs = Button("Documents", id="preset-documents", variant="default")
-                p_docs.tooltip = "Select user Documents folder quick preset"
-                yield p_docs
+        with ModalBox(classes="modal-box"):
+            with Vertical(classes="modal-body"):
+                yield Heading(
+                    "Select Target Directory",
+                    level=1,
+                    classes="modal-title",
+                    id="modal-title",
+                )
+                inp = Input(
+                    value=self.current_dir,
+                    placeholder="Enter absolute directory path...",
+                    id="input-dir",
+                )
+                inp.tooltip = "Enter absolute target directory path to scan"
+                yield inp
+                yield Static("", id="lbl-error", classes="error-banner")
+                yield Label("Selected Sources:", id="lbl-sources")
+                yield Static(
+                    self._format_sources_display(),
+                    id="static-sources-list",
+                    classes="sources-list",
+                )
+                yield Label("Quick Presets:")
+                with Horizontal(classes="preset-row"):
+                    p_demo = Button(
+                        "Demo Workspace", id="preset-demo", variant="default"
+                    )
+                    p_demo.tooltip = "Select sandbox demo workspace quick preset"
+                    yield p_demo
+                    p_dl = Button("Downloads", id="preset-downloads", variant="default")
+                    p_dl.tooltip = "Select user Downloads folder quick preset"
+                    yield p_dl
+                    p_docs = Button(
+                        "Documents", id="preset-documents", variant="default"
+                    )
+                    p_docs.tooltip = "Select user Documents folder quick preset"
+                    yield p_docs
             with Horizontal(classes="button-row"):
                 btn_browse = Button("Native Browse", id="btn-browse", variant="default")
                 btn_browse.tooltip = "Launch native OS directory browser dialog"
@@ -1184,7 +1275,7 @@ class DirectorySelectModal(
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit screen reader announcement."""
-        self._update_layout(self.size.width)
+        self._update_layout(self.size.width, self.size.height)
         self.query_one("#input-dir", Input).focus()
         self.announce("Opened target directory selection dialog.")
 
@@ -1364,7 +1455,9 @@ class DirectorySelectModal(
             pass
 
 
-class ManualPathFallbackModal(A11yMixin, ModalScreen[Optional[str]]):
+class ManualPathFallbackModal(
+    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
+):
     """Fallback modal dialog for manual directory path entry when native selection fails."""
 
     BINDINGS = [
@@ -1380,9 +1473,33 @@ class ManualPathFallbackModal(A11yMixin, ModalScreen[Optional[str]]):
         padding: 1 2;
         background: $panel;
         border: thick $warning;
-        width: 80%;
+        width: 90%;
         max-width: 70;
         height: auto;
+        max-height: 90%;
+        overflow-y: hidden;
+    }
+    .compact .modal-box, .narrow .modal-box {
+        padding: 0 1;
+        width: 96%;
+        max-height: 96%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
+    }
+    .button-row {
+        dock: bottom;
+        width: 100%;
+        margin-top: 1;
+        height: auto;
+        min-height: 3;
+        align: right middle;
+    }
+    .button-row Button {
+        margin-left: 1;
     }
     """
 
@@ -1393,17 +1510,18 @@ class ManualPathFallbackModal(A11yMixin, ModalScreen[Optional[str]]):
 
     def compose(self) -> ComposeResult:
         """Compose modal fallback UI children."""
-        with Vertical(classes="modal-box"):
-            yield Heading("Manual Directory Entry", level=1, classes="modal-title")
-            if self.reason:
-                yield Label(f"Native tool notice: {self.reason}", id="lbl-reason")
-            yield Label("Please enter target directory path manually:")
-            inp = Input(
-                value=self.current_dir,
-                placeholder="Enter absolute folder path...",
-                id="input-fallback-dir",
-            )
-            yield inp
+        with ModalBox(classes="modal-box"):
+            with Vertical(classes="modal-body"):
+                yield Heading("Manual Directory Entry", level=1, classes="modal-title")
+                if self.reason:
+                    yield Label(f"Native tool notice: {self.reason}", id="lbl-reason")
+                yield Label("Please enter target directory path manually:")
+                inp = Input(
+                    value=self.current_dir,
+                    placeholder="Enter absolute folder path...",
+                    id="input-fallback-dir",
+                )
+                yield inp
             with Horizontal(classes="button-row"):
                 btn_cancel = Button(
                     "Cancel", id="btn-cancel-fallback", variant="default"
@@ -1416,6 +1534,7 @@ class ManualPathFallbackModal(A11yMixin, ModalScreen[Optional[str]]):
 
     def on_mount(self) -> None:
         """Focus input field on mount and announce screen reader alert."""
+        self._update_layout(self.size.width, self.size.height)
         self.query_one("#input-fallback-dir", Input).focus()
         self.announce("Opened manual directory entry fallback dialog.")
 
@@ -1476,11 +1595,22 @@ class InteractiveCollisionResolverModal(
         min-width: 40;
         height: auto;
         max-height: 90%;
-        overflow-y: auto;
+        overflow-y: hidden;
+    }
+    .compact .modal-box {
+        padding: 0 1;
+        width: 96%;
+        max-height: 96%;
     }
     .narrow .modal-box {
         padding: 0 1;
-        width: 95%;
+        width: 96%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -1528,10 +1658,19 @@ class InteractiveCollisionResolverModal(
         margin-top: 1;
         width: 100%;
     }
+    #duplicate-groups-list {
+        height: auto;
+    }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
+        height: auto;
+        min-height: 3;
         align: right middle;
+    }
+    .button-row Button {
+        margin-left: 1;
     }
     Button:focus, Select:focus {
         border: heavy $accent;
@@ -1560,90 +1699,89 @@ class InteractiveCollisionResolverModal(
 
     def compose(self) -> ComposeResult:
         """Compose interactive collision resolution dialog widgets."""
-        with Vertical(classes="modal-box"):
-            yield Heading(
-                "Interactive Collision Resolver",
-                level=1,
-                classes="modal-title",
-                id="modal-title",
-            )
-            yield Label(
-                "Review destination target collisions and select per-file resolution actions:",
-                classes="modal-subtitle",
-            )
+        with ModalBox(classes="modal-box"):
+            with Vertical(classes="modal-body"):
+                yield Heading(
+                    "Interactive Collision Resolver",
+                    level=1,
+                    classes="modal-title",
+                    id="modal-title",
+                )
+                yield Label(
+                    "Review destination target collisions and select per-file resolution actions:",
+                    classes="modal-subtitle",
+                )
 
-            with Horizontal(classes="batch-bar", id="batch-action-bar"):
-                batch_sel = Select(
-                    self.RESOLVER_OPTIONS,
-                    value="rename",
-                    id="batch-action-select",
-                    classes="batch-select",
-                    allow_blank=False,
-                )
-                batch_sel.tooltip = (
-                    "Select batch deduplication action to apply to all collision groups"
-                )
-                batch_sel.aria_label = (
-                    "Batch resolution action for all duplicate clusters"
-                )
-                yield batch_sel
+                with Horizontal(classes="batch-bar", id="batch-action-bar"):
+                    batch_sel = Select(
+                        self.RESOLVER_OPTIONS,
+                        value="rename",
+                        id="batch-action-select",
+                        classes="batch-select",
+                        allow_blank=False,
+                    )
+                    batch_sel.tooltip = "Select batch deduplication action to apply to all collision groups"
+                    batch_sel.aria_label = (
+                        "Batch resolution action for all duplicate clusters"
+                    )
+                    yield batch_sel
 
-                btn_apply = Button("Apply to All", id="btn-apply-all")
-                btn_apply.tooltip = (
-                    "Apply selected resolution action to all duplicate clusters"
-                )
-                btn_apply.aria_label = (
-                    "Apply selected resolution action to all duplicate clusters"
-                )
-                yield btn_apply
+                    btn_apply = Button("Apply to All", id="btn-apply-all")
+                    btn_apply.tooltip = (
+                        "Apply selected resolution action to all duplicate clusters"
+                    )
+                    btn_apply.aria_label = (
+                        "Apply selected resolution action to all duplicate clusters"
+                    )
+                    yield btn_apply
 
-            with Vertical(id="duplicate-groups-list"):
-                for group in self.duplicate_groups:
-                    gid = group["group_id"]
-                    tf_name = group.get("target_filename", "Collision")
-                    t_dir = group.get("target_dir", "")
-                    items = group.get("items", [])
-                    default_action = group.get("default_action", "rename")
+                with Vertical(id="duplicate-groups-list"):
+                    for group in self.duplicate_groups:
+                        gid = group["group_id"]
+                        tf_name = group.get("target_filename", "Collision")
+                        t_dir = group.get("target_dir", "")
+                        items = group.get("items", [])
+                        default_action = group.get("default_action", "rename")
 
-                    with Vertical(classes="duplicate-card", id=f"card-{gid}"):
-                        yield Label(
-                            f"Destination Target: {tf_name} ({t_dir})",
-                            classes="card-title",
-                        )
-                        yield Label(
-                            f"Colliding source files ({len(items)}):",
-                            classes="card-subtitle",
-                        )
-                        for item in items:
-                            rel_src = item.get("relative_source") or item.get(
-                                "source_path", ""
-                            )
-                            src_p = item.get("source_path", "")
-                            size_info = ""
-                            if src_p and os.path.exists(src_p):
-                                try:
-                                    sz = os.path.getsize(src_p)
-                                    size_info = f" ({_format_file_size(sz)})"
-                                except OSError:
-                                    pass
+                        with Vertical(classes="duplicate-card", id=f"card-{gid}"):
                             yield Label(
-                                f"• {rel_src}{size_info}", classes="source-item"
+                                f"Destination Target: {tf_name} ({t_dir})",
+                                classes="card-title",
                             )
+                            yield Label(
+                                f"Colliding source files ({len(items)}):",
+                                classes="card-subtitle",
+                            )
+                            for item in items:
+                                rel_src = item.get("relative_source") or item.get(
+                                    "source_path", ""
+                                )
+                                src_p = item.get("source_path", "")
+                                size_info = ""
+                                if src_p and os.path.exists(src_p):
+                                    try:
+                                        sz = os.path.getsize(src_p)
+                                        size_info = f" ({_format_file_size(sz)})"
+                                    except OSError:
+                                        pass
+                                yield Label(
+                                    f"• {rel_src}{size_info}", classes="source-item"
+                                )
 
-                        sel = Select(
-                            self.RESOLVER_OPTIONS,
-                            value=default_action,
-                            id=f"select-action-{gid}",
-                            classes="action-select",
-                            allow_blank=False,
-                        )
-                        sel.tooltip = (
-                            f"Select collision resolution action for {tf_name}"
-                        )
-                        sel.aria_label = (
-                            f"Resolution action for duplicate group {tf_name}"
-                        )
-                        yield sel
+                            sel = Select(
+                                self.RESOLVER_OPTIONS,
+                                value=default_action,
+                                id=f"select-action-{gid}",
+                                classes="action-select",
+                                allow_blank=False,
+                            )
+                            sel.tooltip = (
+                                f"Select collision resolution action for {tf_name}"
+                            )
+                            sel.aria_label = (
+                                f"Resolution action for duplicate group {tf_name}"
+                            )
+                            yield sel
 
             with Horizontal(classes="button-row"):
                 yield Button(
@@ -1653,16 +1791,21 @@ class InteractiveCollisionResolverModal(
                 )
                 yield Button("Cancel", id="btn-cancel-duplicates")
 
-    def _update_layout(self, width: int) -> None:
-        """Update responsiveness based on modal container width."""
+    def _update_layout(self, width: int, height: Optional[int] = None) -> None:
+        """Update responsiveness based on modal container width and height."""
+        effective_height = self._resolve_viewport_height(height)
         if width < 60:
             self.add_class("narrow")
         else:
             self.remove_class("narrow")
+        if width <= 100 or effective_height <= 30:
+            self.add_class("compact")
+        else:
+            self.remove_class("compact")
 
     def on_mount(self) -> None:
         """Focus initial widget on mount and announce to screen reader."""
-        self._update_layout(self.size.width)
+        self._update_layout(self.size.width, self.size.height)
         try:
             self.query_one("#batch-action-select", Select).focus()
         except Exception:

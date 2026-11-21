@@ -20,7 +20,7 @@ from app.core.sample_corpus import (
 )
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveLayoutMixin
 
 logger = logging.getLogger(__name__)
 
@@ -46,11 +46,22 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
         min-width: 40;
         height: auto;
         max-height: 92%;
-        overflow-y: auto;
+        overflow-y: hidden;
+    }
+    .compact .modal-box {
+        padding: 0 1;
+        width: 96%;
+        max-height: 96%;
     }
     .narrow .modal-box {
         padding: 0 1;
-        width: 95%;
+        width: 96%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -65,9 +76,12 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
     .playground-panes {
         width: 100%;
         height: auto;
-        min-height: 16;
+        min-height: 12;
         margin-top: 1;
         margin-bottom: 1;
+    }
+    .narrow .playground-panes {
+        layout: vertical;
     }
     .left-pane {
         width: 45%;
@@ -79,13 +93,19 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
         height: auto;
         padding-left: 1;
     }
+    .narrow .left-pane, .narrow .right-pane {
+        width: 100%;
+        padding: 0;
+    }
     #playground-doc-list {
         height: 8;
+        min-height: 5;
         border: solid $accent;
         margin-bottom: 1;
     }
     #playground-doc-preview {
         height: 6;
+        min-height: 4;
         border: solid $primary;
         padding: 0 1;
         background: $surface;
@@ -93,14 +113,21 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
     }
     #playground-prediction-matrix {
         height: 10;
+        min-height: 7;
         border: solid $accent;
         margin-top: 1;
         margin-bottom: 1;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
+        height: auto;
+        min-height: 3;
         align: right middle;
+    }
+    .button-row Button {
+        margin-left: 1;
     }
     Button:focus, Checkbox:focus, OptionList:focus, DataTable:focus {
         border: heavy $accent;
@@ -118,44 +145,48 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
 
     def compose(self) -> ComposeResult:
         """Compose playground modal dialog UI widgets."""
-        with Vertical(classes="modal-box"):
-            yield Heading(
-                "Interactive Sample Playground [Ctrl+G]",
-                level=1,
-                classes="modal-title",
-                id="modal-title",
-            )
-            yield Label(
-                "Select a sample document and toggle starter rule packs to preview live classification prediction matrix without altering disk files."
-            )
+        with ModalBox(classes="modal-box"):
+            with Vertical(classes="modal-body"):
+                yield Heading(
+                    "Interactive Sample Playground [Ctrl+G]",
+                    level=1,
+                    classes="modal-title",
+                    id="modal-title",
+                )
+                yield Label(
+                    "Select a sample document and toggle starter rule packs to preview live classification prediction matrix without altering disk files."
+                )
 
-            with Horizontal(classes="playground-panes"):
-                # Left Pane: Sample Document Selection & Content Preview
-                with Vertical(classes="left-pane"):
-                    yield Label("Sample Corpus Documents:", classes="field-label")
-                    opts = [Option(fn, id=fn) for fn in self.sample_items.keys()]
-                    yield OptionList(*opts, id="playground-doc-list")
+                with Horizontal(classes="playground-panes"):
+                    # Left Pane: Sample Document Selection & Content Preview
+                    with Vertical(classes="left-pane"):
+                        yield Label("Sample Corpus Documents:", classes="field-label")
+                        opts = [Option(fn, id=fn) for fn in self.sample_items.keys()]
+                        yield OptionList(*opts, id="playground-doc-list")
 
-                    yield Label("Document Text Preview:", classes="field-label")
-                    yield Static("", id="playground-doc-preview")
+                        yield Label("Document Text Preview:", classes="field-label")
+                        yield Static("", id="playground-doc-preview")
 
-                # Right Pane: Starter Template Packs & Live Prediction Matrix
-                with Vertical(classes="right-pane"):
-                    yield Label("Starter Rule Template Packs:", classes="field-label")
-                    for pack in get_starter_templates():
-                        is_default = pack.id in ("financial_tax", "personal_admin")
-                        chk = Checkbox(
-                            f"{pack.icon} {pack.title}",
-                            value=is_default,
-                            id=f"chk-playground-pack-{pack.id}",
+                    # Right Pane: Starter Template Packs & Live Prediction Matrix
+                    with Vertical(classes="right-pane"):
+                        yield Label(
+                            "Starter Rule Template Packs:", classes="field-label"
                         )
-                        chk.tooltip = pack.description
-                        yield chk
+                        for pack in get_starter_templates():
+                            is_default = pack.id in ("financial_tax", "personal_admin")
+                            chk = Checkbox(
+                                f"{pack.icon} {pack.title}",
+                                value=is_default,
+                                id=f"chk-playground-pack-{pack.id}",
+                            )
+                            chk.tooltip = pack.description
+                            yield chk
 
-                    yield Label(
-                        "Live Classification Prediction Matrix:", classes="field-label"
-                    )
-                    yield DataTable(id="playground-prediction-matrix")
+                        yield Label(
+                            "Live Classification Prediction Matrix:",
+                            classes="field-label",
+                        )
+                        yield DataTable(id="playground-prediction-matrix")
 
             with Horizontal(classes="button-row"):
                 yield Button(
@@ -171,7 +202,7 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
 
     def on_mount(self) -> None:
         """Set up prediction matrix columns, focus doc list, and evaluate predictions."""
-        self._update_layout(self.size.width)
+        self._update_layout(self.size.width, self.size.height)
 
         matrix = self.query_one("#playground-prediction-matrix", DataTable)
         matrix.cursor_type = "row"
