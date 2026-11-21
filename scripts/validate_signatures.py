@@ -52,7 +52,10 @@ def collect_tui_svg_snapshots(tests_dir=None):
                 file_path = os.path.join(root, file)
                 try:
                     with open(file_path, "r", encoding="utf-8") as f:
-                        tree = ast.parse(f.read(), filename=file_path)
+                        source = f.read()
+                    if "assert_svg_snapshot" not in source:
+                        continue
+                    tree = ast.parse(source, filename=file_path)
                     for node in ast.walk(tree):
                         if isinstance(node, ast.Call):
                             func_name = ""
@@ -202,20 +205,8 @@ def extract_function_signature(func_node):
     }
 
 
-def extract_module_signatures(file_path):
-    """Statically parse a Python file and extract public class and function signatures."""
-    if not os.path.exists(file_path):
-        print(f"Error: Module source file not found: {file_path}", file=sys.stderr)
-        return {"classes": [], "functions": []}
-
-    try:
-        with open(file_path, "r", encoding="utf-8") as f:
-            source = f.read()
-        tree = ast.parse(source, filename=file_path)
-    except Exception as e:
-        print(f"Warning: Failed to parse AST for {file_path}: {e}", file=sys.stderr)
-        return {"classes": [], "functions": []}
-
+def _extract_module_signatures_from_tree(tree: ast.Module) -> dict:
+    """Extract public class and function signatures from a parsed module AST."""
     classes = []
     functions = []
 
@@ -257,6 +248,23 @@ def extract_module_signatures(file_path):
     }
 
 
+def extract_module_signatures(file_path):
+    """Statically parse a Python file and extract public class and function signatures."""
+    if not os.path.exists(file_path):
+        print(f"Error: Module source file not found: {file_path}", file=sys.stderr)
+        return {"classes": [], "functions": []}
+
+    try:
+        with open(file_path, "r", encoding="utf-8") as f:
+            source = f.read()
+        tree = ast.parse(source, filename=file_path)
+    except Exception as e:
+        print(f"Warning: Failed to parse AST for {file_path}: {e}", file=sys.stderr)
+        return {"classes": [], "functions": []}
+
+    return _extract_module_signatures_from_tree(tree)
+
+
 def extract_protocols(file_path):
     """Statically parse a Python file and extract classes that inherit from Protocol."""
     if not os.path.exists(file_path):
@@ -293,16 +301,8 @@ def extract_protocols(file_path):
     return protocols
 
 
-def extract_cli(file_path):
-    """Statically parse a Python file and extract argparse-related call nodes."""
-    if not os.path.exists(file_path):
-        print(f"Error: CLI source file not found: {file_path}", file=sys.stderr)
-        return []
-
-    with open(file_path, "r", encoding="utf-8") as f:
-        source = f.read()
-
-    tree = ast.parse(source, filename=file_path)
+def _extract_cli_from_tree(tree: ast.AST) -> list:
+    """Extract argparse-related call nodes from a parsed AST."""
     cli_calls = []
 
     for node in ast.walk(tree):
@@ -333,6 +333,19 @@ def extract_cli(file_path):
     return cli_calls
 
 
+def extract_cli(file_path):
+    """Statically parse a Python file and extract argparse-related call nodes."""
+    if not os.path.exists(file_path):
+        print(f"Error: CLI source file not found: {file_path}", file=sys.stderr)
+        return []
+
+    with open(file_path, "r", encoding="utf-8") as f:
+        source = f.read()
+
+    tree = ast.parse(source, filename=file_path)
+    return _extract_cli_from_tree(tree)
+
+
 def collect_cli_definitions(cli_dir=None):
     """Dynamically scan CLI package modules and main entry points to extract CLI call nodes."""
     if cli_dir is None:
@@ -356,11 +369,23 @@ def collect_cli_definitions(cli_dir=None):
                 ):
                     full_path = os.path.join(root, file)
                     rel_path = safe_relpath(full_path, BASE_DIR).replace("\\", "/")
-                    sigs = extract_module_signatures(full_path)
+                    try:
+                        with open(full_path, "r", encoding="utf-8") as f:
+                            source = f.read()
+                        tree = ast.parse(source, filename=full_path)
+                        sigs = _extract_module_signatures_from_tree(tree)
+                        cli_calls = _extract_cli_from_tree(tree)
+                    except Exception as e:
+                        print(
+                            f"Warning: Failed to parse AST for {full_path}: {e}",
+                            file=sys.stderr,
+                        )
+                        sigs = {"classes": [], "functions": []}
+                        cli_calls = []
                     cli_data[rel_path] = {
                         "classes": sigs["classes"],
                         "functions": sigs["functions"],
-                        "cli": extract_cli(full_path),
+                        "cli": cli_calls,
                     }
 
     return dict(sorted(cli_data.items()))

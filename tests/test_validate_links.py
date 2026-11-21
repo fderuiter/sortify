@@ -410,3 +410,168 @@ def test_main_rate_limited_url_exits_zero(mock_urlopen, monkeypatch, tmp_path):
         raise AssertionError("Expected SystemExit(0)")
     except SystemExit as exc:
         assert exc.code == 0
+
+
+@patch("urllib.request.urlopen")
+def test_github_token_authenticates_only_https_api_github_com(
+    mock_urlopen, monkeypatch
+):
+    """Verify GITHUB_TOKEN adds Bearer auth only to https://api.github.com requests."""
+    mock_response = MagicMock()
+    mock_response.status = 200
+    mock_urlopen.return_value.__enter__.return_value = mock_response
+
+    monkeypatch.setenv("GITHUB_TOKEN", "ghs_test_token_123")
+    ok, _, _ = validate_url("https://api.github.com/advisories", set())
+    assert ok is True
+    req = mock_urlopen.call_args[0][0]
+    assert req.get_header("Authorization") == "Bearer ghs_test_token_123"
+    assert req.get_header("Accept") == "application/vnd.github+json"
+
+    for untrusted_url in (
+        "http://api.github.com/advisories",
+        "https://github.com/fderuiter/sortify",
+        "https://pypi.org/project/ruff/",
+    ):
+        mock_urlopen.reset_mock()
+        validate_url(untrusted_url, set())
+        other_req = mock_urlopen.call_args[0][0]
+        assert other_req.get_header("Authorization") is None, (
+            f"Leaked Authorization header to {untrusted_url}"
+        )
+
+    monkeypatch.delenv("GITHUB_TOKEN", raising=False)
+    mock_urlopen.reset_mock()
+    validate_url("https://api.github.com/advisories", set())
+    unauth_req = mock_urlopen.call_args[0][0]
+    assert unauth_req.get_header("Authorization") is None
+
+
+def test_safe_redirect_handler_strips_authorization_on_cross_origin():
+    """Verify _SafeRedirectHandler strips Authorization on cross-origin redirects only."""
+    import urllib.request
+
+    from scripts.validate_links import _SafeRedirectHandler
+
+    handler = _SafeRedirectHandler()
+    origin_req = urllib.request.Request(
+        "https://api.github.com/advisories",
+        headers={
+            "Authorization": "Bearer ghs_secret",
+            "User-Agent": "TestAgent",
+        },
+        method="GET",
+    )
+
+    same_origin = handler.redirect_request(
+        origin_req,
+        None,
+        302,
+        "Found",
+        {},
+        "https://api.github.com/advisories?per_page=1",
+    )
+    assert same_origin is not None
+    assert same_origin.get_header("Authorization") == "Bearer ghs_secret"
+
+    for cross_origin_target in (
+        "https://objects.githubusercontent.com/feed.json",
+        "http://api.github.com/advisories",
+        "https://api.github.com:8443/advisories",
+    ):
+        redirected = handler.redirect_request(
+            origin_req,
+            None,
+            302,
+            "Found",
+            {},
+            cross_origin_target,
+        )
+        assert redirected is not None
+        assert redirected.get_header("Authorization") is None
+        assert "Authorization" not in redirected.headers
+        assert "Authorization" not in redirected.unredirected_hdrs
+
+
+@patch("urllib.request.urlopen")
+def test_validate_url_redirect_fallback_strips_cross_origin_authorization(
+    mock_urlopen, monkeypatch
+):
+    """Verify manual 302 GET fallback in validate_url strips Authorization on cross-origin Location."""
+    monkeypatch.setenv("GITHUB_TOKEN", "ghs_secret_fallback")
+    redirect_302 = urllib.error.HTTPError(
+        "https://api.github.com/advisories",
+        302,
+        "Found",
+        {"Location": "https://codeload.github.com/archive.zip"},
+        None,
+    )
+    ok_response = MagicMock()
+    ok_response.status = 200
+    ok_cm = MagicMock()
+    ok_cm.__enter__.return_value = ok_response
+    mock_urlopen.side_effect = [redirect_302, ok_cm]
+
+    ok, _, is_crit = validate_url("https://api.github.com/advisories", set())
+    assert ok is True
+    assert is_crit is False
+    assert mock_urlopen.call_count == 2
+
+    head_req = mock_urlopen.call_args_list[0][0][0]
+    get_req = mock_urlopen.call_args_list[1][0][0]
+    assert head_req.get_header("Authorization") == "Bearer ghs_secret_fallback"
+    assert get_req.get_header("Authorization") is None
+
+
+def test_urlopen_cross_origin_redirect_end_to_end_strips_auth():
+    """Verify end-to-end opener strips Authorization across loopback port redirects."""
+    import http.server
+    import threading
+    import urllib.request
+
+    from scripts.validate_links import _urlopen
+
+    received_auth: list[str | None] = []
+
+    class TargetHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            received_auth.append(self.headers.get("Authorization"))
+            self.send_response(200)
+            self.end_headers()
+
+        def log_message(self, *_args):
+            return
+
+    target_server = http.server.HTTPServer(("127.0.0.1", 0), TargetHandler)
+    target_port = target_server.server_address[1]
+
+    class RedirectHandler(http.server.BaseHTTPRequestHandler):
+        def do_GET(self):
+            self.send_response(302)
+            self.send_header("Location", f"http://127.0.0.1:{target_port}/dest")
+            self.end_headers()
+
+        def log_message(self, *_args):
+            return
+
+    redirect_server = http.server.HTTPServer(("127.0.0.1", 0), RedirectHandler)
+    redirect_port = redirect_server.server_address[1]
+
+    t1 = threading.Thread(target=target_server.serve_forever, daemon=True)
+    t2 = threading.Thread(target=redirect_server.serve_forever, daemon=True)
+    t1.start()
+    t2.start()
+    try:
+        req = urllib.request.Request(
+            f"http://127.0.0.1:{redirect_port}/start",
+            headers={"Authorization": "Bearer super_secret_token"},
+            method="GET",
+        )
+        with _urlopen(req) as resp:
+            assert resp.status == 200
+        assert received_auth == [None]
+    finally:
+        redirect_server.shutdown()
+        target_server.shutdown()
+        redirect_server.server_close()
+        target_server.server_close()

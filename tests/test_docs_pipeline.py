@@ -2090,3 +2090,92 @@ def test_update_security_md_worker_exception_raises_critical(tmp_path, monkeypat
             update_security_md(sec_file=str(sec_md))
 
     assert sec_md.read_text(encoding="utf-8") == initial_sec
+
+
+def test_update_security_md_excludes_xml_namespaces_and_ui_placeholders(
+    tmp_path, monkeypatch
+):
+    """Verify XML xmlns URIs and UI placeholder URLs are omitted from SECURITY.md."""
+    import json
+
+    (tmp_path / "app" / "ui" / "modals").mkdir(parents=True)
+    (tmp_path / "scripts").mkdir()
+    (tmp_path / "app" / "ui" / "modals" / "models.py").write_text(
+        'Input(placeholder="http://proxy.example.com:8080", id="inp-proxy")\n'
+        'LIVE_URL = "https://shipped.example.org/models"\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "scripts" / "diagram_toolchain.py").write_text(
+        'SVG = \'<svg xmlns="http://www.w3.org/2000/svg"><div xmlns="http://www.w3.org/1999/xhtml"></div></svg>\'\n',
+        encoding="utf-8",
+    )
+    (tmp_path / "network_rules.json").write_text(
+        json.dumps({"targets": ["app", "scripts"], "rules": []}), encoding="utf-8"
+    )
+    sec_md = tmp_path / "SECURITY.md"
+    sec_md.write_text(
+        "# Security Policy\n\n## Network Dependencies\n\nplaceholder\n",
+        encoding="utf-8",
+    )
+    monkeypatch.chdir(tmp_path)
+
+    update_security_md(sec_file=str(sec_md), local_only=True)
+    rendered = sec_md.read_text(encoding="utf-8")
+    assert "shipped.example.org" in rendered
+    assert "proxy.example.com" not in rendered
+    assert "www.w3.org" not in rendered
+
+
+def test_committed_security_md_omits_placeholder_and_xml_namespaces():
+    """Verify committed SECURITY.md omits proxy.example.com:8080 and www.w3.org."""
+    sec_text = Path("SECURITY.md").read_text(encoding="utf-8")
+    assert "proxy.example.com" not in sec_text
+    assert "www.w3.org" not in sec_text
+
+
+def test_generate_docs_local_only_performs_zero_network_calls():
+    """Verify generate_docs.py --check --no-build --local-only succeeds offline without network sockets."""
+    import os
+    import subprocess
+    import sys
+
+    env = dict(os.environ)
+    env["HTTPS_PROXY"] = "http://127.0.0.1:9"
+    env["HTTP_PROXY"] = "http://127.0.0.1:9"
+    env.pop("COLUMNS", None)
+    env.pop("AUTOSORTER_APP_DIR", None)
+    result = subprocess.run(
+        [
+            sys.executable,
+            "scripts/generate_docs.py",
+            "--check",
+            "--no-build",
+            "--local-only",
+        ],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+
+
+def test_audit_handwritten_docs_memoizes_adr_inspections():
+    """Verify _inspect_adr_runtime_state and _count_frontend_store_callers run once across ADR checks."""
+    import scripts.generate_docs as gen_docs
+
+    gen_docs._inspect_adr_runtime_state.cache_clear()
+    gen_docs._count_frontend_store_callers.cache_clear()
+
+    errors = audit_handwritten_docs(local_only=True)
+    assert errors == []
+
+    runtime_info = gen_docs._inspect_adr_runtime_state.cache_info()
+    store_info = gen_docs._count_frontend_store_callers.cache_info()
+    assert runtime_info.currsize == 1
+    assert runtime_info.misses == 1
+    assert store_info.currsize == 1
+    assert store_info.misses == 1
+
+    # Subsequent ADR status check reuses the memoized state (cache hit)
+    assert audit_adr_status() == []
+    assert gen_docs._inspect_adr_runtime_state.cache_info().hits >= 1

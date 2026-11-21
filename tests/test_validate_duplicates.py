@@ -298,3 +298,45 @@ class MasterPipelineResult:
             in err
             for err in pipeline_errors
         )
+
+
+def test_compute_normalized_ast_hash_zero_deepcopy_and_non_mutating(monkeypatch):
+    """Verify compute_normalized_ast_hash never calls copy.deepcopy and leaves input AST untouched."""
+    import copy
+
+    monkeypatch.setattr(
+        copy,
+        "deepcopy",
+        lambda *_a, **_kw: (_ for _ in ()).throw(
+            AssertionError("copy.deepcopy must not be called")
+        ),
+    )
+
+    code1 = """
+def sample(alpha: int, *items: str, flag: bool = True, **extra: object) -> list[int]:
+    '''Docstring ignored.'''
+    unused_decl: str
+    total: int = alpha + len(items)
+    mapped = [elem.upper() for elem in items if flag]
+    try:
+        result = helper(count=alpha, payload=mapped, **extra)
+    except ValueError as err:
+        raise RuntimeError(str(err)) from err
+    return [total, len(result)]
+"""
+    code2 = """
+def sample(beta, *vals, toggle=True, **kw):
+    acc = beta + len(vals)
+    transformed = [item.upper() for item in vals if toggle]
+    try:
+        out = helper(count=beta, payload=transformed, **kw)
+    except ValueError as err:
+        raise RuntimeError(str(err)) from err
+    return [acc, len(out)]
+"""
+    node1 = ast.parse(code1).body[0]
+    before_dump = ast.dump(node1, include_attributes=True)
+    node2 = ast.parse(code2).body[0]
+
+    assert compute_normalized_ast_hash(node1) == compute_normalized_ast_hash(node2)
+    assert ast.dump(node1, include_attributes=True) == before_dump
