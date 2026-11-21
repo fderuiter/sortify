@@ -311,41 +311,27 @@ class DaemonIPCServer:
         dry_run = bool(params.get("dry_run", False))
         dest_dir = params.get("dest_dir")
 
-        validated_paths = []
+        from app.core.pipeline import validate_drop_paths
+
+        ignore_predicate = (
+            self.daemon.should_ignore_path
+            if hasattr(self.daemon, "should_ignore_path")
+            else None
+        )
+        validated_paths, issues = validate_drop_paths(
+            path_list,
+            settings=getattr(self.daemon, "settings", None),
+            ignore_predicate=ignore_predicate,
+        )
+
         invalid_reasons = []
-
-        for p in path_list:
-            if not p or not isinstance(p, str):
-                continue
-            clean_p = p.strip().strip("'\"")
-            if not clean_p:
-                continue
-            abs_p = os.path.abspath(clean_p)
-            if not os.path.exists(abs_p):
-                invalid_reasons.append(f"Path does not exist: {clean_p}")
-                continue
-
-            if hasattr(
-                self.daemon, "should_ignore_path"
-            ) and self.daemon.should_ignore_path(abs_p):
-                invalid_reasons.append(f"Ignored path pattern: {clean_p}")
-                continue
-
-            settings = getattr(self.daemon, "settings", None)
-            if settings:
-                protected = getattr(settings, "PROTECTED_PATHS", [])
-                from app.core.mover import is_subpath_or_equal
-
-                is_prot = False
-                for prot in protected:
-                    if prot and is_subpath_or_equal(abs_p, prot):
-                        is_prot = True
-                        break
-                if is_prot:
-                    invalid_reasons.append(f"Protected path blocked: {clean_p}")
-                    continue
-
-            validated_paths.append(abs_p)
+        for issue in issues:
+            if issue.reason == "missing":
+                invalid_reasons.append(f"Path does not exist: {issue.clean_path}")
+            elif issue.reason == "ignored":
+                invalid_reasons.append(f"Ignored path pattern: {issue.clean_path}")
+            elif issue.reason == "protected":
+                invalid_reasons.append(f"Protected path blocked: {issue.clean_path}")
 
         if not validated_paths:
             reasons_str = (
@@ -355,6 +341,19 @@ class DaemonIPCServer:
             )
             raise ValueError(f"Path validation failed: {reasons_str}")
 
+        daemon_dict = getattr(self.daemon, "__dict__", {})
+        if (
+            hasattr(self.daemon, "_execute_dropped_items")
+            and "process_dropped_items" not in daemon_dict
+        ):
+            res = await asyncio.to_thread(
+                self.daemon._execute_dropped_items,
+                validated_paths,
+                dry_run=dry_run,
+                dest_dir=dest_dir,
+            )
+            res["validated_paths"] = validated_paths
+            return res
         if hasattr(self.daemon, "process_dropped_items"):
             res = await asyncio.to_thread(
                 self.daemon.process_dropped_items,
@@ -364,13 +363,12 @@ class DaemonIPCServer:
             )
             res["validated_paths"] = validated_paths
             return res
-        else:
-            return {
-                "status": "success",
-                "processed_count": len(validated_paths),
-                "validated_paths": validated_paths,
-                "message": f"Successfully forwarded {len(validated_paths)} dropped items to triage pipeline",
-            }
+        return {
+            "status": "success",
+            "processed_count": len(validated_paths),
+            "validated_paths": validated_paths,
+            "message": f"Successfully forwarded {len(validated_paths)} dropped items to triage pipeline",
+        }
 
     def _trigger_daemon_stop(self):
         """Asynchronously trigger daemon stop in a background thread."""
