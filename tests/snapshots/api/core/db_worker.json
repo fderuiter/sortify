@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "c69d42af2b0ae4c385b91b5341286289cd1e44650f1f610875783a263083e70b"
+    "checksum": "01a2342a2445bf3aefa293a23a59b535946a1ec8c51ff3b471d3088b90fb9c3f"
   },
   "classes": [
     {
@@ -16,52 +16,6 @@
               "annotation": null,
               "default": null,
               "name": "self"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "begin_session",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
-            },
-            {
-              "annotation": "str",
-              "default": "None",
-              "name": "db_path"
-            },
-            {
-              "annotation": "float",
-              "default": "300.0",
-              "name": "timeout"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "commit_session",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
             }
           ],
           "returns": null
@@ -118,91 +72,6 @@
               "annotation": null,
               "default": null,
               "name": "**kwargs"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "get_active_session_id",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            }
-          ],
-          "returns": "str | None"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "is_in_session",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            }
-          ],
-          "returns": "bool"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "notify_listeners",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "event_type"
-            },
-            {
-              "annotation": null,
-              "default": "None",
-              "name": "data"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "register_listener",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "callback"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "rollback_session",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
             }
           ],
           "returns": null
@@ -277,24 +146,6 @@
               "annotation": null,
               "default": null,
               "name": "**kwargs"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "unregister_listener",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "callback"
             }
           ],
           "returns": null

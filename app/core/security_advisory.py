@@ -16,7 +16,7 @@ from app.core.exceptions import ModelVerificationError
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_ADVISORY_ENDPOINT = "https://security.huggingface.co/api/advisories"
+DEFAULT_ADVISORY_ENDPOINT = "https://huggingface.co/api/models"
 DEFAULT_CACHE_TTL = 3600  # 1 hour in seconds
 MAX_API_TIMEOUT = 5.0  # Max 5 seconds timeout constraint
 
@@ -27,17 +27,45 @@ _LOCAL_HOSTNAMES: frozenset[str] = frozenset(
 )
 
 
-def _is_allowed_advisory_host(hostname: str) -> bool:
+def _normalize_trusted_hosts(trusted_hosts=None) -> frozenset[str]:
+    """Normalize optional configured trusted hostnames combined with default Hugging Face hosts."""
+    combined = set(_ALLOWED_ADVISORY_HOSTS)
+    if not trusted_hosts:
+        return frozenset(combined)
+    for raw_host in trusted_hosts:
+        if not isinstance(raw_host, str):
+            continue
+        candidate = raw_host.strip().lower().rstrip(".")
+        if "://" in candidate:
+            parsed_cand = urllib.parse.urlsplit(candidate)
+            candidate = (parsed_cand.hostname or "").strip().lower().rstrip(".")
+        if (
+            not candidate
+            or candidate.startswith(".")
+            or candidate in _LOCAL_HOSTNAMES
+            or candidate.endswith(".local")
+            or candidate.endswith(".localhost")
+        ):
+            continue
+        try:
+            ipaddress.ip_address(candidate)
+        except ValueError:
+            combined.add(candidate)
+    return frozenset(combined)
+
+
+def _is_allowed_advisory_host(hostname: str, trusted_hosts=None) -> bool:
     """Check if the given hostname matches an allowed advisory host or trusted subdomain."""
     host = hostname.lower().rstrip(".")
     if not host or host.startswith("."):
         return False
-    return host in _ALLOWED_ADVISORY_HOSTS or any(
-        host.endswith(f".{allowed}") for allowed in _ALLOWED_ADVISORY_HOSTS
+    allowed_set = _normalize_trusted_hosts(trusted_hosts)
+    return host in allowed_set or any(
+        host.endswith(f".{allowed}") for allowed in allowed_set
     )
 
 
-def _validate_advisory_url(url: str) -> None:
+def _validate_advisory_url(url: str, trusted_hosts=None) -> None:
     """Validate that the security advisory URL uses HTTPS and points to an allowed host.
 
     Rejects non-HTTPS schemes, private/loopback/link-local IP addresses, empty hostnames,
@@ -51,7 +79,7 @@ def _validate_advisory_url(url: str) -> None:
     cleaned_url = url.strip()
     try:
         parsed = urllib.parse.urlsplit(cleaned_url)
-    except Exception as e:
+    except ValueError as e:
         raise ModelVerificationError(f"Malformed security advisory URL: {e}") from e
 
     scheme = (parsed.scheme or "").lower()
@@ -100,10 +128,185 @@ def _validate_advisory_url(url: str) -> None:
         )
 
     # Restrict to trusted advisory hosts
-    if not _is_allowed_advisory_host(host_clean):
+    if not _is_allowed_advisory_host(host_clean, trusted_hosts=trusted_hosts):
         raise ModelVerificationError(
             f"Untrusted security advisory host: {hostname}. Only trusted advisory hosts are permitted."
         )
+
+
+def _build_advisory_query_url(
+    base_endpoint: str,
+    norm_repo: Optional[str],
+    norm_hash: Optional[str],
+) -> str:
+    """Construct the HTTPS query URL for either Hugging Face models API or a custom advisory mirror."""
+    parsed = urllib.parse.urlsplit(base_endpoint.strip())
+    clean_path = (parsed.path or "").rstrip("/")
+
+    if clean_path.endswith("/api/models"):
+        if norm_repo:
+            repo_clean = norm_repo.strip("/")
+            segments = [seg for seg in repo_clean.split("/") if seg]
+            if (
+                not segments
+                or any(seg in {".", ".."} for seg in segments)
+                or any(
+                    ch in repo_clean
+                    for ch in ("\\", "?", "#", "@", "\r", "\n", "\t", " ")
+                )
+            ):
+                raise ModelVerificationError(
+                    f"Invalid repository identifier for security advisory check: {norm_repo!r}"
+                )
+            quoted_repo = "/".join(urllib.parse.quote(seg, safe="") for seg in segments)
+            base_no_query = urllib.parse.urlunsplit(
+                (parsed.scheme, parsed.netloc, clean_path, "", "")
+            )
+            query_params = [("securityStatus", "true")]
+            if parsed.query:
+                query_params = urllib.parse.parse_qsl(parsed.query) + query_params
+            return (
+                f"{base_no_query}/{quoted_repo}?{urllib.parse.urlencode(query_params)}"
+            )
+
+        params = {"securityStatus": "true"}
+        if norm_hash:
+            params["sha256"] = norm_hash
+        sep = "&" if parsed.query else "?"
+        return f"{base_endpoint}{sep}{urllib.parse.urlencode(params)}"
+
+    params = {}
+    if norm_repo:
+        params["repo_id"] = norm_repo
+    if norm_hash:
+        params["file_hash"] = norm_hash
+    if not params:
+        return base_endpoint
+    sep = "&" if parsed.query else "?"
+    return f"{base_endpoint}{sep}{urllib.parse.urlencode(params)}"
+
+
+def _parse_advisory_payload(
+    resp_data: object, asset_label: str
+) -> tuple[bool, Optional[str], Optional[str], Optional[str]]:
+    """Extract advisory flag, ID, severity, and details from HF metadata or custom mirror JSON."""
+    if isinstance(resp_data, dict):
+        if resp_data.get("disabled") is True:
+            return (
+                True,
+                "HF-REPO-DISABLED",
+                "HIGH",
+                f"Repository '{asset_label}' is disabled on Hugging Face.",
+            )
+
+        sec_status = resp_data.get("securityRepoStatus")
+        if isinstance(sec_status, dict):
+            files_with_issues = sec_status.get("filesWithIssues")
+            if isinstance(files_with_issues, list) and files_with_issues:
+                first_issue = files_with_issues[0]
+                if isinstance(first_issue, dict):
+                    issue_path = first_issue.get("path") or "unknown"
+                    issue_level = str(
+                        first_issue.get("level")
+                        or first_issue.get("severity")
+                        or "HIGH"
+                    )
+                    adv_id = str(
+                        first_issue.get("id")
+                        or first_issue.get("advisory_id")
+                        or f"HF-SCAN-{issue_level.upper()}"
+                    )
+                    det = str(
+                        first_issue.get("message")
+                        or first_issue.get("details")
+                        or f"Security scan flagged '{issue_path}' ({issue_level})."
+                    )
+                    return (True, adv_id, issue_level, det)
+                return (
+                    True,
+                    "HF-SCAN-ISSUE",
+                    "HIGH",
+                    f"Repository security scan flagged issues: {first_issue}",
+                )
+
+            repo_scan_state = str(sec_status.get("status") or "").strip().lower()
+            if (
+                repo_scan_state
+                in {"infected", "unsafe", "flagged", "malware", "quarantined"}
+                or sec_status.get("infected") is True
+                or sec_status.get("hasIssues") is True
+            ):
+                return (
+                    True,
+                    f"HF-REPO-{repo_scan_state.upper() or 'FLAGGED'}",
+                    "CRITICAL",
+                    str(
+                        sec_status.get("message")
+                        or sec_status.get("details")
+                        or f"Repository '{asset_label}' flagged by Hugging Face security scan."
+                    ),
+                )
+
+        advisories_list = resp_data.get("advisories") or resp_data.get(
+            "securityAdvisories"
+        )
+        has_adv = bool(
+            resp_data.get("has_advisory")
+            or resp_data.get("vulnerable")
+            or advisories_list
+        )
+        adv_id = resp_data.get("advisory_id") or (
+            resp_data.get("id") if has_adv else None
+        )
+        sev = resp_data.get("severity") or resp_data.get("rating")
+        det = resp_data.get("details") or resp_data.get("message")
+
+        if not adv_id and isinstance(advisories_list, list) and advisories_list:
+            first_adv = advisories_list[0]
+            if isinstance(first_adv, dict):
+                adv_id = first_adv.get("id") or first_adv.get("advisory_id")
+                sev = first_adv.get("severity") or first_adv.get("rating")
+                det = (
+                    first_adv.get("details")
+                    or first_adv.get("summary")
+                    or first_adv.get("message")
+                )
+        return (has_adv, adv_id, sev, det)
+
+    if isinstance(resp_data, list) and resp_data:
+        if all(
+            isinstance(item, dict)
+            and (
+                "securityRepoStatus" in item
+                or (
+                    "modelId" in item
+                    and "advisory_id" not in item
+                    and "severity" not in item
+                )
+            )
+            for item in resp_data
+        ):
+            for item in resp_data:
+                parsed_item = _parse_advisory_payload(item, asset_label)
+                if parsed_item[0]:
+                    return parsed_item
+            return (False, None, None, None)
+
+        first_adv = resp_data[0]
+        if isinstance(first_adv, dict):
+            return (
+                True,
+                first_adv.get("id") or first_adv.get("advisory_id"),
+                first_adv.get("severity") or first_adv.get("rating"),
+                first_adv.get("details")
+                or first_adv.get("summary")
+                or first_adv.get("message"),
+            )
+        if isinstance(first_adv, str):
+            return (True, first_adv, None, "Security advisory listed.")
+        return (True, None, None, "Security advisory listed.")
+
+    return (False, None, None, None)
 
 
 _HF_URL_PATTERN = re.compile(
@@ -161,12 +364,27 @@ class SecurityAdvisoryClient:
         self._endpoint = endpoint
         self._ttl = ttl
         self._fallback_policy = fallback_policy
+        trusted = self._get_trusted_hosts()
         if self._endpoint is not None:
-            _validate_advisory_url(self._endpoint)
+            _validate_advisory_url(self._endpoint, trusted_hosts=trusted)
         elif self._settings is not None and hasattr(
             self._settings, "SECURITY_ADVISORY_ENDPOINT"
         ):
-            _validate_advisory_url(self._settings.SECURITY_ADVISORY_ENDPOINT)
+            _validate_advisory_url(
+                self._settings.SECURITY_ADVISORY_ENDPOINT, trusted_hosts=trusted
+            )
+
+    def _get_trusted_hosts(self) -> frozenset[str]:
+        """Return normalized trusted hostnames including any configured TRUSTED_MODEL_HOSTS."""
+        if self._settings is None:
+            try:
+                from app.config import AppSettings
+
+                self._settings = AppSettings()
+            except (OSError, ValueError, RuntimeError):
+                return _ALLOWED_ADVISORY_HOSTS
+        raw = getattr(self._settings, "TRUSTED_MODEL_HOSTS", None)
+        return _normalize_trusted_hosts(raw)
 
     @property
     def endpoint(self) -> str:
@@ -398,17 +616,12 @@ class SecurityAdvisoryClient:
             fallback_policy.strip().lower() if fallback_policy else self.fallback_policy
         )
 
-        _validate_advisory_url(self.endpoint)
+        base_endpoint = self.endpoint
+        trusted_hosts = self._get_trusted_hosts()
+        _validate_advisory_url(base_endpoint, trusted_hosts=trusted_hosts)
 
-        params = {}
-        if norm_repo:
-            params["repo_id"] = norm_repo
-        if norm_hash:
-            params["file_hash"] = norm_hash
-
-        query_str = urllib.parse.urlencode(params)
-        endpoint_url = f"{self.endpoint}?{query_str}" if query_str else self.endpoint
-        _validate_advisory_url(endpoint_url)
+        endpoint_url = _build_advisory_query_url(base_endpoint, norm_repo, norm_hash)
+        _validate_advisory_url(endpoint_url, trusted_hosts=trusted_hosts)
 
         # 2. Remote Security Advisory API Query
         # Bypassing thread-local socket sandboxing safely during advisory lookup
@@ -445,45 +658,9 @@ class SecurityAdvisoryClient:
                             f"Non-JSON or malformed payload received from security advisory endpoint: {json_err}"
                         ) from json_err
 
-                has_adv = False
-                adv_id = None
-                sev = None
-                det = None
-
-                if isinstance(resp_data, dict):
-                    has_adv = bool(
-                        resp_data.get("has_advisory")
-                        or resp_data.get("vulnerable")
-                        or resp_data.get("advisories")
-                    )
-                    adv_id = resp_data.get("advisory_id") or resp_data.get("id")
-                    sev = resp_data.get("severity") or resp_data.get("rating")
-                    det = resp_data.get("details") or resp_data.get("message")
-
-                    if (
-                        not adv_id
-                        and isinstance(resp_data.get("advisories"), list)
-                        and resp_data["advisories"]
-                    ):
-                        first_adv = resp_data["advisories"][0]
-                        if isinstance(first_adv, dict):
-                            adv_id = first_adv.get("id")
-                            sev = first_adv.get("severity")
-                            det = first_adv.get("details") or first_adv.get("summary")
-                elif isinstance(resp_data, list) and resp_data:
-                    has_adv = True
-                    first_adv = resp_data[0]
-                    if isinstance(first_adv, dict):
-                        adv_id = first_adv.get("id") or first_adv.get("advisory_id")
-                        sev = first_adv.get("severity") or first_adv.get("rating")
-                        det = (
-                            first_adv.get("details")
-                            or first_adv.get("summary")
-                            or first_adv.get("message")
-                        )
-                    elif isinstance(first_adv, str):
-                        adv_id = first_adv
-                        det = "Security advisory listed."
+                has_adv, adv_id, sev, det = _parse_advisory_payload(
+                    resp_data, str(norm_repo or norm_hash or "unknown")
+                )
 
                 result = SecurityAdvisoryResult(
                     has_advisory=has_adv,
@@ -506,19 +683,19 @@ class SecurityAdvisoryClient:
 
             except ModelVerificationError:
                 raise
-            except Exception as e:
+            except Exception as e:  # noqa: BLE001 - network/JSON/mocked transport errors routed via fallback policy
                 logger.warning(
-                    f"Security advisory query failed for '{norm_repo or norm_hash}': {e}"
+                    "Security advisory query failed for '%s': %s",
+                    norm_repo or norm_hash,
+                    e,
                 )
                 if eff_fallback == "strict":
                     raise ModelVerificationError(
                         f"Pre-download security advisory lookup failed for '{norm_repo or norm_hash}' "
                         f"under strict security policy: {e}"
                     ) from e
-                else:
-                    fallback_result = SecurityAdvisoryResult(
-                        has_advisory=False,
-                        details=f"Query failed ({e}), proceeding under permissive fallback policy.",
-                        timestamp=time.time(),
-                    )
-                    return fallback_result
+                return SecurityAdvisoryResult(
+                    has_advisory=False,
+                    details=f"Query failed ({e}), proceeding under permissive fallback policy.",
+                    timestamp=time.time(),
+                )
