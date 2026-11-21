@@ -1,0 +1,217 @@
+{
+  "_metadata": {
+    "checksum": "47a38ee9098f44268d7c4bee9b859bb9fcf9e1d33097cacbe778c23ba137451b"
+  },
+  "classes": [],
+  "cli": [
+    {
+      "args": [
+        "model"
+      ],
+      "caller": "subparsers",
+      "keywords": {
+        "help": "Inspect, download, verify, or remove local AI model weights"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "--json"
+      ],
+      "caller": "parser_model",
+      "keywords": {
+        "action": "store_true",
+        "help": "Output response in structured JSON format"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "-q",
+        "--quiet"
+      ],
+      "caller": "parser_model",
+      "keywords": {
+        "action": "store_true",
+        "default": "argparse.SUPPRESS",
+        "dest": "quiet",
+        "help": "Suppress informational prints"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--no-color"
+      ],
+      "caller": "parser_model",
+      "keywords": {
+        "action": "store_true",
+        "default": "argparse.SUPPRESS",
+        "dest": "no_color",
+        "help": "Disable ANSI color formatting"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "status"
+      ],
+      "caller": "model_subparsers",
+      "keywords": {
+        "help": "Display AI consent state, local model bundle readiness, and verification status"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "download"
+      ],
+      "caller": "model_subparsers",
+      "keywords": {
+        "help": "Download and cryptographically verify local ONNX model weights"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "--url"
+      ],
+      "caller": "p_download",
+      "keywords": {
+        "default": "DEFAULT_MODEL_URL",
+        "help": "HTTPS allowlisted model weights URL",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--proxy"
+      ],
+      "caller": "p_download",
+      "keywords": {
+        "default": null,
+        "help": "HTTP/HTTPS proxy URL for model download transfers",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--force"
+      ],
+      "caller": "p_download",
+      "keywords": {
+        "action": "store_true",
+        "help": "Re-download model weights even if verified files already exist"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "verify"
+      ],
+      "caller": "model_subparsers",
+      "keywords": {
+        "help": "Verify SHA-256 hashes and integrity of local model bundle files"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "remove"
+      ],
+      "caller": "model_subparsers",
+      "keywords": {
+        "aliases": [
+          "delete"
+        ],
+        "help": "Unload in-memory AI models and delete local cached model files"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "--model-dir"
+      ],
+      "caller": "p",
+      "keywords": {
+        "default": null,
+        "help": "Explicit local model directory path override",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "-q",
+        "--quiet"
+      ],
+      "caller": "p",
+      "keywords": {
+        "action": "store_true",
+        "default": "argparse.SUPPRESS",
+        "dest": "quiet",
+        "help": "Suppress informational prints"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--no-color"
+      ],
+      "caller": "p",
+      "keywords": {
+        "action": "store_true",
+        "default": "argparse.SUPPRESS",
+        "dest": "no_color",
+        "help": "Disable ANSI color formatting"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--json"
+      ],
+      "caller": "p",
+      "keywords": {
+        "action": "store_true",
+        "help": "Output response in structured JSON format"
+      },
+      "method": "add_argument"
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "handle_model_command",
+      "parameters": [
+        {
+          "annotation": "argparse.Namespace",
+          "default": null,
+          "name": "args"
+        },
+        {
+          "annotation": "AppSettings",
+          "default": null,
+          "name": "settings"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "register_subparser",
+      "parameters": [
+        {
+          "annotation": "argparse._SubParsersAction",
+          "default": null,
+          "name": "subparsers"
+        }
+      ],
+      "returns": "None"
+    }
+  ]
+}

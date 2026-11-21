@@ -132,11 +132,20 @@ def reset_shared_registry():
 
     from app.config import AppSettings, get_app_dir
     from app.core.db_conn import clear_connection_cache
-    from app.core.downloader import DownloadManager
+    from app.core.downloader import _VERIFICATION_CACHE, DownloadManager
     from app.core.network_guard import _thread_local
     from app.core.shared_registry import SharedModelRegistry, SharedWorkerPool
 
     def _cleanup_test_app_dir():
+        if DownloadManager._instance is not None:
+            try:
+                DownloadManager._instance.cancel_download()
+                thread = DownloadManager._instance.current_thread
+                if thread is not None and thread.is_alive():
+                    thread.join(timeout=1.0)
+            except Exception:
+                pass
+        _VERIFICATION_CACHE.clear()
         # Some older UI tests do not close their AppSession. Drain managed
         # services before deleting their stores, just as other singletons reset.
         from app.core import services
@@ -156,9 +165,10 @@ def reset_shared_registry():
                 target = app_dir / filename
                 if target.exists():
                     target.unlink()
-            sessions_dir = app_dir / "sessions"
-            if sessions_dir.exists():
-                shutil.rmtree(sessions_dir, ignore_errors=True)
+            for dirname in ("sessions", "model"):
+                sub_dir = app_dir / dirname
+                if sub_dir.exists():
+                    shutil.rmtree(sub_dir, ignore_errors=True)
         except Exception:
             pass
 
@@ -187,6 +197,18 @@ def reset_shared_registry():
         except Exception:
             pass
         SharedWorkerPool._instance = None
+
+
+@pytest.fixture(autouse=True)
+def block_live_external_downloads(monkeypatch):
+    """Prevent unmocked unit tests from making live outbound HTTP downloads."""
+    import urllib.error
+    import urllib.request
+
+    def _blocked_open(self, fullurl, data=None, timeout=None):
+        raise urllib.error.URLError("External network blocked in unit tests")
+
+    monkeypatch.setattr(urllib.request.OpenerDirector, "open", _blocked_open)
 
 
 @pytest.fixture(scope="session", autouse=True)
