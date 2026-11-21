@@ -178,6 +178,96 @@ def _main_db_baseline(conn) -> None:
 MAIN_DB_MIGRATIONS = (Migration(7, "baseline", _main_db_baseline),)
 
 
+def migrate_add_quarantine_release_exemptions(conn) -> None:
+    """Add verified target columns and SHA-256 release exemption table for quarantine recovery."""
+    import json
+    import time
+
+    from app.core.migrations import table_columns
+
+    if table_columns(conn, "quarantine_records"):
+        add_missing_columns(
+            conn,
+            "quarantine_records",
+            {
+                "verified_target_path": "TEXT",
+                "released_file_hash": "TEXT",
+            },
+        )
+
+    conn.execute("""
+        CREATE TABLE IF NOT EXISTS quarantine_release_exemptions (
+            base_dir TEXT NOT NULL DEFAULT '',
+            file_hash TEXT NOT NULL,
+            verified_target_path TEXT,
+            job_id TEXT,
+            released_at REAL NOT NULL,
+            PRIMARY KEY (base_dir, file_hash)
+        )
+    """)
+    conn.execute(
+        "CREATE INDEX IF NOT EXISTS idx_quarantine_release_exemptions_hash "
+        "ON quarantine_release_exemptions (file_hash)"
+    )
+
+    if not table_columns(conn, "quarantine_records"):
+        return
+
+    rows = conn.execute(
+        """
+        SELECT job_id, base_dir, file_hash, released_file_hash, verified_target_path,
+               audit_log, updated_at, created_at
+        FROM quarantine_records
+        WHERE UPPER(status) = 'RELEASED' AND LOWER(COALESCE(policy_action, '')) = 'release'
+        """
+    ).fetchall()
+
+    now = time.time()
+    for (
+        job_id,
+        base_dir,
+        file_hash,
+        released_hash,
+        verified_target,
+        raw_audit,
+        updated_at,
+        created_at,
+    ) in rows:
+        approved_hash = released_hash or file_hash
+        if not approved_hash and raw_audit:
+            try:
+                entries = json.loads(raw_audit)
+                if isinstance(entries, list):
+                    for entry in reversed(entries):
+                        if isinstance(entry, dict) and entry.get("approved_file_hash"):
+                            approved_hash = entry["approved_file_hash"]
+                            break
+            except Exception:
+                pass
+        if not approved_hash:
+            continue
+
+        norm_base = os.path.normpath(os.path.abspath(base_dir)) if base_dir else ""
+        conn.execute(
+            """
+            INSERT INTO quarantine_release_exemptions (
+                base_dir, file_hash, verified_target_path, job_id, released_at
+            ) VALUES (?, ?, ?, ?, ?)
+            ON CONFLICT(base_dir, file_hash) DO UPDATE SET
+                verified_target_path = COALESCE(excluded.verified_target_path, quarantine_release_exemptions.verified_target_path),
+                job_id = COALESCE(excluded.job_id, quarantine_release_exemptions.job_id),
+                released_at = excluded.released_at
+            """,
+            (
+                norm_base,
+                approved_hash,
+                verified_target,
+                job_id,
+                float(updated_at or created_at or now),
+            ),
+        )
+
+
 class Database:
     """SQLite database abstraction for persistent storage of document state."""
 
@@ -202,6 +292,7 @@ class Database:
         self._cache_lock = threading.Lock()
         self._cached_base_dir = None
         self._cached_documents: Any = None
+        self._release_schema_ready = False
         self.corrupted_vectors = set()
         self._corrupted_vectors_lock = threading.Lock()
         from app.core.cache import SparseMatrixLRUCache
@@ -209,11 +300,31 @@ class Database:
         self.matrix_lru_cache = SparseMatrixLRUCache(max_documents=500)
         self.init_db()
 
+    def _ensure_release_schema(self, conn) -> None:
+        """Ensure quarantine release exemption columns and table exist once per Database instance."""
+        if self._release_schema_ready:
+            return
+        migrate_add_quarantine_release_exemptions(conn)
+        self._release_schema_ready = True
+
+    def _has_release_columns(self, conn) -> bool:
+        """Return True when verified_target_path and released_file_hash columns exist."""
+        if self._release_schema_ready:
+            return True
+        from app.core.migrations import table_columns
+
+        cols = table_columns(conn, "quarantine_records")
+        has_rel = "verified_target_path" in cols and "released_file_hash" in cols
+        if has_rel and table_columns(conn, "quarantine_release_exemptions"):
+            self._release_schema_ready = True
+        return has_rel
+
     def init_db(self):
         """Initialize the core database and create tables if they do not exist."""
         conn = get_db_connection(self.db_path)
         with conn:
             migrate(conn, self.migrations, label=f"Database {self.db_path}")
+            self._ensure_release_schema(conn)
 
             # Purge existing audio-derived or non-eligible index terms from legacy databases
             try:
@@ -2129,6 +2240,8 @@ class Database:
         policy_action: str | None = None,
         error_message: str | None = None,
         audit_entry: dict | str | None = None,
+        verified_target_path: str | None = None,
+        released_file_hash: str | None = None,
     ):
         """Atomically transition quarantine job state and append structured audit record."""
         import json
@@ -2142,8 +2255,13 @@ class Database:
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
+                self._ensure_release_schema(conn)
                 cursor = conn.execute(
-                    "SELECT status, audit_log, policy_action FROM quarantine_records WHERE job_id = ?",
+                    """
+                    SELECT status, audit_log, policy_action, base_dir, file_hash,
+                           verified_target_path, released_file_hash
+                    FROM quarantine_records WHERE job_id = ?
+                    """,
                     (job_id,),
                 )
                 row = cursor.fetchone()
@@ -2163,8 +2281,35 @@ class Database:
                         current_log = []
 
                 existing_action = row[2]
+                rec_base_dir = row[3] or ""
+                rec_file_hash = row[4]
+                existing_verified_target = row[5]
+                existing_released_hash = row[6]
                 act_to_save = (
                     policy_action if policy_action is not None else existing_action
+                )
+
+                effective_released_hash = released_file_hash
+                if not effective_released_hash and isinstance(audit_entry, dict):
+                    effective_released_hash = audit_entry.get(
+                        "approved_file_hash"
+                    ) or audit_entry.get("released_file_hash")
+                if (
+                    not effective_released_hash
+                    and status == "RELEASED"
+                    and (act_to_save or "").lower() == "release"
+                ):
+                    effective_released_hash = rec_file_hash
+
+                hash_to_save = (
+                    effective_released_hash
+                    if effective_released_hash is not None
+                    else existing_released_hash
+                )
+                target_to_save = (
+                    verified_target_path.replace("\\", "/")
+                    if verified_target_path is not None
+                    else existing_verified_target
                 )
 
                 if audit_entry:
@@ -2199,7 +2344,8 @@ class Database:
                 conn.execute(
                     """
                     UPDATE quarantine_records
-                    SET status = ?, policy_action = ?, audit_log = ?, updated_at = ?, error_message = ?
+                    SET status = ?, policy_action = ?, audit_log = ?, updated_at = ?,
+                        error_message = ?, verified_target_path = ?, released_file_hash = ?
                     WHERE job_id = ?
                     """,
                     (
@@ -2208,11 +2354,182 @@ class Database:
                         json.dumps(current_log),
                         now,
                         error_message,
+                        target_to_save,
+                        hash_to_save,
                         job_id,
                     ),
                 )
 
+                should_exempt = bool(
+                    hash_to_save
+                    and (
+                        (
+                            status == "RELEASED"
+                            and (act_to_save or "").lower() == "release"
+                        )
+                        or (
+                            isinstance(audit_entry, dict)
+                            and bool(audit_entry.get("record_release_exemption"))
+                        )
+                    )
+                )
+                if should_exempt and hash_to_save:
+                    norm_base = (
+                        os.path.normpath(os.path.abspath(rec_base_dir))
+                        if rec_base_dir
+                        else ""
+                    )
+                    conn.execute(
+                        """
+                        INSERT INTO quarantine_release_exemptions (
+                            base_dir, file_hash, verified_target_path, job_id, released_at
+                        ) VALUES (?, ?, ?, ?, ?)
+                        ON CONFLICT(base_dir, file_hash) DO UPDATE SET
+                            verified_target_path = COALESCE(excluded.verified_target_path, quarantine_release_exemptions.verified_target_path),
+                            job_id = excluded.job_id,
+                            released_at = excluded.released_at
+                        """,
+                        (norm_base, hash_to_save, target_to_save, job_id, now),
+                    )
+
         return self.worker.execute_write(_write)
+
+    def record_quarantine_release_exemption(
+        self,
+        file_hash: str,
+        base_dir: str = "",
+        verified_target_path: str | None = None,
+        job_id: str | None = None,
+    ) -> None:
+        """Persist a SHA-256 release exemption and verified target path."""
+        import time
+
+        if not file_hash:
+            return
+        now = time.time()
+        norm_base = os.path.normpath(os.path.abspath(base_dir)) if base_dir else ""
+        norm_target = (
+            verified_target_path.replace("\\", "/")
+            if verified_target_path is not None
+            else None
+        )
+
+        def _write():
+            conn = get_db_connection(self.db_path)
+            with conn:
+                self._ensure_release_schema(conn)
+                conn.execute(
+                    """
+                    INSERT INTO quarantine_release_exemptions (
+                        base_dir, file_hash, verified_target_path, job_id, released_at
+                    ) VALUES (?, ?, ?, ?, ?)
+                    ON CONFLICT(base_dir, file_hash) DO UPDATE SET
+                        verified_target_path = COALESCE(excluded.verified_target_path, quarantine_release_exemptions.verified_target_path),
+                        job_id = COALESCE(excluded.job_id, quarantine_release_exemptions.job_id),
+                        released_at = excluded.released_at
+                    """,
+                    (norm_base, file_hash, norm_target, job_id, now),
+                )
+
+        self.worker.execute_write(_write)
+
+    def get_quarantine_release_exemption(
+        self, file_hash: str, base_dir: str = ""
+    ) -> dict | None:
+        """Retrieve a persisted SHA-256 release exemption record, if any."""
+        if not file_hash:
+            return None
+        conn = get_db_connection(self.db_path)
+        with conn:
+            if not self._release_schema_ready:
+                from app.core.migrations import table_columns
+
+                if not table_columns(conn, "quarantine_release_exemptions"):
+                    return None
+            if base_dir:
+                norm_base = os.path.normpath(os.path.abspath(base_dir))
+                row = conn.execute(
+                    """
+                    SELECT base_dir, file_hash, verified_target_path, job_id, released_at
+                    FROM quarantine_release_exemptions
+                    WHERE file_hash = ? AND (LOWER(base_dir) = LOWER(?) OR LOWER(base_dir) = LOWER(?) OR base_dir = '')
+                    ORDER BY CASE WHEN base_dir = '' THEN 1 ELSE 0 END ASC, released_at DESC
+                    LIMIT 1
+                    """,
+                    (file_hash, norm_base, base_dir),
+                ).fetchone()
+            else:
+                row = conn.execute(
+                    """
+                    SELECT base_dir, file_hash, verified_target_path, job_id, released_at
+                    FROM quarantine_release_exemptions
+                    WHERE file_hash = ?
+                    ORDER BY released_at DESC
+                    LIMIT 1
+                    """,
+                    (file_hash,),
+                ).fetchone()
+            if not row:
+                return None
+            return {
+                "base_dir": row[0],
+                "file_hash": row[1],
+                "verified_target_path": row[2],
+                "job_id": row[3],
+                "released_at": row[4],
+            }
+
+    def is_quarantine_hash_released(self, file_hash: str, base_dir: str = "") -> bool:
+        """Return True if file_hash has an approved quarantine release exemption."""
+        import json
+
+        if not file_hash:
+            return False
+        if (
+            self.get_quarantine_release_exemption(file_hash, base_dir=base_dir)
+            is not None
+        ):
+            return True
+        conn = get_db_connection(self.db_path)
+        with conn:
+            has_rel = self._has_release_columns(conn)
+            rel_clause = " OR released_file_hash = ?" if has_rel else ""
+            params: tuple[Any, ...] = (
+                (file_hash, file_hash) if has_rel else (file_hash,)
+            )
+            if conn.execute(
+                f"""
+                SELECT 1 FROM quarantine_records
+                WHERE (file_hash = ?{rel_clause})
+                  AND UPPER(status) = 'RELEASED'
+                  AND LOWER(COALESCE(policy_action, '')) = 'release'
+                LIMIT 1
+                """,
+                params,
+            ).fetchone():
+                return True
+            audit_rows = conn.execute(
+                """
+                SELECT audit_log FROM quarantine_records
+                WHERE UPPER(status) = 'RELEASED'
+                  AND LOWER(COALESCE(policy_action, '')) = 'release'
+                  AND audit_log LIKE ?
+                """,
+                (f"%{file_hash}%",),
+            ).fetchall()
+            for (raw_audit,) in audit_rows:
+                if not raw_audit:
+                    continue
+                try:
+                    entries = json.loads(raw_audit)
+                except Exception:
+                    continue
+                if isinstance(entries, list) and any(
+                    isinstance(e, dict) and e.get("approved_file_hash") == file_hash
+                    for e in entries
+                ):
+                    return True
+        return False
 
     def recover_orphaned_quarantine_jobs(
         self, timeout_seconds: float = 300.0
@@ -2268,16 +2585,43 @@ class Database:
 
         return self.worker.execute_write(_write)
 
-    def get_quarantine_record(self, job_id: str) -> dict | None:
-        """Retrieve a quarantine staging record by job_id."""
+    @staticmethod
+    def _row_to_quarantine_dict(row: tuple, has_release_cols: bool) -> dict:
         import json
 
+        audit = []
+        if row[7]:
+            try:
+                audit = json.loads(row[7])
+            except Exception:
+                audit = []
+        rec = {
+            "job_id": row[0],
+            "base_dir": row[1],
+            "original_filepath": row[2],
+            "staged_filepath": row[3],
+            "file_hash": row[4],
+            "status": row[5],
+            "policy_action": row[6],
+            "audit_log": audit,
+            "created_at": row[8],
+            "updated_at": row[9],
+            "error_message": row[10],
+            "verified_target_path": row[11] if has_release_cols else None,
+            "released_file_hash": row[12] if has_release_cols else None,
+        }
+        return rec
+
+    def get_quarantine_record(self, job_id: str) -> dict | None:
+        """Retrieve a quarantine staging record by job_id."""
         conn = get_db_connection(self.db_path)
         with conn:
+            has_rel = self._has_release_columns(conn)
+            extra_cols = ", verified_target_path, released_file_hash" if has_rel else ""
             cursor = conn.execute(
-                """
+                f"""
                 SELECT job_id, base_dir, original_filepath, staged_filepath, file_hash,
-                       status, policy_action, audit_log, created_at, updated_at, error_message
+                       status, policy_action, audit_log, created_at, updated_at, error_message{extra_cols}
                 FROM quarantine_records
                 WHERE job_id = ?
                 """,
@@ -2286,32 +2630,12 @@ class Database:
             row = cursor.fetchone()
             if not row:
                 return None
-            audit = []
-            if row[7]:
-                try:
-                    audit = json.loads(row[7])
-                except Exception:
-                    audit = []
-            return {
-                "job_id": row[0],
-                "base_dir": row[1],
-                "original_filepath": row[2],
-                "staged_filepath": row[3],
-                "file_hash": row[4],
-                "status": row[5],
-                "policy_action": row[6],
-                "audit_log": audit,
-                "created_at": row[8],
-                "updated_at": row[9],
-                "error_message": row[10],
-            }
+            return self._row_to_quarantine_dict(row, has_rel)
 
     def get_quarantine_records_by_base_dir(
         self, base_dir: str, status: str | None = None
     ) -> list[dict]:
         """Retrieve quarantine staging records for a base directory."""
-        import json
-
         if not base_dir:
             all_recs = self.get_all_quarantine_records()
             return (
@@ -2326,6 +2650,9 @@ class Database:
 
         conn = get_db_connection(self.db_path)
         with conn:
+            has_rel = self._has_release_columns(conn)
+            extra_cols = ", verified_target_path, released_file_hash" if has_rel else ""
+
             b_norm = os.path.normpath(base_dir)
             b_slash = base_dir.replace("\\", "/")
             b_backslash = base_dir.replace("/", "\\")
@@ -2350,9 +2677,9 @@ class Database:
 
             if status:
                 cursor = conn.execute(
-                    """
+                    f"""
                     SELECT job_id, base_dir, original_filepath, staged_filepath, file_hash,
-                           status, policy_action, audit_log, created_at, updated_at, error_message
+                           status, policy_action, audit_log, created_at, updated_at, error_message{extra_cols}
                     FROM quarantine_records
                     WHERE (
                         LOWER(base_dir) = LOWER(?) OR
@@ -2370,9 +2697,9 @@ class Database:
 
             else:
                 cursor = conn.execute(
-                    """
+                    f"""
                     SELECT job_id, base_dir, original_filepath, staged_filepath, file_hash,
-                           status, policy_action, audit_log, created_at, updated_at, error_message
+                           status, policy_action, audit_log, created_at, updated_at, error_message{extra_cols}
                     FROM quarantine_records
                     WHERE (
                         LOWER(base_dir) = LOWER(?) OR
@@ -2388,29 +2715,7 @@ class Database:
                     candidates,
                 )
             rows = cursor.fetchall()
-            results = []
-            for row in rows:
-                audit = []
-                if row[7]:
-                    try:
-                        audit = json.loads(row[7])
-                    except Exception:
-                        audit = []
-                results.append(
-                    {
-                        "job_id": row[0],
-                        "base_dir": row[1],
-                        "original_filepath": row[2],
-                        "staged_filepath": row[3],
-                        "file_hash": row[4],
-                        "status": row[5],
-                        "policy_action": row[6],
-                        "audit_log": audit,
-                        "created_at": row[8],
-                        "updated_at": row[9],
-                        "error_message": row[10],
-                    }
-                )
+            results = [self._row_to_quarantine_dict(row, has_rel) for row in rows]
 
             if not results:
                 # Fallback matching for unusual or relative path representations
@@ -2437,40 +2742,17 @@ class Database:
 
     def get_all_quarantine_records(self) -> list[dict]:
         """Retrieve all quarantine staging records across all sessions."""
-        import json
-
         conn = get_db_connection(self.db_path)
         with conn:
+            has_rel = self._has_release_columns(conn)
+            extra_cols = ", verified_target_path, released_file_hash" if has_rel else ""
             cursor = conn.execute(
-                """
+                f"""
                 SELECT job_id, base_dir, original_filepath, staged_filepath, file_hash,
-                       status, policy_action, audit_log, created_at, updated_at, error_message
+                       status, policy_action, audit_log, created_at, updated_at, error_message{extra_cols}
                 FROM quarantine_records
                 ORDER BY created_at ASC
                 """
             )
             rows = cursor.fetchall()
-            results = []
-            for row in rows:
-                audit = []
-                if row[7]:
-                    try:
-                        audit = json.loads(row[7])
-                    except Exception:
-                        audit = []
-                results.append(
-                    {
-                        "job_id": row[0],
-                        "base_dir": row[1],
-                        "original_filepath": row[2],
-                        "staged_filepath": row[3],
-                        "file_hash": row[4],
-                        "status": row[5],
-                        "policy_action": row[6],
-                        "audit_log": audit,
-                        "created_at": row[8],
-                        "updated_at": row[9],
-                        "error_message": row[10],
-                    }
-                )
-            return results
+            return [self._row_to_quarantine_dict(row, has_rel) for row in rows]

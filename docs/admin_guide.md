@@ -155,11 +155,18 @@ Number of days (> 0) to retain historical sorting session records and rollback s
 
 List of absolute literal directory paths protected from scanning, moving, or modification. Relative paths and wildcard or glob characters ('*', '?', '[', ']') are rejected.
 
+### `QUARANTINE_MODE`
+- **Type**: `str`
+- **Default**: `'personal'`
+- **Allowed**: `personal`, `strict`
+
+Compliance sensitivity quarantine enforcement mode: 'personal' (default) bypasses automatic JEV sensitivity holds so user rules and starter packs route personal documents without false quarantines (unless a policy explicitly sets action='quarantine' or a clinical strategy runs), whereas 'strict' enforces regulated sensitivity holds.
+
 ### `AUTO_QUARANTINE_RATINGS`
 - **Type**: `list[str]`
 - **Default**: `[]`
 
-Opt-in sensitivity severity ratings (such as 'CRITICAL' and 'HIGH') that automatically route detected files into compliance quarantine staging. Defaults to an empty list so automatic sensitivity quarantine is disabled until enabled.
+Opt-in sensitivity severity ratings (such as 'CRITICAL' and 'HIGH') that automatically route detected files into compliance quarantine staging when QUARANTINE_MODE is 'strict' or explicitly configured. Defaults to an empty list so automatic sensitivity quarantine is disabled in personal mode.
 
 ### `QUARANTINE_DIR_NAME`
 - **Type**: `str`
@@ -972,7 +979,8 @@ positional arguments:
     process             Trigger forensic scanning and policy evaluation for
                         quarantine jobs
     release             Release quarantined items to destination directory
-    dismiss             Dismiss quarantine items without restoring files
+    dismiss             Dismiss quarantine items and restore staged files (or
+                        purge with --purge --yes)
 
 options:
   -h, --help            show this help message and exit
@@ -1076,7 +1084,7 @@ options:
 usage: smart-autosorter quarantine dismiss [-h] [--db-path DB_PATH] [-q]
                                            [--no-color] [--json]
                                            [--job-id JOB_ID]
-                                           [--job-ids JOB_IDS]
+                                           [--job-ids JOB_IDS] [--purge] [-y]
                                            [JOB_ID ...]
 
 positional arguments:
@@ -1090,6 +1098,9 @@ options:
   --json             Output response in structured JSON format
   --job-id JOB_ID    Quarantine job ID
   --job-ids JOB_IDS  Comma-separated list of quarantine job IDs
+  --purge            Permanently delete staged files instead of restoring to
+                     original path (requires --yes)
+  -y, --yes          Confirm permanent deletion when --purge is specified
 ```
 
 ##### `rules`

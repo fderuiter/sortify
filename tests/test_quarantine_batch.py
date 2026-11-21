@@ -102,12 +102,15 @@ def test_release_quarantine_batch(test_db_and_dir):
 
 
 def test_dismiss_quarantine_batch(test_db_and_dir):
-    """Test dismiss_quarantine_batch marking items DISMISSED while leaving staged files."""
+    """Test dismiss_quarantine_batch restoring staged files to original_filepath and marking items DISMISSED."""
     db, tmp_dir = test_db_and_dir
     service = QuarantineInterceptorService(db=db)
 
     job1 = stage_dummy_file(service, tmp_dir, "dismiss1.txt")
     job2 = stage_dummy_file(service, tmp_dir, "dismiss2.txt")
+    orig1 = os.path.join(tmp_dir, "dismiss1.txt")
+    if os.path.exists(orig1):
+        os.remove(orig1)
 
     rec1_before = db.get_quarantine_record(job1)
     staged_path1 = rec1_before["staged_filepath"]
@@ -122,8 +125,9 @@ def test_dismiss_quarantine_batch(test_db_and_dir):
     rec2_after = db.get_quarantine_record(job2)
     assert rec1_after["status"] == "DISMISSED"
     assert rec2_after["status"] == "DISMISSED"
-    # Staged file remains on disk
-    assert os.path.exists(staged_path1)
+    # Staged file is restored to original_filepath without stranding bytes in staging
+    assert os.path.exists(orig1)
+    assert not os.path.exists(staged_path1)
 
     # Re-dismissing should indicate already dismissed
     re_dismiss = service.dismiss_quarantine_batch([job1])

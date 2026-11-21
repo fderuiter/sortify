@@ -460,25 +460,33 @@ class SortPipeline(LifecycleTelemetryMixin):
         self.emit_telemetry("plan_start", items=items)
 
         try:
+            custom_qdir = (
+                str(getattr(self.settings, "QUARANTINE_DIR_NAME", "") or "")
+                .replace("\\", "/")
+                .strip("/")
+                .split("/")[0]
+            )
+            excluded_top_dirs = {
+                "_Quarantine_Staging",
+                "_Compliance_Quarantine",
+            }
+            if custom_qdir:
+                excluded_top_dirs.add(custom_qdir)
+
             if items is None:
                 from app.core.scanner import get_files_recursively
 
                 items = get_files_recursively(self.base_dir)
-                custom_qdir = (
-                    str(getattr(self.settings, "QUARANTINE_DIR_NAME", "") or "")
-                    .replace("\\", "/")
-                    .strip("/")
-                    .split("/")[0]
-                )
-                if custom_qdir and items:
-                    items = [
-                        it
-                        for it in items
-                        if str(it).replace("\\", "/").strip("/").split("/")[0]
-                        != custom_qdir
-                    ]
             elif self.base_dir:
                 items = _relativize_items_to_base(items, self.base_dir)
+
+            if items:
+                items = [
+                    it
+                    for it in items
+                    if str(it).replace("\\", "/").strip("/").split("/")[0]
+                    not in excluded_top_dirs
+                ]
 
             metadata_bypassed: list[Any] = []
             if run_metadata_pass:

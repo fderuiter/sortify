@@ -1270,6 +1270,11 @@ class AutoSorterTUI(
                         ]
                     except Exception:
                         pass
+                if "QUARANTINE_MODE" in res:
+                    try:
+                        self.settings.QUARANTINE_MODE = res["QUARANTINE_MODE"]
+                    except Exception:
+                        pass
                 if "QUARANTINE_DIR_NAME" in res:
                     try:
                         self.settings.QUARANTINE_DIR_NAME = res["QUARANTINE_DIR_NAME"]
@@ -1677,13 +1682,19 @@ class AutoSorterTUI(
         """Open the Quarantine Vault Modal Screen."""
         db = self.app_session.db if self.app_session else None
         base_dir = self.base_dir
+        active_settings = getattr(self, "settings", None)
         policies = (
-            getattr(self.settings, "POLICIES", [])
-            if hasattr(self, "settings") and self.settings
+            getattr(active_settings, "POLICIES", [])
+            if active_settings is not None
             else []
         )
         self.push_screen(
-            QuarantineVaultModal(db=db, base_dir=base_dir, policies=policies)
+            QuarantineVaultModal(
+                db=db,
+                base_dir=base_dir,
+                policies=policies,
+                runtime_settings=active_settings,
+            )
         )
 
     @on(Button.Pressed, "#btn-cta-select-dir")

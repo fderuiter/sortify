@@ -536,6 +536,7 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 updated_ratings.append(extra_r)
         try:
             self.settings.AUTO_QUARANTINE_RATINGS = updated_ratings
+            self.settings.QUARANTINE_MODE = "strict" if updated_ratings else "personal"
         except Exception:
             pass
 

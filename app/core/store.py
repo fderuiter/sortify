@@ -14,7 +14,11 @@ from dataclasses import dataclass
 from pathlib import Path
 
 from app.core.cache import CacheManager, _cache_db_baseline
-from app.core.db import Database, _main_db_baseline
+from app.core.db import (
+    Database,
+    _main_db_baseline,
+    migrate_add_quarantine_release_exemptions,
+)
 from app.core.db_conn import DB_ERRORS, get_db_connection
 from app.core.exceptions import CryptoError
 from app.core.history import HistoryManager, _history_db_baseline
@@ -54,6 +58,11 @@ STORE_MIGRATIONS = (
     Migration(1, "initial", _store_initial),
     Migration(2, "moves", migrate_add_moves),
     Migration(3, "legacy_moves", migrate_import_legacy_moves),
+    Migration(
+        4,
+        "quarantine_release_exemptions",
+        migrate_add_quarantine_release_exemptions,
+    ),
 )
 
 
@@ -327,6 +336,8 @@ def _copy_main(src, dst, old_crypto, new_crypto) -> int:
     count += _copy_table(src, dst, "transaction_ledger", skip=("id",))
     count += import_transaction_ledger(dst)
     count += _copy_table(src, dst, "quarantine_records")
+    count += _copy_table(src, dst, "quarantine_release_exemptions")
+    migrate_add_quarantine_release_exemptions(dst)
     # Vectors, TF-IDF tables, model metadata and classification caches are
     # derived from the documents and rebuilt on the next analysis.
     return count

@@ -242,8 +242,18 @@
       "title": "Protected Paths",
       "type": "array"
     },
+    "QUARANTINE_MODE": {
+      "default": "personal",
+      "description": "Compliance sensitivity quarantine enforcement mode: 'personal' (default) bypasses automatic JEV sensitivity holds so user rules and starter packs route personal documents without false quarantines (unless a policy explicitly sets action='quarantine' or a clinical strategy runs), whereas 'strict' enforces regulated sensitivity holds.",
+      "enum": [
+        "personal",
+        "strict"
+      ],
+      "title": "Quarantine Mode",
+      "type": "string"
+    },
     "AUTO_QUARANTINE_RATINGS": {
-      "description": "Opt-in sensitivity severity ratings (such as 'CRITICAL' and 'HIGH') that automatically route detected files into compliance quarantine staging. Defaults to an empty list so automatic sensitivity quarantine is disabled until enabled.",
+      "description": "Opt-in sensitivity severity ratings (such as 'CRITICAL' and 'HIGH') that automatically route detected files into compliance quarantine staging when QUARANTINE_MODE is 'strict' or explicitly configured. Defaults to an empty list so automatic sensitivity quarantine is disabled in personal mode.",
       "items": {
         "type": "string"
       },

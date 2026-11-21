@@ -13,6 +13,7 @@ from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static
 
+from app.core.domain_contracts import VALID_QUARANTINE_STATES
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
 from app.ui.layout import ModalBox, ResponsiveLayoutMixin
@@ -179,21 +180,49 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     }
     """
 
+    _ORDERED_QUARANTINE_STATES: tuple[str, ...] = (
+        "STAGED",
+        "IN_INSPECTION",
+        "QUARANTINED",
+        "REDACTED",
+        "RELEASED",
+        "ARCHIVED",
+        "UNARCHIVED",
+        "DISMISSED",
+        "MANUAL_REVIEW_REQUIRED",
+        "DEAD_LETTER_QUEUE",
+    )
+
     def __init__(
         self,
         db: Optional[Any] = None,
         base_dir: str = "",
         policies: Optional[list[dict[str, Any]]] = None,
+        runtime_settings: Optional[Any] = None,
     ):
         super().__init__()
         self.db = db
         self.base_dir = base_dir
         self.policies = policies or []
+        self.runtime_settings = runtime_settings
         self.records: list[dict[str, Any]] = []
         self.filtered_records: list[dict[str, Any]] = []
         self.selected_job_ids: set[str] = set()
         self.selected_job_id: Optional[str] = None
         self._updating_select_all: bool = False
+
+    def _get_runtime_settings(self) -> Any:
+        if self.runtime_settings is not None:
+            return self.runtime_settings
+        return getattr(getattr(self, "app", None), "settings", None)
+
+    def _get_policies(self) -> list[dict[str, Any]]:
+        if self.policies:
+            return self.policies
+        active_settings = self._get_runtime_settings()
+        if active_settings is not None:
+            return list(getattr(active_settings, "POLICIES", []) or [])
+        return []
 
     def compose(self) -> ComposeResult:
         """Compose quarantine vault modal widgets."""
@@ -218,16 +247,16 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                     inp.tooltip = "Filter quarantine records by job ID, filename, or policy reason"
                     yield inp
 
+                    ordered_states = [
+                        st
+                        for st in self._ORDERED_QUARANTINE_STATES
+                        if st in VALID_QUARANTINE_STATES
+                    ]
+                    for st in sorted(VALID_QUARANTINE_STATES):
+                        if st not in ordered_states:
+                            ordered_states.append(st)
                     sel = Select(
-                        [
-                            ("ALL Statuses", "ALL"),
-                            ("STAGED", "STAGED"),
-                            ("QUARANTINED", "QUARANTINED"),
-                            ("IN_INSPECTION", "IN_INSPECTION"),
-                            ("RELEASED", "RELEASED"),
-                            ("DISMISSED", "DISMISSED"),
-                            ("DEAD_LETTER_QUEUE", "DEAD_LETTER_QUEUE"),
-                        ],
+                        [("ALL Statuses", "ALL"), *((st, st) for st in ordered_states)],
                         value="ALL",
                         id="quarantine-status-filter",
                         allow_blank=False,
@@ -280,9 +309,7 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 btn_dis = Button(
                     "Dismiss (d)", id="btn-quarantine-dismiss", variant="warning"
                 )
-                btn_dis.tooltip = (
-                    "Dismiss selected quarantine item(s) without relocating file"
-                )
+                btn_dis.tooltip = "Dismiss selected quarantine item(s) and restore staged file(s) to original path"
                 yield btn_dis
 
                 btn_insp = Button(
@@ -355,10 +382,14 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         """Fetch quarantine records asynchronously on background worker thread."""
         try:
             with self._open_db() as db_inst:
-                if self.base_dir:
-                    recs = db_inst.get_quarantine_records_by_base_dir(self.base_dir)
-                else:
-                    recs = db_inst.get_all_quarantine_records()
+                from app.core.quarantine_interceptor import QuarantineInterceptorService
+
+                service = QuarantineInterceptorService(
+                    db=db_inst,
+                    policies=self._get_policies(),
+                    runtime_settings=self._get_runtime_settings(),
+                )
+                recs = service.list_quarantine_records(base_dir=self.base_dir or None)
                 self._call_ui(self._on_records_loaded, recs)
         except Exception as e:
             logger.exception(f"Failed to fetch quarantine records: {e}")
@@ -549,6 +580,8 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             f"[bold]File Hash:[/bold] {record.get('file_hash') or '-'}",
             f"[bold]Base Directory:[/bold] {record.get('base_dir', '-')}",
         ]
+        if verified_target := record.get("verified_target_path"):
+            lines.append(f"[bold]Verified Target:[/bold] {verified_target}")
         if err := record.get("error_message"):
             lines.append(f"[bold red]Error:[/bold red] {err}")
 
@@ -618,11 +651,10 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             with self._open_db() as db_inst:
                 from app.core.quarantine_interceptor import QuarantineInterceptorService
 
-                runtime_settings = getattr(getattr(self, "app", None), "settings", None)
                 service = QuarantineInterceptorService(
                     db=db_inst,
-                    policies=self.policies,
-                    runtime_settings=runtime_settings,
+                    policies=self._get_policies(),
+                    runtime_settings=self._get_runtime_settings(),
                 )
                 results = service.release_quarantine_batch(
                     clean_job_ids, dest_dir=target_dir, allow_external=allow_external
@@ -656,7 +688,7 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     @on(Button.Pressed, "#btn-quarantine-dismiss")
     def action_dismiss_selected(self) -> None:
-        """Dismiss selected quarantine items without restoring files."""
+        """Dismiss selected quarantine items and restore staged files to original_filepath."""
         job_ids = self._get_target_job_ids()
         if not job_ids:
             self.announce("No quarantine item selected for dismissal.")
@@ -666,8 +698,10 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         self.execute_batch_dismiss_async(job_ids)
 
     @work(thread=True)
-    def execute_batch_dismiss_async(self, job_ids: Any) -> None:
-        """Asynchronously mark quarantine items as dismissed on background worker thread."""
+    def execute_batch_dismiss_async(
+        self, job_ids: Any, purge: bool = False, confirm_purge: bool = False
+    ) -> None:
+        """Asynchronously dismiss quarantine items and restore or purge staged files."""
         try:
             if isinstance(job_ids, (str, dict)):
                 raw_list = [job_ids]
@@ -681,8 +715,14 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             with self._open_db() as db_inst:
                 from app.core.quarantine_interceptor import QuarantineInterceptorService
 
-                service = QuarantineInterceptorService(db=db_inst)
-                results = service.dismiss_quarantine_batch(clean_job_ids)
+                service = QuarantineInterceptorService(
+                    db=db_inst,
+                    policies=self._get_policies(),
+                    runtime_settings=self._get_runtime_settings(),
+                )
+                results = service.dismiss_quarantine_batch(
+                    clean_job_ids, purge=purge, confirm_purge=confirm_purge
+                )
                 self._call_ui(self._on_batch_dismiss_complete, results)
         except Exception as e:
             logger.error(f"Failed batch quarantine dismiss: {e}", exc_info=True)
@@ -735,11 +775,10 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             with self._open_db() as db_inst:
                 from app.core.quarantine_interceptor import QuarantineInterceptorService
 
-                runtime_settings = getattr(getattr(self, "app", None), "settings", None)
                 service = QuarantineInterceptorService(
                     db=db_inst,
-                    policies=self.policies,
-                    runtime_settings=runtime_settings,
+                    policies=self._get_policies(),
+                    runtime_settings=self._get_runtime_settings(),
                 )
                 results = service.process_quarantine_batch(clean_job_ids)
                 self._call_ui(self._on_batch_reinspect_complete, results)

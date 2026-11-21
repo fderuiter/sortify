@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "7ee6dac14c3212618ff3349426e263222cca79270f26bbe74bf9c18a00e22ea4"
+    "checksum": "effe10ccaa1c34134133f61e8673818ef24e1aaaa22b16b50e8d3a9db63db68f"
   },
   "classes": [],
   "cli": [
@@ -247,7 +247,7 @@
       ],
       "caller": "quarantine_subparsers",
       "keywords": {
-        "help": "Dismiss quarantine items without restoring files"
+        "help": "Dismiss quarantine items and restore staged files (or purge with --purge --yes)"
       },
       "method": "add_parser"
     },
@@ -285,6 +285,32 @@
         "default": null,
         "help": "Comma-separated list of quarantine job IDs",
         "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--purge"
+      ],
+      "caller": "p_dismiss",
+      "keywords": {
+        "action": "store_true",
+        "default": false,
+        "help": "Permanently delete staged files instead of restoring to original path (requires --yes)"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "-y",
+        "--yes"
+      ],
+      "caller": "p_dismiss",
+      "keywords": {
+        "action": "store_true",
+        "default": false,
+        "dest": "confirm_purge",
+        "help": "Confirm permanent deletion when --purge is specified"
       },
       "method": "add_argument"
     },

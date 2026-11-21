@@ -18,16 +18,28 @@ def _normalize_quarantine_dir_prefix(raw_name: str) -> str:
     return cleaned.split("/")[0].strip()
 
 
-def _get_quarantine_ignore_prefixes() -> tuple[str, ...]:
+def _get_quarantine_ignore_prefixes(
+    quarantine_dir_name: str | None = None,
+) -> tuple[str, ...]:
     """Return quarantine directory prefixes that must never be scanned or re-sorted."""
     prefixes: list[str] = list(_DEFAULT_QUARANTINE_DIRS)
+    if quarantine_dir_name:
+        explicit_qdir = _normalize_quarantine_dir_prefix(quarantine_dir_name)
+        if explicit_qdir and explicit_qdir not in prefixes:
+            prefixes.append(explicit_qdir)
     try:
         from app.config import AppSettings, get_app_dir
 
+        candidates = []
         active_inst = getattr(AppSettings, "_instance", None)
         if active_inst is not None:
+            candidates.append(active_inst)
+        active_set = getattr(AppSettings, "_active_instances", None)
+        if active_set is not None:
+            candidates.extend(list(active_set))
+        for inst in candidates:
             mem_qdir = _normalize_quarantine_dir_prefix(
-                getattr(active_inst, "QUARANTINE_DIR_NAME", "")
+                getattr(inst, "QUARANTINE_DIR_NAME", "")
             )
             if mem_qdir and mem_qdir not in prefixes:
                 prefixes.append(mem_qdir)

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "50d70adb7051a4390aba20cd0ba362adce817ebe70379e87286c0fd675a6d16d"
+    "checksum": "598aeaab2b7f09913940e95f8cd5b960db95a11608946293fcb082bdd59876dc"
   },
   "classes": [
     {
@@ -430,6 +430,29 @@
         {
           "async": false,
           "decorators": [],
+          "name": "get_quarantine_release_exemption",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_hash"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "base_dir"
+            }
+          ],
+          "returns": "dict | None"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "get_tfidf_matrix_cache",
           "parameters": [
             {
@@ -516,6 +539,62 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "is_quarantine_hash_released",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_hash"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "base_dir"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "record_quarantine_release_exemption",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "file_hash"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "base_dir"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "verified_target_path"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "job_id"
+            }
+          ],
+          "returns": "None"
         },
         {
           "async": false,
@@ -808,6 +887,16 @@
               "annotation": "dict | str | None",
               "default": "None",
               "name": "audit_entry"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "verified_target_path"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "released_file_hash"
             }
           ],
           "returns": null
@@ -912,5 +1001,19 @@
       ]
     }
   ],
-  "functions": []
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "migrate_add_quarantine_release_exemptions",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "conn"
+        }
+      ],
+      "returns": "None"
+    }
+  ]
 }

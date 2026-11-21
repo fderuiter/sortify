@@ -577,6 +577,46 @@ class SettingsModal(
                             )
                             if r
                         }
+                        raw_q_mode = str(
+                            getattr(self.settings, "QUARANTINE_MODE", "") or ""
+                        ).lower()
+                        if getattr(self.settings, "_quarantine_mode_explicit", False):
+                            initial_q_mode = (
+                                raw_q_mode
+                                if raw_q_mode in ("personal", "strict")
+                                else "personal"
+                            )
+                        elif current_auto_ratings:
+                            initial_q_mode = "strict"
+                        else:
+                            initial_q_mode = (
+                                raw_q_mode
+                                if raw_q_mode in ("personal", "strict")
+                                else "personal"
+                            )
+
+                        yield Label(
+                            "Quarantine Mode:",
+                            classes="field-label",
+                        )
+                        sel_qmode = Select(
+                            [
+                                (
+                                    "Personal (Rules First, No Auto-Holds)",
+                                    "personal",
+                                ),
+                                (
+                                    "Strict (Regulated Sensitivity Holds)",
+                                    "strict",
+                                ),
+                            ],
+                            value=initial_q_mode,
+                            id="select-quarantine-mode",
+                            allow_blank=False,
+                        )
+                        sel_qmode.tooltip = "Select personal mode to bypass automatic sensitivity holds, or strict mode for regulated quarantine holds"
+                        yield sel_qmode
+
                         yield LabeledSwitch(
                             label="Auto-Quarantine CRITICAL Sensitivity",
                             value="CRITICAL" in current_auto_ratings,
@@ -800,9 +840,45 @@ class SettingsModal(
         if hasattr(self, "announce"):
             self.announce(f"Character key shortcuts {state_str}.", priority="polite")
 
+    @on(Select.Changed, "#select-quarantine-mode")
+    def on_quarantine_mode_changed(self, event: Select.Changed) -> None:
+        """Synchronize sensitivity switches and announce quarantine mode changes."""
+        if getattr(self, "_syncing_quarantine_controls", False):
+            return
+        mode_val = str(event.value or "personal").lower()
+        if mode_val == "strict":
+            try:
+                sw_crit = self.query_one("#switch-quarantine-critical", Switch)
+                sw_high = self.query_one("#switch-quarantine-high", Switch)
+                if not sw_crit.value and not sw_high.value:
+                    self._syncing_quarantine_controls = True
+                    try:
+                        sw_crit.value = True
+                        sw_high.value = True
+                    finally:
+                        self._syncing_quarantine_controls = False
+            except Exception:
+                pass
+        if hasattr(self, "announce"):
+            self.announce(
+                f"Quarantine mode set to {mode_val}.",
+                priority="polite",
+            )
+
     @on(Switch.Changed, "#switch-quarantine-critical")
     def on_quarantine_critical_changed(self, event: Switch.Changed) -> None:
         """Announce status update when CRITICAL sensitivity auto-quarantine switch is toggled."""
+        if not getattr(self, "_syncing_quarantine_controls", False) and event.value:
+            try:
+                sel_mode = self.query_one("#select-quarantine-mode", Select)
+                if sel_mode.value == "personal":
+                    self._syncing_quarantine_controls = True
+                    try:
+                        sel_mode.value = "strict"
+                    finally:
+                        self._syncing_quarantine_controls = False
+            except Exception:
+                pass
         state_str = "enabled" if event.value else "disabled"
         if hasattr(self, "announce"):
             self.announce(
@@ -813,6 +889,17 @@ class SettingsModal(
     @on(Switch.Changed, "#switch-quarantine-high")
     def on_quarantine_high_changed(self, event: Switch.Changed) -> None:
         """Announce status update when HIGH sensitivity auto-quarantine switch is toggled."""
+        if not getattr(self, "_syncing_quarantine_controls", False) and event.value:
+            try:
+                sel_mode = self.query_one("#select-quarantine-mode", Select)
+                if sel_mode.value == "personal":
+                    self._syncing_quarantine_controls = True
+                    try:
+                        sel_mode.value = "strict"
+                    finally:
+                        self._syncing_quarantine_controls = False
+            except Exception:
+                pass
         state_str = "enabled" if event.value else "disabled"
         if hasattr(self, "announce"):
             self.announce(
@@ -1029,6 +1116,25 @@ class SettingsModal(
                 auto_quarantine_ratings.append(extra_r)
 
         try:
+            q_mode_val = self.query_one("#select-quarantine-mode", Select).value
+            if q_mode_val == Select.BLANK or str(q_mode_val).lower() not in (
+                "personal",
+                "strict",
+            ):
+                q_mode = "strict" if auto_quarantine_ratings else "personal"
+            else:
+                q_mode = str(q_mode_val).lower()
+        except Exception:
+            q_mode = str(
+                getattr(
+                    self.settings,
+                    "QUARANTINE_MODE",
+                    "strict" if auto_quarantine_ratings else "personal",
+                )
+                or "personal"
+            ).lower()
+
+        try:
             cleanup_empty = self.query_one(
                 "#switch-cleanup-empty-folders", Switch
             ).value
@@ -1054,6 +1160,7 @@ class SettingsModal(
             "ENABLE_CHARACTER_KEY_SHORTCUTS": char_shortcuts,
             "CLEANUP_EMPTY_FOLDERS": cleanup_empty,
             "PRESERVE_HIERARCHY": preserve_hier,
+            "QUARANTINE_MODE": q_mode,
             "AUTO_QUARANTINE_RATINGS": auto_quarantine_ratings,
             "QUARANTINE_DIR_NAME": q_dir_str,
         }

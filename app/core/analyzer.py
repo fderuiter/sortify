@@ -816,16 +816,15 @@ class IncrementalAnalyzer:
             if docs is None:
                 docs = []
 
+            from app.config import resolve_effective_auto_quarantine_ratings
             from app.core.quarantine_interceptor import _is_content_approved_for_release
             from app.core.scanner import parse_item_identifier
 
-            auto_quarantine_ratings = {
-                str(r).upper()
-                for r in (
-                    getattr(runtime_settings, "AUTO_QUARANTINE_RATINGS", []) or []
+            auto_quarantine_ratings = set(
+                resolve_effective_auto_quarantine_ratings(
+                    runtime_settings, strategy_name=self.strategy_name
                 )
-                if r
-            }
+            )
             quarantine_dir_name = (
                 getattr(
                     runtime_settings, "QUARANTINE_DIR_NAME", "_Compliance_Quarantine"
@@ -880,6 +879,7 @@ class IncrementalAnalyzer:
             policy_plan_files = []
             keyword_plan_files = []
             jev_plan_files = []
+            jev_metadata_map = {}
             unsupported_files = []
             historical_overrides = {}
             matched_policies_map = {}
@@ -943,12 +943,26 @@ class IncrementalAnalyzer:
                 )
 
                 if matched_policy:
+                    pol_target = (
+                        matched_policy.target_path
+                        if hasattr(matched_policy, "target_path")
+                        else matched_policy.get("target_path", "")
+                    )
+                    pol_action = (
+                        getattr(matched_policy, "action", None)
+                        if hasattr(matched_policy, "action")
+                        else (
+                            matched_policy.get("action")
+                            if isinstance(matched_policy, dict)
+                            else None
+                        )
+                    )
+                    if str(pol_action or "").lower() == "quarantine" and not pol_target:
+                        pol_target = quarantine_dir_name
                     policy_plan_files.append(
                         (
                             f,
-                            matched_policy.target_path
-                            if hasattr(matched_policy, "target_path")
-                            else matched_policy["target_path"],
+                            pol_target,
                             matched_policy.expression
                             if hasattr(matched_policy, "expression")
                             else matched_policy["expression"],
@@ -999,8 +1013,10 @@ class IncrementalAnalyzer:
                             jev_res = v_jev
                             break
 
+                jev_model = None
                 if jev_res:
                     jev_model = validate_jev_classification_result(jev_res)
+                    jev_metadata_map[f] = jev_model
                     sens_upper = str(jev_model.sensitivity_rating or "LOW").upper()
                     if (
                         sens_upper in auto_quarantine_ratings
@@ -1014,17 +1030,6 @@ class IncrementalAnalyzer:
                             (f, quarantine_dir_name, jev_model, status_match)
                         )
                         continue
-                    if target is not None:
-                        historical_overrides[f] = (target, status_match)
-                    if (
-                        jev_model.is_classified
-                        and jev_model.confidence > 0.0
-                        and jev_model.category != "Unclassified"
-                    ):
-                        jev_plan_files.append(
-                            (f, jev_model.category, jev_model, status_match)
-                        )
-                        matched = True
                 elif auto_quarantine_ratings:
                     try:
                         from app.core.shared_registry import SharedModelRegistry
@@ -1041,6 +1046,7 @@ class IncrementalAnalyzer:
                                 auto_jev_model = validate_jev_classification_result(
                                     auto_jev_res
                                 )
+                                jev_metadata_map[f] = auto_jev_model
                                 sens_upper = str(
                                     auto_jev_model.sensitivity_rating or "LOW"
                                 ).upper()
@@ -1066,21 +1072,18 @@ class IncrementalAnalyzer:
                             f"Auto-quarantine Jev sensitivity evaluation failed for '{f}': {e}",
                             exc_info=True,
                         )
-                    if target is not None:
-                        historical_overrides[f] = (target, status_match)
-                else:
-                    if target is not None:
-                        historical_overrides[f] = (target, status_match)
+
+                if target is not None:
+                    historical_overrides[f] = (target, status_match)
+
+                text_to_search = (
+                    filename_only if status_match else (filename_only + " " + doc_lower)
+                )
 
                 if not matched and keyword_rules:
                     for keyword, target_folder in keyword_rules.items():
                         if not keyword.strip():
                             continue
-                        text_to_search = (
-                            filename_only
-                            if status_match
-                            else (filename_only + " " + doc_lower)
-                        )
                         if keyword.lower() in text_to_search:
                             keyword_plan_files.append(
                                 (f, target_folder, keyword, "keyword", status_match)
@@ -1088,16 +1091,28 @@ class IncrementalAnalyzer:
                             matched = True
                             break
 
-                if not matched and status_match and learned_rules:
+                if not matched and learned_rules:
                     for keyword, target_folder in learned_rules.items():
                         if not keyword.strip():
                             continue
-                        if keyword.lower() in filename_only:
+                        if keyword.lower() in text_to_search:
                             keyword_plan_files.append(
                                 (f, target_folder, keyword, "pattern", status_match)
                             )
                             matched = True
                             break
+
+                if (
+                    not matched
+                    and jev_model is not None
+                    and jev_model.is_classified
+                    and jev_model.confidence > 0.0
+                    and jev_model.category != "Unclassified"
+                ):
+                    jev_plan_files.append(
+                        (f, jev_model.category, jev_model, status_match)
+                    )
+                    matched = True
 
                 if not matched and (status_match or ext not in supported_exts):
                     from app.core.metadata import get_extension_category_target
@@ -1117,7 +1132,13 @@ class IncrementalAnalyzer:
                         ai_documents.append(doc)
 
             if jev_results:
-                processed_files = {f for f, _, _, _ in jev_plan_files}
+                processed_files = (
+                    {f for f, _, _, _ in jev_plan_files}
+                    | {f for f, *_ in policy_plan_files}
+                    | {f for f, *_ in keyword_plan_files}
+                    | {os.path.basename(f) for f, *_ in policy_plan_files}
+                    | {os.path.basename(f) for f, *_ in keyword_plan_files}
+                )
                 for k_jev, v_jev in jev_results.items():
                     f_path = str(k_jev)
                     if (
@@ -1703,12 +1724,17 @@ class IncrementalAnalyzer:
                     if not isinstance(current[part], dict):
                         current[part] = {"_original": current[part]}
                     if i == len(parts) - 1:
-                        current[part][f] = {
+                        kw_node: dict[str, Any] = {
                             "__type__": "file",
                             "routed_by": routed_by,
                             "keyword": keyword,
                             "extraction_status": ext_status,
                         }
+                        if f in jev_metadata_map:
+                            kw_jev = jev_metadata_map[f]
+                            kw_node["sensitivity_rating"] = kw_jev.sensitivity_rating
+                            kw_node["sensitivity_score"] = kw_jev.sensitivity_score
+                        current[part][f] = kw_node
                     else:
                         current = current[part]
 
@@ -1813,12 +1839,17 @@ class IncrementalAnalyzer:
                     return SortingPlan()
                 if target_folder not in plan:
                     plan[target_folder] = {}
-                plan[target_folder][f] = {
+                kw_info: dict[str, Any] = {
                     "__type__": "file",
                     "routed_by": rule_type,
                     "match": keyword,
                     "status": status,
                 }
+                if f in jev_metadata_map:
+                    kw_jev = jev_metadata_map[f]
+                    kw_info["sensitivity_rating"] = kw_jev.sensitivity_rating
+                    kw_info["sensitivity_score"] = kw_jev.sensitivity_score
+                plan[target_folder][f] = kw_info
 
             # Inject Historical Assignments and handle conflicts
             for f, (target_folder, status) in historical_overrides.items():

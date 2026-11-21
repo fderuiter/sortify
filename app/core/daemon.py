@@ -612,6 +612,8 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             getattr(self.settings, "QUARANTINE_DIR_NAME", "_Compliance_Quarantine")
             or "_Compliance_Quarantine"
         )
+        clean_qdir = quarantine_dir_name.replace("\\", "/").strip("/")
+        qdir_top = clean_qdir.split("/")[0] if clean_qdir else "_Compliance_Quarantine"
         ignored_patterns = [
             ".autosorter",
             "sortify.db",
@@ -627,11 +629,13 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             "autosorter.log",
             "_Quarantine_Staging",
             "_Compliance_Quarantine",
-            quarantine_dir_name,
+            clean_qdir,
+            qdir_top,
         ]
 
+        path_segments = [seg for seg in norm_path.split("/") if seg]
         for pattern in ignored_patterns:
-            if pattern in norm_path:
+            if pattern and (pattern in path_segments or pattern in norm_path):
                 return True
 
         # Also ignore any temporary folder/session folders
@@ -990,128 +994,178 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             return
 
         # Phase 0: Quarantine Interceptor Staging & Compliance Policy Evaluation
-        policies = getattr(self.settings, "POLICIES", [])
+        from app.config import resolve_effective_auto_quarantine_ratings
+        from app.core.quarantine_interceptor import _is_content_approved_for_release
+
+        policies = getattr(self.settings, "POLICIES", []) or []
         worker_timeout = getattr(self.settings, "WORKER_TIMEOUT", 300.0)
-        interceptor = QuarantineInterceptorService(
-            db=app_session.db,
-            policies=policies,
-            worker_timeout=worker_timeout,
-            runtime_settings=self.settings,
+        effective_ratings = resolve_effective_auto_quarantine_ratings(self.settings)
+
+        is_approved_release = await self._in_sort_thread(
+            _is_content_approved_for_release,
+            app_session.db,
+            base_dir=self.base_dir,
+            file_path=abs_path,
         )
 
-        try:
-            staged_info = await self._in_sort_thread(
-                interceptor.stage_incoming_file,
-                source_path=abs_path,
-                base_dir=self.base_dir,
-                original_relative_path=rel_path,
+        non_quarantine_lifecycle_actions = {"redact", "archive", "retain", "unarchive"}
+        has_non_quarantine_lifecycle = False
+        has_explicit_quarantine_policy = False
+        for rule in policies:
+            r_act = (
+                getattr(rule, "action", None)
+                if not isinstance(rule, dict)
+                else rule.get("action")
             )
-        except Exception as e:
-            logger.error(
-                f"Failed to stage incoming file {abs_path} in quarantine: {e}",
-                exc_info=True,
+            r_act_lower = str(r_act or "").strip().lower()
+            if r_act_lower in non_quarantine_lifecycle_actions:
+                has_non_quarantine_lifecycle = True
+            elif r_act_lower == "quarantine":
+                has_explicit_quarantine_policy = True
+
+        zero_timeout_probe = worker_timeout is not None and float(worker_timeout) <= 0.0
+        has_plugins = bool(getattr(self.settings, "PLUGINS", None))
+        ext_lower = os.path.splitext(abs_path)[1].lower()
+        is_archive_candidate = ext_lower in {".zip", ".tar", ".gz", ".tgz"} and (
+            has_non_quarantine_lifecycle
+            or has_explicit_quarantine_policy
+            or bool(effective_ratings)
+        )
+
+        needs_quarantine_staging = (
+            zero_timeout_probe
+            or has_non_quarantine_lifecycle
+            or has_plugins
+            or is_archive_candidate
+            or (
+                (has_explicit_quarantine_policy or bool(effective_ratings))
+                and not is_approved_release
             )
-            return
+        )
 
-        job_id = staged_info["job_id"]
-        staged_filepath = staged_info.get("staged_filepath")
-
-        if cancel_check():
-            return
-
-        # Execute deep forensic inspection, PII redaction, and compliance policy evaluation off-thread
-        raw_record = await asyncio.to_thread(interceptor.process_quarantine_job, job_id)
-
-        if cancel_check():
-            return
-
-        quarantine_record = validate_quarantine_record(raw_record)
-
-        status = quarantine_record.status
-        policy_action = quarantine_record.policy_action
-
-        # If file was quarantined, archived, or routed to DLQ / manual review, triage is complete
-        if status in (
-            "QUARANTINED",
-            "ARCHIVED",
-            "MANUAL_REVIEW_REQUIRED",
-            "DEAD_LETTER_QUEUE",
-        ):
-            if os.path.exists(abs_path):
-                resilient_remove(abs_path)
-            logger.info(
-                f"Quarantine interceptor completed for {rel_path} with status {status}"
+        if needs_quarantine_staging:
+            interceptor = QuarantineInterceptorService(
+                db=app_session.db,
+                policies=policies,
+                worker_timeout=worker_timeout,
+                runtime_settings=self.settings,
             )
-            return
 
-        if policy_action == "unarchive" or status == "UNARCHIVED":
-            unpacked_files = (
-                quarantine_record.get("unpacked_files")
-                or (
-                    raw_record.get("unpacked_files")
-                    if isinstance(raw_record, dict)
-                    else None
+            try:
+                staged_info = await self._in_sort_thread(
+                    interceptor.stage_incoming_file,
+                    source_path=abs_path,
+                    base_dir=self.base_dir,
+                    original_relative_path=rel_path,
                 )
-                or (
-                    raw_record.get("extracted_files")
-                    if isinstance(raw_record, dict)
-                    else None
+            except Exception as e:
+                logger.error(
+                    f"Failed to stage incoming file {abs_path} in quarantine: {e}",
+                    exc_info=True,
                 )
-                or []
-            )
-            if not unpacked_files and getattr(quarantine_record, "audit_log", None):
-                for entry in reversed(quarantine_record.audit_log):
-                    if isinstance(entry, dict) and "unpacked_files" in entry:
-                        unpacked_files = entry["unpacked_files"]
-                        break
+                return
 
-            registered_count = 0
-            for child_path in unpacked_files:
-                if os.path.isfile(child_path) and not self.should_ignore_path(
-                    child_path
-                ):
-                    child_event = FileChangeEvent(
-                        event_type="created",
-                        file_path=child_path,
-                        timestamp=time.time(),
+            job_id = staged_info["job_id"]
+            staged_filepath = staged_info.get("staged_filepath")
+
+            if cancel_check():
+                return
+
+            # Execute deep forensic inspection, PII redaction, and compliance policy evaluation off-thread
+            raw_record = await asyncio.to_thread(
+                interceptor.process_quarantine_job, job_id
+            )
+
+            if cancel_check():
+                return
+
+            quarantine_record = validate_quarantine_record(raw_record)
+
+            status = quarantine_record.status
+            policy_action = quarantine_record.policy_action
+
+            # If file was quarantined, archived, or routed to DLQ / manual review, triage is complete
+            if status in (
+                "QUARANTINED",
+                "ARCHIVED",
+                "MANUAL_REVIEW_REQUIRED",
+                "DEAD_LETTER_QUEUE",
+            ):
+                if os.path.exists(abs_path):
+                    resilient_remove(abs_path)
+                logger.info(
+                    f"Quarantine interceptor completed for {rel_path} with status {status}"
+                )
+                return
+
+            if policy_action == "unarchive" or status == "UNARCHIVED":
+                unpacked_files = (
+                    quarantine_record.get("unpacked_files")
+                    or (
+                        raw_record.get("unpacked_files")
+                        if isinstance(raw_record, dict)
+                        else None
                     )
-                    if self.enqueue_event(child_event):
-                        registered_count += 1
+                    or (
+                        raw_record.get("extracted_files")
+                        if isinstance(raw_record, dict)
+                        else None
+                    )
+                    or []
+                )
+                if not unpacked_files and getattr(quarantine_record, "audit_log", None):
+                    for entry in reversed(quarantine_record.audit_log):
+                        if isinstance(entry, dict) and "unpacked_files" in entry:
+                            unpacked_files = entry["unpacked_files"]
+                            break
 
+                registered_count = 0
+                for child_path in unpacked_files:
+                    if os.path.isfile(child_path) and not self.should_ignore_path(
+                        child_path
+                    ):
+                        child_event = FileChangeEvent(
+                            event_type="created",
+                            file_path=child_path,
+                            timestamp=time.time(),
+                        )
+                        if self.enqueue_event(child_event):
+                            registered_count += 1
+
+                if (
+                    staged_filepath
+                    and os.path.exists(staged_filepath)
+                    and os.path.abspath(abs_path) != os.path.abspath(staged_filepath)
+                ):
+                    resilient_remove(staged_filepath)
+
+                logger.info(
+                    f"Quarantine interceptor unarchived {rel_path}: enqueued {registered_count} child files into triage loop"
+                )
+                return
+
+            # If a compliance action (redact, archive, quarantine, retain, sensitivity_hold) was executed, triage is complete
+            if policy_action in (
+                "redact",
+                "archive",
+                "quarantine",
+                "retain",
+                "sensitivity_hold",
+            ):
+                if os.path.exists(abs_path):
+                    resilient_remove(abs_path)
+                logger.info(
+                    f"Quarantine interceptor compliance action {policy_action} executed for {rel_path}"
+                )
+                return
+
+            # Cleanup staging copy if present after quarantine release
             if (
                 staged_filepath
                 and os.path.exists(staged_filepath)
                 and os.path.abspath(abs_path) != os.path.abspath(staged_filepath)
             ):
                 resilient_remove(staged_filepath)
-
-            logger.info(
-                f"Quarantine interceptor unarchived {rel_path}: enqueued {registered_count} child files into triage loop"
-            )
-            return
-
-        # If a compliance action (redact, archive, quarantine, retain, sensitivity_hold) was executed, triage is complete
-        if policy_action in (
-            "redact",
-            "archive",
-            "quarantine",
-            "retain",
-            "sensitivity_hold",
-        ):
-            if os.path.exists(abs_path):
-                resilient_remove(abs_path)
-            logger.info(
-                f"Quarantine interceptor compliance action {policy_action} executed for {rel_path}"
-            )
-            return
-
-        # Cleanup staging copy if present after quarantine release
-        if (
-            staged_filepath
-            and os.path.exists(staged_filepath)
-            and os.path.abspath(abs_path) != os.path.abspath(staged_filepath)
-        ):
-            resilient_remove(staged_filepath)
 
         # Phase 1: Fast-Path Rule Evaluation for released / non-sensitive files
         if not os.path.exists(abs_path):

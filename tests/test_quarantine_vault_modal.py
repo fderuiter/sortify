@@ -217,7 +217,7 @@ def test_quarantine_vault_release_button_opens_directory_picker(
 
 
 def test_quarantine_vault_modal_dismiss_action(staged_quarantine_item):
-    """Test dismissing a quarantine item and verifying status DISMISSED without moving file."""
+    """Test dismissing a quarantine item restores staged file to original_filepath and marks DISMISSED."""
     staged, db, base_dir = staged_quarantine_item
     job_id = staged["job_id"]
     staged_path = staged["staged_filepath"]
@@ -242,7 +242,11 @@ def test_quarantine_vault_modal_dismiss_action(staged_quarantine_item):
             rec = db.get_quarantine_record(job_id)
             assert rec is not None
             assert rec["status"] == "DISMISSED"
-            assert os.path.exists(staged_path)
+            restored_target = os.path.join(
+                base_dir, "medical", "confidential_record.pdf"
+            )
+            assert os.path.exists(restored_target)
+            assert not os.path.exists(staged_path)
             assert "Dismissed manually via quarantine vault modal review" in str(
                 rec["audit_log"]
             )

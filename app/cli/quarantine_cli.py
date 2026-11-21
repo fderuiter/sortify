@@ -172,7 +172,8 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
 
     # dismiss
     p_dismiss = quarantine_subparsers.add_parser(
-        "dismiss", help="Dismiss quarantine items without restoring files"
+        "dismiss",
+        help="Dismiss quarantine items and restore staged files (or purge with --purge --yes)",
     )
     add_quarantine_common(p_dismiss)
     p_dismiss.add_argument(
@@ -193,6 +194,20 @@ def register_subparser(subparsers: argparse._SubParsersAction) -> None:
         type=str,
         default=None,
         help="Comma-separated list of quarantine job IDs",
+    )
+    p_dismiss.add_argument(
+        "--purge",
+        action="store_true",
+        default=False,
+        help="Permanently delete staged files instead of restoring to original path (requires --yes)",
+    )
+    p_dismiss.add_argument(
+        "-y",
+        "--yes",
+        action="store_true",
+        dest="confirm_purge",
+        default=False,
+        help="Confirm permanent deletion when --purge is specified",
     )
 
 
@@ -257,6 +272,8 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
         return unique_ids
 
     try:
+        active_settings = settings if settings is not None else AppSettings()
+
         if quarantine_cmd == "list":
             base_dir = getattr(args, "base_dir", None)
             status_filter = getattr(args, "status", None)
@@ -476,10 +493,24 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
 
         elif quarantine_cmd == "dismiss":
             job_ids = resolve_job_ids(args)
+            purge = bool(getattr(args, "purge", False))
+            confirm_purge = bool(getattr(args, "confirm_purge", False))
+            if purge and not confirm_purge:
+                emit_cli_error(
+                    "Error: --purge requires explicit confirmation with --yes (-y) to permanently delete staged files.",
+                    json_mode=is_json,
+                    exit_code=2,
+                )
 
-            service = QuarantineInterceptorService(db=db)
+            service = QuarantineInterceptorService(
+                db=db,
+                policies=getattr(active_settings, "POLICIES", []),
+                runtime_settings=active_settings,
+            )
             try:
-                results = service.dismiss_quarantine_batch(job_ids)
+                results = service.dismiss_quarantine_batch(
+                    job_ids, purge=purge, confirm_purge=confirm_purge
+                )
                 success_count = sum(
                     1 for r in results if r.get("status") == "DISMISSED"
                 )

@@ -1211,12 +1211,10 @@ def _process_move_item(
         sens_rating = content.get("sensitivity_rating")
         sens_score = content.get("sensitivity_score", 0.0)
 
+    from app.config import resolve_effective_auto_quarantine_ratings
+
     sens_rating_str = str(sens_rating or "LOW").upper()
-    auto_ratings = [
-        r.upper()
-        for r in (getattr(runtime_settings, "AUTO_QUARANTINE_RATINGS", []) or [])
-        if r
-    ]
+    auto_ratings = resolve_effective_auto_quarantine_ratings(runtime_settings)
     quarantine_dir_name = (
         getattr(runtime_settings, "QUARANTINE_DIR_NAME", "_Compliance_Quarantine")
         or "_Compliance_Quarantine"

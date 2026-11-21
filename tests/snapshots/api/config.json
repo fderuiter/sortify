@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "0cfb158ea729f1c571b7066e3f5fac4f984e3158106fa67568253646ed60f63f"
+    "checksum": "6dd9149622bea4c001d2d3dba9e8134321dab1d4d0e29256124715392a7a9f34"
   },
   "classes": [
     {
@@ -436,6 +436,27 @@
         {
           "async": false,
           "decorators": [
+            "@field_validator('QUARANTINE_MODE', mode='before')",
+            "@classmethod"
+          ],
+          "name": "validate_quarantine_mode",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [
             "@field_validator('VISION_ENGINE', mode='before')",
             "@classmethod"
           ],
@@ -478,6 +499,29 @@
       "name": "get_debug_log_dir",
       "parameters": [],
       "returns": "Path"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "resolve_effective_auto_quarantine_ratings",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "runtime_settings"
+        },
+        {
+          "annotation": "list[str] | set[str] | tuple[str, ...] | None",
+          "default": "None",
+          "name": "explicit_ratings"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "strategy_name"
+        }
+      ],
+      "returns": "list[str]"
     }
   ]
 }

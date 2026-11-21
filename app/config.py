@@ -9,6 +9,7 @@ import logging
 import os
 import sys
 import threading
+import weakref
 from collections import defaultdict
 from collections.abc import Callable
 from pathlib import Path
@@ -371,12 +372,23 @@ class Settings(BaseSettings):
             "or modification. Relative paths and wildcard or glob characters ('*', '?', '[', ']') are rejected."
         ),
     )
+    QUARANTINE_MODE: Literal["personal", "strict"] = Field(
+        default="personal",
+        description=(
+            "Compliance sensitivity quarantine enforcement mode: 'personal' "
+            "(default) bypasses automatic JEV sensitivity holds so user rules and "
+            "starter packs route personal documents without false quarantines "
+            "(unless a policy explicitly sets action='quarantine' or a clinical "
+            "strategy runs), whereas 'strict' enforces regulated sensitivity holds."
+        ),
+    )
     AUTO_QUARANTINE_RATINGS: list[str] = Field(
         default_factory=list,
         description=(
             "Opt-in sensitivity severity ratings (such as 'CRITICAL' and 'HIGH') that "
-            "automatically route detected files into compliance quarantine staging. "
-            "Defaults to an empty list so automatic sensitivity quarantine is disabled until enabled."
+            "automatically route detected files into compliance quarantine staging "
+            "when QUARANTINE_MODE is 'strict' or explicitly configured. "
+            "Defaults to an empty list so automatic sensitivity quarantine is disabled in personal mode."
         ),
     )
     QUARANTINE_DIR_NAME: str = Field(
@@ -708,6 +720,17 @@ class Settings(BaseSettings):
             )
         return self
 
+    @field_validator("QUARANTINE_MODE", mode="before")
+    @classmethod
+    def validate_quarantine_mode(cls, v: str) -> str:
+        """Validate that QUARANTINE_MODE is either 'personal' or 'strict'."""
+        if not isinstance(v, str):
+            raise ValueError("QUARANTINE_MODE must be a string.")
+        v_clean = v.strip().lower()
+        if v_clean not in ("personal", "strict"):
+            raise ValueError("QUARANTINE_MODE must be either 'personal' or 'strict'.")
+        return v_clean
+
     @field_validator("CONFLICT_POLICY")
     @classmethod
     def validate_conflict_policy(cls, v: str) -> str:
@@ -1027,11 +1050,87 @@ def _env_sourced_keys(env_file: Path) -> set[str]:
     return {k for k in keys if k in Settings.model_fields}
 
 
+_CLINICAL_STRATEGIES = frozenset({"clinical_tmf", "clinical_isf"})
+_DEFAULT_STRICT_QUARANTINE_RATINGS = ("CRITICAL", "HIGH")
+
+
+def resolve_effective_auto_quarantine_ratings(
+    runtime_settings: Any = None,
+    explicit_ratings: list[str] | set[str] | tuple[str, ...] | None = None,
+    strategy_name: str | None = None,
+) -> list[str]:
+    """Resolve active sensitivity hold ratings from QUARANTINE_MODE, ratings, and strategy.
+
+    - Clinical strategies ('clinical_tmf', 'clinical_isf') always enforce strict holds.
+    - 'personal' mode bypasses automatic JEV sensitivity holds when explicitly active.
+    - 'strict' mode enforces configured ratings (defaulting to CRITICAL and HIGH when unset).
+    """
+    active_strategy = (
+        str(
+            strategy_name
+            or (
+                getattr(runtime_settings, "SORTING_STRATEGY", "")
+                if runtime_settings is not None
+                else ""
+            )
+            or ""
+        )
+        .strip()
+        .lower()
+    )
+
+    configured: list[str] = []
+    if explicit_ratings is not None:
+        configured = [str(r).strip().upper() for r in explicit_ratings if r]
+    elif runtime_settings is not None:
+        raw_ratings = getattr(runtime_settings, "AUTO_QUARANTINE_RATINGS", None) or []
+        configured = [str(r).strip().upper() for r in raw_ratings if r]
+
+    if active_strategy in _CLINICAL_STRATEGIES:
+        return configured if configured else list(_DEFAULT_STRICT_QUARANTINE_RATINGS)
+
+    if explicit_ratings is not None and runtime_settings is None:
+        return configured
+
+    if runtime_settings is None:
+        return []
+
+    model_obj = getattr(runtime_settings, "_settings_model", runtime_settings)
+    fields_set: set[str] = set(getattr(model_obj, "model_fields_set", set()) or set())
+    explicit_mode = getattr(runtime_settings, "_quarantine_mode_explicit", None)
+
+    has_mode_attr = hasattr(runtime_settings, "QUARANTINE_MODE")
+    raw_mode = (
+        str(getattr(runtime_settings, "QUARANTINE_MODE", "personal") or "personal")
+        .strip()
+        .lower()
+    )
+
+    if raw_mode == "strict":
+        if configured:
+            return configured
+        if "AUTO_QUARANTINE_RATINGS" in fields_set:
+            return []
+        return list(_DEFAULT_STRICT_QUARANTINE_RATINGS)
+
+    # Personal mode: bypass automatic sensitivity holds when QUARANTINE_MODE was explicitly
+    # configured as 'personal' (or when no legacy opt-in ratings were configured).
+    if explicit_mode is True or "QUARANTINE_MODE" in fields_set:
+        return []
+
+    if not has_mode_attr:
+        return configured
+
+    return configured
+
+
 class AppSettings:
     """A registry for application settings that provides persistence and validation."""
 
     _class_observers: dict[Any, list[Any]] = defaultdict(list)
     _class_observer_lock = threading.Lock()
+    _active_instances: "weakref.WeakSet[AppSettings]" = weakref.WeakSet()
+    _instance: "AppSettings | None" = None
 
     def __init__(self, filepath=None):
         self._filepath = filepath or str(get_app_dir() / "settings.json")
@@ -1044,6 +1143,9 @@ class AppSettings:
         self._validation_errors = []
         self._observers = defaultdict(list)
         self._observer_lock = threading.Lock()
+        self._quarantine_mode_explicit: bool = False
+        AppSettings._active_instances.add(self)
+        AppSettings._instance = self
 
         env_file = app_env_file()
         try:
@@ -1116,6 +1218,11 @@ class AppSettings:
                 data_keys.remove("MAX_DEBOUNCE_DELAY")
                 data_keys.insert(0, "MAX_DEBOUNCE_DELAY")
 
+            mode_in_file = isinstance(data, dict) and "QUARANTINE_MODE" in data
+            ratings_in_file = bool(
+                isinstance(data, dict) and data.get("AUTO_QUARANTINE_RATINGS")
+            )
+
             for key in data_keys:
                 value = data[key]
                 if hasattr(self._settings_model, key):
@@ -1131,6 +1238,12 @@ class AppSettings:
                         self._validation_errors.append(
                             {"field": key, "message": str(e)}
                         )
+
+            if not mode_in_file and ratings_in_file:
+                self._quarantine_mode_explicit = False
+                self._settings_model.model_fields_set.discard("QUARANTINE_MODE")
+            elif mode_in_file:
+                self._quarantine_mode_explicit = True
 
             if has_validation_errors:
                 # Do not allow saving to overwrite the invalid user settings
@@ -1190,6 +1303,14 @@ class AppSettings:
             self._transient_values[name] = self._settings_model.model_dump(
                 mode="json"
             ).get(name)
+        if name == "QUARANTINE_MODE":
+            self._quarantine_mode_explicit = True
+        elif (
+            name == "AUTO_QUARANTINE_RATINGS"
+            and value
+            and not self._quarantine_mode_explicit
+        ):
+            self._settings_model.model_fields_set.discard("QUARANTINE_MODE")
         setattr(self._settings_model, name, value)
         self._notify_observers(name, getattr(self._settings_model, name, value))
 
@@ -1419,11 +1540,20 @@ class AppSettings:
             "_observer_lock",
             "_transient_values",
             "_env_sourced_keys",
+            "_quarantine_mode_explicit",
         ):
             super().__setattr__(name, value)
         else:
             if name == "MAX_AUDIO_WORKERS":
                 name = "AUDIO_MAX_WORKERS"
+            if name == "QUARANTINE_MODE":
+                super().__setattr__("_quarantine_mode_explicit", True)
+            elif (
+                name == "AUTO_QUARANTINE_RATINGS"
+                and value
+                and not getattr(self, "_quarantine_mode_explicit", False)
+            ):
+                self._settings_model.model_fields_set.discard("QUARANTINE_MODE")
             self._transient_values.pop(name, None)
             self._env_sourced_keys.discard(name)
             setattr(self._settings_model, name, value)

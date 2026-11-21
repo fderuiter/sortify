@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "189966a96a97b5b0871ca366a1e54181eb416fd961fdb4a5f6dfdf129a237d61"
+    "checksum": "9592413064c5cb714b9cc961d006463713d1ae8e7126c10186fd02a78cad6579"
   },
   "classes": [
     {
@@ -64,6 +64,62 @@
               "annotation": "list[str]",
               "default": null,
               "name": "job_ids"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "purge"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "confirm_purge"
+            },
+            {
+              "annotation": "str",
+              "default": "'rename'",
+              "name": "conflict_policy"
+            }
+          ],
+          "returns": "list[dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_quarantine_record_details",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "job_id"
+            }
+          ],
+          "returns": "Optional[dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "list_quarantine_records",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "base_dir"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "status"
             }
           ],
           "returns": "list[dict[str, Any]]"
