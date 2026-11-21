@@ -469,6 +469,20 @@ class Database:
             filepath = rel_p
         self.upsert_documents([(base_dir, filepath, file_hash, extracted_text)])
 
+    _default_tfidf_analyzer: Any = None
+
+    @classmethod
+    def _get_tfidf_analyzer(cls, stop_words_list=None):
+        from sklearn.feature_extraction.text import TfidfVectorizer
+
+        if stop_words_list is None or stop_words_list == "english":
+            analyzer = cls._default_tfidf_analyzer
+            if analyzer is None:
+                analyzer = TfidfVectorizer(stop_words="english").build_analyzer()
+                cls._default_tfidf_analyzer = analyzer
+            return analyzer
+        return TfidfVectorizer(stop_words=stop_words_list).build_analyzer()
+
     def _compute_term_frequencies(
         self, text: str | None, stop_words_list=None
     ) -> dict[str, int]:
@@ -476,8 +490,6 @@ class Database:
         if not text:
             return {}
         from collections import Counter
-
-        from sklearn.feature_extraction.text import TfidfVectorizer
 
         from app.core.text_utils import sanitize_text
 
@@ -489,8 +501,7 @@ class Database:
             stop_words_list = "english"
 
         try:
-            vectorizer = TfidfVectorizer(stop_words=stop_words_list)
-            analyzer = vectorizer.build_analyzer()
+            analyzer = self._get_tfidf_analyzer(stop_words_list)
             tokens = analyzer(clean_text)
         except Exception:
             import re
@@ -862,6 +873,7 @@ class Database:
     def set_user_verified_target(self, base_dir, file_hash, target_path):
         """Record the historical folder assignment for a specific document hash."""
         precomputed_counts_map = {}
+        cached_texts_to_tokenize: list[tuple[str, str]] = []
         cached_hit = False
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
@@ -875,32 +887,22 @@ class Database:
                                 row[2],
                                 target_path,
                             )
-                            dec_text = row[1]
-                            if (
-                                target_path
-                                and dec_text
-                                and self._is_tfidf_eligible(fp, dec_text)
-                            ):
-                                precomputed_counts_map[fp] = (
-                                    self.compute_term_frequencies(dec_text)
-                                )
+                            if target_path and row[1]:
+                                cached_texts_to_tokenize.append((fp, row[1]))
                 elif isinstance(self._cached_documents, list):
                     new_docs = []
                     for row in self._cached_documents:
                         if row[2] == file_hash:
                             new_docs.append((row[0], row[1], row[2], target_path))
-                            dec_text = row[1]
-                            if (
-                                target_path
-                                and dec_text
-                                and self._is_tfidf_eligible(row[0], dec_text)
-                            ):
-                                precomputed_counts_map[row[0]] = (
-                                    self.compute_term_frequencies(dec_text)
-                                )
+                            if target_path and row[1]:
+                                cached_texts_to_tokenize.append((row[0], row[1]))
                         else:
                             new_docs.append(row)
                     self._cached_documents = new_docs
+
+        for fp, dec_text in cached_texts_to_tokenize:
+            if self._is_tfidf_eligible(fp, dec_text):
+                precomputed_counts_map[fp] = self.compute_term_frequencies(dec_text)
 
         if target_path and not cached_hit:
             try:
@@ -961,17 +963,22 @@ class Database:
         if new_filepath == old_filepath:
             return
         cursor = conn.execute(
-            "SELECT 1 FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?) LIMIT 1",
-            (base_dir, old_filepath, old_filepath),
-        )
-        if cursor.fetchone() is None:
-            return
-        cursor = conn.execute(
             "SELECT 1 FROM documents WHERE base_dir = ? AND filepath = ? LIMIT 1",
             (base_dir, new_filepath),
         )
         if cursor.fetchone() is None:
             return
+        cursor = conn.execute(
+            "SELECT 1 FROM documents WHERE base_dir = ? AND filepath = ? LIMIT 1",
+            (base_dir, old_filepath),
+        )
+        if cursor.fetchone() is None:
+            cursor = conn.execute(
+                "SELECT 1 FROM documents WHERE base_dir = ? AND REPLACE(filepath, '\\', '/') = ? LIMIT 1",
+                (base_dir, old_filepath),
+            )
+            if cursor.fetchone() is None:
+                return
         cursor = conn.execute(
             "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
             (base_dir, new_filepath),
@@ -1019,6 +1026,8 @@ class Database:
         new_dir = os.path.dirname(new_filepath).replace("\\", "/")
 
         ext_text = None
+        cached_row_found = False
+        cached_prev_target = None
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
                 if (
@@ -1028,7 +1037,9 @@ class Database:
                 ):
                     row = self._cached_documents.pop(old_filepath, None)
                     if row is not None:
+                        cached_row_found = True
                         ext_text = row[1]
+                        cached_prev_target = row[3] if len(row) > 3 else None
                         self._cached_documents[new_filepath] = (
                             new_filepath,
                             row[1],
@@ -1039,16 +1050,22 @@ class Database:
                     new_docs = []
                     for row in self._cached_documents:
                         if row[0] == old_filepath:
+                            cached_row_found = True
                             ext_text = row[1]
+                            cached_prev_target = row[3] if len(row) > 3 else None
                             new_docs.append((new_filepath, row[1], row[2], new_dir))
                         else:
                             new_docs.append(row)
                     self._cached_documents = new_docs
 
         precomputed_counts = None
-        if new_dir:
+        if new_dir and not (
+            cached_row_found
+            and cached_prev_target
+            and self._is_tfidf_eligible(old_filepath, ext_text)
+        ):
             try:
-                if not ext_text:
+                if not cached_row_found and not ext_text:
                     doc = self.get_document(base_dir, old_filepath)
                     if doc and doc.get("extracted_text"):
                         ext_text = doc["extracted_text"]
@@ -1064,32 +1081,41 @@ class Database:
                 self._drop_stale_destination_row_conn(
                     conn, base_dir, old_filepath, new_filepath
                 )
-                conn.execute(
-                    "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                    (new_filepath, new_dir, base_dir, old_filepath, old_filepath),
+                upd_cur = conn.execute(
+                    "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
+                    (new_filepath, new_dir, base_dir, old_filepath),
                 )
+                if upd_cur.rowcount == 0:
+                    conn.execute(
+                        "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND REPLACE(filepath, '\\', '/') = ?",
+                        (new_filepath, new_dir, base_dir, old_filepath),
+                    )
                 cursor = conn.execute(
                     "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
                     (base_dir, old_filepath),
                 )
                 was_in = cursor.fetchone() is not None
                 if was_in:
-                    cursor = conn.execute(
-                        "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
-                        (base_dir, new_filepath),
-                    )
-                    row = cursor.fetchone()
-                    decrypted_text = None
-                    if row and row[0]:
-                        try:
-                            decrypted_text = self.crypto.decrypt_text(row[0])
-                        except Exception:
-                            decrypted_text = None
+                    if cached_row_found:
+                        decrypted_text = ext_text
+                    else:
+                        cursor = conn.execute(
+                            "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                            (base_dir, new_filepath),
+                        )
+                        row = cursor.fetchone()
+                        decrypted_text = None
+                        if row and row[0]:
+                            try:
+                                decrypted_text = self.crypto.decrypt_text(row[0])
+                            except Exception:
+                                decrypted_text = None
                     if self._is_tfidf_eligible(new_filepath, decrypted_text):
                         conn.execute(
                             "UPDATE tfidf_doc_terms SET filepath = ? WHERE base_dir = ? AND filepath = ?",
                             (new_filepath, base_dir, old_filepath),
                         )
+                        self._invalidate_tfidf_matrix_cache_conn(conn, base_dir)
                     else:
                         self._update_tfidf_for_document_conn(
                             conn, base_dir, old_filepath, None, False
@@ -1097,22 +1123,26 @@ class Database:
                 else:
                     if new_dir:
                         if counts is None:
-                            cursor = conn.execute(
-                                "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
-                                (base_dir, new_filepath),
-                            )
-                            row = cursor.fetchone()
-                            if row and row[0]:
-                                try:
-                                    decrypted_text = self.crypto.decrypt_text(row[0])
-                                except Exception:
-                                    decrypted_text = None
-                                if decrypted_text and self._is_tfidf_eligible(
-                                    new_filepath, decrypted_text
-                                ):
-                                    counts = self.compute_term_frequencies(
-                                        decrypted_text
-                                    )
+                            if cached_row_found:
+                                decrypted_text = ext_text
+                            else:
+                                cursor = conn.execute(
+                                    "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                                    (base_dir, new_filepath),
+                                )
+                                row = cursor.fetchone()
+                                decrypted_text = None
+                                if row and row[0]:
+                                    try:
+                                        decrypted_text = self.crypto.decrypt_text(
+                                            row[0]
+                                        )
+                                    except Exception:
+                                        decrypted_text = None
+                            if decrypted_text and self._is_tfidf_eligible(
+                                new_filepath, decrypted_text
+                            ):
+                                counts = self.compute_term_frequencies(decrypted_text)
                         if counts is not None:
                             self._update_tfidf_for_document_conn(
                                 conn,
@@ -1371,7 +1401,7 @@ class Database:
                     [(base_dir, t) for t in existing_terms],
                 )
 
-        self._update_tfidf_matrix_cache_conn(conn, base_dir)
+        self._invalidate_tfidf_matrix_cache_conn(conn, base_dir)
 
     def set_document_rating(self, base_dir: str, filepath: str, rating: str | None):
         """Record the quality feedback rating associated with a document path."""
@@ -1444,10 +1474,15 @@ class Database:
                 self._drop_stale_destination_row_conn(
                     conn, base_dir, old_filepath, new_filepath
                 )
-                conn.execute(
-                    "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
-                    (new_filepath, new_dir, base_dir, old_filepath, old_filepath),
+                upd_cur = conn.execute(
+                    "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND filepath = ?",
+                    (new_filepath, new_dir, base_dir, old_filepath),
                 )
+                if upd_cur.rowcount == 0:
+                    conn.execute(
+                        "UPDATE documents SET filepath = ?, user_verified_target_path = ? WHERE base_dir = ? AND REPLACE(filepath, '\\', '/') = ?",
+                        (new_filepath, new_dir, base_dir, old_filepath),
+                    )
                 cursor = conn.execute(
                     "SELECT 1 FROM tfidf_doc_terms WHERE base_dir = ? AND filepath = ? LIMIT 1",
                     (base_dir, old_filepath),
@@ -1470,6 +1505,7 @@ class Database:
                             "UPDATE tfidf_doc_terms SET filepath = ? WHERE base_dir = ? AND filepath = ?",
                             (new_filepath, base_dir, old_filepath),
                         )
+                        self._invalidate_tfidf_matrix_cache_conn(conn, base_dir)
                     else:
                         self._update_tfidf_for_document_conn(
                             conn, base_dir, old_filepath, None, False
@@ -1661,6 +1697,20 @@ class Database:
                 self._update_tfidf_matrix_cache_conn(conn, base_dir)
 
         self.worker.execute_write(_write)
+
+    def _invalidate_tfidf_matrix_cache_conn(self, conn, base_dir: str):
+        if not base_dir:
+            return
+        self.matrix_lru_cache.invalidate(base_dir)
+        cursor = conn.execute(
+            "SELECT 1 FROM tfidf_matrix_cache WHERE base_dir = ? LIMIT 1",
+            (base_dir,),
+        )
+        if cursor.fetchone() is not None:
+            conn.execute(
+                "DELETE FROM tfidf_matrix_cache WHERE base_dir = ?",
+                (base_dir,),
+            )
 
     def _update_tfidf_matrix_cache_conn(self, conn, base_dir: str):
         if not base_dir:
