@@ -1958,7 +1958,7 @@ def test_user_guide_rename_shortcut_and_tui_bindings():
 
 
 def test_admin_guide_field_descriptions_policies_and_env_vars():
-    """Verify docs/admin_guide.md documents all 53 field descriptions, 6 policy types, 5 actions, 8 post-unarchive values, and runtime env vars."""
+    """Verify docs/admin_guide.md documents all 54 field descriptions, 6 policy types, 5 actions, 8 post-unarchive values, and runtime env vars."""
     from app.config import Settings
     from app.core.policy_engine import PolicyEngine
 
