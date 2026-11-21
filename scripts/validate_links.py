@@ -26,7 +26,6 @@ DEFAULT_BYPASS_DOMAINS = {
     "docs.smartautosorter.com",
     "sortify.ai",
     "docs.sortify.ai",
-    "security.huggingface.co",
     "localhost",
     "127.0.0.1",
     "host",

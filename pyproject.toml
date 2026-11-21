@@ -277,7 +277,6 @@ show_missing = true
 "app/core/analyzer.py" = 1
 "app/core/analyzer_strategies.py" = 2
 "app/core/daemon.py" = 1
-"app/core/db_worker.py" = 2
 "app/core/downloader.py" = 1
 "app/core/env_helper.py" = 1
 "app/core/history.py" = 3

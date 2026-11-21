@@ -517,9 +517,40 @@ class IncrementalAnalyzer:
                 elif os.path.exists(user_bundle_path):
                     self.model_path = user_bundle_path
 
-        from app.core.semantic_embeddings import SemanticEmbeddingManager
+        from app.core.semantic_embeddings import (
+            ModelValidationError,
+            SemanticEmbeddingManager,
+        )
 
-        self.embedding_manager = SemanticEmbeddingManager(self.db, self.model_path)
+        try:
+            self.embedding_manager = SemanticEmbeddingManager(self.db, self.model_path)
+            if getattr(self.embedding_manager, "is_degraded", False):
+                self.model_path = self.embedding_manager.model_path
+        except ModelValidationError as val_err:
+            err_msg = str(val_err)
+            recovery_action = (
+                "INSTALL_ML_EXTRA"
+                if "onnxruntime" in err_msg.lower()
+                else "RE_DOWNLOAD_MODEL"
+            )
+            logging.warning(
+                "Falling back to TF-IDF clustering after model validation failure: %s",
+                err_msg,
+            )
+            from app.core.shared_registry import SharedModelRegistry
+
+            SharedModelRegistry.get_instance().record_model_health(
+                "onnx_embeddings",
+                status="DEGRADED_FALLBACK",
+                failure_reason=err_msg,
+                suggested_recovery_action=recovery_action,
+            )
+            self.model_path = None
+            self.embedding_manager = SemanticEmbeddingManager(self.db, None)
+            self.embedding_manager.is_degraded = True
+            self.embedding_manager.degradation_state = "DEGRADED_FALLBACK"
+            self.embedding_manager.degradation_reason = err_msg
+            self.embedding_manager.suggested_recovery_action = recovery_action
 
     def close(self):
         """Terminate processes."""

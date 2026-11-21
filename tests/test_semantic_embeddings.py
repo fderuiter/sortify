@@ -1127,3 +1127,119 @@ def test_malformed_model_validation_failure_cleans_up_registry(db, temp_dir):
 
         # Confirm registry cleaned up the session key
         assert expected_key not in registry._models
+
+
+def test_session_startup_missing_vocab_and_missing_onnxruntime_degrades_to_tfidf(
+    temp_dir, monkeypatch, caplog
+):
+    """Starting AppSession with consented model files when vocab.txt is missing or onnxruntime is absent logs a degraded warning and completes TF-IDF sorting without crashing."""
+    import asyncio
+    import logging
+    import sys
+    from unittest.mock import patch
+
+    from app.config import AppSettings
+    from app.core.hashes_registry import HASHES
+    from app.core.semantic_embeddings import SemanticEmbeddingManager
+    from app.core.session import AppSession
+    from app.core.shared_registry import SharedModelRegistry
+
+    monkeypatch.setattr(SemanticEmbeddingManager, "validate_on_init", True)
+
+    app_dir = temp_dir / "autosorter_app"
+    model_dir = app_dir / "model"
+    model_dir.mkdir(parents=True)
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+
+    # Prepare sample workspace files to sort
+    workspace = temp_dir / "workspace_docs"
+    workspace.mkdir()
+    doc_files = [
+        ("invoice_q1.txt", "quarterly finance invoice payment tax balance receipt"),
+        ("invoice_q2.txt", "annual finance invoice billing payment ledger tax"),
+        ("biology_lab.txt", "cellular biology mitosis genetics experiment microscope"),
+        ("biology_notes.txt", "molecular biology dna rna protein synthesis lab"),
+    ]
+    item_paths: list[str] = []
+    for fname, text in doc_files:
+        fpath = workspace / fname
+        fpath.write_text(text, encoding="utf-8")
+        item_paths.append(str(fpath))
+
+    settings = AppSettings(filepath=str(temp_dir / "settings.json"))
+    settings._settings_model.AI_CONSENT_GRANTED = True
+
+    expected_onnx_hash = HASHES["generative_naming"]["model.onnx"]
+    (model_dir / "model.onnx").write_bytes(b"consented-onnx-placeholder")
+    (model_dir / "config.json").write_text('{"model_type": "bert"}', encoding="utf-8")
+
+    # Scenario 1: vocab.txt missing -> logs degraded warning, records RE_DOWNLOAD_MODEL, completes TF-IDF plan
+    caplog.set_level(logging.WARNING)
+    caplog.clear()
+    with patch(
+        "app.core.resilient_file_ops.resilient_file_hash",
+        return_value=expected_onnx_hash,
+    ):
+        session = AppSession(settings, base_dir=str(workspace))
+        try:
+            assert session.analyzer.model_path is None
+            health = SharedModelRegistry.get_instance().get_model_health(
+                "onnx_embeddings"
+            )
+            assert health["status"] == "DEGRADED_FALLBACK"
+            assert health["suggested_recovery_action"] == "RE_DOWNLOAD_MODEL"
+            assert any(
+                "falling back to TF-IDF" in rec.message for rec in caplog.records
+            )
+
+            async def _ingest():
+                chunk: dict[str, dict[str, str]] = {}
+                async for (
+                    item,
+                    text,
+                    fhash,
+                    was_skipped,
+                ) in session.process_items_async(
+                    item_paths, cancel_check=lambda: False
+                ):
+                    if not was_skipped and text:
+                        chunk[item] = {"text": text, "hash": fhash or ""}
+                return chunk
+
+            ingested = asyncio.run(_ingest())
+            assert len(ingested) == 4
+            session.partial_fit(ingested)
+            plan = session.generate_sorting_plan()
+            assert plan is not None
+            assert len(plan) > 0
+        finally:
+            session.close()
+
+    # Scenario 2: tokenizer files present, onnxruntime absent -> logs degraded warning, records INSTALL_ML_EXTRA, completes TF-IDF plan
+    (model_dir / "vocab.txt").write_text("[PAD]\n[UNK]\n", encoding="utf-8")
+    (model_dir / "tokenizer_config.json").write_text("{}", encoding="utf-8")
+    caplog.clear()
+    with (
+        patch.dict(sys.modules, {"onnxruntime": None}),
+        patch(
+            "app.core.resilient_file_ops.resilient_file_hash",
+            return_value=expected_onnx_hash,
+        ),
+    ):
+        session2 = AppSession(settings, base_dir=str(workspace))
+        try:
+            assert session2.analyzer.model_path is None
+            health2 = SharedModelRegistry.get_instance().get_model_health(
+                "onnx_embeddings"
+            )
+            assert health2["status"] == "DEGRADED_FALLBACK"
+            assert health2["suggested_recovery_action"] == "INSTALL_ML_EXTRA"
+            assert any(
+                "falling back to TF-IDF" in rec.message for rec in caplog.records
+            )
+            session2.partial_fit(ingested)
+            plan2 = session2.generate_sorting_plan()
+            assert plan2 is not None
+            assert len(plan2) > 0
+        finally:
+            session2.close()

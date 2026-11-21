@@ -57,7 +57,11 @@ def test_steps_are_logged_outside_any_sort_long_transaction(
     log_step = session.history_manager.log_step
 
     def spy(*args, **kwargs):
-        in_session.append(session.db_worker.is_in_session())
+        in_session.append(
+            session.db_worker.execute_write(
+                lambda: get_db_connection(str(store.path)).in_transaction
+            )
+        )
         return log_step(*args, **kwargs)
 
     monkeypatch.setattr(session.history_manager, "log_step", spy)

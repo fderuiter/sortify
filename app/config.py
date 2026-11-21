@@ -396,10 +396,19 @@ class Settings(BaseSettings):
         ),
     )
     SECURITY_ADVISORY_ENDPOINT: str = Field(
-        default="https://security.huggingface.co/api/advisories",
+        default="https://huggingface.co/api/models",
         description=(
-            "HTTPS endpoint queried with model repository IDs and SHA-256 digests to "
-            "check for published model security advisories before loading weights."
+            "HTTPS endpoint queried for model repository security metadata and "
+            "published advisories before downloading or loading weights (defaults to "
+            "Hugging Face Hub models API; supports custom HTTPS mirrors)."
+        ),
+    )
+    TRUSTED_MODEL_HOSTS: list[str] = Field(
+        default_factory=list,
+        description=(
+            "Additional trusted HTTPS hostnames permitted for model downloads and "
+            "security advisory mirror queries alongside 'huggingface.co' and 'hf.co'. "
+            "IP literals, private or loopback addresses, and non-HTTPS schemes remain blocked."
         ),
     )
     SECURITY_ADVISORY_CACHE_TTL: int = Field(

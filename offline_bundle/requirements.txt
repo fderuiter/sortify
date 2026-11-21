@@ -2191,7 +2191,7 @@ tokenizers==0.23.3 \
     --hash=sha256:ec82e80e65a862275b97c3d90b7a523df8d9519ee48aeb4e9625b2cc909274e0 \
     --hash=sha256:efa3d7318406b4d115dce61ad5061953f1f44b128e79c020ce4615d763e23b6e
     # via transformers
-torch==2.15.0 ; sys_platform == 'darwin' \
+torch==2.15.0 ; sys_platform != 'linux' and sys_platform != 'win32' \
     --hash=sha256:02ac0b22211c1984e5dc002d2e57fdbc13d32116537ea6ae1a0c9d07cafce0c9 \
     --hash=sha256:06a686eb717cd3d1662363082820be45497318887c596d691af0af0c7649c8f0 \
     --hash=sha256:0d2b2d9674fa0b9b3f50e83231aa6545a0b19e437a52f0af939a224faaa45515 \
@@ -2203,7 +2203,7 @@ torch==2.15.0 ; sys_platform == 'darwin' \
     #   smart-autosorter (pyproject.toml)
     #   easyocr
     #   torchvision
-torch==2.15.0+cpu ; sys_platform != 'darwin' \
+torch==2.15.0+cpu ; sys_platform == 'linux' or sys_platform == 'win32' \
     --hash=sha256:01bdc7d291e3f6b5c03cf72d8a1718a5012d9fad5f380e67b563b0a76592055a \
     --hash=sha256:086f79c78c941b428410dc15f898ce2420a4580ae6983ea314692d71ce76c619 \
     --hash=sha256:0955c7e3446326293f48af18fad67872fa31dee5a36a87690eb9e5be8b465be3 \
@@ -2237,14 +2237,18 @@ torch==2.15.0+cpu ; sys_platform != 'darwin' \
     #   smart-autosorter (pyproject.toml)
     #   easyocr
     #   torchvision
-torchvision==0.29.2 ; sys_platform == 'darwin' \
+torchvision==0.29.2 ; sys_platform != 'linux' and sys_platform != 'win32' \
     --hash=sha256:d412494ff011f24c884a3cffd33eba1cb45a0299d4e26c1e175113f9d3b3ebc7
-    # via easyocr
-torchvision==0.29.2+cpu ; sys_platform != 'darwin' \
+    # via
+    #   --override (workspace)
+    #   easyocr
+torchvision==0.29.2+cpu ; sys_platform == 'linux' or sys_platform == 'win32' \
     --hash=sha256:0be2f85933012cb487f844c7483665191653ee8684da89d6d0e34fd63c3a0a88 \
     --hash=sha256:84cb034b4ad99ccfda755270f6a7fff8a1c6694450e29880b99e4a60274e800b \
     --hash=sha256:87631236a47be98ab21301e8cb4fc1cbb9325fe0aa7a022e18d2f894087b68c3
-    # via easyocr
+    # via
+    #   --override (workspace)
+    #   easyocr
 tqdm==4.70.1 \
     --hash=sha256:c293e525e6fef9c20e8728fd4612df02a0aa31bb5fe91ecd93e123b1b7bffa73 \
     --hash=sha256:cefd0eca11b2a37a3aee776544d4f4ae913f02688135b5556b8788dfa474afc4

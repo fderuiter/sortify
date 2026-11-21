@@ -312,6 +312,7 @@ def test_default_bypass_domains_restricted_and_templates_skipped():
         "api.osv.dev",
         "download.pytorch.org",
         "huggingface.co",
+        "security.huggingface.co",
         "keepachangelog.com",
         "w3.org",
         "www.w3.org",

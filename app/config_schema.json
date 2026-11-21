@@ -263,10 +263,18 @@
       "type": "string"
     },
     "SECURITY_ADVISORY_ENDPOINT": {
-      "default": "https://security.huggingface.co/api/advisories",
-      "description": "HTTPS endpoint queried with model repository IDs and SHA-256 digests to check for published model security advisories before loading weights.",
+      "default": "https://huggingface.co/api/models",
+      "description": "HTTPS endpoint queried for model repository security metadata and published advisories before downloading or loading weights (defaults to Hugging Face Hub models API; supports custom HTTPS mirrors).",
       "title": "Security Advisory Endpoint",
       "type": "string"
+    },
+    "TRUSTED_MODEL_HOSTS": {
+      "description": "Additional trusted HTTPS hostnames permitted for model downloads and security advisory mirror queries alongside 'huggingface.co' and 'hf.co'. IP literals, private or loopback addresses, and non-HTTPS schemes remain blocked.",
+      "items": {
+        "type": "string"
+      },
+      "title": "Trusted Model Hosts",
+      "type": "array"
     },
     "SECURITY_ADVISORY_CACHE_TTL": {
       "default": 3600,

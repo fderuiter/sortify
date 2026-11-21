@@ -1588,20 +1588,10 @@ class Database:
 
         def _write():
             conn = get_db_connection(self.db_path)
-            if self.worker and self.worker.is_in_session():
-                if (
-                    self.worker._active_session
-                    and self.worker._active_session.get("conn") is None
-                ):
-                    self.worker._active_session["conn"] = conn
+            with conn:
                 self._apply_batch_updates_on_conn(
                     conn, updates, precomputed_updates_map
                 )
-            else:
-                with conn:
-                    self._apply_batch_updates_on_conn(
-                        conn, updates, precomputed_updates_map
-                    )
             self.invalidate_cache()
 
         self.worker.execute_write(_write)

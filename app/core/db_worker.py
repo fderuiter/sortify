@@ -3,20 +3,10 @@
 import logging
 import queue
 import threading
-import time
-from typing import Any, TypedDict
 
-from app.core.db_conn import clear_connection_cache, get_db_connection
+from app.core.db_conn import clear_connection_cache
 
 logger = logging.getLogger(__name__)
-
-
-class _ActiveSession(TypedDict):
-    session_id: str
-    db_path: str | None
-    timeout: float
-    start_time: float
-    conn: Any
 
 
 class DBWorker:
@@ -26,90 +16,12 @@ class DBWorker:
         self.q = queue.Queue()
         self._stopped = False
         self._lock = threading.Lock()
-        self._listeners = []
-        self._active_session: _ActiveSession | None = None
         from app.core.shared_registry import ContextPropagatingThread
 
         self.thread = ContextPropagatingThread(
             target=self._run, daemon=True, name="DBWorkerThread"
         )
         self.thread.start()
-
-    def _do_begin_session(
-        self, session_id: str, db_path: str = None, timeout: float = 300.0
-    ):
-        if self._active_session is not None:
-            self._do_rollback_session(self._active_session.get("session_id"))
-
-        conn = None
-        if db_path:
-            try:
-                conn = get_db_connection(db_path)
-                conn.execute("BEGIN IMMEDIATE")
-            except Exception as e:
-                logger.warning(
-                    f"Failed to execute BEGIN IMMEDIATE for session {session_id}: {e}"
-                )
-
-        self._active_session = {
-            "session_id": str(session_id),
-            "db_path": db_path,
-            "timeout": float(timeout),
-            "start_time": time.time(),
-            "conn": conn,
-        }
-
-    def _do_commit_session(self, session_id: str | None = None):
-        if not self._active_session:
-            return
-        if session_id and str(self._active_session.get("session_id")) != str(
-            session_id
-        ):
-            return
-        conn = self._active_session.get("conn")
-        if conn:
-            try:
-                conn.commit()
-            except Exception as e:
-                logger.error(f"Error committing transaction session {session_id}: {e}")
-                try:
-                    conn.rollback()
-                except Exception:
-                    pass
-                raise
-            finally:
-                self._active_session = None
-        else:
-            self._active_session = None
-
-    def _do_rollback_session(self, session_id: str | None = None):
-        if not self._active_session:
-            return
-        conn = self._active_session.get("conn")
-        if conn:
-            try:
-                conn.rollback()
-            except Exception as e:
-                logger.warning(
-                    f"Error rolling back transaction session {session_id}: {e}"
-                )
-            finally:
-                self._active_session = None
-        else:
-            self._active_session = None
-
-    def _check_session_timeout(self):
-        if not self._active_session:
-            return
-        timeout = self._active_session.get("timeout", 300.0)
-        start_time = self._active_session.get("start_time", 0.0)
-        elapsed = time.time() - start_time
-        if elapsed > timeout:
-            sess_id = self._active_session.get("session_id")
-            logger.warning(
-                f"Transaction session {sess_id} timed out after {elapsed:.1f}s (limit: {timeout}s). Rolling back automatically."
-            )
-            self._do_rollback_session(sess_id)
 
     def _run(self):
         try:
@@ -142,8 +54,6 @@ class DBWorker:
             except Exception:
                 pass
 
-            self._check_session_timeout()
-
             try:
                 result = func(*args, **kwargs)
                 if result_q is not None:
@@ -154,30 +64,8 @@ class DBWorker:
                     f"Task exception encountered in write operation '{func_name}': {e}",
                     exc_info=True,
                 )
-                if self._active_session is not None:
-                    try:
-                        sess_id = self._active_session.get("session_id")
-                        logger.error(
-                            f"Task exception encountered during transaction session {sess_id}. "
-                            f"Rolling back open session transaction automatically: {e}"
-                        )
-                        self._do_rollback_session(sess_id)
-                    except Exception as rollback_err:
-                        logger.error(
-                            f"Failed during automatic transaction rollback: {rollback_err}"
-                        )
                 if result_q is not None:
                     result_q.put(("error", e))
-                else:
-                    payload = {
-                        "func_name": func_name,
-                        "func": func,
-                        "exception": e,
-                        "error": str(e),
-                        "args": args,
-                        "kwargs": kwargs,
-                    }
-                    self.notify_listeners("write_error", payload)
             finally:
                 try:
                     from app.core.shared_registry import _thread_local
@@ -187,45 +75,9 @@ class DBWorker:
                     pass
                 self.q.task_done()
 
-        if self._active_session is not None:
-            self._do_rollback_session()
-
         # Ensure all database connections opened by this worker thread are closed
         # before the thread exits, preventing file locking issues on Windows.
         clear_connection_cache()
-
-    def begin_session(
-        self, session_id: str, db_path: str = None, timeout: float = 300.0
-    ):
-        """Begin an explicit transaction session for multi-batch operations."""
-        return self.execute_write(
-            self._do_begin_session, session_id, db_path=db_path, timeout=timeout
-        )
-
-    def commit_session(self, session_id: str):
-        """Commit an active transaction session."""
-        return self.execute_write(self._do_commit_session, session_id=session_id)
-
-    def rollback_session(self, session_id: str):
-        """Roll back an active transaction session."""
-        return self.execute_write(self._do_rollback_session, session_id=session_id)
-
-    def is_in_session(self) -> bool:
-        """Return True if an active transaction session is open on the worker."""
-        if self._active_session is not None:
-            timeout = self._active_session.get("timeout", 300.0)
-            start_time = self._active_session.get("start_time", 0.0)
-            if time.time() - start_time > timeout:
-                return False
-            return True
-        return False
-
-    def get_active_session_id(self) -> str | None:
-        """Return active session ID if a session is currently open."""
-        if self.is_in_session() and self._active_session:
-            sess_id = self._active_session.get("session_id")
-            return str(sess_id) if sess_id is not None else None
-        return None
 
     def submit_write(self, func, *args, **kwargs):
         """Submit a database write operation to the queue without waiting for completion."""
@@ -271,15 +123,6 @@ class DBWorker:
                     f"Task exception encountered in write operation '{func_name}': {e}",
                     exc_info=True,
                 )
-                payload = {
-                    "func_name": func_name,
-                    "func": func,
-                    "exception": e,
-                    "error": str(e),
-                    "args": args,
-                    "kwargs": kwargs,
-                }
-                self.notify_listeners("write_error", payload)
             return
         with self._lock:
             if self._stopped:
@@ -305,39 +148,7 @@ class DBWorker:
         from app.core.shared_registry import SharedWorkerPool
 
         pool = SharedWorkerPool.get_instance()
-        future = pool.submit(func, *args, **kwargs)
-
-        def _on_done(fut):
-            try:
-                res = fut.result()
-                self.notify_listeners("job_complete", res)
-            except Exception as e:
-                self.notify_listeners("job_error", e)
-
-        future.add_done_callback(_on_done)
-        return future
-
-    def register_listener(self, callback):
-        """Register a callback listener for background job status updates."""
-        with self._lock:
-            if callback not in self._listeners:
-                self._listeners.append(callback)
-
-    def unregister_listener(self, callback):
-        """Unregister a callback listener."""
-        with self._lock:
-            if callback in self._listeners:
-                self._listeners.remove(callback)
-
-    def notify_listeners(self, event_type: str, data=None):
-        """Notify registered listeners of background worker events."""
-        with self._lock:
-            listeners = list(self._listeners)
-        for cb in listeners:
-            try:
-                cb(event_type, data)
-            except Exception:
-                pass
+        return pool.submit(func, *args, **kwargs)
 
     def stop(self, stop_embeddings: bool = True):
         """Gracefully stop the worker thread and wait for it to finish.
