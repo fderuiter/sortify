@@ -91,6 +91,23 @@ class OfflineModelLoader:
         return True
 
     @classmethod
+    def _local_files_match_pinned_hashes(cls, model_id: str, model_path: str) -> bool:
+        """Return True when every registered file for `model_id` matches its pinned SHA-256 digest."""
+        if not model_path or not os.path.isdir(model_path):
+            return False
+        from app.core.shared_registry import SharedModelRegistry
+
+        registry = SharedModelRegistry.get_instance()
+        integrity_id = cls._integrity_id(model_id)
+        if not registry.get_expected_hashes(integrity_id):
+            return False
+        try:
+            registry.verify_integrity(integrity_id, model_path)
+        except (HashVerificationError, OSError):
+            return False
+        return True
+
+    @classmethod
     def _find_sidecar_zip_candidates(cls) -> list[str]:
         """Find potential filesystem paths where smart-autosorter-models.zip may reside."""
         candidates = []
@@ -512,16 +529,31 @@ class OfflineModelLoader:
                     exc_info=True,
                 )
 
-        try:
-            advisory_client.check_advisory(
-                repo_id=model_id,
-                file_hash=file_hash,
+        cached_advisory = advisory_client.get_cached_advisory(
+            model_id, file_hash
+        ) or advisory_client.get_cached_advisory(model_id, None)
+        if cached_advisory is not None and cached_advisory.has_advisory:
+            details_msg = (
+                f"Active security advisory '{cached_advisory.advisory_id or 'FLAGGED'}' "
+                f"detected for asset '{model_id}' (severity: {cached_advisory.severity or 'CRITICAL'}): "
+                f"{cached_advisory.details or 'Security alert issued.'}"
             )
-        except ModelVerificationError as adv_err:
             logger.critical(
-                f"Security advisory flag blocked offline model loading for '{model_id}': {adv_err}"
+                f"Security advisory flag blocked offline model loading for '{model_id}': {details_msg}"
             )
-            raise
+            raise ModelVerificationError(details_msg)
+
+        if not cls._local_files_match_pinned_hashes(model_id, model_path):
+            try:
+                advisory_client.check_advisory(
+                    repo_id=model_id,
+                    file_hash=file_hash,
+                )
+            except ModelVerificationError as adv_err:
+                logger.critical(
+                    f"Security advisory flag blocked offline model loading for '{model_id}': {adv_err}"
+                )
+                raise
 
         # 5. Enforce sandboxed loading
         try:

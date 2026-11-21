@@ -15,6 +15,19 @@ from app.ui.heading import Heading
 from app.ui.layout import ModalBox, ResponsiveLayoutMixin
 
 
+def _is_onnxruntime_available() -> bool:
+    """Return True when the optional `onnxruntime` package is importable."""
+    import importlib.util
+    import sys
+
+    if "onnxruntime" in sys.modules:
+        return sys.modules["onnxruntime"] is not None
+    try:
+        return importlib.util.find_spec("onnxruntime") is not None
+    except (ImportError, ValueError):
+        return False
+
+
 class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     """Modal screen for interactive local ONNX model management."""
 
@@ -28,7 +41,7 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         background: rgba(0, 0, 0, 0.6);
     }
     .modal-box {
-        padding: 1 2;
+        padding: 0 1;
         background: $panel;
         border: thick $primary;
         width: 92%;
@@ -51,13 +64,13 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     .modal-title {
         text-style: bold;
         color: $accent;
-        margin-bottom: 1;
+        margin-bottom: 0;
     }
     .compact .modal-title {
         margin-bottom: 0;
     }
     .field-label {
-        margin-top: 1;
+        margin-top: 0;
         color: $text;
         text-style: bold;
     }
@@ -66,7 +79,21 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     }
     .info-label {
         margin-top: 0;
+        width: 100%;
         color: $text;
+    }
+    .path-label {
+        margin-top: 0;
+        width: 100%;
+        max-height: 1;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        color: $text;
+    }
+    .guidance-label {
+        margin-top: 0;
+        width: 100%;
+        color: $warning;
     }
     .button-row {
         dock: bottom;
@@ -80,6 +107,10 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     }
     .compact .button-row {
         margin-top: 0;
+    }
+    .narrow .button-row {
+        grid-size: 2;
+        grid-columns: 1fr 1fr;
     }
     .button-row Button {
         width: 100%;
@@ -128,7 +159,7 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                     "Status: Checking...", id="lbl-model-status", classes="info-label"
                 )
                 yield Label(
-                    "Location: Checking...", id="lbl-model-path", classes="info-label"
+                    "Location: Checking...", id="lbl-model-path", classes="path-label"
                 )
                 yield Label(
                     "Size on Disk: 0 MB", id="lbl-model-size", classes="info-label"
@@ -137,6 +168,12 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                     "Verification: Checking...",
                     id="lbl-model-hash",
                     classes="info-label",
+                )
+                yield Label(
+                    "",
+                    id="lbl-ml-guidance",
+                    classes="guidance-label",
+                    markup=False,
                 )
 
                 yield Heading(
@@ -204,8 +241,12 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         return p_val
 
     def _refresh_ui_state(self) -> None:
-        """Update model file info labels and control button states."""
-        from app.core.downloader import DownloadManager, verify_downloaded_model
+        """Update model file info labels, runtime guidance, and control button states."""
+        from app.core.downloader import (
+            DownloadManager,
+            _inspect_model_bundle,
+            verify_downloaded_model,
+        )
 
         dm = DownloadManager.get_instance()
 
@@ -217,20 +258,46 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         lbl_path = self.query_one("#lbl-model-path", Label)
         lbl_size = self.query_one("#lbl-model-size", Label)
         lbl_hash = self.query_one("#lbl-model-hash", Label)
+        lbl_ml = self.query_one("#lbl-ml-guidance", Label)
 
         lbl_path.update(f"Location: {model_dir}")
+
+        if _is_onnxruntime_available():
+            lbl_ml.update("")
+            lbl_ml.display = False
+        else:
+            lbl_ml.update(
+                "ML extra absent: install 'smart-autosorter[ml]' (uv sync --extra ml); TF-IDF fallback active."
+            )
+            lbl_ml.display = True
 
         model_exists = os.path.exists(onnx_file) and os.path.getsize(onnx_file) > 0
         tmp_exists = os.path.exists(tmp_file)
 
         if model_exists:
-            size_mb = os.path.getsize(onnx_file) / (1024 * 1024)
+            total_bytes = 0
+            if os.path.isdir(model_dir):
+                for entry in os.listdir(model_dir):
+                    entry_p = os.path.join(model_dir, entry)
+                    if os.path.isfile(entry_p):
+                        total_bytes += os.path.getsize(entry_p)
+            else:
+                total_bytes = os.path.getsize(onnx_file)
+            size_mb = total_bytes / (1024 * 1024)
             lbl_size.update(f"Size on Disk: {size_mb:.2f} MB")
-            lbl_status.update("Status: Downloaded & Present")
             if verify_downloaded_model(model_dir):
+                lbl_status.update("Status: Downloaded & Present")
                 lbl_hash.update("Verification: Valid (Cryptographically Verified)")
             else:
-                lbl_hash.update("Verification: Unverified or Missing Configuration")
+                bundle_state, bundle_detail = _inspect_model_bundle(model_dir)
+                if bundle_state == "incomplete":
+                    lbl_status.update("Status: Incomplete Bundle")
+                    lbl_hash.update(
+                        f"Verification: Incomplete Warning ({bundle_detail})"
+                    )
+                else:
+                    lbl_status.update("Status: Downloaded (Unverified)")
+                    lbl_hash.update("Verification: Corrupted or Unverified")
         elif tmp_exists:
             size_mb = os.path.getsize(tmp_file) / (1024 * 1024)
             lbl_size.update(f"Size on Disk: {size_mb:.2f} MB (Incomplete)")
@@ -241,12 +308,15 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             lbl_status.update("Status: Missing (Not Downloaded)")
             lbl_hash.update("Verification: N/A")
 
+        has_any_model_files = model_exists or (
+            os.path.isdir(model_dir) and bool(os.listdir(model_dir))
+        )
         is_dl = dm.state["is_downloading"]
         self.query_one("#btn-start", Button).disabled = is_dl
         self.query_one("#btn-cancel-dl", Button).disabled = not is_dl
         self.query_one("#btn-retry", Button).disabled = is_dl
         self.query_one("#btn-delete", Button).disabled = not (
-            model_exists or tmp_exists or is_dl
+            has_any_model_files or tmp_exists or is_dl
         )
 
     def _poll_download_status(self) -> None:

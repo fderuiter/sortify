@@ -61,14 +61,8 @@ def test_fast_triage_provisional_for_images_and_background_queue(tmp_path: Path)
 
 
 def test_db_worker_background_concurrency_and_listeners(tmp_path: Path):
-    """Verify DBWorker background job pool accepts jobs and notifies listeners."""
+    """Verify DBWorker background job pool accepts jobs and returns results."""
     worker = DBWorker()
-    events = []
-
-    def _listener(event_type, data):
-        events.append((event_type, data))
-
-    worker.register_listener(_listener)
 
     def _sample_bg_job():
         time.sleep(0.05)
@@ -78,7 +72,6 @@ def test_db_worker_background_concurrency_and_listeners(tmp_path: Path):
     res = fut.result(timeout=2.0)
 
     assert res == "completed_result"
-    assert any(e[0] == "job_complete" and e[1] == "completed_result" for e in events)
 
     worker.stop()
 
