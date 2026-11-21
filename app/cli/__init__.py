@@ -29,10 +29,12 @@ def register_cli_subcommands(subparsers: argparse._SubParsersAction) -> None:
     from app.cli.ledger_cli import register_subparser as register_ledger
     from app.cli.model_cli import register_subparser as register_model
     from app.cli.quarantine_cli import register_subparser as register_quarantine
+    from app.cli.rules_cli import register_subparser as register_rules
 
     register_ledger(subparsers)
     register_model(subparsers)
     register_quarantine(subparsers)
+    register_rules(subparsers)
 
 
 def handle_cli_command(args: argparse.Namespace, settings: AppSettings) -> bool:
@@ -40,6 +42,7 @@ def handle_cli_command(args: argparse.Namespace, settings: AppSettings) -> bool:
     from app.cli.ledger_cli import handle_ledger_command
     from app.cli.model_cli import handle_model_command
     from app.cli.quarantine_cli import handle_quarantine_command
+    from app.cli.rules_cli import handle_rules_command
 
     subcmd = getattr(args, "subcommand", None)
     if subcmd == "ledger":
@@ -48,6 +51,8 @@ def handle_cli_command(args: argparse.Namespace, settings: AppSettings) -> bool:
         return handle_model_command(args, settings)
     elif subcmd == "quarantine":
         return handle_quarantine_command(args, settings)
+    elif subcmd == "rules":
+        return handle_rules_command(args, settings)
     return False
 
 

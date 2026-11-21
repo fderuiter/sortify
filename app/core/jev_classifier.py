@@ -5,9 +5,11 @@ and archival prioritization within a sub-150 ms SLA to bypass heavy generative A
 """
 
 import contextlib
+import functools
 import json
 import logging
 import os
+import re
 import time
 from typing import Any, Optional
 
@@ -207,6 +209,54 @@ def _extract_pptx_snippet(file_path: str) -> str:
             exc_info=True,
         )
     return ""
+
+
+@functools.lru_cache(maxsize=512)
+def _compile_keyword_pattern(keyword: str) -> re.Pattern[str]:
+    """Compile an ASCII alphanumeric token-boundary regex for a Jev category keyword.
+
+    Treats underscores, hyphens, dots, slashes, and whitespace as token separators so
+    `john_cv_2026.pdf` and `invoice_001.pdf` match while substring collisions inside
+    technical identifiers such as `opencv_tutorial_notes.txt` or `syntax_guide.md` do not.
+    """
+    kw = keyword.strip().lower()
+    if not kw:
+        return re.compile(r"(?!x)x")
+
+    if kw.endswith("_"):
+        stem = re.escape(kw[:-1])
+        return re.compile(rf"(?<![a-z0-9]){stem}_")
+
+    if "_" in kw:
+        parts = [re.escape(part) for part in kw.split("_") if part]
+        joined = r"[\s_\-]+".join(parts)
+        return re.compile(rf"(?<![a-z0-9]){joined}(?:s)?(?![a-z0-9])")
+
+    if kw == "w2":
+        return re.compile(r"(?<![a-z0-9])w-?2(?![a-z0-9])")
+
+    if kw == "tax":
+        return re.compile(r"(?<![a-z0-9])tax(?:es)?(?![a-z0-9])")
+
+    if kw == "diagnosis":
+        return re.compile(r"(?<![a-z0-9])diagnos(?:is|es)(?![a-z0-9])")
+
+    if (
+        len(kw) <= 3
+        or kw.endswith("s")
+        or kw == "hipaa"
+        or any(ch.isdigit() for ch in kw)
+    ):
+        return re.compile(rf"(?<![a-z0-9]){re.escape(kw)}(?![a-z0-9])")
+
+    return re.compile(rf"(?<![a-z0-9]){re.escape(kw)}(?:s)?(?![a-z0-9])")
+
+
+def _keyword_matches_tokens(keyword: str, text_to_check: str) -> bool:
+    """Return True when keyword appears on word/token boundaries in text_to_check."""
+    if not keyword or not text_to_check:
+        return False
+    return _compile_keyword_pattern(keyword).search(text_to_check) is not None
 
 
 class JevClassifierEngine:
@@ -703,8 +753,12 @@ class JevClassifierEngine:
 
             for cat_name, rules in self.CATEGORY_RULES.items():
                 match_score = 0.0
-                # Check keyword matches
-                kw_matches = sum(1 for kw in rules["keywords"] if kw in text_to_check)
+                # Check keyword matches on word/token boundaries
+                kw_matches = sum(
+                    1
+                    for kw in rules["keywords"]
+                    if _keyword_matches_tokens(kw, text_to_check)
+                )
                 if kw_matches > 0:
                     match_score += min(0.6 + (kw_matches - 1) * 0.15, 0.95)
 

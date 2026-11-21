@@ -1705,6 +1705,7 @@ def _main_impl():
         "ledger",
         "model",
         "quarantine",
+        "rules",
         "undo",
         "drop",
     )

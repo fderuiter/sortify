@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "b0d6dbf0de1b3ec6c8390fc646cfc6ac71673dd41468e1a0218a458e8f48262a"
+    "checksum": "a03387dff63c5f4e86389487c5676e274720dc18a082d2d1b24ac063ddbc96f5"
   },
   "classes": [
     {
@@ -155,7 +155,7 @@
               "name": "settings"
             },
             {
-              "annotation": "Optional[dict[str, str]]",
+              "annotation": "dict[str, str] | None",
               "default": "None",
               "name": "resolutions"
             },
@@ -163,6 +163,11 @@
               "annotation": "str",
               "default": "'keep_existing'",
               "name": "default_strategy"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "import_disabled"
             }
           ],
           "returns": "tuple[dict[str, str], list[dict[str, Any]]]"
@@ -304,10 +309,23 @@
     {
       "async": false,
       "decorators": [],
-      "name": "normalize_rule_path",
+      "name": "normalize_imported_target_path",
       "parameters": [
         {
           "annotation": "str",
+          "default": null,
+          "name": "raw_path"
+        }
+      ],
+      "returns": "tuple[str, bool, str | None]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "normalize_rule_path",
+      "parameters": [
+        {
+          "annotation": "str | None",
           "default": null,
           "name": "path_str"
         }

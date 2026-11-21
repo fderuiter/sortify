@@ -670,7 +670,8 @@ class AutoSorterTUI(
             or is_non_interactive_env
         )
 
-        if getattr(self.settings, "AI_CONSENT_GRANTED", None) is None:
+        _unset = object()
+        if getattr(self.settings, "AI_CONSENT_GRANTED", _unset) is None:
             if is_bypass:
                 self.settings.AI_CONSENT_GRANTED = False
                 if hasattr(self.settings, "_save"):
@@ -1298,6 +1299,18 @@ class AutoSorterTUI(
                 if "PRESERVE_HIERARCHY" in res:
                     try:
                         self.settings.PRESERVE_HIERARCHY = res["PRESERVE_HIERARCHY"]
+                    except Exception:
+                        pass
+                if "AUTO_QUARANTINE_RATINGS" in res:
+                    try:
+                        self.settings.AUTO_QUARANTINE_RATINGS = res[
+                            "AUTO_QUARANTINE_RATINGS"
+                        ]
+                    except Exception:
+                        pass
+                if "QUARANTINE_DIR_NAME" in res:
+                    try:
+                        self.settings.QUARANTINE_DIR_NAME = res["QUARANTINE_DIR_NAME"]
                     except Exception:
                         pass
                 if hasattr(self.settings, "_save"):

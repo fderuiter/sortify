@@ -312,6 +312,34 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                     chk.tooltip = pack.description
                     yield chk
 
+                yield Heading(
+                    "Compliance Sensitivity Quarantine (Opt-In):",
+                    level=2,
+                    classes="field-label",
+                )
+                yield Label(
+                    "Enable automatic quarantine holds only if you want HIGH or CRITICAL sensitivity files staged for review:"
+                )
+                current_auto_ratings = {
+                    str(r).upper()
+                    for r in (
+                        getattr(self.settings, "AUTO_QUARANTINE_RATINGS", []) or []
+                    )
+                    if r
+                }
+                yield LabeledSwitch(
+                    label="Auto-Quarantine CRITICAL Sensitivity",
+                    value="CRITICAL" in current_auto_ratings,
+                    switch_id="switch-wizard-quarantine-critical",
+                    tooltip="Automatically hold CRITICAL sensitivity documents (e.g. clinical/medical records) in compliance quarantine",
+                )
+                yield LabeledSwitch(
+                    label="Auto-Quarantine HIGH Sensitivity",
+                    value="HIGH" in current_auto_ratings,
+                    switch_id="switch-wizard-quarantine-high",
+                    tooltip="Automatically hold HIGH sensitivity documents (e.g. financial, tax, legal, resume records) in compliance quarantine",
+                )
+
             with Horizontal(classes="button-row"):
                 btn_finish = Button("Finish & Save", id="btn-finish", variant="primary")
                 btn_finish.tooltip = (
@@ -514,6 +542,12 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         elif switch_id == "switch-sample-corpus":
             state = "enabled" if event.value else "disabled"
             self.announce(f"Sample document corpus generation {state}.")
+        elif switch_id == "switch-wizard-quarantine-critical":
+            state = "enabled" if event.value else "disabled"
+            self.announce(f"Automatic CRITICAL sensitivity quarantine {state}.")
+        elif switch_id == "switch-wizard-quarantine-high":
+            state = "enabled" if event.value else "disabled"
+            self.announce(f"Automatic HIGH sensitivity quarantine {state}.")
 
     @on(Checkbox.Changed)
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
@@ -650,6 +684,39 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             self.settings.PROXY = proxy_val
         except Exception:
             proxy_val = str(getattr(self.settings, "PROXY", "") or "").strip()
+
+        existing_ratings = [
+            str(r).upper()
+            for r in (getattr(self.settings, "AUTO_QUARANTINE_RATINGS", []) or [])
+            if r and str(r).upper() not in ("CRITICAL", "HIGH")
+        ]
+        try:
+            q_crit = self.query_one("#switch-wizard-quarantine-critical", Switch).value
+        except Exception:
+            q_crit = "CRITICAL" in {
+                str(r).upper()
+                for r in (getattr(self.settings, "AUTO_QUARANTINE_RATINGS", []) or [])
+            }
+        try:
+            q_high = self.query_one("#switch-wizard-quarantine-high", Switch).value
+        except Exception:
+            q_high = "HIGH" in {
+                str(r).upper()
+                for r in (getattr(self.settings, "AUTO_QUARANTINE_RATINGS", []) or [])
+            }
+
+        updated_ratings: list[str] = []
+        if q_crit:
+            updated_ratings.append("CRITICAL")
+        if q_high:
+            updated_ratings.append("HIGH")
+        for extra_r in existing_ratings:
+            if extra_r not in updated_ratings:
+                updated_ratings.append(extra_r)
+        try:
+            self.settings.AUTO_QUARANTINE_RATINGS = updated_ratings
+        except Exception:
+            pass
 
         defer_download = False
         try:

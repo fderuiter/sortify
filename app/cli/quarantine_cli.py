@@ -347,8 +347,14 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
         elif quarantine_cmd == "process":
             job_ids = resolve_job_ids(args)
             timeout = getattr(args, "timeout", 300.0)
+            active_settings = settings if settings is not None else AppSettings()
 
-            service = QuarantineInterceptorService(db=db, worker_timeout=timeout)
+            service = QuarantineInterceptorService(
+                db=db,
+                policies=getattr(active_settings, "POLICIES", []),
+                worker_timeout=timeout,
+                runtime_settings=active_settings,
+            )
             try:
                 results = service.process_quarantine_batch(
                     job_ids, timeout_override=timeout
@@ -406,8 +412,13 @@ def handle_quarantine_command(args: argparse.Namespace, settings: AppSettings) -
             dest_dir_override = getattr(args, "dest_dir", None)
             conflict_policy = getattr(args, "conflict_policy", "rename") or "rename"
             allow_external = getattr(args, "allow_external_dest", False)
+            active_settings = settings if settings is not None else AppSettings()
 
-            service = QuarantineInterceptorService(db=db)
+            service = QuarantineInterceptorService(
+                db=db,
+                policies=getattr(active_settings, "POLICIES", []),
+                runtime_settings=active_settings,
+            )
             try:
                 results = service.release_quarantine_batch(
                     job_ids,

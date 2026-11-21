@@ -1151,3 +1151,309 @@ def test_rule_importers_coverage_gaps(tmp_path):
     assert res_ts.keyword_rules.get("tag_in_dict") == "StandaloneGroup/SubFolder"
     png_policies = [p for p in res_ts.policies if p["expression"] == "*.png"]
     assert len(png_policies) == 1
+
+
+def test_normalize_imported_target_path_conversions_and_rejections():
+    """Verify exported absolute paths normalize safely and unsafe paths are rejected with clear reasons."""
+    from app.core.rule_importers import normalize_imported_target_path
+
+    # Valid relative paths remain unchanged with was_converted=False
+    assert normalize_imported_target_path("Financial/Invoices") == (
+        "Financial/Invoices",
+        False,
+        None,
+    )
+    assert normalize_imported_target_path("Work\\Taxes\\2025") == (
+        "Work/Taxes/2025",
+        False,
+        None,
+    )
+
+    # Exported absolute / home / UNC / env / file:// paths convert with was_converted=True
+    converted_cases = [
+        ("/Users/alice/Documents/Taxes/2025", "Documents/Taxes/2025"),
+        ("/home/bob/Downloads/Sorted", "Downloads/Sorted"),
+        ("/Volumes/Macintosh HD/Archive/Legal", "Archive/Legal"),
+        ("/mnt/nas/Shared/Receipts", "Shared/Receipts"),
+        ("/Sorted/Invoices", "Sorted/Invoices"),
+        ("C:\\Users\\Alice\\Documents\\Invoices", "Documents/Invoices"),
+        ("D:\\Archive\\2025\\Q1", "Archive/2025/Q1"),
+        ("\\\\nas-server\\accounting\\Invoices\\2025", "Invoices/2025"),
+        ("~/Documents/Medical", "Documents/Medical"),
+        ("%USERPROFILE%\\Documents\\Contracts", "Documents/Contracts"),
+        ("%Desktop%\\QuickSort", "Desktop/QuickSort"),
+        ("file:///Users/alice/Taxes%202025/Returns", "Taxes 2025/Returns"),
+        ("file:///C:/Users/Alice/Finance/Bills", "Finance/Bills"),
+    ]
+    for raw, expected in converted_cases:
+        norm, was_converted, err = normalize_imported_target_path(raw)
+        assert err is None, f"Unexpected error for {raw}: {err}"
+        assert norm == expected
+        assert was_converted is True
+
+    # Unsafe paths that cannot become a safe relative folder are rejected
+    unsafe_cases = [
+        "/",
+        "C:\\",
+        "D:/",
+        "~",
+        "~/",
+        "/Users/alice",
+        "C:\\Users\\Alice",
+        "/Volumes/BackupDrive",
+        "\\\\nas-server\\accounting",
+        "%USERPROFILE%",
+        "../OutsideWorkspace",
+        "/Users/alice/Documents/../../etc/passwd",
+        "Invoices/CON/2025",
+        "NUL",
+        "Bad:Folder*Name",
+        "Control\x00Char",
+        "file:///Users/alice/Bad%00Char",
+    ]
+    for raw in unsafe_cases:
+        norm, was_converted, err = normalize_imported_target_path(raw)
+        assert norm == "", f"Expected {raw!r} to be rejected, got {norm!r}"
+        assert was_converted is False
+        assert err is not None and len(err) > 0
+
+
+def test_hazel_importer_normalizes_paths_filters_clauses_and_maps_unarchive(tmp_path):
+    """Verify Hazel importer converts absolute paths, skips unsafe paths/clauses/copy, and maps unarchive."""
+    hazel_data = {
+        "Rules": [
+            {
+                "NSRuleName": "Absolute Invoice Move",
+                "NSRuleConditions": [
+                    {"target": "Name", "operator": "contains", "value": "invoice"},
+                    {"target": "Size", "operator": "greater than", "value": "1048576"},
+                    {
+                        "target": "Date Added",
+                        "operator": "is after",
+                        "value": "2025-01-01",
+                    },
+                    {
+                        "target": "Name",
+                        "operator": "does not contain",
+                        "value": "draft",
+                    },
+                ],
+                "NSRuleActions": [
+                    {
+                        "NSRuleActionType": "NSRuleActionMove",
+                        "DestinationPath": "/Users/alice/Documents/Invoices",
+                    }
+                ],
+            },
+            {
+                "NSRuleName": "Pure Size Rule",
+                "NSRuleConditions": [
+                    {"target": "Size", "operator": ">", "value": "50MB"},
+                ],
+                "NSRuleActions": [{"DestinationPath": "LargeFiles"}],
+            },
+            {
+                "NSRuleName": "Negated Mode Rule",
+                "NSRuleConditionMode": "none",
+                "NSRuleConditions": [
+                    {"target": "Name", "operator": "contains", "value": "secret"},
+                ],
+                "NSRuleActions": [{"DestinationPath": "NonSecret"}],
+            },
+            {
+                "NSRuleName": "Copy Backup Rule",
+                "NSRuleConditions": [
+                    {"target": "Extension", "operator": "is", "value": "pdf"},
+                ],
+                "NSRuleActions": [
+                    {
+                        "NSRuleActionType": "NSRuleActionCopy",
+                        "DestinationPath": "Backups/PDFs",
+                    }
+                ],
+            },
+            {
+                "NSRuleName": "Unsafe Root Destination",
+                "NSRuleConditions": [
+                    {"target": "Name", "operator": "contains", "value": "rootfile"},
+                ],
+                "NSRuleActions": [{"DestinationPath": "/"}],
+            },
+            {
+                "NSRuleName": "Unpack Archives",
+                "NSRuleConditions": [
+                    {"target": "Extension", "operator": "is", "value": "zip"},
+                ],
+                "NSRuleActions": [
+                    {
+                        "NSRuleActionType": "NSRuleActionUnarchive",
+                        "DestinationPath": "/Users/alice/Downloads/Unpacked",
+                    }
+                ],
+            },
+        ]
+    }
+    plist_file = tmp_path / "complex.hazelrules"
+    with open(plist_file, "wb") as f:
+        plistlib.dump(hazel_data, f)
+
+    res = HazelRuleImporter().parse_file(plist_file)
+
+    # 1. Valid 'invoice' condition kept with normalized relative path; draft/size/date NOT turned into keywords!
+    assert res.keyword_rules == {"invoice": "Documents/Invoices"}
+    assert "draft" not in res.keyword_rules
+    assert "1048576" not in res.keyword_rules
+    assert "50mb" not in res.keyword_rules
+    assert "secret" not in res.keyword_rules
+    assert "rootfile" not in res.keyword_rules
+    assert "pure size rule" not in res.keyword_rules
+
+    # 2. Unarchive rule mapped to built-in unarchive policy with normalized relative folder; Copy PDF rule skipped!
+    assert len(res.policies) == 1
+    pol = res.policies[0]
+    assert pol["type"] == "unarchive"
+    assert pol["action"] == "unarchive"
+    assert pol["expression"] == "*.zip"
+    assert pol["target_path"] == "Downloads/Unpacked"
+
+    # 3. Warnings emitted for path conversion, size, date, negated, copy, and unsafe root path
+    joined_warnings = "\n".join(res.warnings)
+    assert "converted destination path" in joined_warnings.lower()
+    assert "size" in joined_warnings.lower()
+    assert "date" in joined_warnings.lower()
+    assert "negated" in joined_warnings.lower()
+    assert "copy" in joined_warnings.lower()
+    assert "Unsafe Root Destination" in joined_warnings
+
+
+def test_dropit_ini_xml_json_filtering_normalization_and_unarchive(tmp_path):
+    """Verify DropIt INI/XML/JSON normalize paths, filter negated/size/date/copy clauses, and map Extract to unarchive."""
+    ini_content = (
+        "[DropIt]\n"
+        "Profile = Enterprise Rules\n\n"
+        "[Association_1]\n"
+        "Name = Invoices With Exclusions\n"
+        "Rules = *.pdf;!*draft*;>10MB;<30d\n"
+        "Exclude = *temp*\n"
+        "Size = >1024\n"
+        "DateModified = <2025-01-01\n"
+        "Action = Move\n"
+        "Destination = C:\\Users\\Alice\\Finance\\PDFs\n\n"
+        "[Association_2]\n"
+        "Name = Copy Rule\n"
+        "Rules = *.docx\n"
+        "Action = Copy\n"
+        "Destination = C:\\Users\\Alice\\Backups\\Docs\n\n"
+        "[Association_3]\n"
+        "Name = Extract Archives\n"
+        "Rules = *.tar.gz;archive_bundle\n"
+        "Action = Extract\n"
+        "Destination = \\\\fileserver\\shared\\Archives\\Extracted\n\n"
+        "[Association_4]\n"
+        "Name = Unsafe Traversal\n"
+        "Rules = *.csv\n"
+        "Action = Move\n"
+        "Destination = ..\\..\\escaped\n"
+    )
+    ini_file = tmp_path / "profile.ini"
+    ini_file.write_text(ini_content, encoding="utf-8")
+
+    importer = get_rule_importer(ini_file)
+    assert isinstance(importer, DropItRuleImporter)
+    res = importer.parse_file(ini_file)
+
+    # No bogus keyword move rules created for copy/negated/size/date/unsafe rules
+    assert res.keyword_rules == {}
+
+    by_expr = {p["expression"]: p for p in res.policies}
+    assert set(by_expr.keys()) == {"*.pdf", "*.tar.gz", "archive_bundle"}
+
+    assert by_expr["*.pdf"]["type"] == "pattern"
+    assert by_expr["*.pdf"]["target_path"] == "Finance/PDFs"
+    assert "action" not in by_expr["*.pdf"]
+
+    assert by_expr["*.tar.gz"]["type"] == "unarchive"
+    assert by_expr["*.tar.gz"]["action"] == "unarchive"
+    assert by_expr["*.tar.gz"]["target_path"] == "Archives/Extracted"
+
+    assert by_expr["archive_bundle"]["type"] == "unarchive"
+    assert by_expr["archive_bundle"]["action"] == "unarchive"
+    assert by_expr["archive_bundle"]["target_path"] == "Archives/Extracted"
+
+    joined_warnings = "\n".join(res.warnings)
+    assert "converted destination path" in joined_warnings.lower()
+    assert "Copy" in joined_warnings
+    assert "negated" in joined_warnings.lower()
+    assert "size" in joined_warnings.lower()
+    assert "date" in joined_warnings.lower()
+    assert "traversal" in joined_warnings.lower()
+
+
+def test_import_disabled_staging_and_disabled_conflict_detection(tmp_path):
+    """Verify merge_into_settings(import_disabled=True) stages new rules disabled and detects disabled keyword conflicts."""
+    settings = AppSettings(filepath=str(tmp_path / "settings_disabled.json"))
+    settings.KEYWORD_RULES = {"active_kw": "Existing/Active"}
+    settings.DISABLED_KEYWORD_RULES = {"staged_kw": "Existing/Staged"}
+    settings.POLICIES = [
+        {
+            "type": "pattern",
+            "expression": "*.xlsx",
+            "target_path": "Existing/Sheets",
+            "priority": 80,
+            "enabled": True,
+        }
+    ]
+
+    import_res = ImportResult(
+        keyword_rules={
+            "active_kw": "Imported/Active",
+            "staged_kw": "Imported/Staged",
+            "brand_new": "Imported/NewFolder",
+        },
+        policies=[
+            {
+                "type": "pattern",
+                "expression": "*.xlsx",
+                "target_path": "Imported/Sheets",
+                "priority": 75,
+            },
+            {
+                "type": "unarchive",
+                "expression": "*.zip",
+                "target_path": "Imported/Unpacked",
+                "action": "unarchive",
+                "priority": 85,
+            },
+        ],
+    )
+
+    conflicts = RuleConflictAnalyzer.analyze(import_res, settings)
+    conflict_ids = {c.identifier for c in conflicts}
+    assert conflict_ids == {"active_kw", "staged_kw", "*.xlsx (pattern)"}
+
+    import_res.merge_into_settings(
+        settings,
+        resolutions={
+            "active_kw": "keep_existing",
+            "staged_kw": "overwrite",
+            "*.xlsx (pattern)": "overwrite",
+        },
+        import_disabled=True,
+    )
+
+    # Existing active rule kept; existing disabled rule updated in DISABLED_KEYWORD_RULES; brand-new rule staged disabled!
+    assert settings.KEYWORD_RULES == {"active_kw": "Existing/Active"}
+    assert settings.DISABLED_KEYWORD_RULES == {
+        "staged_kw": "Imported/Staged",
+        "brand_new": "Imported/NewFolder",
+    }
+
+    # Overwritten existing active policy keeps its existing enabled state (True); brand-new unarchive policy staged enabled=False
+    xlsx_pol = next(p for p in settings.POLICIES if p["expression"] == "*.xlsx")
+    assert xlsx_pol["target_path"] == "Imported/Sheets"
+    assert xlsx_pol.get("enabled", True) is True
+
+    zip_pol = next(p for p in settings.POLICIES if p["expression"] == "*.zip")
+    assert zip_pol["target_path"] == "Imported/Unpacked"
+    assert zip_pol["action"] == "unarchive"
+    assert zip_pol["enabled"] is False

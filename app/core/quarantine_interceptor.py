@@ -31,6 +31,65 @@ from app.core.text_utils import sanitize_secret_patterns
 
 logger = logging.getLogger(__name__)
 
+
+def _is_content_approved_for_release(
+    db: Any,
+    base_dir: str = "",
+    file_hash: Optional[str] = None,
+    file_path: Optional[str] = None,
+) -> bool:
+    """Return True if an unchanged file's SHA-256 hash has an approved user release exemption."""
+    if db is None:
+        return False
+
+    target_hash = file_hash
+    if not target_hash and file_path and os.path.exists(file_path):
+        try:
+            target_hash = resilient_file_hash(file_path)
+        except (OSError, ValueError) as exc:
+            logger.debug(
+                "Could not compute release-approval hash for '%s': %s", file_path, exc
+            )
+            return False
+
+    if not target_hash:
+        return False
+
+    records: list[dict[str, Any]] = []
+    try:
+        if hasattr(db, "get_all_quarantine_records"):
+            records = db.get_all_quarantine_records() or []
+        elif hasattr(db, "get_quarantine_records_by_base_dir"):
+            records = (
+                db.get_quarantine_records_by_base_dir(base_dir, status="RELEASED") or []
+            )
+    except (OSError, ValueError, RuntimeError, AttributeError) as exc:
+        logger.debug("Could not query release-approval records: %s", exc)
+        return False
+
+    for rec in records:
+        if not isinstance(rec, dict):
+            continue
+        if (rec.get("status") or "").upper() != "RELEASED":
+            continue
+        if (rec.get("policy_action") or "").lower() != "release":
+            continue
+
+        if rec.get("file_hash") == target_hash:
+            return True
+
+        audit_log = rec.get("audit_log") or []
+        if isinstance(audit_log, list):
+            for entry in audit_log:
+                if (
+                    isinstance(entry, dict)
+                    and entry.get("approved_file_hash") == target_hash
+                ):
+                    return True
+
+    return False
+
+
 SSN_PATTERN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 CREDIT_CARD_PATTERN = re.compile(r"\b(?:\d[ -]*?){13,16}\b")
 EMAIL_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Z|a-z]{2,}\b")
@@ -106,7 +165,7 @@ class QuarantineInterceptorService:
                 for r in getattr(runtime_settings, "AUTO_QUARANTINE_RATINGS", [])
             ]
         else:
-            self.auto_quarantine_ratings = ["CRITICAL", "HIGH"]
+            self.auto_quarantine_ratings = []
 
     def resolve_safe_target_dir(
         self,
@@ -190,22 +249,29 @@ class QuarantineInterceptorService:
         policy_action: Optional[str] = None,
     ) -> dict[str, Any]:
         """Immediately place incoming unverified file into temporary _Quarantine_Staging prior to compliance evaluation."""
-        if not os.path.exists(source_path):
+        abs_source = os.path.abspath(source_path)
+        if not os.path.exists(abs_source):
             raise FileNotFoundError(f"Source file not found for staging: {source_path}")
 
+        abs_base_dir = (
+            os.path.abspath(base_dir)
+            if base_dir
+            else os.path.abspath(os.path.dirname(abs_source))
+        )
+
         job_id = f"qjob_{uuid.uuid4().hex[:12]}"
-        file_name = os.path.basename(source_path)
+        file_name = os.path.basename(abs_source)
         rel_path = original_relative_path or file_name
 
-        quarantine_dir = os.path.join(base_dir, "_Quarantine_Staging")
+        quarantine_dir = os.path.join(abs_base_dir, "_Quarantine_Staging")
         os.makedirs(quarantine_dir, exist_ok=True)
         _set_posix_mode(quarantine_dir, 0o700)
 
         staged_file_name = f"{job_id}_{file_name}"
-        staged_path = os.path.join(quarantine_dir, staged_file_name)
+        staged_path = os.path.abspath(os.path.join(quarantine_dir, staged_file_name))
 
         # Copy file to quarantine staging area
-        shutil.copy2(source_path, staged_path)
+        shutil.copy2(abs_source, staged_path)
         _set_posix_mode(staged_path, 0o600)
 
         file_hash = None
@@ -219,7 +285,7 @@ class QuarantineInterceptorService:
         # Record atomic STAGED state transition in database
         self.db.stage_quarantine_record(
             job_id=job_id,
-            base_dir=base_dir,
+            base_dir=abs_base_dir,
             original_filepath=rel_path,
             staged_filepath=staged_path,
             file_hash=file_hash,
@@ -228,7 +294,7 @@ class QuarantineInterceptorService:
 
         return {
             "job_id": job_id,
-            "base_dir": base_dir,
+            "base_dir": abs_base_dir,
             "original_filepath": rel_path,
             "staged_filepath": staged_path,
             "file_hash": file_hash,
@@ -264,6 +330,13 @@ class QuarantineInterceptorService:
         staged_path = record["staged_filepath"]
         base_dir = record["base_dir"]
         orig_rel_path = record["original_filepath"]
+
+        if base_dir:
+            base_dir = os.path.abspath(base_dir)
+        if staged_path and not os.path.isabs(staged_path) and base_dir:
+            candidate_staged = os.path.normpath(os.path.join(base_dir, staged_path))
+            if os.path.exists(candidate_staged) or not os.path.exists(staged_path):
+                staged_path = candidate_staged
 
         try:
             # Check timeout guardrail
@@ -386,9 +459,29 @@ class QuarantineInterceptorService:
                     f"Forensic scanning job exceeded timeout of {effective_timeout}s"
                 )
 
+            current_file_hash = None
+            if staged_path and os.path.exists(staged_path):
+                with contextlib.suppress(Exception):
+                    current_file_hash = resilient_file_hash(staged_path)
+            if not current_file_hash:
+                current_file_hash = record.get("file_hash")
+
+            is_approved_release = _is_content_approved_for_release(
+                self.db,
+                base_dir=base_dir or "",
+                file_hash=current_file_hash,
+            )
+            if is_approved_release and action in ("quarantine", "sensitivity_hold"):
+                logger.info(
+                    f"Skipping repeat quarantine hold for approved unchanged content '{orig_rel_path}'."
+                )
+                action = "allow"
+
             # 4b. Upstream Barrier: Jev Pre-Classification & Sensitivity Hold for unguided / default documents
             if (
-                action not in ("redact", "archive", "quarantine", "retain", "unarchive")
+                not is_approved_release
+                and action
+                not in ("redact", "archive", "quarantine", "retain", "unarchive")
                 and self.jev_classifier is not None
             ):
                 try:
@@ -415,10 +508,7 @@ class QuarantineInterceptorService:
                     )
 
                     auto_ratings = [
-                        r.upper()
-                        for r in getattr(
-                            self, "auto_quarantine_ratings", ["CRITICAL", "HIGH"]
-                        )
+                        r.upper() for r in getattr(self, "auto_quarantine_ratings", [])
                     ]
                     if sens_rating in auto_ratings:
                         logger.info(
@@ -912,9 +1002,26 @@ class QuarantineInterceptorService:
                     )
                     continue
 
-                staged_path = record.get("staged_filepath")
+                base_dir = record.get("base_dir") or ""
+                orig_rel = record.get("original_filepath") or "released_file"
+                effective_base = os.path.abspath(base_dir) if base_dir else os.getcwd()
+
+                raw_staged_path = record.get("staged_filepath")
+                staged_path = raw_staged_path
+                if staged_path:
+                    if not os.path.isabs(staged_path):
+                        candidate_staged = os.path.normpath(
+                            os.path.join(effective_base, staged_path)
+                        )
+                        if os.path.exists(candidate_staged) or not os.path.exists(
+                            staged_path
+                        ):
+                            staged_path = candidate_staged
+                    else:
+                        staged_path = os.path.abspath(staged_path)
+
                 if not staged_path or not os.path.exists(staged_path):
-                    err_msg = f"Staged file missing at '{staged_path}'"
+                    err_msg = f"Staged file missing at '{raw_staged_path}'"
                     self.db.update_quarantine_status(
                         job_id=job_id,
                         status="MANUAL_REVIEW_REQUIRED",
@@ -933,10 +1040,6 @@ class QuarantineInterceptorService:
                         }
                     )
                     continue
-
-                base_dir = record.get("base_dir") or ""
-                orig_rel = record.get("original_filepath") or "released_file"
-                effective_base = os.path.abspath(base_dir) if base_dir else os.getcwd()
 
                 if dest_dir:
                     target_parent = os.path.abspath(dest_dir)
@@ -1006,17 +1109,27 @@ class QuarantineInterceptorService:
                 else:
                     dest_file_path = candidate_dest
 
+                approved_hash = None
+                with contextlib.suppress(Exception):
+                    approved_hash = resilient_file_hash(staged_path)
+                if not approved_hash:
+                    approved_hash = record.get("file_hash")
+
                 try:
                     with atomic_quarantine_relocation(staged_path, dest_file_path):
+                        audit_entry: dict[str, Any] = {
+                            "timestamp": time.time(),
+                            "status": "RELEASED",
+                            "details": f"Released from quarantine modal review to {dest_file_path}",
+                            "user_approved_release": True,
+                        }
+                        if approved_hash:
+                            audit_entry["approved_file_hash"] = approved_hash
                         self.db.update_quarantine_status(
                             job_id=job_id,
                             status="RELEASED",
                             policy_action="release",
-                            audit_entry={
-                                "timestamp": time.time(),
-                                "status": "RELEASED",
-                                "details": f"Released from quarantine modal review to {dest_file_path}",
-                            },
+                            audit_entry=audit_entry,
                         )
                 except Exception:
                     if (

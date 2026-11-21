@@ -43,9 +43,20 @@ def clean_db():
     yield
 
 
+def test_default_settings_disable_auto_quarantine_until_enabled():
+    """Automatic sensitivity quarantine defaults to disabled ([]) until explicitly opted in."""
+    default_settings = Settings()
+    assert default_settings.AUTO_QUARANTINE_RATINGS == []
+
+    service = QuarantineInterceptorService(db=db, runtime_settings=default_settings)
+    assert service.auto_quarantine_ratings == []
+
+
 def test_upstream_barrier_jev_classification_and_hold():
-    """Requirement 1: QuarantineInterceptorService calls JevClassifierEngine and holds CRITICAL/HIGH files in quarantine staging with policy_action='sensitivity_hold' under 150ms SLA."""
-    service = QuarantineInterceptorService(db=db)
+    """Requirement 1: QuarantineInterceptorService calls JevClassifierEngine and holds CRITICAL/HIGH files in quarantine staging with policy_action='sensitivity_hold' under 150ms SLA when opted in."""
+    service = QuarantineInterceptorService(
+        db=db, auto_quarantine_ratings=["CRITICAL", "HIGH"]
+    )
 
     sample_dir = os.path.join(_test_dir, "upstream_sample")
     os.makedirs(sample_dir, exist_ok=True)
@@ -108,6 +119,7 @@ async def test_upstream_daemon_halts_on_sensitivity_hold(tmp_path):
     )
 
     settings = Settings()
+    settings.AUTO_QUARANTINE_RATINGS = ["CRITICAL", "HIGH"]
     daemon = ContinuousWatchdogDaemon(settings, str(src_dir))
     daemon._is_running = True
 
@@ -220,6 +232,7 @@ def test_downstream_barrier_mover_interception():
     }
 
     settings = Settings()
+    settings.AUTO_QUARANTINE_RATINGS = ["CRITICAL", "HIGH"]
     engine = AsyncMoveEngine()
 
     result = engine.execute(

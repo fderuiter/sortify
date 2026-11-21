@@ -6,11 +6,14 @@ from unittest.mock import MagicMock, patch
 import pytest
 
 from app.core.native_dialog import (
+    RULE_IMPORT_EXTENSIONS,
     NativeDialogError,
     decode_base64_to_path,
     encode_path_to_base64,
     select_native_directory,
     select_native_directory_powershell,
+    select_native_file,
+    select_native_file_powershell,
 )
 
 
@@ -112,3 +115,111 @@ def test_downstream_path_validation_with_decoded_utf8_path(tmp_path):
     assert decoded == orig_path
     assert test_dir.exists()
     assert (test_dir / "test.txt").write_text("ok", encoding="utf-8") == 2
+
+
+def test_select_native_file_powershell_success_cancel_and_error():
+    """Verify PowerShell OpenFileDialog returns UTF-8 paths, handles cancel, and raises on error."""
+    target_file = "C:\\Users\\Alice\\Données\\DropIt_Rules.ini"
+    b64_file = base64.b64encode(target_file.encode("utf-8")).decode("ascii")
+
+    mock_ok = MagicMock(returncode=0, stdout=f"{b64_file}\n", stderr="")
+    with patch(
+        "app.core.native_dialog.run_background_process", return_value=mock_ok
+    ) as mock_run:
+        res = select_native_file_powershell(
+            initial_dir="C:\\Users\\Alice\\Downloads",
+            title="Select Rule File",
+            extensions=RULE_IMPORT_EXTENSIONS,
+        )
+        assert res == target_file
+        cmd = mock_run.call_args[0][0]
+        assert cmd[0] == "powershell"
+        assert "OpenFileDialog" in cmd[-1]
+        import re
+
+        m_filter = re.search(
+            r"\$filterBytes = \[System\.Convert\]::FromBase64String\('([^']+)'\)",
+            cmd[-1],
+        )
+        assert m_filter is not None
+        decoded_filter = decode_base64_to_path(m_filter.group(1))
+        assert "*.ini" in decoded_filter
+        assert "*.hazelrules" in decoded_filter
+
+    mock_cancel = MagicMock(returncode=0, stdout="\n", stderr="")
+    with patch(
+        "app.core.native_dialog.run_background_process", return_value=mock_cancel
+    ):
+        assert select_native_file_powershell() is None
+
+    mock_fail = MagicMock(returncode=1, stdout="", stderr="STA thread unavailable")
+    with patch("app.core.native_dialog.run_background_process", return_value=mock_fail):
+        with pytest.raises(NativeDialogError, match="PowerShell file dialog failed"):
+            select_native_file_powershell()
+
+
+def test_select_native_file_platform_dispatch():
+    """Verify cross-platform native file picker dispatch across Windows, macOS, Linux, and unsupported OS."""
+    with patch("sys.platform", "win32"):
+        with patch(
+            "app.core.native_dialog.select_native_file_powershell",
+            return_value="C:\\Rules\\profile.ini",
+        ) as mock_ps:
+            assert select_native_file() == "C:\\Rules\\profile.ini"
+            mock_ps.assert_called_once()
+
+    with patch("sys.platform", "darwin"):
+        mock_mac_ok = MagicMock(
+            returncode=0, stdout="/Users/alice/Exported.hazelrules\n", stderr=""
+        )
+        with patch(
+            "app.core.native_dialog.run_background_process", return_value=mock_mac_ok
+        ):
+            assert select_native_file() == "/Users/alice/Exported.hazelrules"
+
+        mock_mac_cancel = MagicMock(
+            returncode=1, stdout="", stderr="User canceled (-128)"
+        )
+        with patch(
+            "app.core.native_dialog.run_background_process",
+            return_value=mock_mac_cancel,
+        ):
+            assert select_native_file() is None
+
+        mock_mac_err = MagicMock(returncode=1, stdout="", stderr="WindowServer error")
+        with patch(
+            "app.core.native_dialog.run_background_process", return_value=mock_mac_err
+        ):
+            with pytest.raises(
+                NativeDialogError, match="macOS native file dialog failed"
+            ):
+                select_native_file()
+
+    with patch("sys.platform", "linux"):
+        mock_lin_ok = MagicMock(
+            returncode=0, stdout="/home/alice/profile.ini\n", stderr=""
+        )
+        with patch(
+            "app.core.native_dialog.run_background_process", return_value=mock_lin_ok
+        ):
+            assert select_native_file() == "/home/alice/profile.ini"
+
+        mock_lin_cancel = MagicMock(returncode=1, stdout="", stderr="")
+        with patch(
+            "app.core.native_dialog.run_background_process",
+            return_value=mock_lin_cancel,
+        ):
+            assert select_native_file() is None
+
+        with patch(
+            "app.core.native_dialog.run_background_process",
+            side_effect=FileNotFoundError("zenity not installed"),
+        ):
+            with pytest.raises(
+                NativeDialogError, match="Linux native file dialog failed"
+            ):
+                select_native_file()
+
+    with patch("sys.platform", "freebsd14"):
+        with pytest.raises(NativeDialogError, match="not supported on platform"):
+            select_native_file()

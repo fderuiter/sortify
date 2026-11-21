@@ -466,3 +466,66 @@ def test_policy_halting_and_cascading():
     halted_folder = find_folder_for("tax_document_2026.pdf", plan_halt)
     assert halted_folder != "Tax Folder"
     assert halted_folder != "Yearly Archive Folder"
+
+
+def test_match_pattern_expression_wildcards_extensions_and_substrings():
+    """Verify match_pattern_expression handles globs, leading-dot extensions, and plain substrings."""
+    from app.core.policy_engine import PolicyEngine, match_pattern_expression
+
+    # 1. Wildcard masks (*, ?, [...])
+    assert match_pattern_expression("*.pdf", "Annual_Report_2025.PDF") is True
+    assert match_pattern_expression("*.pdf", "Annual_Report_2025.pdf.bak") is False
+    assert match_pattern_expression("inv_202[56]_??.csv", "INV_2025_09.CSV") is True
+    assert match_pattern_expression("inv_202[56]_??.csv", "INV_2024_09.CSV") is False
+    assert match_pattern_expression("inv_202[56]_??.csv", "INV_2025_9.CSV") is False
+
+    # 2. Leading-dot extension masks (.pdf)
+    assert match_pattern_expression(".pdf", "invoice.pdf") is True
+    assert match_pattern_expression(".pdf", "STATEMENT.PDF") is True
+    assert match_pattern_expression(".pdf", "invoice.pdf.tmp") is False
+    assert match_pattern_expression(".pdf", "pdf_summary.txt") is False
+
+    # 3. Plain substring text without wildcards preserves legacy substring matching
+    assert match_pattern_expression("invoice", "2025_invoice_final.txt") is True
+    assert match_pattern_expression("invoice", "receipt_2025.txt") is False
+    assert match_pattern_expression("", "anything.txt") is False
+
+    # 4. PolicyEngine.match_policy supports wildcard pattern, unarchive, and skips disabled rules
+    policies = [
+        {
+            "type": "pattern",
+            "expression": "*.pdf",
+            "target_path": "Disabled/PDFs",
+            "priority": 100,
+            "enabled": False,
+        },
+        {
+            "type": "pattern",
+            "expression": "*.pdf",
+            "target_path": "Documents/PDFs",
+            "priority": 80,
+            "enabled": True,
+        },
+        {
+            "type": "unarchive",
+            "expression": "bundle_[0-9]*.zip",
+            "target_path": "Archives/Unpacked",
+            "action": "unarchive",
+            "priority": 90,
+            "enabled": True,
+        },
+    ]
+
+    matched_pdf, halted_pdf = PolicyEngine.evaluate_policies(
+        "Q4_Statement.PDF", "", None, policies, return_halting=True
+    )
+    assert halted_pdf is False
+    assert matched_pdf is not None
+    assert matched_pdf["target_path"] == "Documents/PDFs"
+
+    matched_zip, _ = PolicyEngine.evaluate_policies(
+        "bundle_42.zip", "", None, policies, return_halting=True
+    )
+    assert matched_zip is not None
+    assert matched_zip["target_path"] == "Archives/Unpacked"
+    assert matched_zip["action"] == "unarchive"
