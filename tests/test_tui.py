@@ -2664,3 +2664,42 @@ def test_tui_tree_rendering_zero_stat_and_collision_precomputation(temp_workspac
             assert app.collision_paths == set()
 
     asyncio.run(_test())
+
+
+def test_ai_provisioning_idle_poll_executes_zero_stat_calls_and_tracks_transitions(
+    temp_workspace,
+):
+    """Verify 0.5s AI status polling executes zero os.stat calls when idle and updates on DownloadManager state changes."""
+    from app.core.downloader import DownloadManager
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(
+            settings=settings, base_dir=temp_workspace, skip_wizard=True
+        )
+
+        async with app.run_test() as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.pause(0.05)
+
+            with patch("os.stat") as mock_stat, patch("os.lstat") as mock_lstat:
+                app._poll_ai_provisioning_status()
+                app._poll_ai_provisioning_status()
+                assert mock_stat.call_count == 0
+                assert mock_lstat.call_count == 0
+
+            dm = DownloadManager.get_instance()
+            dm._status = DownloadManager.DownloadState.DOWNLOADING
+            dm.state["is_downloading"] = True
+            dm.state["progress"] = 0.42
+            app._poll_ai_provisioning_status()
+            assert "[AI: Downloading 42%]" in str(
+                app.query_one("#status-bar", Static).render()
+            )
+
+            with patch("os.stat") as mock_stat_dl:
+                app._poll_ai_provisioning_status()
+                assert mock_stat_dl.call_count == 0
+
+    asyncio.run(_test())

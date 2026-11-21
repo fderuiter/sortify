@@ -891,26 +891,51 @@ class AutoSorterTUI(
             elif new_state == "idle":
                 self.announce("Watchdog daemon idle.", priority="assertive")
 
+    def _compute_ai_poll_token(self) -> tuple[Any, ...]:
+        """Build an in-memory token of consent and DownloadManager state without disk stat calls."""
+        from app.core.downloader import DownloadManager
+
+        consent = getattr(self.settings, "AI_CONSENT_GRANTED", None) is True
+        dm = DownloadManager._instance
+        if dm is None:
+            return (0, consent, "IDLE", False, 0, "")
+        is_downloading = bool(dm.state.get("is_downloading", False))
+        raw_progress = float(dm.state.get("progress", 0.0) or 0.0)
+        pct = int(round(min(100.0, max(0.0, raw_progress * 100.0))))
+        err = str(dm.state.get("error") or "")
+        return (id(dm), consent, str(dm.status), is_downloading, pct, err)
+
     def _get_ai_status_badge(self) -> str:
         """Return visual AI runtime status badge distinguishing active, downloading, fallback, and disabled."""
         from app.core.downloader import get_ai_runtime_state
 
         runtime_state = get_ai_runtime_state(self.settings)
+        badge = str(runtime_state["badge"])
         self._last_ai_state = str(runtime_state["state"])
-        return str(runtime_state["badge"])
+        self._last_ai_badge = badge
+        self._last_ai_poll_token = self._compute_ai_poll_token()
+        return badge
 
     def _poll_ai_provisioning_status(self) -> None:
         """Poll background model download and verification state to refresh status bar badges."""
         try:
+            poll_token = self._compute_ai_poll_token()
+            if (
+                getattr(self, "_last_ai_badge", None) is not None
+                and getattr(self, "_last_ai_poll_token", None) == poll_token
+            ):
+                return
+
             from app.core.downloader import get_ai_runtime_state
 
+            prev_badge = getattr(self, "_last_ai_badge", None)
+            prev_state = getattr(self, "_last_ai_state", None)
             runtime = get_ai_runtime_state(self.settings)
             new_badge = str(runtime["badge"])
             new_state = str(runtime["state"])
-            prev_badge = getattr(self, "_last_ai_badge", None)
-            prev_state = getattr(self, "_last_ai_state", None)
             self._last_ai_badge = new_badge
             self._last_ai_state = new_state
+            self._last_ai_poll_token = self._compute_ai_poll_token()
 
             if prev_badge is not None and prev_badge != new_badge:
                 self.update_status()

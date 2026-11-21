@@ -1209,3 +1209,18 @@ def test_bundle_staging_cleanup_on_corrupted_tokenizer_and_cancellation():
         ] == []
     finally:
         shutil.rmtree(parent_dir, ignore_errors=True)
+
+
+def test_unmocked_download_manager_opener_blocked_without_breaking_global_urllib():
+    """Verify unit-test guard blocks unmocked DownloadManager downloads immediately while leaving global OpenerDirector.open intact."""
+    import urllib.request
+
+    dm = DownloadManager()
+    opener = dm.get_opener()
+    with pytest.raises(DownloadError, match="External model download blocked"):
+        opener.open(
+            "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx"
+        )
+
+    plain_opener = urllib.request.build_opener()
+    assert plain_opener.open.__func__ is urllib.request.OpenerDirector.open

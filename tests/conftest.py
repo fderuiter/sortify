@@ -201,14 +201,24 @@ def reset_shared_registry():
 
 @pytest.fixture(autouse=True)
 def block_live_external_downloads(monkeypatch):
-    """Prevent unmocked unit tests from making live outbound HTTP downloads."""
-    import urllib.error
+    """Prevent unmocked DownloadManager calls in unit tests from downloading remote model weights."""
     import urllib.request
 
-    def _blocked_open(self, fullurl, data=None, timeout=None):
-        raise urllib.error.URLError("External network blocked in unit tests")
+    from app.core.downloader import DownloadError, DownloadManager
 
-    monkeypatch.setattr(urllib.request.OpenerDirector, "open", _blocked_open)
+    orig_get_opener = DownloadManager.get_opener
+
+    def _guarded_get_opener(self, proxy: str = None):
+        opener = orig_get_opener(self, proxy)
+        if type(opener) is urllib.request.OpenerDirector:
+
+            def _blocked_open(fullurl, data=None, timeout=None):
+                raise DownloadError("External model download blocked in unit tests")
+
+            opener.open = _blocked_open
+        return opener
+
+    monkeypatch.setattr(DownloadManager, "get_opener", _guarded_get_opener)
 
 
 @pytest.fixture(scope="session", autouse=True)
