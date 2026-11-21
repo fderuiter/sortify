@@ -1067,15 +1067,9 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
                 "base_dir": None,
             }
     elif latest_flag:
-        from app.core.history import UNDO_SNAPSHOT_STATUS
-
-        # Skip sorts already undone and the safety snapshots undo itself
-        # takes, so running `undo --latest` again reaches the previous sort.
+        # Skip sorts already undone, so running `undo --latest` again reaches the previous sort.
         undoable = [
-            s
-            for s in all_sessions
-            if str(s.get("status", "")).lower()
-            not in ("rolled_back", UNDO_SNAPSHOT_STATUS)
+            s for s in all_sessions if str(s.get("status", "")).lower() != "rolled_back"
         ]
         if undoable:
             target_session = undoable[0]
@@ -1780,9 +1774,10 @@ def _main_impl():
 
     # Automated headless startup reconciliation scan for incomplete file relocations
     try:
-        from app.core.ledger import TransactionLedger
+        from app.core.moves import MoveLedger
+        from app.core.store import open_store
 
-        ledger = TransactionLedger()
+        ledger = MoveLedger(str(open_store().path), auto_init=True)
         ledger.reconcile_incomplete_transactions()
     except Exception as exc:
         logging.warning(

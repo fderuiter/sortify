@@ -7,7 +7,7 @@ import sys
 from app.cli.error_emitter import emit_cli_error
 from app.config import AppSettings
 from app.core.exceptions import AuditExportError
-from app.core.ledger import TransactionLedger, get_default_ledger_path
+from app.core.moves import MoveLedger
 
 
 def register_subparser(subparsers: argparse._SubParsersAction) -> None:
@@ -158,15 +158,22 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
             exit_code=2,
         )
 
-    ledger_db_path = getattr(args, "ledger_db", None) or get_default_ledger_path()
-    ledger = TransactionLedger(db_path=ledger_db_path)
-
     quiet = getattr(args, "quiet", False)
 
     db = None
     lease = None
+    ledger: MoveLedger | None = None
+    if ledger_cmd != "export":
+        ledger_db_path = getattr(args, "ledger_db", None)
+        if ledger_db_path is None:
+            from app.core.store import open_store
+
+            ledger_db_path = str(open_store().path)
+        ledger = MoveLedger(db_path=ledger_db_path, auto_init=True)
+
     try:
         if ledger_cmd == "status":
+            assert ledger is not None
             session_id = getattr(args, "session_id", None)
             failed_only = getattr(args, "failed", False)
             aborted_only = getattr(args, "aborted", False)
@@ -211,6 +218,7 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
             sys.exit(0)
 
         elif ledger_cmd == "reconcile":
+            assert ledger is not None
             try:
                 from app.core.services import acquire_services
 
@@ -239,6 +247,7 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
             sys.exit(0)
 
         elif ledger_cmd == "purge":
+            assert ledger is not None
             session_id = getattr(args, "session_id", None)
             completed_only = getattr(args, "completed", False)
             failed_only = getattr(args, "failed", False)

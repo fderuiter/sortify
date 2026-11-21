@@ -12,7 +12,7 @@ We chose this because moves are recorded in three places today (`transaction_led
 
 ## Implementation
 
-Active: `MoveLedger` and the `moves` table (`app/core/moves.py`), legacy `step_ledger` import in `app/core/store.py`, pre-move `intent` / `done` / `verified` / `failed` recording in `app/core/mover.py`, and backwards move replay in `app/core/history.py` and `SortPipeline.undo` (`app/core/pipeline.py`) when `moves` rows exist. Still open: `app/core/mover.py` writes concurrently to `moves`, `transaction_ledger`, sidecar `TransactionLedger` (`app/core/ledger.py`) and `HistoryManager.log_step` (`step_ledger`), and `app/core/history.py` still runs `_rollback_from_snapshot_internal` against `snapshot_files` alongside `rollback_journal.json` when ledger rows are absent.
+Complete: `MoveLedger` and the canonical `moves` table (`app/core/moves.py`) record every file move, overwrite displacement, verification state (`intent` → `done` → `verified`), and structured failure in `app/core/mover.py` without pre-sort or pre-undo snapshots. Numbered migrations in `app/core/store.py` and `app/core/history.py` import legacy `step_ledger`, main-database `transaction_ledger`, and sidecar `transaction_ledger.db` records into `moves`. Undo, failure rollback, session counts, and audit exports replay and query `moves` across `app/core/history.py`, `app/core/session_catalog.py`, and `SortPipeline.undo` (`app/core/pipeline.py`). Startup reconciliation (`app/core/session.py`, `app/main.py`) and `smart-autosorter ledger` (`app/cli/ledger_cli.py`) operate directly on `MoveLedger`, while `app/core/ledger.py` isolates `KeyAuditLedger` for key export and rotation audit events.
 
 ## Considered options
 

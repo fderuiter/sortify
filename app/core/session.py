@@ -69,10 +69,7 @@ class AppSession:
                     pass
 
             try:
-                from app.core.ledger import TransactionLedger
-
-                ledger = TransactionLedger()
-                ledger.reconcile_incomplete_transactions(db=self.db)
+                self.history_manager.moves.reconcile_incomplete_transactions(db=self.db)
             except Exception:
                 pass
 

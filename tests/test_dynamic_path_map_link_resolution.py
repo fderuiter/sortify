@@ -149,24 +149,19 @@ class TestDynamicPathMapLinkResolution(unittest.TestCase):
         self.assertIn("report_1.pdf", symlink_target)
 
     def test_step_ledger_and_rollback_from_dynamically_suffixed_target(self):
-        """Test step ledger logging and rollback from dynamically suffixed target paths."""
-        session_id = self.history_manager.create_snapshot(self.base_dir)
+        """Test move ledger recording and rollback from dynamically suffixed target paths."""
+        session_id = self.history_manager.start_session(self.base_dir)
         src_file = os.path.join(self.base_dir, "data.txt")
         with open(src_file, "w") as f:
             f.write("source data")
 
         suffixed_target = os.path.join(self.dest_dir, "data_1.txt")
+        seq = self.history_manager.moves.record_intent(
+            session_id, src_file, suffixed_target
+        )
         # Perform move
         shutil.move(src_file, suffixed_target)
-
-        # Log step into step ledger
-        self.history_manager.log_step(
-            session_id=session_id,
-            source_path=src_file,
-            target_path=suffixed_target,
-            original_filename="data.txt",
-            is_collision_renamed=True,
-        )
+        self.history_manager.moves.mark_done(session_id, seq, suffixed_target)
 
         # Unwind session
         unwound = self.history_manager.unwind_session(session_id, db=self.db)

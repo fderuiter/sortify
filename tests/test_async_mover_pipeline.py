@@ -55,20 +55,42 @@ class DummyDB:
         pass
 
 
+class DummyMoveLedger:
+    def __init__(self, steps: list):
+        self._steps = steps
+        self._lock = threading.Lock()
+
+    def record_intent(self, session_id, src, dst, src_sha256=None, size=None):
+        with self._lock:
+            self._steps.append((session_id, src, dst))
+            return len(self._steps)
+
+    def record_displaced(self, session_id, seq, displaced):
+        pass
+
+    def mark_done(self, session_id, seq, dst=None, displaced=None):
+        pass
+
+    def mark_verified(self, session_id, seq):
+        pass
+
+    def mark_failed(self, session_id, seq, error=None):
+        pass
+
+
 class DummyHistoryManager:
     def __init__(self):
         self.steps = []
-        self.lock = threading.Lock()
+        self.moves = DummyMoveLedger(self.steps)
 
-    def create_snapshot(self, base_dir):
+    def start_session(self, base_dir):
         return "test-session-123"
 
-    def log_step(self, **kwargs):
-        with self.lock:
-            self.steps.append(kwargs)
-
-    def clear_step_ledger(self, session_id):
+    def complete_session(self, session_id):
         pass
+
+    def unwind_session(self, session_id, db=None):
+        return len(self.steps)
 
 
 def test_async_mover_chunked_execution(tmp_path):
@@ -377,7 +399,7 @@ def test_move_engine_exception_rollback_transitions(tmp_path):
         def __init__(self):
             self.unwound = False
 
-        def create_snapshot(self, base):
+        def start_session(self, base):
             return "snap-123"
 
         def unwind_session(self, session_id, db=None):
@@ -624,10 +646,8 @@ def test_process_move_item_legacy_caller_fallback(tmp_path):
         path_map={},
         runtime_settings=None,
         session_id="test_legacy_session",
-        ledger=None,
         history_manager=hm,
         db_lock=lock,
-        step_counter=[0],
         db_updates_batch=db_updates,
     )
 

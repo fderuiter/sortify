@@ -48,6 +48,8 @@ DB_ERRORS: tuple[type[Exception], ...] = tuple(
 
 # Global connection cache and lock
 def _close_evicted_connection(key, conn):
+    for rk in [k for k, v in _raw_key_to_abs.items() if (v, k[1]) == key]:
+        _raw_key_to_abs.pop(rk, None)
     if conn:
         try:
             conn.close()
@@ -56,6 +58,7 @@ def _close_evicted_connection(key, conn):
 
 
 _connection_cache = BoundedMemoryCache(max_size=50, on_evict=_close_evicted_connection)
+_raw_key_to_abs: dict[tuple[str, int], str] = {}
 _cache_lock = threading.RLock()
 _path_init_locks = {}
 _path_locks_lock = threading.Lock()
@@ -93,6 +96,12 @@ def clear_connection_cache(only_current_and_inactive: bool = True):
                         conn.close()
                     except Exception:
                         pass
+            for rk in [
+                k
+                for k in _raw_key_to_abs
+                if k[1] == calling_thread_id or k[1] not in active_thread_ids
+            ]:
+                _raw_key_to_abs.pop(rk, None)
         else:
             for k, conn in _connection_cache.items():
                 try:
@@ -104,6 +113,7 @@ def clear_connection_cache(only_current_and_inactive: bool = True):
                 except Exception:
                     pass
             _connection_cache.clear()
+            _raw_key_to_abs.clear()
             with _path_locks_lock:
                 _path_init_locks.clear()
     gc.collect()
@@ -123,17 +133,30 @@ def clear_dead_thread_connections():
                         conn.close()
                     except Exception:
                         pass
+        for rk in [k for k in _raw_key_to_abs if k[1] not in active_thread_ids]:
+            _raw_key_to_abs.pop(rk, None)
 
 
 def get_db_connection(db_path: str):
     """Create and configure a new database connection with performance parameters."""
     global _connection_cache
-    abs_path = str(Path(db_path).resolve())
+    raw_path = os.fspath(db_path)
     thread_id = threading.get_ident()
+    is_abs_raw = isinstance(raw_path, str) and os.path.isabs(raw_path)
+
+    if is_abs_raw:
+        with _cache_lock:
+            cached_abs = _raw_key_to_abs.get((raw_path, thread_id))
+            if cached_abs is not None and (cached_abs, thread_id) in _connection_cache:
+                return _connection_cache[(cached_abs, thread_id)]
+
+    abs_path = str(Path(db_path).resolve())
     cache_key = (abs_path, thread_id)
 
     with _cache_lock:
         if cache_key in _connection_cache:
+            if is_abs_raw:
+                _raw_key_to_abs[(raw_path, thread_id)] = abs_path
             return _connection_cache[cache_key]
 
         # Automatically clean up connections for dead threads to prevent resource and lock leaks on Windows
@@ -146,8 +169,14 @@ def get_db_connection(db_path: str):
     with _get_path_init_lock(abs_path):
         with _cache_lock:
             if cache_key in _connection_cache:
+                if is_abs_raw:
+                    _raw_key_to_abs[(raw_path, thread_id)] = abs_path
                 return _connection_cache[cache_key]
-        return _open_connection(db_path, abs_path, cache_key)
+        conn = _open_connection(db_path, abs_path, cache_key)
+        if is_abs_raw:
+            with _cache_lock:
+                _raw_key_to_abs[(raw_path, thread_id)] = abs_path
+        return conn
 
 
 def _open_connection(db_path: str, abs_path: str, cache_key):

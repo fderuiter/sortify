@@ -405,3 +405,37 @@ def test_batch_tfidf_vocab_empty_edge_cases():
             assert N == 0
             assert len(top_terms) == 0
             assert len(doc_terms) == 0
+
+
+def test_tfidf_matrix_cache_invalidated_on_document_move_and_custom_stopwords():
+    """Verify moving an indexed document invalidates stale tfidf_matrix_cache rows and custom stop words bypass the default analyzer cache."""
+    with tempfile.TemporaryDirectory() as tmp_dir:
+        with managed_sqlite_db(tmp_dir, "test_matrix_invalidation.db") as (
+            db,
+            _db_path,
+            db_worker,
+        ):
+            base_dir = "matrix_inval_base"
+            db.upsert_document(
+                base_dir, "old/doc.txt", "hash_doc", "quantum photonics laser research"
+            )
+            db.set_user_verified_target_path(base_dir, "old/doc.txt", "Physics")
+            db_worker.q.join()
+
+            db.update_tfidf_matrix_cache(base_dir)
+            cached_before = db.get_tfidf_matrix_cache(base_dir)
+            assert any(r[0] == "old/doc.txt" for r in cached_before)
+
+            db.update_document_path(base_dir, "old/doc.txt", "Physics/doc_moved.txt")
+            db_worker.q.join()
+
+            assert db.get_tfidf_matrix_cache(base_dir) == []
+            db.update_tfidf_matrix_cache(base_dir)
+            cached_after = db.get_tfidf_matrix_cache(base_dir)
+            assert all(r[0] == "Physics/doc_moved.txt" for r in cached_after)
+
+            custom_counts = db.compute_term_frequencies(
+                "quantum photonics laser", stop_words_list=["quantum"]
+            )
+            assert "quantum" not in custom_counts
+            assert custom_counts["photonics"] == 1

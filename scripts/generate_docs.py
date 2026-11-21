@@ -1144,7 +1144,9 @@ def _inspect_adr_runtime_state(repo_root: Path | None = None) -> dict:
     mover_path = root / "app/core/mover.py"
     mover_src = mover_path.read_text(encoding="utf-8") if mover_path.is_file() else ""
     mover_has_coexisting_ledgers = (
-        "TransactionLedger" in mover_src and "log_step" in mover_src
+        "TransactionLedger" in mover_src
+        or "log_step" in mover_src
+        or "transaction_step" in mover_src
     )
 
     history_path = root / "app/core/history.py"
@@ -1298,10 +1300,32 @@ def audit_adr_status(content=None, doc_path=None, repo_root: Path | None = None)
                     errors.append(
                         f"ADR 0006 ({label}) '## Implementation' must document snapshot rollback (_rollback_from_snapshot_internal) in app/core/history.py"
                     )
-        elif impl and "_rollback_from_snapshot_internal" in impl:
-            errors.append(
-                f"ADR 0006 ({label}) '## Implementation' still marks _rollback_from_snapshot_internal open after removal"
-            )
+        else:
+            if not impl:
+                errors.append(
+                    f"ADR 0006 ({label}) is missing a non-empty '## Implementation' section"
+                )
+            else:
+                if (
+                    "_rollback_from_snapshot_internal" in impl
+                    or "still open" in impl.lower()
+                ):
+                    errors.append(
+                        f"ADR 0006 ({label}) '## Implementation' still marks legacy rollback or ledgers open after removal"
+                    )
+                required_citations = (
+                    "app/core/moves.py",
+                    "app/core/mover.py",
+                    "app/core/history.py",
+                    "app/cli/ledger_cli.py",
+                )
+                missing_citations = [
+                    mod for mod in required_citations if mod not in impl
+                ]
+                if missing_citations:
+                    errors.append(
+                        f"ADR 0006 ({label}) '## Implementation' must cite canonical ledger modules: {', '.join(missing_citations)}"
+                    )
 
     elif filename.startswith("0007-"):
         callers = state["frontend_store_callers"]

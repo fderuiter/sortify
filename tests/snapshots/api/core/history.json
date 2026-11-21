@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "4c8e0eef4f4ba39278ffd643629e54fc32e9f597bb200595215ac26d1c1573a6"
+    "checksum": "896b665ae2171612dd0cee498949ed2a1b2d6b72b624f78a0de2b09892bf6d43"
   },
   "classes": [
     {
@@ -43,7 +43,7 @@
         {
           "async": false,
           "decorators": [],
-          "name": "check_missing_files",
+          "name": "complete_session",
           "parameters": [
             {
               "annotation": null,
@@ -56,43 +56,7 @@
               "name": "session_id"
             }
           ],
-          "returns": "list[str]"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "clear_step_ledger",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "create_snapshot",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "base_dir"
-            }
-          ],
-          "returns": "str"
+          "returns": "None"
         },
         {
           "async": false,
@@ -161,77 +125,6 @@
         {
           "async": false,
           "decorators": [],
-          "name": "get_step_ledger",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
-            }
-          ],
-          "returns": "list[dict[str, Any]]"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "log_step",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "source_path"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "target_path"
-            },
-            {
-              "annotation": "str",
-              "default": "None",
-              "name": "original_path"
-            },
-            {
-              "annotation": "str",
-              "default": "None",
-              "name": "original_filename"
-            },
-            {
-              "annotation": "bool",
-              "default": "False",
-              "name": "is_cross_volume"
-            },
-            {
-              "annotation": "bool",
-              "default": "False",
-              "name": "is_collision_renamed"
-            },
-            {
-              "annotation": "str",
-              "default": "None",
-              "name": "file_hash"
-            }
-          ],
-          "returns": "int"
-        },
-        {
-          "async": false,
-          "decorators": [],
           "name": "preview_rollback",
           "parameters": [
             {
@@ -288,6 +181,29 @@
         {
           "async": false,
           "decorators": [],
+          "name": "start_session",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "session_id"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
           "name": "unwind_session",
           "parameters": [
             {
@@ -312,146 +228,6 @@
             }
           ],
           "returns": "int"
-        }
-      ]
-    },
-    {
-      "class_name": "RollbackBatchTransaction",
-      "decorators": [],
-      "methods": [
-        {
-          "async": false,
-          "decorators": [],
-          "name": "__init__",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "Any",
-              "default": null,
-              "name": "conn"
-            },
-            {
-              "annotation": "int",
-              "default": "50",
-              "name": "batch_size"
-            }
-          ],
-          "returns": "None"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "begin_batch",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            }
-          ],
-          "returns": "None"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "commit_batch",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            }
-          ],
-          "returns": "None"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "execute",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "query"
-            },
-            {
-              "annotation": "tuple | list",
-              "default": "()",
-              "name": "params"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "executemany",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "query"
-            },
-            {
-              "annotation": null,
-              "default": null,
-              "name": "seq_of_params"
-            }
-          ],
-          "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "flush",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            }
-          ],
-          "returns": "None"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "rollback_batch",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            }
-          ],
-          "returns": "None"
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "step",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            }
-          ],
-          "returns": "None"
         }
       ]
     },

@@ -350,6 +350,38 @@ def test_tui_first_run_auto_triggers_wizard(temp_workspace):
     asyncio.run(_test())
 
 
+def test_tui_first_run_skips_auto_wizard_when_plan_populated(temp_workspace):
+    """Verify first-run launch does not pop WizardModal over an already-populated sorting plan."""
+
+    async def _test():
+        settings = AppSettings()
+        assert settings.AI_CONSENT_GRANTED is None
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        app.plan = {
+            "Documents": {
+                "notes.txt": {
+                    "__type__": "file",
+                    "filepath": os.path.join(temp_workspace, "notes.txt"),
+                    "target_filename": "notes.txt",
+                    "is_checked": True,
+                }
+            }
+        }
+
+        async with app.run_test() as pilot:
+            await pilot.pause(0.1)
+            assert not isinstance(app.screen, WizardModal)
+
+            # Also verify a plan populated before a deferred _auto_open_wizard callback suppresses it
+            app2 = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+            async with app2.run_test() as pilot2:
+                app2.plan = app.plan
+                await pilot2.pause(0.1)
+                assert not isinstance(app2.screen, WizardModal)
+
+    asyncio.run(_test())
+
+
 def test_tui_returning_launch_bypasses_wizard(temp_workspace):
     """Verify returning launch with explicit AI consent settings bypasses WizardModal."""
 

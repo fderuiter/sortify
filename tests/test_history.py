@@ -23,15 +23,21 @@ def test_incremental_sync_and_stop_on_failure(test_history_env):
     db.upsert_document(base_dir, "file1.txt", "hash1", "text1")
     db.upsert_document(base_dir, "file2.txt", "hash2", "text2")
 
-    # Take snapshot
-    session_id = history_manager.create_snapshot(base_dir)
+    # Register session and record canonical moves (file2 seq=1, file1 seq=2 so backwards replay restores file1 first and fails on file2)
+    session_id = history_manager.start_session(base_dir)
 
-    # Move files and update DB to simulate organization
     file1_dst = os.path.join(base_dir, "folder", "file1.txt")
     file2_dst = os.path.join(base_dir, "folder", "file2.txt")
     os.makedirs(os.path.dirname(file1_dst), exist_ok=True)
-    shutil.move(file1_src, file1_dst)
+
+    seq2 = history_manager.moves.record_intent(session_id, file2_src, file2_dst)
     shutil.move(file2_src, file2_dst)
+    history_manager.moves.mark_done(session_id, seq2, file2_dst)
+
+    seq1 = history_manager.moves.record_intent(session_id, file1_src, file1_dst)
+    shutil.move(file1_src, file1_dst)
+    history_manager.moves.mark_done(session_id, seq1, file1_dst)
+    history_manager.complete_session(session_id)
 
     def _delete():
         conn = get_db_connection(db.db_path)
@@ -42,18 +48,19 @@ def test_incremental_sync_and_stop_on_failure(test_history_env):
     db.upsert_document(base_dir, os.path.join("folder", "file1.txt"), "hash1", "text1")
     db.upsert_document(base_dir, os.path.join("folder", "file2.txt"), "hash2", "text2")
 
-    # Mock _robust_move to fail on the second file
-    from app.core.history import _robust_move
+    # Mock resilient_move to fail on file2 (the second move replayed backwards)
+    from app.core.resilient_file_ops import resilient_move as original_resilient_move
 
-    original_robust_move = _robust_move
-
-    def mock_robust_move(src, dst):
-        if "file2.txt" in src or "file2.txt" in dst:
+    def mock_resilient_move(src, dst, *args, **kwargs):
+        if "file2.txt" in str(src) or "file2.txt" in str(dst):
             raise OSError("Mocked permission error on file2")
-        return original_robust_move(src, dst)
+        return original_resilient_move(src, dst, *args, **kwargs)
 
-    with patch("app.core.history._robust_move", side_effect=mock_robust_move):
-        with pytest.raises(OSError, match="Mocked permission error on file2"):
+    with patch(
+        "app.core.resilient_file_ops.resilient_move",
+        side_effect=mock_resilient_move,
+    ):
+        with pytest.raises(PermissionError, match="Mocked permission error on file2"):
             history_manager.rollback(session_id)
 
     # Validate state:
@@ -102,13 +109,15 @@ def test_rollback_cyclic_collision(test_history_env):
     db.upsert_document(base_dir, "A.txt", "hashA", "textA")
     db.upsert_document(base_dir, "B.txt", "hashB", "textB")
 
-    session_id = history_manager.create_snapshot(base_dir)
+    session_id = history_manager.start_session(base_dir)
 
-    # Swap A and B
+    # Swap A and B via staging move recorded in canonical MoveLedger
     temp = os.path.join(base_dir, "temp.txt")
-    shutil.move(file1_src, temp)
-    shutil.move(file2_src, file1_src)
-    shutil.move(temp, file2_src)
+    for src, dst in ((file1_src, temp), (file2_src, file1_src), (temp, file2_src)):
+        seq = history_manager.moves.record_intent(session_id, src, dst)
+        shutil.move(src, dst)
+        history_manager.moves.mark_done(session_id, seq, dst)
+    history_manager.complete_session(session_id)
 
     def _delete():
         conn = get_db_connection(db.db_path)
@@ -154,14 +163,20 @@ def test_rollback_multi_file_cyclic_collision(test_history_env):
     db.upsert_document(base_dir, "B.txt", "hashB", "textB")
     db.upsert_document(base_dir, "C.txt", "hashC", "textC")
 
-    session_id = history_manager.create_snapshot(base_dir)
+    session_id = history_manager.start_session(base_dir)
 
-    # 3-way rotation: A -> B, B -> C, C -> A
+    # 3-way rotation: C -> temp, B -> C, A -> B, temp -> A recorded in MoveLedger
     temp = os.path.join(base_dir, "temp.txt")
-    shutil.move(file_c, temp)
-    shutil.move(file_b, file_c)
-    shutil.move(file_a, file_b)
-    shutil.move(temp, file_a)
+    for src, dst in (
+        (file_c, temp),
+        (file_b, file_c),
+        (file_a, file_b),
+        (temp, file_a),
+    ):
+        seq = history_manager.moves.record_intent(session_id, src, dst)
+        shutil.move(src, dst)
+        history_manager.moves.mark_done(session_id, seq, dst)
+    history_manager.complete_session(session_id)
 
     def _update_docs():
         conn = get_db_connection(db.db_path)
@@ -211,18 +226,24 @@ def test_rollback_cyclic_collision_with_non_cyclic_dest(test_history_env):
     db.upsert_document(base_dir, "B.txt", "hashB", "textB")
     db.upsert_document(base_dir, "C.txt", "hashC", "textC")
 
-    session_id = history_manager.create_snapshot(base_dir)
+    session_id = history_manager.start_session(base_dir)
 
-    # Swap A and B (cyclic collision)
+    # Swap A and B (cyclic collision) and move C to subfolder, recorded in MoveLedger
     temp = os.path.join(base_dir, "temp.txt")
-    shutil.move(file_a, temp)
-    shutil.move(file_b, file_a)
-    shutil.move(temp, file_b)
-
-    # Move C to subfolder, and create an unmanaged file at C.txt (non-cyclic destination collision)
     c_moved = os.path.join(base_dir, "sub", "C.txt")
     os.makedirs(os.path.dirname(c_moved), exist_ok=True)
-    shutil.move(file_c, c_moved)
+    for src, dst in (
+        (file_a, temp),
+        (file_b, file_a),
+        (temp, file_b),
+        (file_c, c_moved),
+    ):
+        seq = history_manager.moves.record_intent(session_id, src, dst)
+        shutil.move(src, dst)
+        history_manager.moves.mark_done(session_id, seq, dst)
+    history_manager.complete_session(session_id)
+
+    # Create an unmanaged file at C.txt (occupied source collision on undo)
     with open(file_c, "w") as f:
         f.write("unmanaged")
 
@@ -245,22 +266,21 @@ def test_rollback_cyclic_collision_with_non_cyclic_dest(test_history_env):
     with open(file_b, "r") as f:
         assert f.read() == "B"
 
-    # Verify C restored to original content
+    # Unmanaged file at C.txt is preserved untouched; C restores non-destructively to C_1.txt (ADR 0006)
     with open(file_c, "r") as f:
-        assert f.read() == "C"
-
-    # Verify unmanaged file renamed safely
-    safe_unmanaged = os.path.join(base_dir, "C_1.txt")
-    assert os.path.exists(safe_unmanaged)
-    with open(safe_unmanaged, "r") as f:
         assert f.read() == "unmanaged"
+
+    restored_c = os.path.join(base_dir, "C_1.txt")
+    assert os.path.exists(restored_c)
+    with open(restored_c, "r") as f:
+        assert f.read() == "C"
 
     # Verify db documents restored
     docA = db.get_document(base_dir, "A.txt")
     assert docA["file_hash"] == "hashA"
     docB = db.get_document(base_dir, "B.txt")
     assert docB["file_hash"] == "hashB"
-    docC = db.get_document(base_dir, "C.txt")
+    docC = db.get_document(base_dir, "C_1.txt")
     assert docC["file_hash"] == "hashC"
 
 
@@ -384,8 +404,15 @@ def test_snapshot_pruning_respects_policy_engine_actions(test_history_env):
             ("session-policy-matched", now - (60 * day_sec), base_dir),
         )
         conn.execute(
-            "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, 1, 100, ?)",
-            ("session-policy-matched", "compliance_doc.pdf", now - (60 * day_sec)),
+            "INSERT INTO moves (session_id, seq, src, dst, state, created_at, updated_at) "
+            "VALUES (?, 1, ?, ?, 'done', ?, ?)",
+            (
+                "session-policy-matched",
+                os.path.join(base_dir, "compliance_doc.pdf"),
+                os.path.join(base_dir, "Docs", "compliance_doc.pdf"),
+                now - (60 * day_sec),
+                now - (60 * day_sec),
+            ),
         )
         # Session 3: Ordinary expired session
         conn.execute(
@@ -440,18 +467,16 @@ def test_purge_overwrite_backups_oserror(caplog):
 
 def test_get_session_moves_getsize_error(test_history_env):
     base_dir, db, cache, history_manager, db_worker = test_history_env
-    session_id = history_manager.create_snapshot(base_dir)
+    session_id = history_manager.start_session(base_dir)
+    seq = history_manager.moves.record_intent(
+        session_id,
+        os.path.join(base_dir, "a.txt"),
+        "/nonexistent/path/file.txt",
+        size=None,
+    )
+    history_manager.moves.mark_done(session_id, seq, "/nonexistent/path/file.txt")
 
     with (
-        patch.object(history_manager.moves, "list_moves", return_value=[]),
-        patch.object(history_manager, "get_step_ledger", return_value=[]),
-        patch.object(
-            history_manager.db,
-            "get_transaction_steps",
-            return_value=[
-                {"target_path": "/nonexistent/path/file.txt", "source_path": "a.txt"}
-            ],
-        ),
         patch("os.path.exists", return_value=True),
         patch("os.path.getsize", side_effect=OSError("Get size failed")),
     ):
@@ -465,23 +490,24 @@ def test_history_manager_get_sessions_single_query(test_history_env):
     base_dir, db, cache, history_manager, db_worker = test_history_env
     conn = get_db_connection(history_manager.db_path)
     with conn:
-        # Session 1: 3 steps, 2 files
+        # Session 1: 3 moves across 2 distinct source files
         conn.execute(
             "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
             ("sess-hist-1", 100.0, base_dir, "completed"),
         )
-        for i in range(3):
+        moves_rows = [
+            (1, f"{base_dir}/s0.txt", f"{base_dir}/d0.txt"),
+            (2, f"{base_dir}/s1.txt", f"{base_dir}/d1.txt"),
+            (3, f"{base_dir}/s0.txt", f"{base_dir}/d2.txt"),
+        ]
+        for seq, src, dst in moves_rows:
             conn.execute(
-                "INSERT INTO step_ledger (session_id, source_path, target_path) VALUES (?, ?, ?)",
-                ("sess-hist-1", f"{base_dir}/s{i}.txt", f"{base_dir}/d{i}.txt"),
-            )
-        for i in range(2):
-            conn.execute(
-                "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, 1, 10, 100.0)",
-                ("sess-hist-1", f"file{i}.txt"),
+                "INSERT INTO moves (session_id, seq, src, dst, state, created_at, updated_at) "
+                "VALUES (?, ?, ?, ?, 'done', 100.0, 100.0)",
+                ("sess-hist-1", seq, src, dst),
             )
 
-        # Session 2: 0 steps, 0 files
+        # Session 2: 0 moves, 0 files
         conn.execute(
             "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
             ("sess-hist-2", 200.0, base_dir, "active"),
@@ -530,12 +556,9 @@ def test_history_manager_get_sessions_benchmark_500_sessions(test_history_env):
             )
             if i % 2 == 0:
                 conn.execute(
-                    "INSERT INTO step_ledger (session_id, source_path, target_path) VALUES (?, ?, ?)",
+                    "INSERT INTO moves (session_id, seq, src, dst, state, created_at, updated_at) "
+                    "VALUES (?, 1, ?, ?, 'done', 100.0, 100.0)",
                     (sid, f"{base_dir}/s_{i}.txt", f"{base_dir}/d_{i}.txt"),
-                )
-                conn.execute(
-                    "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, 1, 10, 100.0)",
-                    (sid, f"f_{i}.txt"),
                 )
 
     # Warmup

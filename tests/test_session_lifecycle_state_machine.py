@@ -16,7 +16,6 @@ from app.core.history import (
     FAILED_STATUS,
     PARTIALLY_ROLLED_BACK,
     ROLLED_BACK,
-    UNDO_SNAPSHOT,
     SessionStateMachine,
 )
 from app.core.session_catalog import find_abandoned_sessions, mark_session_abandoned
@@ -65,7 +64,6 @@ def test_transition_matrix_valid_transitions():
         (ACTIVE, ROLLED_BACK),
         (ACTIVE, PARTIALLY_ROLLED_BACK),
         (ACTIVE, FAILED_STATUS),
-        (ACTIVE, UNDO_SNAPSHOT),
         (ACTIVE, "abandoned"),
         (ACTIVE, ACTIVE),
         (COMPLETED, ROLLED_BACK),
@@ -83,10 +81,6 @@ def test_transition_matrix_valid_transitions():
         (FAILED_STATUS, "abandoned"),
         (FAILED_STATUS, ACTIVE),
         (FAILED_STATUS, COMPLETED),
-        (UNDO_SNAPSHOT, ROLLED_BACK),
-        (UNDO_SNAPSHOT, FAILED_STATUS),
-        (UNDO_SNAPSHOT, "abandoned"),
-        (UNDO_SNAPSHOT, UNDO_SNAPSHOT),
         ("abandoned", ROLLED_BACK),
         ("abandoned", PARTIALLY_ROLLED_BACK),
         ("abandoned", FAILED_STATUS),
@@ -105,19 +99,13 @@ def test_transition_matrix_invalid_transitions_raise_domain_exception():
 
     invalid_pairs = [
         (COMPLETED, ACTIVE),
-        (COMPLETED, UNDO_SNAPSHOT),
         (ROLLED_BACK, ACTIVE),
         (ROLLED_BACK, COMPLETED),
         (ROLLED_BACK, PARTIALLY_ROLLED_BACK),
         (ROLLED_BACK, FAILED_STATUS),
-        (ROLLED_BACK, UNDO_SNAPSHOT),
         (ROLLED_BACK, "abandoned"),
-        (UNDO_SNAPSHOT, ACTIVE),
-        (UNDO_SNAPSHOT, COMPLETED),
-        (UNDO_SNAPSHOT, PARTIALLY_ROLLED_BACK),
         ("abandoned", ACTIVE),
         ("abandoned", COMPLETED),
-        ("abandoned", UNDO_SNAPSHOT),
     ]
 
     for current_status, new_status in invalid_pairs:
@@ -155,12 +143,13 @@ def test_step_unwind_failure_transitions_to_failed_in_db(lifecycle_env):
     with open(file_src, "w") as f:
         f.write("data")
 
-    session_id = history.create_snapshot(base_dir)
+    session_id = history.start_session(base_dir)
     shutil.move(file_src, file_dst)
-    history.log_step(session_id, file_src, file_dst)
+    seq = history.moves.record_intent(session_id, file_src, file_dst)
+    history.moves.mark_done(session_id, seq, file_dst)
 
     # Transition session to completed (simulating sort completion)
-    history._transition_session_status(session_id, COMPLETED)
+    history.complete_session(session_id)
 
     # 2. Trigger unwind with resilient_move raising PermissionError (file locked)
     with patch(
@@ -190,10 +179,10 @@ def test_move_replay_failure_transitions_to_failed_in_db(lifecycle_env):
     base_dir = lifecycle_env["base_dir"]
     db_path = lifecycle_env["db_path"]
 
-    session_id = history.create_snapshot(base_dir)
+    session_id = history.start_session(base_dir)
 
     # Transition to completed
-    history._transition_session_status(session_id, COMPLETED)
+    history.complete_session(session_id)
 
     # Add a move record in MoveLedger
     src_file = os.path.join(base_dir, "report.pdf")
@@ -226,15 +215,16 @@ def test_move_replay_failure_transitions_to_failed_in_db(lifecycle_env):
         assert row[0] == "failed"
 
 
-def test_snapshot_rollback_accepts_is_partial_and_records_status(lifecycle_env):
-    """Verify snapshot rollback operation accepts a partial rollback indicator and records corresponding status (Criterion 3)."""
+def test_rollback_records_full_and_partial_status(lifecycle_env):
+    """Verify full and partial rollback record rolled_back and partially_rolled_back statuses (Criterion 3)."""
     history = lifecycle_env["history"]
     base_dir = lifecycle_env["base_dir"]
     db_path = lifecycle_env["db_path"]
 
     # Test 1: Full rollback records 'rolled_back'
-    session_id_full = history.create_snapshot(base_dir)
-    history._rollback_from_snapshot_internal(session_id_full, is_partial=False)
+    session_id_full = history.start_session(base_dir)
+    history.complete_session(session_id_full)
+    history.rollback(session_id_full)
 
     conn = get_db_connection(db_path)
     with conn:
@@ -244,8 +234,25 @@ def test_snapshot_rollback_accepts_is_partial_and_records_status(lifecycle_env):
         assert row[0] == "rolled_back"
 
     # Test 2: Partial rollback records 'partially_rolled_back'
-    session_id_partial = history.create_snapshot(base_dir)
-    history._rollback_from_snapshot_internal(session_id_partial, is_partial=True)
+    f1_src = os.path.join(base_dir, "f1.txt")
+    f2_src = os.path.join(base_dir, "f2.txt")
+    out_dir = os.path.join(base_dir, "out")
+    os.makedirs(out_dir, exist_ok=True)
+    f1_dst = os.path.join(out_dir, "f1.txt")
+    f2_dst = os.path.join(out_dir, "f2.txt")
+    with open(f1_dst, "w") as f:
+        f.write("1")
+    with open(f2_dst, "w") as f:
+        f.write("2")
+
+    session_id_partial = history.start_session(base_dir)
+    seq1 = history.moves.record_intent(session_id_partial, f1_src, f1_dst)
+    history.moves.mark_done(session_id_partial, seq1, f1_dst)
+    seq2 = history.moves.record_intent(session_id_partial, f2_src, f2_dst)
+    history.moves.mark_done(session_id_partial, seq2, f2_dst)
+    history.complete_session(session_id_partial)
+
+    history.rollback(session_id_partial, selected_step_ids=[seq1])
 
     with conn:
         row = conn.execute(
@@ -254,33 +261,17 @@ def test_snapshot_rollback_accepts_is_partial_and_records_status(lifecycle_env):
         assert row[0] == "partially_rolled_back"
 
 
-def test_unwind_steps_preserves_partial_status_on_snapshot_fallback(lifecycle_env):
-    """Verify partial rollback status is preserved when unwinding falls back to snapshot restoration (Requirement 3)."""
+def test_unwind_empty_selected_steps_preserves_partial_status(lifecycle_env):
+    """Verify partial rollback status is recorded even when selected_step_ids matches no recorded moves."""
     history = lifecycle_env["history"]
     base_dir = lifecycle_env["base_dir"]
     db_path = lifecycle_env["db_path"]
 
-    # Create files in base_dir before snapshotting
-    file1 = os.path.join(base_dir, "f1.txt")
-    file2 = os.path.join(base_dir, "f2.txt")
-    with open(file1, "w") as f:
-        f.write("1")
-    with open(file2, "w") as f:
-        f.write("2")
+    session_id = history.start_session(base_dir)
+    history.complete_session(session_id)
 
-    # Create a session with snapshot files
-    session_id = history.create_snapshot(base_dir)
-
-    # In step_ledger, create 2 steps
-    history.log_step(session_id, file1, os.path.join(base_dir, "out", "f1.txt"))
-    history.log_step(session_id, file2, os.path.join(base_dir, "out", "f2.txt"))
-
-    # Unwind with selected_step_ids targeting only 1 of the 2 steps -> partial rollback
-    # Mocking steps_to_unwind empty but snapshot_files present to trigger snapshot fallback
-    with patch.object(history, "get_step_ledger", return_value=[]):
-        # selected_step_ids specified indicates partial unwind
-        res = history._unwind_session_internal(session_id, selected_step_ids=["step-1"])
-        assert res >= 0
+    res = history._unwind_session_internal(session_id, selected_step_ids=["999"])
+    assert res == 0
 
     conn = get_db_connection(db_path)
     with conn:
@@ -299,19 +290,19 @@ def test_session_catalog_recognizes_failed_and_partially_rolled_back_sessions(
     store = lifecycle_env["store"]
 
     # 1. Create a session and set to failed
-    sid_failed = history.create_snapshot(base_dir)
+    sid_failed = history.start_session(base_dir)
     history._transition_session_status(sid_failed, "failed")
 
     # 2. Create a session and set to partially_rolled_back
-    sid_partial = history.create_snapshot(base_dir)
+    sid_partial = history.start_session(base_dir)
     history._transition_session_status(sid_partial, "partially_rolled_back")
 
     # 3. Create a completed session
-    sid_completed = history.create_snapshot(base_dir)
+    sid_completed = history.start_session(base_dir)
     history._transition_session_status(sid_completed, "completed")
 
     # 4. Create a rolled_back session
-    sid_rolled_back = history.create_snapshot(base_dir)
+    sid_rolled_back = history.start_session(base_dir)
     history._transition_session_status(sid_rolled_back, "rolled_back")
 
     abandoned = find_abandoned_sessions(store=store)
@@ -339,7 +330,7 @@ def test_mark_session_abandoned_transitions_status(lifecycle_env):
     store = lifecycle_env["store"]
     db_path = lifecycle_env["db_path"]
 
-    sid = history.create_snapshot(base_dir)
+    sid = history.start_session(base_dir)
     history._transition_session_status(sid, "failed")
 
     # Mark abandoned
@@ -362,7 +353,7 @@ def test_audit_logs_and_telemetry_events(lifecycle_env):
     history = lifecycle_env["history"]
     base_dir = lifecycle_env["base_dir"]
 
-    sid = history.create_snapshot(base_dir)
+    sid = history.start_session(base_dir)
 
     events_received = []
 
@@ -399,8 +390,8 @@ def test_audit_logs_and_telemetry_events(lifecycle_env):
     assert audit_events[1]["new_status"] == "partially_rolled_back"
 
 
-def test_rollback_from_steps_failure_transitions_to_failed_in_db(lifecycle_env):
-    """Verify that when _rollback_from_steps encounters a step error,
+def test_blocking_parent_failure_transitions_to_failed_in_db(lifecycle_env):
+    """Verify that when _move_aside_blocking_parents raises during backwards move replay,
 
     session status is updated to failed in the database (Criterion 2).
     """
@@ -408,31 +399,27 @@ def test_rollback_from_steps_failure_transitions_to_failed_in_db(lifecycle_env):
     base_dir = lifecycle_env["base_dir"]
     db_path = lifecycle_env["db_path"]
 
-    session_id = history.create_snapshot(base_dir)
-    history._transition_session_status(session_id, COMPLETED)
+    src_file = os.path.join(base_dir, "file1.txt")
+    dst_file = os.path.join(base_dir, "sorted", "file1.txt")
+    os.makedirs(os.path.dirname(dst_file), exist_ok=True)
+    with open(dst_file, "w") as f:
+        f.write("content")
 
-    # Prepare steps for _rollback_from_steps
-    step_entry = {
-        "step_number": 1,
-        "source_path": "file1.txt",
-        "destination_path": "sorted/file1.txt",
-        "file_hash": "hash123",
-        "item_type": "file",
-        "metadata": "{}",
-    }
+    session_id = history.start_session(base_dir)
+    seq = history.moves.record_intent(session_id, src_file, dst_file)
+    history.moves.mark_done(session_id, seq, dst_file)
+    history.complete_session(session_id)
 
-    # Simulate step failure by patching _move_aside_blocking_parents to raise PermissionError
+    moves = history.moves.list_moves(session_id)
+
     with patch(
         "app.core.history._move_aside_blocking_parents",
         side_effect=PermissionError("Permission denied during step reversal"),
     ):
-        with pytest.raises((PermissionError, ValueError)) as exc_info:
-            history._rollback_from_steps(session_id, [step_entry], base_dir)
-        assert "Rollback halted" in str(exc_info.value) or "Recovery incomplete" in str(
-            exc_info.value
-        )
+        with pytest.raises(PermissionError) as exc_info:
+            history._replay_moves_backwards(session_id, moves)
+        assert "Recovery incomplete" in str(exc_info.value)
 
-    # Verify session status updated to failed
     conn = get_db_connection(db_path)
     with conn:
         row = conn.execute(

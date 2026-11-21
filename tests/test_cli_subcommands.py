@@ -663,23 +663,20 @@ def test_drop_preset_is_hidden_and_warns(tmp_path):
 @pytest.mark.xdist_group(name="cli_subcommands")
 def test_cli_ledger_status_and_purge_failure_flags(tmp_path):
     """Test ledger status and purge CLI commands with --failed, --aborted, and --json flags."""
-    from app.core.ledger import TransactionLedger
+    from app.core.moves import MoveLedger
 
     db_path = str(tmp_path / "ledger.db")
-    ledger = TransactionLedger(db_path)
+    ledger = MoveLedger(db_path, auto_init=True)
 
     # Log an aborted transaction intent
     src_file = tmp_path / "abort_src.txt"
     src_file.write_text("aborted file content")
     dst_file = tmp_path / "abort_dst.txt"
 
-    ledger.log_intent(
+    ledger.record_intent(
         session_id="sess-cli",
-        base_dir=str(tmp_path),
-        source_path=str(src_file),
-        dest_path=str(dst_file),
-        source_rel_path="abort_src.txt",
-        dest_rel_path="abort_dst.txt",
+        src=str(src_file),
+        dst=str(dst_file),
     )
 
     # Run reconciliation to transition the entry to ABORTED

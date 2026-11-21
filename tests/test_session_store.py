@@ -1,6 +1,5 @@
 """Sessions read and write the one app store (ADR 0008)."""
 
-import json
 import time
 from pathlib import Path
 
@@ -54,7 +53,7 @@ def test_steps_are_logged_outside_any_sort_long_transaction(
     session, store, monkeypatch
 ):
     in_session = []
-    log_step = session.history_manager.log_step
+    record_intent = session.history_manager.moves.record_intent
 
     def spy(*args, **kwargs):
         in_session.append(
@@ -62,9 +61,9 @@ def test_steps_are_logged_outside_any_sort_long_transaction(
                 lambda: get_db_connection(str(store.path)).in_transaction
             )
         )
-        return log_step(*args, **kwargs)
+        return record_intent(*args, **kwargs)
 
-    monkeypatch.setattr(session.history_manager, "log_step", spy)
+    monkeypatch.setattr(session.history_manager.moves, "record_intent", spy)
 
     plan, result = SortPipeline(session).run(dry_run=False)
 
@@ -90,8 +89,11 @@ def test_undo_from_the_store_restores_a_sort(session, store):
 
 def _unfinished_session(store, base_dir):
     with open_session_history(store) as history:
-        session_id = history.create_snapshot(str(base_dir))
-        history.log_step(session_id, f"{base_dir}/a.txt", f"{base_dir}/Docs/a.txt")
+        session_id = history.start_session(str(base_dir))
+        seq = history.moves.record_intent(
+            session_id, f"{base_dir}/a.txt", f"{base_dir}/Docs/a.txt"
+        )
+        history.moves.mark_done(session_id, seq, f"{base_dir}/Docs/a.txt")
     return session_id
 
 
@@ -112,50 +114,29 @@ def test_a_session_marked_abandoned_is_not_offered_again(tmp_path, store):
     assert find_abandoned_sessions(store) == []
 
 
-def test_an_interrupted_rollback_is_found_by_its_journal(store):
-    journal = store.app_dir / "rollback_journal.json"
-    journal.write_text(json.dumps({"session_id": "s1", "base_dir": "/x"}))
-
-    (entry,) = find_abandoned_sessions(store)
-
-    assert entry["session_id"] == "s1"
-    assert entry["is_rollback_recovery"] is True
-    assert entry["journal_path"] == str(journal)
-    # The journal sits in the app directory, which recovery must never delete.
-    assert "session_dir" not in entry
-
-
 def test_list_sessions_executes_single_query(store):
     """Criterion 1: list_sessions executes one SQL statement with LEFT JOIN and GROUP BY."""
     conn = get_db_connection(str(store.path))
     with conn:
-        # Session 1: 2 steps, 3 files
+        # Session 1: 3 moves across 2 distinct source files
         conn.execute(
             "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
             ("sess-1", 100.0, "/base1", "completed"),
         )
         conn.execute(
-            "INSERT INTO step_ledger (session_id, source_path, target_path) VALUES (?, ?, ?)",
+            "INSERT INTO moves (session_id, seq, src, dst, state) VALUES (?, 1, ?, ?, 'done')",
             ("sess-1", "/base1/a.txt", "/base1/dest/a.txt"),
         )
         conn.execute(
-            "INSERT INTO step_ledger (session_id, source_path, target_path) VALUES (?, ?, ?)",
+            "INSERT INTO moves (session_id, seq, src, dst, state) VALUES (?, 2, ?, ?, 'done')",
             ("sess-1", "/base1/b.txt", "/base1/dest/b.txt"),
         )
         conn.execute(
-            "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, 1, 10, 100.0)",
-            ("sess-1", "a.txt"),
-        )
-        conn.execute(
-            "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, 2, 20, 100.0)",
-            ("sess-1", "b.txt"),
-        )
-        conn.execute(
-            "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, 3, 30, 100.0)",
-            ("sess-1", "c.txt"),
+            "INSERT INTO moves (session_id, seq, src, dst, state) VALUES (?, 3, ?, ?, 'verified')",
+            ("sess-1", "/base1/a.txt", "/base1/dest2/a.txt"),
         )
 
-        # Session 2: 0 steps, 0 files (empty child records)
+        # Session 2: 0 moves, 0 files (empty child records)
         conn.execute(
             "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
             ("sess-2", 200.0, "/base2", "active"),
@@ -190,8 +171,8 @@ def test_list_sessions_executes_single_query(store):
     assert sessions[1]["timestamp"] == 100.0
     assert sessions[1]["base_dir"] == "/base1"
     assert sessions[1]["status"] == "completed"
-    assert sessions[1]["step_count"] == 2
-    assert sessions[1]["file_count"] == 3
+    assert sessions[1]["step_count"] == 3
+    assert sessions[1]["file_count"] == 2
     assert isinstance(sessions[1]["step_count"], int)
     assert isinstance(sessions[1]["file_count"], int)
     assert sessions[1]["history_db_path"] == str(store.path)
@@ -207,15 +188,11 @@ def test_list_sessions_benchmark_500_sessions(store):
                 "INSERT INTO sessions (session_id, timestamp, base_dir, status) VALUES (?, ?, ?, ?)",
                 (sid, float(i), f"/dir/{i}", "completed"),
             )
-            # Add steps and files to every other session
+            # Add moves to every other session
             if i % 2 == 0:
                 conn.execute(
-                    "INSERT INTO step_ledger (session_id, source_path, target_path) VALUES (?, ?, ?)",
+                    "INSERT INTO moves (session_id, seq, src, dst, state) VALUES (?, 1, ?, ?, 'done')",
                     (sid, f"/dir/{i}/src.txt", f"/dir/{i}/dst.txt"),
-                )
-                conn.execute(
-                    "INSERT INTO snapshot_files (session_id, original_rel_path, inode, size, mtime) VALUES (?, ?, 1, 10, 100.0)",
-                    (sid, "src.txt"),
                 )
 
     # Warmup

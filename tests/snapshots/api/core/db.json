@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "8022b8de3e13bfd0f220d2a038ec683cbd647fdee545ac866f55fb0c4d9cbee0"
+    "checksum": "50d70adb7051a4390aba20cd0ba362adce817ebe70379e87286c0fd675a6d16d"
   },
   "classes": [
     {
@@ -462,24 +462,6 @@
             }
           ],
           "returns": null
-        },
-        {
-          "async": false,
-          "decorators": [],
-          "name": "get_transaction_steps",
-          "parameters": [
-            {
-              "annotation": null,
-              "default": null,
-              "name": "self"
-            },
-            {
-              "annotation": "str",
-              "default": null,
-              "name": "session_id"
-            }
-          ],
-          "returns": "list"
         },
         {
           "async": false,

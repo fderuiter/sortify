@@ -676,12 +676,15 @@ class AutoSorterTUI(
                         self.settings._save()
                     except Exception:
                         pass
-            elif not getattr(self, "_wizard_dismissed_this_session", False):
+            elif not getattr(
+                self, "_wizard_dismissed_this_session", False
+            ) and not self._has_file_nodes(self.plan):
 
                 def _auto_open_wizard() -> None:
                     if (
                         isinstance(self.screen, ModalScreen)
                         or len(self.screen_stack) > 1
+                        or self._has_file_nodes(self.plan)
                     ):
                         return
                     self.action_open_wizard()
