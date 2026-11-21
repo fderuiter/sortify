@@ -194,6 +194,32 @@ def test_offline_requirements_manifest_covers_base_and_ml_packages():
         )
 
 
+def test_offline_requirements_manifest_sympy_mpmath_compatibility():
+    """Verify mpmath version in offline_bundle/requirements.txt satisfies sympy's <1.4 upper bound."""
+    from scripts.prepare_offline import _parse_manifest_entries
+
+    repo_root = Path(__file__).resolve().parent.parent
+    req_file = repo_root / "offline_bundle" / "requirements.txt"
+    entries = _parse_manifest_entries(req_file.read_text(encoding="utf-8"))
+    versions_by_name = {
+        str(item["name"]): str(item["spec"]).split("==", 1)[1].split(";", 1)[0].strip()
+        for item in entries
+        if item["active"] and "==" in str(item["spec"])
+    }
+
+    if "sympy" in versions_by_name:
+        assert "mpmath" in versions_by_name, (
+            "sympy is present in offline_bundle/requirements.txt, so mpmath must also be pinned"
+        )
+        mpmath_parts = tuple(
+            int(part) for part in versions_by_name["mpmath"].split(".")[:2]
+        )
+        assert (1, 1) <= mpmath_parts < (1, 4), (
+            f"sympy=={versions_by_name['sympy']} requires mpmath>=1.1.0,<1.4, "
+            f"but offline_bundle/requirements.txt pins mpmath=={versions_by_name['mpmath']}"
+        )
+
+
 @patch("scripts.install_offline.safe_extract_zip")
 @patch("scripts.install_offline.os.path.exists", return_value=True)
 def test_extract_and_install_offline_traversal_exit(mock_exists, mock_extract):
