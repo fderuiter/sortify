@@ -634,3 +634,146 @@ def test_check_advisory_cached_result_bypasses_url_validation():
     retrieved = client.check_advisory(repo_id=repo_id)
     assert retrieved is res
     assert retrieved.details == "Cached valid result"
+
+
+def test_default_advisory_endpoint_uses_hf_models_api():
+    """Verify default advisory endpoint points to live Hugging Face models API."""
+    from app.config import AppSettings
+    from app.core.security_advisory import DEFAULT_ADVISORY_ENDPOINT
+
+    assert DEFAULT_ADVISORY_ENDPOINT == "https://huggingface.co/api/models"
+    settings = AppSettings()
+    assert settings.SECURITY_ADVISORY_ENDPOINT == "https://huggingface.co/api/models"
+
+
+def test_hf_models_api_security_status_clean_and_flagged():
+    """Verify SecurityAdvisoryClient queries ?securityStatus=true on HF models API and enforces strict policy on flagged repos."""
+    import io
+    import json
+
+    client = SecurityAdvisoryClient(
+        endpoint="https://huggingface.co/api/models",
+        fallback_policy="strict",
+    )
+
+    requested_urls: list[str] = []
+
+    def make_opener(payload: dict):
+        body = json.dumps(payload).encode("utf-8")
+        mock_opener = MagicMock()
+
+        def fake_open(req, timeout=5.0):
+            requested_urls.append(req.full_url)
+            resp = MagicMock()
+            resp.read.return_value = body
+            cm = MagicMock()
+            cm.__enter__.return_value = resp
+            cm.__exit__.return_value = False
+            return cm
+
+        mock_opener.open.side_effect = fake_open
+        return mock_opener
+
+    # 1. Clean HF model response
+    clean_payload = {
+        "id": "Xenova/all-MiniLM-L6-v2",
+        "disabled": False,
+        "securityRepoStatus": {"scansDone": True, "filesWithIssues": []},
+    }
+    with patch.object(client, "_build_opener", return_value=make_opener(clean_payload)):
+        res = client.check_advisory(
+            repo_id="https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx"
+        )
+        assert res.has_advisory is False
+        assert res.advisory_id is None
+        assert requested_urls[-1] == (
+            "https://huggingface.co/api/models/Xenova/all-MiniLM-L6-v2?securityStatus=true"
+        )
+
+    # 2. Flagged filesWithIssues response rejected under strict policy
+    client.clear_cache()
+    flagged_payload = {
+        "id": "malicious-org/backdoored-model",
+        "disabled": False,
+        "securityRepoStatus": {
+            "scansDone": True,
+            "filesWithIssues": [
+                {"path": "onnx/model.onnx", "level": "unsafe", "title": "Pickle RCE"}
+            ],
+        },
+    }
+    with patch.object(
+        client, "_build_opener", return_value=make_opener(flagged_payload)
+    ):
+        with pytest.raises(ModelVerificationError, match="Active security advisory"):
+            client.check_advisory(repo_id="malicious-org/backdoored-model")
+
+    # 3. Disabled repository response rejected under strict policy
+    client.clear_cache()
+    disabled_payload = {
+        "id": "malicious-org/takedown-model",
+        "disabled": True,
+        "securityRepoStatus": {"scansDone": True, "filesWithIssues": []},
+    }
+    with patch.object(
+        client, "_build_opener", return_value=make_opener(disabled_payload)
+    ):
+        with pytest.raises(ModelVerificationError, match="Active security advisory"):
+            client.check_advisory(repo_id="malicious-org/takedown-model")
+    _ = io
+
+
+def test_custom_advisory_mirror_with_trusted_model_hosts(tmp_path):
+    """Verify custom HTTPS advisory mirrors work when listed in TRUSTED_MODEL_HOSTS while untrusted/HTTP remain blocked."""
+    import json
+
+    from app.config import AppSettings
+
+    cfg_path = tmp_path / "settings.json"
+    settings = AppSettings(filepath=str(cfg_path))
+    settings._settings_model.TRUSTED_MODEL_HOSTS = ["advisory.corp.example.com"]
+    settings._settings_model.SECURITY_ADVISORY_ENDPOINT = (
+        "https://advisory.corp.example.com/api/v1/advisories"
+    )
+
+    client = SecurityAdvisoryClient(
+        endpoint=settings.SECURITY_ADVISORY_ENDPOINT,
+        fallback_policy="strict",
+        settings=settings,
+    )
+
+    captured_urls: list[str] = []
+    mock_opener = MagicMock()
+
+    def fake_open(req, timeout=5.0):
+        captured_urls.append(req.full_url)
+        resp = MagicMock()
+        resp.read.return_value = json.dumps({"advisories": []}).encode("utf-8")
+        cm = MagicMock()
+        cm.__enter__.return_value = resp
+        cm.__exit__.return_value = False
+        return cm
+
+    mock_opener.open.side_effect = fake_open
+    with patch.object(client, "_build_opener", return_value=mock_opener):
+        res = client.check_advisory(repo_id="Xenova/all-MiniLM-L6-v2")
+        assert res.has_advisory is False
+        assert captured_urls == [
+            "https://advisory.corp.example.com/api/v1/advisories?repo_id=Xenova%2Fall-MiniLM-L6-v2"
+        ]
+
+    # Plain HTTP on trusted host is still rejected
+    with pytest.raises(ModelVerificationError, match="Only HTTPS is permitted"):
+        SecurityAdvisoryClient(
+            endpoint="http://advisory.corp.example.com/api/v1/advisories",
+            settings=settings,
+        )
+
+    # Unlisted HTTPS host is still rejected
+    with pytest.raises(
+        ModelVerificationError, match="Untrusted security advisory host"
+    ):
+        SecurityAdvisoryClient(
+            endpoint="https://unlisted.corp.example.com/api/v1/advisories",
+            settings=settings,
+        )

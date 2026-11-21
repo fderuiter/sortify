@@ -715,3 +715,67 @@ def test_verify_integrity_fails_on_any_missing_registered_file(tmp_path):
 
     with pytest.raises(FileNotFoundError):
         registry.verify_integrity("two-files", str(tmp_path))
+
+
+def test_offline_load_skips_network_advisory_when_pinned_hashes_match(
+    tmp_path, monkeypatch, isolated_home
+):
+    """Offline model load skips external advisory HTTP requests when all local files match pinned SHA-256 digests."""
+    from app.core.exceptions import ModelVerificationError
+    from app.core.hashes_registry import HASHES
+    from app.core.security_advisory import (
+        SecurityAdvisoryClient,
+        SecurityAdvisoryResult,
+    )
+
+    model_dir = isolated_home / ".smart-autosorter" / "offline_bundle" / "pinned-model"
+    model_dir.mkdir(parents=True)
+    cfg_bytes = b'{"model_type": "bert"}'
+    onnx_bytes = b"verified-onnx-weights"
+    (model_dir / "config.json").write_bytes(cfg_bytes)
+    (model_dir / "model.onnx").write_bytes(onnx_bytes)
+
+    pinned = {
+        "config.json": _sha256(cfg_bytes),
+        "model.onnx": _sha256(onnx_bytes),
+    }
+
+    monkeypatch.setitem(HASHES, "pinned-model", dict(pinned))
+    registry = SharedModelRegistry.get_instance()
+    registry.register_expected_hashes("pinned-model", dict(pinned))
+    OfflineModelLoader.register_model(
+        "pinned-model", expected_files=["config.json", "model.onnx"]
+    )
+
+    SecurityAdvisoryClient.reset_instance()
+    advisory_client = SecurityAdvisoryClient.get_instance()
+    advisory_client._fallback_policy = "strict"
+
+    # External check_advisory must NOT be invoked when local files match pinned SHA-256 digests
+    with patch.object(
+        SecurityAdvisoryClient,
+        "check_advisory",
+        side_effect=AssertionError("External advisory check must be skipped offline"),
+    ) as mock_check:
+        loaded = OfflineModelLoader.load_model(
+            "pinned-model", lambda resolved_dir: f"loaded:{resolved_dir}"
+        )
+        assert loaded == f"loaded:{model_dir}"
+        mock_check.assert_not_called()
+
+    # A cached flagged security advisory must STILL block loading even when hashes match
+    advisory_client.cache_advisory(
+        "pinned-model",
+        None,
+        SecurityAdvisoryResult(
+            has_advisory=True,
+            advisory_id="HF-SEC-999",
+            severity="CRITICAL",
+            details="Known malicious checkpoint",
+        ),
+    )
+    with pytest.raises(ModelVerificationError, match="Active security advisory"):
+        OfflineModelLoader.load_model(
+            "pinned-model", lambda resolved_dir: f"loaded:{resolved_dir}"
+        )
+    SecurityAdvisoryClient.reset_instance()

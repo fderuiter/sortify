@@ -894,11 +894,11 @@ def test_explicit_change_of_env_value_is_persisted(tmp_path, monkeypatch):
     assert saved["MAX_FOLDERS"] == 5
 
 
-def test_all_53_settings_fields_have_descriptions():
-    """Verify all 53 Settings fields define non-empty descriptions in Python and JSON schema."""
+def test_all_54_settings_fields_have_descriptions():
+    """Verify all 54 Settings fields define non-empty descriptions in Python and JSON schema."""
     from pathlib import Path
 
-    assert len(Settings.model_fields) == 53
+    assert len(Settings.model_fields) == 54
     for field_name, field_info in Settings.model_fields.items():
         assert (
             isinstance(field_info.description, str) and field_info.description.strip()
@@ -907,7 +907,7 @@ def test_all_53_settings_fields_have_descriptions():
     schema_path = Path(__file__).resolve().parent.parent / "app" / "config_schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     properties = schema["properties"]
-    assert len(properties) == 53
+    assert len(properties) == 54
     for prop_name, prop_schema in properties.items():
         assert (
             isinstance(prop_schema.get("description"), str)

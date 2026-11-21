@@ -343,3 +343,134 @@ def test_model_manager_responsive_layout_narrow(temp_workspace):
             assert "narrow" in modal.classes
 
     asyncio.run(_test())
+
+
+def test_model_manager_verification_status_requires_complete_tokenizer_bundle(
+    temp_workspace, monkeypatch
+):
+    """Removing vocab.txt or tokenizer_config.json changes verification label to an incomplete warning instead of Valid."""
+    import hashlib
+
+    from app.core.shared_registry import SharedModelRegistry
+
+    app_dir = os.path.join(temp_workspace, "autosorter_app")
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", app_dir)
+
+    bundle_payloads = {
+        "model.onnx": b"onnx-weights-bytes",
+        "config.json": b'{"model_type": "bert", "hidden_size": 384}',
+        "tokenizer.json": b'{"version": "1.0"}',
+        "tokenizer_config.json": b'{"do_lower_case": true}',
+        "special_tokens_map.json": b'{"cls_token": "[CLS]"}',
+        "vocab.txt": b"[PAD]\n[UNK]\n[CLS]\n[SEP]\n",
+        "version.txt": b"1.0.0",
+    }
+    expected_hashes = {
+        fname: hashlib.sha256(content).hexdigest()
+        for fname, content in bundle_payloads.items()
+    }
+    SharedModelRegistry.get_instance().register_expected_hashes(
+        "model_download", expected_hashes
+    )
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        async with app.run_test(size=(80, 24)) as pilot:
+            app.action_open_model_manager()
+            await pilot.pause(0.1)
+
+            modal = app.screen
+            assert isinstance(modal, ModelManagerModal)
+            model_dir = modal._resolve_model_dir()
+            os.makedirs(model_dir, exist_ok=True)
+            for fname, content in bundle_payloads.items():
+                with open(os.path.join(model_dir, fname), "wb") as f:
+                    f.write(content)
+
+            modal._refresh_ui_state()
+            await pilot.pause(0.05)
+
+            lbl_hash = modal.query_one("#lbl-model-hash", Label)
+            assert "Valid" in str(lbl_hash.content)
+
+            # Remove vocab.txt -> Incomplete warning instead of Valid
+            os.remove(os.path.join(model_dir, "vocab.txt"))
+            modal._refresh_ui_state()
+            await pilot.pause(0.05)
+            hash_text_no_vocab = str(lbl_hash.content)
+            assert "Valid" not in hash_text_no_vocab
+            assert "Incomplete" in hash_text_no_vocab
+            assert "vocab.txt" in hash_text_no_vocab
+
+            # Restore vocab.txt and remove tokenizer_config.json -> Incomplete warning instead of Valid
+            with open(os.path.join(model_dir, "vocab.txt"), "wb") as f:
+                f.write(bundle_payloads["vocab.txt"])
+            os.remove(os.path.join(model_dir, "tokenizer_config.json"))
+            modal._refresh_ui_state()
+            await pilot.pause(0.05)
+            hash_text_no_tok_cfg = str(lbl_hash.content)
+            assert "Valid" not in hash_text_no_tok_cfg
+            assert "Incomplete" in hash_text_no_tok_cfg
+            assert "tokenizer_config.json" in hash_text_no_tok_cfg
+
+    asyncio.run(_test())
+
+
+def test_model_manager_ml_guidance_and_80x24_button_containment(
+    temp_workspace, monkeypatch
+):
+    """Verify ModelManagerModal shows ml install hint when onnxruntime is absent and wraps all 5 buttons inside the modal border on 80x24 terminals."""
+    app_dir = os.path.join(temp_workspace, "autosorter_app")
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", app_dir)
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+
+        with patch.dict("sys.modules", {"onnxruntime": None}):
+            async with app.run_test(size=(80, 24)) as pilot:
+                app.action_open_model_manager()
+                await pilot.pause(0.1)
+
+                modal = app.screen
+                assert isinstance(modal, ModelManagerModal)
+
+                lbl_guidance = modal.query_one("#lbl-ml-guidance", Label)
+                assert lbl_guidance.display is True
+                rendered_guidance = str(lbl_guidance.render())
+                assert "smart-autosorter[ml]" in rendered_guidance
+                assert "TF-IDF" in rendered_guidance
+
+                modal_box = modal.query_one(".modal-box")
+                box_region = modal_box.region
+                assert box_region.width <= 80
+                assert box_region.height <= 24
+
+                for btn_id in (
+                    "#btn-start",
+                    "#btn-cancel-dl",
+                    "#btn-retry",
+                    "#btn-delete",
+                    "#btn-close",
+                ):
+                    btn = modal.query_one(btn_id)
+                    btn_region = btn.region
+                    assert btn_region.width > 0 and btn_region.height > 0
+                    assert btn_region.x >= box_region.x, (
+                        f"{btn_id} left {btn_region.x} outside modal {box_region.x}"
+                    )
+                    assert btn_region.right <= box_region.right, (
+                        f"{btn_id} right {btn_region.right} overflows modal {box_region.right}"
+                    )
+                    assert btn_region.y >= box_region.y, (
+                        f"{btn_id} top {btn_region.y} outside modal {box_region.y}"
+                    )
+                    assert btn_region.bottom <= box_region.bottom, (
+                        f"{btn_id} bottom {btn_region.bottom} overflows modal {box_region.bottom}"
+                    )
+
+    asyncio.run(_test())
