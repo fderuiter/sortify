@@ -650,6 +650,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#trusted_model_hosts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TRUSTED_MODEL_HOSTS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#security_advisory_cache_ttl" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -2672,6 +2683,17 @@
 </li>
         
           <li class="md-nav__item">
+  <a href="#trusted_model_hosts" class="md-nav__link">
+    <span class="md-ellipsis">
+      
+        TRUSTED_MODEL_HOSTS
+      
+    </span>
+  </a>
+  
+</li>
+        
+          <li class="md-nav__item">
   <a href="#security_advisory_cache_ttl" class="md-nav__link">
     <span class="md-ellipsis">
       
@@ -3619,9 +3641,15 @@
 <h3 id="security_advisory_endpoint"><code>SECURITY_ADVISORY_ENDPOINT</code></h3>
 <ul>
 <li><strong>Type</strong>: <code>str</code></li>
-<li><strong>Default</strong>: <code>'https://security.huggingface.co/api/advisories'</code></li>
+<li><strong>Default</strong>: <code>'https://huggingface.co/api/models'</code></li>
 </ul>
-<p>HTTPS endpoint queried with model repository IDs and SHA-256 digests to check for published model security advisories before loading weights.</p>
+<p>HTTPS endpoint queried for model repository security metadata and published advisories before downloading or loading weights (defaults to Hugging Face Hub models API; supports custom HTTPS mirrors).</p>
+<h3 id="trusted_model_hosts"><code>TRUSTED_MODEL_HOSTS</code></h3>
+<ul>
+<li><strong>Type</strong>: <code>list[str]</code></li>
+<li><strong>Default</strong>: <code>[]</code></li>
+</ul>
+<p>Additional trusted HTTPS hostnames permitted for model downloads and security advisory mirror queries alongside 'huggingface.co' and 'hf.co'. IP literals, private or loopback addresses, and non-HTTPS schemes remain blocked.</p>
 <h3 id="security_advisory_cache_ttl"><code>SECURITY_ADVISORY_CACHE_TTL</code></h3>
 <ul>
 <li><strong>Type</strong>: <code>int</code></li>
