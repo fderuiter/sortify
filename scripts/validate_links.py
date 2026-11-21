@@ -56,6 +56,26 @@ def is_template_or_redacted_url(url: str) -> bool:
     return False
 
 
+def _is_rate_limited_http_error(err: urllib.error.HTTPError) -> bool:
+    """Return True when an HTTPError indicates upstream HTTP rate limiting rather than a broken link."""
+    if err.code == 429:
+        return True
+    if err.code == 403:
+        reason = str(getattr(err, "reason", "") or "").lower()
+        if "rate limit" in reason:
+            return True
+        headers = getattr(err, "headers", None)
+        if headers and hasattr(headers, "items"):
+            lower_headers = {str(k).lower(): str(v).strip() for k, v in headers.items()}
+            if lower_headers.get("x-ratelimit-remaining") == "0":
+                return True
+            if lower_headers.get("ratelimit-remaining") == "0":
+                return True
+            if "retry-after" in lower_headers:
+                return True
+    return False
+
+
 def validate_url(
     url: str,
     bypass_domains: set | None = None,
@@ -103,6 +123,8 @@ def validate_url(
             with urllib.request.urlopen(probe_req, timeout=TIMEOUT) as response:
                 return True, f"OK (POST {response.status})", False
         except urllib.error.HTTPError as e:
+            if _is_rate_limited_http_error(e):
+                return False, f"HTTP Error {e.code}: {e.reason} (rate limited)", False
             return False, f"HTTP Error {e.code}: {e.reason}", True
         except urllib.error.URLError as e:
             return (
@@ -131,6 +153,8 @@ def validate_url(
             with urllib.request.urlopen(req, timeout=TIMEOUT) as response:
                 return True, f"OK (HEAD {response.status})", False
         except urllib.error.HTTPError as e:
+            if _is_rate_limited_http_error(e):
+                return False, f"HTTP Error {e.code}: {e.reason} (rate limited)", False
             # Fallback to GET if method not allowed, forbidden, bad request, or unauthorized
             if e.code in (405, 403, 400, 401, 301, 302, 308, 307):
                 try:
@@ -138,6 +162,12 @@ def validate_url(
                     with urllib.request.urlopen(req, timeout=TIMEOUT) as response:
                         return True, f"OK (GET {response.status})", False
                 except urllib.error.HTTPError as e_get:
+                    if _is_rate_limited_http_error(e_get):
+                        return (
+                            False,
+                            f"HTTP Error {e_get.code}: {e_get.reason} (rate limited)",
+                            False,
+                        )
                     return False, f"HTTP Error {e_get.code}: {e_get.reason}", True
                 except urllib.error.URLError as e_get:
                     return (
