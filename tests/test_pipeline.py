@@ -335,7 +335,7 @@ def test_reroot_plan_and_validate_drop_paths(tmp_path):
 
 @pytest.mark.anyio
 async def test_ipc_drop_validates_paths_once_and_daemon_emits_pipeline_telemetry(
-    tmp_path,
+    tmp_path, monkeypatch
 ):
     """DaemonIPCServer._handle_drop_rpc validates paths once, and daemon sorting emits pipeline telemetry."""
     import threading
@@ -346,6 +346,7 @@ async def test_ipc_drop_validates_paths_once_and_daemon_emits_pipeline_telemetry
     from app.core.db_conn import clear_connection_cache
     from app.core.ipc import DaemonIPCServer
 
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app_dir"))
     src = tmp_path / "watched"
     src.mkdir()
     dropped = tmp_path / "dropped_doc.txt"
@@ -440,13 +441,14 @@ def test_handle_scan_command_applies_config_overrides_once(
     assert '"status": "success"' in captured.out
 
 
-def test_daemon_process_dropped_items_and_reload_settings(tmp_path):
+def test_daemon_process_dropped_items_and_reload_settings(tmp_path, monkeypatch):
     """ContinuousWatchdogDaemon.process_dropped_items and _reload_settings cover shared validation and timer flushing."""
     from unittest import mock
 
     from app.core.daemon import ContinuousWatchdogDaemon
     from app.core.db_conn import clear_connection_cache
 
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app_dir"))
     watched = tmp_path / "watched"
     watched.mkdir()
     drop_dir = tmp_path / "drop_src"
@@ -496,6 +498,50 @@ def test_daemon_process_dropped_items_and_reload_settings(tmp_path):
         assert len(result["errors"]) == 2
         assert any("Path does not exist:" in e for e in result["errors"])
         assert any("Protected path blocked:" in e for e in result["errors"])
+        moved_files = list(drop_dir.rglob("invoice_doc.txt"))
+        assert len(moved_files) == 1
+        assert len(moved_files[0].relative_to(drop_dir).parts) == 2
     finally:
         daemon.stop()
         clear_connection_cache(only_current_and_inactive=False)
+
+
+def test_plan_relativizes_dropped_file_items_under_base_dir(tmp_path, monkeypatch):
+    """SortPipeline.plan relativizes absolute dropped file paths (POSIX and Windows drive paths) under base_dir."""
+    from app.core.pipeline import _relativize_items_to_base
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app_dir"))
+    drop_dir = tmp_path / "drop_src"
+    drop_dir.mkdir()
+    dropped_file = drop_dir / "invoice_doc.txt"
+    dropped_file.write_text("Invoice banking financial report")
+
+    base, files = drop_scope(str(dropped_file))
+    settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = False
+    s = AppSession(settings, base_dir=base)
+    try:
+        plan, result = SortPipeline(s).run(files)
+        assert plan
+        assert result.ok
+        moved_files = list(drop_dir.rglob("invoice_doc.txt"))
+        assert len(moved_files) == 1
+        assert len(moved_files[0].relative_to(drop_dir).parts) == 2
+    finally:
+        s.close()
+
+    win_base = r"C:\Users\runneradmin\AppData\Local\Temp\drop_src"
+    win_items = [
+        r"C:\Users\runneradmin\AppData\Local\Temp\drop_src\invoice_doc.txt",
+        r"C:\Users\runneradmin\AppData\Local\Temp\drop_src\sub\report.txt",
+        r"C:\Users\runneradmin\Other\external.txt",
+        r"C:\Users\runneradmin\Other::ns_doc.txt",
+        "already_rel.txt",
+    ]
+    assert _relativize_items_to_base(win_items, win_base) == [
+        "invoice_doc.txt",
+        r"sub\report.txt",
+        r"C:\Users\runneradmin\Other\external.txt",
+        r"C:\Users\runneradmin\Other::ns_doc.txt",
+        "already_rel.txt",
+    ]

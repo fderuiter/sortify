@@ -17,6 +17,14 @@ class MockSettings:
     def __init__(self):
         self.language = "en"
         self.ai_status_badge = "ON"
+        self.AI_CONSENT_GRANTED = False
+
+
+@pytest.fixture(autouse=True)
+def _isolate_tui_env(tmp_path, monkeypatch):
+    """Isolate per-test app directory and session catalog to prevent startup modal races."""
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path))
+    monkeypatch.setattr("app.core.session_catalog.find_abandoned_sessions", lambda: [])
 
 
 @pytest.fixture

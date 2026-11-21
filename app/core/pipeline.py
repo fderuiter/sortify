@@ -193,6 +193,57 @@ def _no_progress(info=None):
     pass
 
 
+def _relativize_items_to_base(items: Sequence[Any], base_dir: str) -> list[Any]:
+    """Convert absolute file items inside ``base_dir`` to relative paths.
+
+    ``drop_scope(file_path)`` returns ``(parent_dir, [abs_file_path])`` while
+    extraction and plan hierarchy injection expect paths relative to
+    ``base_dir`` unless namespaced with ``::``. Relative items, ``::``
+    identifiers, and paths outside ``base_dir`` are preserved unchanged.
+    """
+    import ntpath
+
+    from app.core.mover import is_subpath_or_equal
+    from app.core.path_utils import safe_relpath
+
+    if not base_dir:
+        return list(items)
+
+    normalized: list[Any] = []
+    for item in items:
+        if not isinstance(item, str) or not item or "::" in item:
+            normalized.append(item)
+            continue
+
+        if os.path.isabs(item) and os.path.isabs(base_dir):
+            if is_subpath_or_equal(item, base_dir):
+                rel = safe_relpath(item, base_dir)
+                if (
+                    rel
+                    and rel != "."
+                    and not rel.startswith("..")
+                    and not os.path.isabs(rel)
+                ):
+                    normalized.append(rel)
+                    continue
+        elif ntpath.isabs(item) and ntpath.isabs(base_dir):
+            norm_item = ntpath.normcase(ntpath.normpath(item))
+            norm_base = ntpath.normcase(ntpath.normpath(base_dir)).rstrip("\\")
+            if norm_item != norm_base and norm_item.startswith(norm_base + "\\"):
+                rel = ntpath.relpath(ntpath.normpath(item), ntpath.normpath(base_dir))
+                if (
+                    rel
+                    and rel != "."
+                    and not rel.startswith("..")
+                    and not ntpath.isabs(rel)
+                ):
+                    normalized.append(rel)
+                    continue
+
+        normalized.append(item)
+    return normalized
+
+
 @dataclass
 class SortResult:
     """What one sort or undo did, in the shape every front end reports it.
@@ -413,6 +464,8 @@ class SortPipeline(LifecycleTelemetryMixin):
                 from app.core.scanner import get_files_recursively
 
                 items = get_files_recursively(self.base_dir)
+            elif self.base_dir:
+                items = _relativize_items_to_base(items, self.base_dir)
 
             metadata_bypassed: list[Any] = []
             if run_metadata_pass:
