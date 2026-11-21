@@ -208,8 +208,8 @@ The **Import External Rules** modal lets you import rules from third-party tools
 #### Path Normalization, Unarchive Mapping, and Clause Filtering
 - **Destination Path Normalization**: Exported absolute destination paths (POSIX `/Users/...`, Windows `C:\...`, UNC shares `\\server\share\...`, `~/...`, `%ENV%\...`, and `file://` URIs) are converted into safe relative folder paths and listed with a preview warning. Rules whose destination cannot become a safe relative folder (such as `/`, `C:\`, traversal segments `..`, illegal characters, or OS-reserved names) are skipped before merge with a warning.
 - **Archive Extraction Mapping**: External extraction rules (`Unarchive`, `NSRuleActionUnarchive`, `Extract`, `Unpack`, `Decompress`) map to Sortify's built-in `unarchive` policy action when destination folders are valid.
-- **Unsupported Clause Filtering**: Negated operators/masks (`does not contain`, `!mask`, `-mask`, `#exclude`), numeric size or date filters, script executions, and `Copy` actions are skipped with explicit warnings rather than creating unintended keyword move rules.
-- **Syntax Errors and Malformed Files**: Malformed files surface non-blocking warnings without corrupting existing settings.
+- **Unsupported Clause Filtering and Unmapped Operators**: Negated operators/masks (`does not contain`, `!mask`, `-mask`, `#exclude`), numeric size or date filters, script executions, `Copy` actions, and unmapped or unrecognized condition operators are flagged as non-blocking warnings and skipped rather than creating unintended keyword move rules.
+- **Syntax Errors and Malformed Files**: If a file cannot be parsed or contains syntax errors, the importer surfaces non-blocking warnings without corrupting existing settings.
 - **TagSpaces Asymmetry**: TagSpaces taxonomy imports generate keyword rules, while exporting back to native TagSpaces taxonomy files is not supported (see [Exporting Active Rules](#exporting-active-rules)).
 
 #### Headless CLI Rule Import and Export

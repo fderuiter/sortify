@@ -375,3 +375,35 @@ def test_rule_import_modal_browse_ini_preview_and_enable_toggle(tmp_path, mocker
             assert unarch.get("enabled", True) is True
 
     asyncio.run(_test())
+
+
+def test_modal_push_immediate_teardown_does_not_raise_no_matches(tmp_path):
+    """Verify pushing DirectorySelectModal or RuleImportModal right before app exit does not raise NoMatches."""
+    import asyncio
+
+    from app.ui.modals.edit import DirectorySelectModal
+    from app.ui.tui import AutoSorterTUI
+
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    workspace = tmp_path / "empty_workspace"
+    workspace.mkdir(exist_ok=True)
+
+    async def _test_dir_modal():
+        app = AutoSorterTUI(
+            settings=settings, base_dir=str(workspace), skip_wizard=True
+        )
+        async with app.run_test():
+            app.push_screen(DirectorySelectModal(str(workspace)))
+            assert isinstance(app.screen, DirectorySelectModal)
+
+    async def _test_rule_import_modal():
+        app = AutoSorterTUI(
+            settings=settings, base_dir=str(workspace), skip_wizard=True
+        )
+        async with app.run_test():
+            app.push_screen(RuleImportModal(settings))
+            assert isinstance(app.screen, RuleImportModal)
+
+    asyncio.run(_test_dir_modal())
+    asyncio.run(_test_rule_import_modal())

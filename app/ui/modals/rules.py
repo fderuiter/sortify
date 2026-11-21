@@ -720,8 +720,8 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
     def on_mount(self) -> None:
         """Focus initial input field on mount and set up preview tables."""
         self._update_layout(self.size.width)
-        self.query_one("#input-rule-file-path", Input).focus()
         try:
+            self.query_one("#input-rule-file-path", Input).focus()
             dt_kw = self.query_one("#dt-imported-keywords", DataTable)
             dt_kw.add_columns("Keyword", "Target Path")
 

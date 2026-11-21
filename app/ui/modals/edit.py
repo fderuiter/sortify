@@ -1276,7 +1276,10 @@ class DirectorySelectModal(
     def on_mount(self) -> None:
         """Focus input field on mount and emit screen reader announcement."""
         self._update_layout(self.size.width, self.size.height)
-        self.query_one("#input-dir", Input).focus()
+        try:
+            self.query_one("#input-dir", Input).focus()
+        except Exception:
+            return
         self.announce("Opened target directory selection dialog.")
 
     @on(Button.Pressed, "#btn-add-dir")
