@@ -179,7 +179,8 @@ class AutoSorterTUI(
     }
     #main-dual-pane.narrow #left-tree-pane {
         width: 100%;
-        height: 1fr;
+        height: 8;
+        min-height: 7;
     }
     #tree-search-input {
         width: 100%;
@@ -188,28 +189,50 @@ class AutoSorterTUI(
         border-bottom: solid $primary;
         margin: 0;
     }
+    #main-dual-pane.narrow #tree-search-input {
+        height: 1;
+        border: none;
+        background: $boost;
+    }
     #plan-tree {
         width: 100%;
         height: 1fr;
+        min-height: 4;
         border: none;
         padding: 0;
     }
     #right-meta-pane {
+        layout: vertical;
         width: 50%;
         height: 100%;
         border: solid $secondary;
         padding: 1 2;
+        overflow-y: hidden;
+    }
+    .compact #right-meta-pane {
+        padding: 0 1;
     }
     #main-dual-pane.narrow #right-meta-pane {
         width: 100%;
         height: 1fr;
+        min-height: 9;
+        padding: 0 1;
+    }
+    #right-meta-scroll {
+        width: 100%;
+        height: 1fr;
+        overflow-y: auto;
     }
     .tui-log-area {
-        height: 1fr;
+        height: auto;
         max-height: 10;
         min-height: 3;
         margin-top: 1;
         border: solid $secondary;
+    }
+    .compact .tui-log-area {
+        margin-top: 0;
+        max-height: 6;
     }
     #main-progress-bar {
         width: 100%;
@@ -239,10 +262,14 @@ class AutoSorterTUI(
         width: 100%;
         height: auto;
         min-height: 1;
-        max-height: 6;
+        max-height: 4;
+        overflow-y: auto;
         padding: 0 1;
         margin: 0;
         display: none;
+    }
+    .compact #alert-banner {
+        max-height: 3;
     }
     #alert-banner.alert-critical {
         background: $error-darken-2;
@@ -261,6 +288,15 @@ class AutoSorterTUI(
         margin-top: 1;
         width: 100%;
     }
+    .compact #btn-execute {
+        margin-top: 0;
+    }
+    #main-dual-pane.narrow #btn-execute {
+        height: 1;
+        min-height: 1;
+        border: none;
+        margin-top: 0;
+    }
     #onboarding-cta-card {
         border: solid $accent;
         padding: 1 2;
@@ -268,13 +304,26 @@ class AutoSorterTUI(
         background: $surface;
         height: auto;
     }
+    .compact #onboarding-cta-card {
+        padding: 0 1;
+        margin-bottom: 0;
+    }
+    .compact .meta-header {
+        margin-bottom: 0;
+    }
     #onboarding-guide-text {
         margin-bottom: 1;
+    }
+    .compact #onboarding-guide-text {
+        margin-bottom: 0;
     }
     #onboarding-workspace-state {
         margin-bottom: 1;
         color: $accent;
         text-style: bold;
+    }
+    .compact #onboarding-workspace-state {
+        margin-bottom: 0;
     }
     #onboarding-cta-buttons {
         layout: vertical;
@@ -283,6 +332,15 @@ class AutoSorterTUI(
     #onboarding-cta-buttons Button {
         width: 100%;
         margin-bottom: 1;
+    }
+    .compact #onboarding-cta-buttons Button {
+        margin-bottom: 0;
+    }
+    #main-dual-pane.narrow #onboarding-cta-buttons Button {
+        height: 1;
+        min-height: 1;
+        border: none;
+        margin-bottom: 0;
     }
     #inspector-container {
         height: auto;
@@ -355,73 +413,76 @@ class AutoSorterTUI(
                 )
                 yield tree
             with Vertical(id="right-meta-pane"):
-                with Vertical(id="onboarding-cta-card"):
-                    yield Heading(
-                        "Workspace Setup & Quick Actions",
-                        level=2,
-                        classes="meta-header",
-                    )
-                    yield Static(
-                        "Welcome to Sortify AI Pro. Select a workspace directory, run a scan, or load a sample dataset to get started.",
-                        id="onboarding-guide-text",
-                    )
-                    initial_workspace_state = (
-                        f"Active Workspace: {self.base_dir}"
-                        if self.base_dir
-                        else "Active Workspace: No directory selected"
-                    )
-                    yield Static(
-                        initial_workspace_state, id="onboarding-workspace-state"
-                    )
-                    with Vertical(id="onboarding-cta-buttons"):
-                        btn_select_dir = Button(
-                            "Choose Directory [Ctrl+B]",
-                            id="btn-cta-select-dir",
-                            variant="primary",
+                with Vertical(id="right-meta-scroll"):
+                    with Vertical(id="onboarding-cta-card"):
+                        yield Heading(
+                            "Workspace Setup & Quick Actions",
+                            level=2,
+                            classes="meta-header",
                         )
-                        btn_select_dir.tooltip = "Open directory selection dialog to choose workspace folder [Ctrl+B]"
-                        yield btn_select_dir
+                        yield Static(
+                            "Welcome to Sortify AI Pro. Select a workspace directory, run a scan, or load a sample dataset to get started.",
+                            id="onboarding-guide-text",
+                        )
+                        initial_workspace_state = (
+                            f"Active Workspace: {self.base_dir}"
+                            if self.base_dir
+                            else "Active Workspace: No directory selected"
+                        )
+                        yield Static(
+                            initial_workspace_state, id="onboarding-workspace-state"
+                        )
+                        with Vertical(id="onboarding-cta-buttons"):
+                            btn_select_dir = Button(
+                                "Choose Directory [Ctrl+B]",
+                                id="btn-cta-select-dir",
+                                variant="primary",
+                            )
+                            btn_select_dir.tooltip = "Open directory selection dialog to choose workspace folder [Ctrl+B]"
+                            yield btn_select_dir
 
-                        btn_scan_dir = Button(
-                            "Scan Directory [Ctrl+S]",
-                            id="btn-cta-scan-dir",
-                            variant="success",
-                        )
-                        btn_scan_dir.tooltip = "Initiate workspace scan to generate organization plan [Ctrl+S]"
-                        yield btn_scan_dir
+                            btn_scan_dir = Button(
+                                "Scan Directory [Ctrl+S]",
+                                id="btn-cta-scan-dir",
+                                variant="success",
+                            )
+                            btn_scan_dir.tooltip = "Initiate workspace scan to generate organization plan [Ctrl+S]"
+                            yield btn_scan_dir
 
-                        btn_sample_data = Button(
-                            "Load Sample Dataset [G]",
-                            id="btn-cta-sample-data",
-                            variant="default",
+                            btn_sample_data = Button(
+                                "Load Sample Dataset \\[G]",
+                                id="btn-cta-sample-data",
+                                variant="default",
+                            )
+                            btn_sample_data.tooltip = (
+                                "Generate interactive sample dataset in workspace [G]"
+                            )
+                            yield btn_sample_data
+                    with Vertical(id="inspector-container"):
+                        yield Heading(
+                            "Side-by-Side Path Comparison",
+                            level=2,
+                            classes="meta-header",
                         )
-                        btn_sample_data.tooltip = (
-                            "Generate interactive sample dataset in workspace [G]"
+                        path_comp = Static(
+                            "Select a file or folder in the tree to compare source and target paths.",
+                            id="path-comparison",
                         )
-                        yield btn_sample_data
-                with Vertical(id="inspector-container"):
-                    yield Heading(
-                        "Side-by-Side Path Comparison", level=2, classes="meta-header"
-                    )
-                    path_comp = Static(
-                        "Select a file or folder in the tree to compare source and target paths.",
-                        id="path-comparison",
-                    )
-                    path_comp.tooltip = "Side-by-side split column view comparing source and destination target paths"
-                    yield path_comp
-                    yield Heading(
-                        "Node Metadata Inspector", level=2, classes="meta-header"
-                    )
-                    meta_widget = Static(
-                        "Select a node in the tree to inspect details.",
-                        id="meta-details",
-                    )
-                    meta_widget.tooltip = "Metadata inspector panel displaying attributes of selected file or folder"
-                    yield meta_widget
-                yield Heading("Live Execution Log", level=2, classes="meta-header")
-                tui_log = Log(id="tui-log", classes="tui-log-area")
-                tui_log.tooltip = "Live operation execution log output feed"
-                yield tui_log
+                        path_comp.tooltip = "Side-by-side split column view comparing source and destination target paths"
+                        yield path_comp
+                        yield Heading(
+                            "Node Metadata Inspector", level=2, classes="meta-header"
+                        )
+                        meta_widget = Static(
+                            "Select a node in the tree to inspect details.",
+                            id="meta-details",
+                        )
+                        meta_widget.tooltip = "Metadata inspector panel displaying attributes of selected file or folder"
+                        yield meta_widget
+                    yield Heading("Live Execution Log", level=2, classes="meta-header")
+                    tui_log = Log(id="tui-log", classes="tui-log-area")
+                    tui_log.tooltip = "Live operation execution log output feed"
+                    yield tui_log
                 btn_exec = Button(
                     "Execute Plan [Ctrl+E]",
                     id="btn-execute",
@@ -527,14 +588,24 @@ class AutoSorterTUI(
         except Exception:
             pass
 
-    def _update_layout(self, width: int) -> None:
-        """Update container CSS classes based on viewport width breakpoint."""
+    def _update_layout(self, width: int, height: Optional[int] = None) -> None:
+        """Update container CSS classes based on viewport width and height breakpoints."""
+        effective_height = self._resolve_viewport_height(height)
+        is_compact = width <= 100 or effective_height <= 30
+        if is_compact:
+            self.add_class("compact")
+        else:
+            self.remove_class("compact")
         try:
             dual_pane = self.query_one("#main-dual-pane")
             if width < 100:
                 dual_pane.add_class("narrow")
             else:
                 dual_pane.remove_class("narrow")
+            if is_compact:
+                dual_pane.add_class("compact")
+            else:
+                dual_pane.remove_class("compact")
         except Exception:
             pass
 
@@ -546,7 +617,7 @@ class AutoSorterTUI(
 
     def on_mount(self) -> None:
         """Mount event handler."""
-        self._update_layout(self.size.width)
+        self._update_layout(self.size.width, self.size.height)
         try:
             from app.ui.notifications import NotificationManager
 

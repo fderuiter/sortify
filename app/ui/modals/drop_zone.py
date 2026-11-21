@@ -14,7 +14,7 @@ from textual.widgets import Button, DataTable, Input, Label, Static
 
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveLayoutMixin
 from app.ui.notifications import TROUBLESHOOTING_URL
 
 logger = logging.getLogger(__name__)
@@ -41,6 +41,13 @@ class DropPlanConfirmModal(A11yMixin, ModalScreen[bool]):
         min-width: 30;
         height: auto;
         max-height: 90%;
+        overflow-y: hidden;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -55,8 +62,10 @@ class DropPlanConfirmModal(A11yMixin, ModalScreen[bool]):
         padding: 0 1;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 1;
-        height: 3;
+        height: auto;
         align: right middle;
     }
     """
@@ -68,10 +77,13 @@ class DropPlanConfirmModal(A11yMixin, ModalScreen[bool]):
 
     def compose(self) -> ComposeResult:
         """Compose the plan preview with Move and Cancel buttons."""
-        with Vertical(classes="modal-box"):
+        with ModalBox(classes="modal-box"):
             yield Heading("Review DropZone Plan", level=1, classes="modal-title")
-            yield Label(self.summary, id="lbl-drop-plan-summary")
-            yield Static("\n".join(self.plan_lines), id="drop-plan-tree", markup=False)
+            with Vertical(classes="modal-body"):
+                yield Label(self.summary, id="lbl-drop-plan-summary")
+                yield Static(
+                    "\n".join(self.plan_lines), id="drop-plan-tree", markup=False
+                )
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel-drop-plan")
                 btn_cancel.tooltip = "Close without moving any files"
@@ -119,16 +131,22 @@ class DropZoneModal(
         padding: 1 2;
         background: $panel;
         border: double $accent;
-        width: 90%;
+        width: 92%;
         max-width: 100;
-        min-width: 50;
+        min-width: 40;
         height: auto;
         max-height: 95%;
-        overflow-y: auto;
+        overflow-y: hidden;
     }
-    .narrow .modal-box {
+    .compact .modal-box, .narrow .modal-box {
         padding: 0 1;
-        width: 95%;
+        width: 98%;
+    }
+    .modal-body {
+        width: 100%;
+        height: auto;
+        max-height: 100%;
+        overflow-y: auto;
     }
     .modal-title {
         text-style: bold;
@@ -160,7 +178,7 @@ class DropZoneModal(
     }
     .dropzone-split-container {
         height: auto;
-        min-height: 8;
+        min-height: 7;
         layout: horizontal;
         margin-top: 0;
         margin-bottom: 0;
@@ -171,7 +189,7 @@ class DropZoneModal(
     #dropzone-staging-table {
         width: 60%;
         height: 7;
-        min-height: 5;
+        min-height: 6;
         margin-top: 0;
         margin-bottom: 0;
         border: solid $accent;
@@ -183,7 +201,7 @@ class DropZoneModal(
     #dropzone-metadata-preview {
         width: 40%;
         height: 7;
-        min-height: 5;
+        min-height: 6;
         border: solid $primary;
         background: $surface;
         padding: 0 1;
@@ -213,14 +231,35 @@ class DropZoneModal(
         text-style: italic;
     }
     .button-row {
+        dock: bottom;
+        width: 100%;
         margin-top: 0;
-        height: 3;
+        height: auto;
         align: right middle;
     }
+    .compact .button-row Button {
+        height: 1;
+        min-height: 1;
+        border: none;
+    }
     .queue-row {
+        width: 100%;
         margin-top: 0;
-        height: 3;
-        align: center middle;
+        layout: grid;
+        grid-size: 3;
+        grid-columns: 1fr 1fr 1fr;
+        grid-gutter: 0 1;
+        height: auto;
+    }
+    .queue-row Button {
+        width: 100%;
+        min-width: 0;
+        margin: 0;
+    }
+    .compact .queue-row Button {
+        height: 1;
+        min-height: 1;
+        border: none;
     }
     Button:focus, Input:focus, DataTable:focus {
         border: heavy $accent;
@@ -240,93 +279,104 @@ class DropZoneModal(
 
     def compose(self) -> ComposeResult:
         """Compose floating dropzone modal overlay controls."""
-        with Vertical(classes="modal-box"):
+        with ModalBox(classes="modal-box"):
             yield Heading(
                 "Floating DropZone - Quick File Triage",
                 level=1,
                 classes="modal-title",
                 id="modal-title",
             )
-            with Vertical(classes="dropzone-target"):
-                yield Label(
-                    "📥 Drop or Paste File / Folder Paths Here",
-                    classes="dropzone-instructions",
-                )
-                yield Label(
-                    "Drag items onto terminal or paste absolute file paths to organize automatically",
-                    classes="dropzone-subinstructions",
-                )
-            inp = Input(
-                placeholder="Paste or drop file / directory paths here...",
-                id="input-drop-paths",
-            )
-            inp.tooltip = (
-                "Enter or drop target file or folder paths to trigger automated sorting"
-            )
-            yield inp
-
-            filter_inp = Input(
-                placeholder="Filter staged queue...",
-                id="input-queue-filter",
-            )
-            filter_inp.tooltip = "Filter staged queue items by typing keywords (filename, path, status, extension)"
-            yield filter_inp
-
-            with Container(classes="dropzone-split-container"):
-                table = DataTable(id="dropzone-staging-table")
-                table.cursor_type = "row"
-                table.tooltip = (
-                    "Interactive staging queue displaying file status and details"
-                )
-                yield table
-
-                with Vertical(id="dropzone-metadata-preview"):
-                    yield Label("📋 Metadata Preview", classes="preview-header")
-                    yield Label("Path: N/A", id="preview-path", classes="preview-field")
-                    yield Label("Size: N/A", id="preview-size", classes="preview-field")
+            with Vertical(classes="modal-body"):
+                with Vertical(classes="dropzone-target"):
                     yield Label(
-                        "Modified: N/A", id="preview-mtime", classes="preview-field"
+                        "📥 Drop or Paste File / Folder Paths Here",
+                        classes="dropzone-instructions",
                     )
                     yield Label(
-                        "Status: N/A", id="preview-status", classes="preview-field"
+                        "Drag items onto terminal or paste absolute file paths to organize automatically",
+                        classes="dropzone-subinstructions",
                     )
-
-            with Horizontal(classes="queue-row"):
-                btn_filter = Button(
-                    "Filter Unsupported", id="btn-filter-unsupported", variant="warning"
+                inp = Input(
+                    placeholder="Paste or drop file / directory paths here...",
+                    id="input-drop-paths",
                 )
-                btn_filter.tooltip = "Remove unsupported file formats from the queue"
-                yield btn_filter
+                inp.tooltip = "Enter or drop target file or folder paths to trigger automated sorting"
+                yield inp
 
-                btn_remove = Button(
-                    "Remove Item", id="btn-remove-item", variant="error"
+                filter_inp = Input(
+                    placeholder="Filter staged queue...",
+                    id="input-queue-filter",
                 )
-                btn_remove.tooltip = "Remove the selected row from the staging table"
-                yield btn_remove
+                filter_inp.tooltip = "Filter staged queue items by typing keywords (filename, path, status, extension)"
+                yield filter_inp
 
-                btn_up = Button("Move Up", id="btn-move-up", variant="default")
-                btn_up.tooltip = "Move selected item up in queue priority"
-                yield btn_up
+                with Container(classes="dropzone-split-container"):
+                    table = DataTable(id="dropzone-staging-table")
+                    table.cursor_type = "row"
+                    table.tooltip = (
+                        "Interactive staging queue displaying file status and details"
+                    )
+                    yield table
 
-                btn_down = Button("Move Down", id="btn-move-down", variant="default")
-                btn_down.tooltip = "Move selected item down in queue priority"
-                yield btn_down
+                    with Vertical(id="dropzone-metadata-preview"):
+                        yield Label("📋 Metadata Preview", classes="preview-header")
+                        yield Label(
+                            "Path: N/A", id="preview-path", classes="preview-field"
+                        )
+                        yield Label(
+                            "Size: N/A", id="preview-size", classes="preview-field"
+                        )
+                        yield Label(
+                            "Modified: N/A", id="preview-mtime", classes="preview-field"
+                        )
+                        yield Label(
+                            "Status: N/A", id="preview-status", classes="preview-field"
+                        )
 
-                btn_clear = Button(
-                    "Clear Queue", id="btn-clear-queue", variant="default"
+                with Horizontal(classes="queue-row"):
+                    btn_filter = Button(
+                        "Filter Unsupported",
+                        id="btn-filter-unsupported",
+                        variant="warning",
+                    )
+                    btn_filter.tooltip = (
+                        "Remove unsupported file formats from the queue"
+                    )
+                    yield btn_filter
+
+                    btn_remove = Button(
+                        "Remove Item", id="btn-remove-item", variant="error"
+                    )
+                    btn_remove.tooltip = (
+                        "Remove the selected row from the staging table"
+                    )
+                    yield btn_remove
+
+                    btn_up = Button("Move Up", id="btn-move-up", variant="default")
+                    btn_up.tooltip = "Move selected item up in queue priority"
+                    yield btn_up
+
+                    btn_down = Button(
+                        "Move Down", id="btn-move-down", variant="default"
+                    )
+                    btn_down.tooltip = "Move selected item down in queue priority"
+                    yield btn_down
+
+                    btn_clear = Button(
+                        "Clear Queue", id="btn-clear-queue", variant="default"
+                    )
+                    btn_clear.tooltip = "Clear all staged items from the modal"
+                    yield btn_clear
+
+                status_lbl = Label(
+                    "Ready. Drop or enter paths above.",
+                    id="dropzone-status",
+                    classes="status-text",
                 )
-                btn_clear.tooltip = "Clear all staged items from the modal"
-                yield btn_clear
-
-            status_lbl = Label(
-                "Ready. Drop or enter paths above.",
-                id="dropzone-status",
-                classes="status-text",
-            )
-            status_lbl.tooltip = (
-                "Live visual progress indicators and classification status messages"
-            )
-            yield status_lbl
+                status_lbl.tooltip = (
+                    "Live visual progress indicators and classification status messages"
+                )
+                yield status_lbl
 
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
