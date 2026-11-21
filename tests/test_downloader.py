@@ -45,27 +45,53 @@ def mock_security_advisory():
 
 
 def test_verify_downloaded_model(temp_model_dir):
-    # Setup files
-    onnx_file = os.path.join(temp_model_dir, "model.onnx")
-    config_file = os.path.join(temp_model_dir, "config.json")
+    bundle_payloads = {
+        "model.onnx": b"dummy onnx content",
+        "config.json": b'{"model_type": "bert", "hidden_size": 384}',
+        "tokenizer.json": b'{"version": "1.0"}',
+        "tokenizer_config.json": b'{"do_lower_case": true}',
+        "special_tokens_map.json": b'{"cls_token": "[CLS]"}',
+        "vocab.txt": b"[PAD]\n[UNK]\n[CLS]\n[SEP]\n",
+        "version.txt": b"1.0.0",
+    }
+    expected_hashes = {
+        fname: hashlib.sha256(content).hexdigest()
+        for fname, content in bundle_payloads.items()
+    }
+    SharedModelRegistry.get_instance().register_expected_hashes(
+        "model_download", expected_hashes
+    )
 
     # Empty dir -> False
     assert not verify_downloaded_model(temp_model_dir)
 
-    # Missing config -> False
-    with open(onnx_file, "w") as f:
-        f.write("dummy onnx content")
+    # Only model.onnx + config.json without tokenizer files -> False
+    with open(os.path.join(temp_model_dir, "model.onnx"), "wb") as f:
+        f.write(bundle_payloads["model.onnx"])
+    with open(os.path.join(temp_model_dir, "config.json"), "wb") as f:
+        f.write(bundle_payloads["config.json"])
     assert not verify_downloaded_model(temp_model_dir)
 
-    # Empty config -> False
-    with open(config_file, "w") as f:
-        f.write("")
-    assert not verify_downloaded_model(temp_model_dir)
-
-    # Valid config and non-empty ONNX -> True
-    with open(config_file, "w") as f:
-        f.write('{"model_type": "onnx"}')
+    # Full bundle with matching SHA-256 digests -> True
+    for fname, content in bundle_payloads.items():
+        with open(os.path.join(temp_model_dir, fname), "wb") as f:
+            f.write(content)
     assert verify_downloaded_model(temp_model_dir)
+
+    # Missing vocab.txt -> False
+    os.remove(os.path.join(temp_model_dir, "vocab.txt"))
+    assert not verify_downloaded_model(temp_model_dir)
+
+    # Restore vocab.txt, remove tokenizer_config.json -> False
+    with open(os.path.join(temp_model_dir, "vocab.txt"), "wb") as f:
+        f.write(bundle_payloads["vocab.txt"])
+    os.remove(os.path.join(temp_model_dir, "tokenizer_config.json"))
+    assert not verify_downloaded_model(temp_model_dir)
+
+    # Restore tokenizer_config.json with tampered bytes -> False
+    with open(os.path.join(temp_model_dir, "tokenizer_config.json"), "wb") as f:
+        f.write(b'{"tampered": true}')
+    assert not verify_downloaded_model(temp_model_dir)
 
 
 @pytest.mark.parametrize(
@@ -988,3 +1014,198 @@ def test_delete_model_async_clears_cancellation_state(temp_model_dir):
     assert dm.state["is_downloading"] is False
     assert dm.state["success"] is False
     assert dm.state["status_text"] == "Model deleted."
+
+
+def test_default_model_url_points_to_xenova_bundle():
+    """Verify DEFAULT_MODEL_URL targets Xenova/all-MiniLM-L6-v2 ONNX bundle."""
+    assert (
+        DEFAULT_MODEL_URL
+        == "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx"
+    )
+
+
+def test_full_xenova_bundle_staging_verification_and_atomic_activation():
+    """Verify downloader fetches all Xenova bundle files into staging, verifies hashes, and atomically activates."""
+    parent_dir = tempfile.mkdtemp()
+    target_model_dir = os.path.join(parent_dir, "model")
+
+    remote_payloads = {
+        "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx": b"onnx-binary-weights",
+        "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/config.json": b'{"model_type": "bert", "hidden_size": 384}',
+        "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/tokenizer.json": b'{"version": "1.0"}',
+        "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/tokenizer_config.json": b'{"do_lower_case": true}',
+        "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/special_tokens_map.json": b'{"cls_token": "[CLS]"}',
+        "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/vocab.txt": b"[PAD]\n[UNK]\n[CLS]\n[SEP]\n",
+    }
+    expected_hashes = {
+        "model.onnx": hashlib.sha256(
+            remote_payloads[
+                "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx"
+            ]
+        ).hexdigest(),
+        "config.json": hashlib.sha256(
+            remote_payloads[
+                "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/config.json"
+            ]
+        ).hexdigest(),
+        "tokenizer.json": hashlib.sha256(
+            remote_payloads[
+                "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/tokenizer.json"
+            ]
+        ).hexdigest(),
+        "tokenizer_config.json": hashlib.sha256(
+            remote_payloads[
+                "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/tokenizer_config.json"
+            ]
+        ).hexdigest(),
+        "special_tokens_map.json": hashlib.sha256(
+            remote_payloads[
+                "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/special_tokens_map.json"
+            ]
+        ).hexdigest(),
+        "vocab.txt": hashlib.sha256(
+            remote_payloads[
+                "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/vocab.txt"
+            ]
+        ).hexdigest(),
+        "version.txt": hashlib.sha256(b"1.0.0").hexdigest(),
+    }
+    SharedModelRegistry.get_instance().register_expected_hashes(
+        "model_download", expected_hashes
+    )
+
+    fetched_urls: list[str] = []
+
+    def fake_open(req, timeout=30.0):
+        req_url = req.full_url if hasattr(req, "full_url") else str(req)
+        fetched_urls.append(req_url)
+        body = remote_payloads[req_url]
+        resp = MagicMock()
+        resp.info.return_value.get.return_value = str(len(body))
+        resp.read.side_effect = [body, b""]
+        cm = MagicMock()
+        cm.__enter__.return_value = resp
+        cm.__exit__.return_value = False
+        return cm
+
+    mock_opener = MagicMock()
+    mock_opener.open.side_effect = fake_open
+
+    success_event = threading.Event()
+    failure_errors: list[Exception] = []
+
+    try:
+        with patch("urllib.request.build_opener", return_value=mock_opener):
+            run_background_download(
+                DEFAULT_MODEL_URL,
+                target_model_dir,
+                on_success=success_event.set,
+                on_failure=lambda err: failure_errors.append(err),
+            )
+            assert success_event.wait(timeout=15), (
+                f"Unexpected errors: {failure_errors}"
+            )
+
+        assert set(fetched_urls) == set(remote_payloads.keys())
+        assert verify_downloaded_model(target_model_dir) is True
+        for fname in expected_hashes:
+            assert os.path.isfile(os.path.join(target_model_dir, fname))
+        leftover = [
+            entry
+            for entry in os.listdir(parent_dir)
+            if entry.startswith(".model_staging_")
+        ]
+        assert leftover == []
+    finally:
+        shutil.rmtree(parent_dir, ignore_errors=True)
+
+
+def test_bundle_staging_cleanup_on_corrupted_tokenizer_and_cancellation():
+    """Verify failed or cancelled bundle downloads delete staging files immediately and never leave partial model folders."""
+    parent_dir = tempfile.mkdtemp()
+    target_model_dir = os.path.join(parent_dir, "model")
+
+    good_payload = b"good-content"
+    good_hash = hashlib.sha256(good_payload).hexdigest()
+    expected_hashes = {
+        fname: good_hash
+        for fname in (
+            "model.onnx",
+            "config.json",
+            "tokenizer.json",
+            "tokenizer_config.json",
+            "special_tokens_map.json",
+            "vocab.txt",
+        )
+    }
+    expected_hashes["version.txt"] = hashlib.sha256(b"1.0.0").hexdigest()
+    SharedModelRegistry.get_instance().register_expected_hashes(
+        "model_download", expected_hashes
+    )
+
+    # Case 1: Tampered vocab.txt triggers ModelVerificationError and leaves no partial model_dir or staging dir
+    def fake_open_corrupt_vocab(req, timeout=30.0):
+        req_url = req.full_url if hasattr(req, "full_url") else str(req)
+        body = b"TAMPERED-VOCAB" if req_url.endswith("/vocab.txt") else good_payload
+        resp = MagicMock()
+        resp.info.return_value.get.return_value = str(len(body))
+        resp.read.side_effect = [body, b""]
+        cm = MagicMock()
+        cm.__enter__.return_value = resp
+        cm.__exit__.return_value = False
+        return cm
+
+    mock_opener = MagicMock()
+    mock_opener.open.side_effect = fake_open_corrupt_vocab
+    fail_event = threading.Event()
+    errors: list[Exception] = []
+
+    try:
+        with patch("urllib.request.build_opener", return_value=mock_opener):
+            run_background_download(
+                DEFAULT_MODEL_URL,
+                target_model_dir,
+                on_failure=lambda err: (errors.append(err), fail_event.set()),
+            )
+            assert fail_event.wait(timeout=15)
+        assert isinstance(errors[0], ModelVerificationError)
+        assert not os.path.exists(target_model_dir)
+        assert [
+            e for e in os.listdir(parent_dir) if e.startswith(".model_staging_")
+        ] == []
+
+        # Case 2: Mid-bundle cancellation deletes staging dir and never creates target_model_dir
+        cancel_event = threading.Event()
+
+        def fake_open_cancel_midway(req, timeout=30.0):
+            req_url = req.full_url if hasattr(req, "full_url") else str(req)
+            if req_url.endswith("/tokenizer.json"):
+                cancel_event.set()
+            resp = MagicMock()
+            resp.info.return_value.get.return_value = str(len(good_payload))
+            resp.read.side_effect = [good_payload, b""]
+            cm = MagicMock()
+            cm.__enter__.return_value = resp
+            cm.__exit__.return_value = False
+            return cm
+
+        mock_opener_cancel = MagicMock()
+        mock_opener_cancel.open.side_effect = fake_open_cancel_midway
+        cancel_done = threading.Event()
+        cancel_errors: list[Exception] = []
+
+        with patch("urllib.request.build_opener", return_value=mock_opener_cancel):
+            run_background_download(
+                DEFAULT_MODEL_URL,
+                target_model_dir,
+                cancel_event=cancel_event,
+                on_failure=lambda err: (cancel_errors.append(err), cancel_done.set()),
+            )
+            assert cancel_done.wait(timeout=15)
+        assert isinstance(cancel_errors[0], DownloadCancelledError)
+        assert not os.path.exists(target_model_dir)
+        assert [
+            e for e in os.listdir(parent_dir) if e.startswith(".model_staging_")
+        ] == []
+    finally:
+        shutil.rmtree(parent_dir, ignore_errors=True)

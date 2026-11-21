@@ -250,22 +250,40 @@ class SemanticEmbeddingManager:
             if force_validation or self.validate_on_init:
                 try:
                     self.validate_model_assets()
-                except Exception as e:
+                except Exception as e:  # noqa: BLE001 - capture asset or runtime validation failure into degraded fallback state
+                    err_msg = str(e)
+                    missing_ml_extra = (
+                        isinstance(e.__cause__, (ImportError, ModuleNotFoundError))
+                        or "onnxruntime" in err_msg.lower()
+                    )
+                    recovery_action = (
+                        "INSTALL_ML_EXTRA" if missing_ml_extra else "RE_DOWNLOAD_MODEL"
+                    )
                     self.is_model_valid = False
                     self.is_degraded = True
                     self.degradation_state = "DEGRADED_FALLBACK"
-                    self.degradation_reason = str(e)
-                    self.suggested_recovery_action = "RE_DOWNLOAD_MODEL"
-                    self.validation_error_message = str(e)
+                    self.degradation_reason = err_msg
+                    self.suggested_recovery_action = recovery_action
+                    self.validation_error_message = err_msg
                     from app.core.shared_registry import SharedModelRegistry
 
                     SharedModelRegistry.get_instance().record_model_health(
                         "onnx_embeddings",
                         status="DEGRADED_FALLBACK",
-                        failure_reason=str(e),
-                        suggested_recovery_action="RE_DOWNLOAD_MODEL",
+                        failure_reason=err_msg,
+                        suggested_recovery_action=recovery_action,
                     )
-                    raise e
+                    if force_validation:
+                        raise
+                    logging.warning(
+                        "Semantic embedding validation failed (%s); falling back to TF-IDF keyword clustering.",
+                        err_msg,
+                    )
+                    self.model_path = None
+                    fallback_props = get_active_model_properties(None)
+                    self.signature = fallback_props[0]
+                    self.dimensions = fallback_props[1]
+                    self.version = fallback_props[2]
 
         # Initialize global metadata and verify profile
         self.verify_active_model()
@@ -395,13 +413,18 @@ class SemanticEmbeddingManager:
             dimensions = out.shape[-1]
             if not isinstance(dimensions, int) or dimensions <= 0:
                 raise ModelValidationError(f"Invalid model dimensions: {dimensions}")
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - wrap session init errors into ModelValidationError
             try:
                 registry.unload_model(f"onnx_{onnx_file}")
-            except Exception:
+            except Exception:  # noqa: BLE001 - best-effort cleanup of failed session entry
                 logging.debug("Could not unload ONNX model", exc_info=True)
             if isinstance(e, ModelValidationError):
                 raise e
+            if isinstance(e, (ImportError, ModuleNotFoundError)):
+                raise ModelValidationError(
+                    f"Optional ML dependency 'onnxruntime' is not installed ({e}). "
+                    "Install 'smart-autosorter[ml]' to enable semantic embeddings."
+                ) from e
             raise ModelValidationError(
                 f"ONNX session initialization or dimension extraction failed: {e}"
             ) from e

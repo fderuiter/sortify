@@ -6,6 +6,7 @@ import json
 import logging
 import os
 import shutil
+import tempfile
 import threading
 import urllib.error
 import urllib.parse
@@ -18,7 +19,19 @@ from app.core.progress import ProgressUpdate, emit_progress
 
 logger = logging.getLogger(__name__)
 
-DEFAULT_MODEL_URL = "https://huggingface.co/sentence-transformers/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx"
+DEFAULT_MODEL_URL = (
+    "https://huggingface.co/Xenova/all-MiniLM-L6-v2/resolve/main/onnx/model.onnx"
+)
+
+_REQUIRED_BUNDLE_FILES: tuple[str, ...] = (
+    "model.onnx",
+    "config.json",
+    "tokenizer.json",
+    "tokenizer_config.json",
+    "special_tokens_map.json",
+    "vocab.txt",
+    "version.txt",
+)
 
 
 class DownloadError(DownloaderError):
@@ -34,17 +47,45 @@ _LOCAL_HOSTNAMES: frozenset[str] = frozenset(
 )
 
 
-def _is_allowed_model_host(hostname: str) -> bool:
+def _normalize_trusted_model_hosts(trusted_hosts=None) -> frozenset[str]:
+    """Normalize optional configured trusted hostnames alongside default Hugging Face hosts."""
+    combined = set(_ALLOWED_MODEL_HOSTS)
+    if not trusted_hosts:
+        return frozenset(combined)
+    for raw_host in trusted_hosts:
+        if not isinstance(raw_host, str):
+            continue
+        candidate = raw_host.strip().lower().rstrip(".")
+        if "://" in candidate:
+            parsed_cand = urllib.parse.urlsplit(candidate)
+            candidate = (parsed_cand.hostname or "").strip().lower().rstrip(".")
+        if (
+            not candidate
+            or candidate.startswith(".")
+            or candidate in _LOCAL_HOSTNAMES
+            or candidate.endswith(".local")
+            or candidate.endswith(".localhost")
+        ):
+            continue
+        try:
+            ipaddress.ip_address(candidate)
+        except ValueError:
+            combined.add(candidate)
+    return frozenset(combined)
+
+
+def _is_allowed_model_host(hostname: str, trusted_hosts=None) -> bool:
     """Check if the given hostname matches an allowed model host or trusted subdomain."""
     host = hostname.lower().rstrip(".")
     if not host or host.startswith("."):
         return False
-    return host in _ALLOWED_MODEL_HOSTS or any(
-        host.endswith(f".{allowed}") for allowed in _ALLOWED_MODEL_HOSTS
+    allowed_set = _normalize_trusted_model_hosts(trusted_hosts)
+    return host in allowed_set or any(
+        host.endswith(f".{allowed}") for allowed in allowed_set
     )
 
 
-def _validate_url(url: str) -> None:
+def _validate_url(url: str, trusted_hosts=None) -> None:
     """Validate that the model download URL uses HTTPS and points to an allowed model host.
 
     Rejects non-HTTPS schemes, private/loopback/link-local IP addresses, empty hostnames,
@@ -56,7 +97,7 @@ def _validate_url(url: str) -> None:
     cleaned_url = url.strip()
     try:
         parsed = urllib.parse.urlsplit(cleaned_url)
-    except Exception as e:
+    except ValueError as e:
         raise DownloadError(f"Malformed model download URL: {e}") from e
 
     scheme = (parsed.scheme or "").lower()
@@ -104,7 +145,7 @@ def _validate_url(url: str) -> None:
         )
 
     # Restrict to trusted model hosts
-    if not _is_allowed_model_host(host_clean):
+    if not _is_allowed_model_host(host_clean, trusted_hosts=trusted_hosts):
         raise DownloadError(
             f"Untrusted model download host: {hostname}. Only trusted model hosts are permitted."
         )
@@ -391,6 +432,18 @@ class DownloadManager(LifecycleTelemetryMixin):
             self._opener = urllib.request.build_opener(*handlers)
             return self._opener
 
+    def _get_trusted_hosts(self) -> frozenset[str]:
+        """Return normalized trusted model download hostnames including configured mirrors."""
+        raw_hosts = getattr(self._settings, "TRUSTED_MODEL_HOSTS", None)
+        if raw_hosts is None:
+            try:
+                from app.config import AppSettings
+
+                raw_hosts = AppSettings().TRUSTED_MODEL_HOSTS
+            except (OSError, ValueError, RuntimeError):
+                raw_hosts = None
+        return _normalize_trusted_model_hosts(raw_hosts)
+
     def start_download(self, url: str, model_dir: str, proxy: str = ""):
         """Initiate model download thread-safely if not already downloading."""
         with self._manager_lock:
@@ -400,7 +453,7 @@ class DownloadManager(LifecycleTelemetryMixin):
             ):
                 raise DownloadError("An installation is already underway.")
 
-            _validate_url(url)
+            _validate_url(url, trusted_hosts=self._get_trusted_hosts())
 
             self.cancel_event.clear()
             self._transition_to_locked(DownloadState.DOWNLOADING)
@@ -607,23 +660,168 @@ def verify_temp_file_hash(temp_path: str, target_path: str) -> bool:
     return True
 
 
-def verify_downloaded_model(model_dir: str) -> bool:
-    """Verify integrity of the completed download.
+def _inspect_model_bundle(model_dir: str) -> tuple[str, str]:
+    """Inspect a local model directory and return `(status_code, detail_message)`.
 
-    Checks if model.onnx and config.json exist, are non-empty, and valid.
+    Status codes are `'missing'`, `'incomplete'`, `'corrupted'`, or `'valid'`.
     """
+    if not model_dir or not os.path.isdir(model_dir):
+        return ("missing", "Model directory does not exist.")
+
     onnx_file = os.path.join(model_dir, "model.onnx")
+    if not os.path.isfile(onnx_file) or os.path.getsize(onnx_file) == 0:
+        return ("missing", "Model weights (model.onnx) are missing or empty.")
+
+    from app.core.shared_registry import SharedModelRegistry
+
+    registry = SharedModelRegistry.get_instance()
+    expected_hashes = registry.get_expected_hashes("model_download")
+
+    # Preserve explicit single-file test overrides while enforcing the full 7-file bundle by default
+    if expected_hashes and set(expected_hashes.keys()) == {"model.onnx"}:
+        required_files: tuple[str, ...] = ("model.onnx", "config.json")
+    else:
+        combined_req = list(_REQUIRED_BUNDLE_FILES)
+        for fname in expected_hashes:
+            if fname not in combined_req:
+                combined_req.append(fname)
+        required_files = tuple(combined_req)
+
+    missing_files = [
+        fname
+        for fname in required_files
+        if not os.path.isfile(os.path.join(model_dir, fname))
+        or os.path.getsize(os.path.join(model_dir, fname)) == 0
+    ]
+    if missing_files:
+        return (
+            "incomplete",
+            f"Missing required files: {', '.join(missing_files)}",
+        )
+
     config_file = os.path.join(model_dir, "config.json")
-    if not os.path.exists(onnx_file) or os.path.getsize(onnx_file) == 0:
-        return False
-    if not os.path.exists(config_file):
-        return False
     try:
-        with open(config_file, "r", encoding="utf-8") as f:
-            json.load(f)
+        with open(config_file, "r", encoding="utf-8") as cf:
+            cfg_obj = json.load(cf)
+        if not isinstance(cfg_obj, dict):
+            return ("corrupted", "config.json must contain a JSON object.")
     except (OSError, ValueError):
-        return False
-    return True
+        return ("corrupted", "config.json is unreadable or invalid JSON.")
+
+    if expected_hashes:
+        from app.core.resilient_file_ops import resilient_file_hash
+
+        for fname, exp_hash in expected_hashes.items():
+            fpath = os.path.join(model_dir, fname)
+            if not os.path.isfile(fpath):
+                return ("incomplete", f"Missing required file: {fname}")
+            try:
+                actual_hash = resilient_file_hash(fpath, chunk_size=65536)
+            except OSError:
+                return (
+                    "corrupted",
+                    f"Could not read {fname} for SHA-256 verification.",
+                )
+            if actual_hash != exp_hash:
+                return ("corrupted", f"SHA-256 digest mismatch for {fname}.")
+
+    return ("valid", "All model and tokenizer files passed verification.")
+
+
+def verify_downloaded_model(model_dir: str) -> bool:
+    """Verify integrity of the completed model bundle download.
+
+    Returns True only when `model.onnx`, `config.json`, and all required tokenizer
+    and bundle files exist and pass cryptographic SHA-256 verification.
+    """
+    status_code, _ = _inspect_model_bundle(model_dir)
+    return status_code == "valid"
+
+
+def _derive_repo_resolve_base(model_url: str) -> str:
+    """Derive the repository `/resolve/<revision>` base URL from a model weight URL."""
+    clean = model_url.strip()
+    parsed = urllib.parse.urlsplit(clean)
+    path = parsed.path or ""
+    if path.endswith("/onnx/model.onnx"):
+        base_path = path[: -len("/onnx/model.onnx")]
+    elif path.endswith("/model.onnx"):
+        base_path = path[: -len("/model.onnx")]
+    else:
+        base_path = path.rsplit("/", 1)[0]
+    return urllib.parse.urlunsplit((parsed.scheme, parsed.netloc, base_path, "", ""))
+
+
+def _resolve_bundle_plan(
+    url: str,
+) -> tuple[dict[str, str], dict[str, str], dict[str, str]]:
+    """Build `(remote_files, generated_files, expected_hashes)` for `run_background_download`."""
+    from app.core.shared_registry import SharedModelRegistry
+
+    expected_hashes = dict(
+        SharedModelRegistry.get_instance().get_expected_hashes("model_download") or {}
+    )
+
+    if expected_hashes and set(expected_hashes.keys()) == {"model.onnx"}:
+        return (
+            {"model.onnx": url},
+            {"config.json": json.dumps({"model_type": "onnx", "dimensions": 384})},
+            expected_hashes,
+        )
+
+    base_url = _derive_repo_resolve_base(url)
+    remote_files: dict[str, str] = {"model.onnx": url}
+    companion_names = (
+        "config.json",
+        "tokenizer.json",
+        "tokenizer_config.json",
+        "special_tokens_map.json",
+        "vocab.txt",
+    )
+    for fname in companion_names:
+        if not expected_hashes or fname in expected_hashes:
+            remote_files[fname] = f"{base_url}/{fname}"
+
+    for fname in expected_hashes:
+        if fname not in remote_files and fname != "version.txt":
+            remote_files[fname] = f"{base_url}/{fname}"
+
+    generated_files: dict[str, str] = {}
+    if not expected_hashes or "version.txt" in expected_hashes:
+        generated_files["version.txt"] = "1.0.0"
+
+    return (remote_files, generated_files, expected_hashes)
+
+
+def _activate_staged_bundle(staging_dir: str, model_dir: str) -> None:
+    """Atomically promote a verified `staging_dir` bundle to `model_dir`."""
+    if not os.path.exists(model_dir):
+        os.replace(staging_dir, model_dir)
+        return
+
+    backup_dir = f"{staging_dir}_prev"
+    try:
+        os.replace(model_dir, backup_dir)
+        try:
+            os.replace(staging_dir, model_dir)
+        except OSError:
+            with contextlib.suppress(OSError):
+                os.replace(backup_dir, model_dir)
+            raise
+        shutil.rmtree(backup_dir, ignore_errors=True)
+    except PermissionError:
+        moved_targets: list[str] = []
+        try:
+            for entry in os.listdir(staging_dir):
+                src = os.path.join(staging_dir, entry)
+                dst = os.path.join(model_dir, entry)
+                os.replace(src, dst)
+                moved_targets.append(dst)
+        except OSError:
+            for dst in moved_targets:
+                with contextlib.suppress(OSError):
+                    os.remove(dst)
+            raise
 
 
 def run_background_download(
@@ -639,17 +837,37 @@ def run_background_download(
     backoff_factor: float = 2.0,
     max_retries: int = 3,
 ):
-    """Run model download in a dedicated background thread that bypasses sandboxing."""
+    """Run model bundle download in a dedicated background thread that bypasses sandboxing."""
     if cancel_event is None:
         cancel_event = threading.Event()
 
     def thread_target():
-        # Validate URL scheme and destination host before security advisory check and sandbox unblocking
+        dm = download_manager
+        if dm is not None and hasattr(dm, "_get_trusted_hosts"):
+            trusted_hosts = dm._get_trusted_hosts()
+        else:
+            raw_hosts = getattr(
+                getattr(dm, "_settings", None), "TRUSTED_MODEL_HOSTS", None
+            )
+            if raw_hosts is None:
+                try:
+                    from app.config import AppSettings
+
+                    raw_hosts = AppSettings().TRUSTED_MODEL_HOSTS
+                except (OSError, ValueError, RuntimeError):
+                    raw_hosts = None
+            trusted_hosts = _normalize_trusted_model_hosts(raw_hosts)
+
+        # Validate primary URL and derived bundle URLs before security advisory check or sandbox unblocking
         try:
-            _validate_url(url)
-        except Exception as val_err:
+            _validate_url(url, trusted_hosts=trusted_hosts)
+            remote_files, generated_files, expected_hashes = _resolve_bundle_plan(url)
+            for remote_url in remote_files.values():
+                _validate_url(remote_url, trusted_hosts=trusted_hosts)
+        except Exception as val_err:  # noqa: BLE001 - report validation errors via on_failure callback
             logger.warning(
-                f"Model download URL validation failed: {val_err}",
+                "Model download URL validation failed: %s",
+                val_err,
                 exc_info=True,
             )
             err = (
@@ -667,9 +885,10 @@ def run_background_download(
 
             advisory_client = SecurityAdvisoryClient.get_instance()
             advisory_client.check_advisory(repo_id=url)
-        except Exception as adv_err:
+        except Exception as adv_err:  # noqa: BLE001 - report advisory failures via on_failure callback
             logger.warning(
-                f"Pre-download security advisory check failed: {adv_err}",
+                "Pre-download security advisory check failed: %s",
+                adv_err,
                 exc_info=True,
             )
             if isinstance(adv_err, (DownloadError, DownloaderError)):
@@ -683,19 +902,17 @@ def run_background_download(
 
         from app.core.network_guard import unblock_external_network
 
+        staging_dir: str | None = None
+        abs_model_dir = os.path.abspath(model_dir)
+        parent_dir = os.path.dirname(abs_model_dir) or "."
+
         # Bypass application sandboxing on this dedicated thread after advisory check passes
         try:
             with unblock_external_network(reason="model download execution"):
-                # Create model directory
-                os.makedirs(model_dir, exist_ok=True)
-                target_path = os.path.join(model_dir, "model.onnx")
-                temp_path = target_path + ".tmp"
-
-                dm = download_manager
                 if dm is None:
                     try:
                         dm = DownloadManager.get_instance()
-                    except Exception:
+                    except Exception:  # noqa: BLE001 - fallback to direct opener if singleton init fails
                         logger.debug(
                             "DownloadManager unavailable; using direct opener",
                             exc_info=True,
@@ -719,186 +936,240 @@ def run_background_download(
                         handlers.append(urllib.request.ProxyHandler({}))
                     return urllib.request.build_opener(*handlers)
 
-                bytes_downloaded = 0
-                total_size = 0
+                os.makedirs(parent_dir, exist_ok=True)
+                staging_dir = tempfile.mkdtemp(prefix=".model_staging_", dir=parent_dir)
+
+                disk_probe_path = (
+                    abs_model_dir if os.path.exists(abs_model_dir) else parent_dir
+                )
                 chunk_size = 1024 * 64
-                retries = 0
+                total_files_count = max(len(remote_files), 1)
+                cumulative_bytes = 0
 
-                while True:
-                    try:
-                        if cancel_event.is_set():
-                            raise DownloadCancelledError(
-                                "Download was cancelled by the user."
+                for file_idx, (fname, file_url) in enumerate(remote_files.items()):
+                    staged_target = os.path.join(staging_dir, fname)
+                    staged_tmp = f"{staged_target}.tmp"
+                    retries = 0
+
+                    while True:
+                        try:
+                            if cancel_event.is_set():
+                                raise DownloadCancelledError(
+                                    "Download was cancelled by the user."
+                                )
+
+                            opener = get_current_opener()
+                            req = urllib.request.Request(
+                                file_url,
+                                headers={"User-Agent": "Smart-AutoSorter/1.0"},
                             )
 
-                        opener = get_current_opener()
-                        req = urllib.request.Request(
-                            url, headers={"User-Agent": "Smart-AutoSorter/1.0"}
-                        )
+                            file_bytes = 0
+                            with opener.open(req, timeout=15) as response:
+                                total_size = int(
+                                    response.info().get("Content-Length", 0) or 0
+                                )
 
-                        mode = "wb"
-                        bytes_downloaded = 0
-                        with opener.open(req, timeout=15) as response:
-                            total_size = int(response.info().get("Content-Length", 0))
-
-                            # Proactive disk space check
-                            if total_size > 0:
-                                try:
-                                    _, _, free = shutil.disk_usage(model_dir)
-                                    if free < total_size:
-                                        raise DiskSpaceError(
-                                            f"Insufficient disk space. Required: {total_size} bytes, Free: {free} bytes."
-                                        )
-                                except OSError as e:
-                                    logger.warning(
-                                        f"Could not retrieve disk usage: {e}"
-                                    )
-
-                            with open(temp_path, mode) as f:
-                                while True:
-                                    if cancel_event.is_set():
-                                        raise DownloadCancelledError(
-                                            "Download was cancelled by the user."
-                                        )
-
+                                if total_size > 0:
                                     try:
-                                        chunk = response.read(chunk_size)
-                                    except Exception as e:
-                                        raise NetworkError(
-                                            f"Network error during read: {e}"
-                                        ) from e
-
-                                    if not chunk:
-                                        break
-
-                                    try:
-                                        f.write(chunk)
-                                    except OSError as e:
-                                        if e.errno == 28 or "No space" in str(e):
+                                        _, _, free = shutil.disk_usage(disk_probe_path)
+                                        if free < total_size:
                                             raise DiskSpaceError(
-                                                "Insufficient disk space on the target drive."
+                                                f"Insufficient disk space. Required: {total_size} bytes, Free: {free} bytes."
+                                            )
+                                    except OSError as e:
+                                        logger.warning(
+                                            "Could not retrieve disk usage: %s", e
+                                        )
+
+                                with open(staged_tmp, "wb") as f:
+                                    while True:
+                                        if cancel_event.is_set():
+                                            raise DownloadCancelledError(
+                                                "Download was cancelled by the user."
+                                            )
+
+                                        try:
+                                            chunk = response.read(chunk_size)
+                                        except Exception as e:  # noqa: BLE001 - normalize transport read failures
+                                            raise NetworkError(
+                                                f"Network error during read: {e}"
                                             ) from e
-                                        raise DiskSpaceError(
-                                            f"Local file write error: {e}"
-                                        ) from e
 
-                                    bytes_downloaded += len(chunk)
-                                    ratio = (
-                                        (bytes_downloaded / total_size)
-                                        if total_size > 0
-                                        else 0.0
-                                    )
-                                    msg = (
-                                        f"Downloaded {bytes_downloaded / (1024 * 1024):.2f}MB of {total_size / (1024 * 1024):.2f}MB ({ratio * 100:.1f}%)"
-                                        if total_size > 0
-                                        else f"Downloaded {bytes_downloaded / (1024 * 1024):.2f}MB..."
-                                    )
-                                    emit_progress(
-                                        progress_callback,
-                                        progress_or_update=ratio,
-                                        stage=msg,
-                                        unit_count=bytes_downloaded,
-                                        unit_type="bytes",
-                                    )
-                        # Download succeeded
-                        break
+                                        if not chunk:
+                                            break
 
-                    except (DownloadCancelledError, DiskSpaceError):
-                        raise
-                    except Exception as net_err:
-                        if cancel_event.is_set():
-                            raise DownloadCancelledError(
-                                "Download was cancelled by the user."
-                            )
-                        if isinstance(net_err, DownloadError) and not isinstance(
-                            net_err, NetworkError
-                        ):
+                                        try:
+                                            f.write(chunk)
+                                        except OSError as e:
+                                            if e.errno == 28 or "No space" in str(e):
+                                                raise DiskSpaceError(
+                                                    "Insufficient disk space on the target drive."
+                                                ) from e
+                                            raise DiskSpaceError(
+                                                f"Local file write error: {e}"
+                                            ) from e
+
+                                        file_bytes += len(chunk)
+                                        file_ratio = (
+                                            (file_bytes / total_size)
+                                            if total_size > 0
+                                            else 0.0
+                                        )
+                                        if total_files_count == 1:
+                                            overall_ratio = file_ratio
+                                        elif fname == "model.onnx":
+                                            overall_ratio = 0.85 * file_ratio
+                                        else:
+                                            rem_count = max(total_files_count - 1, 1)
+                                            overall_ratio = 0.85 + 0.14 * (
+                                                (max(file_idx - 1, 0) + file_ratio)
+                                                / rem_count
+                                            )
+
+                                        msg = (
+                                            f"Downloaded {file_bytes / (1024 * 1024):.2f}MB of {total_size / (1024 * 1024):.2f}MB ({overall_ratio * 100:.1f}%) [{fname}]"
+                                            if total_size > 0
+                                            else f"Downloaded {file_bytes / (1024 * 1024):.2f}MB [{fname}]..."
+                                        )
+                                        emit_progress(
+                                            progress_callback,
+                                            progress_or_update=min(
+                                                0.99, max(0.0, overall_ratio)
+                                            ),
+                                            stage=msg,
+                                            unit_count=cumulative_bytes + file_bytes,
+                                            unit_type="bytes",
+                                        )
+
+                            cumulative_bytes += file_bytes
+                            break
+
+                        except (DownloadCancelledError, DiskSpaceError):
                             raise
-                        if isinstance(
-                            net_err, NetworkError
-                        ) and "Invalid proxy configuration" in str(net_err):
-                            raise net_err
+                        except Exception as net_err:  # noqa: BLE001 - retry transient network failures with backoff
+                            if os.path.exists(staged_tmp):
+                                with contextlib.suppress(OSError):
+                                    os.remove(staged_tmp)
 
-                        retries += 1
-                        if retries > max_retries:
-                            if isinstance(net_err, DownloadError):
+                            if cancel_event.is_set():
+                                raise DownloadCancelledError(
+                                    "Download was cancelled by the user."
+                                ) from net_err
+                            if isinstance(net_err, DownloadError) and not isinstance(
+                                net_err, NetworkError
+                            ):
+                                raise
+                            if isinstance(
+                                net_err, NetworkError
+                            ) and "Invalid proxy configuration" in str(net_err):
                                 raise net_err
-                            raise NetworkError(str(net_err)) from net_err
 
-                        delay = initial_delay * (backoff_factor ** (retries - 1))
-                        logger.info(
-                            f"Retrying download operation ({retries}/{max_retries}) after {delay:.2f}s delay: {net_err}"
-                        )
+                            retries += 1
+                            if retries > max_retries:
+                                if isinstance(net_err, DownloadError):
+                                    raise net_err
+                                raise NetworkError(str(net_err)) from net_err
 
-                        # Wait for backoff delay or until cancelled
-                        if cancel_event.wait(delay) or cancel_event.is_set():
-                            raise DownloadCancelledError(
-                                "Download was cancelled by the user."
+                            delay = initial_delay * (backoff_factor ** (retries - 1))
+                            logger.info(
+                                "Retrying download operation (%d/%d) for %s after %.2fs delay: %s",
+                                retries,
+                                max_retries,
+                                fname,
+                                delay,
+                                net_err,
                             )
 
-                        # Reset bytes_downloaded for standard download stream restart
-                        bytes_downloaded = 0
+                            if cancel_event.wait(delay) or cancel_event.is_set():
+                                raise DownloadCancelledError(
+                                    "Download was cancelled by the user."
+                                )
 
-                # Requirement 3 & Zero-Trust File Finalization: Calculate and verify cryptographic hash before moving to final destination
-                verify_temp_file_hash(temp_path, target_path)
+                    # Verify cryptographic SHA-256 digest of each staged file before promoting
+                    verify_temp_file_hash(
+                        staged_tmp, os.path.join(abs_model_dir, fname)
+                    )
+                    if expected_hashes and fname in expected_hashes:
+                        from app.core.resilient_file_ops import resilient_file_hash
 
-                # If verification passes, finalize and rename it and write config
-                if os.path.exists(temp_path):
-                    if os.path.exists(target_path):
-                        os.remove(target_path)
-                    os.rename(temp_path, target_path)
+                        actual_digest = resilient_file_hash(
+                            staged_tmp, chunk_size=65536
+                        )
+                        if actual_digest != expected_hashes[fname]:
+                            with contextlib.suppress(OSError):
+                                os.remove(staged_tmp)
+                            raise ModelVerificationError(
+                                f"Cryptographic signature verification failed for {fname}.\n"
+                                f"Expected: {expected_hashes[fname]}\n"
+                                f"Actual: {actual_digest}"
+                            )
+                    os.replace(staged_tmp, staged_target)
 
-                # Write a placeholder config.json next to it
-                config_path = os.path.join(model_dir, "config.json")
-                with open(config_path, "w", encoding="utf-8") as cf:
-                    json.dump({"model_type": "onnx", "dimensions": 384}, cf)
+                # Stage local metadata files (e.g., version.txt) and verify their SHA-256 digests
+                for gen_name, gen_content in generated_files.items():
+                    if cancel_event.is_set():
+                        raise DownloadCancelledError(
+                            "Download was cancelled by the user."
+                        )
+                    gen_tmp = os.path.join(staging_dir, f"{gen_name}.tmp")
+                    gen_target = os.path.join(staging_dir, gen_name)
+                    with open(gen_tmp, "w", encoding="utf-8", newline="\n") as gf:
+                        gf.write(gen_content)
+                    if expected_hashes and gen_name in expected_hashes:
+                        verify_temp_file_hash(
+                            gen_tmp, os.path.join(abs_model_dir, gen_name)
+                        )
+                    os.replace(gen_tmp, gen_target)
 
-                # Requirement 6: Run integrity verification on completed download
-                if not verify_downloaded_model(model_dir):
+                # Verify full staged bundle integrity before atomic activation
+                if not verify_downloaded_model(staging_dir):
                     raise DownloadError(
-                        "Integrity verification failed for the downloaded model."
+                        "Integrity verification failed for the staged model bundle."
                     )
 
                 if cancel_event and cancel_event.is_set():
                     raise DownloadCancelledError("Download was cancelled by the user.")
 
+                _activate_staged_bundle(staging_dir, abs_model_dir)
+
                 if on_success:
                     on_success()
 
         except DownloadCancelledError as e:
-            # Clean up temp files
-            temp_path = os.path.join(model_dir, "model.onnx.tmp")
+            if staging_dir and os.path.exists(staging_dir):
+                shutil.rmtree(staging_dir, ignore_errors=True)
+            temp_path = os.path.join(abs_model_dir, "model.onnx.tmp")
             if os.path.exists(temp_path):
                 with contextlib.suppress(OSError):
                     os.remove(temp_path)
-            target_path = os.path.join(model_dir, "model.onnx")
-            if os.path.exists(target_path):
-                with contextlib.suppress(OSError):
-                    os.remove(target_path)
             if on_failure:
                 on_failure(e)
 
         except DiskSpaceError as e:
-            # Clean up temp files
-            temp_path = os.path.join(model_dir, "model.onnx.tmp")
+            if staging_dir and os.path.exists(staging_dir):
+                shutil.rmtree(staging_dir, ignore_errors=True)
+            temp_path = os.path.join(abs_model_dir, "model.onnx.tmp")
             if os.path.exists(temp_path):
                 with contextlib.suppress(OSError):
                     os.remove(temp_path)
             if on_failure:
                 on_failure(e)
 
-        except Exception as e:
+        except Exception as e:  # noqa: BLE001 - ensure immediate staging cleanup and error callback reporting
             logger.debug("Model download failed", exc_info=True)
-            # Clean up temp files
-            temp_path = os.path.join(model_dir, "model.onnx.tmp")
+            if staging_dir and os.path.exists(staging_dir):
+                shutil.rmtree(staging_dir, ignore_errors=True)
+            temp_path = os.path.join(abs_model_dir, "model.onnx.tmp")
             if os.path.exists(temp_path):
                 try:
                     os.remove(temp_path)
                 except OSError as cleanup_err:
                     logger.warning(
-                        f"Failed to clean up temporary file {temp_path}: {cleanup_err}"
+                        "Failed to clean up temporary file %s: %s",
+                        temp_path,
+                        cleanup_err,
                     )
-            # Wrap as NetworkError if not already a subclass of DownloadError or DownloaderError
             if isinstance(e, (DownloadError, DownloaderError)):
                 err = e
             else:
@@ -906,6 +1177,9 @@ def run_background_download(
                 err.__cause__ = e
             if on_failure:
                 on_failure(err)
+        finally:
+            if staging_dir and os.path.exists(staging_dir):
+                shutil.rmtree(staging_dir, ignore_errors=True)
 
     from app.core.shared_registry import ContextPropagatingThread
 
