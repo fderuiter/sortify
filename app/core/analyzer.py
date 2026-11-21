@@ -813,10 +813,42 @@ class IncrementalAnalyzer:
                     if d[0] in norm_target_paths
                     or os.path.normpath(d[0]).replace("\\", "/") in norm_target_paths
                 ]
-            if not docs and not jev_results:
-                return self._build_sorting_plan({}, invalid_locks=invalid_locks)
             if docs is None:
                 docs = []
+
+            from app.core.quarantine_interceptor import _is_content_approved_for_release
+            from app.core.scanner import parse_item_identifier
+
+            auto_quarantine_ratings = {
+                str(r).upper()
+                for r in (
+                    getattr(runtime_settings, "AUTO_QUARANTINE_RATINGS", []) or []
+                )
+                if r
+            }
+            quarantine_dir_name = (
+                getattr(
+                    runtime_settings, "QUARANTINE_DIR_NAME", "_Compliance_Quarantine"
+                )
+                or "_Compliance_Quarantine"
+            )
+            qdir_top = quarantine_dir_name.replace("\\", "/").strip("/").split("/")[0]
+
+            def _is_quarantine_rel_path(path_val: str) -> bool:
+                if not path_val:
+                    return False
+                _, clean_rel = parse_item_identifier(str(path_val), base_dir)
+                top_seg = clean_rel.replace("\\", "/").strip("/").split("/")[0]
+                return (
+                    top_seg.startswith("_Quarantine_Staging")
+                    or top_seg.startswith("_Compliance_Quarantine")
+                    or (bool(qdir_top) and top_seg == qdir_top)
+                )
+
+            if docs:
+                docs = [d for d in docs if not _is_quarantine_rel_path(d[0])]
+            if not docs and not jev_results:
+                return self._build_sorting_plan({}, invalid_locks=invalid_locks)
 
             from app.core.extractor_strategies import registry
             from app.core.jev_classifier import JevClassifierEngine
@@ -852,12 +884,16 @@ class IncrementalAnalyzer:
             historical_overrides = {}
             matched_policies_map = {}
 
-            # Map file hashes to their historical targets
+            # Map file hashes to their historical targets (excluding quarantine staging/hold folders)
             hash_to_target = {}
             for d in docs:
                 if cancel_check and cancel_check():
                     return SortingPlan()
-                if len(d) > 3 and d[3] is not None:
+                if (
+                    len(d) > 3
+                    and d[3] is not None
+                    and not _is_quarantine_rel_path(d[3])
+                ):
                     hash_to_target[d[2]] = d[3]
 
             for d in docs:
@@ -866,6 +902,10 @@ class IncrementalAnalyzer:
                 f, doc = d[0], d[1]
                 file_hash = d[2] if len(d) > 2 else None
                 assigned_folder = d[3] if len(d) > 3 else None
+                if assigned_folder is not None and _is_quarantine_rel_path(
+                    assigned_folder
+                ):
+                    assigned_folder = None
 
                 target = (
                     assigned_folder
@@ -931,10 +971,17 @@ class IncrementalAnalyzer:
                         ai_documents.append(doc)
                     continue
 
-                if target is not None:
+                if locked_files and f in locked_files and target is not None:
                     historical_overrides[f] = (target, status_match)
-                    if locked_files and f in locked_files:
-                        continue
+                    continue
+
+                src_root, rel_f = parse_item_identifier(f, base_dir)
+                abs_f = (
+                    os.path.join(src_root, rel_f)
+                    if src_root and not os.path.isabs(rel_f)
+                    else rel_f
+                )
+                abs_src_root = os.path.abspath(src_root) if src_root else ""
 
                 matched = False
                 jev_res = None
@@ -952,17 +999,78 @@ class IncrementalAnalyzer:
                             jev_res = v_jev
                             break
 
-                    if jev_res:
-                        jev_model = validate_jev_classification_result(jev_res)
-                        if (
-                            jev_model.is_classified
-                            and jev_model.confidence > 0.0
-                            and jev_model.category != "Unclassified"
-                        ):
-                            jev_plan_files.append(
-                                (f, jev_model.category, jev_model, status_match)
+                if jev_res:
+                    jev_model = validate_jev_classification_result(jev_res)
+                    sens_upper = str(jev_model.sensitivity_rating or "LOW").upper()
+                    if (
+                        sens_upper in auto_quarantine_ratings
+                        and not _is_content_approved_for_release(
+                            self.db,
+                            base_dir=abs_src_root,
+                            file_path=abs_f,
+                        )
+                    ):
+                        jev_plan_files.append(
+                            (f, quarantine_dir_name, jev_model, status_match)
+                        )
+                        continue
+                    if target is not None:
+                        historical_overrides[f] = (target, status_match)
+                    if (
+                        jev_model.is_classified
+                        and jev_model.confidence > 0.0
+                        and jev_model.category != "Unclassified"
+                    ):
+                        jev_plan_files.append(
+                            (f, jev_model.category, jev_model, status_match)
+                        )
+                        matched = True
+                elif auto_quarantine_ratings:
+                    try:
+                        from app.core.shared_registry import SharedModelRegistry
+
+                        jev_engine = (
+                            SharedModelRegistry.get_instance().get_jev_classifier()
+                        )
+                        if jev_engine:
+                            auto_jev_res = jev_engine.classify(
+                                abs_f,
+                                text_content=None if status_match else doc,
                             )
-                            matched = True
+                            if auto_jev_res:
+                                auto_jev_model = validate_jev_classification_result(
+                                    auto_jev_res
+                                )
+                                sens_upper = str(
+                                    auto_jev_model.sensitivity_rating or "LOW"
+                                ).upper()
+                                if (
+                                    sens_upper in auto_quarantine_ratings
+                                    and not _is_content_approved_for_release(
+                                        self.db,
+                                        base_dir=abs_src_root,
+                                        file_path=abs_f,
+                                    )
+                                ):
+                                    jev_plan_files.append(
+                                        (
+                                            f,
+                                            quarantine_dir_name,
+                                            auto_jev_model,
+                                            status_match,
+                                        )
+                                    )
+                                    continue
+                    except Exception as e:
+                        logging.warning(
+                            f"Auto-quarantine Jev sensitivity evaluation failed for '{f}': {e}",
+                            exc_info=True,
+                        )
+                    if target is not None:
+                        historical_overrides[f] = (target, status_match)
+                else:
+                    if target is not None:
+                        historical_overrides[f] = (target, status_match)
 
                 if not matched and keyword_rules:
                     for keyword, target_folder in keyword_rules.items():
@@ -1013,11 +1121,33 @@ class IncrementalAnalyzer:
                 for k_jev, v_jev in jev_results.items():
                     f_path = str(k_jev)
                     if (
-                        f_path not in processed_files
+                        not _is_quarantine_rel_path(f_path)
+                        and f_path not in processed_files
                         and os.path.basename(f_path) not in processed_files
                     ):
                         v_jev_model = validate_jev_classification_result(v_jev)
+                        sens_upper = str(
+                            v_jev_model.sensitivity_rating or "LOW"
+                        ).upper()
+                        src_r, rel_r = parse_item_identifier(f_path, base_dir)
+                        abs_r = (
+                            os.path.join(src_r, rel_r)
+                            if src_r and not os.path.isabs(rel_r)
+                            else rel_r
+                        )
                         if (
+                            sens_upper in auto_quarantine_ratings
+                            and not _is_content_approved_for_release(
+                                self.db,
+                                base_dir=os.path.abspath(src_r) if src_r else "",
+                                file_path=abs_r,
+                            )
+                        ):
+                            jev_plan_files.append(
+                                (f_path, quarantine_dir_name, v_jev_model, None)
+                            )
+                            processed_files.add(f_path)
+                        elif (
                             v_jev_model.is_classified
                             and v_jev_model.confidence > 0.0
                             and v_jev_model.category != "Unclassified"
