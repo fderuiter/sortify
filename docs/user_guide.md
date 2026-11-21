@@ -189,24 +189,45 @@ Use the following shortcuts and button controls:
 The **Import External Rules** modal lets you import rules from third-party tools into Sortify:
 
 #### Supported Importers
-- **Hazel (`.hazelrules`, `.plist`)**: Parses Apple property list rule packages (`HazelRuleImporter`). Extracted conditions (e.g. filename contains or extension matches) and move actions are converted into Sortify keyword rules and pattern policies.
-- **DropIt (`.xml`, `.json`, `.dropit`, `.ini`)**: Parses DropIt profiles and association packages (`DropItRuleImporter`), translating associations into keyword rules and matching policies.
-- **TagSpaces (`taggroup.json`, `taggroups.json`)**: Parses TagSpaces tag taxonomy exports (`TagSpacesRuleImporter`), converting tag groupings into keyword-to-folder sorting rules.
+- **Hazel (`.hazelrules`, `.plist`)**: Parses Apple property list rule packages (`HazelRuleImporter`). Extracted conditions (such as filename contains, wildcard masks, or extension matches), move actions, and archive extraction actions (`NSRuleActionUnarchive` / `Unarchive`) are converted into Sortify keyword rules and policies.
+- **DropIt (`.ini`, `.xml`, `.json`, `.dropit`)**: Parses DropIt INI, XML, and JSON association packages (`DropItRuleImporter`), translating move and archive extraction (`Extract` / `Unarchive`) rules into keyword rules and glob/extension pattern policies (`*`, `?`, `[...]`, `.pdf`).
+- **TagSpaces (`taggroup.json`, `taggroups.json`)**: Parses TagSpaces tag taxonomy and smart rule exports (`TagSpacesRuleImporter`), converting tag groupings and matchers into sorting rules.
+- **Sortify JSON (`*.json`)**: Imports native Sortify JSON rule backups (`SortifyRuleImporter`).
 
 #### Import Workflow
-1. Enter the full path to your rule file in the input field (for example, `/path/to/rules.hazelrules` or `taggroup.json`).
-2. Select **Parse File** (`#btn-parse-rule-file`) or press `[Enter]`.
-3. Inspect the parsed preview:
-   - **Imported Keywords**: Displays extracted keyword mappings and their designated destination folders.
-   - **Imported Policies**: Displays rule types, expressions or patterns, target paths, and rule priorities.
-   - **Warnings Banner**: Highlights unmapped operators or syntax anomalies.
-4. Resolve any detected conflicts (see [Conflict Resolution](#conflict-resolution) below).
-5. Select **Merge Rules into Settings** (`#btn-merge-imported-rules`) to commit the imported rules into your active settings.
+1. Select **Browse...** (`#btn-browse-rule-file`) to choose a rule file via your OS file dialog, or type the path in `#input-rule-file-path` (supports `.hazelrules`, `.plist`, `.ini`, `.xml`, `.json`, and `.dropit`).
+2. Select **Parse File** (`#btn-parse-rule-file`) or press `[Enter]` (selecting a file via **Browse...** parses it automatically).
+3. Keep **Import new rules disabled for review** (`#chk-import-disabled`) checked (the default) to stage newly imported keyword rules in `DISABLED_KEYWORD_RULES` and new policies with `enabled: false` until you inspect and enable them, or uncheck it to activate new rules immediately.
+4. Inspect the parsed preview:
+   - **Imported Keywords**: Displays extracted keyword mappings and normalized relative destination folders.
+   - **Imported Policies**: Displays rule types (including `[unarchive]` extraction badges), wildcard/extension expressions, target paths, and rule priorities.
+   - **Warnings Banner**: Displays converted destination paths (`'original' -> 'relative'`), skipped unsafe paths, and omitted unsupported clauses.
+5. Resolve any detected conflicts (see [Conflict Resolution](#conflict-resolution) below).
+6. Select **Merge Rules into Settings** (`#btn-merge-imported-rules`) to commit the imported rules.
 
-#### Fallback Behaviors and Parsing Error Handling
-- **Syntax Errors and Malformed Files**: If a file cannot be parsed or contains syntax errors, the importer captures the error in the warning banner without aborting or corrupting existing settings.
-- **Unmapped Condition Operators**: Unrecognized condition operators or actions are flagged as non-blocking warnings, and unsupported clauses are skipped while extracting all valid conditions.
-- **TagSpaces Asymmetry**: TagSpaces taxonomy imports generate keyword rules, but Sortify does not export back to native TagSpaces files (see [Exporting Active Rules](#exporting-active-rules)).
+#### Path Normalization, Unarchive Mapping, and Clause Filtering
+- **Destination Path Normalization**: Exported absolute destination paths (POSIX `/Users/...`, Windows `C:\...`, UNC shares `\\server\share\...`, `~/...`, `%ENV%\...`, and `file://` URIs) are converted into safe relative folder paths and listed with a preview warning. Rules whose destination cannot become a safe relative folder (such as `/`, `C:\`, traversal segments `..`, illegal characters, or OS-reserved names) are skipped before merge with a warning.
+- **Archive Extraction Mapping**: External extraction rules (`Unarchive`, `NSRuleActionUnarchive`, `Extract`, `Unpack`, `Decompress`) map to Sortify's built-in `unarchive` policy action when destination folders are valid.
+- **Unsupported Clause Filtering and Unmapped Operators**: Negated operators/masks (`does not contain`, `!mask`, `-mask`, `#exclude`), numeric size or date filters, script executions, `Copy` actions, and unmapped or unrecognized condition operators are flagged as non-blocking warnings and skipped rather than creating unintended keyword move rules.
+- **Syntax Errors and Malformed Files**: If a file cannot be parsed or contains syntax errors, the importer surfaces non-blocking warnings without corrupting existing settings.
+- **TagSpaces Asymmetry**: TagSpaces taxonomy imports generate keyword rules, while exporting back to native TagSpaces taxonomy files is not supported (see [Exporting Active Rules](#exporting-active-rules)).
+
+#### Headless CLI Rule Import and Export
+You can also preview, import, and export rule packages from scripts or CI without opening the TUI:
+```bash
+# Preview converted paths, skipped clauses, and conflicts without modifying settings
+smart-autosorter rules import ~/Exports/profile.ini --dry-run
+
+# Import new rules disabled for review (default) with conflict resolution overrides
+smart-autosorter rules import ~/Exports/rules.hazelrules --conflict-strategy keep_existing --resolve invoice=overwrite
+
+# Import new rules enabled immediately and emit structured JSON output
+smart-autosorter rules import ~/Exports/rules.hazelrules --enable --json
+
+# Export active rules to Sortify JSON, Hazel (.hazelrules), or DropIt (.ini)
+smart-autosorter rules export ./backup_rules.json
+smart-autosorter rules export ./dropit_rules.ini --format dropit_ini
+```
 
 ### Conflict Resolution
 <a id="conflict-resolution"></a>

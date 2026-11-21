@@ -1,13 +1,16 @@
-"""Native OS directory selection dialog helper using Base64-encoded communication.
+"""Native OS directory and file selection dialog helpers using Base64-encoded communication.
 
 Prevents character corruption, console codepage mismatches, and application crashes
-when selecting folder paths containing non-ASCII, accented, or international characters on Windows.
+when selecting folder or file paths containing non-ASCII, accented, or international characters on Windows.
 """
 
 import base64
+import binascii
 import logging
+import os
+import subprocess
 import sys
-from typing import Optional
+from collections.abc import Sequence
 
 from app.core.env_helper import (
     get_cleaned_env,
@@ -17,9 +20,18 @@ from app.core.env_helper import (
 
 logger = logging.getLogger(__name__)
 
+RULE_IMPORT_EXTENSIONS: tuple[str, ...] = (
+    ".hazelrules",
+    ".plist",
+    ".ini",
+    ".xml",
+    ".json",
+    ".dropit",
+)
+
 
 class NativeDialogError(Exception):
-    """Raised when native directory selection dialog fails to launch or run."""
+    """Raised when a native directory or file selection dialog fails to launch or run."""
 
     pass
 
@@ -42,19 +54,34 @@ def decode_base64_to_path(base64_str: str) -> str:
     return decoded_bytes.decode("utf-8")
 
 
+def _normalize_extensions(extensions: Sequence[str] | None) -> list[str]:
+    """Normalize file extension filters into lowercase leading-dot suffixes."""
+    raw = extensions if extensions is not None else RULE_IMPORT_EXTENSIONS
+    cleaned: list[str] = []
+    for ext in raw:
+        item = str(ext).strip().lower()
+        if not item:
+            continue
+        if not item.startswith("."):
+            item = f".{item}"
+        if all(ch.isalnum() or ch in "._-" for ch in item) and item not in cleaned:
+            cleaned.append(item)
+    return cleaned
+
+
 def select_native_directory_powershell(
-    initial_dir: Optional[str] = None,
-) -> Optional[str]:
+    initial_dir: str | None = None,
+) -> str | None:
     """Launch Windows native FolderBrowserDialog via PowerShell with Base64 ASCII output.
 
     Parameters
     ----------
-    initial_dir : str, optional
+    initial_dir : str | None, optional
         Initial directory path to open in the folder browser.
 
     Returns
     -------
-    str or None
+    str | None
         Decoded UTF-8 directory path string if selected, or None if cancelled by user.
 
     Raises
@@ -127,13 +154,19 @@ def select_native_directory_powershell(
 
     except NativeDialogError:
         raise
-    except Exception as exc:
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        UnicodeError,
+        binascii.Error,
+        ValueError,
+    ) as exc:
         raise NativeDialogError(
             f"Failed to execute native directory selection: {exc}"
         ) from exc
 
 
-def select_native_directory(initial_dir: Optional[str] = None) -> Optional[str]:
+def select_native_directory(initial_dir: str | None = None) -> str | None:
     """Launch platform native directory selection dialog using Base64 ASCII communication.
 
     On Windows, invokes PowerShell FolderBrowserDialog with Base64 output.
@@ -141,12 +174,12 @@ def select_native_directory(initial_dir: Optional[str] = None) -> Optional[str]:
 
     Parameters
     ----------
-    initial_dir : str, optional
+    initial_dir : str | None, optional
         Initial directory path to open in the folder browser.
 
     Returns
     -------
-    str or None
+    str | None
         Decoded UTF-8 directory path string if selected, or None if cancelled by user.
 
     Raises
@@ -170,7 +203,7 @@ def select_native_directory(initial_dir: Optional[str] = None) -> Optional[str]:
                 if res.returncode == 0 and res.stdout.strip():
                     return res.stdout.strip()
                 return None
-            except Exception as exc:
+            except (OSError, subprocess.SubprocessError, ValueError) as exc:
                 raise NativeDialogError(
                     f"macOS native folder dialog failed: {exc}"
                 ) from exc
@@ -188,7 +221,7 @@ def select_native_directory(initial_dir: Optional[str] = None) -> Optional[str]:
                 if res.returncode == 0 and res.stdout.strip():
                     return res.stdout.strip()
                 return None
-            except Exception as exc:
+            except (OSError, subprocess.SubprocessError, ValueError) as exc:
                 raise NativeDialogError(
                     f"Linux native folder dialog failed: {exc}"
                 ) from exc
@@ -196,3 +229,212 @@ def select_native_directory(initial_dir: Optional[str] = None) -> Optional[str]:
         raise NativeDialogError(
             f"Native folder selection not supported on platform '{sys.platform}'"
         )
+
+
+def select_native_file_powershell(
+    initial_dir: str | None = None,
+    title: str = "Select Rule File",
+    extensions: Sequence[str] | None = None,
+) -> str | None:
+    """Launch Windows native OpenFileDialog via PowerShell with Base64 UTF-8 communication.
+
+    Parameters
+    ----------
+    initial_dir : str | None, optional
+        Initial directory path to open in the file dialog.
+    title : str, optional
+        Dialog window title.
+    extensions : Sequence[str] | None, optional
+        Allowed file extensions (defaults to ``RULE_IMPORT_EXTENSIONS``).
+
+    Returns
+    -------
+    str | None
+        Decoded UTF-8 file path string if selected, or None if cancelled by user.
+
+    Raises
+    ------
+    NativeDialogError
+        If PowerShell fails to launch, exits with non-zero code, or encounters an error.
+    """
+    clean_exts = _normalize_extensions(extensions)
+    if clean_exts:
+        wildcards = ";".join(f"*{ext}" for ext in clean_exts)
+        filter_spec = f"Rule Files ({wildcards})|{wildcards}|All Files (*.*)|*.*"
+    else:
+        filter_spec = "All Files (*.*)|*.*"
+
+    init_b64 = encode_path_to_base64(initial_dir) if initial_dir else ""
+    title_b64 = encode_path_to_base64(title or "Select Rule File")
+    filter_b64 = encode_path_to_base64(filter_spec)
+
+    ps_script = (
+        "Add-Type -AssemblyName System.Windows.Forms; "
+        "$dlg = New-Object System.Windows.Forms.OpenFileDialog; "
+        "$dlg.CheckFileExists = $true; "
+        "$dlg.Multiselect = $false; "
+        f"$titleBytes = [System.Convert]::FromBase64String('{title_b64}'); "
+        "$dlg.Title = [System.Text.Encoding]::UTF8.GetString($titleBytes); "
+        f"$filterBytes = [System.Convert]::FromBase64String('{filter_b64}'); "
+        "$dlg.Filter = [System.Text.Encoding]::UTF8.GetString($filterBytes); "
+        f"$dirB64 = '{init_b64}'; "
+        "if ($dirB64 -ne '') { "
+        "  try { "
+        "    $dirBytes = [System.Convert]::FromBase64String($dirB64); "
+        "    $dirPath = [System.Text.Encoding]::UTF8.GetString($dirBytes); "
+        "    if (Test-Path -Path $dirPath) { $dlg.InitialDirectory = $dirPath } "
+        "  } catch {} "
+        "}; "
+        "$choice = $dlg.ShowDialog(); "
+        "if ($choice -eq [System.Windows.Forms.DialogResult]::OK) { "
+        "  $outBytes = [System.Text.Encoding]::UTF8.GetBytes($dlg.FileName); "
+        "  Write-Output ([System.Convert]::ToBase64String($outBytes)) "
+        "}"
+    )
+
+    cmd = [
+        "powershell",
+        "-NoProfile",
+        "-NonInteractive",
+        "-ExecutionPolicy",
+        "Bypass",
+        "-Command",
+        ps_script,
+    ]
+
+    try:
+        res = run_background_process(
+            cmd,
+            sandbox=False,
+            capture_output=True,
+            text=True,
+            env=get_cleaned_env(),
+            startupinfo=get_subprocess_startupinfo(),
+            timeout=120,
+        )
+        if res.returncode != 0:
+            detail = res.stderr.strip() if res.stderr else f"Exit code {res.returncode}"
+            raise NativeDialogError(f"PowerShell file dialog failed: {detail}")
+
+        encoded_file = res.stdout.strip()
+        if not encoded_file:
+            return None
+        return decode_base64_to_path(encoded_file)
+    except NativeDialogError:
+        raise
+    except (
+        OSError,
+        subprocess.SubprocessError,
+        UnicodeError,
+        binascii.Error,
+        ValueError,
+    ) as exc:
+        raise NativeDialogError(
+            f"Failed to execute native file selection: {exc}"
+        ) from exc
+
+
+def select_native_file(
+    initial_dir: str | None = None,
+    title: str = "Select Rule File",
+    extensions: Sequence[str] | None = None,
+) -> str | None:
+    """Launch platform native file selection dialog using offline local OS helpers.
+
+    Parameters
+    ----------
+    initial_dir : str | None, optional
+        Initial directory path to open in the file picker.
+    title : str, optional
+        Dialog window title or prompt.
+    extensions : Sequence[str] | None, optional
+        Allowed file extensions (defaults to ``RULE_IMPORT_EXTENSIONS``).
+
+    Returns
+    -------
+    str | None
+        Selected UTF-8 file path string, or None if cancelled by user.
+
+    Raises
+    ------
+    NativeDialogError
+        If native file dialog utility is unavailable or fails to launch.
+    """
+    clean_exts = _normalize_extensions(extensions)
+    safe_title = (title or "Select Rule File").replace('"', "'").replace("\n", " ")
+
+    if sys.platform == "win32":
+        return select_native_file_powershell(
+            initial_dir=initial_dir,
+            title=safe_title,
+            extensions=clean_exts,
+        )
+
+    env = get_cleaned_env()
+
+    if sys.platform == "darwin":
+        script = f'POSIX path of (choose file with prompt "{safe_title}")'
+        try:
+            res = run_background_process(
+                ["osascript", "-e", script],
+                sandbox=False,
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=60,
+            )
+            if res.returncode == 0:
+                chosen = res.stdout.strip()
+                return chosen or None
+            stderr_lower = (res.stderr or "").lower()
+            if "user canceled" in stderr_lower or "-128" in stderr_lower:
+                return None
+            raise NativeDialogError(
+                f"macOS native file dialog failed: {res.stderr.strip() or f'Exit code {res.returncode}'}"
+            )
+        except NativeDialogError:
+            raise
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+            raise NativeDialogError(f"macOS native file dialog failed: {exc}") from exc
+
+    if sys.platform == "linux":
+        zenity_cmd = [
+            "zenity",
+            "--file-selection",
+            f"--title={safe_title}",
+        ]
+        if initial_dir:
+            norm_dir = os.path.abspath(initial_dir).rstrip(os.sep) + os.sep
+            zenity_cmd.append(f"--filename={norm_dir}")
+        if clean_exts:
+            patterns = " ".join(f"*{ext}" for ext in clean_exts)
+            zenity_cmd.append(f"--file-filter=Rule Files ({patterns}) | {patterns}")
+            zenity_cmd.append("--file-filter=All Files | *")
+
+        try:
+            res = run_background_process(
+                zenity_cmd,
+                sandbox=False,
+                capture_output=True,
+                text=True,
+                env=env,
+                timeout=60,
+            )
+            if res.returncode == 0:
+                chosen = res.stdout.strip()
+                return chosen or None
+            if res.returncode == 1 and not (
+                res.stderr and "cannot open display" in res.stderr.lower()
+            ):
+                return None
+            raise NativeDialogError(
+                f"Linux native file dialog failed: {res.stderr.strip() or f'Exit code {res.returncode}'}"
+            )
+        except NativeDialogError:
+            raise
+        except (OSError, subprocess.SubprocessError, ValueError) as exc:
+            raise NativeDialogError(f"Linux native file dialog failed: {exc}") from exc
+
+    raise NativeDialogError(
+        f"Native file selection not supported on platform '{sys.platform}'"
+    )

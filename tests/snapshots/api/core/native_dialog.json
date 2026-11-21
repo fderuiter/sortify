@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "6340d65fae4900aed30dd3e4f2647f670cada4a9f857e32968f9e8043c63e7fd"
+    "checksum": "e58ef71f4297dbc597ff1327a80459a1c09aab01dbdb65f5a6ab1b2e1a765f2f"
   },
   "classes": [
     {
@@ -42,12 +42,12 @@
       "name": "select_native_directory",
       "parameters": [
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "initial_dir"
         }
       ],
-      "returns": "Optional[str]"
+      "returns": "str | None"
     },
     {
       "async": false,
@@ -55,12 +55,58 @@
       "name": "select_native_directory_powershell",
       "parameters": [
         {
-          "annotation": "Optional[str]",
+          "annotation": "str | None",
           "default": "None",
           "name": "initial_dir"
         }
       ],
-      "returns": "Optional[str]"
+      "returns": "str | None"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "select_native_file",
+      "parameters": [
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "initial_dir"
+        },
+        {
+          "annotation": "str",
+          "default": "'Select Rule File'",
+          "name": "title"
+        },
+        {
+          "annotation": "Sequence[str] | None",
+          "default": "None",
+          "name": "extensions"
+        }
+      ],
+      "returns": "str | None"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "select_native_file_powershell",
+      "parameters": [
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "initial_dir"
+        },
+        {
+          "annotation": "str",
+          "default": "'Select Rule File'",
+          "name": "title"
+        },
+        {
+          "annotation": "Sequence[str] | None",
+          "default": "None",
+          "name": "extensions"
+        }
+      ],
+      "returns": "str | None"
     }
   ]
 }

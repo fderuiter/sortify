@@ -465,14 +465,14 @@ usage: smart-autosorter [-h] [-q] [--no-color] [--demo] [--smoke-test]
                         [--json] [--daemon] [--tui] [--interactive]
                         [--accept-ai-consent | --decline-ai-consent]
                         [--skip-wizard] [--non-interactive]
-                        {sort,scan,config,daemon,undo,drop,ledger,quarantine}
+                        {sort,scan,config,daemon,undo,drop,ledger,quarantine,rules}
                         ...
 
 Smart AutoSorter AI Pro: sort a folder of documents into topic
 folders, offline. Every move can be undone.
 
 positional arguments:
-  {sort,scan,config,daemon,undo,drop,ledger,quarantine}
+  {sort,scan,config,daemon,undo,drop,ledger,quarantine,rules}
                         Available subcommands
     sort                Run document sorting in headless batch processing mode
     scan                Run directory scanning and analysis without moving
@@ -487,6 +487,8 @@ positional arguments:
                         reconciliation
     quarantine          Manage compliance quarantine staging, inspection, and
                         release
+    rules               Import or export routing rules (Hazel, DropIt,
+                        TagSpaces, Sortify JSON)
 
 options:
   -h, --help            show this help message and exit
@@ -1088,6 +1090,86 @@ options:
   --json             Output response in structured JSON format
   --job-id JOB_ID    Quarantine job ID
   --job-ids JOB_IDS  Comma-separated list of quarantine job IDs
+```
+
+##### `rules`
+```text
+usage: smart-autosorter rules [-h] [--json] {import,export} ...
+
+positional arguments:
+  {import,export}  Rule management subcommands
+    import         Parse, preview, and merge external rule packages into
+                   Sortify settings
+    export         Export active keyword rules and policies to Sortify JSON,
+                   Hazel, or DropIt INI
+
+options:
+  -h, --help       show this help message and exit
+  --json           Output response in structured JSON format
+```
+
+###### `rules import`
+```text
+usage: smart-autosorter rules import [-h] [--settings-file SETTINGS_FILE] [-q]
+                                     [--no-color] [--json] [-f FILE_OPT]
+                                     [--dry-run]
+                                     [--conflict-strategy {keep_existing,overwrite,skip_conflicting}]
+                                     [--resolve IDENT=STRATEGY]
+                                     [--disabled | --enable]
+                                     [FILE]
+
+positional arguments:
+  FILE                  Path to rule file (.hazelrules, .plist, .ini, .xml,
+                        .json, .dropit)
+
+options:
+  -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Optional path to a specific Sortify settings.json file
+  -q, --quiet           Suppress non-essential informational output
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  -f FILE_OPT, --file FILE_OPT
+                        Path to rule file (.hazelrules, .plist, .ini, .xml,
+                        .json, .dropit)
+  --dry-run             Preview extracted rules, path conversions, warnings,
+                        and conflicts without saving
+  --conflict-strategy {keep_existing,overwrite,skip_conflicting}
+                        Default resolution strategy for rule collisions
+                        (default: keep_existing)
+  --resolve IDENT=STRATEGY
+                        Per-rule conflict override, e.g. --resolve
+                        invoice=overwrite (repeatable)
+  --disabled            Import new rules disabled for review (default)
+  --enable, --enabled   Activate newly imported rules immediately instead of
+                        staging disabled
+```
+
+###### `rules export`
+```text
+usage: smart-autosorter rules export [-h] [--settings-file SETTINGS_FILE] [-q]
+                                     [--no-color] [--json] [-o OUTPUT_OPT]
+                                     [-f {sortify_json,hazel,dropit_ini,json,hazelrules,ini}]
+                                     [--dry-run]
+                                     [OUTPUT]
+
+positional arguments:
+  OUTPUT                Destination file path for exported rules
+
+options:
+  -h, --help            show this help message and exit
+  --settings-file SETTINGS_FILE
+                        Optional path to a specific Sortify settings.json file
+  -q, --quiet           Suppress non-essential informational output
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  -o OUTPUT_OPT, --output OUTPUT_OPT
+                        Destination file path for exported rules
+  -f {sortify_json,hazel,dropit_ini,json,hazelrules,ini}, --format {sortify_json,hazel,dropit_ini,json,hazelrules,ini}
+                        Target export format (inferred from file extension
+                        when omitted)
+  --dry-run             Preview rule counts and target format without writing
+                        export file
 ```
 
 ### `sandbox_cli.py`

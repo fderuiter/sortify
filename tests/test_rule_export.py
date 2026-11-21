@@ -246,3 +246,47 @@ def test_export_unwritable_destination(populated_settings, tmp_path):
             export_active_rules(
                 populated_settings, "sortify_json", read_only_dir / "test.json"
             )
+
+
+def test_export_unarchive_policy_roundtrip_all_formats(tmp_path):
+    """Verify unarchive policies roundtrip through Sortify JSON, Hazel, and DropIt INI."""
+    settings = AppSettings(filepath=str(tmp_path / "unarchive_settings.json"))
+    settings.KEYWORD_RULES = {}
+    settings.POLICIES = [
+        {
+            "type": "unarchive",
+            "expression": "*.zip",
+            "target_path": "Archives/Unpacked",
+            "action": "unarchive",
+            "priority": 85,
+            "halting": False,
+        }
+    ]
+
+    # 1. Sortify JSON roundtrip
+    json_out = tmp_path / "unarchive.json"
+    export_active_rules(settings, "sortify_json", json_out)
+    res_json = get_rule_importer(json_out).parse_file(json_out)
+    assert len(res_json.policies) == 1
+    assert res_json.policies[0]["action"] == "unarchive"
+    assert res_json.policies[0]["target_path"] == "Archives/Unpacked"
+
+    # 2. Hazel .hazelrules roundtrip
+    hazel_out = tmp_path / "unarchive.hazelrules"
+    export_active_rules(settings, "hazel", hazel_out)
+    res_hazel = get_rule_importer(hazel_out).parse_file(hazel_out)
+    assert len(res_hazel.policies) == 1
+    assert res_hazel.policies[0]["action"] == "unarchive"
+    assert res_hazel.policies[0]["type"] == "unarchive"
+    assert res_hazel.policies[0]["target_path"] == "Archives/Unpacked"
+
+    # 3. DropIt .ini roundtrip
+    ini_out = tmp_path / "unarchive.ini"
+    export_active_rules(settings, "dropit_ini", ini_out)
+    ini_text = ini_out.read_text(encoding="utf-8")
+    assert "Action = Extract" in ini_text
+    res_ini = get_rule_importer(ini_out).parse_file(ini_out)
+    assert len(res_ini.policies) == 1
+    assert res_ini.policies[0]["action"] == "unarchive"
+    assert res_ini.policies[0]["type"] == "unarchive"
+    assert res_ini.policies[0]["target_path"] == "Archives/Unpacked"

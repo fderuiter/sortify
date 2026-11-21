@@ -1,0 +1,281 @@
+{
+  "_metadata": {
+    "checksum": "ea90e473357de6552e8ef42007810b108c3f1b586653b4bfe9632bd7140ec5ae"
+  },
+  "classes": [],
+  "cli": [
+    {
+      "args": [
+        "rules"
+      ],
+      "caller": "subparsers",
+      "keywords": {
+        "help": "Import or export routing rules (Hazel, DropIt, TagSpaces, Sortify JSON)"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "--json"
+      ],
+      "caller": "parser_rules",
+      "keywords": {
+        "action": "store_true",
+        "help": "Output response in structured JSON format"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "import"
+      ],
+      "caller": "rules_subparsers",
+      "keywords": {
+        "help": "Parse, preview, and merge external rule packages into Sortify settings"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "file_path"
+      ],
+      "caller": "p_import",
+      "keywords": {
+        "default": null,
+        "help": "Path to rule file (.hazelrules, .plist, .ini, .xml, .json, .dropit)",
+        "metavar": "FILE",
+        "nargs": "?"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "-f",
+        "--file"
+      ],
+      "caller": "p_import",
+      "keywords": {
+        "default": null,
+        "dest": "file_opt",
+        "help": "Path to rule file (.hazelrules, .plist, .ini, .xml, .json, .dropit)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--dry-run"
+      ],
+      "caller": "p_import",
+      "keywords": {
+        "action": "store_true",
+        "help": "Preview extracted rules, path conversions, warnings, and conflicts without saving"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--conflict-strategy"
+      ],
+      "caller": "p_import",
+      "keywords": {
+        "choices": "list(_VALID_CONFLICT_STRATEGIES)",
+        "default": "keep_existing",
+        "help": "Default resolution strategy for rule collisions (default: keep_existing)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--resolve"
+      ],
+      "caller": "p_import",
+      "keywords": {
+        "action": "append",
+        "default": [],
+        "help": "Per-rule conflict override, e.g. --resolve invoice=overwrite (repeatable)",
+        "metavar": "IDENT=STRATEGY"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--disabled"
+      ],
+      "caller": "state_group",
+      "keywords": {
+        "action": "store_true",
+        "dest": "force_disabled",
+        "help": "Import new rules disabled for review (default)"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--enable",
+        "--enabled"
+      ],
+      "caller": "state_group",
+      "keywords": {
+        "action": "store_true",
+        "dest": "force_enabled",
+        "help": "Activate newly imported rules immediately instead of staging disabled"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "export"
+      ],
+      "caller": "rules_subparsers",
+      "keywords": {
+        "help": "Export active keyword rules and policies to Sortify JSON, Hazel, or DropIt INI"
+      },
+      "method": "add_parser"
+    },
+    {
+      "args": [
+        "output_path"
+      ],
+      "caller": "p_export",
+      "keywords": {
+        "default": null,
+        "help": "Destination file path for exported rules",
+        "metavar": "OUTPUT",
+        "nargs": "?"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "-o",
+        "--output"
+      ],
+      "caller": "p_export",
+      "keywords": {
+        "default": null,
+        "dest": "output_opt",
+        "help": "Destination file path for exported rules",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "-f",
+        "--format"
+      ],
+      "caller": "p_export",
+      "keywords": {
+        "choices": [
+          "sortify_json",
+          "hazel",
+          "dropit_ini",
+          "json",
+          "hazelrules",
+          "ini"
+        ],
+        "default": null,
+        "dest": "export_format",
+        "help": "Target export format (inferred from file extension when omitted)",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--dry-run"
+      ],
+      "caller": "p_export",
+      "keywords": {
+        "action": "store_true",
+        "help": "Preview rule counts and target format without writing export file"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--settings-file"
+      ],
+      "caller": "target_parser",
+      "keywords": {
+        "default": null,
+        "help": "Optional path to a specific Sortify settings.json file",
+        "type": "str"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "-q",
+        "--quiet"
+      ],
+      "caller": "target_parser",
+      "keywords": {
+        "action": "store_true",
+        "default": "argparse.SUPPRESS",
+        "dest": "quiet",
+        "help": "Suppress non-essential informational output"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--no-color"
+      ],
+      "caller": "target_parser",
+      "keywords": {
+        "action": "store_true",
+        "default": "argparse.SUPPRESS",
+        "dest": "no_color",
+        "help": "Disable ANSI color formatting"
+      },
+      "method": "add_argument"
+    },
+    {
+      "args": [
+        "--json"
+      ],
+      "caller": "target_parser",
+      "keywords": {
+        "action": "store_true",
+        "help": "Output response in structured JSON format"
+      },
+      "method": "add_argument"
+    }
+  ],
+  "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "handle_rules_command",
+      "parameters": [
+        {
+          "annotation": "argparse.Namespace",
+          "default": null,
+          "name": "args"
+        },
+        {
+          "annotation": "AppSettings",
+          "default": null,
+          "name": "settings"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "register_subparser",
+      "parameters": [
+        {
+          "annotation": "argparse._SubParsersAction",
+          "default": null,
+          "name": "subparsers"
+        }
+      ],
+      "returns": "None"
+    }
+  ]
+}

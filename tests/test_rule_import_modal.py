@@ -61,10 +61,14 @@ def test_rule_import_modal_parsing_and_merging(tmp_path):
 
         assert "invoice" in modal.current_result.keyword_rules
 
-        # Perform merge action
+        # Perform merge action (new rules are staged disabled by default)
         modal.action_merge_rules()
 
-        assert settings.KEYWORD_RULES.get("invoice") == "Financial/Invoices"
+        assert settings.DISABLED_KEYWORD_RULES.get("invoice") == "Financial/Invoices"
+        assert "invoice" not in settings.KEYWORD_RULES
+        pdf_policies = [p for p in settings.POLICIES if p.get("expression") == "*.pdf"]
+        for pol in pdf_policies:
+            assert pol.get("enabled") is False
     finally:
         Path(temp_path).unlink(missing_ok=True)
 
@@ -166,12 +170,14 @@ def test_rule_import_modal_tagspaces_parsing_and_merging(tmp_path):
 
         modal.action_merge_rules()
 
-        assert settings.KEYWORD_RULES.get("prescription") == "Medical"
+        assert settings.DISABLED_KEYWORD_RULES.get("prescription") == "Medical"
+        assert "prescription" not in settings.KEYWORD_RULES
         lab_policies = [
             p for p in settings.POLICIES if p.get("expression") == "lab report"
         ]
         assert len(lab_policies) == 1
         assert lab_policies[0].get("target_path") == "Medical"
+        assert lab_policies[0].get("enabled") is False
     finally:
         Path(temp_path).unlink(missing_ok=True)
 
@@ -258,3 +264,146 @@ def test_rule_import_modal_dismissal(tmp_path, mocker):
             assert not isinstance(app.screen, RuleImportModal)
 
     asyncio.run(_test())
+
+
+def test_rule_import_modal_browse_ini_preview_and_enable_toggle(tmp_path, mocker):
+    """Verify Browse..., .ini format support, unarchive badge, warnings, and enable toggle."""
+    import asyncio
+
+    from textual.widgets import Checkbox, DataTable, Input, Label
+
+    from app.core.native_dialog import NativeDialogError
+    from app.ui.tui import AutoSorterTUI
+
+    ini_file = tmp_path / "dropit_profile.ini"
+    ini_file.write_text(
+        "[DropIt]\n"
+        "Profile = Imported INI\n\n"
+        "[Association_1]\n"
+        "Name = Unpack Bundles\n"
+        "Rules = *.zip\n"
+        "Action = Extract\n"
+        "Destination = C:\\Users\\Alice\\Archives\\Unpacked\n\n"
+        "[Association_2]\n"
+        "Name = Copy Backups\n"
+        "Rules = *.bak\n"
+        "Action = Copy\n"
+        "Destination = C:\\Users\\Alice\\Backups\n\n"
+        "[Association_3]\n"
+        "Name = Tax Receipts\n"
+        "Rules = receipt\n"
+        "Action = Move\n"
+        "Destination = /Users/alice/Documents/Receipts\n",
+        encoding="utf-8",
+    )
+
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path))
+        async with app.run_test(size=(80, 30)) as pilot:
+            await pilot.pause(0.1)
+            modal = RuleImportModal(settings)
+            app.push_screen(modal)
+            await pilot.pause(0.1)
+
+            # Verify .ini and Browse... are exposed and disabled-by-default checkbox is checked
+            inp = modal.query_one("#input-rule-file-path", Input)
+            assert "ini" in inp.placeholder.lower()
+            btn_browse = modal.query_one("#btn-browse-rule-file", Button)
+            assert "Browse" in str(btn_browse.label)
+            chk_disabled = modal.query_one("#chk-import-disabled", Checkbox)
+            assert chk_disabled.value is True
+            assert modal.import_disabled is True
+
+            # 1. Test graceful fallback when native file dialog fails
+            mocker.patch(
+                "app.core.native_dialog.select_native_file",
+                side_effect=NativeDialogError("headless display"),
+            )
+            btn_browse.press()
+            await pilot.pause(0.2)
+            status_lbl = modal.query_one("#lbl-import-status", Label)
+            assert "Native file picker unavailable" in str(status_lbl.render())
+
+            # 2. Test native file selection populating input and auto-parsing .ini preview
+            mocker.patch(
+                "app.core.native_dialog.select_native_file",
+                return_value=str(ini_file),
+            )
+            btn_browse.press()
+            await pilot.pause(0.25)
+
+            assert inp.value == str(ini_file)
+            assert modal.current_result is not None
+            assert (
+                modal.current_result.keyword_rules.get("receipt")
+                == "Documents/Receipts"
+            )
+
+            dt_pol = modal.query_one("#dt-imported-policies", DataTable)
+            assert dt_pol.row_count == 1
+            first_row = dt_pol.get_row_at(0)
+            assert "unarchive" in str(first_row[0]).lower()
+            assert first_row[1] == "*.zip"
+            assert first_row[2] == "Archives/Unpacked"
+
+            # Warnings should report both converted absolute paths and skipped Copy action
+            warn_labels = [
+                str(lbl.render())
+                for lbl in modal.query("#container-import-warnings Label")
+            ]
+            joined_warnings = "\n".join(warn_labels)
+            assert "converted destination path" in joined_warnings.lower()
+            assert "Copy" in joined_warnings
+
+            # 3. Uncheck disabled-by-default checkbox to import active immediately
+            chk_disabled.toggle()
+            await pilot.pause(0.1)
+            assert modal.import_disabled is False
+
+            modal.action_merge_rules()
+            await pilot.pause(0.1)
+
+            assert settings.KEYWORD_RULES.get("receipt") == "Documents/Receipts"
+            assert "receipt" not in settings.DISABLED_KEYWORD_RULES
+            unarch = next(
+                p for p in settings.POLICIES if p.get("expression") == "*.zip"
+            )
+            assert unarch["action"] == "unarchive"
+            assert unarch["target_path"] == "Archives/Unpacked"
+            assert unarch.get("enabled", True) is True
+
+    asyncio.run(_test())
+
+
+def test_modal_push_immediate_teardown_does_not_raise_no_matches(tmp_path):
+    """Verify pushing DirectorySelectModal or RuleImportModal right before app exit does not raise NoMatches."""
+    import asyncio
+
+    from app.ui.modals.edit import DirectorySelectModal
+    from app.ui.tui import AutoSorterTUI
+
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    workspace = tmp_path / "empty_workspace"
+    workspace.mkdir(exist_ok=True)
+
+    async def _test_dir_modal():
+        app = AutoSorterTUI(
+            settings=settings, base_dir=str(workspace), skip_wizard=True
+        )
+        async with app.run_test():
+            app.push_screen(DirectorySelectModal(str(workspace)))
+            assert isinstance(app.screen, DirectorySelectModal)
+
+    async def _test_rule_import_modal():
+        app = AutoSorterTUI(
+            settings=settings, base_dir=str(workspace), skip_wizard=True
+        )
+        async with app.run_test():
+            app.push_screen(RuleImportModal(settings))
+            assert isinstance(app.screen, RuleImportModal)
+
+    asyncio.run(_test_dir_modal())
+    asyncio.run(_test_rule_import_modal())

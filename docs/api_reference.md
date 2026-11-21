@@ -24,6 +24,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.cli.quarantine_cli
 
+## `app.cli.rules_cli`
+
+::: app.cli.rules_cli
+
 ## `app.config`
 
 ::: app.config

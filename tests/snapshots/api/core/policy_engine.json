@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "3ccb2d2c37b168c3a977ed81bf5b42646c5abb095d15afe9c76e775702d0942e"
+    "checksum": "d0d6da2a6c7278f8ec714412bc0088fd6f8a30dcee417bfa39005207518e4fbf"
   },
   "classes": [
     {
@@ -125,7 +125,7 @@
               "name": "lock_path"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "file_path"
             }
@@ -145,12 +145,12 @@
               "name": "lock_path"
             },
             {
-              "annotation": "Optional[str]",
+              "annotation": "str | None",
               "default": "None",
               "name": "file_path"
             }
           ],
-          "returns": "tuple[bool, Optional[str]]"
+          "returns": "tuple[bool, str | None]"
         },
         {
           "async": false,
@@ -237,6 +237,24 @@
           "annotation": "Any",
           "default": null,
           "name": "lower_rule"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "match_pattern_expression",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "expression"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "filename"
         }
       ],
       "returns": "bool"

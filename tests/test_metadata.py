@@ -369,3 +369,56 @@ def test_metadata_pass_policy_cascades_by_default(tmp_path):
         # Should cascade and match on the lower priority policy
         assert res == ["unrelated.txt"]
         db.set_user_verified_target_path.assert_not_called()
+
+
+def test_metadata_pass_policy_wildcard_extension_and_unarchive(tmp_path):
+    settings = MagicMock()
+    settings.KEYWORD_RULES = {}
+    settings.LEARNED_RULES = {}
+    settings.POLICIES = [
+        {
+            "type": "pattern",
+            "expression": "*.txt",
+            "target_path": "Disabled/Notes",
+            "priority": 95,
+            "enabled": False,
+        },
+        {
+            "type": "pattern",
+            "expression": ".pdf",
+            "target_path": "Documents/PDFs",
+            "priority": 80,
+        },
+        {
+            "type": "pattern",
+            "expression": "scan_[0-9][0-9].txt",
+            "target_path": "Scans/Notes",
+            "priority": 75,
+        },
+        {
+            "type": "unarchive",
+            "expression": "release_*.zip",
+            "target_path": "Archives/Extracted",
+            "action": "unarchive",
+            "priority": 85,
+        },
+    ]
+    db = MagicMock()
+    db.get_all_documents.return_value = []
+
+    files = [
+        "report.PDF",
+        "report.pdf.txt",
+        "scan_07.txt",
+        "scan_7.txt",
+        "release_v2.zip",
+    ]
+    for fname in files:
+        (tmp_path / fname).touch()
+
+    with patch("app.core.metadata.get_file_hash", side_effect=lambda p: f"h_{p}"):
+        res = MetadataPass.run(str(tmp_path), files, settings, db, None, None)
+
+    # report.PDF matches .pdf, scan_07.txt matches scan_[0-9][0-9].txt, release_v2.zip matches unarchive
+    # report.pdf.txt has disabled *.txt policy and does NOT match trailing .pdf; scan_7.txt does NOT match ??
+    assert set(res) == {"report.PDF", "scan_07.txt", "release_v2.zip"}
