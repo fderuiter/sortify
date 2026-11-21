@@ -136,12 +136,9 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     def _resolve_model_dir(self) -> str:
         """Resolve primary model directory path."""
-        try:
-            from app.config import get_app_dir
+        from app.core.downloader import resolve_default_model_dir
 
-            return str(get_app_dir() / "model")
-        except Exception:
-            return os.path.expanduser("~/.smart-autosorter/model")
+        return resolve_default_model_dir()
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
@@ -234,6 +231,11 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         p_val = self.query_one("#input-proxy", Input).value.strip()
         if self.settings:
             setattr(self.settings, "PROXY", p_val)
+            if hasattr(self.settings, "_save"):
+                try:
+                    self.settings._save()
+                except Exception:
+                    pass
         from app.core.downloader import DownloadManager
 
         dm = DownloadManager.get_instance()
@@ -319,6 +321,15 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             has_any_model_files or tmp_exists or is_dl
         )
 
+    def _refresh_app_status(self) -> None:
+        """Refresh parent application status bar badge if supported."""
+        update_fn = getattr(self.app, "update_status", None)
+        if callable(update_fn):
+            try:
+                update_fn()
+            except (AttributeError, RuntimeError):
+                return
+
     def _poll_download_status(self) -> None:
         """Periodic non-blocking timer callback to poll download status."""
         from app.core.downloader import DownloadManager, DownloadState
@@ -370,6 +381,7 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         self._prev_status_text = status_text
 
         self._refresh_ui_state()
+        self._refresh_app_status()
 
     @on(Button.Pressed, "#btn-start")
     def action_start_download(self) -> None:
@@ -381,6 +393,7 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         model_dir = self._resolve_model_dir()
         try:
             dm.start_download(DEFAULT_MODEL_URL, model_dir, proxy=p_val)
+            self._refresh_app_status()
             self.announce("Started model download.", priority="polite")
         except Exception as e:
             from app.ui.notifications import notify
@@ -395,6 +408,7 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
         dm = DownloadManager.get_instance()
         dm.cancel_download()
+        self._refresh_app_status()
         self.announce("Cancelled model download.", priority="polite")
 
     @on(Button.Pressed, "#btn-retry")
@@ -409,6 +423,7 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         model_dir = self._resolve_model_dir()
         try:
             dm.start_download(DEFAULT_MODEL_URL, model_dir, proxy=p_val)
+            self._refresh_app_status()
             self.announce("Retrying model download.", priority="polite")
         except Exception as e:
             from app.ui.notifications import notify
@@ -425,6 +440,7 @@ class ModelManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         model_dir = self._resolve_model_dir()
 
         def _on_done(success: bool, err: Optional[Exception]):
+            self._refresh_app_status()
             if success:
                 self.announce("Model deleted successfully.", priority="polite")
             else:

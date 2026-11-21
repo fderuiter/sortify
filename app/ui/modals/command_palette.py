@@ -113,7 +113,7 @@ DEFAULT_COMMAND_CATALOG: list[PaletteCommand] = [
         id="open_model_manager",
         title="Open Model Manager",
         category="Models",
-        shortcut="",
+        shortcut="Ctrl+G",
         description="Manage ONNX model downloads and local embeddings",
         action_name="action_open_model_manager",
     ),

@@ -199,3 +199,116 @@ def test_tui_wizard_modal_bypassed_with_non_interactive_env(tmp_path):
                 assert app.settings.AI_CONSENT_GRANTED is False
 
     asyncio.run(_test())
+
+
+def test_cli_consent_flags_persist_across_restarts(tmp_path):
+    """AC 7 / Req 10: --accept-ai-consent and --decline-ai-consent persist to settings.json across restarts."""
+    settings_file = str(tmp_path / "settings.json")
+    parser = build_parser()
+
+    settings1 = AppSettings(filepath=settings_file)
+    apply_config_overrides(settings1, parser.parse_args(["--accept-ai-consent"]))
+    reloaded1 = AppSettings(filepath=settings_file)
+    assert reloaded1.AI_CONSENT_GRANTED is True
+
+    settings2 = AppSettings(filepath=settings_file)
+    apply_config_overrides(settings2, parser.parse_args(["--decline-ai-consent"]))
+    reloaded2 = AppSettings(filepath=settings_file)
+    assert reloaded2.AI_CONSENT_GRANTED is False
+
+
+def test_cli_consent_preserves_interactive_workspace_prompt_unless_non_interactive(
+    tmp_path,
+):
+    """Req 10: --accept-ai-consent alone does not force NON_INTERACTIVE and keeps interactive folder selection."""
+    from app.main import resolve_preset_and_directory
+
+    settings_file = str(tmp_path / "settings.json")
+    settings = AppSettings(filepath=settings_file)
+    parser = build_parser()
+    args = parser.parse_args(["--accept-ai-consent"])
+
+    apply_config_overrides(settings, args)
+    assert getattr(settings, "_non_interactive", False) is False
+    assert settings.NON_INTERACTIVE is False
+
+    chosen_dir = tmp_path / "chosen_docs"
+    chosen_dir.mkdir()
+    with (
+        patch("sys.stdin.isatty", return_value=True),
+        patch("builtins.input", side_effect=["5", str(chosen_dir)]),
+    ):
+        resolved = resolve_preset_and_directory(args, settings)
+        assert str(resolved) == str(chosen_dir.resolve())
+
+
+def test_cli_accept_ai_consent_provisions_model_with_terminal_progress(
+    tmp_path, capsys
+):
+    """AC 7 / Req 11: Accepting AI consent from CLI triggers model provisioning with terminal progress output."""
+    from app.main import _maybe_provision_model_for_cli_consent
+
+    settings = AppSettings(filepath=str(tmp_path / "settings.json"))
+    parser = build_parser()
+    args = parser.parse_args(["--accept-ai-consent"])
+    apply_config_overrides(settings, args)
+
+    def _fake_provision(
+        model_dir=None, url=None, proxy=None, force=False, quiet=False, stream=None
+    ):
+        if stream is not None and not quiet:
+            stream.write("Provisioning local AI model bundle into /tmp/model ...\n")
+            stream.write("  Downloading model.onnx: 100%\n")
+        return {
+            "status": "verified",
+            "verified": True,
+            "downloaded": True,
+            "model_dir": str(tmp_path / "model"),
+            "detail": "Verified local AI model weights ready on disk.",
+        }
+
+    with patch(
+        "app.core.downloader.provision_model_cli", side_effect=_fake_provision
+    ) as mock_prov:
+        _maybe_provision_model_for_cli_consent(args, settings)
+        mock_prov.assert_called_once()
+
+    captured = capsys.readouterr()
+    assert "Provisioning local AI model bundle" in captured.err
+
+
+def test_bare_cli_accept_ai_consent_non_interactive_json(tmp_path, capsys):
+    """Bare `--accept-ai-consent --non-interactive --json` persists consent, provisions model, and exits cleanly."""
+    import json
+    import sys
+
+    from app.main import _main_impl
+
+    settings_file = str(tmp_path / "settings.json")
+
+    with (
+        patch(
+            "app.main.AppSettings",
+            side_effect=lambda *a, **kw: AppSettings(filepath=settings_file),
+        ),
+        patch(
+            "app.core.downloader.provision_model_cli",
+            return_value={
+                "status": "verified",
+                "verified": True,
+                "downloaded": False,
+                "model_dir": str(tmp_path / "model"),
+            },
+        ) as mock_prov,
+        patch.object(
+            sys,
+            "argv",
+            ["smart-autosorter", "--accept-ai-consent", "--non-interactive", "--json"],
+        ),
+    ):
+        _main_impl()
+
+    mock_prov.assert_called_once()
+    data = json.loads(capsys.readouterr().out)
+    assert data == {"status": "success", "ai_consent_granted": True}
+    assert AppSettings(filepath=settings_file).AI_CONSENT_GRANTED is True

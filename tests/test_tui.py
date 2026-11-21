@@ -983,7 +983,22 @@ def test_tui_settings_modal_ai_consent_toggle_flow(temp_workspace):
 
                 assert app.settings.AI_CONSENT_GRANTED is True
                 assert mock_save.called
-                assert "[AI: Active]" in str(sb.render())
+                assert "[AI: Fallback]" in str(sb.render())
+
+                with patch(
+                    "app.core.downloader.inspect_local_model_bundle",
+                    return_value={
+                        "status": "verified",
+                        "verified": True,
+                        "model_dir": temp_workspace,
+                        "present_files": [],
+                        "missing_files": [],
+                        "detail": "Verified",
+                    },
+                ):
+                    app.update_status()
+                    await pilot.pause(0.05)
+                    assert "[AI: Active]" in str(sb.render())
 
                 # Re-open settings modal and disable AI consent
                 app.action_open_settings()
@@ -2385,6 +2400,7 @@ def test_main_screen_bindings_avoid_keys_terminals_cannot_send():
     "key, action",
     [
         ("ctrl+k", "action_open_command_palette"),
+        ("ctrl+g", "action_open_model_manager"),
         ("ctrl+y", "action_open_history"),
         ("ctrl+x", "action_open_extraction_preview"),
         ("ctrl+z", "action_undo_last_sort"),

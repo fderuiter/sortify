@@ -4,6 +4,7 @@ This script imports and runs the main application GUI or CLI demo.
 """
 
 import argparse
+import json
 import logging
 import os
 import re
@@ -290,8 +291,20 @@ def _extract_bool_arg(
     return bool(getattr(args, attr, default))
 
 
+def _persist_settings_sync(settings: AppSettings) -> None:
+    """Flush pending debounced save timer and persist settings synchronously."""
+    timer = getattr(settings, "_save_timer", None)
+    if timer is not None:
+        try:
+            timer.cancel()
+        except Exception:
+            pass
+    if hasattr(settings, "_save"):
+        settings._save()
+
+
 def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
-    """Apply command-line argument overrides to AppSettings for this run only."""
+    """Apply command-line argument overrides and persist explicit CLI consent flags."""
     max_folders = getattr(args, "max_folders", None)
     if max_folders is not None:
         settings.override("MAX_FOLDERS", max_folders)
@@ -317,11 +330,13 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
     env_consent = os.environ.get("SORTIFY_AI_CONSENT")
     env_non_interactive = os.environ.get("NON_INTERACTIVE")
 
-    # CLI consent flags take precedence over saved settings and env vars
+    # CLI consent flags persist to user settings and take precedence over env vars
     if accept_consent:
-        settings.override("AI_CONSENT_GRANTED", True)
+        settings.AI_CONSENT_GRANTED = True
+        _persist_settings_sync(settings)
     elif decline_consent:
-        settings.override("AI_CONSENT_GRANTED", False)
+        settings.AI_CONSENT_GRANTED = False
+        _persist_settings_sync(settings)
     elif env_consent is not None:
         env_consent_clean = env_consent.strip().lower()
         if env_consent_clean in ("1", "true", "yes", "on"):
@@ -329,7 +344,8 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
         elif env_consent_clean in ("0", "false", "no", "off"):
             settings.override("AI_CONSENT_GRANTED", False)
 
-    # Check for non-interactive mode or wizard bypass
+    # Bypass TUI onboarding wizard when consent or skip flags are provided,
+    # while only enabling non-interactive mode when explicitly requested.
     is_non_interactive_env = bool(
         env_non_interactive
         and env_non_interactive.strip().lower() in ("1", "true", "yes", "on")
@@ -342,10 +358,47 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
         or decline_consent
     ):
         object.__setattr__(settings, "_skip_wizard", True)
-        object.__setattr__(settings, "_non_interactive", True)
-        settings.NON_INTERACTIVE = True
         if settings.AI_CONSENT_GRANTED is None:
             settings.override("AI_CONSENT_GRANTED", False)
+
+    if non_interactive_flag or is_non_interactive_env:
+        object.__setattr__(settings, "_non_interactive", True)
+
+
+def _maybe_provision_model_for_cli_consent(
+    args: argparse.Namespace, settings: AppSettings
+) -> None:
+    """Initiate model verification/download with terminal progress when --accept-ai-consent is passed."""
+    if not _extract_bool_arg(args, "accept_ai_consent"):
+        return
+    if getattr(args, "subcommand", None) == "model":
+        return
+    if getattr(args, "_cli_consent_model_checked", False):
+        return
+    object.__setattr__(args, "_cli_consent_model_checked", True)
+
+    from app.core.downloader import provision_model_cli
+    from app.core.exceptions import DownloaderError
+
+    quiet = bool(getattr(args, "quiet", False))
+    proxy = str(getattr(settings, "PROXY", "") or "").strip()
+    try:
+        provision_model_cli(proxy=proxy, quiet=quiet, stream=sys.stderr)
+    except DownloaderError as exc:
+        if not quiet:
+            print(
+                f"Warning: Could not download AI model weights ({exc}). "
+                "Proceeding with local keyword/TF-IDF fallback. "
+                "Retry anytime with 'smart-autosorter model download'.",
+                file=sys.stderr,
+            )
+    except Exception as exc:
+        if not quiet:
+            print(
+                f"Warning: Model provisioning check encountered an error ({exc}). "
+                "Proceeding with local keyword/TF-IDF fallback.",
+                file=sys.stderr,
+            )
 
 
 def _prompt_workspace_selection(args: argparse.Namespace) -> Path:
@@ -580,6 +633,7 @@ def _prepare_cli_target_directory(
 ):
     """Apply CLI overrides once, optionally launch TUI, and validate the target folder."""
     apply_config_overrides(settings, args)
+    _maybe_provision_model_for_cli_consent(args, settings)
 
     if warn_if_ml_unavailable:
         from app.core.verifier import is_ml_available
@@ -1649,6 +1703,7 @@ def _main_impl():
         "config",
         "daemon",
         "ledger",
+        "model",
         "quarantine",
         "undo",
         "drop",
@@ -1706,6 +1761,8 @@ def _main_impl():
     for handler in root_logger.handlers:
         handler.addFilter(scrubber)
 
+    _maybe_provision_model_for_cli_consent(args, settings)
+
     # Direct subcommand execution
     if getattr(args, "subcommand", None) == "sort":
         handle_sort_command(args, settings)
@@ -1725,6 +1782,18 @@ def _main_impl():
         if handle_cli_command(args, settings):
             return
 
+    has_explicit_consent_flag = _extract_bool_arg(
+        args, "accept_ai_consent"
+    ) or _extract_bool_arg(args, "decline_ai_consent")
+    is_non_interactive_mode = bool(
+        getattr(settings, "_non_interactive", False)
+        or _extract_bool_arg(args, "non_interactive")
+        or (
+            os.environ.get("NON_INTERACTIVE", "").strip().lower()
+            in ("1", "true", "yes", "on")
+        )
+    )
+
     # Explicit Headless Guard for non-interactive streams without subcommands
     is_interactive = sys.stdin is not None and sys.stdin.isatty()
     is_explicit_ui = (
@@ -1734,7 +1803,7 @@ def _main_impl():
         or getattr(args, "daemon", False)
     )
 
-    if not is_interactive and not is_explicit_ui:
+    if (not is_interactive or is_non_interactive_mode) and not is_explicit_ui:
         if getattr(args, "directory", None):
             # A bare directory opens the TUI, where the user confirms the plan.
             # With no terminal (cron, pipes, CI) nobody can confirm, so only
@@ -1747,6 +1816,26 @@ def _main_impl():
                     file=sys.stderr,
                 )
             handle_sort_command(args, settings)
+        elif has_explicit_consent_flag:
+            is_json = bool(getattr(args, "json", False) or "--json" in sys.argv)
+            consent_state = bool(getattr(settings, "AI_CONSENT_GRANTED", False))
+            if is_json:
+                print(
+                    json.dumps(
+                        {
+                            "status": "success",
+                            "ai_consent_granted": consent_state,
+                        },
+                        indent=2,
+                    )
+                )
+            elif not getattr(args, "quiet", False):
+                state_label = "granted" if consent_state else "declined"
+                print(
+                    f"Saved AI consent preference: {state_label}.",
+                    file=sys.stderr,
+                )
+            return
         else:
             if getattr(args, "json", False) or "--json" in sys.argv:
                 emit_cli_error(
@@ -1756,6 +1845,25 @@ def _main_impl():
                 )
             parser.print_help(sys.stderr)
             sys.exit(2)
+
+    if (
+        has_explicit_consent_flag
+        and is_interactive
+        and not is_non_interactive_mode
+        and not getattr(args, "directory", None)
+        and not getattr(args, "preset", None)
+        and not getattr(args, "demo", False)
+        and not getattr(args, "daemon", False)
+    ):
+        try:
+            target_path = resolve_preset_and_directory(args, settings)
+            args.directory = str(target_path)
+        except ValueError as err:
+            emit_cli_error(
+                f"Error: {err}",
+                json_mode=bool(getattr(args, "json", False)),
+                exit_code=1,
+            )
 
     # Verify embedded model integrity upfront if packaged / sandboxed
     if is_packaged():

@@ -465,14 +465,14 @@ usage: smart-autosorter [-h] [-q] [--no-color] [--demo] [--smoke-test]
                         [--json] [--daemon] [--tui] [--interactive]
                         [--accept-ai-consent | --decline-ai-consent]
                         [--skip-wizard] [--non-interactive]
-                        {sort,scan,config,daemon,undo,drop,ledger,quarantine}
+                        {sort,scan,config,daemon,undo,drop,ledger,model,quarantine}
                         ...
 
 Smart AutoSorter AI Pro: sort a folder of documents into topic
 folders, offline. Every move can be undone.
 
 positional arguments:
-  {sort,scan,config,daemon,undo,drop,ledger,quarantine}
+  {sort,scan,config,daemon,undo,drop,ledger,model,quarantine}
                         Available subcommands
     sort                Run document sorting in headless batch processing mode
     scan                Run directory scanning and analysis without moving
@@ -485,6 +485,8 @@ positional arguments:
                         directories
     ledger              Manage transaction ledger entries and automated
                         reconciliation
+    model               Inspect, download, verify, or remove local AI model
+                        weights
     quarantine          Manage compliance quarantine staging, inspection, and
                         release
 
@@ -954,6 +956,105 @@ options:
   -f {csv,json}, --format {csv,json}
                         Audit log export format (csv or json)
   --csv                 Export audit log in CSV format
+```
+
+##### `model`
+```text
+usage: smart-autosorter model [-h] [--json] [-q] [--no-color]
+                              {status,download,verify,remove,delete} ...
+
+positional arguments:
+  {status,download,verify,remove,delete}
+                        Model management subcommands
+    status              Display AI consent state, local model bundle
+                        readiness, and verification status
+    download            Download and cryptographically verify local ONNX model
+                        weights
+    verify              Verify SHA-256 hashes and integrity of local model
+                        bundle files
+    remove (delete)     Unload in-memory AI models and delete local cached
+                        model files
+
+options:
+  -h, --help            show this help message and exit
+  --json                Output response in structured JSON format
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+```
+
+###### `model status`
+```text
+usage: smart-autosorter model status [-h] [--model-dir MODEL_DIR] [-q]
+                                     [--no-color] [--json]
+
+options:
+  -h, --help            show this help message and exit
+  --model-dir MODEL_DIR
+                        Explicit local model directory path override
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+```
+
+###### `model download`
+```text
+usage: smart-autosorter model download [-h] [--model-dir MODEL_DIR] [-q]
+                                       [--no-color] [--json] [--url URL]
+                                       [--proxy PROXY] [--force]
+
+options:
+  -h, --help            show this help message and exit
+  --model-dir MODEL_DIR
+                        Explicit local model directory path override
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+  --url URL             HTTPS allowlisted model weights URL
+  --proxy PROXY         HTTP/HTTPS proxy URL for model download transfers
+  --force               Re-download model weights even if verified files
+                        already exist
+```
+
+###### `model verify`
+```text
+usage: smart-autosorter model verify [-h] [--model-dir MODEL_DIR] [-q]
+                                     [--no-color] [--json]
+
+options:
+  -h, --help            show this help message and exit
+  --model-dir MODEL_DIR
+                        Explicit local model directory path override
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+```
+
+###### `model remove`
+```text
+usage: smart-autosorter model remove [-h] [--model-dir MODEL_DIR] [-q]
+                                     [--no-color] [--json]
+
+options:
+  -h, --help            show this help message and exit
+  --model-dir MODEL_DIR
+                        Explicit local model directory path override
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
+```
+
+###### `model delete`
+```text
+usage: smart-autosorter model remove [-h] [--model-dir MODEL_DIR] [-q]
+                                     [--no-color] [--json]
+
+options:
+  -h, --help            show this help message and exit
+  --model-dir MODEL_DIR
+                        Explicit local model directory path override
+  -q, --quiet           Suppress informational prints
+  --no-color            Disable ANSI color formatting
+  --json                Output response in structured JSON format
 ```
 
 ##### `quarantine`

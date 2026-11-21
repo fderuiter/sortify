@@ -20,6 +20,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.cli.ledger_cli
 
+## `app.cli.model_cli`
+
+::: app.cli.model_cli
+
 ## `app.cli.quarantine_cli`
 
 ::: app.cli.quarantine_cli

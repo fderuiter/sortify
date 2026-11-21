@@ -14,31 +14,46 @@ On first launch the **Privacy & Data Setup Wizard** asks whether you allow the o
 Declining is fine. Sorting still works offline using TF-IDF keyword clustering (see [Offline Mode](#offline-mode)).
 
 ### From the command line
-- Grant consent and download the model:
+- Grant consent, persist your preference across restarts, verify or download the local ONNX model with terminal progress, and select a workspace in interactive terminals:
   ```bash
   smart-autosorter --accept-ai-consent
   ```
-- Decline and stay fully offline:
+- Decline AI consent, persist that preference across restarts, and stay 100% offline:
   ```bash
   smart-autosorter --decline-ai-consent
   ```
-- In scripts or other non-interactive environments, add `--non-interactive` (or `--skip-wizard`) so no dialog waits for input:
+- In scripts or headless CI environments, add `--non-interactive` so no workspace prompt or TUI dialog waits for input:
   ```bash
   smart-autosorter --accept-ai-consent --non-interactive
+  ```
+- Manage local model weights directly at any time with the `model` subcommand:
+  ```bash
+  smart-autosorter model status
+  smart-autosorter model download --proxy http://proxy.example.com:8080
+  smart-autosorter model verify
+  smart-autosorter model remove
   ```
 
 ### In the terminal interface
 The wizard opens automatically on first launch of `smart-autosorter`:
-1. **AI Consent**: Use `[Tab]` / `[Shift+Tab]` to focus the AI Consent switch (`#switch-consent`), then press `[Space]` or `[Enter]` to toggle consent for local semantic AI sorting.
-2. **Workspace Directory**: Navigate to the workspace directory input field (`#input-dir`) to enter the absolute path of the directory you want to organize. If left empty, it falls back to the current working directory.
-3. **Quick Presets**: Alternatively, choose one of the quick preset buttons to quickly populate `#input-dir`:
-   - **Demo Workspace**: sandbox demo folder (`sandbox/demo_workspace`, created automatically if needed).
+1. **AI Consent & Live Model Status**: Use `[Tab]` / `[Shift+Tab]` to focus the AI Consent switch (`#switch-consent`), then press `[Space]` or `[Enter]` to toggle consent. The wizard inspects your local model directory on launch and shows whether weights are **Verified**, **Downloading**, or **Missing** (`#lbl-wizard-model-status`).
+2. **Proxy & Deferred Download Options**: Optionally enter a corporate HTTP/HTTPS proxy URL (`#input-wizard-proxy`) or check **Defer model download (metered or offline network)** (`#chk-defer-download`) to skip background transfers and sort immediately using offline keyword/TF-IDF rules.
+3. **Workspace Directory & Quick Presets**: Enter the target directory path (`#input-dir`), or choose a quick preset button:
+   - **Demo Workspace**: creates `sandbox/demo_workspace` and automatically enables **Generate Sample Documents** (`#chk-sample-corpus`) so finishing setup renders a non-empty sorting plan immediately.
    - **Downloads**: your user `~/Downloads` directory.
    - **Documents**: your user `~/Documents` directory.
-4. **Validation and Error Handling**: If an invalid or non-existent path is entered, selecting **Finish & Save** (or pressing `[Enter]` inside `#input-dir`) displays an inline error banner (`#lbl-error`), announces the error message via screen reader, and restores focus directly to the input field so you can correct it. The wizard remains open until a valid directory path is provided.
-5. **Finish & Save**: Highlight **Finish & Save** (or press `[Enter]` inside `#input-dir`). The wizard validates the directory path through path validation before saving settings, applying any selected starter templates, and initiating the initial directory scan.
+4. **Interactive Sample Playground**: Select **Try Interactive Sample Playground** (`#btn-open-playground`) to preview sample documents and test how each of the six built-in starter rule template packs changes live classification predictions. Toggling starter packs or committing the sandbox synchronizes your chosen folder and pack selections back to the onboarding wizard.
+5. **Validation and Error Handling**: If an invalid or non-existent path is entered, selecting **Finish & Save** (or pressing `[Enter]` inside `#input-dir`) displays an inline error banner (`#lbl-error`), announces the error message via screen reader, and restores focus directly to the input field so you can correct it.
+6. **Finish & Save**: Highlight **Finish & Save** (or press `[Enter]` inside `#input-dir`). When AI consent is enabled and verified weights are absent (unless deferred), Sortify automatically starts a non-blocking background model download, scans the chosen workspace immediately using local keyword/TF-IDF clustering, and switches the status bar badge from `[AI: Downloading …]` / `[AI: Fallback]` to `[AI: Active]` once SHA-256 verification completes.
 
-Reopen the wizard any time with `[Ctrl+W]`.
+Reopen the wizard any time with `[Ctrl+W]`, or open the **Model Manager** directly with `[Ctrl+G]` (also available in the Command Palette via `[Ctrl+K]`).
+
+### AI Status Bar Badges
+The TUI status bar distinguishes four runtime AI states:
+- `[AI: Active]`: AI consent is enabled and cryptographically verified ONNX model weights exist on disk.
+- `[AI: Downloading XX%]`: AI consent is enabled and local model weights are downloading in the background while keyword/TF-IDF clustering remains available.
+- `[AI: Fallback]`: AI consent is enabled, but verified model weights are missing, deferred, or offline (sorting continues locally with keyword rules and TF-IDF vectors).
+- `[AI: Disabled]`: AI consent is off and in-memory AI models are unloaded.
 
 ## Sorting a Folder
 
@@ -48,7 +63,7 @@ Reopen the wizard any time with `[Ctrl+W]`.
 3. Review the plan. `[Ctrl+F]` searches the tree, `[Space]` checks items, `[Ctrl+L]` locks a file in place, `[F2]` renames a file or folder category node, `[Ctrl+N]` creates a folder, and `[Ctrl+R]` opens the active rule manager modal. Press `[R]` to reassign checked files or the active item to a target folder (if a text input field such as the search box is focused, defocus it first before pressing `[F2]`, `[Ctrl+R]`, or `[R]`; see [Keyboard Shortcuts](keyboard_shortcuts.md)). You can also press `[Ctrl+K]` to open the [Command Palette](#command-palette) for command discovery and to trigger all system actions without memorizing keybindings.
 4. Press `[Ctrl+E]` to execute. You can review duplicates first, and an audit report is shown when the moves finish.
 
-Press `[Ctrl+K]` for the command palette, `[?]` or `[F1]` for the full list of shortcuts, and `[Ctrl+Q]` to quit. Every shortcut is also listed in [Keyboard Shortcuts](keyboard_shortcuts.md).
+Press `[Ctrl+K]` for the command palette, `[Ctrl+G]` for the Model Manager, `[?]` or `[F1]` for the full list of shortcuts, and `[Ctrl+Q]` to quit. Every shortcut is also listed in [Keyboard Shortcuts](keyboard_shortcuts.md).
 
 ### From the command line
 ```bash

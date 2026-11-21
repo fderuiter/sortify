@@ -21,6 +21,7 @@ Press `?` or `F1` in the app to see these shortcuts.
 | `+` | Rating (+) |
 | `-` | Rating (-) |
 | `Ctrl+O` | Settings |
+| `Ctrl+G` | Model Manager |
 | `Ctrl+K` | Command Palette |
 | `Ctrl+W` | Wizard |
 | `Ctrl+D` | DropZone |

@@ -177,11 +177,29 @@ async def test_changing_consent_state_updates_status_bar_badge_and_announcements
         sb = app.query_one("#status-bar", Static)
         assert "[AI: Disabled]" in str(sb.render())
 
-        # Update settings consent to True
+        # Update settings consent to True without verified local weights -> Fallback
         app.settings.AI_CONSENT_GRANTED = True
         await pilot.pause(0.1)
 
-        assert "[AI: Active]" in str(sb.render())
+        assert "[AI: Fallback]" in str(sb.render())
+
+        # When local model bundle is verified, status bar switches to [AI: Active]
+        from unittest.mock import patch
+
+        with patch(
+            "app.core.downloader.inspect_local_model_bundle",
+            return_value={
+                "status": "verified",
+                "verified": True,
+                "model_dir": str(tmp_path / "model"),
+                "present_files": [],
+                "missing_files": [],
+                "detail": "Verified",
+            },
+        ):
+            app.update_status()
+            await pilot.pause(0.05)
+            assert "[AI: Active]" in str(sb.render())
 
         # Update settings consent back to False
         app.settings.AI_CONSENT_GRANTED = False
