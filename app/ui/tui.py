@@ -125,6 +125,7 @@ class AutoSorterTUI(
         Binding("plus", "rate_positive", "Rating (+)", show=False),
         Binding("minus", "rate_negative", "Rating (-)", show=False),
         Binding("ctrl+o", "open_settings", "Settings", show=False),
+        Binding("ctrl+g", "open_model_manager", "Model Manager", show=False),
         Binding("ctrl+k", "open_command_palette", "Command Palette", show=False),
         Binding("ctrl+w", "open_wizard", "Wizard", show=False),
         Binding("ctrl+d", "open_dropzone", "DropZone", show=False),
@@ -645,6 +646,7 @@ class AutoSorterTUI(
         self._update_onboarding_cta_visibility()
         self.check_abandoned_sessions()
         self.set_interval(1.0, self._poll_daemon_status)
+        self.set_interval(0.5, self._poll_ai_provisioning_status)
         self.run_worker(self._poll_daemon_status(), name="poll_daemon_startup")
 
         env_non_interactive = os.environ.get("NON_INTERACTIVE")
@@ -889,10 +891,70 @@ class AutoSorterTUI(
             elif new_state == "idle":
                 self.announce("Watchdog daemon idle.", priority="assertive")
 
+    def _compute_ai_poll_token(self) -> tuple[Any, ...]:
+        """Build an in-memory token of consent and DownloadManager state without disk stat calls."""
+        from app.core.downloader import DownloadManager
+
+        consent = getattr(self.settings, "AI_CONSENT_GRANTED", None) is True
+        dm = DownloadManager._instance
+        if dm is None:
+            return (0, consent, "IDLE", False, 0, "")
+        is_downloading = bool(dm.state.get("is_downloading", False))
+        raw_progress = float(dm.state.get("progress", 0.0) or 0.0)
+        pct = int(round(min(100.0, max(0.0, raw_progress * 100.0))))
+        err = str(dm.state.get("error") or "")
+        return (id(dm), consent, str(dm.status), is_downloading, pct, err)
+
     def _get_ai_status_badge(self) -> str:
-        """Return visual AI consent status badge string."""
-        consent = getattr(self.settings, "AI_CONSENT_GRANTED", None)
-        return "[AI: Active]" if consent is True else "[AI: Disabled]"
+        """Return visual AI runtime status badge distinguishing active, downloading, fallback, and disabled."""
+        from app.core.downloader import get_ai_runtime_state
+
+        runtime_state = get_ai_runtime_state(self.settings)
+        badge = str(runtime_state["badge"])
+        self._last_ai_state = str(runtime_state["state"])
+        self._last_ai_badge = badge
+        self._last_ai_poll_token = self._compute_ai_poll_token()
+        return badge
+
+    def _poll_ai_provisioning_status(self) -> None:
+        """Poll background model download and verification state to refresh status bar badges."""
+        try:
+            poll_token = self._compute_ai_poll_token()
+            if (
+                getattr(self, "_last_ai_badge", None) is not None
+                and getattr(self, "_last_ai_poll_token", None) == poll_token
+            ):
+                return
+
+            from app.core.downloader import get_ai_runtime_state
+
+            prev_badge = getattr(self, "_last_ai_badge", None)
+            prev_state = getattr(self, "_last_ai_state", None)
+            runtime = get_ai_runtime_state(self.settings)
+            new_badge = str(runtime["badge"])
+            new_state = str(runtime["state"])
+            self._last_ai_badge = new_badge
+            self._last_ai_state = new_state
+            self._last_ai_poll_token = self._compute_ai_poll_token()
+
+            if prev_badge is not None and prev_badge != new_badge:
+                self.update_status()
+            if prev_state == "downloading" and new_state == "active":
+                self.announce(
+                    "AI model weights verified and active.",
+                    priority="polite",
+                )
+            elif (
+                prev_state == "downloading"
+                and new_state == "fallback"
+                and runtime.get("error")
+            ):
+                self.announce(
+                    f"AI model download failed ({runtime['error']}). Using local keyword fallback.",
+                    priority="assertive",
+                )
+        except Exception as exc:
+            logger.debug(f"AI provisioning status poll error: {exc}")
 
     def _on_ai_consent_changed(self, value: Any = None) -> None:
         """Handle AI_CONSENT_GRANTED setting change notification."""
@@ -925,13 +987,13 @@ class AutoSorterTUI(
             pass
 
     def update_status(self, text: Optional[str] = None) -> None:
-        """Update status bar label with current message, AI consent badge, and daemon badge."""
+        """Update status bar label with current message, truthful AI badge, and daemon badge."""
         try:
             if text is not None:
+                import re
+
                 clean_text = str(text)
-                for badge_str in ("[AI: Active]", "[AI: Disabled]"):
-                    if clean_text.startswith(badge_str):
-                        clean_text = clean_text[len(badge_str) :].lstrip()
+                clean_text = re.sub(r"^\[AI:[^\]]+\]\s*", "", clean_text)
                 for badge_str in (
                     "[Daemon: Active]",
                     "[Daemon: Paused]",
@@ -946,6 +1008,7 @@ class AutoSorterTUI(
                 )
 
             ai_badge = self._get_ai_status_badge()
+            self._last_ai_badge = ai_badge
             daemon_badge = self._get_daemon_status_badge()
             badges = f"{ai_badge} {daemon_badge}"
             full_text = (

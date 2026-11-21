@@ -483,3 +483,36 @@ async def test_tui_direct_rule_actions(tmp_path):
         assert app.screen.settings is app.settings
         await pilot.press("escape")
         await pilot.pause()
+
+
+@pytest.mark.anyio
+async def test_model_manager_ctrl_g_binding_and_catalog_entry(tmp_path):
+    """Verify Ctrl+G opens ModelManagerModal directly and is listed in palette and cheat sheet."""
+    cmd = next(c for c in DEFAULT_COMMAND_CATALOG if c.id == "open_model_manager")
+    assert cmd.shortcut == "Ctrl+G"
+
+    ctrl_g = next((b for b in AutoSorterTUI.BINDINGS if b.key == "ctrl+g"), None)
+    assert ctrl_g is not None
+    assert ctrl_g.action == "open_model_manager"
+    assert ctrl_g.show is False
+
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = False
+    app = AutoSorterTUI(settings=settings, base_dir=str(tmp_path), skip_wizard=True)
+
+    async with app.run_test() as pilot:
+        await pilot.pause()
+        await pilot.press("ctrl+g")
+        await pilot.pause()
+        assert isinstance(app.screen, ModelManagerModal)
+        await pilot.press("escape")
+        await pilot.pause()
+
+        await pilot.press("?")
+        await pilot.pause()
+        assert isinstance(app.screen, ShortcutCheatSheetModal)
+        rendered_labels = " ".join(
+            str(lbl.render()) for lbl in app.screen.query("Label")
+        )
+        assert "Ctrl+G" in rendered_labels
+        assert "Model Manager" in rendered_labels

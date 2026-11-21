@@ -353,6 +353,7 @@ def test_build_parser_factory():
         "config",
         "daemon",
         "ledger",
+        "model",
         "quarantine",
         "undo",
         "drop",
@@ -645,7 +646,7 @@ def test_one_off_flags_are_not_persisted(tmp_path, monkeypatch):
     time.sleep(1.0)
     saved = json.loads((app_dir / "settings.json").read_text(encoding="utf-8"))
     assert saved["MAX_FOLDERS"] == 7
-    assert saved.get("AI_CONSENT_GRANTED") is None
+    assert saved.get("AI_CONSENT_GRANTED") is False
 
 
 @pytest.mark.xdist_group(name="cli_subcommands")

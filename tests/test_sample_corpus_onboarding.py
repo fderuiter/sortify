@@ -17,10 +17,13 @@ def test_generate_sample_corpus_engine(tmp_path):
 
     # Initial generation
     files = generate_sample_corpus(target_dir, overwrite=False)
-    assert len(files) == 4
+    assert len(files) == 7
     assert "demo_finance.txt" in files
     assert "demo_tech.txt" in files
     assert "demo_health.txt" in files
+    assert "demo_legal.txt" in files
+    assert "demo_personal.txt" in files
+    assert "demo_hr.txt" in files
     assert "empty.txt" in files
 
     # Verify content
@@ -34,7 +37,7 @@ def test_generate_sample_corpus_engine(tmp_path):
 
     # Calling with overwrite=True succeeds
     recreated = generate_sample_corpus(target_dir, overwrite=True)
-    assert len(recreated) == 4
+    assert len(recreated) == 7
 
 
 def test_wizard_modal_sample_corpus_option(tmp_path):

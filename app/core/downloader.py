@@ -12,6 +12,7 @@ import urllib.error
 import urllib.parse
 import urllib.request
 from enum import Enum
+from typing import Any
 
 from app.core.exceptions import DownloaderError, ModelVerificationError
 from app.core.lifecycle import LifecycleTelemetryMixin
@@ -1186,3 +1187,370 @@ def run_background_download(
     thread = ContextPropagatingThread(target=thread_target, daemon=True)
     thread.start()
     return thread
+
+
+_VERIFICATION_CACHE_LOCK = threading.Lock()
+_VERIFICATION_CACHE: dict[str, tuple[tuple[Any, ...], bool, str, str]] = {}
+
+
+def resolve_default_model_dir() -> str:
+    """Resolve the active local model directory path across packaged and user installs.
+
+    Checks embedded PyInstaller bundle paths and local workspace ``model/`` directories
+    when verified weights are present, otherwise defaults to ``get_app_dir() / "model"``.
+
+    Returns
+    -------
+    str
+        Resolved filesystem path to the model directory.
+    """
+    from app.core.path_utils import get_meipass_dir, is_packaged
+
+    if is_packaged():
+        meipass = get_meipass_dir()
+        if meipass:
+            mei_dir = os.path.join(meipass, "model")
+            if os.path.isfile(os.path.join(mei_dir, "model.onnx")):
+                return mei_dir
+
+    local_dir = os.path.abspath("model")
+    if os.path.isfile(os.path.join(local_dir, "model.onnx")):
+        return local_dir
+
+    try:
+        from app.config import get_app_dir
+
+        return str(get_app_dir() / "model")
+    except (OSError, ValueError, RuntimeError):
+        return os.path.expanduser("~/.smart-autosorter/model")
+
+
+def inspect_local_model_bundle(model_dir: str | None = None) -> dict[str, Any]:
+    """Inspect local model directory and active ``DownloadManager`` state with stat-keyed caching.
+
+    Parameters
+    ----------
+    model_dir : str | None, optional
+        Model directory to inspect. Resolves default application model path when omitted.
+
+    Returns
+    -------
+    dict[str, Any]
+        Structured inspection dictionary containing ``model_dir``, ``verified``,
+        ``bundle_status``, ``detail``, ``is_downloading``, ``progress_percent``,
+        ``status_text``, ``error``, ``size_bytes``, and ``files``.
+    """
+    resolved_dir = os.path.abspath(model_dir or resolve_default_model_dir())
+    dm = DownloadManager.get_instance()
+    is_downloading = bool(dm.state.get("is_downloading", False))
+    raw_progress = float(dm.state.get("progress", 0.0) or 0.0)
+    progress_percent = min(100.0, max(0.0, raw_progress * 100.0))
+    status_text = str(dm.state.get("status_text") or "")
+    err_obj = dm.state.get("error")
+    error_str = str(err_obj) if err_obj else None
+
+    from app.core.shared_registry import SharedModelRegistry
+
+    expected_hashes = SharedModelRegistry.get_instance().get_expected_hashes(
+        "model_download"
+    )
+    tracked_names = sorted(set(_REQUIRED_BUNDLE_FILES) | set(expected_hashes.keys()))
+
+    file_stats: list[tuple[str, int, int]] = []
+    files_report: dict[str, dict[str, Any]] = {}
+    total_size_bytes = 0
+
+    if os.path.isdir(resolved_dir):
+        for fname in tracked_names:
+            fpath = os.path.join(resolved_dir, fname)
+            try:
+                st = os.stat(fpath)
+                if os.path.isfile(fpath):
+                    file_stats.append((fname, int(st.st_size), int(st.st_mtime_ns)))
+                    files_report[fname] = {
+                        "exists": True,
+                        "size_bytes": int(st.st_size),
+                    }
+                    total_size_bytes += int(st.st_size)
+                else:
+                    file_stats.append((fname, -1, -1))
+                    files_report[fname] = {"exists": False, "size_bytes": 0}
+            except OSError:
+                file_stats.append((fname, -1, -1))
+                files_report[fname] = {"exists": False, "size_bytes": 0}
+    else:
+        for fname in tracked_names:
+            file_stats.append((fname, -1, -1))
+            files_report[fname] = {"exists": False, "size_bytes": 0}
+
+    fingerprint = (
+        tuple(file_stats),
+        tuple(sorted(expected_hashes.items())),
+    )
+
+    with _VERIFICATION_CACHE_LOCK:
+        cached = _VERIFICATION_CACHE.get(resolved_dir)
+
+    if cached is not None and cached[0] == fingerprint:
+        verified, bundle_status, detail = cached[1], cached[2], cached[3]
+    else:
+        bundle_status, detail = _inspect_model_bundle(resolved_dir)
+        verified = bundle_status == "valid"
+        with _VERIFICATION_CACHE_LOCK:
+            _VERIFICATION_CACHE[resolved_dir] = (
+                fingerprint,
+                verified,
+                bundle_status,
+                detail,
+            )
+
+    return {
+        "model_dir": resolved_dir,
+        "verified": verified,
+        "bundle_status": "downloading" if is_downloading else bundle_status,
+        "disk_bundle_status": bundle_status,
+        "detail": detail,
+        "is_downloading": is_downloading,
+        "progress_percent": progress_percent,
+        "status_text": status_text,
+        "error": error_str,
+        "size_bytes": total_size_bytes,
+        "files": files_report,
+    }
+
+
+def get_ai_runtime_state(
+    settings: Any = None, model_dir: str | None = None
+) -> dict[str, Any]:
+    """Compute truthful four-state AI runtime status and status-bar badge string.
+
+    Distinguishes:
+    - ``disabled``: AI consent is False or unset -> ``[AI: Disabled]``
+    - ``downloading``: AI consent is True and model transfer is active -> ``[AI: Downloading XX%]``
+    - ``active``: AI consent is True and verified model weights exist on disk -> ``[AI: Active]``
+    - ``fallback``: AI consent is True and verified weights are absent -> ``[AI: Fallback]``
+
+    Parameters
+    ----------
+    settings : Any, optional
+        Application settings instance exposing ``AI_CONSENT_GRANTED``.
+    model_dir : str | None, optional
+        Explicit model directory override.
+
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary containing ``state``, ``badge``, ``consent_granted``, and bundle metadata.
+    """
+    consent = getattr(settings, "AI_CONSENT_GRANTED", None) if settings else None
+    bundle = inspect_local_model_bundle(model_dir=model_dir)
+
+    if consent is not True:
+        state = "disabled"
+        badge = "[AI: Disabled]"
+    elif bundle.get("is_downloading", False):
+        state = "downloading"
+        pct = int(round(float(bundle.get("progress_percent", 0.0) or 0.0)))
+        badge = f"[AI: Downloading {pct}%]" if pct > 0 else "[AI: Downloading]"
+    elif bundle.get("verified", False):
+        state = "active"
+        badge = "[AI: Active]"
+    else:
+        state = "fallback"
+        badge = "[AI: Fallback]"
+
+    return {
+        "state": state,
+        "badge": badge,
+        "consent_granted": consent is True,
+        **bundle,
+    }
+
+
+def provision_model_cli(
+    model_dir: str | None = None,
+    url: str = DEFAULT_MODEL_URL,
+    proxy: str = "",
+    force: bool = False,
+    quiet: bool = False,
+    stream: Any = None,
+) -> dict[str, Any]:
+    """Verify or download model weights synchronously with terminal progress output.
+
+    Parameters
+    ----------
+    model_dir : str | None, optional
+        Destination directory for model files. Defaults to ``resolve_default_model_dir()``.
+    url : str, optional
+        HTTPS allowlisted model URL. Defaults to ``DEFAULT_MODEL_URL``.
+    proxy : str, optional
+        Optional HTTP/HTTPS proxy URL.
+    force : bool, optional
+        Re-download even if verified model files already exist on disk.
+    quiet : bool, optional
+        Suppress terminal progress messages when True.
+    stream : Any, optional
+        Output stream for progress updates (defaults to ``sys.stderr``).
+
+    Returns
+    -------
+    dict[str, Any]
+        Result dictionary with ``status``, ``downloaded``, ``verified``, and ``model_dir``.
+
+    Raises
+    ------
+    DownloaderError
+        If network transfer, URL validation, or SHA-256 verification fails.
+    """
+    import sys
+
+    out = stream if stream is not None else sys.stderr
+    resolved_dir = os.path.abspath(model_dir or resolve_default_model_dir())
+
+    if not force and verify_downloaded_model(resolved_dir):
+        if not quiet and out is not None:
+            print(
+                f"AI model weights verified at '{resolved_dir}'.",
+                file=out,
+            )
+        return {
+            "status": "verified",
+            "downloaded": False,
+            "verified": True,
+            "model_dir": resolved_dir,
+        }
+
+    done_event = threading.Event()
+    failure_holder: list[BaseException] = []
+    last_bucket = [-1]
+    is_tty = bool(out is not None and hasattr(out, "isatty") and out.isatty())
+
+    def _on_progress(update: ProgressUpdate) -> None:
+        if quiet or out is None:
+            return
+        pct = min(100, max(0, int(round((update.progress or 0.0) * 100))))
+        stage = update.stage or f"Downloading model weights ({pct}%)"
+        if is_tty:
+            out.write(f"\r{stage:<72}")
+            out.flush()
+        else:
+            bucket = pct // 25
+            if bucket != last_bucket[0]:
+                last_bucket[0] = bucket
+                print(stage, file=out)
+
+    def _on_success() -> None:
+        done_event.set()
+
+    def _on_failure(err: BaseException) -> None:
+        failure_holder.append(err)
+        done_event.set()
+
+    if not quiet and out is not None:
+        print(
+            f"Provisioning local AI model weights into '{resolved_dir}'...",
+            file=out,
+        )
+
+    dm = DownloadManager.get_instance()
+    if proxy and proxy.strip():
+        dm.update_proxy(proxy.strip())
+
+    worker = run_background_download(
+        url=url,
+        model_dir=resolved_dir,
+        progress_callback=_on_progress,
+        on_success=_on_success,
+        on_failure=_on_failure,
+        proxy=proxy.strip() if proxy else "",
+        download_manager=dm,
+    )
+    worker.join()
+    done_event.wait(timeout=1.0)
+
+    if is_tty and not quiet and out is not None:
+        out.write("\n")
+        out.flush()
+
+    with _VERIFICATION_CACHE_LOCK:
+        _VERIFICATION_CACHE.pop(resolved_dir, None)
+
+    if failure_holder:
+        err = failure_holder[0]
+        if isinstance(err, DownloaderError):
+            raise err
+        raise DownloadError(str(err)) from err
+
+    if not verify_downloaded_model(resolved_dir):
+        _, detail = _inspect_model_bundle(resolved_dir)
+        raise ModelVerificationError(
+            f"Model verification failed after download: {detail}"
+        )
+
+    if not quiet and out is not None:
+        print(
+            f"AI model weights downloaded and verified at '{resolved_dir}'.",
+            file=out,
+        )
+
+    return {
+        "status": "verified",
+        "downloaded": True,
+        "verified": True,
+        "model_dir": resolved_dir,
+    }
+
+
+def remove_local_model_bundle(model_dir: str | None = None) -> dict[str, Any]:
+    """Unload in-memory AI models and remove local model directory files safely.
+
+    Parameters
+    ----------
+    model_dir : str | None, optional
+        Target model directory to remove. Defaults to ``resolve_default_model_dir()``.
+
+    Returns
+    -------
+    dict[str, Any]
+        Dictionary containing ``model_dir``, ``removed``, ``removed_files``, and ``freed_bytes``.
+    """
+    resolved_dir = os.path.abspath(model_dir or resolve_default_model_dir())
+    dm = DownloadManager.get_instance()
+    dm.cancel_download()
+
+    with contextlib.suppress(Exception):
+        from app.core.shared_registry import SharedModelRegistry
+
+        SharedModelRegistry.get_instance().unload_all_models()
+
+    removed_files: list[str] = []
+    freed_bytes = 0
+    if os.path.isdir(resolved_dir):
+        for root, _dirs, files in os.walk(resolved_dir):
+            for fname in files:
+                fpath = os.path.join(root, fname)
+                with contextlib.suppress(OSError):
+                    freed_bytes += os.path.getsize(fpath)
+                removed_files.append(os.path.relpath(fpath, resolved_dir))
+        from app.core.resilient_file_ops import resilient_rmtree
+
+        resilient_rmtree(resolved_dir, ignore_errors=True)
+
+    with dm._manager_lock:
+        dm.cancel_event.clear()
+        dm._transition_to_locked(DownloadState.IDLE)
+        dm.state["progress"] = 0.0
+        dm.state["status_text"] = "Model deleted."
+        dm.state["success"] = False
+        dm.state["error"] = None
+        dm.state["is_downloading"] = False
+
+    with _VERIFICATION_CACHE_LOCK:
+        _VERIFICATION_CACHE.pop(resolved_dir, None)
+
+    return {
+        "model_dir": resolved_dir,
+        "removed": bool(removed_files) or not os.path.exists(resolved_dir),
+        "removed_files": sorted(removed_files),
+        "freed_bytes": freed_bytes,
+    }

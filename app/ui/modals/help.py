@@ -174,6 +174,10 @@ class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None
                     "  Ctrl+O      - Open application settings", classes="shortcut-row"
                 )
                 yield Label(
+                    "  Ctrl+G      - Open AI Model Manager dialog",
+                    classes="shortcut-row",
+                )
+                yield Label(
                     "  Ctrl+W      - Open model onboarding wizard",
                     classes="shortcut-row",
                 )
