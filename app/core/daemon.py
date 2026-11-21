@@ -23,10 +23,10 @@ from app.core.domain_contracts import (
     validate_quarantine_record,
 )
 from app.core.lifecycle import LifecycleTelemetryMixin
-from app.core.metadata import MetadataPass
+from app.core.metadata import MetadataPass as MetadataPass
 from app.core.mover import is_subpath_or_equal
 from app.core.path_utils import safe_relpath
-from app.core.pipeline import SortPipeline, drop_scope
+from app.core.pipeline import SortPipeline, drop_scope, validate_drop_paths
 from app.core.quarantine_interceptor import QuarantineInterceptorService
 from app.core.resilient_file_ops import resilient_remove
 from app.core.scanner import get_files_recursively
@@ -899,6 +899,54 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             self._sort_executor, functools.partial(fn, *args, **kwargs)
         )
 
+    def _reload_settings(self, *, log_error: bool = False) -> None:
+        """Flush any pending debounced settings save timer and reload settings from disk."""
+        try:
+            save_timer = getattr(self.settings, "_save_timer", None)
+            if save_timer is not None:
+                try:
+                    save_timer.cancel()
+                except Exception:
+                    logger.debug("Failed to cancel settings save timer", exc_info=True)
+                self.settings._save()
+            self.settings.load()
+        except Exception as e:
+            if log_error:
+                logger.error(f"Error loading settings dynamically: {e}", exc_info=True)
+            else:
+                logger.debug("Failed to reload settings before triage", exc_info=True)
+
+    def _build_pipeline(self, app_session: Any) -> SortPipeline:
+        """Build a SortPipeline bound to daemon settings, base_dir, and telemetry."""
+        pipeline = SortPipeline(
+            app_session, base_dir=self.base_dir, settings=self.settings
+        )
+        pipeline.add_state_change_hook(
+            lambda old_s, new_s, _ctx=None: self.emit_telemetry(
+                "pipeline_state_change",
+                old_state=old_s.value,
+                new_state=new_s.value,
+                pipeline_state=new_s.value,
+            )
+        )
+        return pipeline
+
+    def _plan_and_execute_phase(
+        self,
+        pipeline: SortPipeline,
+        items: list[str],
+        **plan_kwargs: Any,
+    ) -> tuple[Any, Any]:
+        """Plan one phase via SortPipeline and execute moves inside scoped_move_phase."""
+        plan = pipeline.plan(items, **plan_kwargs)
+        if not plan:
+            return plan, None
+        cancel_check = plan_kwargs.get("cancel_check")
+        if cancel_check and cancel_check():
+            return plan, None
+        outcome = pipeline.execute(plan, move_context=self.scoped_move_phase)
+        return plan, outcome
+
     async def _triage_file_path(
         self, abs_path: str, cancel_token: Optional[threading.Event] = None
     ):
@@ -930,17 +978,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         def cancel_check():
             return self._is_cancelled(cancel_token)
 
-        try:
-            save_timer = getattr(self.settings, "_save_timer", None)
-            if save_timer is not None:
-                try:
-                    save_timer.cancel()
-                except Exception:
-                    logger.debug("Failed to cancel settings save timer", exc_info=True)
-                self.settings._save()
-            self.settings.load()
-        except Exception:
-            logger.debug("Failed to reload settings before triage", exc_info=True)
+        self._reload_settings()
 
         if cancel_check():
             return
@@ -1073,31 +1111,20 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         if not os.path.exists(abs_path):
             return
 
-        await self._in_sort_thread(
-            MetadataPass.run,
-            self.base_dir,
+        pipeline = self._build_pipeline(app_session)
+
+        _fast_plan, fast_outcome = await self._in_sort_thread(
+            self._plan_and_execute_phase,
+            pipeline,
             [rel_path],
-            self.settings,
-            app_session.db,
-            None,
-            cancel_check,
-        )
-
-        if cancel_check():
-            return
-
-        fast_path_plan = await self._in_sort_thread(
-            app_session.generate_sorting_plan,
             fast_path_only=True,
             target_paths=[rel_path],
+            run_metadata_pass=True,
+            cancel_check=cancel_check,
         )
-        if fast_path_plan:
-            with self.scoped_move_phase(plan=fast_path_plan):
-                summary = await self._in_sort_thread(
-                    app_session.execute_moves, fast_path_plan
-                )
+        if fast_outcome is not None:
             logger.info(
-                f"Targeted Fast-Path triage completed for {rel_path}: {summary}"
+                f"Targeted Fast-Path triage completed for {rel_path}: {fast_outcome.summary}"
             )
             return
 
@@ -1119,18 +1146,17 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 and getattr(jev_res, "is_classified", False)
                 and getattr(jev_res, "confidence", 0.0) >= 0.5
             ):
-                jev_plan = await self._in_sort_thread(
-                    app_session.generate_sorting_plan,
+                _jev_plan, jev_outcome = await self._in_sort_thread(
+                    self._plan_and_execute_phase,
+                    pipeline,
+                    [rel_path],
                     fast_path_only=True,
                     jev_results={rel_path: jev_res, abs_path: jev_res},
+                    cancel_check=cancel_check,
                 )
-                if jev_plan:
-                    with self.scoped_move_phase(plan=jev_plan):
-                        summary = await self._in_sort_thread(
-                            app_session.execute_moves, jev_plan
-                        )
+                if jev_outcome is not None:
                     logger.info(
-                        f"Targeted Jev Fast-Path triage completed for {rel_path}: {summary}"
+                        f"Targeted Jev Fast-Path triage completed for {rel_path}: {jev_outcome.summary}"
                     )
                     return
         except Exception as e:
@@ -1145,32 +1171,18 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         if not os.path.exists(abs_path):
             return
 
-        # Phase 2: Text Extraction & Incremental Model Training
-        async for item, text, file_hash, was_skipped in app_session.process_items_async(
-            [rel_path], cancel_check
-        ):
-            if cancel_check():
-                break
-            if not was_skipped:
-                chunk = {item: {"text": text, "hash": file_hash}}
-                await self._in_sort_thread(app_session.partial_fit, chunk)
-                chunk.clear()
-
-        if cancel_check():
-            return
-
-        slow_path_plan = await self._in_sort_thread(
-            app_session.generate_sorting_plan,
+        # Phase 2: Text Extraction, Incremental Model Training, and AI Planning via SortPipeline
+        _slow_plan, slow_outcome = await self._in_sort_thread(
+            self._plan_and_execute_phase,
+            pipeline,
+            [rel_path],
             fast_path_only=False,
             target_paths=[rel_path],
+            cancel_check=cancel_check,
         )
-        if slow_path_plan:
-            with self.scoped_move_phase(plan=slow_path_plan):
-                summary = await self._in_sort_thread(
-                    app_session.execute_moves, slow_path_plan
-                )
+        if slow_outcome is not None:
             logger.info(
-                f"Targeted Slow-Path AI triage completed for {rel_path}: {summary}"
+                f"Targeted Slow-Path AI triage completed for {rel_path}: {slow_outcome.summary}"
             )
 
     async def _reconciliation_worker(
@@ -1244,41 +1256,20 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 f"Reconciliation audit enqueued {enqueued_count} untracked files."
             )
 
-    def process_dropped_items(
+    def _execute_dropped_items(
         self,
-        paths: list[str],
+        validated_paths: list[str],
+        *,
         dry_run: bool = False,
         dest_dir: Optional[str] = None,
+        errors: list[str] | None = None,
     ) -> dict[str, Any]:
-        """Process dropped file or directory path payloads through active triage pipeline."""
+        """Run SortPipeline over pre-validated drop target paths."""
+        _ = dest_dir
         processed_items = []
-        errors = []
+        error_list = list(errors) if errors is not None else []
 
-        for item_path in paths:
-            if not item_path or not isinstance(item_path, str):
-                continue
-            clean_path = item_path.strip().strip("'\"")
-            if not clean_path:
-                continue
-            abs_path = os.path.abspath(clean_path)
-            if not os.path.exists(abs_path):
-                errors.append(f"Path does not exist: {clean_path}")
-                continue
-
-            if self.should_ignore_path(abs_path):
-                logger.info(f"Skipping ignored dropped path: {abs_path}")
-                continue
-
-            protected_paths = getattr(self.settings, "PROTECTED_PATHS", [])
-            is_protected = False
-            for prot in protected_paths:
-                if prot and is_subpath_or_equal(abs_path, prot):
-                    is_protected = True
-                    break
-            if is_protected:
-                errors.append(f"Protected path blocked: {abs_path}")
-                continue
-
+        for abs_path in validated_paths:
             try:
                 if not (os.path.isdir(abs_path) or os.path.isfile(abs_path)):
                     continue
@@ -1306,15 +1297,45 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 logger.error(
                     f"Error processing dropped path {abs_path}: {e}", exc_info=True
                 )
-                errors.append(f"Processing error for {abs_path}: {e}")
+                error_list.append(f"Processing error for {abs_path}: {e}")
 
-        status_res = "success" if processed_items else ("error" if errors else "no_op")
+        status_res = (
+            "success" if processed_items else ("error" if error_list else "no_op")
+        )
         return {
             "status": status_res,
             "processed_count": len(processed_items),
             "processed_items": processed_items,
-            "errors": errors,
+            "errors": error_list,
         }
+
+    def process_dropped_items(
+        self,
+        paths: list[str],
+        dry_run: bool = False,
+        dest_dir: Optional[str] = None,
+    ) -> dict[str, Any]:
+        """Process dropped file or directory path payloads through active triage pipeline."""
+        validated_paths, issues = validate_drop_paths(
+            paths,
+            settings=self.settings,
+            ignore_predicate=self.should_ignore_path,
+        )
+        errors: list[str] = []
+        for issue in issues:
+            if issue.reason == "missing":
+                errors.append(f"Path does not exist: {issue.clean_path}")
+            elif issue.reason == "ignored":
+                logger.info(f"Skipping ignored dropped path: {issue.abs_path}")
+            elif issue.reason == "protected":
+                errors.append(f"Protected path blocked: {issue.abs_path}")
+
+        return self._execute_dropped_items(
+            validated_paths,
+            dry_run=dry_run,
+            dest_dir=dest_dir,
+            errors=errors,
+        )
 
     def start(self):
         """Start the continuous watchdog daemon, workers, event loop, and file system observer."""
@@ -1594,25 +1615,12 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             return cancel_event.is_set() or self._is_cancelled()
 
         # Dynamic reload of settings
-        try:
-            save_timer = getattr(self.settings, "_save_timer", None)
-            if save_timer is not None:
-                try:
-                    save_timer.cancel()
-                except Exception:
-                    logger.debug("Failed to cancel settings save timer", exc_info=True)
-                self.settings._save()
-            self.settings.load()
-        except Exception as e:
-            logger.error(f"Error loading settings dynamically: {e}", exc_info=True)
-
-        # Setup isolated event loop for this background thread to process async tasks
-        loop = asyncio.new_event_loop()
-        asyncio.set_event_loop(loop)
+        self._reload_settings(log_error=True)
 
         app_session = None
         try:
             app_session = AppSession(self.settings, self.base_dir)
+            pipeline = self._build_pipeline(app_session)
 
             # PHASE 1: Fast-Path (Deterministic Rules)
             if cancel_check():
@@ -1624,24 +1632,17 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 logger.info("No files found to organize.")
                 return
 
-            # Run MetadataPass to identify deterministic rule-matched files and mark them as BYPASSED
-            MetadataPass.run(
-                self.base_dir, files, self.settings, app_session.db, None, cancel_check
+            fast_path_plan, fast_outcome = self._plan_and_execute_phase(
+                pipeline,
+                files,
+                fast_path_only=True,
+                run_metadata_pass=True,
+                cancel_check=cancel_check,
             )
+            fast_path_moved_destinations: set[str] = set()
 
-            if cancel_check():
-                return
-
-            # Generate and execute fast-path plan
-            fast_path_plan = app_session.generate_sorting_plan(fast_path_only=True)
-            fast_path_moved_destinations = set()
-
-            if fast_path_plan:
-                with self.scoped_move_phase(plan=fast_path_plan):
-                    fast_path_summary = app_session.execute_moves(fast_path_plan)
-                logger.info(f"Phase 1 (Fast-Path) completed: {fast_path_summary}")
-
-                # Retrieve destination paths from the fast_path_plan to bypass them in Phase 2
+            if fast_outcome is not None:
+                logger.info(f"Phase 1 (Fast-Path) completed: {fast_outcome.summary}")
                 fast_path_moved_destinations = _extract_plan_destinations(
                     fast_path_plan, base_dir=self.base_dir
                 )
@@ -1658,58 +1659,28 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 logger.info("No remaining files to organize.")
                 return
 
-            # PHASE 2: Slow-Path (AI Classification & Clustering)
-            # Run MetadataPass on remaining files, unioned with fast-path moved files to ensure they are bypassed!
-            bypassed_files_2 = MetadataPass.run(
-                self.base_dir, files, self.settings, app_session.db, None, cancel_check
+            # PHASE 2: Slow-Path (AI Classification & Clustering) via SortPipeline
+            slow_path_plan = pipeline.plan(
+                files,
+                fast_path_only=False,
+                run_metadata_pass=True,
+                bypassed_items=fast_path_moved_destinations,
+                cancel_check=cancel_check,
             )
-            bypassed_set = {f.replace("\\", "/") for f in bypassed_files_2}.union(
-                {d.replace("\\", "/") for d in fast_path_moved_destinations}
-            )
-            items_to_sort = [
-                f for f in files if f.replace("\\", "/") not in bypassed_set
-            ]
 
             if cancel_check():
                 return
 
-            # Process remaining unorganized files (Heavy Text Extraction & OCR)
-            if items_to_sort:
-
-                async def process_and_fit():
-                    async for (
-                        item,
-                        text,
-                        file_hash,
-                        was_skipped,
-                    ) in app_session.process_items_async(items_to_sort, cancel_check):
-                        if cancel_check():
-                            break
-                        if not was_skipped:
-                            chunk = {item: {"text": text, "hash": file_hash}}
-                            await asyncio.to_thread(app_session.partial_fit, chunk)
-                            chunk.clear()
-                            del chunk
-                        del text
-
-                loop.run_until_complete(process_and_fit())
-
-            if cancel_check():
-                return
-
-            # Generate slow-path AI plan (full plan, which naturally filters already moved files)
-            slow_path_plan = app_session.generate_sorting_plan(fast_path_only=False)
             if not slow_path_plan:
                 logger.info("No AI sorting actions needed.")
                 return
 
-            if cancel_check():
-                return
-
-            # Execute Phase 2 moves (AI Classification)
-            with self.scoped_move_phase(plan=slow_path_plan):
-                summary = app_session.execute_moves(slow_path_plan)
-            logger.info(f"Phase 2 (Slow-Path AI) completed successfully: {summary}")
+            slow_outcome = pipeline.execute(
+                slow_path_plan, move_context=self.scoped_move_phase
+            )
+            logger.info(
+                f"Phase 2 (Slow-Path AI) completed successfully: {slow_outcome.summary}"
+            )
 
         except Exception as e:
             logger.error(
@@ -1724,10 +1695,6 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                     self._transition_to(DaemonState.RUNNING)
             if app_session:
                 app_session.close()
-            try:
-                loop.close()
-            except Exception:
-                logger.debug("Failed to close sorting event loop", exc_info=True)
 
 
 def start_daemon(settings: AppSettings, base_dir: str = None):

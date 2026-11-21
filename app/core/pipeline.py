@@ -9,9 +9,11 @@ import inspect
 import logging
 import os
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Collection, Sequence
+from contextlib import AbstractContextManager, nullcontext
 from dataclasses import dataclass, field
 from enum import Enum
+from pathlib import Path
 from typing import Any
 
 from app.core.lifecycle import LifecycleTelemetryMixin
@@ -117,6 +119,74 @@ def drop_scope(path: str) -> tuple[str, list | None]:
     if os.path.isdir(path):
         return path, None
     return os.path.dirname(path), [path]
+
+
+@dataclass(frozen=True)
+class DropPathIssue:
+    """Structured validation issue for a rejected drop target path."""
+
+    raw_path: str
+    clean_path: str
+    abs_path: str
+    reason: str
+
+
+def validate_drop_paths(
+    paths: Sequence[Any],
+    *,
+    settings: Any = None,
+    ignore_predicate: Callable[[str], bool] | None = None,
+) -> tuple[list[str], list[DropPathIssue]]:
+    """Validate dropped target paths against existence, ignore, and protection rules."""
+    from app.core.mover import is_subpath_or_equal
+
+    validated_paths: list[str] = []
+    issues: list[DropPathIssue] = []
+    protected_paths = (
+        getattr(settings, "PROTECTED_PATHS", []) if settings is not None else []
+    )
+    if not isinstance(protected_paths, (list, tuple, set)):
+        protected_paths = []
+
+    for raw_path in paths:
+        if not raw_path or not isinstance(raw_path, str):
+            continue
+        clean_path = raw_path.strip().strip("'\"")
+        if not clean_path:
+            continue
+        abs_path = os.path.abspath(clean_path)
+        if not os.path.exists(abs_path):
+            issues.append(DropPathIssue(raw_path, clean_path, abs_path, "missing"))
+            continue
+        if ignore_predicate is not None and ignore_predicate(abs_path):
+            issues.append(DropPathIssue(raw_path, clean_path, abs_path, "ignored"))
+            continue
+        if any(
+            prot and is_subpath_or_equal(abs_path, prot) for prot in protected_paths
+        ):
+            issues.append(DropPathIssue(raw_path, clean_path, abs_path, "protected"))
+            continue
+        validated_paths.append(abs_path)
+
+    return validated_paths, issues
+
+
+def reroot_plan(plan: Any, dest_dir: str) -> dict[str, Any]:
+    """Re-key a plan's relative entries under ``dest_dir``; absolute keys stay."""
+    dest_base = Path(dest_dir).resolve()
+    dest_base.mkdir(parents=True, exist_ok=True)
+    plan_items = (
+        plan.plan.items()
+        if hasattr(plan, "plan") and isinstance(plan.plan, dict)
+        else plan.items()
+    )
+    re_rooted_plan: dict[str, Any] = {}
+    for key, value in plan_items:
+        if os.path.isabs(key):
+            re_rooted_plan[key] = value
+        else:
+            re_rooted_plan[str(dest_base / key)] = value
+    return re_rooted_plan
 
 
 def _no_progress(info=None):
@@ -229,8 +299,16 @@ class SortPipeline(LifecycleTelemetryMixin):
     The caller owns the session and closes it; the pipeline only drives it.
     """
 
-    def __init__(self, session):
+    def __init__(
+        self,
+        session,
+        *,
+        base_dir: str | None = None,
+        settings: Any = None,
+    ):
         self.session = session
+        self._base_dir = base_dir
+        self._settings = settings
         if hasattr(session, "pipeline"):
             session.pipeline = self
         initial_state = getattr(session, "lifecycle_state", None)
@@ -252,12 +330,16 @@ class SortPipeline(LifecycleTelemetryMixin):
     @property
     def settings(self):
         """The session's settings."""
-        return self.session.settings
+        if self._settings is not None:
+            return self._settings
+        return getattr(self.session, "settings", None)
 
     @property
     def base_dir(self) -> str:
         """The folder being sorted."""
-        return self.session.base_dir
+        if self._base_dir is not None:
+            return self._base_dir
+        return getattr(self.session, "base_dir", "")
 
     def _validate_transition(self, target_state: PipelineLifecycleState) -> None:
         allowed = _ALLOWED_TRANSITIONS.get(self._state, set())
@@ -299,10 +381,17 @@ class SortPipeline(LifecycleTelemetryMixin):
         progress_callback: Callable | None = None,
         cancel_check: Callable | None = None,
         chunk_size: int = 50,
+        fast_path_only: bool | None = None,
+        target_paths: list[str] | None = None,
+        jev_results: dict[str, Any] | None = None,
+        run_metadata_pass: bool = False,
+        bypassed_items: Collection[str] | None = None,
     ) -> Any:
         """Extract text, fit the analyzer and return the plan. Nothing moves.
 
         ``items`` defaults to every file under the session's source folder.
+        Supports deterministic fast-path planning, ``MetadataPass`` pre-filtering,
+        Jev fast-path overrides, and targeted single-path scoping.
         """
         if self.state in (
             PipelineLifecycleState.EXECUTING,
@@ -314,40 +403,87 @@ class SortPipeline(LifecycleTelemetryMixin):
         if self.state == PipelineLifecycleState.PLANNING:
             raise IllegalStateTransitionError("Planning is already in progress.")
 
+        if hasattr(self.session, "pipeline"):
+            self.session.pipeline = self
         self.transition_to(PipelineLifecycleState.PLANNING)
         self.emit_telemetry("plan_start", items=items)
 
         try:
-            from app.core.extractor import build_corpus_generator
-
             if items is None:
                 from app.core.scanner import get_files_recursively
 
                 items = get_files_recursively(self.base_dir)
 
-            generator = build_corpus_generator(
-                base_dir=self.base_dir,
-                items_to_sort=items,
-                progress_callback=progress_callback or _no_progress,
-                max_workers=getattr(self.settings, "MAX_WORKERS", 2),
-                db=self.session.db,
-                chunk_size=chunk_size,
-                cancel_check=cancel_check,
-                settings=self.settings,
-            )
-            for chunk in generator:
+            metadata_bypassed: list[Any] = []
+            if run_metadata_pass:
+                from app.core.metadata import MetadataPass
+
+                metadata_bypassed = (
+                    MetadataPass.run(
+                        self.base_dir,
+                        items,
+                        self.settings,
+                        self.session.db,
+                        progress_callback,
+                        cancel_check,
+                    )
+                    or []
+                )
                 if cancel_check and cancel_check():
                     self.transition_to(PipelineLifecycleState.CANCELLED)
                     self.emit_telemetry("plan_cancelled")
                     return None
-                self.session.partial_fit(chunk)
+
+            if not bool(fast_path_only):
+                from app.core.extractor import build_corpus_generator
+
+                bypassed_set = {
+                    str(f).replace("\\", "/") for f in metadata_bypassed
+                } | {str(d).replace("\\", "/") for d in (bypassed_items or ())}
+                items_to_extract = (
+                    [f for f in items if str(f).replace("\\", "/") not in bypassed_set]
+                    if bypassed_set
+                    else items
+                )
+
+                if items_to_extract:
+                    raw_workers = getattr(self.settings, "MAX_WORKERS", 2)
+                    max_workers = (
+                        raw_workers
+                        if isinstance(raw_workers, int) and raw_workers > 0
+                        else 2
+                    )
+                    generator = build_corpus_generator(
+                        base_dir=self.base_dir,
+                        items_to_sort=items_to_extract,
+                        progress_callback=progress_callback or _no_progress,
+                        max_workers=max_workers,
+                        db=self.session.db,
+                        chunk_size=chunk_size,
+                        cancel_check=cancel_check,
+                        settings=self.settings,
+                    )
+                    for chunk in generator:
+                        if cancel_check and cancel_check():
+                            self.transition_to(PipelineLifecycleState.CANCELLED)
+                            self.emit_telemetry("plan_cancelled")
+                            return None
+                        self.session.partial_fit(chunk)
 
             if cancel_check and cancel_check():
                 self.transition_to(PipelineLifecycleState.CANCELLED)
                 self.emit_telemetry("plan_cancelled")
                 return None
 
-            plan = self.session.generate_sorting_plan()
+            plan_kwargs: dict[str, Any] = {}
+            if fast_path_only is not None:
+                plan_kwargs["fast_path_only"] = bool(fast_path_only)
+            if target_paths is not None:
+                plan_kwargs["target_paths"] = target_paths
+            if jev_results is not None:
+                plan_kwargs["jev_results"] = jev_results
+
+            plan = self.session.generate_sorting_plan(**plan_kwargs)
             self.transition_to(PipelineLifecycleState.PLANNED)
             self.emit_telemetry("plan_finish", plan=plan)
             return plan
@@ -360,7 +496,13 @@ class SortPipeline(LifecycleTelemetryMixin):
             self.emit_telemetry("plan_error", error=str(e))
             raise
 
-    def execute(self, plan, **kwargs) -> SortResult:
+    def execute(
+        self,
+        plan,
+        *,
+        move_context: Callable[[Any], AbstractContextManager[Any]] | None = None,
+        **kwargs,
+    ) -> SortResult:
         """Move the files in ``plan`` and return what happened."""
         if self.state != PipelineLifecycleState.PLANNED:
             raise IllegalStateTransitionError(
@@ -376,9 +518,7 @@ class SortPipeline(LifecycleTelemetryMixin):
                 or self.session.execute_moves
             )
             sig = inspect.signature(fn)
-            accepts_pipeline = "pipeline" in sig.parameters or any(
-                p.kind == inspect.Parameter.VAR_KEYWORD for p in sig.parameters.values()
-            )
+            accepts_pipeline = "pipeline" in sig.parameters
         except (ValueError, TypeError):
             accepts_pipeline = True
 
@@ -386,9 +526,16 @@ class SortPipeline(LifecycleTelemetryMixin):
             call_kwargs["pipeline"] = self
 
         try:
-            summary = self.session.execute_moves(plan, **call_kwargs)
-            quarantine_dir = getattr(
+            ctx = move_context(plan) if move_context is not None else nullcontext()
+            with ctx:
+                summary = self.session.execute_moves(plan, **call_kwargs)
+            raw_quarantine_dir = getattr(
                 self.settings, "QUARANTINE_DIR_NAME", "_Compliance_Quarantine"
+            )
+            quarantine_dir = (
+                raw_quarantine_dir
+                if isinstance(raw_quarantine_dir, str)
+                else "_Compliance_Quarantine"
             )
             result = SortResult.from_summary(summary, quarantine_dir)
             if result.cancelled or summary.get("cancelled"):
@@ -510,12 +657,19 @@ class SortPipeline(LifecycleTelemetryMixin):
         self.emit_telemetry("undo_finish", result=result)
         return result
 
-    def run(self, items: list | None = None, *, dry_run: bool = False, **kwargs):
+    def run(
+        self,
+        items: list | None = None,
+        *,
+        dry_run: bool = False,
+        move_context: Callable[[Any], AbstractContextManager[Any]] | None = None,
+        **kwargs,
+    ):
         """Plan, then execute unless ``dry_run``. Returns ``(plan, result)``.
 
         A dry run's result is ``None``.
         """
         plan = self.plan(items, **kwargs)
-        if dry_run:
+        if dry_run or plan is None:
             return plan, None
-        return plan, self.execute(plan)
+        return plan, self.execute(plan, move_context=move_context)
