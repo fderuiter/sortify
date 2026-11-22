@@ -579,3 +579,36 @@ def test_precommit_hooks_full_repo_readonly_parity():
         s for s in build_steps if s.get("name") == "Validate Configuration Schema"
     )
     assert "scripts/validate_config.py --check" in cfg_step.get("run", "")
+
+
+def test_ci_and_precommit_isolate_live_link_checks_and_retire_validate_imports():
+    """Verify CI static-checks and pre-commit run local-only link checks and omit retired validate_imports."""
+    workflow = _load_ci_workflow()
+    static_steps = workflow["jobs"]["static-checks"]["steps"]
+    static_runs = "\n".join(s.get("run", "") for s in static_steps)
+
+    assert "scripts/validate_links.py --local-only" in static_runs
+    assert "scripts/generate_docs.py --check --local-only" in static_runs
+    assert "validate_imports.py" not in static_runs
+    assert "deptry" in static_runs
+    assert not Path("scripts/validate_imports.py").exists()
+
+    precommit_cfg = yaml.safe_load(
+        Path(".pre-commit-config.yaml").read_text(encoding="utf-8")
+    )
+    local_repo = next(r for r in precommit_cfg["repos"] if r["repo"] == "local")
+    hooks = {h["id"]: h for h in local_repo["hooks"]}
+
+    assert "validate-imports" not in hooks
+    assert "deptry" in hooks
+    validate_docs_entry = hooks["validate-docs"]["entry"]
+    assert "--check" in validate_docs_entry
+    assert "--no-build" in validate_docs_entry
+    assert "--local-only" in validate_docs_entry
+
+    contributing = Path("CONTRIBUTING.md").read_text(encoding="utf-8")
+    assert "SKIP=no-commit-to-branch uv run pre-commit run --all-files" in contributing
+    assert "scripts/generate_docs.py --check --no-build --local-only" in contributing
+
+    pr_template = Path(".github/pull_request_template.md").read_text(encoding="utf-8")
+    assert "scripts/generate_docs.py --check --no-build --local-only" in pr_template

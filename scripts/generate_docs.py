@@ -1,5 +1,6 @@
 """Automated documentation generator."""
 
+import functools
 import glob
 import os
 import re
@@ -663,7 +664,26 @@ def validate_security_policy(content=None, doc_path="SECURITY.md"):
     return errors
 
 
-def update_security_md(sec_file="SECURITY.md"):
+_NON_NETWORK_URL_ATTR_PREFIX_RE = re.compile(
+    r"\b(?:xmlns(?::[A-Za-z_][\w.-]*)?\s*=\s*['\"]$|placeholder\s*=\s*['\"][^'\"\r\n]*$)"
+)
+
+
+def _is_non_network_url_literal(file_content: str, match_start: int, url: str) -> bool:
+    """Return True for XML namespace URIs and UI placeholder sample URLs."""
+    from urllib.parse import urlparse
+
+    prefix = file_content[max(0, match_start - 96) : match_start]
+    if _NON_NETWORK_URL_ATTR_PREFIX_RE.search(prefix):
+        return True
+    try:
+        hostname = (urlparse(url).hostname or "").lower()
+    except ValueError:
+        hostname = ""
+    return hostname == "proxy.example.com"
+
+
+def update_security_md(sec_file="SECURITY.md", local_only: bool = False):
     """Scan for network dependencies and update SECURITY.md."""
     # Validate security policy prose in SECURITY.md against AppSettings
     policy_errors = validate_security_policy(doc_path=sec_file)
@@ -776,6 +796,8 @@ def update_security_md(sec_file="SECURITY.md"):
                 url = match.group(0).rstrip(".,;)'\"")
                 if "[REDACTED]" in url:
                     continue
+                if _is_non_network_url_literal(file_content, match.start(), url):
+                    continue
                 if is_template_or_redacted_url(url):
                     static_prefix = url.split("{", 1)[0]
                     try:
@@ -818,7 +840,9 @@ def update_security_md(sec_file="SECURITY.md"):
         # Request timeouts of no more than 5 seconds per domain handled by validate_url?
         # Wait, validate_url in validate_links.py uses TIMEOUT = 3.0 which is <= 5s.
         future_to_url = {
-            executor.submit(validate_url, url, DEFAULT_BYPASS_DOMAINS): url
+            executor.submit(
+                validate_url, url, DEFAULT_BYPASS_DOMAINS, local_only=local_only
+            ): url
             for url in urls_to_validate
         }
         for future in concurrent.futures.as_completed(future_to_url):
@@ -1093,9 +1117,12 @@ def audit_privacy_policy(content=None, doc_path="PRIVACY.md"):
     return errors
 
 
+@functools.lru_cache(maxsize=16)
 def _count_frontend_store_callers(root: Path) -> list[str]:
     """Return sorted relative paths of front-end modules importing store modules directly."""
     import ast
+
+    root = Path(root).resolve()
 
     store_modules = {
         "app.core.db",
@@ -1133,9 +1160,10 @@ def _count_frontend_store_callers(root: Path) -> list[str]:
     return sorted(callers)
 
 
+@functools.lru_cache(maxsize=16)
 def _inspect_adr_runtime_state(repo_root: Path | None = None) -> dict:
     """Inspect local runtime source files offline to verify ADR implementation claims."""
-    root = Path(repo_root) if repo_root is not None else REPO_ROOT
+    root = (Path(repo_root) if repo_root is not None else REPO_ROOT).resolve()
 
     ng_path = root / "app/core/network_guard.py"
     ng_src = ng_path.read_text(encoding="utf-8") if ng_path.is_file() else ""
@@ -1210,13 +1238,23 @@ def _inspect_adr_runtime_state(repo_root: Path | None = None) -> dict:
     }
 
 
-def audit_adr_status(content=None, doc_path=None, repo_root: Path | None = None):
+def audit_adr_status(
+    content=None,
+    doc_path=None,
+    repo_root: Path | None = None,
+    runtime_state: dict | None = None,
+):
     """Audit accepted ADRs for accurate module citations and Implementation sections."""
-    root = Path(repo_root) if repo_root is not None else REPO_ROOT
+    root = (Path(repo_root) if repo_root is not None else REPO_ROOT).resolve()
     if doc_path is None and content is None:
         adr_dir = root / "docs" / "adr"
         if not adr_dir.is_dir():
             return [f"Missing ADR directory: {adr_dir}"]
+        shared_state = (
+            runtime_state
+            if runtime_state is not None
+            else _inspect_adr_runtime_state(root)
+        )
         all_errors = []
         for adr_file in sorted(adr_dir.glob("*.md")):
             all_errors.extend(
@@ -1224,6 +1262,7 @@ def audit_adr_status(content=None, doc_path=None, repo_root: Path | None = None)
                     content=None,
                     doc_path=adr_file.as_posix(),
                     repo_root=root,
+                    runtime_state=shared_state,
                 )
             )
         return all_errors
@@ -1249,7 +1288,9 @@ def audit_adr_status(content=None, doc_path=None, repo_root: Path | None = None)
 
     errors = []
     filename = os.path.basename(str(label))
-    state = _inspect_adr_runtime_state(root)
+    state = (
+        runtime_state if runtime_state is not None else _inspect_adr_runtime_state(root)
+    )
 
     if filename.startswith("0001-"):
         if state["network_guard_patches_socket"]:
@@ -1398,11 +1439,15 @@ def audit_adr_status(content=None, doc_path=None, repo_root: Path | None = None)
     return errors
 
 
-def audit_handwritten_docs():
+def audit_handwritten_docs(local_only: bool = False):
     """Audit external links and relative codebase path references in handwritten docs."""
     import re
 
     from scripts.validate_links import DEFAULT_BYPASS_DOMAINS, URL_REGEX, validate_url
+
+    getattr(_inspect_adr_runtime_state, "cache_clear", lambda: None)()
+    getattr(_count_frontend_store_callers, "cache_clear", lambda: None)()
+    adr_runtime_state: dict | None = None
 
     handwritten_docs = get_handwritten_docs()
     errors = []
@@ -1425,7 +1470,9 @@ def audit_handwritten_docs():
             url = match.group(0).strip().rstrip(".,;)'\"`<> \n\r\t\\")
             if not url:
                 continue
-            success, msg, is_critical = validate_url(url, DEFAULT_BYPASS_DOMAINS)
+            success, msg, is_critical = validate_url(
+                url, DEFAULT_BYPASS_DOMAINS, local_only=local_only
+            )
             if not success and is_critical:
                 errors.append(f"Broken external link in {doc_path}: {url} ({msg})")
 
@@ -1476,7 +1523,15 @@ def audit_handwritten_docs():
         # 6. ADR implementation status and module citation consistency check
         norm_doc_path = doc_path.replace("\\", "/")
         if norm_doc_path.startswith("docs/adr/") or "/adr/" in norm_doc_path:
-            errors.extend(audit_adr_status(content=content, doc_path=doc_path))
+            if adr_runtime_state is None:
+                adr_runtime_state = _inspect_adr_runtime_state(REPO_ROOT.resolve())
+            errors.extend(
+                audit_adr_status(
+                    content=content,
+                    doc_path=doc_path,
+                    runtime_state=adr_runtime_state,
+                )
+            )
 
     return errors
 
@@ -1600,6 +1655,11 @@ def main():
         action="store_true",
         help="Skip MkDocs HTML site generation build step.",
     )
+    parser.add_argument(
+        "--local-only",
+        action="store_true",
+        help="Validate external URL syntax locally without making live network requests.",
+    )
 
     args = parser.parse_args()
 
@@ -1632,7 +1692,12 @@ def main():
         ("generate_ui_docs", generate_ui_docs),
         ("generate_admin_guide", generate_admin_guide),
         ("generate_keyboard_docs", generate_keyboard_docs),
-        ("update_security_md", update_security_md),
+        (
+            "update_security_md",
+            (lambda: update_security_md(local_only=True))
+            if args.local_only
+            else update_security_md,
+        ),
         ("compile_diagram_assets", compile_diagram_assets),
         ("sync_config_schema", sync_config_schema),
     ]
@@ -1698,7 +1763,11 @@ def main():
                     if new_content != initial_contents.get(filepath):
                         changed_files.append(filepath)
 
-                doc_audit_errors = audit_handwritten_docs()
+                doc_audit_errors = (
+                    audit_handwritten_docs(local_only=True)
+                    if args.local_only
+                    else audit_handwritten_docs()
+                )
                 host_audit_errors = audit_model_hosts()
                 all_audit_errors = list(
                     dict.fromkeys(doc_audit_errors + host_audit_errors)

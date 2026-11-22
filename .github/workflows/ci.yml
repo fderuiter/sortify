@@ -127,7 +127,7 @@ jobs:
 
     - name: Validate External Links
       run: |
-        uv run python scripts/validate_links.py
+        uv run python scripts/validate_links.py --local-only
 
     - name: Validate API and CLI Signatures
       run: |
@@ -136,10 +136,6 @@ jobs:
     - name: Validate Architectural Guardrails
       run: |
         uv run python scripts/validate_architecture.py
-
-    - name: Validate Import Gate
-      run: |
-        uv run python scripts/validate_imports.py
 
     - name: Check dependency declarations
       run: |
@@ -173,7 +169,7 @@ jobs:
 
     - name: Validate Documentation and Integrity
       run: |
-        uv run python scripts/generate_docs.py --check
+        uv run python scripts/generate_docs.py --check --local-only
 
     - name: Upload Documentation Site Artifact
       if: github.ref == 'refs/heads/main'

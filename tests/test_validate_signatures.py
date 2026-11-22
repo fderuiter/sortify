@@ -1157,3 +1157,60 @@ def test_orphan_detection_runs_with_explicit_module_paths(
         validate_signatures.main()
     assert exc2.value.code == 1
     assert "Orphaned snapshot file detected" in capsys.readouterr().err
+
+
+def test_collect_tui_svg_snapshots_skips_unrelated_test_ast_parses(
+    tmp_path, monkeypatch
+):
+    """Verify collect_tui_svg_snapshots only calls ast.parse on test files mentioning assert_svg_snapshot."""
+    import ast
+
+    tests_dir = tmp_path / "tests"
+    snap_dir = tests_dir / "snapshots" / "tui_svg"
+    snap_dir.mkdir(parents=True)
+    expected_svg = snap_dir / "home_screen.svg"
+    expected_svg.write_text("<svg/>", encoding="utf-8")
+
+    unrelated_test = tests_dir / "test_unrelated_unit.py"
+    unrelated_test.write_text(
+        "def test_math():\n    assert 1 + 1 == 2\n", encoding="utf-8"
+    )
+
+    svg_test = tests_dir / "test_tui_visual.py"
+    svg_test.write_text(
+        'def test_home(assert_svg_snapshot):\n    assert_svg_snapshot("home_screen", app)\n',
+        encoding="utf-8",
+    )
+
+    real_parse = ast.parse
+    parsed_filenames: list[str] = []
+
+    def tracking_parse(source, filename="<unknown>", *args, **kwargs):
+        parsed_filenames.append(str(filename))
+        return real_parse(source, filename, *args, **kwargs)
+
+    monkeypatch.setattr(validate_signatures, "BASE_DIR", str(tmp_path))
+    monkeypatch.setattr(ast, "parse", tracking_parse)
+    discovered = validate_signatures.collect_tui_svg_snapshots(str(tests_dir))
+
+    assert discovered == {os.path.realpath(str(expected_svg))}
+    assert parsed_filenames == [str(svg_test)]
+
+
+def test_collect_cli_definitions_parses_each_cli_module_once(monkeypatch):
+    """Verify collect_cli_definitions parses each app/cli/*.py file once."""
+    import ast
+
+    real_parse = ast.parse
+    parsed_cli_files: list[str] = []
+
+    def tracking_parse(source, filename="<unknown>", *args, **kwargs):
+        norm = str(filename).replace(os.sep, "/")
+        if norm.startswith("app/cli/"):
+            parsed_cli_files.append(norm)
+        return real_parse(source, filename, *args, **kwargs)
+
+    monkeypatch.setattr(ast, "parse", tracking_parse)
+    cli_defs = validate_signatures.collect_cli_definitions()
+    assert cli_defs
+    assert len(parsed_cli_files) == len(set(parsed_cli_files))

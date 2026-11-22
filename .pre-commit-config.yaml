@@ -49,7 +49,7 @@ repos:
         files: '(\.pytest_cache/|\.venv/|\.coverage$|htmlcov/|__pycache__/|.*\.py[co]$)'
       - id: validate-docs
         name: Validate Documentation
-        entry: uv run python scripts/generate_docs.py --check --no-build
+        entry: uv run python scripts/generate_docs.py --check --no-build --local-only
         language: system
         pass_filenames: false
         files: '^(docs/|scripts/.*\.py|app/.*\.py|app/config_schema\.json|network_rules\.json|pyproject\.toml|uv\.lock|mkdocs\.yml|README\.md|PRIVACY\.md|SECURITY\.md)'
@@ -95,10 +95,5 @@ repos:
         language: system
         pass_filenames: false
         files: '(\.py$|^pyproject\.toml$|^uv\.lock$)'
-      - id: validate-imports
-        name: Validate Import Gate and Direct Dependencies
-        entry: uv run python scripts/validate_imports.py
-        language: system
-        files: '(^app/.*\.py$|^pyproject\.toml$|^uv\.lock$)'
 
 

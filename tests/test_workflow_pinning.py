@@ -118,3 +118,30 @@ def test_scheduled_audit_splits_readonly_staging_from_app_publish():
     assert "--publish-from" in publish_job_dump
     assert "REMEDIATION_APP_ID" in publish_job_dump
     assert "REMEDIATION_APP_PRIVATE_KEY" in publish_job_dump
+
+
+def test_scheduled_link_audit_runs_live_validation_with_readonly_permissions():
+    """scheduled-link-audit.yml must run live validate_links.py on schedule and workflow_dispatch with read-only permissions."""
+    path = Path(".github/workflows/scheduled-link-audit.yml")
+    assert path.exists(), "Missing .github/workflows/scheduled-link-audit.yml"
+    workflow = yaml.safe_load(path.read_text(encoding="utf-8"))
+
+    triggers = workflow.get("on") or workflow.get(True) or {}
+    assert "schedule" in triggers
+    assert "workflow_dispatch" in triggers
+    assert workflow.get("permissions") == {"contents": "read"}
+
+    jobs = workflow.get("jobs") or {}
+    assert "link-audit" in jobs
+    job = jobs["link-audit"]
+    assert job.get("permissions") == {"contents": "read"}
+
+    steps = job.get("steps") or []
+    link_step = next(
+        (s for s in steps if "scripts/validate_links.py" in s.get("run", "")), None
+    )
+    assert link_step is not None
+    assert "--local-only" not in link_step.get("run", "")
+    assert (link_step.get("env") or {}).get(
+        "GITHUB_TOKEN"
+    ) == "${{ secrets.GITHUB_TOKEN }}"
