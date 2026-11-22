@@ -5,15 +5,28 @@ from typing import Any, Optional
 
 SAMPLE_CORPUS_ITEMS: dict[str, str] = {
     "demo_finance.txt": (
-        "This is a detailed report on finance, money, investment, and banking strategies. "
-        "The economy is growing."
+        "Quarterly vendor invoice and payment receipt summary for finance and banking review. "
+        "Includes annual 1099 tax form totals and monthly account statement reconciliation."
     ),
     "demo_tech.txt": (
-        "Notes on software engineering, computer science, algorithms, and technology. "
-        "Python is great."
+        "Software engineering architecture specification, sprint meeting_notes, and milestone "
+        "project_plan for the computer platform. Summarized in the engineering quarterly report."
     ),
     "demo_health.txt": (
-        "Medical science, healthcare, doctor, patient, clinical trials, medicine, and health."
+        "Clinical patient healthcare summary from doctor visit with pharmacy prescription "
+        "renewal notes, lab_result panel, medical_bill breakdown, and insurance claim record."
+    ),
+    "demo_legal.txt": (
+        "Executed commercial property lease and mutual nda contract between partner firms. "
+        "Governed by a binding confidential agreement for intellectual property protection."
+    ),
+    "demo_personal.txt": (
+        "Household utility billing notice, home appliance warranty certificate, and passport "
+        "renewal checklist. Includes annual residential vehicle registration confirmation."
+    ),
+    "demo_hr.txt": (
+        "Candidate resume packet, annual department performance_review rubric, and staff "
+        "onboarding acknowledgement for the updated employee handbook."
     ),
     "empty.txt": "",
 }

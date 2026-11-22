@@ -370,6 +370,11 @@ def discover_existing_folders(
     and PROTECTED_PATHS so only legitimate user category directories are returned.
     """
     discovered_by_key: dict[str, str] = {}
+    abs_base_norm = (
+        _norm_boundary_path(str(base_dir))
+        if base_dir and isinstance(base_dir, (str, os.PathLike))
+        else None
+    )
     # Order roots so dest_dir casing wins if both base_dir and dest_dir have same folder
     roots: list[str] = []
     for candidate in (base_dir, dest_dir):
@@ -393,6 +398,11 @@ def discover_existing_folders(
                     if is_junction_entry(entry) or entry.is_symlink():
                         continue
                     if not entry.is_dir(follow_symlinks=False):
+                        continue
+                    if (
+                        abs_base_norm is not None
+                        and _norm_boundary_path(entry.path) == abs_base_norm
+                    ):
                         continue
                     if _is_quarantine_entry_name(entry.name, filt.quarantine_prefixes):
                         continue

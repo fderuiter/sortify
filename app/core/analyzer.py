@@ -709,6 +709,7 @@ class IncrementalAnalyzer:
         folder_name: str,
         base_dir: Optional[str] = None,
         dest_dir: Optional[str] = None,
+        exclude_rel_paths: Optional[set[str]] = None,
     ) -> str:
         split_camel = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", folder_name)
         raw_tokens = re.findall(r"[a-zA-Z0-9]{2,}", split_camel.lower())
@@ -722,6 +723,7 @@ class IncrementalAnalyzer:
                 if lookup in cls._FOLDER_SEMANTIC_EXPANSIONS:
                     parts.append(cls._FOLDER_SEMANTIC_EXPANSIONS[lookup])
 
+        excl = exclude_rel_paths or set()
         for root in (base_dir, dest_dir):
             if not root:
                 continue
@@ -733,6 +735,9 @@ class IncrementalAnalyzer:
                 with os.scandir(cand_dir) as it:
                     for entry in it:
                         if entry.name.startswith("."):
+                            continue
+                        rel_cand = f"{folder_name}/{entry.name}".replace("\\", "/")
+                        if rel_cand in excl or rel_cand.lower() in excl:
                             continue
                         stem_name = os.path.splitext(entry.name)[0]
                         parts.append(cls._augment_text_for_anchoring(stem_name))
@@ -761,8 +766,11 @@ class IncrementalAnalyzer:
         from sklearn.feature_extraction.text import TfidfVectorizer
         from sklearn.metrics.pairwise import cosine_similarity
 
+        excl_rels = {fn.replace("\\", "/").lower() for fn in filenames if fn}
         folder_profiles = [
-            self._build_folder_anchor_profile(folder, base_dir, dest_dir)
+            self._build_folder_anchor_profile(
+                folder, base_dir, dest_dir, exclude_rel_paths=excl_rels
+            )
             for folder in existing_folders
         ]
         candidate_profiles = [

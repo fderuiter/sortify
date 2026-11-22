@@ -453,3 +453,44 @@ def test_writer_construction_requires_composition_root(source):
     errors = []
     validate_service_ownership(errors, "app/core/services.py", ast.parse(source))
     assert not errors
+
+
+def test_validate_architecture_single_app_walk_and_zero_deepcopy(monkeypatch):
+    """Verify full validate_architecture scan walks app/ once, parses each app file once, and skips copy.deepcopy."""
+    import ast
+    import copy
+    import os
+
+    real_walk = os.walk
+    app_walk_calls = 0
+
+    def counting_walk(top, *args, **kwargs):
+        nonlocal app_walk_calls
+        if str(top) == "app":
+            app_walk_calls += 1
+        return real_walk(top, *args, **kwargs)
+
+    real_parse = ast.parse
+    parsed_files: list[str] = []
+
+    def counting_parse(source, filename="<unknown>", *args, **kwargs):
+        if isinstance(filename, str) and filename.startswith("app/"):
+            parsed_files.append(filename)
+        return real_parse(source, filename, *args, **kwargs)
+
+    monkeypatch.setattr(os, "walk", counting_walk)
+    monkeypatch.setattr(ast, "parse", counting_parse)
+    monkeypatch.setattr(
+        copy,
+        "deepcopy",
+        lambda *_a, **_kw: (_ for _ in ()).throw(
+            AssertionError("copy.deepcopy must not be called")
+        ),
+    )
+    monkeypatch.setattr(sys, "argv", ["validate_architecture.py"])
+
+    with pytest.raises(SystemExit) as exc_info:
+        main()
+    assert exc_info.value.code == 0
+    assert app_walk_calls == 1
+    assert len(parsed_files) == len(set(parsed_files))

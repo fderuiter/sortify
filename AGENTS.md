@@ -12,10 +12,10 @@ Local, offline-first Python 3.12 file sorter (`smart-autosorter`). Read `CONTEXT
 - Lint and format: `uv run ruff check` and `uv run ruff format` (read-only check: `uv run ruff format --check .`).
 - Type check: `uv run ty check` and `uv run python scripts/check_ty_warnings.py` (enforces shrink-only per-file warning ceilings in `[tool.sortify.ty-warning-ceilings]`).
 - Dependency audit: `uv run deptry .`.
-- Read-only repository checks: `uv run python scripts/validate_config.py --check`, `uv run python scripts/generate_docs.py --check --no-build`, `uv run python scripts/diagram_toolchain.py verify`, `uv run python scripts/validate_signatures.py`, and `uv run python scripts/validate_links.py --local-only`.
+- Read-only repository checks: `uv run python scripts/validate_config.py --check`, `uv run python scripts/generate_docs.py --check --no-build --local-only`, `uv run python scripts/diagram_toolchain.py verify`, `uv run python scripts/validate_signatures.py`, and `uv run python scripts/validate_links.py --local-only`.
 - Explicit baseline syncs: `uv run python scripts/validate_config.py --sync` (config schema), `uv run python scripts/generate_docs.py` (generated docs, `SECURITY.md`, and config schema), `uv run python scripts/validate_signatures.py --update` (API/CLI signature snapshots), and `uv run python scripts/diagram_toolchain.py build` (`.mmd` and `.svg` diagrams).
 - Vulnerability remediation: `uv run python scripts/remediate_vulnerabilities.py --stage-dir <dir>` (stage validated lockfiles and `remediation_manifest.json` read-only) and `uv run python scripts/remediate_vulnerabilities.py --publish-from <dir>` (publish signed PRs and issue alerts).
-- Architecture and import validation: `uv run python scripts/validate_architecture.py` and `uv run python scripts/validate_imports.py`.
+- Architecture validation: `uv run python scripts/validate_architecture.py`.
 - Prompt manifest verification: `uv run python scripts/prompt_manifest.py verify --strict` (generate keypair with `keygen`; re-sign via `PROMPT_MANIFEST_PRIVATE_KEY` with `generate`).
 - Hooks: `uv run pre-commit install` (or `uv run pre-commit run --all-files`); they run ruff, secret detection (gitleaks), workflow linting (actionlint), plus full-repository read-only validators in `scripts/`.
 

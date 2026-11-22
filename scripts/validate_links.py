@@ -7,9 +7,10 @@ import os
 import re
 import socket
 import sys
+import threading
 import urllib.error
 import urllib.request
-from urllib.parse import urlparse
+from urllib.parse import urljoin, urlparse
 
 URL_REGEX = re.compile(r'https?://[^\s\'"<>]+')
 _TEMPLATE_EXPR_RE = re.compile(r"\{[^{}]+\}")
@@ -55,6 +56,83 @@ def is_template_or_redacted_url(url: str) -> bool:
     return False
 
 
+def _effective_port(parsed) -> int | None:
+    """Return explicit or scheme-default port for origin comparison."""
+    try:
+        if parsed.port is not None:
+            return parsed.port
+    except ValueError:
+        return None
+    scheme = (parsed.scheme or "").lower()
+    if scheme == "https":
+        return 443
+    if scheme == "http":
+        return 80
+    return None
+
+
+def _is_same_origin(source_url: str, target_url: str) -> bool:
+    """Return True only when source_url and target_url share scheme, hostname, and port."""
+    try:
+        src = urlparse(source_url)
+        dst = urlparse(urljoin(source_url, target_url))
+        return (
+            bool(src.scheme and src.hostname and dst.scheme and dst.hostname)
+            and src.scheme.lower() == dst.scheme.lower()
+            and src.hostname.lower() == dst.hostname.lower()
+            and _effective_port(src) == _effective_port(dst)
+        )
+    except ValueError:
+        return False
+
+
+def _strip_authorization_headers(req: urllib.request.Request) -> None:
+    """Remove Authorization headers from both redirected and unredirected header maps."""
+    for hdr_dict in (req.headers, req.unredirected_hdrs):
+        for key in list(hdr_dict.keys()):
+            if key.lower() == "authorization":
+                del hdr_dict[key]
+
+
+class _SafeRedirectHandler(urllib.request.HTTPRedirectHandler):
+    """HTTPRedirectHandler that strips Authorization headers on cross-origin redirects."""
+
+    def redirect_request(self, req, fp, code, msg, headers, newurl):
+        redirected = super().redirect_request(req, fp, code, msg, headers, newurl)
+        if redirected is not None and not _is_same_origin(
+            req.full_url, redirected.full_url
+        ):
+            _strip_authorization_headers(redirected)
+        return redirected
+
+
+_OPENER_LOCK = threading.Lock()
+_LAST_OPENER_PROXIES: dict[str, str] | None = None
+
+
+def _urlopen(req: urllib.request.Request, timeout: float = TIMEOUT):
+    """Open URL with _SafeRedirectHandler installed while delegating via urllib.request.urlopen."""
+    global _LAST_OPENER_PROXIES
+    current_proxies = urllib.request.getproxies()
+    opener = getattr(urllib.request, "_opener", None)
+    has_safe_handler = opener is not None and any(
+        isinstance(h, _SafeRedirectHandler) for h in getattr(opener, "handlers", ())
+    )
+    if not has_safe_handler or current_proxies != _LAST_OPENER_PROXIES:
+        with _OPENER_LOCK:
+            opener = getattr(urllib.request, "_opener", None)
+            has_safe_handler = opener is not None and any(
+                isinstance(h, _SafeRedirectHandler)
+                for h in getattr(opener, "handlers", ())
+            )
+            if not has_safe_handler or current_proxies != _LAST_OPENER_PROXIES:
+                urllib.request.install_opener(
+                    urllib.request.build_opener(_SafeRedirectHandler())
+                )
+                _LAST_OPENER_PROXIES = dict(current_proxies)
+    return urllib.request.urlopen(req, timeout=timeout)
+
+
 def _is_rate_limited_http_error(err: urllib.error.HTTPError) -> bool:
     """Return True when an HTTPError indicates upstream HTTP rate limiting rather than a broken link."""
     if err.code == 429:
@@ -63,7 +141,7 @@ def _is_rate_limited_http_error(err: urllib.error.HTTPError) -> bool:
         reason = str(getattr(err, "reason", "") or "").lower()
         if "rate limit" in reason:
             return True
-        headers = getattr(err, "headers", None)
+        headers = getattr(err, "headers", None) or getattr(err, "hdrs", None)
         if headers and hasattr(headers, "items"):
             lower_headers = {str(k).lower(): str(v).strip() for k, v in headers.items()}
             if lower_headers.get("x-ratelimit-remaining") == "0":
@@ -119,7 +197,7 @@ def validate_url(
             },
         )
         try:
-            with urllib.request.urlopen(probe_req, timeout=TIMEOUT) as response:
+            with _urlopen(probe_req, timeout=TIMEOUT) as response:
                 return True, f"OK (POST {response.status})", False
         except urllib.error.HTTPError as e:
             if _is_rate_limited_http_error(e):
@@ -141,15 +219,23 @@ def validate_url(
             return False, f"Unexpected Error: {str(e)}", not allow_offline
 
     # Using a common user agent to avoid being blocked immediately
+    req_headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"}
+    if scheme == "https" and hostname.lower() == "api.github.com":
+        req_headers["Accept"] = "application/vnd.github+json"
+        req_headers["X-GitHub-Api-Version"] = "2022-11-28"
+        github_token = os.environ.get("GITHUB_TOKEN", "").strip()
+        if github_token:
+            req_headers["Authorization"] = f"Bearer {github_token}"
+
     req = urllib.request.Request(
         url,
         method="HEAD",
-        headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64)"},
+        headers=req_headers,
     )
 
     try:
         try:
-            with urllib.request.urlopen(req, timeout=TIMEOUT) as response:
+            with _urlopen(req, timeout=TIMEOUT) as response:
                 return True, f"OK (HEAD {response.status})", False
         except urllib.error.HTTPError as e:
             if _is_rate_limited_http_error(e):
@@ -157,8 +243,32 @@ def validate_url(
             # Fallback to GET if method not allowed, forbidden, bad request, or unauthorized
             if e.code in (405, 403, 400, 401, 301, 302, 308, 307):
                 try:
-                    req.method = "GET"
-                    with urllib.request.urlopen(req, timeout=TIMEOUT) as response:
+                    get_url = req.full_url
+                    get_headers = dict(req.header_items())
+                    if e.code in (301, 302, 308, 307):
+                        err_headers = getattr(e, "headers", None) or getattr(
+                            e, "hdrs", None
+                        )
+                        location = None
+                        if err_headers and hasattr(err_headers, "items"):
+                            for hk, hv in err_headers.items():
+                                if str(hk).lower() == "location":
+                                    location = str(hv).strip()
+                                    break
+                        if location:
+                            get_url = urljoin(req.full_url, location)
+                        if not location or not _is_same_origin(req.full_url, get_url):
+                            get_headers = {
+                                k: v
+                                for k, v in get_headers.items()
+                                if k.lower() != "authorization"
+                            }
+                    get_req = urllib.request.Request(
+                        get_url,
+                        method="GET",
+                        headers=get_headers,
+                    )
+                    with _urlopen(get_req, timeout=TIMEOUT) as response:
                         return True, f"OK (GET {response.status})", False
                 except urllib.error.HTTPError as e_get:
                     if _is_rate_limited_http_error(e_get):

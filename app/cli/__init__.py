@@ -27,10 +27,12 @@ def json_default(obj: Any) -> Any:
 def register_cli_subcommands(subparsers: argparse._SubParsersAction) -> None:
     """Register core domain subcommand subparsers into the central parser."""
     from app.cli.ledger_cli import register_subparser as register_ledger
+    from app.cli.model_cli import register_subparser as register_model
     from app.cli.quarantine_cli import register_subparser as register_quarantine
     from app.cli.rules_cli import register_subparser as register_rules
 
     register_ledger(subparsers)
+    register_model(subparsers)
     register_quarantine(subparsers)
     register_rules(subparsers)
 
@@ -38,12 +40,15 @@ def register_cli_subcommands(subparsers: argparse._SubParsersAction) -> None:
 def handle_cli_command(args: argparse.Namespace, settings: AppSettings) -> bool:
     """Dispatch command to domain CLI handlers. Returns True if handled."""
     from app.cli.ledger_cli import handle_ledger_command
+    from app.cli.model_cli import handle_model_command
     from app.cli.quarantine_cli import handle_quarantine_command
     from app.cli.rules_cli import handle_rules_command
 
     subcmd = getattr(args, "subcommand", None)
     if subcmd == "ledger":
         return handle_ledger_command(args, settings)
+    elif subcmd == "model":
+        return handle_model_command(args, settings)
     elif subcmd == "quarantine":
         return handle_quarantine_command(args, settings)
     elif subcmd == "rules":

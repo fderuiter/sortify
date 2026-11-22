@@ -4,6 +4,7 @@ This script imports and runs the main application GUI or CLI demo.
 """
 
 import argparse
+import json
 import logging
 import os
 import re
@@ -15,6 +16,7 @@ from app.cli.error_emitter import emit_cli_error
 from app.config import AppSettings
 from app.core.domain_contracts import _make_json_serializable
 from app.core.path_utils import is_packaged
+from app.core.pipeline import reroot_plan
 from app.core.plan_format import format_plan_tree
 from app.core.session_catalog import list_sessions
 from app.frozen_runtime import prepare_frozen_windows_runtime
@@ -290,8 +292,20 @@ def _extract_bool_arg(
     return bool(getattr(args, attr, default))
 
 
+def _persist_settings_sync(settings: AppSettings) -> None:
+    """Flush pending debounced save timer and persist settings synchronously."""
+    timer = getattr(settings, "_save_timer", None)
+    if timer is not None:
+        try:
+            timer.cancel()
+        except Exception:
+            pass
+    if hasattr(settings, "_save"):
+        settings._save()
+
+
 def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
-    """Apply command-line argument overrides to AppSettings for this run only."""
+    """Apply command-line argument overrides and persist explicit CLI consent flags."""
     max_folders = getattr(args, "max_folders", None)
     if max_folders is not None:
         settings.override("MAX_FOLDERS", max_folders)
@@ -317,11 +331,13 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
     env_consent = os.environ.get("SORTIFY_AI_CONSENT")
     env_non_interactive = os.environ.get("NON_INTERACTIVE")
 
-    # CLI consent flags take precedence over saved settings and env vars
+    # CLI consent flags persist to user settings and take precedence over env vars
     if accept_consent:
-        settings.override("AI_CONSENT_GRANTED", True)
+        settings.AI_CONSENT_GRANTED = True
+        _persist_settings_sync(settings)
     elif decline_consent:
-        settings.override("AI_CONSENT_GRANTED", False)
+        settings.AI_CONSENT_GRANTED = False
+        _persist_settings_sync(settings)
     elif env_consent is not None:
         env_consent_clean = env_consent.strip().lower()
         if env_consent_clean in ("1", "true", "yes", "on"):
@@ -329,7 +345,8 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
         elif env_consent_clean in ("0", "false", "no", "off"):
             settings.override("AI_CONSENT_GRANTED", False)
 
-    # Check for non-interactive mode or wizard bypass
+    # Bypass TUI onboarding wizard when consent or skip flags are provided,
+    # while only enabling non-interactive mode when explicitly requested.
     is_non_interactive_env = bool(
         env_non_interactive
         and env_non_interactive.strip().lower() in ("1", "true", "yes", "on")
@@ -342,10 +359,47 @@ def apply_config_overrides(settings: AppSettings, args: argparse.Namespace):
         or decline_consent
     ):
         object.__setattr__(settings, "_skip_wizard", True)
-        object.__setattr__(settings, "_non_interactive", True)
-        settings.NON_INTERACTIVE = True
         if settings.AI_CONSENT_GRANTED is None:
             settings.override("AI_CONSENT_GRANTED", False)
+
+    if non_interactive_flag or is_non_interactive_env:
+        object.__setattr__(settings, "_non_interactive", True)
+
+
+def _maybe_provision_model_for_cli_consent(
+    args: argparse.Namespace, settings: AppSettings
+) -> None:
+    """Initiate model verification/download with terminal progress on top-level --accept-ai-consent setup."""
+    if not _extract_bool_arg(args, "accept_ai_consent"):
+        return
+    if getattr(args, "subcommand", None) is not None:
+        return
+    if getattr(args, "_cli_consent_model_checked", False):
+        return
+    object.__setattr__(args, "_cli_consent_model_checked", True)
+
+    from app.core.downloader import provision_model_cli
+    from app.core.exceptions import DownloaderError
+
+    quiet = bool(getattr(args, "quiet", False))
+    proxy = str(getattr(settings, "PROXY", "") or "").strip()
+    try:
+        provision_model_cli(proxy=proxy, quiet=quiet, stream=sys.stderr)
+    except DownloaderError as exc:
+        if not quiet:
+            print(
+                f"Warning: Could not download AI model weights ({exc}). "
+                "Proceeding with local keyword/TF-IDF fallback. "
+                "Retry anytime with 'smart-autosorter model download'.",
+                file=sys.stderr,
+            )
+    except Exception as exc:
+        if not quiet:
+            print(
+                f"Warning: Model provisioning check encountered an error ({exc}). "
+                "Proceeding with local keyword/TF-IDF fallback.",
+                file=sys.stderr,
+            )
 
 
 def _prompt_workspace_selection(args: argparse.Namespace) -> Path:
@@ -554,20 +608,33 @@ def _print_plan_for_humans(
     print("\n".join(lines))
 
 
+_reroot_plan = reroot_plan
+
+
 def _maybe_launch_tui(
     args: argparse.Namespace,
     settings: AppSettings,
     initial_dir: str | None = None,
+    *,
+    open_dropzone: bool = False,
+    initial_drop_paths: list[str] | None = None,
 ) -> None:
     """Launch the interactive TUI and exit when ``--tui`` or ``--interactive`` is set."""
     if getattr(args, "tui", False) or getattr(args, "interactive", False):
         from app.ui.tui import run_tui
 
+        tui_kwargs: dict[str, Any] = {
+            "skip_wizard": _extract_bool_arg(args, "skip_wizard"),
+            "non_interactive": _extract_bool_arg(args, "non_interactive"),
+        }
+        if open_dropzone:
+            tui_kwargs["open_dropzone"] = True
+        if initial_drop_paths is not None:
+            tui_kwargs["initial_drop_paths"] = initial_drop_paths
         run_tui(
             settings,
             initial_dir,
-            skip_wizard=_extract_bool_arg(args, "skip_wizard"),
-            non_interactive=_extract_bool_arg(args, "non_interactive"),
+            **tui_kwargs,
         )
         sys.exit(0)
 
@@ -674,8 +741,8 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
         pipeline = SortPipeline(session)
         plan = pipeline.plan(dest_dir=dest_abs)
 
-        if dest_dir:
-            plan = reroot_plan(plan, dest_dir)
+        if dest_dir and dest_abs:
+            plan = reroot_plan(plan, dest_dir, source_dir=str(target_path))
             session.base_dir = dest_abs
 
         serializable_plan = _make_json_serializable(plan)
@@ -1125,8 +1192,29 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
     json_output = getattr(args, "json", False)
 
     raw_p = getattr(args, "paths", None)
-    init_dir = getattr(args, "directory", None) or (raw_p[0] if raw_p else None)
-    _maybe_launch_tui(args, settings, init_dir)
+    dest_arg = getattr(args, "dest_dir", None)
+    dir_arg = getattr(args, "directory", None)
+    init_dir: str | None = None
+    if dest_arg:
+        init_dir = str(Path(dest_arg).expanduser().resolve())
+    elif dir_arg:
+        abs_dir = os.path.abspath(os.path.expanduser(str(dir_arg)))
+        init_dir = abs_dir if os.path.isdir(abs_dir) else os.path.dirname(abs_dir)
+    elif raw_p:
+        first_clean = str(raw_p[0]).strip().strip("'\"")
+        if first_clean:
+            abs_first = os.path.abspath(os.path.expanduser(first_clean))
+            init_dir = (
+                abs_first if os.path.isdir(abs_first) else os.path.dirname(abs_first)
+            )
+
+    _maybe_launch_tui(
+        args,
+        settings,
+        init_dir,
+        open_dropzone=True,
+        initial_drop_paths=list(raw_p) if raw_p else [],
+    )
 
     if getattr(args, "preset", None):
         print(
@@ -1142,12 +1230,15 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
             exit_code=1,
         )
 
+    from app.core.mover import is_subpath_or_equal
     from app.core.pipeline import (
         SortPipeline,
+        _relativize_items_to_base,
         drop_scope,
         reroot_plan,
         validate_drop_paths,
     )
+    from app.core.scanner import ScanFilter, get_files_recursively
     from app.core.session import AppSession
 
     validated_paths, issues = validate_drop_paths(raw_paths, settings=settings)
@@ -1174,28 +1265,65 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
         )
 
     dest_dir = getattr(args, "dest_dir", None)
+    resolved_dest: str | None = None
+    if dest_dir:
+        resolved_dest = str(Path(dest_dir).expanduser().resolve())
+        protected_paths = getattr(settings, "PROTECTED_PATHS", []) or []
+        if isinstance(protected_paths, (list, tuple, set)) and any(
+            prot and is_subpath_or_equal(resolved_dest, prot)
+            for prot in protected_paths
+        ):
+            emit_cli_error(
+                f"Error: Destination path '{dest_dir}' is protected.",
+                json_mode=json_output,
+                exit_code=1,
+            )
+        if os.path.exists(resolved_dest) and not os.path.isdir(resolved_dest):
+            emit_cli_error(
+                f"Error: Destination path '{dest_dir}' is not a directory.",
+                json_mode=json_output,
+                exit_code=1,
+            )
+
     dry_run = getattr(args, "dry_run", False)
     quiet = getattr(args, "quiet", False)
 
     processed_results = []
     for path in validated_paths:
         base_dir, files = drop_scope(path)
+        if files is None:
+            drop_filter = ScanFilter.from_settings(settings=settings, base_dir=base_dir)
+            drop_filter.max_depth = None
+            norm_files = get_files_recursively(
+                base_dir, settings=settings, scan_filter=drop_filter
+            )
+        else:
+            norm_files = _relativize_items_to_base(files, base_dir)
 
         session = None
         try:
             session = AppSession(settings, base_dir=base_dir)
             pipeline = SortPipeline(session)
-            dest_abs = str(os.path.abspath(dest_dir)) if dest_dir else None
-            plan = pipeline.plan(files, dest_dir=dest_abs)
+            plan = pipeline.plan(norm_files, dest_dir=resolved_dest)
 
-            if dest_dir:
-                plan = reroot_plan(plan, dest_dir)
+            if resolved_dest:
+                plan = reroot_plan(plan, resolved_dest, source_dir=base_dir)
+                session.base_dir = resolved_dest
 
             serializable_plan = _make_json_serializable(plan)
             if dry_run:
                 summary = {"status": "dry_run", "plan": serializable_plan}
             else:
+                src_was_dir = os.path.isdir(base_dir)
                 summary = pipeline.execute(plan).summary
+                if (
+                    resolved_dest
+                    and src_was_dir
+                    and os.path.normcase(os.path.abspath(resolved_dest))
+                    != os.path.normcase(os.path.abspath(base_dir))
+                    and not os.path.exists(base_dir)
+                ):
+                    os.makedirs(base_dir, exist_ok=True)
 
             processed_results.append(
                 {
@@ -1651,6 +1779,7 @@ def _main_impl():
         "config",
         "daemon",
         "ledger",
+        "model",
         "quarantine",
         "rules",
         "undo",
@@ -1709,6 +1838,8 @@ def _main_impl():
     for handler in root_logger.handlers:
         handler.addFilter(scrubber)
 
+    _maybe_provision_model_for_cli_consent(args, settings)
+
     # Direct subcommand execution
     if getattr(args, "subcommand", None) == "sort":
         handle_sort_command(args, settings)
@@ -1728,6 +1859,18 @@ def _main_impl():
         if handle_cli_command(args, settings):
             return
 
+    has_explicit_consent_flag = _extract_bool_arg(
+        args, "accept_ai_consent"
+    ) or _extract_bool_arg(args, "decline_ai_consent")
+    is_non_interactive_mode = bool(
+        getattr(settings, "_non_interactive", False)
+        or _extract_bool_arg(args, "non_interactive")
+        or (
+            os.environ.get("NON_INTERACTIVE", "").strip().lower()
+            in ("1", "true", "yes", "on")
+        )
+    )
+
     # Explicit Headless Guard for non-interactive streams without subcommands
     is_interactive = sys.stdin is not None and sys.stdin.isatty()
     is_explicit_ui = (
@@ -1737,7 +1880,7 @@ def _main_impl():
         or getattr(args, "daemon", False)
     )
 
-    if not is_interactive and not is_explicit_ui:
+    if (not is_interactive or is_non_interactive_mode) and not is_explicit_ui:
         if getattr(args, "directory", None):
             # A bare directory opens the TUI, where the user confirms the plan.
             # With no terminal (cron, pipes, CI) nobody can confirm, so only
@@ -1750,6 +1893,26 @@ def _main_impl():
                     file=sys.stderr,
                 )
             handle_sort_command(args, settings)
+        elif has_explicit_consent_flag:
+            is_json = bool(getattr(args, "json", False) or "--json" in sys.argv)
+            consent_state = bool(getattr(settings, "AI_CONSENT_GRANTED", False))
+            if is_json:
+                print(
+                    json.dumps(
+                        {
+                            "status": "success",
+                            "ai_consent_granted": consent_state,
+                        },
+                        indent=2,
+                    )
+                )
+            elif not getattr(args, "quiet", False):
+                state_label = "granted" if consent_state else "declined"
+                print(
+                    f"Saved AI consent preference: {state_label}.",
+                    file=sys.stderr,
+                )
+            return
         else:
             if getattr(args, "json", False) or "--json" in sys.argv:
                 emit_cli_error(
@@ -1759,6 +1922,25 @@ def _main_impl():
                 )
             parser.print_help(sys.stderr)
             sys.exit(2)
+
+    if (
+        has_explicit_consent_flag
+        and is_interactive
+        and not is_non_interactive_mode
+        and not getattr(args, "directory", None)
+        and not getattr(args, "preset", None)
+        and not getattr(args, "demo", False)
+        and not getattr(args, "daemon", False)
+    ):
+        try:
+            target_path = resolve_preset_and_directory(args, settings)
+            args.directory = str(target_path)
+        except ValueError as err:
+            emit_cli_error(
+                f"Error: {err}",
+                json_mode=bool(getattr(args, "json", False)),
+                exit_code=1,
+            )
 
     # Verify embedded model integrity upfront if packaged / sandboxed
     if is_packaged():

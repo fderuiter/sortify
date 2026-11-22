@@ -983,7 +983,22 @@ def test_tui_settings_modal_ai_consent_toggle_flow(temp_workspace):
 
                 assert app.settings.AI_CONSENT_GRANTED is True
                 assert mock_save.called
-                assert "[AI: Active]" in str(sb.render())
+                assert "[AI: Fallback]" in str(sb.render())
+
+                with patch(
+                    "app.core.downloader.inspect_local_model_bundle",
+                    return_value={
+                        "status": "verified",
+                        "verified": True,
+                        "model_dir": temp_workspace,
+                        "present_files": [],
+                        "missing_files": [],
+                        "detail": "Verified",
+                    },
+                ):
+                    app.update_status()
+                    await pilot.pause(0.05)
+                    assert "[AI: Active]" in str(sb.render())
 
                 # Re-open settings modal and disable AI consent
                 app.action_open_settings()
@@ -2385,6 +2400,7 @@ def test_main_screen_bindings_avoid_keys_terminals_cannot_send():
     "key, action",
     [
         ("ctrl+k", "action_open_command_palette"),
+        ("ctrl+g", "action_open_model_manager"),
         ("ctrl+y", "action_open_history"),
         ("ctrl+x", "action_open_extraction_preview"),
         ("ctrl+z", "action_undo_last_sort"),
@@ -2646,5 +2662,44 @@ def test_tui_tree_rendering_zero_stat_and_collision_precomputation(temp_workspac
             await app.workers.wait_for_complete()
             await pilot.pause(0.05)
             assert app.collision_paths == set()
+
+    asyncio.run(_test())
+
+
+def test_ai_provisioning_idle_poll_executes_zero_stat_calls_and_tracks_transitions(
+    temp_workspace,
+):
+    """Verify 0.5s AI status polling executes zero os.stat calls when idle and updates on DownloadManager state changes."""
+    from app.core.downloader import DownloadManager
+
+    async def _test():
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(
+            settings=settings, base_dir=temp_workspace, skip_wizard=True
+        )
+
+        async with app.run_test() as pilot:
+            await app.workers.wait_for_complete()
+            await pilot.pause(0.05)
+
+            with patch("os.stat") as mock_stat, patch("os.lstat") as mock_lstat:
+                app._poll_ai_provisioning_status()
+                app._poll_ai_provisioning_status()
+                assert mock_stat.call_count == 0
+                assert mock_lstat.call_count == 0
+
+            dm = DownloadManager.get_instance()
+            dm._status = DownloadManager.DownloadState.DOWNLOADING
+            dm.state["is_downloading"] = True
+            dm.state["progress"] = 0.42
+            app._poll_ai_provisioning_status()
+            assert "[AI: Downloading 42%]" in str(
+                app.query_one("#status-bar", Static).render()
+            )
+
+            with patch("os.stat") as mock_stat_dl:
+                app._poll_ai_provisioning_status()
+                assert mock_stat_dl.call_count == 0
 
     asyncio.run(_test())

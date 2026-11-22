@@ -6,33 +6,46 @@ Welcome to the Smart AutoSorter AI Pro troubleshooting guide. This page covers m
 
 ## Model download failures
 
-The Model Manager (accessible via Command Palette `[Ctrl+K]`) downloads the optional embedding model (`all-MiniLM-L6-v2` in ONNX format) from Hugging Face. When a download fails it shows **Model download failed:** followed by the reason.
+The Onboarding Wizard (`[Ctrl+W]`) and Model Manager (`[Ctrl+G]` or Command Palette `[Ctrl+K]`) download the optional local embedding model (`all-MiniLM-L6-v2` in ONNX format) from Hugging Face and verify its SHA-256 digests before activation. While weights are missing or if a download fails, the status bar shows `[AI: Fallback]` and Sortify continues organizing folders locally with keyword rules and TF-IDF clustering.
 
 ### Network errors
 The message names a network, connection or timeout error. A firewall, antivirus, VPN or proxy is blocking `huggingface.co`, or the machine is offline.
 
 - Check your internet connection, and try again with the VPN off.
-- Behind a corporate proxy, enter it in the Model Manager's proxy field before downloading.
-- If the network can't be opened, ask your administrator for the offline deployment bundle, which includes the model.
+- Behind a corporate proxy, enter the proxy URL directly in the Onboarding Wizard (`#input-wizard-proxy`), in the Model Manager (`[Ctrl+G]`), or on the CLI via `smart-autosorter model download --proxy http://proxy.example.com:8080`.
+- On metered or offline networks, enable **Defer model download** in the Onboarding Wizard to skip background transfers and sort immediately in `[AI: Fallback]` mode.
+- If the network can't be opened, ask your administrator for the offline deployment bundle, which includes the pre-verified model files.
 
 ### "Insufficient disk space"
 The message reads `Insufficient disk space. Required: N bytes, Free: M bytes.` or `Insufficient disk space on the target drive.` Sortify checks that the target drive has room for the whole file before it downloads. Free that much space plus a margin, then retry.
 
 ## Granting consent and retrying the download
 
-Consent and the download are separate steps. Granting consent allows Sortify to use the model; the download itself starts from the Model Manager.
+Completing onboarding with **AI Consent Granted** switched on automatically starts a background model download when verified weights are absent (unless deferred), while scanning your workspace right away. Once SHA-256 verification finishes, the status bar switches from `[AI: Downloading …]` to `[AI: Active]`.
 
 ### In the terminal UI
-1. Start the app with `smart-autosorter --tui`.
-2. Press `[Ctrl+W]` to open the Model Onboarding Wizard, switch **AI Consent Granted** on with `[Space]`, and choose **Finish & Save**.
-3. Press `[Ctrl+K]` to open the Command Palette, search for **Model Manager**, press `[Enter]`, and choose **Start Download**, or **Retry Download** after a failure.
+1. Start the app with `smart-autosorter` (or `smart-autosorter --tui`).
+2. On first launch (or by pressing `[Ctrl+W]`), switch **AI Consent Granted** on with `[Space]`, optionally configure a proxy URL, and choose **Finish & Save** to save consent and start background provisioning automatically.
+3. To inspect progress, retry an interrupted download, verify hashes, or delete cached weights later, press `[Ctrl+G]` (or open the Command Palette with `[Ctrl+K]` and select **Open Model Manager**).
 
 ### From the command line
-`smart-autosorter --accept-ai-consent` opens the terminal UI with consent granted for that run. It does not start the download; use the Model Manager for that.
+- Save AI consent across restarts, verify or download model weights with terminal progress output, and keep interactive workspace selection active in terminal sessions:
+  ```bash
+  smart-autosorter --accept-ai-consent
+  ```
+- Save AI consent and provision weights in headless scripts without interactive prompts:
+  ```bash
+  smart-autosorter --accept-ai-consent --non-interactive
+  ```
+- Check model status, retry downloads (including `--proxy`), verify SHA-256 hashes, or remove local model files directly:
+  ```bash
+  smart-autosorter model status
+  smart-autosorter model download --proxy http://proxy.example.com:8080
+  smart-autosorter model verify
+  smart-autosorter model remove
+  ```
 
-`smart-autosorter config --set AI_CONSENT_GRANTED true` is meant to save consent permanently, but it currently prints the new value without reliably saving it ([#806](https://github.com/fderuiter/sortify/issues/806)). Use the wizard until that is fixed.
-
-You can keep using Sortify without the model (`smart-autosorter --decline-ai-consent`). Files are still clustered by content using TF-IDF keyword vectors; see [Offline Mode](user_guide.md#offline-mode).
+You can also decline AI consent permanently (`smart-autosorter --decline-ai-consent`). Files are still clustered locally by content using TF-IDF keyword vectors; see [Offline Mode](user_guide.md#offline-mode).
 
 ## Settings configuration
 
@@ -70,11 +83,11 @@ For authoritative headless batch procedures, CLI commands (`smart-autosorter led
 
 ## DropZone errors
 
-The DropZone (`[Ctrl+D]`) sorts files you paste or drop into its queue. **Sort Items** reports an error when nothing in the queue can be sorted:
+The DropZone (`[Ctrl+D]` or `smart-autosorter drop --tui`) sorts files and folders you paste or drop into its queue, either in place or into a chosen destination folder (**Destination folder** input or **Browse** button). **Sort Items** reports an error when nothing in the queue can be sorted or the destination is invalid:
 
-- **"No file or folder paths provided."** The queue is empty. Paste one or more paths into the input and press Enter.
-- **"Protected path blocked: NAME"** The item is inside one of your protected paths (Settings, General), so Sortify will not move it. Remove the path from the protected list if you do want it sorted.
-- **"No ready files to sort in queue."** Every queued item is protected, missing (**Not Found**) or **Unsupported**. The DropZone accepts `.txt`, `.docx`, `.csv`, `.xlsx`, `.xls` and `.pdf`; **Filter Unsupported** removes the rest from the queue.
+- **"No file or folder paths provided."** The queue is empty. Paste or drop one or more file or folder paths (including multi-file terminal drops or `file://` URIs) into the input and press Enter.
+- **"Protected path blocked: NAME"** A queued source item or the selected destination folder is inside one of your protected paths (Settings, General), so Sortify will not move files from or into it. Remove the path from the protected list or pick another destination folder if you want to proceed.
+- **"No ready files to sort in queue."** Every queued item is protected, missing (**Not Found**) or **Unsupported**. The DropZone accepts all formats supported by the sorting pipeline—documents (`.txt`, `.docx`, `.csv`, `.xlsx`, `.xls`, `.pdf`), images (`.png`, `.jpg`, `.jpeg`), audio (`.mp3`, `.wav`, `.m4a`), video/media, archives, installers/binaries, design/CAD files, Jev-classified code and presentation formats (`.pptx`, `.ppt`, `.key`, `.py`, `.json`, `.yaml`, etc.), and any file matching your configured rules or extension categories—while keeping extensions in **Ignored extensions** as **Unsupported**. **Filter Unsupported** removes unsupported items from the queue.
 
 ## CRO forensic ingestion
 

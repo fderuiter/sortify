@@ -32,9 +32,9 @@ uv run pytest -m "not slow"             # fast suite, parallel by default (pytes
 uv run pytest -m slow -n 0              # ML, snapshot and integration tests
 uv run ruff check . && uv run ruff format .
 uv run ty check                         # type check app/ (config in pyproject.toml)
-uv run pre-commit run --all-files       # every hook, same as CI's static checks
-uv run python scripts/validate_config.py --check        # verify config schema and pyproject.toml bounds read-only
-uv run python scripts/generate_docs.py --check          # verify generated docs/diagrams read-only and build site/
+SKIP=no-commit-to-branch uv run pre-commit run --all-files       # every hook offline, including on main
+uv run python scripts/validate_config.py --check                 # verify config schema and pyproject.toml bounds read-only
+uv run python scripts/generate_docs.py --check --no-build --local-only  # verify generated docs/diagrams offline and read-only
 uv run mkdocs serve                     # preview the docs site at http://127.0.0.1:8000
 ```
 
@@ -46,14 +46,13 @@ Set `PYTHON_KEYRING_BACKEND=keyring.backends.fail.Keyring` when running tests on
 
 | Hook | Script | Fails when |
 |---|---|---|
-| `validate-docs` | `uv run python scripts/generate_docs.py --check --no-build` | generated docs (`docs/api_reference.md`, `docs/ui.md`, `docs/admin_guide.md`, `docs/keyboard_shortcuts.md`, `SECURITY.md`, `app/config_schema.json`) are stale, or a handwritten doc links to a missing path |
+| `validate-docs` | `uv run python scripts/generate_docs.py --check --no-build --local-only` | generated docs (`docs/api_reference.md`, `docs/ui.md`, `docs/admin_guide.md`, `docs/keyboard_shortcuts.md`, `SECURITY.md`, `app/config_schema.json`) are stale, or a handwritten doc links to a missing path |
 | `validate-diagram-artifacts` | `uv run python scripts/diagram_toolchain.py --verify` | a Mermaid diagram spec or `.mmd`/`.svg` artifact in `docs/assets/diagrams/` is stale or invalid |
 | `validate-signatures` | `uv run python scripts/validate_signatures.py` | a public API or CLI signature changed without updating its baseline in `tests/snapshots/api/`, or an orphaned snapshot exists under `tests/snapshots/` |
 | `validate-architecture` | `uv run python scripts/validate_architecture.py` | a centralized helper, `Settings` usage, or architecture diagram inventory drifts across `app/`, `scripts/diagram_schema.py`, or `docs/assets/diagrams/` |
-| `validate-imports` | `uv run python scripts/validate_imports.py` | `app/` imports a package that isn't a declared dependency |
 | `deptry` | `uv run deptry .` | a declared dependency is unused, an import comes only in transitively, or runtime code imports a dev-only package (exceptions are in `[tool.deptry]` in `pyproject.toml`) |
 | `validate-config-schema` | `uv run python scripts/validate_config.py --check` | `app/config.py` and `app/config_schema.json` disagree, or `pyproject.toml` `hatchling` bounds drift |
-| `validate-links` | `uv run python scripts/validate_links.py --local-only` | a URL in a changed `.py` or `.md` file is malformed (CI runs `scripts/validate_links.py` to check that live external links resolve) |
+| `validate-links` | `uv run python scripts/validate_links.py --local-only` | a URL in a changed `.py` or `.md` file is malformed (`.github/workflows/scheduled-link-audit.yml` runs `scripts/validate_links.py` to check that live external links resolve) |
 
 CI (`.github/workflows/ci.yml`) runs the same checks, a dependency audit and secret scan, then the test suite on Linux, Windows and macOS. The fast suite must keep coverage of `app/` at 70% or above (`--cov-fail-under` in `ci.yml`; on Linux this counts branches too). On Linux, the modules that move, undo and encrypt files must also stay above their own floors in `[tool.sortify.coverage-floors]` in `pyproject.toml`, checked by `scripts/check_coverage_floors.py`. Raise a floor when your tests raise its module. Tests run with a synchronous stand-in for the database write queue; mark a test `@pytest.mark.real_db_worker` to run it against the real asynchronous queue. The aggregate `Required CI` job is the merge gate.
 

@@ -149,6 +149,8 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         super().__init__()
         self.settings = settings
         self.current_dir = current_dir
+        self._playground_committed_dir: Optional[str] = None
+        self._sample_auto_enabled_by_demo: bool = False
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
@@ -209,6 +211,36 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                         "zero document cloud telemetry, and encrypted local SQLCipher storage)"
                     ),
                 )
+
+                yield Label(
+                    self._format_model_status_text(
+                        consent_enabled=bool(consent_val),
+                        defer_download=False,
+                    ),
+                    id="lbl-wizard-model-status",
+                )
+
+                chk_defer = Checkbox(
+                    "Defer model download (metered or offline network)",
+                    value=False,
+                    id="chk-defer-download",
+                )
+                chk_defer.tooltip = "Skip automatic background model download and sort immediately with local keyword/TF-IDF rules"
+                yield chk_defer
+
+                proxy_val = (
+                    getattr(self.settings, "PROXY", "") or ""
+                    if self.settings is not None
+                    else ""
+                )
+                yield Label("Network Proxy (optional):", classes="preset-label")
+                inp_proxy = Input(
+                    value=str(proxy_val),
+                    placeholder="Optional HTTP/HTTPS proxy URL (e.g. http://proxy.example.com:8080)",
+                    id="input-wizard-proxy",
+                )
+                inp_proxy.tooltip = "Optional HTTP/HTTPS proxy URL used when downloading local AI model weights"
+                yield inp_proxy
 
                 yield Heading("Workspace Directory:", level=2, classes="field-label")
                 initial_dir = (
@@ -308,14 +340,79 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                     tooltip="Automatically hold HIGH sensitivity documents (e.g. financial, tax, legal, resume records) in compliance quarantine",
                 )
 
-                yield Label("Status: Local embedded AI model weights verified.")
-
             with Horizontal(classes="button-row"):
                 btn_finish = Button("Finish & Save", id="btn-finish", variant="primary")
                 btn_finish.tooltip = (
                     "Save AI consent setting and complete onboarding wizard"
                 )
                 yield btn_finish
+
+    def _format_model_status_text(
+        self,
+        consent_enabled: Optional[bool] = None,
+        defer_download: Optional[bool] = None,
+    ) -> str:
+        """Build truthful live model status description for the wizard."""
+        from app.core.downloader import inspect_local_model_bundle
+
+        if consent_enabled is None:
+            try:
+                consent_enabled = bool(self.query_one("#switch-consent", Switch).value)
+            except Exception:
+                consent_enabled = bool(
+                    getattr(self.settings, "AI_CONSENT_GRANTED", False)
+                )
+
+        if defer_download is None:
+            try:
+                defer_download = bool(
+                    self.query_one("#chk-defer-download", Checkbox).value
+                )
+            except Exception:
+                defer_download = False
+
+        bundle = inspect_local_model_bundle()
+        if bundle["is_downloading"]:
+            pct = int(round(bundle["progress_percent"]))
+            return (
+                f"Model Status: Downloading local AI model weights ({pct}%) — "
+                "workspace sorts with keyword clustering until verification completes."
+            )
+        if bundle["verified"]:
+            return "Model Status: Verified local AI model weights ready on disk."
+        if bundle["disk_bundle_status"] in ("incomplete", "corrupted"):
+            reason = bundle["detail"]
+            if consent_enabled and not defer_download:
+                return (
+                    f"Model Status: Unverified/incomplete weights ({reason}) — "
+                    "fresh background download will start on Finish."
+                )
+            return (
+                f"Model Status: Unverified/incomplete weights ({reason}) — "
+                "using local keyword/TF-IDF fallback."
+            )
+        if consent_enabled and not defer_download:
+            return (
+                "Model Status: Missing local model weights — background download (~80 MB) "
+                "will start automatically on Finish."
+            )
+        if consent_enabled and defer_download:
+            return (
+                "Model Status: Missing local model weights — download deferred "
+                "(using local keyword/TF-IDF fallback)."
+            )
+        return (
+            "Model Status: Missing local model weights — AI disabled "
+            "(using local keyword/TF-IDF sorting)."
+        )
+
+    def _refresh_model_status_label(self) -> None:
+        """Refresh the live model status label inside the wizard."""
+        try:
+            lbl = self.query_one("#lbl-wizard-model-status", Label)
+            lbl.update(self._format_model_status_text())
+        except Exception:
+            pass
 
     def _show_error(self, message: str) -> None:
         """Display inline error banner, announce message, and focus input."""
@@ -341,7 +438,7 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     @on(Button.Pressed, "#preset-demo")
     def action_preset_demo(self) -> None:
-        """Select sandbox demo workspace quick preset."""
+        """Select sandbox demo workspace quick preset and enable sample generation."""
         path = os.path.abspath("sandbox/demo_workspace")
         if not os.path.exists(path):
             try:
@@ -350,17 +447,36 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 self._show_error(f"Failed to create directory '{path}': {exc}")
                 return
         self._set_directory_input(path, "demo workspace")
+        try:
+            chk_sample = self.query_one("#chk-sample-corpus", Checkbox)
+            if not chk_sample.value:
+                self._sample_auto_enabled_by_demo = True
+                chk_sample.value = True
+        except Exception:
+            pass
 
     @on(Button.Pressed, "#preset-downloads")
     def action_preset_downloads(self) -> None:
         """Select user Downloads folder quick preset."""
         path = os.path.expanduser("~/Downloads")
+        if self._sample_auto_enabled_by_demo:
+            self._sample_auto_enabled_by_demo = False
+            try:
+                self.query_one("#chk-sample-corpus", Checkbox).value = False
+            except Exception:
+                pass
         self._set_directory_input(path, "Downloads")
 
     @on(Button.Pressed, "#preset-documents")
     def action_preset_documents(self) -> None:
         """Select user Documents folder quick preset."""
         path = os.path.expanduser("~/Documents")
+        if self._sample_auto_enabled_by_demo:
+            self._sample_auto_enabled_by_demo = False
+            try:
+                self.query_one("#chk-sample-corpus", Checkbox).value = False
+            except Exception:
+                pass
         self._set_directory_input(path, "Documents")
 
     def _set_directory_input(self, path: str, preset_name: str) -> None:
@@ -382,8 +498,10 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 pass
 
     def on_mount(self) -> None:
-        """Focus switch on mount and emit screen reader announcement."""
+        """Focus switch on mount, refresh model status, and emit screen reader announcement."""
         self._update_layout(self.size.width, self.size.height)
+        self._refresh_model_status_label()
+        self.set_interval(0.5, self._refresh_model_status_label)
         try:
             self.query_one("#switch-consent", Switch).focus()
         except Exception:
@@ -418,6 +536,7 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
         if switch_id == "switch-consent":
             state = "enabled" if event.value else "disabled"
+            self._refresh_model_status_label()
             self.announce(f"AI consent {state}.")
             self.announce(f"AI consent {state}. {PRIVACY_GUARANTEE_ANNOUNCEMENT}")
         elif switch_id == "switch-sample-corpus":
@@ -432,11 +551,17 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     @on(Checkbox.Changed)
     def on_checkbox_changed(self, event: Checkbox.Changed) -> None:
-        """Announce starter template checkbox selection state changes."""
+        """Announce starter template and provisioning checkbox selection state changes."""
         chk_id = getattr(event.checkbox, "id", None) or getattr(
             event.control, "id", None
         )
         if not chk_id:
+            return
+
+        if chk_id == "chk-defer-download":
+            self._refresh_model_status_label()
+            state = "deferred" if event.value else "automatic"
+            self.announce(f"Model download mode set to {state}.")
             return
 
         if chk_id == "chk-sample-corpus":
@@ -461,15 +586,57 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 self.announce(f"{pack.title} template pack {state}.")
                 break
 
+    def _get_selected_pack_ids(self) -> list[str]:
+        """Return starter template pack IDs currently checked in the wizard."""
+        from app.core.rule_templates import get_starter_templates
+
+        selected: list[str] = []
+        for pack in get_starter_templates():
+            try:
+                if self.query_one(f"#chk-template-{pack.id}", Checkbox).value:
+                    selected.append(pack.id)
+            except Exception:
+                pass
+        return selected
+
+    def _sync_from_playground(self, payload: dict) -> None:
+        """Synchronize starter pack toggles and committed sandbox directory from SamplePlaygroundModal."""
+        from app.core.rule_templates import get_starter_templates
+
+        selected_packs = set(payload.get("selected_packs") or [])
+        for pack in get_starter_templates():
+            try:
+                chk = self.query_one(f"#chk-template-{pack.id}", Checkbox)
+                desired = pack.id in selected_packs
+                if chk.value != desired:
+                    chk.value = desired
+            except Exception:
+                pass
+
+        if payload.get("committed"):
+            committed_dir = str(payload.get("target_dir") or "").strip()
+            if committed_dir:
+                self.current_dir = committed_dir
+                self._playground_committed_dir = committed_dir
+                try:
+                    self.query_one("#input-dir", Input).value = committed_dir
+                except Exception:
+                    pass
+                try:
+                    self.query_one("#chk-sample-corpus", Checkbox).value = False
+                    self._sample_auto_enabled_by_demo = False
+                except Exception:
+                    pass
+
     @on(Button.Pressed, "#btn-open-playground")
     def action_open_playground(self) -> None:
-        """Open interactive sample playground modal screen."""
+        """Open interactive sample playground modal screen with bidirectional state sync."""
         from app.ui.modals.sample_playground import SamplePlaygroundModal
 
         target_dir = ""
         try:
             val = self.query_one("#input-dir", Input).value.strip()
-            if val and os.path.exists(os.path.expanduser(val)):
+            if val:
                 target_dir = os.path.abspath(os.path.expanduser(val))
         except Exception:
             pass
@@ -477,12 +644,17 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             target_dir = getattr(self.app, "base_dir", "") or os.getcwd()
 
         self.app.push_screen(
-            SamplePlaygroundModal(self.settings, target_dir=target_dir)
+            SamplePlaygroundModal(
+                self.settings,
+                target_dir=target_dir,
+                initial_selected_packs=self._get_selected_pack_ids(),
+                on_sync=self._sync_from_playground,
+            )
         )
 
     @on(Button.Pressed, "#btn-finish")
     def action_finish(self) -> None:
-        """Finish wizard, validate directory, save consent settings, apply templates, and scan."""
+        """Finish wizard, validate directory, save consent/proxy, start background provisioning, and scan."""
         raw_dir = ""
         try:
             raw_dir = self.query_one("#input-dir", Input).value.strip()
@@ -505,6 +677,13 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         except Exception:
             consent = False
         self.settings.AI_CONSENT_GRANTED = consent
+
+        proxy_val = ""
+        try:
+            proxy_val = self.query_one("#input-wizard-proxy", Input).value.strip()
+            self.settings.PROXY = proxy_val
+        except Exception:
+            proxy_val = str(getattr(self.settings, "PROXY", "") or "").strip()
 
         existing_ratings = [
             str(r).upper()
@@ -539,20 +718,15 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         except Exception:
             pass
 
-        from app.core.rule_templates import (
-            apply_starter_templates,
-            get_starter_templates,
-        )
+        defer_download = False
+        try:
+            defer_download = bool(self.query_one("#chk-defer-download", Checkbox).value)
+        except Exception:
+            defer_download = False
 
-        selected_packs = []
-        for pack in get_starter_templates():
-            try:
-                chk = self.query_one(f"#chk-template-{pack.id}", Checkbox)
-                if chk.value:
-                    selected_packs.append(pack.id)
-            except Exception:
-                pass
+        from app.core.rule_templates import apply_starter_templates
 
+        selected_packs = self._get_selected_pack_ids()
         if selected_packs:
             try:
                 apply_starter_templates(self.settings, selected_packs)
@@ -568,6 +742,35 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 self.settings._save()
             except Exception as e:
                 logger.error(f"Error saving consent setting: {e}")
+
+        if consent and not defer_download:
+            try:
+                from app.core.downloader import (
+                    DEFAULT_MODEL_URL,
+                    DownloadManager,
+                    resolve_default_model_dir,
+                    verify_downloaded_model,
+                )
+
+                model_dir = resolve_default_model_dir()
+                dm = DownloadManager.get_instance()
+                if proxy_val:
+                    dm.update_proxy(proxy_val)
+                if not dm.state.get(
+                    "is_downloading", False
+                ) and not verify_downloaded_model(model_dir):
+                    dm.start_download(DEFAULT_MODEL_URL, model_dir, proxy=proxy_val)
+                    self.announce(
+                        "Started background AI model download. Using local keyword clustering until verification completes."
+                    )
+            except Exception as dl_exc:
+                logger.warning(
+                    f"Background model provisioning could not start during onboarding: {dl_exc}"
+                )
+                self.announce(
+                    f"Model download unavailable ({dl_exc}). Continuing with local keyword clustering."
+                )
+
         gen_sample = False
         try:
             gen_sample = self.query_one("#chk-sample-corpus", Checkbox).value
@@ -581,8 +784,13 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         if gen_sample:
             from app.core.sample_corpus import generate_sample_corpus
 
+            is_demo_preset = os.path.normpath(chosen_dir).endswith(
+                os.path.normpath("sandbox/demo_workspace")
+            )
             sample_fn = getattr(self.app, "_sample_dataset_dir", None)
-            if callable(sample_fn):
+            if is_demo_preset or chosen_dir == self._playground_committed_dir:
+                sample_target = chosen_dir
+            elif callable(sample_fn):
                 sample_target = sample_fn(chosen_dir)
             else:
                 if (
@@ -616,6 +824,13 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         if hasattr(self.app, "source_dirs"):
             setattr(self.app, "source_dirs", [target_dir])
 
+        update_status_fn = getattr(self.app, "update_status", None)
+        if callable(update_status_fn):
+            try:
+                update_status_fn()
+            except Exception:
+                pass
+
         update_cta = getattr(self.app, "_update_onboarding_cta_visibility", None)
         if callable(update_cta):
             try:
@@ -628,14 +843,18 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         except Exception:
             pass
 
-        scan_fn = getattr(self.app, "action_scan_directory", None)
-        if callable(scan_fn):
-            scan_fn()
-
         self.announce(
             "Finished model onboarding wizard, saved consent settings, and applied selected starter rule templates."
         )
+        try:
+            self.set_focus(None)
+        except Exception:
+            pass
         self.dismiss(None)
+
+        scan_fn = getattr(self.app, "action_scan_directory", None)
+        if callable(scan_fn):
+            scan_fn()
 
     def action_cancel(self) -> None:
         """Cancel wizard on Escape key press."""

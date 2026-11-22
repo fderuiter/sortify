@@ -3,7 +3,6 @@
 import argparse
 import ast
 import builtins
-import copy
 import glob
 import hashlib
 import os
@@ -96,70 +95,122 @@ IMPORT_LAYER_EXEMPT: set[str] = set()
 
 
 def compute_normalized_ast_hash(node: ast.AST) -> str:
-    """Compute SHA256 hash of a function AST node after normalizing docstrings, type annotations, and local variable names."""
-    func_copy = copy.deepcopy(node)
+    """Compute SHA256 hash of a function AST node using read-only serialization after normalizing docstrings, type annotations, and local variable names."""
+    is_root_func = isinstance(node, (ast.FunctionDef, ast.AsyncFunctionDef))
+    root_args = node.args if is_root_func else None
+    top_arg_ids: set[int] = set()
+    if root_args is not None:
+        for a in root_args.posonlyargs + root_args.args + root_args.kwonlyargs:
+            top_arg_ids.add(id(a))
+        if root_args.vararg is not None:
+            top_arg_ids.add(id(root_args.vararg))
+        if root_args.kwarg is not None:
+            top_arg_ids.add(id(root_args.kwarg))
 
-    if isinstance(func_copy, (ast.FunctionDef, ast.AsyncFunctionDef)):
-        # 1. Strip docstring if first statement in function body is a string literal expression
-        if func_copy.body and isinstance(func_copy.body[0], ast.Expr):
-            first_val = func_copy.body[0].value
-            if isinstance(first_val, ast.Constant) and isinstance(first_val.value, str):
-                func_copy.body.pop(0)
+    root_body: list[ast.stmt] | None = None
+    if is_root_func:
+        body = node.body
+        if (
+            body
+            and isinstance(body[0], ast.Expr)
+            and isinstance(body[0].value, ast.Constant)
+            and isinstance(body[0].value.value, str)
+        ):
+            root_body = body[1:]
+        else:
+            root_body = body
 
-        # 2. Strip type annotations and type comments
-        func_copy.returns = None
-        func_copy.type_comment = None
-
-        args_obj = func_copy.args
-        for arg in args_obj.posonlyargs + args_obj.args + args_obj.kwonlyargs:
-            arg.annotation = None
-            arg.type_comment = None
-        if args_obj.vararg is not None:
-            args_obj.vararg.annotation = None
-            args_obj.vararg.type_comment = None
-        if args_obj.kwarg is not None:
-            args_obj.kwarg.annotation = None
-            args_obj.kwarg.type_comment = None
-
-    # 3. Normalize local variable / parameter names and walk tree
     var_map: dict[str, str] = {}
 
-    class ASTNormalizer(ast.NodeTransformer):
-        def visit_arg(self, node: ast.arg) -> ast.arg:
-            self.generic_visit(node)
-            if node.arg and node.arg not in BUILTIN_NAMES:
-                if node.arg not in var_map:
-                    var_map[node.arg] = f"v_{len(var_map)}"
-                node.arg = var_map[node.arg]
-            return node
+    def _map_var(name: str) -> str:
+        if name and name not in BUILTIN_NAMES:
+            mapped = var_map.get(name)
+            if mapped is None:
+                mapped = f"v_{len(var_map)}"
+                var_map[name] = mapped
+            return mapped
+        return name
 
-        def visit_Name(self, node: ast.Name) -> ast.Name:
-            self.generic_visit(node)
-            if node.id and node.id not in BUILTIN_NAMES:
-                if node.id not in var_map:
-                    var_map[node.id] = f"v_{len(var_map)}"
-                node.id = var_map[node.id]
-            return node
+    def _serialize(val: object) -> str:
+        if isinstance(val, ast.AST):
+            if isinstance(val, ast.AnnAssign):
+                assert val.value is not None
+                target_s = _serialize(val.target)
+                value_s = _serialize(val.value)
+                return f"Assign([{target_s}], {value_s})"
 
-        def visit_keyword(self, node: ast.keyword) -> ast.keyword:
-            self.generic_visit(node)
-            if node.arg and node.arg not in BUILTIN_NAMES:
-                if node.arg in var_map:
-                    node.arg = var_map[node.arg]
-            return node
+            cls = type(val)
+            if isinstance(val, ast.arg):
+                is_top = id(val) in top_arg_ids
+                ann_val = None if is_top else getattr(val, "annotation", None)
+                tc_val = None if is_top else getattr(val, "type_comment", None)
+                ann_s = _serialize(ann_val) if ann_val is not None else None
+                tc_s = _serialize(tc_val) if tc_val is not None else None
+                arg_name = _map_var(val.arg) if val.arg else val.arg
+                field_vals = (
+                    ("arg", arg_name, repr(arg_name)),
+                    ("annotation", ann_val, ann_s),
+                    ("type_comment", tc_val, tc_s),
+                )
+                args = []
+                keywords = False
+                for fname, raw_v, fmt_v in field_vals:
+                    if raw_v is None and getattr(cls, fname, ...) is None:
+                        keywords = True
+                        continue
+                    s = fmt_v if fmt_v is not None else repr(raw_v)
+                    args.append(f"{fname}={s}" if keywords else s)
+                return f"arg({', '.join(args)})"
 
-        def visit_AnnAssign(self, node: ast.AnnAssign) -> ast.AST | None:
-            if node.value is None:
-                return None
-            target = self.visit(node.target)
-            value = self.visit(node.value)
-            return ast.Assign(targets=[target], value=value, type_comment=None)
+            if isinstance(val, ast.Name):
+                ctx_s = _serialize(val.ctx)
+                norm_id = _map_var(val.id) if val.id else val.id
+                return f"Name({repr(norm_id)}, {ctx_s})"
 
-    normalizer = ASTNormalizer()
-    func_copy = normalizer.visit(func_copy)
+            if isinstance(val, ast.keyword):
+                val_s = _serialize(val.value)
+                kw_arg = val.arg
+                if kw_arg and kw_arg not in BUILTIN_NAMES and kw_arg in var_map:
+                    kw_arg = var_map[kw_arg]
+                if kw_arg is None:
+                    return f"keyword(value={val_s})"
+                return f"keyword({repr(kw_arg)}, {val_s})"
 
-    # Convert to canonical AST dump without line numbers or column offsets
-    dump_str = ast.dump(func_copy, annotate_fields=False, include_attributes=False)
+            args = []
+            keywords = False
+            is_root = val is node and is_root_func
+            for fname in val._fields:
+                if is_root and fname == "body":
+                    fval: object = root_body
+                elif is_root and fname in ("returns", "type_comment"):
+                    fval = None
+                else:
+                    try:
+                        fval = getattr(val, fname)
+                    except AttributeError:
+                        keywords = True
+                        continue
+                if fval is None and getattr(cls, fname, ...) is None:
+                    keywords = True
+                    continue
+                s = _serialize(fval)
+                args.append(f"{fname}={s}" if keywords else s)
+            return f"{cls.__name__}({', '.join(args)})"
+
+        if isinstance(val, list):
+            items = [
+                _serialize(x)
+                for x in val
+                if not (isinstance(x, ast.AnnAssign) and x.value is None)
+            ]
+            return f"[{', '.join(items)}]"
+
+        return repr(val)
+
+    if isinstance(node, ast.AnnAssign) and node.value is None:
+        dump_str = "None"
+    else:
+        dump_str = _serialize(node)
     return hashlib.sha256(dump_str.encode("utf-8")).hexdigest()
 
 
@@ -319,17 +370,13 @@ class UtilityAntiDuplicationVisitor(ast.NodeVisitor):
         self._check_function(node)
 
 
-def validate_codebase_duplication(
-    errors: list, target_files: set[str] | None = None
-) -> None:
-    """Traverse app/ directory to run primitive duplicate checks, canonical utility re-definition checks, and structural function hash comparison."""
-    function_hashes = {}
-
-    for root, _, files in os.walk("app"):
+def _collect_parsed_app_files(app_root: str = "app") -> list[tuple[str, ast.Module]]:
+    """Walk app_root once and parse each Python source file into an AST."""
+    parsed_files: list[tuple[str, ast.Module]] = []
+    for root, _, files in os.walk(app_root):
         for file in files:
             if not file.endswith(".py"):
                 continue
-
             filepath = os.path.join(root, file).replace("\\", "/")
             try:
                 with open(filepath, "r", encoding="utf-8") as f:
@@ -337,21 +384,36 @@ def validate_codebase_duplication(
                 tree = ast.parse(content, filename=filepath)
             except Exception:
                 continue
+            parsed_files.append((filepath, tree))
+    return parsed_files
 
-            # Run primitive duplicate pattern checks
-            if target_files is None or filepath in target_files:
-                prim_visitor = DuplicatePatternVisitor(filepath)
-                prim_visitor.visit(tree)
-                errors.extend(prim_visitor.errors)
 
-            # Run AST anti-duplication visitor
-            file_errors = [] if target_files is not None else errors
-            anti_dup_visitor = UtilityAntiDuplicationVisitor(
-                filepath, file_errors, function_hashes
-            )
-            anti_dup_visitor.visit(tree)
-            if target_files is not None and filepath in target_files:
-                errors.extend(file_errors)
+def validate_codebase_duplication(
+    errors: list,
+    target_files: set[str] | None = None,
+    parsed_files: list[tuple[str, ast.Module]] | None = None,
+) -> None:
+    """Traverse app/ ASTs to run primitive duplicate checks, canonical utility re-definition checks, and structural function hash comparison."""
+    function_hashes: dict[str, list[tuple[str, int, str]]] = {}
+    app_asts = (
+        parsed_files if parsed_files is not None else _collect_parsed_app_files("app")
+    )
+
+    for filepath, tree in app_asts:
+        # Run primitive duplicate pattern checks
+        if target_files is None or filepath in target_files:
+            prim_visitor = DuplicatePatternVisitor(filepath)
+            prim_visitor.visit(tree)
+            errors.extend(prim_visitor.errors)
+
+        # Run AST anti-duplication visitor
+        file_errors = [] if target_files is not None else errors
+        anti_dup_visitor = UtilityAntiDuplicationVisitor(
+            filepath, file_errors, function_hashes
+        )
+        anti_dup_visitor.visit(tree)
+        if target_files is not None and filepath in target_files:
+            errors.extend(file_errors)
 
     # Compare normalized function hashes across distinct files
     for h, locs in function_hashes.items():
@@ -782,118 +844,108 @@ def main():
 
     errors = []
     declared_settings = declared_settings_keys()
+    parsed_files = _collect_parsed_app_files("app")
 
     # Rule 1 & Rule 2: Async DB writes and UI blocking operations
-    for root, _, files in os.walk("app"):
-        for file in files:
-            if not file.endswith(".py"):
-                continue
+    for filepath, tree in parsed_files:
+        if target_files is not None and filepath not in target_files:
+            continue
 
-            filepath = os.path.join(root, file).replace("\\", "/")
-            if target_files is not None and filepath not in target_files:
-                continue
+        validate_import_layers(errors, filepath, tree)
+        validate_service_ownership(errors, filepath, tree)
+        validate_settings_keys(errors, filepath, tree, declared_settings)
+        validate_lazy_ml_imports(errors, filepath, tree)
 
-            try:
-                with open(filepath, "r", encoding="utf-8") as f:
-                    content = f.read()
-                tree = ast.parse(content, filename=filepath)
-            except SyntaxError:
-                continue
+        validate_import_time_globals(errors, filepath, tree)
+        validate_no_test_detection(errors, filepath, tree)
 
-            validate_import_layers(errors, filepath, tree)
-            validate_service_ownership(errors, filepath, tree)
-            validate_settings_keys(errors, filepath, tree, declared_settings)
-            validate_lazy_ml_imports(errors, filepath, tree)
+        is_ui_file = "app/ui" in filepath
 
-            validate_import_time_globals(errors, filepath, tree)
-            validate_no_test_detection(errors, filepath, tree)
+        class Visitor(ast.NodeVisitor):
+            def __init__(self):
+                self.async_context = []
 
-            is_ui_file = "app/ui" in filepath
+            def visit_AsyncFunctionDef(self, node):
+                self.async_context.append(node.name)
+                self.generic_visit(node)
+                self.async_context.pop()
 
-            class Visitor(ast.NodeVisitor):
-                def __init__(self):
-                    self.async_context = []
-
-                def visit_AsyncFunctionDef(self, node):
-                    self.async_context.append(node.name)
+            def visit_Call(self, node):
+                if not self.async_context:
                     self.generic_visit(node)
-                    self.async_context.pop()
+                    return
 
-                def visit_Call(self, node):
-                    if not self.async_context:
-                        self.generic_visit(node)
-                        return
-
-                    # Direct DB writes in async def (execute, executemany, commit)
-                    if isinstance(node.func, ast.Attribute):
-                        method_name = node.func.attr
-                        if method_name in ("execute", "executemany", "commit"):
-                            if method_name == "commit":
-                                errors.append(
-                                    f"{filepath}:{node.lineno}: Direct database commit() inside async function '{self.async_context[-1]}'"
-                                )
-                            elif method_name in ("execute", "executemany"):
-                                if (
-                                    node.args
-                                    and isinstance(node.args[0], ast.Constant)
-                                    and isinstance(node.args[0].value, str)
+                # Direct DB writes in async def (execute, executemany, commit)
+                if isinstance(node.func, ast.Attribute):
+                    method_name = node.func.attr
+                    if method_name in ("execute", "executemany", "commit"):
+                        if method_name == "commit":
+                            errors.append(
+                                f"{filepath}:{node.lineno}: Direct database commit() inside async function '{self.async_context[-1]}'"
+                            )
+                        elif method_name in ("execute", "executemany"):
+                            if (
+                                node.args
+                                and isinstance(node.args[0], ast.Constant)
+                                and isinstance(node.args[0].value, str)
+                            ):
+                                query = node.args[0].value.upper()
+                                if any(
+                                    q in query
+                                    for q in (
+                                        "INSERT ",
+                                        "UPDATE ",
+                                        "DELETE ",
+                                        "CREATE ",
+                                        "DROP ",
+                                    )
                                 ):
-                                    query = node.args[0].value.upper()
-                                    if any(
-                                        q in query
-                                        for q in (
-                                            "INSERT ",
-                                            "UPDATE ",
-                                            "DELETE ",
-                                            "CREATE ",
-                                            "DROP ",
-                                        )
-                                    ):
-                                        errors.append(
-                                            f"{filepath}:{node.lineno}: Direct database write ({method_name} with {query.split()[0]}) inside async function '{self.async_context[-1]}'"
-                                        )
+                                    errors.append(
+                                        f"{filepath}:{node.lineno}: Direct database write ({method_name} with {query.split()[0]}) inside async function '{self.async_context[-1]}'"
+                                    )
 
-                    # Synchronous blocking operations in UI-bound logic
-                    if is_ui_file:
-                        if (
-                            isinstance(node.func, ast.Attribute)
-                            and node.func.attr == "sleep"
-                            and isinstance(node.func.value, ast.Name)
-                            and node.func.value.id == "time"
-                        ):
-                            errors.append(
-                                f"{filepath}:{node.lineno}: Synchronous time.sleep() inside async function '{self.async_context[-1]}'"
-                            )
+                # Synchronous blocking operations in UI-bound logic
+                if is_ui_file:
+                    if (
+                        isinstance(node.func, ast.Attribute)
+                        and node.func.attr == "sleep"
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "time"
+                    ):
+                        errors.append(
+                            f"{filepath}:{node.lineno}: Synchronous time.sleep() inside async function '{self.async_context[-1]}'"
+                        )
 
-                        if (
-                            isinstance(node.func, ast.Attribute)
-                            and node.func.attr
-                            in ("get", "post", "put", "delete", "patch")
-                            and isinstance(node.func.value, ast.Name)
-                            and node.func.value.id == "requests"
-                        ):
-                            errors.append(
-                                f"{filepath}:{node.lineno}: Synchronous requests.{node.func.attr}() inside async function '{self.async_context[-1]}'"
-                            )
+                    if (
+                        isinstance(node.func, ast.Attribute)
+                        and node.func.attr in ("get", "post", "put", "delete", "patch")
+                        and isinstance(node.func.value, ast.Name)
+                        and node.func.value.id == "requests"
+                    ):
+                        errors.append(
+                            f"{filepath}:{node.lineno}: Synchronous requests.{node.func.attr}() inside async function '{self.async_context[-1]}'"
+                        )
 
-                        if isinstance(node.func, ast.Name) and node.func.id == "open":
-                            errors.append(
-                                f"{filepath}:{node.lineno}: Synchronous open() inside async function '{self.async_context[-1]}'"
-                            )
+                    if isinstance(node.func, ast.Name) and node.func.id == "open":
+                        errors.append(
+                            f"{filepath}:{node.lineno}: Synchronous open() inside async function '{self.async_context[-1]}'"
+                        )
 
-                        if isinstance(
-                            node.func, ast.Attribute
-                        ) and node.func.attr.startswith(("read_", "write_")):
-                            errors.append(
-                                f"{filepath}:{node.lineno}: Synchronous Path.{node.func.attr}() inside async function '{self.async_context[-1]}'"
-                            )
+                    if isinstance(
+                        node.func, ast.Attribute
+                    ) and node.func.attr.startswith(("read_", "write_")):
+                        errors.append(
+                            f"{filepath}:{node.lineno}: Synchronous Path.{node.func.attr}() inside async function '{self.async_context[-1]}'"
+                        )
 
-                    self.generic_visit(node)
+                self.generic_visit(node)
 
-            Visitor().visit(tree)
+        Visitor().visit(tree)
 
     # Rule 3: Anti-duplication, canonical utility registration, and primitive duplicate pattern checks
-    validate_codebase_duplication(errors, target_files=target_files)
+    validate_codebase_duplication(
+        errors, target_files=target_files, parsed_files=parsed_files
+    )
 
     # Rule 4: Validate Pydantic diagram specs and asset sync
     if is_full_scan or (

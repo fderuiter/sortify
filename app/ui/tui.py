@@ -125,6 +125,7 @@ class AutoSorterTUI(
         Binding("plus", "rate_positive", "Rating (+)", show=False),
         Binding("minus", "rate_negative", "Rating (-)", show=False),
         Binding("ctrl+o", "open_settings", "Settings", show=False),
+        Binding("ctrl+g", "open_model_manager", "Model Manager", show=False),
         Binding("ctrl+k", "open_command_palette", "Command Palette", show=False),
         Binding("ctrl+w", "open_wizard", "Wizard", show=False),
         Binding("ctrl+d", "open_dropzone", "DropZone", show=False),
@@ -355,6 +356,8 @@ class AutoSorterTUI(
         skip_wizard: bool = False,
         non_interactive: bool = False,
         db: Optional[Any] = None,
+        open_dropzone: bool = False,
+        initial_drop_paths: Optional[list[str]] = None,
     ):
         super().__init__()
         self.settings = settings
@@ -377,6 +380,10 @@ class AutoSorterTUI(
             self.source_dirs = []
         self.skip_wizard = skip_wizard
         self.non_interactive = non_interactive
+        self.open_dropzone = bool(open_dropzone)
+        self.initial_drop_paths: list[str] = (
+            list(initial_drop_paths) if initial_drop_paths else []
+        )
         self.plan: dict[str, Any] = {}
         self.locked_files: dict[str, str] = {}
         self._ratings_cache: dict[str, str] = {}
@@ -645,7 +652,11 @@ class AutoSorterTUI(
         self._update_onboarding_cta_visibility()
         self.check_abandoned_sessions()
         self.set_interval(1.0, self._poll_daemon_status)
+        self.set_interval(0.5, self._poll_ai_provisioning_status)
         self.run_worker(self._poll_daemon_status(), name="poll_daemon_startup")
+
+        if self.open_dropzone or self.initial_drop_paths:
+            self.action_open_dropzone(initial_paths=self.initial_drop_paths, force=True)
 
         env_non_interactive = os.environ.get("NON_INTERACTIVE")
         is_non_interactive_env = bool(
@@ -889,10 +900,70 @@ class AutoSorterTUI(
             elif new_state == "idle":
                 self.announce("Watchdog daemon idle.", priority="assertive")
 
+    def _compute_ai_poll_token(self) -> tuple[Any, ...]:
+        """Build an in-memory token of consent and DownloadManager state without disk stat calls."""
+        from app.core.downloader import DownloadManager
+
+        consent = getattr(self.settings, "AI_CONSENT_GRANTED", None) is True
+        dm = DownloadManager._instance
+        if dm is None:
+            return (0, consent, "IDLE", False, 0, "")
+        is_downloading = bool(dm.state.get("is_downloading", False))
+        raw_progress = float(dm.state.get("progress", 0.0) or 0.0)
+        pct = int(round(min(100.0, max(0.0, raw_progress * 100.0))))
+        err = str(dm.state.get("error") or "")
+        return (id(dm), consent, str(dm.status), is_downloading, pct, err)
+
     def _get_ai_status_badge(self) -> str:
-        """Return visual AI consent status badge string."""
-        consent = getattr(self.settings, "AI_CONSENT_GRANTED", None)
-        return "[AI: Active]" if consent is True else "[AI: Disabled]"
+        """Return visual AI runtime status badge distinguishing active, downloading, fallback, and disabled."""
+        from app.core.downloader import get_ai_runtime_state
+
+        runtime_state = get_ai_runtime_state(self.settings)
+        badge = str(runtime_state["badge"])
+        self._last_ai_state = str(runtime_state["state"])
+        self._last_ai_badge = badge
+        self._last_ai_poll_token = self._compute_ai_poll_token()
+        return badge
+
+    def _poll_ai_provisioning_status(self) -> None:
+        """Poll background model download and verification state to refresh status bar badges."""
+        try:
+            poll_token = self._compute_ai_poll_token()
+            if (
+                getattr(self, "_last_ai_badge", None) is not None
+                and getattr(self, "_last_ai_poll_token", None) == poll_token
+            ):
+                return
+
+            from app.core.downloader import get_ai_runtime_state
+
+            prev_badge = getattr(self, "_last_ai_badge", None)
+            prev_state = getattr(self, "_last_ai_state", None)
+            runtime = get_ai_runtime_state(self.settings)
+            new_badge = str(runtime["badge"])
+            new_state = str(runtime["state"])
+            self._last_ai_badge = new_badge
+            self._last_ai_state = new_state
+            self._last_ai_poll_token = self._compute_ai_poll_token()
+
+            if prev_badge is not None and prev_badge != new_badge:
+                self.update_status()
+            if prev_state == "downloading" and new_state == "active":
+                self.announce(
+                    "AI model weights verified and active.",
+                    priority="polite",
+                )
+            elif (
+                prev_state == "downloading"
+                and new_state == "fallback"
+                and runtime.get("error")
+            ):
+                self.announce(
+                    f"AI model download failed ({runtime['error']}). Using local keyword fallback.",
+                    priority="assertive",
+                )
+        except Exception as exc:
+            logger.debug(f"AI provisioning status poll error: {exc}")
 
     def _on_ai_consent_changed(self, value: Any = None) -> None:
         """Handle AI_CONSENT_GRANTED setting change notification."""
@@ -925,13 +996,13 @@ class AutoSorterTUI(
             pass
 
     def update_status(self, text: Optional[str] = None) -> None:
-        """Update status bar label with current message, AI consent badge, and daemon badge."""
+        """Update status bar label with current message, truthful AI badge, and daemon badge."""
         try:
             if text is not None:
+                import re
+
                 clean_text = str(text)
-                for badge_str in ("[AI: Active]", "[AI: Disabled]"):
-                    if clean_text.startswith(badge_str):
-                        clean_text = clean_text[len(badge_str) :].lstrip()
+                clean_text = re.sub(r"^\[AI:[^\]]+\]\s*", "", clean_text)
                 for badge_str in (
                     "[Daemon: Active]",
                     "[Daemon: Paused]",
@@ -946,6 +1017,7 @@ class AutoSorterTUI(
                 )
 
             ai_badge = self._get_ai_status_badge()
+            self._last_ai_badge = ai_badge
             daemon_badge = self._get_daemon_status_badge()
             badges = f"{ai_badge} {daemon_badge}"
             full_text = (
@@ -1469,20 +1541,33 @@ class AutoSorterTUI(
         except Exception:
             pass
 
-    def action_open_dropzone(self) -> None:
+    def action_open_dropzone(
+        self,
+        initial_paths: Optional[list[str]] = None,
+        force: bool = False,
+    ) -> None:
         """Open floating dropzone overlay modal screen."""
-        if self._is_text_control_focused(allow_tree_search=True):
+        if not force and self._is_text_control_focused(allow_tree_search=True):
             return
 
         def on_drop_done(res: Optional[dict[str, Any]]) -> None:
             if res:
                 cnt = res.get("processed_count", 0)
+                dest_used = res.get("destination_dir")
+                if dest_used and not self.base_dir and os.path.isdir(dest_used):
+                    self.base_dir = dest_used
                 self.announce(f"DropZone triage finished: {cnt} item(s) organized.")
-                if self.base_dir and os.path.exists(self.base_dir):
-                    self.action_scan_directory()
+                scan_dir = dest_used or self.base_dir
+                if scan_dir and os.path.exists(scan_dir):
+                    if scan_dir == self.base_dir:
+                        self.action_scan_directory()
 
         self.push_screen(
-            DropZoneModal(settings=self.settings, base_dir=self.base_dir),
+            DropZoneModal(
+                settings=self.settings,
+                base_dir=self.base_dir,
+                initial_paths=initial_paths,
+            ),
             on_drop_done,
         )
 
@@ -1808,6 +1893,8 @@ def run_tui(
     base_dir: Optional[str] = None,
     skip_wizard: bool = False,
     non_interactive: bool = False,
+    open_dropzone: bool = False,
+    initial_drop_paths: Optional[list[str]] = None,
 ) -> None:
     """Run the Textual full-screen terminal interface."""
     import shutil
@@ -1853,6 +1940,8 @@ def run_tui(
         base_dir=base_dir,
         skip_wizard=skip_wizard,
         non_interactive=non_interactive,
+        open_dropzone=open_dropzone,
+        initial_drop_paths=initial_drop_paths,
     )
     app.run()
 
