@@ -83,11 +83,11 @@ For authoritative headless batch procedures, CLI commands (`smart-autosorter led
 
 ## DropZone errors
 
-The DropZone (`[Ctrl+D]`) sorts files you paste or drop into its queue. **Sort Items** reports an error when nothing in the queue can be sorted:
+The DropZone (`[Ctrl+D]` or `smart-autosorter drop --tui`) sorts files and folders you paste or drop into its queue, either in place or into a chosen destination folder (**Destination folder** input or **Browse** button). **Sort Items** reports an error when nothing in the queue can be sorted or the destination is invalid:
 
-- **"No file or folder paths provided."** The queue is empty. Paste one or more paths into the input and press Enter.
-- **"Protected path blocked: NAME"** The item is inside one of your protected paths (Settings, General), so Sortify will not move it. Remove the path from the protected list if you do want it sorted.
-- **"No ready files to sort in queue."** Every queued item is protected, missing (**Not Found**) or **Unsupported**. The DropZone accepts `.txt`, `.docx`, `.csv`, `.xlsx`, `.xls` and `.pdf`; **Filter Unsupported** removes the rest from the queue.
+- **"No file or folder paths provided."** The queue is empty. Paste or drop one or more file or folder paths (including multi-file terminal drops or `file://` URIs) into the input and press Enter.
+- **"Protected path blocked: NAME"** A queued source item or the selected destination folder is inside one of your protected paths (Settings, General), so Sortify will not move files from or into it. Remove the path from the protected list or pick another destination folder if you want to proceed.
+- **"No ready files to sort in queue."** Every queued item is protected, missing (**Not Found**) or **Unsupported**. The DropZone accepts all formats supported by the sorting pipeline—documents (`.txt`, `.docx`, `.csv`, `.xlsx`, `.xls`, `.pdf`), images (`.png`, `.jpg`, `.jpeg`), audio (`.mp3`, `.wav`, `.m4a`), video/media, archives, installers/binaries, design/CAD files, Jev-classified code and presentation formats (`.pptx`, `.ppt`, `.key`, `.py`, `.json`, `.yaml`, etc.), and any file matching your configured rules or extension categories—while keeping extensions in **Ignored extensions** as **Unsupported**. **Filter Unsupported** removes unsupported items from the queue.
 
 ## CRO forensic ingestion
 

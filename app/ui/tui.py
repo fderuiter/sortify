@@ -356,6 +356,8 @@ class AutoSorterTUI(
         skip_wizard: bool = False,
         non_interactive: bool = False,
         db: Optional[Any] = None,
+        open_dropzone: bool = False,
+        initial_drop_paths: Optional[list[str]] = None,
     ):
         super().__init__()
         self.settings = settings
@@ -378,6 +380,10 @@ class AutoSorterTUI(
             self.source_dirs = []
         self.skip_wizard = skip_wizard
         self.non_interactive = non_interactive
+        self.open_dropzone = bool(open_dropzone)
+        self.initial_drop_paths: list[str] = (
+            list(initial_drop_paths) if initial_drop_paths else []
+        )
         self.plan: dict[str, Any] = {}
         self.locked_files: dict[str, str] = {}
         self._ratings_cache: dict[str, str] = {}
@@ -648,6 +654,9 @@ class AutoSorterTUI(
         self.set_interval(1.0, self._poll_daemon_status)
         self.set_interval(0.5, self._poll_ai_provisioning_status)
         self.run_worker(self._poll_daemon_status(), name="poll_daemon_startup")
+
+        if self.open_dropzone or self.initial_drop_paths:
+            self.action_open_dropzone(initial_paths=self.initial_drop_paths, force=True)
 
         env_non_interactive = os.environ.get("NON_INTERACTIVE")
         is_non_interactive_env = bool(
@@ -1522,20 +1531,33 @@ class AutoSorterTUI(
         except Exception:
             pass
 
-    def action_open_dropzone(self) -> None:
+    def action_open_dropzone(
+        self,
+        initial_paths: Optional[list[str]] = None,
+        force: bool = False,
+    ) -> None:
         """Open floating dropzone overlay modal screen."""
-        if self._is_text_control_focused(allow_tree_search=True):
+        if not force and self._is_text_control_focused(allow_tree_search=True):
             return
 
         def on_drop_done(res: Optional[dict[str, Any]]) -> None:
             if res:
                 cnt = res.get("processed_count", 0)
+                dest_used = res.get("destination_dir")
+                if dest_used and not self.base_dir and os.path.isdir(dest_used):
+                    self.base_dir = dest_used
                 self.announce(f"DropZone triage finished: {cnt} item(s) organized.")
-                if self.base_dir and os.path.exists(self.base_dir):
-                    self.action_scan_directory()
+                scan_dir = dest_used or self.base_dir
+                if scan_dir and os.path.exists(scan_dir):
+                    if scan_dir == self.base_dir:
+                        self.action_scan_directory()
 
         self.push_screen(
-            DropZoneModal(settings=self.settings, base_dir=self.base_dir),
+            DropZoneModal(
+                settings=self.settings,
+                base_dir=self.base_dir,
+                initial_paths=initial_paths,
+            ),
             on_drop_done,
         )
 
@@ -1861,6 +1883,8 @@ def run_tui(
     base_dir: Optional[str] = None,
     skip_wizard: bool = False,
     non_interactive: bool = False,
+    open_dropzone: bool = False,
+    initial_drop_paths: Optional[list[str]] = None,
 ) -> None:
     """Run the Textual full-screen terminal interface."""
     import shutil
@@ -1906,6 +1930,8 @@ def run_tui(
         base_dir=base_dir,
         skip_wizard=skip_wizard,
         non_interactive=non_interactive,
+        open_dropzone=open_dropzone,
+        initial_drop_paths=initial_drop_paths,
     )
     app.run()
 

@@ -545,3 +545,44 @@ def test_plan_relativizes_dropped_file_items_under_base_dir(tmp_path, monkeypatc
         r"C:\Users\runneradmin\Other::ns_doc.txt",
         "already_rel.txt",
     ]
+
+
+def test_reroot_plan_binds_sources_and_executes_nested_drop_into_dest(
+    tmp_path, monkeypatch
+):
+    """reroot_plan binds absolute source_path on nested leaves and executes into dest_dir."""
+    from app.core.pipeline import reroot_plan
+    from app.main import _reroot_plan
+
+    assert _reroot_plan is reroot_plan
+
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(tmp_path / "app_dir"))
+    src = tmp_path / "incoming"
+    (src / "sub1").mkdir(parents=True)
+    (src / "sub2").mkdir(parents=True)
+    (src / "sub1" / "bundle.zip").write_bytes(b"PK\x03\x04")
+    (src / "sub2" / "invoice_doc.txt").write_text(
+        "Finance, investment, and banking invoice report."
+    )
+    dest = tmp_path / "sorted_dest"
+    dest.mkdir()
+
+    settings = AppSettings()
+    settings.AI_CONSENT_GRANTED = False
+    s = AppSession(settings, base_dir=str(src))
+    try:
+        pipe = SortPipeline(s)
+        plan = pipe.plan(["sub1/bundle.zip", "sub2/invoice_doc.txt"])
+        rerooted = reroot_plan(plan, str(dest), source_dir=str(src))
+
+        assert s.source_dirs == [str(src)]
+        s.base_dir = str(dest)
+        assert s.source_dirs == [str(src)]
+
+        outcome = pipe.execute(rerooted)
+        assert outcome.ok
+        dest_names = {p.name for p in dest.rglob("*") if p.is_file()}
+        assert dest_names == {"bundle.zip", "invoice_doc.txt"}
+        assert not [p for p in src.rglob("*") if p.is_file()]
+    finally:
+        s.close()

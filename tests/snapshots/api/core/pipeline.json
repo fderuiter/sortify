@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "f43fe1b6f326ecd08173c09e78fdbfda07e66c4661d7d71758b0461a1fadaa64"
+    "checksum": "6716ae387da0a0ec9682083c0f52db83ca2475deb8f0942a6fadf82cc0a6f3aa"
   },
   "classes": [
     {
@@ -390,6 +390,11 @@
           "annotation": "str",
           "default": null,
           "name": "dest_dir"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "source_dir"
         }
       ],
       "returns": "dict[str, Any]"

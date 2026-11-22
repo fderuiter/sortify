@@ -2,7 +2,10 @@
 
 import logging
 import os
+import re
+import shlex
 from datetime import datetime
+from pathlib import Path
 from typing import Any, Optional
 
 from textual import events, on, work
@@ -18,6 +21,8 @@ from app.ui.layout import ModalBox, ResponsiveLayoutMixin
 from app.ui.notifications import TROUBLESHOOTING_URL
 
 logger = logging.getLogger(__name__)
+
+_WIN_DRIVE_RE = re.compile(r"^[a-zA-Z]:[/\\]")
 
 
 class DropPlanConfirmModal(A11yMixin, ModalScreen[bool]):
@@ -120,8 +125,6 @@ class DropZoneModal(
         Binding("escape", "cancel", "Cancel dialog", show=True),
     ]
 
-    SUPPORTED_EXTENSIONS = {".txt", ".docx", ".csv", ".xlsx", ".xls", ".pdf"}
-
     CSS = """
     DropZoneModal {
         align: center middle;
@@ -175,6 +178,29 @@ class DropZoneModal(
     #input-queue-filter {
         margin-top: 0;
         margin-bottom: 0;
+    }
+    .dest-row {
+        width: 100%;
+        height: auto;
+        margin-top: 0;
+        margin-bottom: 0;
+        align: left middle;
+    }
+    #input-dest-dir {
+        width: 1fr;
+        margin-top: 0;
+        margin-bottom: 0;
+    }
+    #btn-browse-dest {
+        width: auto;
+        min-width: 12;
+        margin: 0 0 0 1;
+    }
+    .compact .dest-row Button {
+        height: 1;
+        min-height: 1;
+        border: none;
+        min-width: 10;
     }
     .dropzone-split-container {
         height: auto;
@@ -270,10 +296,16 @@ class DropZoneModal(
     }
     """
 
-    def __init__(self, settings: Any = None, base_dir: Optional[str] = None):
+    def __init__(
+        self,
+        settings: Any = None,
+        base_dir: Optional[str] = None,
+        initial_paths: Optional[list[str]] = None,
+    ):
         super().__init__()
         self.settings = settings
         self.base_dir = base_dir
+        self.initial_paths: list[str] = list(initial_paths) if initial_paths else []
         self.processed_result: Optional[dict[str, Any]] = None
         self.staged_items: list[dict[str, Any]] = []
 
@@ -302,6 +334,26 @@ class DropZoneModal(
                 )
                 inp.tooltip = "Enter or drop target file or folder paths to trigger automated sorting"
                 yield inp
+
+                with Horizontal(classes="dest-row"):
+                    dest_inp = Input(
+                        value=self.base_dir or "",
+                        placeholder="Destination folder (optional, leave blank to sort in place)...",
+                        id="input-dest-dir",
+                    )
+                    dest_inp.tooltip = (
+                        "Destination directory where sorted files will be placed "
+                        "(leave empty to sort each item inside its own folder)"
+                    )
+                    yield dest_inp
+
+                    btn_browse = Button(
+                        "Browse", id="btn-browse-dest", variant="default"
+                    )
+                    btn_browse.tooltip = (
+                        "Browse for a destination directory using native folder dialog"
+                    )
+                    yield btn_browse
 
                 filter_inp = Input(
                     placeholder="Filter staged queue...",
@@ -515,13 +567,186 @@ class DropZoneModal(
         """Update metadata preview panel on cell selection/focus."""
         self.update_active_metadata_preview()
 
+    @staticmethod
+    def _decode_path_token(token: str) -> str:
+        """Strip outer quotes, decode file:// URIs, and expand user home."""
+        cleaned = token.strip()
+        if len(cleaned) >= 2 and cleaned[0] == cleaned[-1] and cleaned[0] in ("'", '"'):
+            cleaned = cleaned[1:-1].strip()
+        if cleaned.lower().startswith("file://"):
+            rest = cleaned[7:]
+            if rest.lower().startswith("localhost/"):
+                raw_url_path = rest[9:]
+            elif rest.startswith("/"):
+                raw_url_path = rest
+            else:
+                raw_url_path = f"//{rest}"
+            decoded = re.sub(
+                r"(?:%[0-9a-fA-F]{2})+",
+                lambda m: bytes.fromhex(m.group(0).replace("%", "")).decode(
+                    "utf-8", errors="replace"
+                ),
+                raw_url_path,
+            )
+            if re.match(r"^/[a-zA-Z]:[/\\]", decoded):
+                decoded = decoded[1:]
+            if os.sep == "\\":
+                decoded = decoded.replace("/", "\\")
+            return os.path.expanduser(decoded)
+        return os.path.expanduser(cleaned)
+
+    @staticmethod
+    def _looks_like_standalone_path(token: str) -> bool:
+        """Return True when a shell token begins with an explicit path or URI prefix."""
+        t = token.strip()
+        return bool(
+            t.startswith(("/", "~", "./", "../", ".\\", "..\\"))
+            or t.lower().startswith("file://")
+            or _WIN_DRIVE_RE.match(t)
+        )
+
+    def _parse_raw_drop_input(self, raw_text: str) -> list[str]:
+        """Parse pasted or dropped text into individual filesystem path strings."""
+        parsed_paths: list[str] = []
+        for raw_line in raw_text.replace("\r\n", "\n").replace("\r", "\n").split("\n"):
+            line = raw_line.strip()
+            if not line:
+                continue
+
+            has_quotes = "'" in line or '"' in line
+            has_escaped_space = "\\ " in line
+            file_uri_count = line.lower().count("file://")
+
+            whole_candidate = self._decode_path_token(line)
+            if not has_quotes and file_uri_count <= 1:
+                if os.path.exists(os.path.abspath(whole_candidate)):
+                    parsed_paths.append(whole_candidate)
+                    continue
+
+            use_posix = not bool(re.search(r"""(?:^|\s|["'])[a-zA-Z]:\\""", line))
+            try:
+                tokens = shlex.split(line, posix=use_posix)
+            except ValueError:
+                tokens = [line]
+
+            if not tokens:
+                continue
+
+            if len(tokens) == 1:
+                decoded_single = self._decode_path_token(tokens[0])
+                if decoded_single:
+                    parsed_paths.append(decoded_single)
+                continue
+
+            decoded_tokens = [self._decode_path_token(tok) for tok in tokens]
+            decoded_tokens = [tok for tok in decoded_tokens if tok]
+            if not decoded_tokens:
+                continue
+
+            if (
+                not has_quotes
+                and not has_escaped_space
+                and file_uri_count == 0
+                and not all(self._looks_like_standalone_path(tok) for tok in tokens[1:])
+                and not any(
+                    os.path.exists(os.path.abspath(tok)) for tok in decoded_tokens
+                )
+            ):
+                parsed_paths.append(whole_candidate)
+            else:
+                parsed_paths.extend(decoded_tokens)
+
+        return parsed_paths
+
+    def _is_supported_file(self, abs_p: str) -> bool:
+        """Check whether the sorting pipeline can classify or route ``abs_p``."""
+        from app.core.extractor_strategies import registry
+        from app.core.jev_classifier import JevClassifierEngine
+        from app.core.metadata import get_extension_category_target
+        from app.core.policy_engine import match_pattern_expression
+
+        ext = os.path.splitext(abs_p)[1].lower()
+        ignored_raw = (
+            getattr(self.settings, "IGNORED_EXTENSIONS", []) if self.settings else []
+        ) or []
+        ignored_exts = {
+            s if s.startswith(".") else f".{s}"
+            for s in (str(x).strip().lower() for x in ignored_raw)
+            if s
+        }
+        if ext and ext in ignored_exts:
+            return False
+
+        if ext and registry.is_supported(ext):
+            return True
+
+        jev_exts = {
+            s if s.startswith(".") else f".{s}"
+            for s in (
+                str(x).strip().lower()
+                for x in JevClassifierEngine.get_supported_extensions()
+            )
+            if s
+        }
+        if ext and ext in jev_exts:
+            return True
+
+        if get_extension_category_target(abs_p, self.settings) is not None:
+            return True
+
+        filename_only = os.path.basename(abs_p).lower()
+        file_path_lower = abs_p.lower()
+        policies = (
+            getattr(self.settings, "POLICIES", []) if self.settings else []
+        ) or []
+        if isinstance(policies, list):
+            sorted_policies = sorted(
+                (p for p in policies if isinstance(p, dict)),
+                key=lambda x: x.get("priority", 0),
+                reverse=True,
+            )
+            for policy in sorted_policies:
+                if not policy.get("enabled", True):
+                    continue
+                p_type = str(policy.get("type", "")).lower()
+                expr_lower = str(policy.get("expression", "")).lower()
+                target_path = policy.get("target_path")
+                is_match = False
+                if p_type == "override" and expr_lower:
+                    is_match = (
+                        expr_lower == filename_only
+                        or expr_lower in filename_only
+                        or expr_lower in file_path_lower
+                    )
+                elif p_type == "pattern" and expr_lower:
+                    is_match = match_pattern_expression(expr_lower, filename_only)
+                elif p_type == "unarchive" and expr_lower:
+                    is_match = match_pattern_expression(expr_lower, filename_only)
+                elif p_type == "keyword" and expr_lower:
+                    is_match = expr_lower in filename_only
+                if is_match and target_path:
+                    return True
+                if not is_match and policy.get("halting", False):
+                    return False
+
+        for attr_name in ("KEYWORD_RULES", "LEARNED_RULES"):
+            rules = (
+                getattr(self.settings, attr_name, {}) if self.settings else {}
+            ) or {}
+            if isinstance(rules, dict):
+                for keyword, target_folder in rules.items():
+                    if (
+                        str(keyword).strip()
+                        and str(keyword).lower() in filename_only
+                        and target_folder
+                    ):
+                        return True
+
+        return False
+
     def stage_paths(self, raw_text: str) -> None:
         """Parse raw input string, expand directories, validate, and stage items."""
-        raw_items = [
-            p.strip().strip("'\"")
-            for p in raw_text.replace("\r", "\n").split("\n")
-            if p.strip()
-        ]
+        raw_items = self._parse_raw_drop_input(raw_text)
         if not raw_items:
             return
 
@@ -539,7 +764,7 @@ class DropZoneModal(
                 files = get_files_recursively(abs_p)
                 for f_path in files:
                     self._add_single_file_to_staging(
-                        os.path.join(abs_p, f_path), protected
+                        os.path.join(abs_p, f_path), protected, root_dir=abs_p
                     )
                     new_count += 1
             else:
@@ -557,7 +782,9 @@ class DropZoneModal(
         msg = f"Staged {new_count} item(s). Queue total: {len(self.staged_items)} ({ready_cnt} ready)."
         self.update_status_msg(msg)
 
-    def _add_single_file_to_staging(self, abs_p: str, protected: list[str]) -> None:
+    def _add_single_file_to_staging(
+        self, abs_p: str, protected: list[str], root_dir: Optional[str] = None
+    ) -> None:
         """Validate and append a single file path to staged_items."""
         from app.core.mover import is_subpath_or_equal
 
@@ -569,6 +796,7 @@ class DropZoneModal(
 
         filename = os.path.basename(abs_p) or abs_p
         ext = os.path.splitext(abs_p)[1].lower()
+        group_root = root_dir or os.path.dirname(abs_p)
 
         if is_prot:
             status = "BLOCKED"
@@ -576,7 +804,7 @@ class DropZoneModal(
         elif not os.path.exists(abs_p):
             status = "Not Found"
             size_bytes = 0
-        elif ext not in self.SUPPORTED_EXTENSIONS:
+        elif not self._is_supported_file(abs_p):
             status = "Unsupported"
             size_bytes = os.path.getsize(abs_p) if os.path.exists(abs_p) else 0
         else:
@@ -585,7 +813,10 @@ class DropZoneModal(
 
         size_str = self._format_size(size_bytes)
 
-        if not any(item["path"] == abs_p for item in self.staged_items):
+        existing = next(
+            (item for item in self.staged_items if item["path"] == abs_p), None
+        )
+        if existing is None:
             self.staged_items.append(
                 {
                     "path": abs_p,
@@ -594,8 +825,11 @@ class DropZoneModal(
                     "size": size_bytes,
                     "size_str": size_str,
                     "status": status,
+                    "group_root": group_root,
                 }
             )
+        elif root_dir and is_subpath_or_equal(abs_p, root_dir):
+            existing["group_root"] = root_dir
 
     def filter_unsupported_items(self) -> None:
         """Remove items with 'Unsupported' status from the queue."""
@@ -698,7 +932,7 @@ class DropZoneModal(
         self.update_status_msg("Cleared all staged items from the queue.")
 
     def on_mount(self) -> None:
-        """Focus input on mount, render staging table, and announce modal opening."""
+        """Focus input on mount, stage initial paths if any, and announce modal opening."""
         self._app_ref = self.app
         self._update_layout(self.size.width)
         self._refresh_table()
@@ -707,16 +941,82 @@ class DropZoneModal(
         except Exception:
             pass
         self.announce("Opened floating dropzone overlay for quick file triage.")
+        if self.initial_paths:
+            self.stage_paths("\n".join(str(p) for p in self.initial_paths))
 
     def on_paste(self, event: events.Paste) -> None:
         """Handle clipboard paste event for dropped path payloads."""
+        focused = getattr(self, "focused", None)
+        if focused is not None and getattr(focused, "id", None) in (
+            "input-dest-dir",
+            "input-queue-filter",
+        ):
+            return
         if event.text:
+            event.stop()
             try:
                 inp = self.query_one("#input-drop-paths", Input)
                 inp.value = event.text.strip()
             except Exception:
                 pass
             self.stage_paths(event.text)
+
+    @on(Button.Pressed, "#btn-browse-dest")
+    def on_btn_browse_dest_pressed(self, event: Button.Pressed) -> None:
+        """Open native directory picker to populate the destination folder input."""
+        curr_val = ""
+        try:
+            curr_val = self.query_one("#input-dest-dir", Input).value.strip()
+        except Exception:
+            pass
+        initial_dir = curr_val or self.base_dir
+        self._browse_dest_worker(initial_dir)
+
+    @work(thread=True)
+    def _browse_dest_worker(self, initial_dir: Optional[str]) -> None:
+        """Launch native folder selection dialog in a background thread."""
+        from app.core.native_dialog import NativeDialogError, select_native_directory
+
+        app_ref = getattr(self, "_app_ref", None)
+        try:
+            chosen = select_native_directory(initial_dir)
+            if chosen:
+                if app_ref:
+                    app_ref.call_from_thread(self._on_dest_dir_selected, chosen)
+                else:
+                    self._on_dest_dir_selected(chosen)
+        except NativeDialogError as exc:
+            if app_ref:
+                app_ref.call_from_thread(self._on_dest_dir_failed, str(exc))
+            else:
+                self._on_dest_dir_failed(str(exc))
+        except Exception as exc:
+            if app_ref:
+                app_ref.call_from_thread(self._on_dest_dir_failed, str(exc))
+            else:
+                self._on_dest_dir_failed(str(exc))
+
+    def _on_dest_dir_selected(self, path: str) -> None:
+        """Set destination input from native folder browser selection."""
+        abs_p = os.path.abspath(os.path.expanduser(path))
+        try:
+            inp = self.query_one("#input-dest-dir", Input)
+            inp.value = abs_p
+        except Exception:
+            pass
+        self.update_status_msg(f"Destination folder set to: {abs_p}")
+
+    def _on_dest_dir_failed(self, reason: str) -> None:
+        """Notify user and focus manual destination input when native dialog fails."""
+        from app.ui.notifications import notify
+
+        msg = "Native folder browser unavailable; enter destination path manually."
+        notify(f"{msg} ({reason})", type="warning")
+        self.update_status_msg(msg)
+        try:
+            self.query_one("#input-dest-dir", Input).focus()
+        except Exception:
+            pass
 
     @on(Input.Submitted, "#input-drop-paths")
     def on_input_submitted(self, event: Input.Submitted) -> None:
@@ -787,6 +1087,38 @@ class DropZoneModal(
 
         help_url = f"{TROUBLESHOOTING_URL}#dropzone-errors"
 
+        raw_dest: Optional[str] = None
+        try:
+            dest_inp = self.query_one("#input-dest-dir", Input)
+            raw_dest = dest_inp.value.strip()
+        except Exception:
+            raw_dest = (self.base_dir or "").strip()
+
+        resolved_dest: Optional[str] = None
+        if raw_dest:
+            from app.core.mover import is_subpath_or_equal
+            from app.ui.notifications import notify
+
+            decoded_dest = self._decode_path_token(raw_dest)
+            resolved_dest = str(Path(decoded_dest).expanduser().resolve())
+            protected = (
+                getattr(self.settings, "PROTECTED_PATHS", []) if self.settings else []
+            ) or []
+            if any(
+                prot and is_subpath_or_equal(resolved_dest, prot) for prot in protected
+            ):
+                err_text = f"Protected destination blocked: {resolved_dest}"
+                self._show_help_button(help_url)
+                notify(f"DropZone error: {err_text}", type="error", help_url=help_url)
+                self.update_status_msg(err_text, help_url=help_url)
+                return
+            if os.path.exists(resolved_dest) and not os.path.isdir(resolved_dest):
+                err_text = f"Destination path is not a folder: {resolved_dest}"
+                self._show_help_button(help_url)
+                notify(f"DropZone error: {err_text}", type="error", help_url=help_url)
+                self.update_status_msg(err_text, help_url=help_url)
+                return
+
         filtered = self.get_filtered_items()
         ready_paths = [item["path"] for item in filtered if item["status"] == "Ready"]
 
@@ -814,7 +1146,7 @@ class DropZoneModal(
             return
 
         self.update_status_msg(f"Processing {len(ready_paths)} dropped item(s)...")
-        self.run_drop_worker(ready_paths)
+        self.run_drop_worker(ready_paths, dest_dir=resolved_dest)
 
     def update_status_msg(self, msg: str, help_url: Optional[str] = None) -> None:
         """Update live status message region and screen reader announcement."""
@@ -836,26 +1168,38 @@ class DropZoneModal(
         self._pending_drop = []
 
     @work(exclusive=True, thread=True)
-    def run_drop_worker(self, target_paths: list[str]) -> None:
+    def run_drop_worker(
+        self, target_paths: list[str], dest_dir: Optional[str] = None
+    ) -> None:
         """Plan the dropped items in a worker thread, then ask before moving."""
         app_ref = getattr(self, "_app_ref", None)
         self._close_pending_drop()
         pending: list[dict[str, Any]] = []
         try:
-            from app.core.pipeline import SortPipeline
+            from app.core.path_utils import safe_relpath
+            from app.core.pipeline import SortPipeline, reroot_plan
             from app.core.scanner import get_files_recursively
             from app.core.session import AppSession
 
-            # Plan every staged file in a folder together, so a dropped folder
-            # is clustered as a whole instead of one file at a time.
+            resolved_dest = (
+                str(Path(dest_dir).expanduser().resolve()) if dest_dir else None
+            )
+
+            # Plan every staged file under its dropped root folder together so a
+            # dropped folder (including nested subfolders) stays in one session.
+            staged_roots = {
+                item["path"]: item.get("group_root")
+                for item in list(self.staged_items)
+                if isinstance(item, dict) and "path" in item
+            }
             groups: dict[str, list[str]] = {}
             for path in target_paths:
                 if os.path.isdir(path):
                     groups.setdefault(path, []).extend(get_files_recursively(path))
                 else:
-                    groups.setdefault(os.path.dirname(path), []).append(
-                        os.path.basename(path)
-                    )
+                    group_root = staged_roots.get(path) or os.path.dirname(path)
+                    rel_item = safe_relpath(path, group_root)
+                    groups.setdefault(group_root, []).append(rel_item)
 
             for base_dir, files in groups.items():
                 if app_ref:
@@ -865,15 +1209,25 @@ class DropZoneModal(
                     )
 
                 session = AppSession(self.settings, base_dir=base_dir)
+                re_rooted = bool(
+                    resolved_dest
+                    and os.path.normcase(os.path.abspath(resolved_dest))
+                    != os.path.normcase(os.path.abspath(base_dir))
+                )
                 pending.append(
                     {
                         "path": base_dir,
                         "session": session,
                         "plan": None,
                         "file_count": len(files),
+                        "re_rooted": re_rooted,
                     }
                 )
-                pending[-1]["plan"] = SortPipeline(session).plan(files)
+                plan = SortPipeline(session).plan(files)
+                if re_rooted and resolved_dest is not None:
+                    plan = reroot_plan(plan, resolved_dest, source_dir=base_dir)
+                    session.base_dir = resolved_dest
+                pending[-1]["plan"] = plan
 
             self._pending_drop = pending
             if app_ref:
@@ -943,7 +1297,16 @@ class DropZoneModal(
 
             for item in pending:
                 try:
+                    src_dir = item.get("path")
+                    src_dir_was_dir = bool(src_dir and os.path.isdir(src_dir))
                     outcome = SortPipeline(item["session"]).execute(item["plan"])
+                    if (
+                        item.get("re_rooted")
+                        and src_dir
+                        and src_dir_was_dir
+                        and not os.path.exists(src_dir)
+                    ):
+                        os.makedirs(src_dir, exist_ok=True)
                     outcomes.append(outcome)
                     processed_items.append(
                         {
