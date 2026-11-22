@@ -143,6 +143,9 @@ class AppSession:
                             )
                         )
                         gen_candidates.append(str(get_app_dir() / "generative_naming"))
+                        gen_candidates.append(
+                            str(get_app_dir() / "models" / "generative_naming")
+                        )
                         for cand in gen_candidates:
                             if cand and os.path.exists(cand):
                                 gen_model_path = cand

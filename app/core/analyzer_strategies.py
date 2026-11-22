@@ -440,6 +440,8 @@ def recursive_kmeans_worker_main(
     key = None
     strategy = None
     vector_buffers = []
+    has_model_path = False
+    worker_model_path = None
 
     try:
         if is_pipe:
@@ -483,6 +485,8 @@ def recursive_kmeans_worker_main(
                 "strategy_class_name", "RecursiveKMeansStrategy"
             )
             thread_limit = payload.get("thread_limit")
+            has_model_path = payload.get("has_model_path", False)
+            worker_model_path = payload.get("model_path")
             raw_corpus = payload.get("pre_fetched_corpus")
             pre_fetched_corpus = (
                 validate_corpus_prefetch_batch(raw_corpus)
@@ -1816,6 +1820,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         from app.config import get_app_dir
 
         user_gen_path = str(get_app_dir() / "generative_naming")
+        user_models_gen_path = str(get_app_dir() / "models" / "generative_naming")
         user_bundle_path = str(get_app_dir() / "model")
 
         self.model_path = model_path
@@ -1828,6 +1833,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             from app.core.path_utils import get_meipass_dir
 
             mei_dir = get_meipass_dir()
+            mei_bundle_path = None
             if mei_dir:
                 mei_gen_path = os.path.join(
                     mei_dir, "offline_bundle", "generative_naming"
@@ -1835,17 +1841,19 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 mei_bundle_path = os.path.join(mei_dir, "offline_bundle", "model")
                 if os.path.exists(mei_gen_path):
                     self.model_path = mei_gen_path
-                elif is_gguf_model_dir(mei_bundle_path):
-                    self.model_path = mei_bundle_path
 
             if not self.model_path:
                 if os.path.exists(local_gen_path):
                     self.model_path = local_gen_path
                 elif os.path.exists(user_gen_path):
                     self.model_path = user_gen_path
-                elif is_gguf_model_dir(local_bundle_path):
+                elif os.path.exists(user_models_gen_path):
+                    self.model_path = user_models_gen_path
+                elif mei_bundle_path and os.path.exists(mei_bundle_path):
+                    self.model_path = mei_bundle_path
+                elif os.path.exists(local_bundle_path):
                     self.model_path = local_bundle_path
-                elif is_gguf_model_dir(user_bundle_path):
+                elif os.path.exists(user_bundle_path):
                     self.model_path = user_bundle_path
                 else:
                     self.model_path = None
@@ -2052,6 +2060,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         from app.config import get_app_dir
 
         user_gen_path = str(get_app_dir() / "generative_naming")
+        user_models_gen_path = str(get_app_dir() / "models" / "generative_naming")
 
         if not self.model_path or not os.path.exists(
             os.path.join(self.model_path, "config.json")
@@ -2073,6 +2082,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     self.model_path = local_gen_path
                 elif os.path.exists(user_gen_path):
                     self.model_path = user_gen_path
+                elif os.path.exists(user_models_gen_path):
+                    self.model_path = user_models_gen_path
                 elif not self._gguf_failed:
                     self.model_path = None
 

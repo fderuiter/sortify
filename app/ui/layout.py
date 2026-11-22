@@ -11,10 +11,22 @@ from textual.widget import Widget
 class ModalBox(Vertical):
     """Modal outer container that forwards scroll helpers to an inner ``.modal-body``."""
 
-    def _body_scroll_target(self) -> Optional[Widget]:
+    def _body_scroll_target(self, widget: Optional[Widget] = None) -> Optional[Widget]:
         """Return inner scrollable ``.modal-body`` when outer box itself does not scroll."""
         if self.max_scroll_y > 0:
             return None
+        if widget is not None:
+            for anc in widget.ancestors:
+                if anc is self:
+                    break
+                if isinstance(anc, Widget) and "modal-body" in anc.classes:
+                    return anc
+        bodies = list(self.query(".modal-body"))
+        for body in bodies:
+            if body.display and all(anc.display for anc in body.ancestors):
+                return body
+        if bodies:
+            return bodies[0]
         try:
             return self.query_one(".modal-body", Widget)
         except NoMatches:
@@ -22,16 +34,17 @@ class ModalBox(Vertical):
 
     def scroll_to_widget(self, widget: Widget, *args: Any, **kwargs: Any) -> bool:
         """Scroll inner ``.modal-body`` to bring ``widget`` into view when separated."""
-        target = self._body_scroll_target()
+        target = self._body_scroll_target(widget)
         if target is not None:
             return target.scroll_to_widget(widget, *args, **kwargs)
         return super().scroll_to_widget(widget, *args, **kwargs)
 
     def scroll_home(self, *args: Any, **kwargs: Any) -> None:
         """Scroll inner ``.modal-body`` to top when separated from pinned footer."""
-        target = self._body_scroll_target()
-        if target is not None:
-            target.scroll_home(*args, **kwargs)
+        bodies = list(self.query(".modal-body"))
+        if self.max_scroll_y <= 0 and bodies:
+            for body in bodies:
+                body.scroll_home(*args, **kwargs)
             return
         super().scroll_home(*args, **kwargs)
 

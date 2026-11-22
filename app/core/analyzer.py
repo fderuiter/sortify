@@ -809,10 +809,20 @@ class IncrementalAnalyzer:
                 file_vecs_dict = self.embedding_manager.get_vectors_batch(
                     base_dir, filenames, regenerate=True
                 )
-                folder_vecs = [
-                    self.embedding_manager.generate_embedding(fp)
-                    for fp in folder_profiles
-                ]
+                anchor_vec_cache = getattr(self, "_folder_anchor_vec_cache", None)
+                if anchor_vec_cache is None:
+                    anchor_vec_cache = {}
+                    self._folder_anchor_vec_cache = anchor_vec_cache
+                em_id = id(self.embedding_manager)
+                folder_vecs = []
+                for fp in folder_profiles:
+                    cache_key = (em_id, fp)
+                    cached_vec = anchor_vec_cache.get(cache_key)
+                    if cached_vec is None:
+                        cached_vec = self.embedding_manager.generate_embedding(fp)
+                        if cached_vec is not None:
+                            anchor_vec_cache[cache_key] = cached_vec
+                    folder_vecs.append(cached_vec)
                 if folder_vecs and all(
                     self.embedding_manager.validate_vector_dimension(v)
                     for v in folder_vecs
@@ -1983,9 +1993,31 @@ class IncrementalAnalyzer:
             else:
                 disk_base = base_dir if base_dir and os.path.isdir(base_dir) else None
                 disk_dest = dest_dir if dest_dir and os.path.isdir(dest_dir) else None
-                active_existing_folders = discover_existing_folders(
+                discovered_ef = discover_existing_folders(
                     disk_base, dest_dir=disk_dest, settings=runtime_settings
                 )
+                model_abs = (
+                    os.path.abspath(str(self.model_path))
+                    if getattr(self, "model_path", None)
+                    else None
+                )
+                if model_abs:
+                    active_existing_folders = []
+                    for ef in discovered_ef:
+                        is_model_dir = False
+                        for root_cand in (disk_base, disk_dest):
+                            if not root_cand:
+                                continue
+                            ef_abs = os.path.abspath(os.path.join(root_cand, ef))
+                            if model_abs == ef_abs or model_abs.startswith(
+                                ef_abs + os.sep
+                            ):
+                                is_model_dir = True
+                                break
+                        if not is_model_dir:
+                            active_existing_folders.append(ef)
+                else:
+                    active_existing_folders = discovered_ef
 
             if active_existing_folders and ai_filenames and not fast_path_only:
                 anchored_items, ai_filenames, ai_documents = (

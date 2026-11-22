@@ -1041,6 +1041,29 @@ class AppSettings:
 
     _class_observers: dict[Any, list[Any]] = defaultdict(list)
     _class_observer_lock = threading.Lock()
+    _file_locks: dict[str, threading.RLock] = {}
+    _active_file_timers: dict[str, threading.Timer] = {}
+    _file_registry_lock = threading.Lock()
+
+    @classmethod
+    def _get_file_lock(cls, filepath: str) -> threading.RLock:
+        norm_path = os.path.abspath(filepath)
+        with cls._file_registry_lock:
+            lock = cls._file_locks.get(norm_path)
+            if lock is None:
+                lock = threading.RLock()
+                cls._file_locks[norm_path] = lock
+            return lock
+
+    @classmethod
+    def _cancel_file_timer(cls, filepath: str, current_timer: Any = None) -> None:
+        norm_path = os.path.abspath(filepath)
+        with cls._file_registry_lock:
+            existing = cls._active_file_timers.get(norm_path)
+            if existing is not None and existing is not current_timer:
+                existing.cancel()
+            if existing is not None:
+                cls._active_file_timers.pop(norm_path, None)
 
     def __init__(self, filepath=None):
         self._filepath = filepath or str(get_app_dir() / "settings.json")
@@ -1075,9 +1098,11 @@ class AppSettings:
 
         has_validation_errors = False
         needs_migration = False
+        file_lock = self._get_file_lock(self._filepath)
         try:
-            with open(self._filepath, "r", encoding="utf-8") as f:
-                data = json.load(f)
+            with file_lock:
+                with open(self._filepath, "r", encoding="utf-8") as f:
+                    data = json.load(f)
 
             # Decrypt PROXY setting if encrypted, or mark for migration if legacy plaintext
             if isinstance(data, dict) and "PROXY" in data:
@@ -1172,10 +1197,14 @@ class AppSettings:
         with self._lock:
             if self._save_timer is not None:
                 self._save_timer.cancel()
-            self._save_timer = threading.Timer(0.5, self._save)
+            self._cancel_file_timer(self._filepath)
+            timer = threading.Timer(0.5, self._save)
             # Ensure background thread doesn't block app exit
-            self._save_timer.daemon = True
-            self._save_timer.start()
+            timer.daemon = True
+            self._save_timer = timer
+            with self._file_registry_lock:
+                self._active_file_timers[os.path.abspath(self._filepath)] = timer
+            timer.start()
 
     def flush(self) -> None:
         """Write a pending debounced save now.
@@ -1203,7 +1232,12 @@ class AppSettings:
         self._notify_observers(name, getattr(self._settings_model, name, value))
 
     def _save(self):
+        current_thread = threading.current_thread()
         with self._lock:
+            if self._save_timer is not None and self._save_timer is not current_thread:
+                self._save_timer.cancel()
+            self._save_timer = None
+            self._cancel_file_timer(self._filepath, current_timer=current_thread)
             data = self._settings_model.model_dump(mode="json")
             data.update(self._transient_values)
             for key in self._env_sourced_keys:
@@ -1237,12 +1271,15 @@ class AppSettings:
                             "persisted. It remains available for this session."
                         )
 
-            parent_dir = os.path.dirname(self._filepath)
-            if parent_dir and not os.path.exists(parent_dir):
-                os.makedirs(parent_dir, exist_ok=True)
+            file_lock = self._get_file_lock(self._filepath)
+            with file_lock:
+                parent_dir = os.path.dirname(self._filepath)
+                if parent_dir and not os.path.exists(parent_dir):
+                    os.makedirs(parent_dir, exist_ok=True)
 
-            with open(self._filepath, "w", encoding="utf-8") as f:
-                json.dump(data, f, indent=4)
+                with open(self._filepath, "w", encoding="utf-8") as f:
+                    json.dump(data, f, indent=4)
+                    f.flush()
             # Keep the last persisted ciphertext even when an edited proxy
             # cannot be encrypted. Clearing the proxy also clears this fallback.
             persisted_proxy = data.get("PROXY", "")
