@@ -2,6 +2,7 @@
 
 import logging
 import os
+from collections.abc import Callable
 from typing import Any, Optional
 
 from textual import on
@@ -135,20 +136,32 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
     }
     """
 
-    def __init__(self, settings: Any, target_dir: Optional[str] = None):
+    def __init__(
+        self,
+        settings: Any,
+        target_dir: Optional[str] = None,
+        initial_selected_packs: Optional[list[str]] = None,
+        on_sync: Optional[Callable[[dict[str, Any]], None]] = None,
+    ):
         super().__init__()
         self.settings = settings
         self.target_dir = target_dir or getattr(self.app, "base_dir", "") or os.getcwd()
         self.sample_items = get_sample_corpus_items()
         self.selected_file: str = "demo_finance.txt"
         self._predictions: dict[str, dict[str, Any]] = {}
+        self._initial_selected_packs = (
+            list(initial_selected_packs)
+            if initial_selected_packs is not None
+            else ["financial_tax", "personal_admin"]
+        )
+        self._on_sync = on_sync
 
     def compose(self) -> ComposeResult:
         """Compose playground modal dialog UI widgets."""
         with ModalBox(classes="modal-box"):
             with Vertical(classes="modal-body"):
                 yield Heading(
-                    "Interactive Sample Playground [Ctrl+G]",
+                    "Interactive Sample Playground",
                     level=1,
                     classes="modal-title",
                     id="modal-title",
@@ -162,7 +175,11 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
                     with Vertical(classes="left-pane"):
                         yield Label("Sample Corpus Documents:", classes="field-label")
                         opts = [Option(fn, id=fn) for fn in self.sample_items.keys()]
-                        yield OptionList(*opts, id="playground-doc-list")
+                        doc_list = OptionList(*opts, id="playground-doc-list")
+                        doc_list.tooltip = (
+                            "Select a sample document to inspect its text content"
+                        )
+                        yield doc_list
 
                         yield Label("Document Text Preview:", classes="field-label")
                         yield Static("", id="playground-doc-preview")
@@ -172,8 +189,9 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
                         yield Label(
                             "Starter Rule Template Packs:", classes="field-label"
                         )
+                        initial_set = set(self._initial_selected_packs)
                         for pack in get_starter_templates():
-                            is_default = pack.id in ("financial_tax", "personal_admin")
+                            is_default = pack.id in initial_set
                             chk = Checkbox(
                                 f"{pack.icon} {pack.title}",
                                 value=is_default,
@@ -186,19 +204,27 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
                             "Live Classification Prediction Matrix:",
                             classes="field-label",
                         )
-                        yield DataTable(id="playground-prediction-matrix")
+                        matrix = DataTable(id="playground-prediction-matrix")
+                        matrix.tooltip = "Live classification results for each sample document across selected starter packs"
+                        yield matrix
 
             with Horizontal(classes="button-row"):
-                yield Button(
+                btn_commit = Button(
                     "Commit Sandbox to Workspace",
                     id="btn-commit-playground",
                     variant="primary",
                 )
-                yield Button(
+                btn_commit.tooltip = "Save selected starter packs and write sample documents into the target workspace"
+                yield btn_commit
+                btn_close = Button(
                     "Close Playground",
                     id="btn-close-playground",
                     variant="default",
                 )
+                btn_close.tooltip = (
+                    "Close sample playground without writing sample files to disk"
+                )
+                yield btn_close
 
     def on_mount(self) -> None:
         """Set up prediction matrix columns, focus doc list, and evaluate predictions."""
@@ -277,6 +303,20 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
             self._update_doc_preview(fn)
             self.announce(f"Selected sample document {fn}.")
 
+    def _notify_sync(self, *, committed: bool) -> None:
+        """Invoke optional synchronization callback with current playground state."""
+        if callable(self._on_sync):
+            try:
+                self._on_sync(
+                    {
+                        "selected_packs": self._get_selected_pack_ids(),
+                        "committed": committed,
+                        "target_dir": self.target_dir,
+                    }
+                )
+            except Exception as exc:
+                logger.debug(f"SamplePlaygroundModal sync callback error: {exc}")
+
     @on(Checkbox.Changed)
     def on_pack_checkbox_changed(self, event: Checkbox.Changed) -> None:
         """Refresh predictions live when starter rule template pack checkbox is toggled."""
@@ -286,6 +326,7 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
         if chk_id and chk_id.startswith("chk-playground-pack-"):
             pack_id = chk_id[len("chk-playground-pack-") :]
             self._refresh_simulation()
+            self._notify_sync(committed=False)
             state = "enabled" if event.value else "disabled"
             self.announce(f"Starter template pack {pack_id} {state}.")
 
@@ -296,6 +337,8 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
         if selected_packs:
             try:
                 apply_starter_templates(self.settings, selected_packs)
+                if hasattr(self.settings, "_save"):
+                    self.settings._save()
             except Exception as exc:
                 logger.error(f"Failed to apply starter templates on commit: {exc}")
 
@@ -313,8 +356,18 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
                 self.app.base_dir = self.target_dir
             if hasattr(self.app, "source_dirs"):
                 self.app.source_dirs = [self.target_dir]
-            if hasattr(self.app, "action_scan_directory"):
-                self.app.action_scan_directory()
+            update_cta = getattr(self.app, "_update_onboarding_cta_visibility", None)
+            if callable(update_cta):
+                try:
+                    update_cta()
+                except Exception:
+                    pass
+            try:
+                ws_state = self.app.query_one("#onboarding-workspace-state", Static)
+                ws_state.update(f"Active Workspace: {self.target_dir}")
+            except Exception:
+                pass
+            self._notify_sync(committed=True)
             if hasattr(self.app, "notify"):
                 self.app.notify(
                     "Sample corpus committed to workspace.", severity="information"
@@ -323,7 +376,11 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
             logger.error(f"Failed to commit sample corpus: {exc}")
             self.announce(f"Failed to commit sample documents: {exc}")
 
+        app_ref = self.app
+        was_wizard_underneath = len(app_ref.screen_stack) > 2
         self.dismiss(None)
+        if not was_wizard_underneath and hasattr(app_ref, "action_scan_directory"):
+            app_ref.action_scan_directory()
 
     @on(Button.Pressed, "#btn-close-playground")
     def action_cancel(self) -> None:

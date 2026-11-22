@@ -2102,6 +2102,7 @@ def test_update_security_md_excludes_xml_namespaces_and_ui_placeholders(
     (tmp_path / "scripts").mkdir()
     (tmp_path / "app" / "ui" / "modals" / "models.py").write_text(
         'Input(placeholder="http://proxy.example.com:8080", id="inp-proxy")\n'
+        'Input(placeholder="Optional HTTP/HTTPS proxy URL (e.g. http://corp-proxy.example.net:8080)", id="input-wizard-proxy")\n'
         'LIVE_URL = "https://shipped.example.org/models"\n',
         encoding="utf-8",
     )
@@ -2123,6 +2124,7 @@ def test_update_security_md_excludes_xml_namespaces_and_ui_placeholders(
     rendered = sec_md.read_text(encoding="utf-8")
     assert "shipped.example.org" in rendered
     assert "proxy.example.com" not in rendered
+    assert "corp-proxy.example.net" not in rendered
     assert "www.w3.org" not in rendered
 
 

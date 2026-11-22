@@ -665,7 +665,7 @@ def validate_security_policy(content=None, doc_path="SECURITY.md"):
 
 
 _NON_NETWORK_URL_ATTR_PREFIX_RE = re.compile(
-    r"\b(?:xmlns(?::[A-Za-z_][\w.-]*)?|placeholder)\s*=\s*['\"]$"
+    r"\b(?:xmlns(?::[A-Za-z_][\w.-]*)?\s*=\s*['\"]$|placeholder\s*=\s*['\"][^'\"\r\n]*$)"
 )
 
 
@@ -673,7 +673,7 @@ def _is_non_network_url_literal(file_content: str, match_start: int, url: str) -
     """Return True for XML namespace URIs and UI placeholder sample URLs."""
     from urllib.parse import urlparse
 
-    prefix = file_content[max(0, match_start - 48) : match_start]
+    prefix = file_content[max(0, match_start - 96) : match_start]
     if _NON_NETWORK_URL_ATTR_PREFIX_RE.search(prefix):
         return True
     try:

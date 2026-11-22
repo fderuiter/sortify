@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "8f09e46c727f79522f69d7f45f51a1cf6add35b494accf42ef49e391081cf1d5"
+    "checksum": "a432c8ce2b343d2f460debf12e0ece87f68dc4e794d6aaf1dbcbd6bf016b7934"
   },
   "classes": [
     {
@@ -284,6 +284,95 @@
     }
   ],
   "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "get_ai_runtime_state",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "settings"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "model_dir"
+        }
+      ],
+      "returns": "dict[str, Any]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "inspect_local_model_bundle",
+      "parameters": [
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "model_dir"
+        }
+      ],
+      "returns": "dict[str, Any]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "provision_model_cli",
+      "parameters": [
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "model_dir"
+        },
+        {
+          "annotation": "str",
+          "default": "DEFAULT_MODEL_URL",
+          "name": "url"
+        },
+        {
+          "annotation": "str",
+          "default": "''",
+          "name": "proxy"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "force"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "quiet"
+        },
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "stream"
+        }
+      ],
+      "returns": "dict[str, Any]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "remove_local_model_bundle",
+      "parameters": [
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "model_dir"
+        }
+      ],
+      "returns": "dict[str, Any]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "resolve_default_model_dir",
+      "parameters": [],
+      "returns": "str"
+    },
     {
       "async": false,
       "decorators": [],
