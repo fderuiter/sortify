@@ -440,6 +440,8 @@ def recursive_kmeans_worker_main(
     key = None
     strategy = None
     vector_buffers = []
+    has_model_path = False
+    worker_model_path = None
 
     try:
         if is_pipe:
@@ -483,6 +485,8 @@ def recursive_kmeans_worker_main(
                 "strategy_class_name", "RecursiveKMeansStrategy"
             )
             thread_limit = payload.get("thread_limit")
+            has_model_path = payload.get("has_model_path", False)
+            worker_model_path = payload.get("model_path")
             raw_corpus = payload.get("pre_fetched_corpus")
             pre_fetched_corpus = (
                 validate_corpus_prefetch_batch(raw_corpus)
@@ -511,6 +515,8 @@ def recursive_kmeans_worker_main(
                 "strategy_class_name", "RecursiveKMeansStrategy"
             )
             thread_limit = payload.get("thread_limit")
+            has_model_path = payload.get("has_model_path", False)
+            worker_model_path = payload.get("model_path")
             raw_corpus_ipc = payload.get("pre_fetched_corpus")
             pre_fetched_corpus = (
                 validate_corpus_prefetch_batch(raw_corpus_ipc)
@@ -523,6 +529,8 @@ def recursive_kmeans_worker_main(
             max_folders = max_folders_or_key
             out_q = output_queue
             key = session_key
+            has_model_path = False
+            worker_model_path = None
 
         # 1. Respect configured CPU thread limits from global registry
         if thread_limit is None:
@@ -566,6 +574,8 @@ def recursive_kmeans_worker_main(
         strategy.db = None
         strategy.base_dir = None
         strategy.pre_fetched_corpus = pre_fetched_corpus
+        if has_model_path:
+            strategy.model_path = worker_model_path
 
         # Callers always supply these, either directly or in the IPC payload.
         strategy.stop_words = cast(set, stop_words)
@@ -600,6 +610,12 @@ def recursive_kmeans_worker_main(
             "worker_pid": worker_pid,
             "worker_niceness": worker_niceness,
             "worker_thread_limit": thread_limit,
+            "is_degraded": getattr(strategy, "is_degraded", False),
+            "degradation_state": getattr(strategy, "degradation_state", "HEALTHY"),
+            "degradation_reason": getattr(strategy, "degradation_reason", None),
+            "suggested_recovery_action": getattr(
+                strategy, "suggested_recovery_action", None
+            ),
         }
         if conn is not None:
             if key is not None:
@@ -809,6 +825,8 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             "strategy_class_name": strategy_class_name,
             "thread_limit": parent_thread_limit,
             "pre_fetched_corpus": pre_fetched_corpus,
+            "has_model_path": hasattr(self, "model_path"),
+            "model_path": getattr(self, "model_path", None),
         }
 
         encrypted_input = session_crypto.encrypt_payload(payload)
@@ -910,6 +928,24 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             self._last_worker_pid = result.get("worker_pid")
             self._last_worker_niceness = result.get("worker_niceness")
             self._last_worker_thread_limit = result.get("worker_thread_limit")
+            if result.get("is_degraded") or result.get("degradation_state") in (
+                "DEGRADED_FALLBACK",
+                "FAILED",
+            ):
+                reason = (
+                    result.get("degradation_reason")
+                    or "Generative naming model degraded to rule-based fallback"
+                )
+                recovery = (
+                    result.get("suggested_recovery_action") or "RE_DOWNLOAD_MODEL"
+                )
+                if hasattr(self, "_record_degraded_fallback"):
+                    cast(Any, self)._record_degraded_fallback(reason, recovery)
+                else:
+                    self.is_degraded = True
+                    self.degradation_state = "DEGRADED_FALLBACK"
+                    self.degradation_reason = reason
+                    self.suggested_recovery_action = recovery
             from app.core.analyzer import SortingPlan, _validate_sorting_plan_nodes
 
             validated_p = _validate_sorting_plan_nodes(result["plan"])
@@ -1080,6 +1116,32 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
                             deep_update(d[k], v)
                         else:
                             d[k] = v
+
+                def _dedup_nested_labels(parent_label: str, child_dict: dict) -> dict:
+                    if not isinstance(child_dict, dict):
+                        return child_dict
+                    norm_parent = parent_label.strip().lower()
+                    deduped: dict = {}
+                    for k, v in child_dict.items():
+                        is_file_leaf = v is None or (
+                            isinstance(v, dict) and v.get("__type__") == "file"
+                        )
+                        if not is_file_leaf and isinstance(v, dict):
+                            v = _dedup_nested_labels(k, v)
+                            if k.strip().lower() == norm_parent:
+                                deep_update(deduped, v)
+                                continue
+                        if (
+                            isinstance(v, dict)
+                            and k in deduped
+                            and isinstance(deduped[k], dict)
+                        ):
+                            deep_update(deduped[k], v)
+                        else:
+                            deduped[k] = v
+                    return deduped
+
+                sub_plan = _dedup_nested_labels(folder_name, sub_plan)
 
                 if folder_name not in plan:
                     plan[folder_name] = sub_plan
@@ -1493,6 +1555,31 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         pre_fetched_corpus: CorpusPreFetchBatchModel | None = None,
     ) -> tuple[dict, float]:
         """Generate a hierarchical plan of folder names using generative modeling."""
+        self.is_degraded = False
+        self.degradation_state = "HEALTHY"
+        self.degradation_reason = None
+        self.suggested_recovery_action = None
+
+        if (
+            not getattr(self, "_model_initialized", False)
+            and self._generator is None
+            and not (self._gguf_active and not self._gguf_failed)
+            and not is_prompt_dump_enabled()
+        ):
+            if not self.model_path or not os.path.exists(self.model_path):
+                self._record_degraded_fallback(
+                    f"Model path does not exist: '{self.model_path}'"
+                )
+            else:
+                try:
+                    from app.core.shared_registry import SharedModelRegistry
+
+                    SharedModelRegistry.get_instance().verify_integrity(
+                        "generative_naming", self.model_path
+                    )
+                except Exception as e:
+                    self._record_degraded_fallback(str(e))
+
         plan, error = super().generate_plan(
             filenames,
             documents,
@@ -1727,24 +1814,44 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
         base_path = get_base_path(__file__)
 
+        local_gen_path = os.path.join(base_path, "offline_bundle", "generative_naming")
         local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
 
         from app.config import get_app_dir
 
+        user_gen_path = str(get_app_dir() / "generative_naming")
+        user_models_gen_path = str(get_app_dir() / "models" / "generative_naming")
         user_bundle_path = str(get_app_dir() / "model")
 
         self.model_path = model_path
         if not self.model_path:
+            env_gen_path = os.environ.get("GENERATIVE_NAMING_PATH")
+            if env_gen_path and os.path.exists(env_gen_path):
+                self.model_path = env_gen_path
+
+        if not self.model_path:
             from app.core.path_utils import get_meipass_dir
 
             mei_dir = get_meipass_dir()
+            mei_bundle_path = None
             if mei_dir:
+                mei_gen_path = os.path.join(
+                    mei_dir, "offline_bundle", "generative_naming"
+                )
                 mei_bundle_path = os.path.join(mei_dir, "offline_bundle", "model")
-                if os.path.exists(mei_bundle_path):
-                    self.model_path = mei_bundle_path
+                if os.path.exists(mei_gen_path):
+                    self.model_path = mei_gen_path
 
             if not self.model_path:
-                if os.path.exists(local_bundle_path):
+                if os.path.exists(local_gen_path):
+                    self.model_path = local_gen_path
+                elif os.path.exists(user_gen_path):
+                    self.model_path = user_gen_path
+                elif os.path.exists(user_models_gen_path):
+                    self.model_path = user_models_gen_path
+                elif mei_bundle_path and os.path.exists(mei_bundle_path):
+                    self.model_path = mei_bundle_path
+                elif os.path.exists(local_bundle_path):
                     self.model_path = local_bundle_path
                 elif os.path.exists(user_bundle_path):
                     self.model_path = user_bundle_path
@@ -1826,18 +1933,42 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         self._generator = None
         self._model_initialized = False
 
+    def _record_degraded_fallback(
+        self, reason: str, recovery_action: str = "RE_DOWNLOAD_MODEL"
+    ) -> None:
+        """Mark strategy and shared model registry health as DEGRADED_FALLBACK."""
+        self.is_degraded = True
+        self.degradation_state = "DEGRADED_FALLBACK"
+        self.degradation_reason = reason
+        self.suggested_recovery_action = recovery_action
+        try:
+            from app.core.shared_registry import SharedModelRegistry
+
+            SharedModelRegistry.get_instance().record_model_health(
+                "generative_naming",
+                status="DEGRADED_FALLBACK",
+                failure_reason=reason,
+                suggested_recovery_action=recovery_action,
+            )
+        except Exception:
+            pass
+
     def _init_model(self):
         self._model_initialized = True
 
         if not self._gguf_failed and is_gguf_model_dir(self.model_path):
             try:
+                from app.core.shared_registry import SharedModelRegistry
+
+                SharedModelRegistry.get_instance().verify_integrity(
+                    "generative_naming", str(self.model_path)
+                )
+
                 self._gguf_active = True
                 self._gguf_session_crypto = EphemeralSessionCrypto()
                 self._gguf_session_key = self._gguf_session_crypto.session_key
                 self._gguf_input_queue = multiprocessing.Queue()
                 self._gguf_output_queue = multiprocessing.Queue()
-
-                from app.core.shared_registry import SharedModelRegistry
 
                 try:
                     n_threads = SharedModelRegistry.get_instance().get_thread_limit()
@@ -1868,9 +1999,17 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                         if isinstance(res, dict)
                         else "Unknown initialization error"
                     )
+                self.is_degraded = False
+                self.degradation_state = "HEALTHY"
+                self.degradation_reason = None
+                self.suggested_recovery_action = None
+                SharedModelRegistry.get_instance().record_model_health(
+                    "generative_naming", status="HEALTHY"
+                )
                 return
             except Exception as e:
                 logging.error(f"GGUF initialization failed: {e}")
+                self._record_degraded_fallback(f"GGUF initialization failed: {e}")
                 self._fallback_to_pytorch()
                 return
 
@@ -1917,10 +2056,11 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
             )
 
-        local_bundle_path = os.path.join(base_path, "offline_bundle", "model")
+        local_gen_path = os.path.join(base_path, "offline_bundle", "generative_naming")
         from app.config import get_app_dir
 
-        user_bundle_path = str(get_app_dir() / "model")
+        user_gen_path = str(get_app_dir() / "generative_naming")
+        user_models_gen_path = str(get_app_dir() / "models" / "generative_naming")
 
         if not self.model_path or not os.path.exists(
             os.path.join(self.model_path, "config.json")
@@ -1929,18 +2069,22 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
 
             mei_dir = get_meipass_dir()
             if mei_dir:
-                mei_bundle_path = os.path.join(mei_dir, "offline_bundle", "model")
-                if os.path.exists(mei_bundle_path):
-                    self.model_path = mei_bundle_path
+                mei_gen_path = os.path.join(
+                    mei_dir, "offline_bundle", "generative_naming"
+                )
+                if os.path.exists(mei_gen_path):
+                    self.model_path = mei_gen_path
 
             if not self.model_path or not os.path.exists(
                 os.path.join(self.model_path, "config.json")
             ):
-                if os.path.exists(local_bundle_path):
-                    self.model_path = local_bundle_path
-                elif os.path.exists(user_bundle_path):
-                    self.model_path = user_bundle_path
-                else:
+                if os.path.exists(local_gen_path):
+                    self.model_path = local_gen_path
+                elif os.path.exists(user_gen_path):
+                    self.model_path = user_gen_path
+                elif os.path.exists(user_models_gen_path):
+                    self.model_path = user_models_gen_path
+                elif not self._gguf_failed:
                     self.model_path = None
 
         self._init_pytorch_model()
@@ -1950,9 +2094,14 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if self._generator is not None:
             return
         if not self.model_path or not os.path.exists(self.model_path):
-            logging.warning(
-                "Offline model bundle not found in either the local project directory or the user configuration directory."
+            reason = (
+                f"Offline model bundle not found: '{self.model_path}'."
+                if self.model_path
+                else "Offline generative model bundle not found in local or user directories."
             )
+            logging.warning(reason)
+            if not is_prompt_dump_enabled():
+                self._record_degraded_fallback(reason)
             return
 
         from app.core.shared_registry import SharedModelRegistry
@@ -1960,12 +2109,26 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         registry = SharedModelRegistry.get_instance()
         try:
             generator, task, tokenizer = registry.get_generative_model(self.model_path)
+            if generator is None:
+                if not is_prompt_dump_enabled():
+                    self._record_degraded_fallback(
+                        f"Failed to initialize generative model at '{self.model_path}'"
+                    )
+                self._generator = None
+                return
             self._generator = generator
             self.task = task
             if tokenizer:
                 self.token_biases = self._build_logit_biases(tokenizer)
+            self.is_degraded = False
+            self.degradation_state = "HEALTHY"
+            self.degradation_reason = None
+            self.suggested_recovery_action = None
+            registry.record_model_health("generative_naming", status="HEALTHY")
         except Exception as e:
             logging.error(f"Failed to load generative model via shared registry: {e}")
+            if not is_prompt_dump_enabled():
+                self._record_degraded_fallback(str(e))
             self._generator = None
 
     def _run_prompt(

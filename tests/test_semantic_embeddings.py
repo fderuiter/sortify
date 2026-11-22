@@ -662,7 +662,7 @@ def test_tokenizer_files_missing_raises_validation_error(db, temp_dir):
     # Write registered model.onnx hash content to pass signature check
     from app.core.hashes_registry import HASHES
 
-    expected_hash = HASHES["generative_naming"]["model.onnx"]
+    expected_hash = HASHES["model_download"]["model.onnx"]
     from unittest.mock import MagicMock, patch
 
     mock_sha256 = MagicMock()
@@ -1063,7 +1063,7 @@ def test_onnx_central_registry_session_routing_and_unloading(db, temp_dir):
         # 2. Asset validation uses central registry (reuses or loads into registry)
         from app.core.hashes_registry import HASHES
 
-        expected_hash = HASHES["generative_naming"]["model.onnx"]
+        expected_hash = HASHES["model_download"]["model.onnx"]
         with patch(
             "app.core.resilient_file_ops.resilient_file_hash",
             return_value=expected_hash,
@@ -1107,7 +1107,7 @@ def test_malformed_model_validation_failure_cleans_up_registry(db, temp_dir):
 
     from app.core.hashes_registry import HASHES
 
-    expected_hash = HASHES["generative_naming"]["model.onnx"]
+    expected_hash = HASHES["model_download"]["model.onnx"]
     expected_key = f"onnx_{onnx_file}"
 
     mock_ort = MagicMock()
@@ -1169,7 +1169,7 @@ def test_session_startup_missing_vocab_and_missing_onnxruntime_degrades_to_tfidf
     settings = AppSettings(filepath=str(temp_dir / "settings.json"))
     settings._settings_model.AI_CONSENT_GRANTED = True
 
-    expected_onnx_hash = HASHES["generative_naming"]["model.onnx"]
+    expected_onnx_hash = HASHES["model_download"]["model.onnx"]
     (model_dir / "model.onnx").write_bytes(b"consented-onnx-placeholder")
     (model_dir / "config.json").write_text('{"model_type": "bert"}', encoding="utf-8")
 

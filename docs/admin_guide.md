@@ -24,6 +24,13 @@ Whether to use the local generative LLM model to synthesize descriptive folder a
 
 Whether to retain relative source subfolder structure beneath generated destination category directories.
 
+### `SCAN_MAX_DEPTH`
+- **Type**: `int`
+- **Default**: `0`
+- **Allowed**: >= 0, <= 20
+
+Maximum subfolder recursion depth when scanning directories (integer from 0 to 20 levels; 0 scans top-level files only).
+
 ### `MAX_FOLDERS`
 - **Type**: `int`
 - **Default**: `12`

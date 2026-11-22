@@ -1,5 +1,6 @@
 """Metadata pass for pre-evaluating files against rules before text extraction."""
 
+import contextlib
 import logging
 import mimetypes
 import os
@@ -124,17 +125,63 @@ class MetadataPass:
         keyword_rules = getattr(settings, "KEYWORD_RULES", {})
         learned_rules = getattr(settings, "LEARNED_RULES", {})
         policies = getattr(settings, "POLICIES", [])
+        auto_quarantine_ratings = [
+            r for r in (getattr(settings, "AUTO_QUARANTINE_RATINGS", []) or []) if r
+        ]
+        has_content_compliance_policy = bool(auto_quarantine_ratings) or any(
+            isinstance(p, dict)
+            and p.get("enabled", True)
+            and (
+                str(p.get("type", "")).lower() == "compliance"
+                or str(p.get("action", "")).lower() in ("quarantine", "redact")
+            )
+            for p in (policies or [])
+        )
 
         # Sort policies in descending order of priority (higher priority number first)
         sorted_policies = sorted(
             policies, key=lambda x: x.get("priority", 0), reverse=True
         )
 
+        if db and hasattr(db, "worker"):
+            from app.core.db import DBWorker
+
+            if isinstance(getattr(db, "worker", None), DBWorker):
+                with contextlib.suppress(RuntimeError, OSError):
+                    db.worker.execute_write(lambda: None)
+
         docs = db.get_all_documents(base_dir, source_dirs=source_dirs) if db else []
+        doc_ratings = (
+            db.get_all_document_ratings(base_dir)
+            if db and hasattr(db, "get_all_document_ratings")
+            else {}
+        )
+        if not isinstance(doc_ratings, dict):
+            doc_ratings = {}
         hash_to_target = {}
+        rejected_by_doc: dict[str, set[str]] = {}
         for d in docs:
-            if len(d) >= 4 and d[2] and d[3]:
-                hash_to_target[d[2]] = d[3]
+            if len(d) >= 4:
+                fp_key = str(d[0]).replace("\\", "/")
+                raw_t = str(d[3]) if d[3] else ""
+                is_neg = (
+                    str(doc_ratings.get(fp_key, doc_ratings.get(d[0], "")))
+                    .lower()
+                    .startswith("negative")
+                )
+                if raw_t.startswith("!"):
+                    rej = raw_t[1:].strip().replace("\\", "/").strip("/").lower()
+                    if rej:
+                        rejected_by_doc.setdefault(fp_key, set()).add(rej)
+                    continue
+                if is_neg:
+                    if raw_t:
+                        rej = raw_t.strip().replace("\\", "/").strip("/").lower()
+                        if rej:
+                            rejected_by_doc.setdefault(fp_key, set()).add(rej)
+                    continue
+                if d[2] and d[3]:
+                    hash_to_target[d[2]] = d[3]
 
         bypassed_files = []
         docs_to_upsert = []
@@ -223,7 +270,16 @@ class MetadataPass:
                 if not halt_evaluation and not matched_target and not is_supported:
                     matched_target = get_extension_category_target(item, settings)
 
+            norm_rel_p = rel_p.replace("\\", "/")
+            rejected_set = rejected_by_doc.get(norm_rel_p, set())
             if matched_target:
+                mt_clean = str(matched_target).replace("\\", "/").strip("/").lower()
+                if mt_clean in rejected_set or (mt_clean.split("/")[0] in rejected_set):
+                    matched_target = None
+
+            if matched_target and (
+                not is_supported or not has_content_compliance_policy
+            ):
                 bypassed_files.append(item)
                 docs_to_upsert.append((src_root, rel_p, file_hash, "[STATUS:BYPASSED]"))
                 emit_progress(

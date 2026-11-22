@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "6716ae387da0a0ec9682083c0f52db83ca2475deb8f0942a6fadf82cc0a6f3aa"
+    "checksum": "13293328d0b0cfa8a3bfc08cfc3f7a6094e4ac758153a3bc5a8dd5007c556416"
   },
   "classes": [
     {
@@ -173,13 +173,23 @@
             },
             {
               "annotation": "bool",
-              "default": "False",
+              "default": "True",
               "name": "run_metadata_pass"
             },
             {
               "annotation": "Collection[str] | None",
               "default": "None",
               "name": "bypassed_items"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "dest_dir"
+            },
+            {
+              "annotation": "list[str] | None",
+              "default": "None",
+              "name": "existing_folders"
             }
           ],
           "returns": "Any"

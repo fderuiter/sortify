@@ -287,6 +287,8 @@ class SettingsModal(
 ):
     """Modal dialog for modifying application settings."""
 
+    AUTO_FOCUS = None
+
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
     ]
@@ -364,10 +366,17 @@ class SettingsModal(
     }
     SettingsModal TabbedContent {
         height: auto;
+        max-height: 1fr;
+    }
+    SettingsModal ContentSwitcher {
+        height: auto;
+        max-height: 1fr;
     }
     SettingsModal TabPane {
         height: auto;
+        max-height: 1fr;
         padding: 0;
+        overflow-y: auto;
     }
     """
 
@@ -375,6 +384,7 @@ class SettingsModal(
         super().__init__()
         self.settings = settings
         self.help_url = f"{TROUBLESHOOTING_URL}#settings-configuration"
+        self._announced_switch_values: dict[str, bool] = {}
 
     def query_one(self, selector: Any, expect_type: Any = None) -> Any:
         """Query one widget, aliasing alternative switch IDs."""
@@ -404,288 +414,294 @@ class SettingsModal(
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
         with ModalBox(classes="modal-box"):
-            with Vertical(classes="modal-body"):
-                yield Heading(
-                    "Application Settings [Ctrl+O]",
-                    level=1,
-                    classes="modal-title",
-                    id="modal-title",
-                )
+            yield Heading(
+                "Application Settings [Ctrl+O]",
+                level=1,
+                classes="modal-title",
+                id="modal-title",
+            )
+            with TabbedContent(initial="tab-general", id="settings-tabbed-content"):
+                with TabPane(
+                    "General Settings", id="tab-general", classes="modal-body"
+                ):
+                    yield Label(
+                        "Protected Directories (comma-separated):",
+                        classes="field-label",
+                    )
+                    prot = getattr(self.settings, "PROTECTED_PATHS", [])
+                    prot_str = (
+                        ", ".join(prot)
+                        if isinstance(prot, (list, tuple, set))
+                        else str(prot)
+                    )
+                    inp_prot = Input(
+                        value=prot_str,
+                        placeholder="/path/1, /path/2",
+                        id="input-protected",
+                    )
+                    inp_prot.tooltip = "Comma-separated protected directories exempt from automated moves"
+                    yield inp_prot
 
-                with TabbedContent(initial="tab-general", id="settings-tabbed-content"):
-                    with TabPane("General Settings", id="tab-general"):
-                        yield Label(
-                            "Protected Directories (comma-separated):",
-                            classes="field-label",
-                        )
-                        prot = getattr(self.settings, "PROTECTED_PATHS", [])
-                        prot_str = (
-                            ", ".join(prot)
-                            if isinstance(prot, (list, tuple, set))
-                            else str(prot)
-                        )
-                        inp_prot = Input(
-                            value=prot_str,
-                            placeholder="/path/1, /path/2",
-                            id="input-protected",
-                        )
-                        inp_prot.tooltip = "Comma-separated protected directories exempt from automated moves"
-                        yield inp_prot
+                    yield Label(
+                        "Ignored Extensions (comma-separated):",
+                        classes="field-label",
+                    )
+                    ign = getattr(self.settings, "IGNORED_EXTENSIONS", [])
+                    ign_str = (
+                        ", ".join(ign)
+                        if isinstance(ign, (list, tuple, set))
+                        else str(ign)
+                    )
+                    inp_ign = Input(
+                        value=ign_str,
+                        placeholder=".tmp, .bak, .log",
+                        id="input-ignored",
+                    )
+                    inp_ign.tooltip = (
+                        "Comma-separated file extensions to ignore during scanning"
+                    )
+                    yield inp_ign
 
-                        yield Label(
-                            "Ignored Extensions (comma-separated):",
-                            classes="field-label",
-                        )
-                        ign = getattr(self.settings, "IGNORED_EXTENSIONS", [])
-                        ign_str = (
-                            ", ".join(ign)
-                            if isinstance(ign, (list, tuple, set))
-                            else str(ign)
-                        )
-                        inp_ign = Input(
-                            value=ign_str,
-                            placeholder=".tmp, .bak, .log",
-                            id="input-ignored",
-                        )
-                        inp_ign.tooltip = (
-                            "Comma-separated file extensions to ignore during scanning"
-                        )
-                        yield inp_ign
+                    yield Label("Max Folders:", classes="field-label")
+                    max_f_str = str(getattr(self.settings, "MAX_FOLDERS", 12))
+                    inp_max_f = Input(
+                        value=max_f_str, placeholder="12", id="input-max-folders"
+                    )
+                    inp_max_f.tooltip = (
+                        "Maximum subdirectories generated during sorting"
+                    )
+                    yield inp_max_f
 
-                        yield Label("Max Folders:", classes="field-label")
-                        max_f_str = str(getattr(self.settings, "MAX_FOLDERS", 12))
-                        inp_max_f = Input(
-                            value=max_f_str, placeholder="12", id="input-max-folders"
-                        )
-                        inp_max_f.tooltip = (
-                            "Maximum subdirectories generated during sorting"
-                        )
-                        yield inp_max_f
+                    yield Label("Worker Concurrency (Threads):", classes="field-label")
+                    conc_str = str(getattr(self.settings, "MAX_WORKERS", 4))
+                    inp_conc = Input(
+                        value=conc_str, placeholder="4", id="input-concurrency"
+                    )
+                    inp_conc.tooltip = "Worker concurrency thread limit for processing"
+                    yield inp_conc
 
-                        yield Label(
-                            "Worker Concurrency (Threads):", classes="field-label"
-                        )
-                        conc_str = str(getattr(self.settings, "MAX_WORKERS", 4))
-                        inp_conc = Input(
-                            value=conc_str, placeholder="4", id="input-concurrency"
-                        )
-                        inp_conc.tooltip = (
-                            "Worker concurrency thread limit for processing"
-                        )
-                        yield inp_conc
+                    yield Label("Conflict Policy:", classes="field-label")
+                    conflict_pol = getattr(self.settings, "CONFLICT_POLICY", "rename")
+                    conflict_options = [
+                        ("Overwrite", "overwrite"),
+                        ("Auto-Rename", "rename"),
+                        ("Skip", "skip"),
+                    ]
+                    sel_conflict = Select(
+                        options=conflict_options,
+                        value=conflict_pol,
+                        id="select-conflict-policy",
+                    )
+                    sel_conflict.tooltip = "Select collision handling strategy for conflicting target files"
+                    yield sel_conflict
 
-                        yield Label("Conflict Policy:", classes="field-label")
-                        conflict_pol = getattr(
-                            self.settings, "CONFLICT_POLICY", "rename"
-                        )
-                        conflict_options = [
-                            ("Overwrite", "overwrite"),
-                            ("Auto-Rename", "rename"),
-                            ("Skip", "skip"),
-                        ]
-                        sel_conflict = Select(
-                            options=conflict_options,
-                            value=conflict_pol,
-                            id="select-conflict-policy",
-                        )
-                        sel_conflict.tooltip = "Select collision handling strategy for conflicting target files"
-                        yield sel_conflict
+                    yield LabeledSwitch(
+                        label="Cleanup Empty Folders",
+                        value=bool(
+                            getattr(self.settings, "CLEANUP_EMPTY_FOLDERS", True)
+                        ),
+                        switch_id="switch-cleanup-empty-folders",
+                        tooltip="Automatically prune empty source directories after moving organized files",
+                    )
 
+                    yield LabeledSwitch(
+                        label="Preserve Folder Hierarchy",
+                        value=bool(getattr(self.settings, "PRESERVE_HIERARCHY", False)),
+                        switch_id="switch-preserve-hierarchy",
+                        tooltip="Maintain source directory levels and folder structure during classification",
+                    )
+
+                    yield Label(
+                        "Max Scan Depth (0 = top-level only):",
+                        classes="field-label",
+                    )
+                    inp_scan_depth = Input(
+                        value=str(getattr(self.settings, "SCAN_MAX_DEPTH", 0)),
+                        id="input-scan-max-depth",
+                    )
+                    inp_scan_depth.tooltip = (
+                        "Maximum subfolder depth to scan (0 keeps subfolders untouched)"
+                    )
+                    yield inp_scan_depth
+
+                with TabPane(
+                    "AI & Privacy Settings",
+                    id="tab-ai-privacy",
+                    classes="modal-body",
+                ):
+                    yield Heading("Sorting Strategy:", level=2, classes="field-label")
+                    strat = getattr(self.settings, "SORTING_STRATEGY", "default")
+                    options = [
+                        ("Standard Semantic", "default"),
+                        ("Generative AI", "generative"),
+                    ]
+                    from app.core.plugin_registry import PluginRegistry
+
+                    reg = PluginRegistry.get_instance()
+                    reg.load_plugins_from_settings(self.settings)
+                    options.extend(reg.get_tui_strategy_options())
+                    if not any(opt[1] == strat for opt in options):
+                        options.append((f"Extension ({strat})", strat))
+                    sel_strat = Select(
+                        options=options, value=strat, id="select-strategy"
+                    )
+                    sel_strat.tooltip = (
+                        "Select sorting strategy engine for document classification"
+                    )
+                    yield sel_strat
+
+                    yield Heading(
+                        "Compliance & Renaming Toggles:",
+                        level=2,
+                        classes="field-label",
+                    )
+                    for sw_cfg in reg.get_tui_switches():
+                        sw_key = sw_cfg.get("key", "")
+                        sw_id = sw_cfg.get("id", f"switch-{sw_key.lower()}")
+                        sw_lbl = sw_cfg.get("label", f" {sw_key}")
+                        sw_tip = sw_cfg.get("tooltip", "")
+                        sw_val = bool(getattr(self.settings, sw_key, False))
                         yield LabeledSwitch(
-                            label="Cleanup Empty Folders",
-                            value=bool(
-                                getattr(self.settings, "CLEANUP_EMPTY_FOLDERS", True)
-                            ),
-                            switch_id="switch-cleanup-empty-folders",
-                            tooltip="Automatically prune empty source directories after moving organized files",
+                            label=sw_lbl,
+                            value=sw_val,
+                            switch_id=sw_id,
+                            tooltip=sw_tip,
                         )
 
-                        yield LabeledSwitch(
-                            label="Preserve Folder Hierarchy",
-                            value=bool(
-                                getattr(self.settings, "PRESERVE_HIERARCHY", False)
-                            ),
-                            switch_id="switch-preserve-hierarchy",
-                            tooltip="Maintain source directory levels and folder structure during classification",
-                        )
+                    yield LabeledSwitch(
+                        label="AI Consent Granted",
+                        value=bool(getattr(self.settings, "AI_CONSENT_GRANTED", False)),
+                        switch_id="switch-ai-consent",
+                        tooltip="Toggle AI consent for semantic document classification and processing",
+                    )
 
-                    with TabPane("AI & Privacy Settings", id="tab-ai-privacy"):
-                        yield Heading(
-                            "Sorting Strategy:", level=2, classes="field-label"
-                        )
-                        strat = getattr(self.settings, "SORTING_STRATEGY", "default")
-                        options = [
-                            ("Standard Semantic", "default"),
-                            ("Generative AI", "generative"),
-                        ]
-                        from app.core.plugin_registry import PluginRegistry
+                    yield LabeledSwitch(
+                        label="AI Contextual Renaming",
+                        value=bool(
+                            getattr(self.settings, "CONTEXTUAL_RENAMING", False)
+                        ),
+                        switch_id="switch-contextual-renaming",
+                        tooltip="Toggle AI contextual file renaming",
+                    )
 
-                        reg = PluginRegistry.get_instance()
-                        reg.load_plugins_from_settings(self.settings)
-                        options.extend(reg.get_tui_strategy_options())
-                        if not any(opt[1] == strat for opt in options):
-                            options.append((f"Extension ({strat})", strat))
-                        sel_strat = Select(
-                            options=options, value=strat, id="select-strategy"
+                    current_auto_ratings = {
+                        str(r).upper()
+                        for r in (
+                            getattr(self.settings, "AUTO_QUARANTINE_RATINGS", []) or []
                         )
-                        sel_strat.tooltip = (
-                            "Select sorting strategy engine for document classification"
-                        )
-                        yield sel_strat
+                        if r
+                    }
+                    yield LabeledSwitch(
+                        label="Auto-Quarantine CRITICAL Sensitivity",
+                        value="CRITICAL" in current_auto_ratings,
+                        switch_id="switch-quarantine-critical",
+                        tooltip="Automatically hold CRITICAL sensitivity documents in compliance quarantine during sorting and daemon monitoring",
+                    )
 
-                        yield Heading(
-                            "Compliance & Renaming Toggles:",
-                            level=2,
-                            classes="field-label",
-                        )
-                        for sw_cfg in reg.get_tui_switches():
-                            sw_key = sw_cfg.get("key", "")
-                            sw_id = sw_cfg.get("id", f"switch-{sw_key.lower()}")
-                            sw_lbl = sw_cfg.get("label", f" {sw_key}")
-                            sw_tip = sw_cfg.get("tooltip", "")
-                            sw_val = bool(getattr(self.settings, sw_key, False))
-                            yield LabeledSwitch(
-                                label=sw_lbl,
-                                value=sw_val,
-                                switch_id=sw_id,
-                                tooltip=sw_tip,
-                            )
+                    yield LabeledSwitch(
+                        label="Auto-Quarantine HIGH Sensitivity",
+                        value="HIGH" in current_auto_ratings,
+                        switch_id="switch-quarantine-high",
+                        tooltip="Automatically hold HIGH sensitivity documents in compliance quarantine during sorting and daemon monitoring",
+                    )
 
-                        yield LabeledSwitch(
-                            label="AI Consent Granted",
-                            value=bool(
-                                getattr(self.settings, "AI_CONSENT_GRANTED", False)
-                            ),
-                            switch_id="switch-ai-consent",
-                            tooltip="Toggle AI consent for semantic document classification and processing",
+                    yield Label(
+                        "Compliance Quarantine Folder Name:",
+                        classes="field-label",
+                    )
+                    q_dir_val = (
+                        getattr(
+                            self.settings,
+                            "QUARANTINE_DIR_NAME",
+                            "_Compliance_Quarantine",
                         )
+                        or "_Compliance_Quarantine"
+                    )
+                    inp_qdir = Input(
+                        value=str(q_dir_val),
+                        placeholder="_Compliance_Quarantine",
+                        id="input-quarantine-dir",
+                    )
+                    inp_qdir.tooltip = "Workspace subfolder name used when staging held compliance files"
+                    yield inp_qdir
 
-                        yield LabeledSwitch(
-                            label="AI Contextual Renaming",
-                            value=bool(
-                                getattr(self.settings, "CONTEXTUAL_RENAMING", False)
-                            ),
-                            switch_id="switch-contextual-renaming",
-                            tooltip="Toggle AI contextual file renaming",
-                        )
+                    yield LabeledSwitch(
+                        label="Speak Status Messages Aloud",
+                        value=bool(
+                            getattr(self.settings, "SPEAK_ANNOUNCEMENTS", False)
+                        ),
+                        switch_id="switch-speak-announcements",
+                        tooltip="Read each status message aloud with the system speech command (say / spd-say)",
+                    )
 
-                        current_auto_ratings = {
-                            str(r).upper()
-                            for r in (
-                                getattr(self.settings, "AUTO_QUARANTINE_RATINGS", [])
-                                or []
-                            )
-                            if r
-                        }
-                        yield LabeledSwitch(
-                            label="Auto-Quarantine CRITICAL Sensitivity",
-                            value="CRITICAL" in current_auto_ratings,
-                            switch_id="switch-quarantine-critical",
-                            tooltip="Automatically hold CRITICAL sensitivity documents in compliance quarantine during sorting and daemon monitoring",
-                        )
-
-                        yield LabeledSwitch(
-                            label="Auto-Quarantine HIGH Sensitivity",
-                            value="HIGH" in current_auto_ratings,
-                            switch_id="switch-quarantine-high",
-                            tooltip="Automatically hold HIGH sensitivity documents in compliance quarantine during sorting and daemon monitoring",
-                        )
-
-                        yield Label(
-                            "Compliance Quarantine Folder Name:",
-                            classes="field-label",
-                        )
-                        q_dir_val = (
+                    yield LabeledSwitch(
+                        label="Single-Character Shortcuts",
+                        value=bool(
                             getattr(
                                 self.settings,
-                                "QUARANTINE_DIR_NAME",
-                                "_Compliance_Quarantine",
+                                "ENABLE_CHARACTER_KEY_SHORTCUTS",
+                                True,
                             )
-                            or "_Compliance_Quarantine"
-                        )
-                        inp_qdir = Input(
-                            value=str(q_dir_val),
-                            placeholder="_Compliance_Quarantine",
-                            id="input-quarantine-dir",
-                        )
-                        inp_qdir.tooltip = "Workspace subfolder name used when staging held compliance files"
-                        yield inp_qdir
+                        ),
+                        switch_id="switch-character-key-shortcuts",
+                        tooltip="Enable single-character keyboard shortcuts in the plan tree (WCAG 2.1.4)",
+                    )
 
-                        yield LabeledSwitch(
-                            label="Speak Status Messages Aloud",
-                            value=bool(
-                                getattr(self.settings, "SPEAK_ANNOUNCEMENTS", False)
-                            ),
-                            switch_id="switch-speak-announcements",
-                            tooltip="Read each status message aloud with the system speech command (say / spd-say)",
-                        )
+                    btn_scrub = Button(
+                        "Scrub AI Artifacts",
+                        id="btn-scrub-artifacts",
+                        variant="warning",
+                    )
+                    btn_scrub.tooltip = "Report vector count and cache footprint, and scrub stored vectors and model files"
+                    yield btn_scrub
 
-                        yield LabeledSwitch(
-                            label="Single-Character Shortcuts",
-                            value=bool(
-                                getattr(
-                                    self.settings,
-                                    "ENABLE_CHARACTER_KEY_SHORTCUTS",
-                                    True,
-                                )
-                            ),
-                            switch_id="switch-character-key-shortcuts",
-                            tooltip="Enable single-character keyboard shortcuts in the plan tree (WCAG 2.1.4)",
-                        )
+                    btn_templates = Button(
+                        "Starter Rule Template Gallery",
+                        id="btn-open-templates",
+                        variant="primary",
+                    )
+                    btn_templates.tooltip = (
+                        "View and apply pre-configured starter rule template packs"
+                    )
+                    yield btn_templates
 
-                        btn_scrub = Button(
-                            "Scrub AI Artifacts",
-                            id="btn-scrub-artifacts",
-                            variant="warning",
-                        )
-                        btn_scrub.tooltip = "Report vector count and cache footprint, and scrub stored vectors and model files"
-                        yield btn_scrub
+                    btn_active_rules = Button(
+                        "Active Rule Manager",
+                        id="btn-open-rules",
+                        variant="primary",
+                    )
+                    btn_active_rules.tooltip = "Inspect, add, edit, toggle, and delete active rules and policies"
+                    yield btn_active_rules
 
-                        btn_templates = Button(
-                            "Starter Rule Template Gallery",
-                            id="btn-open-templates",
-                            variant="primary",
-                        )
-                        btn_templates.tooltip = (
-                            "View and apply pre-configured starter rule template packs"
-                        )
-                        yield btn_templates
+                with TabPane(
+                    "Extraction & OCR",
+                    id="tab-extraction",
+                    classes="modal-body",
+                ):
+                    yield Label(
+                        "PDF Text Density Threshold (chars/page):",
+                        classes="field-label",
+                    )
+                    density_val = getattr(
+                        self.settings, "PDF_TEXT_DENSITY_THRESHOLD", 50
+                    )
+                    inp_density = Input(
+                        value=str(density_val),
+                        placeholder="50",
+                        id="input-pdf-density-threshold",
+                    )
+                    inp_density.tooltip = "Pages with fewer embedded characters trigger EasyOCR rasterization fallback"
+                    yield inp_density
 
-                        btn_active_rules = Button(
-                            "Active Rule Manager",
-                            id="btn-open-rules",
-                            variant="primary",
-                        )
-                        btn_active_rules.tooltip = "Inspect, add, edit, toggle, and delete active rules and policies"
-                        yield btn_active_rules
-
-                    with TabPane("Extraction & OCR", id="tab-extraction"):
-                        yield Label(
-                            "PDF Text Density Threshold (chars/page):",
-                            classes="field-label",
-                        )
-                        density_val = getattr(
-                            self.settings, "PDF_TEXT_DENSITY_THRESHOLD", 50
-                        )
-                        inp_density = Input(
-                            value=str(density_val),
-                            placeholder="50",
-                            id="input-pdf-density-threshold",
-                        )
-                        inp_density.tooltip = "Pages with fewer embedded characters trigger EasyOCR rasterization fallback"
-                        yield inp_density
-
-                        slider_density = DensitySlider(
-                            value=int(density_val),
-                            min_value=0,
-                            max_value=500,
-                            step=5,
-                            id="slider-pdf-density-threshold",
-                        )
-                        slider_density.tooltip = (
-                            "Adjust PDF text density threshold slider"
-                        )
-                        yield slider_density
+                    slider_density = DensitySlider(
+                        value=int(density_val),
+                        min_value=0,
+                        max_value=500,
+                        step=5,
+                        id="slider-pdf-density-threshold",
+                    )
+                    slider_density.tooltip = "Adjust PDF text density threshold slider"
+                    yield slider_density
 
             with Horizontal(classes="button-row"):
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
@@ -710,8 +726,48 @@ class SettingsModal(
     def on_mount(self) -> None:
         """Focus initial input field on mount and emit announcement."""
         self._update_layout(self.size.width, self.size.height)
-        self.query_one("#input-protected", Input).focus()
+        self.query_one("#input-protected", Input).focus(scroll_visible=False)
+        self.query_one(".modal-box", ModalBox).scroll_home(
+            animate=False, immediate=True
+        )
+        for sw_id in (
+            "#switch-character-key-shortcuts",
+            "#switch-quarantine-critical",
+            "#switch-quarantine-high",
+        ):
+            try:
+                sw = self.query_one(sw_id, Switch)
+                self._announced_switch_values[sw_id] = bool(sw.value)
+                self.watch(
+                    sw,
+                    "value",
+                    lambda val, sid=sw_id: self._announce_switch_toggle(sid, bool(val)),
+                    init=False,
+                )
+            except Exception:
+                pass
         self.announce("Opened application settings dialog.")
+
+    def _announce_switch_toggle(self, switch_id: str, value: bool) -> None:
+        """Emit deduplicated accessibility announcement when a settings switch changes."""
+        if self._announced_switch_values.get(switch_id) == value:
+            return
+        self._announced_switch_values[switch_id] = value
+        state_str = "enabled" if value else "disabled"
+        if not hasattr(self, "announce"):
+            return
+        if switch_id == "#switch-character-key-shortcuts":
+            self.announce(f"Character key shortcuts {state_str}.", priority="polite")
+        elif switch_id == "#switch-quarantine-critical":
+            self.announce(
+                f"Automatic CRITICAL sensitivity quarantine {state_str}.",
+                priority="polite",
+            )
+        elif switch_id == "#switch-quarantine-high":
+            self.announce(
+                f"Automatic HIGH sensitivity quarantine {state_str}.",
+                priority="polite",
+            )
 
     @on(Button.Pressed, "#btn-open-templates")
     def action_open_templates(self) -> None:
@@ -796,29 +852,19 @@ class SettingsModal(
     @on(Switch.Changed, "#switch-character-key-shortcuts")
     def on_character_shortcuts_changed(self, event: Switch.Changed) -> None:
         """Announce shortcut status update when single-character shortcuts switch is toggled."""
-        state_str = "enabled" if event.value else "disabled"
-        if hasattr(self, "announce"):
-            self.announce(f"Character key shortcuts {state_str}.", priority="polite")
+        self._announce_switch_toggle(
+            "#switch-character-key-shortcuts", bool(event.value)
+        )
 
     @on(Switch.Changed, "#switch-quarantine-critical")
     def on_quarantine_critical_changed(self, event: Switch.Changed) -> None:
         """Announce status update when CRITICAL sensitivity auto-quarantine switch is toggled."""
-        state_str = "enabled" if event.value else "disabled"
-        if hasattr(self, "announce"):
-            self.announce(
-                f"Automatic CRITICAL sensitivity quarantine {state_str}.",
-                priority="polite",
-            )
+        self._announce_switch_toggle("#switch-quarantine-critical", bool(event.value))
 
     @on(Switch.Changed, "#switch-quarantine-high")
     def on_quarantine_high_changed(self, event: Switch.Changed) -> None:
         """Announce status update when HIGH sensitivity auto-quarantine switch is toggled."""
-        state_str = "enabled" if event.value else "disabled"
-        if hasattr(self, "announce"):
-            self.announce(
-                f"Automatic HIGH sensitivity quarantine {state_str}.",
-                priority="polite",
-            )
+        self._announce_switch_toggle("#switch-quarantine-high", bool(event.value))
 
     def _execute_scrub_and_purge(self) -> None:
         """Execute memory model unload, database vector clearing, and background model cache purging."""
@@ -1039,6 +1085,28 @@ class SettingsModal(
         except Exception:
             preserve_hier = bool(getattr(self.settings, "PRESERVE_HIERARCHY", False))
 
+        try:
+            scan_depth_str = self.query_one(
+                "#input-scan-max-depth", Input
+            ).value.strip()
+        except Exception:
+            scan_depth_str = str(getattr(self.settings, "SCAN_MAX_DEPTH", 0))
+        try:
+            scan_max_depth = int(scan_depth_str)
+            if not (0 <= scan_max_depth <= 20):
+                raise ValueError("Max Scan Depth must be between 0 and 20.")
+        except ValueError:
+            self._show_help_button(help_url)
+            from app.ui.notifications import notify
+
+            err_text = (
+                f"Invalid Max Scan Depth '{scan_depth_str}'. "
+                "Expected an integer from 0 to 20."
+            )
+            notify(f"Settings error: {err_text}", type="error", help_url=help_url)
+            self.announce(f"Settings error: {err_text}", help_url=help_url)
+            return
+
         res = {
             "PROTECTED_PATHS": p_list,
             "IGNORED_EXTENSIONS": i_list,
@@ -1047,6 +1115,7 @@ class SettingsModal(
             "PDF_TEXT_DENSITY_THRESHOLD": pdf_density,
             "CONFLICT_POLICY": conflict_pol,
             "SORTING_STRATEGY": strat,
+            "AI_ASSISTED_NAMING": strat == "generative",
             "CLINICAL_SMART_RENAMING": clin_renaming,
             "CONTEXTUAL_RENAMING": ctx_renaming,
             "AI_CONSENT_GRANTED": ai_consent,
@@ -1054,6 +1123,7 @@ class SettingsModal(
             "ENABLE_CHARACTER_KEY_SHORTCUTS": char_shortcuts,
             "CLEANUP_EMPTY_FOLDERS": cleanup_empty,
             "PRESERVE_HIERARCHY": preserve_hier,
+            "SCAN_MAX_DEPTH": scan_max_depth,
             "AUTO_QUARANTINE_RATINGS": auto_quarantine_ratings,
             "QUARANTINE_DIR_NAME": q_dir_str,
         }

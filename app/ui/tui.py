@@ -1303,6 +1303,11 @@ class AutoSorterTUI(
                         pass
                 if "SORTING_STRATEGY" in res:
                     self.settings.SORTING_STRATEGY = res["SORTING_STRATEGY"]
+                if "AI_ASSISTED_NAMING" in res:
+                    try:
+                        self.settings.AI_ASSISTED_NAMING = res["AI_ASSISTED_NAMING"]
+                    except Exception:
+                        pass
                 if "CLINICAL_SMART_RENAMING" in res:
                     self.settings.CLINICAL_SMART_RENAMING = res[
                         "CLINICAL_SMART_RENAMING"
@@ -1333,6 +1338,11 @@ class AutoSorterTUI(
                 if "PRESERVE_HIERARCHY" in res:
                     try:
                         self.settings.PRESERVE_HIERARCHY = res["PRESERVE_HIERARCHY"]
+                    except Exception:
+                        pass
+                if "SCAN_MAX_DEPTH" in res:
+                    try:
+                        self.settings.SCAN_MAX_DEPTH = res["SCAN_MAX_DEPTH"]
                     except Exception:
                         pass
                 if "AUTO_QUARANTINE_RATINGS" in res:

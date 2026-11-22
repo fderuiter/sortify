@@ -732,17 +732,18 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
         from app.core.pipeline import SortPipeline, reroot_plan
         from app.core.session import AppSession
 
-        session = AppSession(settings, base_dir=str(target_path))
-        pipeline = SortPipeline(session)
-        plan = pipeline.plan()
-
         dest_dir = getattr(args, "dest_dir", None)
+        dest_abs = str(Path(dest_dir).resolve()) if dest_dir else None
         dry_run = getattr(args, "dry_run", False)
         json_output = getattr(args, "json", False)
 
-        if dest_dir:
+        session = AppSession(settings, base_dir=str(target_path))
+        pipeline = SortPipeline(session)
+        plan = pipeline.plan(dest_dir=dest_abs)
+
+        if dest_dir and dest_abs:
             plan = reroot_plan(plan, dest_dir, source_dir=str(target_path))
-            session.base_dir = str(Path(dest_dir).resolve())
+            session.base_dir = dest_abs
 
         serializable_plan = _make_json_serializable(plan)
         _maybe_export_simulation_report(args, plan, base_dir=str(target_path))
@@ -822,7 +823,7 @@ def handle_scan_command(args: argparse.Namespace, settings: AppSettings):
         from app.core.session import AppSession
 
         session = AppSession(settings, base_dir=str(target_path))
-        files = get_files_recursively(str(target_path))
+        files = get_files_recursively(str(target_path), settings=settings)
         plan = SortPipeline(session).plan(files)
         serializable_plan = _make_json_serializable(plan)
 
@@ -1237,6 +1238,7 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
         reroot_plan,
         validate_drop_paths,
     )
+    from app.core.scanner import ScanFilter, get_files_recursively
     from app.core.session import AppSession
 
     validated_paths, issues = validate_drop_paths(raw_paths, settings=settings)
@@ -1289,15 +1291,20 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
     processed_results = []
     for path in validated_paths:
         base_dir, files = drop_scope(path)
-        norm_files = (
-            _relativize_items_to_base(files, base_dir) if files is not None else None
-        )
+        if files is None:
+            drop_filter = ScanFilter.from_settings(settings=settings, base_dir=base_dir)
+            drop_filter.max_depth = None
+            norm_files = get_files_recursively(
+                base_dir, settings=settings, scan_filter=drop_filter
+            )
+        else:
+            norm_files = _relativize_items_to_base(files, base_dir)
 
         session = None
         try:
             session = AppSession(settings, base_dir=base_dir)
             pipeline = SortPipeline(session)
-            plan = pipeline.plan(norm_files)
+            plan = pipeline.plan(norm_files, dest_dir=resolved_dest)
 
             if resolved_dest:
                 plan = reroot_plan(plan, resolved_dest, source_dir=base_dir)

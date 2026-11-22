@@ -113,6 +113,7 @@ def _cli(work: Path, *args: str, crash_at: int = 0, crash_mode: str = "after"):
         **os.environ,
         "AUTOSORTER_APP_DIR": str(work / "app"),
         "HOME": str(work / "home"),
+        "SORTIFY_SCAN_MAX_DEPTH": "5",
         "CRASH_AT": str(crash_at),
         "CRASH_MODE": crash_mode,
     }

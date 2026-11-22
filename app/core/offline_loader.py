@@ -60,11 +60,19 @@ class OfflineModelLoader:
     @staticmethod
     def _integrity_id(model_id: str) -> str:
         """Return the hash registry key for a model ID."""
-        return (
-            "generative_naming"
-            if model_id in ("generative_naming", "model")
-            else model_id
-        )
+        if model_id == "model":
+            from app.core.shared_registry import SharedModelRegistry
+
+            gen_hashes = (
+                SharedModelRegistry.get_instance().get_expected_hashes(
+                    "generative_naming"
+                )
+                or {}
+            )
+            if "model.onnx" in gen_hashes:
+                return "generative_naming"
+            return "model_download"
+        return model_id
 
     @classmethod
     def _verify_candidate(cls, model_id: str, path: str) -> bool:

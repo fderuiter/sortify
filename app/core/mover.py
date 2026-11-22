@@ -814,7 +814,7 @@ def _prune_emptied_dirs(
             cur_norm = os.path.normcase(current)
             if cur_norm == base_norm or not is_subpath_or_equal(current, base_dir):
                 break
-            if _is_foreign_hidden_dir(current):
+            if _is_foreign_hidden_dir(current) or current.lower().endswith(".app"):
                 break
             if protected_paths and any(
                 is_subpath_or_equal(current, p) for p in protected_paths
@@ -867,6 +867,16 @@ def _resolve_source_path(
     src_p = _get_val(content, "source_path")
     src_root = _get_val(content, "source_root")
     rel_src = _get_val(content, "relative_source") or key
+    raw_key = key
+
+    if isinstance(src_p, str) and "::" in src_p:
+        parsed_root, parsed_sp = src_p.split("::", 1)
+        src_root = src_root or parsed_root
+        src_p = parsed_sp
+
+    if isinstance(raw_key, str) and "::" in raw_key:
+        parsed_root, raw_key = raw_key.split("::", 1)
+        src_root = src_root or parsed_root
 
     if "::" in rel_src:
         parsed_root, parsed_rel = rel_src.split("::", 1)
@@ -874,6 +884,7 @@ def _resolve_source_path(
         rel_src = parsed_rel
 
     effective_base = src_root if src_root else base_dir
+    abs_sp = None
 
     if src_p:
         abs_sp = os.path.normpath(
@@ -887,15 +898,25 @@ def _resolve_source_path(
         primary = os.path.normpath(
             os.path.join(effective_base, active_parent_path, rel_src)
         )
+        key_cand = os.path.normpath(os.path.join(effective_base, raw_key))
         if os.path.lexists(alt) and not _is_same_path(alt, primary):
             return alt
         if os.path.lexists(primary):
             return primary
         if os.path.lexists(alt):
             return alt
+        if os.path.lexists(key_cand):
+            return key_cand
+        if abs_sp is not None:
+            return abs_sp
         return primary
 
-    return os.path.normpath(os.path.join(effective_base, rel_src))
+    cand = os.path.normpath(os.path.join(effective_base, rel_src))
+    if os.path.lexists(cand):
+        return cand
+    if abs_sp is not None:
+        return abs_sp
+    return cand
 
 
 def _get_node_mtime(
@@ -1199,6 +1220,19 @@ def _process_move_item(
     source_path = item["source_path"]
     if not os.path.lexists(source_path):
         return False
+
+    if runtime_settings is not None:
+        from app.core.scanner import ScanFilter
+
+        item_filter = ScanFilter.from_settings(
+            settings=runtime_settings, base_dir=base_dir, max_depth=None
+        )
+        if (
+            item_filter.is_protected(source_path)
+            or item_filter.is_app_bundle(source_path)
+            or item_filter.has_ignored_extension(source_path)
+        ):
+            return False
 
     content = item["content"]
     filename = item["filename"]
@@ -1755,9 +1789,23 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
 
             effective_priority = priority or getattr(runtime_settings, "priority", None)
 
-            move_items = _collect_move_items(
+            from app.core.scanner import ScanFilter
+
+            scan_filter = ScanFilter.from_settings(
+                settings=runtime_settings, base_dir=base_dir, max_depth=None
+            )
+            raw_move_items = _collect_move_items(
                 base_dir, plan, priority=effective_priority
             )
+            move_items = [
+                item
+                for item in raw_move_items
+                if not (
+                    scan_filter.is_protected(item["source_path"])
+                    or scan_filter.is_app_bundle(item["source_path"])
+                    or scan_filter.has_ignored_extension(item["source_path"])
+                )
+            ]
             total_items = len(move_items)
             chunks = [
                 move_items[i : i + effective_chunk_size]
@@ -1968,17 +2016,16 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                 if cleanup_enabled:
                     self.transition_to(MoveEngineState.CLEANING_DIRS)
                     summary.state = self.state
-                    protected_paths = getattr(runtime_settings, "PROTECTED_PATHS", [])
-                    protected_paths = [os.path.normpath(p) for p in protected_paths]
+                    protected_paths = list(scan_filter.protected_paths)
 
                     for node in dirs_to_process:
                         is_protected = node.get("protected")
                         source_path = node.get("source_path")
                         if not is_protected and source_path:
-                            for p in protected_paths:
-                                if is_subpath_or_equal(source_path, p):
-                                    is_protected = True
-                                    break
+                            if scan_filter.is_protected(
+                                source_path
+                            ) or scan_filter.is_app_bundle(source_path):
+                                is_protected = True
 
                         if is_protected:
                             summary["protected_folders"] += 1

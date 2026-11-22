@@ -326,32 +326,78 @@ class VerificationEngine:
                 effective_base = src_root if src_root else base_dir
 
                 src_p = _get_val(content, "source_path")
+                if src_p and "::" in str(src_p):
+                    parsed_r, parsed_p = str(src_p).split("::", 1)
+                    effective_base = src_root or parsed_r
+                    src_p = parsed_p
+
                 if src_p and os.path.isabs(src_p):
                     source_path = os.path.normpath(src_p)
                 elif depth > 0:
                     rel_src_val = _get_val(content, "relative_source")
-                    if rel_src_val is None:
+                    if rel_src_val is None and not src_p:
                         raise ValueError(
                             f"Missing required relative source metadata field for nested item '{key}'"
                         )
-                    relative_source = rel_src_val
-                    rel_src_norm = relative_source.replace("\\", "/")
-                    parent_norm = active_parent_path.replace("\\", "/")
-                    if parent_norm and (
-                        rel_src_norm.startswith(parent_norm + "/")
-                        or rel_src_norm == parent_norm
-                    ):
-                        rel_src_with_parent = relative_source
-                    else:
-                        rel_src_with_parent = os.path.join(
-                            active_parent_path, relative_source
+                    if src_p:
+                        cand_src_p = os.path.normpath(
+                            os.path.join(effective_base, src_p)
                         )
-                    source_path = os.path.normpath(
-                        os.path.join(effective_base, rel_src_with_parent)
-                    )
+                    else:
+                        cand_src_p = None
+
+                    if rel_src_val is None:
+                        source_path = cand_src_p  # type: ignore[assignment]
+                    else:
+                        relative_source = (
+                            rel_src_val.split("::", 1)[1]
+                            if "::" in str(rel_src_val)
+                            else rel_src_val
+                        )
+                        rel_src_norm = relative_source.replace("\\", "/")
+                        parent_norm = active_parent_path.replace("\\", "/")
+                        if parent_norm and (
+                            rel_src_norm.startswith(parent_norm + "/")
+                            or rel_src_norm == parent_norm
+                        ):
+                            rel_src_with_parent = relative_source
+                        else:
+                            rel_src_with_parent = os.path.join(
+                                active_parent_path, relative_source
+                            )
+                        primary_cand = os.path.normpath(
+                            os.path.join(effective_base, rel_src_with_parent)
+                        )
+                        alt_cand = os.path.normpath(
+                            os.path.join(effective_base, relative_source)
+                        )
+                        raw_key = key.split("::", 1)[1] if "::" in str(key) else key
+                        key_cand = os.path.normpath(
+                            os.path.join(effective_base, raw_key)
+                        )
+                        if cand_src_p and os.path.lexists(cand_src_p):
+                            source_path = cand_src_p
+                        elif os.path.lexists(alt_cand) and not os.path.lexists(
+                            primary_cand
+                        ):
+                            source_path = alt_cand
+                        elif os.path.lexists(primary_cand):
+                            source_path = primary_cand
+                        elif (
+                            "/" in str(raw_key) or "\\" in str(raw_key)
+                        ) and os.path.lexists(key_cand):
+                            source_path = key_cand
+                        elif cand_src_p and not rel_src_norm.startswith(".."):
+                            source_path = cand_src_p
+                        else:
+                            source_path = primary_cand
                 else:
                     rel_src_val = _get_val(content, "relative_source")
-                    if rel_src_val is not None:
+                    if src_p:
+                        source_path = os.path.normpath(
+                            os.path.join(effective_base, src_p)
+                        )
+                    elif rel_src_val is not None:
                         relative_source = rel_src_val
                         source_path = os.path.normpath(
                             os.path.join(effective_base, relative_source)

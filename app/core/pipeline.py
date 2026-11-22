@@ -138,15 +138,11 @@ def validate_drop_paths(
     ignore_predicate: Callable[[str], bool] | None = None,
 ) -> tuple[list[str], list[DropPathIssue]]:
     """Validate dropped target paths against existence, ignore, and protection rules."""
-    from app.core.mover import is_subpath_or_equal
+    from app.core.scanner import ScanFilter
 
     validated_paths: list[str] = []
     issues: list[DropPathIssue] = []
-    protected_paths = (
-        getattr(settings, "PROTECTED_PATHS", []) if settings is not None else []
-    )
-    if not isinstance(protected_paths, (list, tuple, set)):
-        protected_paths = []
+    scan_filter = ScanFilter.from_settings(settings=settings)
 
     for raw_path in paths:
         if not raw_path or not isinstance(raw_path, str):
@@ -158,13 +154,18 @@ def validate_drop_paths(
         if not os.path.exists(abs_path):
             issues.append(DropPathIssue(raw_path, clean_path, abs_path, "missing"))
             continue
+        if scan_filter.is_protected(abs_path):
+            issues.append(DropPathIssue(raw_path, clean_path, abs_path, "protected"))
+            continue
         if ignore_predicate is not None and ignore_predicate(abs_path):
             issues.append(DropPathIssue(raw_path, clean_path, abs_path, "ignored"))
             continue
-        if any(
-            prot and is_subpath_or_equal(abs_path, prot) for prot in protected_paths
+        if (
+            scan_filter.is_app_bundle(abs_path)
+            or scan_filter.has_ignored_extension(abs_path)
+            or scan_filter.is_quarantine(abs_path)
         ):
-            issues.append(DropPathIssue(raw_path, clean_path, abs_path, "protected"))
+            issues.append(DropPathIssue(raw_path, clean_path, abs_path, "ignored"))
             continue
         validated_paths.append(abs_path)
 
@@ -264,9 +265,14 @@ def reroot_plan(
 ) -> dict[str, Any]:
     """Re-key a plan's relative entries under ``dest_dir`` and bind ``source_path``."""
     from app.core.domain_contracts import _get_val
+    from app.core.scanner import discover_existing_folders
 
     dest_base = Path(dest_dir).resolve()
     dest_base.mkdir(parents=True, exist_ok=True)
+    existing_map = {
+        name.lower(): name
+        for name in discover_existing_folders(None, dest_dir=str(dest_base))
+    }
     bound_plan = _bind_plan_sources(plan, source_dir or "")
     plan_items = (
         bound_plan.plan.items()
@@ -287,7 +293,13 @@ def reroot_plan(
             else:
                 re_rooted_plan[key] = value
         else:
-            re_rooted_plan[str(dest_base / key)] = value
+            parts = str(key).replace("\\", "/").strip("/").split("/")
+            if parts and parts[0].lower() in existing_map:
+                parts[0] = existing_map[parts[0].lower()]
+                resolved_rel = "/".join(parts)
+            else:
+                resolved_rel = key
+            re_rooted_plan[str(dest_base / resolved_rel)] = value
     return re_rooted_plan
 
 
@@ -537,8 +549,10 @@ class SortPipeline(LifecycleTelemetryMixin):
         fast_path_only: bool | None = None,
         target_paths: list[str] | None = None,
         jev_results: dict[str, Any] | None = None,
-        run_metadata_pass: bool = False,
+        run_metadata_pass: bool = True,
         bypassed_items: Collection[str] | None = None,
+        dest_dir: str | None = None,
+        existing_folders: list[str] | None = None,
     ) -> Any:
         """Extract text, fit the analyzer and return the plan. Nothing moves.
 
@@ -562,28 +576,49 @@ class SortPipeline(LifecycleTelemetryMixin):
         self.emit_telemetry("plan_start", items=items)
 
         try:
-            if items is None:
-                from app.core.scanner import get_files_recursively
+            from app.core.scanner import (
+                ScanFilter,
+                discover_existing_folders,
+                get_files_recursively,
+                parse_item_identifier,
+            )
 
-                items = get_files_recursively(self.base_dir)
-                custom_qdir = (
-                    str(getattr(self.settings, "QUARANTINE_DIR_NAME", "") or "")
-                    .replace("\\", "/")
-                    .strip("/")
-                    .split("/")[0]
+            scan_filter = ScanFilter.from_settings(
+                settings=self.settings, base_dir=self.base_dir
+            )
+            if items is None:
+                items = get_files_recursively(
+                    self.base_dir,
+                    settings=self.settings,
+                    scan_filter=scan_filter,
                 )
-                if custom_qdir and items:
-                    items = [
-                        it
-                        for it in items
-                        if str(it).replace("\\", "/").strip("/").split("/")[0]
-                        != custom_qdir
-                    ]
-            elif self.base_dir:
-                items = _relativize_items_to_base(items, self.base_dir)
+            else:
+                if self.base_dir:
+                    items = _relativize_items_to_base(items, self.base_dir)
+                filtered_items = []
+                for it in items:
+                    src_root, rel_p = parse_item_identifier(
+                        str(it), default_base_dir=self.base_dir or ""
+                    )
+                    cand_abs = os.path.join(src_root, rel_p) if src_root else str(it)
+                    if (
+                        scan_filter.check_path(
+                            cand_abs,
+                            base_dir=src_root or self.base_dir,
+                            check_depth=False,
+                            check_hidden=False,
+                        )
+                        is None
+                    ):
+                        filtered_items.append(it)
+                items = filtered_items
 
             metadata_bypassed: list[Any] = []
-            if run_metadata_pass:
+            if (
+                run_metadata_pass
+                and items
+                and getattr(self.session, "db", None) is not None
+            ):
                 from app.core.metadata import MetadataPass
 
                 metadata_bypassed = (
@@ -594,6 +629,7 @@ class SortPipeline(LifecycleTelemetryMixin):
                         self.session.db,
                         progress_callback,
                         cancel_check,
+                        source_dirs=getattr(self.session, "source_dirs", None),
                     )
                     or []
                 )
@@ -650,6 +686,31 @@ class SortPipeline(LifecycleTelemetryMixin):
                 plan_kwargs["target_paths"] = target_paths
             if jev_results is not None:
                 plan_kwargs["jev_results"] = jev_results
+
+            resolved_existing = (
+                list(existing_folders)
+                if existing_folders is not None
+                else discover_existing_folders(
+                    self.base_dir, dest_dir=dest_dir, settings=self.settings
+                )
+            )
+            try:
+                gen_sig = inspect.signature(self.session.generate_sorting_plan)
+                has_var_kw = any(
+                    p.kind == inspect.Parameter.VAR_KEYWORD
+                    for p in gen_sig.parameters.values()
+                )
+                if resolved_existing and (
+                    has_var_kw or "existing_folders" in gen_sig.parameters
+                ):
+                    plan_kwargs["existing_folders"] = resolved_existing
+                if dest_dir and (has_var_kw or "dest_dir" in gen_sig.parameters):
+                    plan_kwargs["dest_dir"] = dest_dir
+            except (ValueError, TypeError):
+                if resolved_existing:
+                    plan_kwargs["existing_folders"] = resolved_existing
+                if dest_dir:
+                    plan_kwargs["dest_dir"] = dest_dir
 
             plan = self.session.generate_sorting_plan(**plan_kwargs)
             self.transition_to(PipelineLifecycleState.PLANNED)

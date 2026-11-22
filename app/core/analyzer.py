@@ -3,9 +3,12 @@
 This module provides topic modeling functionality.
 """
 
+import contextlib
 import hashlib
 import logging
 import os
+import re
+from collections import defaultdict
 from typing import Any, Optional, cast
 
 from pydantic import BaseModel
@@ -652,6 +655,324 @@ class IncrementalAnalyzer:
         """Reload stop words from config."""
         self.stop_words = new_stop_words
 
+    _FOLDER_SEMANTIC_EXPANSIONS: dict[str, str] = {
+        "invoice": "invoice invoices billing bill bills statement payable charge payment remittance vendor receipt due",
+        "bill": "bill bills billing invoice invoices statement utility payment due charge",
+        "billing": "billing bill bills invoice invoices statement payment due charge",
+        "receipt": "receipt receipts purchase order paid transaction expense reimbursement invoice",
+        "tax": "tax taxes irs w2 1099 deduction return filing taxable revenue",
+        "finance": "finance financial accounting ledger budget balance invoice billing tax bank statement",
+        "financial": "financial finance accounting ledger budget balance invoice billing tax bank statement",
+        "accounting": "accounting finance ledger invoice billing tax receipt",
+        "contract": "contract contracts agreement nda legal clause terms signature addendum",
+        "legal": "legal contract agreement nda clause compliance court",
+        "resume": "resume cv curriculum vitae cover letter application employment experience",
+        "medical": "medical health clinic prescription patient lab diagnosis insurance",
+        "travel": "travel flight hotel itinerary booking boarding pass ticket reservation",
+        "report": "report reports summary analysis quarterly annual metrics review",
+    }
+
+    @staticmethod
+    def _stem_anchor_token(token: str) -> str:
+        tok = token.lower().strip()
+        if len(tok) <= 3:
+            return tok
+        if tok.endswith("ies") and len(tok) > 4:
+            return tok[:-3] + "y"
+        if tok.endswith(("ses", "xes", "zes", "ches", "shes")) and len(tok) > 4:
+            return tok[:-2]
+        if tok.endswith("s") and not tok.endswith(("ss", "us", "is")):
+            tok = tok[:-1]
+        if tok.endswith("ing") and len(tok) > 5:
+            base = tok[:-3]
+            if len(base) >= 4:
+                return base
+        return tok
+
+    @classmethod
+    def _augment_text_for_anchoring(cls, text: str) -> str:
+        if not text:
+            return ""
+        split_camel = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", text)
+        raw_tokens = re.findall(r"[a-zA-Z0-9]{2,}", split_camel.lower())
+        expanded: list[str] = []
+        for tok in raw_tokens:
+            expanded.append(tok)
+            stem = cls._stem_anchor_token(tok)
+            if stem and stem != tok:
+                expanded.append(stem)
+        return " ".join(expanded)
+
+    @classmethod
+    def _build_folder_anchor_profile(
+        cls,
+        folder_name: str,
+        base_dir: Optional[str] = None,
+        dest_dir: Optional[str] = None,
+        exclude_rel_paths: Optional[set[str]] = None,
+    ) -> str:
+        split_camel = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", folder_name)
+        raw_tokens = re.findall(r"[a-zA-Z0-9]{2,}", split_camel.lower())
+        parts: list[str] = []
+        for tok in raw_tokens:
+            parts.extend([tok, tok])
+            stem = cls._stem_anchor_token(tok)
+            if stem and stem != tok:
+                parts.extend([stem, stem])
+            for lookup in (tok, stem):
+                if lookup in cls._FOLDER_SEMANTIC_EXPANSIONS:
+                    parts.append(cls._FOLDER_SEMANTIC_EXPANSIONS[lookup])
+
+        excl = exclude_rel_paths or set()
+        for root in (base_dir, dest_dir):
+            if not root:
+                continue
+            cand_dir = os.path.join(root, folder_name)
+            if not os.path.isdir(cand_dir):
+                continue
+            try:
+                sampled = 0
+                with os.scandir(cand_dir) as it:
+                    for entry in it:
+                        if entry.name.startswith("."):
+                            continue
+                        rel_cand = f"{folder_name}/{entry.name}".replace("\\", "/")
+                        if rel_cand in excl or rel_cand.lower() in excl:
+                            continue
+                        stem_name = os.path.splitext(entry.name)[0]
+                        parts.append(cls._augment_text_for_anchoring(stem_name))
+                        sampled += 1
+                        if sampled >= 25:
+                            break
+            except OSError:
+                pass
+
+        return " ".join(p for p in parts if p)
+
+    def _anchor_files_to_existing_folders(
+        self,
+        filenames: list[str],
+        documents: list[str],
+        existing_folders: list[str],
+        base_dir: Optional[str],
+        dest_dir: Optional[str],
+        is_rejected_fn,
+    ) -> tuple[list[tuple[str, str, str, str, Optional[str]]], list[str], list[str]]:
+        """Match candidate files against existing folders using ONNX and TF-IDF similarity."""
+        if not filenames or not existing_folders:
+            return [], filenames, documents
+
+        import numpy as np
+        from sklearn.feature_extraction.text import TfidfVectorizer
+        from sklearn.metrics.pairwise import cosine_similarity
+
+        excl_rels = {fn.replace("\\", "/").lower() for fn in filenames if fn}
+        folder_profiles = [
+            self._build_folder_anchor_profile(
+                folder, base_dir, dest_dir, exclude_rel_paths=excl_rels
+            )
+            for folder in existing_folders
+        ]
+        candidate_profiles = [
+            self._augment_text_for_anchoring(
+                f"{os.path.splitext(os.path.basename(fn))[0]} {doc or ''}"
+            )
+            for fn, doc in zip(filenames, documents)
+        ]
+
+        n_files = len(filenames)
+        n_folders = len(existing_folders)
+        tfidf_sims = np.zeros((n_files, n_folders), dtype=np.float64)
+        try:
+            stop_list = list(self.stop_words) if self.stop_words else None
+            vec = TfidfVectorizer(
+                stop_words=stop_list,
+                ngram_range=(1, 2),
+                sublinear_tf=True,
+                max_features=2000,
+            )
+            combined_matrix = vec.fit_transform(folder_profiles + candidate_profiles)
+            folder_mat = combined_matrix[:n_folders]
+            cand_mat = combined_matrix[n_folders:]
+            tfidf_sims = np.nan_to_num(cosine_similarity(cand_mat, folder_mat), nan=0.0)
+        except (ValueError, RuntimeError, TypeError):
+            tfidf_sims = np.zeros((n_files, n_folders), dtype=np.float64)
+
+        sims = tfidf_sims
+        use_semantic = (
+            getattr(self, "embedding_manager", None) is not None
+            and not self.embedding_manager.is_mock
+            and not self.embedding_manager.is_reconstruction_active()
+        )
+        if use_semantic and base_dir:
+            try:
+                file_vecs_dict = self.embedding_manager.get_vectors_batch(
+                    base_dir, filenames, regenerate=True
+                )
+                anchor_vec_cache = getattr(self, "_folder_anchor_vec_cache", None)
+                if anchor_vec_cache is None:
+                    anchor_vec_cache = {}
+                    self._folder_anchor_vec_cache = anchor_vec_cache
+                em_id = id(self.embedding_manager)
+                folder_vecs = []
+                for fp in folder_profiles:
+                    cache_key = (em_id, fp)
+                    cached_vec = anchor_vec_cache.get(cache_key)
+                    if cached_vec is None:
+                        cached_vec = self.embedding_manager.generate_embedding(fp)
+                        if cached_vec is not None:
+                            anchor_vec_cache[cache_key] = cached_vec
+                    folder_vecs.append(cached_vec)
+                if folder_vecs and all(
+                    self.embedding_manager.validate_vector_dimension(v)
+                    for v in folder_vecs
+                ):
+                    D = self.embedding_manager.dimensions
+                    file_vecs = []
+                    valid_rows = []
+                    for fn in filenames:
+                        v = file_vecs_dict.get(fn.replace("\\", "/"))
+                        if (
+                            v is not None
+                            and self.embedding_manager.validate_vector_dimension(v)
+                        ):
+                            file_vecs.append(v)
+                            valid_rows.append(True)
+                        else:
+                            file_vecs.append([0.0] * D)
+                            valid_rows.append(False)
+                    sem_sims = np.nan_to_num(
+                        cosine_similarity(np.array(file_vecs), np.array(folder_vecs)),
+                        nan=0.0,
+                    )
+                    mask = np.array(valid_rows)[:, None]
+                    sims = np.where(mask, np.maximum(sem_sims, tfidf_sims), tfidf_sims)
+            except (ValueError, RuntimeError, TypeError, OSError):
+                sims = tfidf_sims
+
+        anchored: list[tuple[str, str, str, str, Optional[str]]] = []
+        rem_files: list[str] = []
+        rem_docs: list[str] = []
+        threshold = 0.18
+
+        for idx, (fn, doc) in enumerate(zip(filenames, documents)):
+            row = sims[idx]
+            ranked = np.argsort(-row)
+            chosen_folder = None
+            chosen_score = 0.0
+            for f_idx in ranked:
+                score = float(row[f_idx])
+                if score < threshold:
+                    break
+                cand_folder = existing_folders[int(f_idx)]
+                if not is_rejected_fn(fn, cand_folder):
+                    chosen_folder = cand_folder
+                    chosen_score = score
+                    break
+            if chosen_folder is not None:
+                anchored.append(
+                    (
+                        fn,
+                        chosen_folder,
+                        f"existing folder '{chosen_folder}' ({chosen_score:.2f})",
+                        "existing_folder",
+                        None,
+                    )
+                )
+            else:
+                rem_files.append(fn)
+                rem_docs.append(doc)
+
+        return anchored, rem_files, rem_docs
+
+    def _snap_clusters_to_existing_folders(
+        self,
+        plan: dict,
+        existing_folders: list[str],
+        is_rejected_fn,
+    ) -> dict:
+        """Snap generated top-level cluster names to matching existing folders."""
+        if not isinstance(plan, dict) or not existing_folders:
+            return plan
+
+        existing_by_lower = {ef.lower(): ef for ef in existing_folders if ef}
+        existing_stems: dict[str, frozenset[str]] = {}
+        for ef in existing_folders:
+            tokens = re.findall(
+                r"[a-zA-Z0-9]{2,}",
+                re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", ef).lower(),
+            )
+            stems = frozenset(self._stem_anchor_token(t) for t in tokens if t)
+            if stems:
+                existing_stems[ef] = stems
+
+        def _collect_leaf_keys(node: Any) -> list[str]:
+            if not isinstance(node, dict):
+                return []
+            keys: list[str] = []
+            for k, v in node.items():
+                if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
+                    keys.append(k)
+                elif isinstance(v, dict):
+                    keys.extend(_collect_leaf_keys(v))
+            return keys
+
+        def _deep_merge(dst: dict, src: dict) -> None:
+            for k, v in src.items():
+                if (
+                    isinstance(v, dict)
+                    and v.get("__type__") != "file"
+                    and k in dst
+                    and isinstance(dst[k], dict)
+                    and dst[k].get("__type__") != "file"
+                ):
+                    _deep_merge(dst[k], v)
+                else:
+                    dst[k] = v
+
+        snapped: dict = {}
+        for cluster_key, cluster_val in plan.items():
+            if (
+                not isinstance(cluster_val, dict)
+                or cluster_val.get("__type__") == "file"
+                or cluster_key in ("Miscellaneous", "Review Required")
+            ):
+                snapped[cluster_key] = cluster_val
+                continue
+
+            matched_existing = existing_by_lower.get(cluster_key.lower())
+            if matched_existing is None:
+                c_tokens = re.findall(
+                    r"[a-zA-Z0-9]{2,}",
+                    re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", cluster_key).lower(),
+                )
+                c_stems = frozenset(self._stem_anchor_token(t) for t in c_tokens if t)
+                if c_stems:
+                    best_ef = None
+                    best_overlap = 0.0
+                    for ef, ef_stems in existing_stems.items():
+                        inter = len(c_stems & ef_stems)
+                        if inter > 0:
+                            score = inter / max(1, min(len(c_stems), len(ef_stems)))
+                            if score > best_overlap:
+                                best_overlap = score
+                                best_ef = ef
+                    if best_ef is not None and best_overlap >= 0.5:
+                        matched_existing = best_ef
+
+            target_key = cluster_key
+            if matched_existing is not None:
+                leaf_keys = _collect_leaf_keys(cluster_val)
+                if not any(is_rejected_fn(lk, matched_existing) for lk in leaf_keys):
+                    target_key = matched_existing
+
+            if target_key in snapped and isinstance(snapped[target_key], dict):
+                _deep_merge(snapped[target_key], cluster_val)
+            else:
+                snapped[target_key] = cluster_val
+
+        return snapped
+
     def _inject_hierarchy(self, node: dict) -> dict:
         """Transform a flat mapping of files into a nested folder structure based on relative paths."""
         if not isinstance(node, dict) or node.get("__type__") == "file":
@@ -715,6 +1036,11 @@ class IncrementalAnalyzer:
 
         if not is_degraded and health_records:
             for model_id, record in health_records.items():
+                if (
+                    model_id == "generative_naming"
+                    and getattr(self, "strategy_name", "default") != "generative"
+                ):
+                    continue
                 status = record.get("status")
                 if status in ("DEGRADED_FALLBACK", "FAILED"):
                     is_degraded = True
@@ -750,6 +1076,8 @@ class IncrementalAnalyzer:
         target_paths: Optional[list[str]] = None,
         jev_results: Optional[dict[str, Any]] = None,
         source_dirs: Optional[list[str]] = None,
+        existing_folders: Optional[list[str]] = None,
+        dest_dir: Optional[str] = None,
     ) -> SortingPlan:
         """Generate a sorting plan mapping file paths to destination paths based on current model state.
 
@@ -799,6 +1127,13 @@ class IncrementalAnalyzer:
                 norm_target_paths.add(os.path.normpath(rel).replace("\\", "/"))
 
         try:
+            if self.db and hasattr(self.db, "worker"):
+                from app.core.db import DBWorker
+
+                if isinstance(getattr(self.db, "worker", None), DBWorker):
+                    with contextlib.suppress(RuntimeError, OSError):
+                        self.db.worker.execute_write(lambda: None)
+
             docs = (
                 self.db.get_all_documents(
                     base_dir, target_paths=norm_target_paths, source_dirs=source_dirs
@@ -884,14 +1219,66 @@ class IncrementalAnalyzer:
             historical_overrides = {}
             matched_policies_map = {}
 
-            # Map file hashes to their historical targets (excluding quarantine staging/hold folders)
+            # Load document ratings and build per-file rejected target folder sets
+            raw_ratings = (
+                self.db.get_all_document_ratings(base_dir)
+                if self.db and hasattr(self.db, "get_all_document_ratings")
+                else {}
+            )
+            doc_ratings: dict[str, str] = (
+                {
+                    str(k).replace("\\", "/"): str(v).lower()
+                    for k, v in raw_ratings.items()
+                    if v
+                }
+                if isinstance(raw_ratings, dict)
+                else {}
+            )
+            rejected_targets: dict[str, set[str]] = defaultdict(set)
+            for d in docs:
+                norm_df = str(d[0]).replace("\\", "/")
+                raw_assigned = d[3] if len(d) > 3 else None
+                rating_val = doc_ratings.get(norm_df, "")
+                if isinstance(raw_assigned, str) and raw_assigned.startswith("!"):
+                    rej = raw_assigned[1:].strip().replace("\\", "/").strip("/")
+                    if rej:
+                        rejected_targets[norm_df].add(rej.lower())
+                        rejected_targets[norm_df].add(rej.split("/")[0].lower())
+                elif rating_val == "negative" and raw_assigned:
+                    rej = str(raw_assigned).strip().replace("\\", "/").strip("/")
+                    if rej:
+                        rejected_targets[norm_df].add(rej.lower())
+                        rejected_targets[norm_df].add(rej.split("/")[0].lower())
+
+            def _is_target_rejected(f_path: str, candidate: Optional[str]) -> bool:
+                if not candidate:
+                    return False
+                rej_set = rejected_targets.get(str(f_path).replace("\\", "/"))
+                if not rej_set:
+                    return False
+                cand_norm = str(candidate).strip().replace("\\", "/").strip("/").lower()
+                if not cand_norm:
+                    return False
+                return cand_norm in rej_set or cand_norm.split("/")[0] in rej_set
+
+            if locked_files:
+                locked_files = {
+                    k: v
+                    for k, v in locked_files.items()
+                    if not _is_target_rejected(k, v)
+                }
+
+            # Map file hashes to their historical targets (excluding quarantine and rejected targets)
             hash_to_target = {}
             for d in docs:
                 if cancel_check and cancel_check():
                     return SortingPlan()
+                norm_df = str(d[0]).replace("\\", "/")
                 if (
                     len(d) > 3
                     and d[3] is not None
+                    and not str(d[3]).startswith("!")
+                    and doc_ratings.get(norm_df) != "negative"
                     and not _is_quarantine_rel_path(d[3])
                 ):
                     hash_to_target[d[2]] = d[3]
@@ -900,17 +1287,23 @@ class IncrementalAnalyzer:
                 if cancel_check and cancel_check():
                     return SortingPlan()
                 f, doc = d[0], d[1]
+                norm_f_key = str(f).replace("\\", "/")
                 file_hash = d[2] if len(d) > 2 else None
                 assigned_folder = d[3] if len(d) > 3 else None
-                if assigned_folder is not None and _is_quarantine_rel_path(
-                    assigned_folder
+                if assigned_folder is not None and (
+                    str(assigned_folder).startswith("!")
+                    or doc_ratings.get(norm_f_key) == "negative"
+                    or _is_quarantine_rel_path(assigned_folder)
+                    or _is_target_rejected(f, assigned_folder)
                 ):
                     assigned_folder = None
 
+                cand_hash_target = hash_to_target.get(file_hash)
+                if _is_target_rejected(f, cand_hash_target):
+                    cand_hash_target = None
+
                 target = (
-                    assigned_folder
-                    if assigned_folder is not None
-                    else hash_to_target.get(file_hash)
+                    assigned_folder if assigned_folder is not None else cand_hash_target
                 )
 
                 filename_only = os.path.basename(f).lower()
@@ -1074,7 +1467,7 @@ class IncrementalAnalyzer:
 
                 if not matched and keyword_rules:
                     for keyword, target_folder in keyword_rules.items():
-                        if not keyword.strip():
+                        if not keyword.strip() or _is_target_rejected(f, target_folder):
                             continue
                         text_to_search = (
                             filename_only
@@ -1088,11 +1481,21 @@ class IncrementalAnalyzer:
                             matched = True
                             break
 
-                if not matched and status_match and learned_rules:
+                if not matched and learned_rules:
+                    text_to_search = (
+                        filename_only
+                        if status_match
+                        else (filename_only + " " + doc_lower)
+                    )
+                    norm_search = re.sub(r"[_\-\s]+", " ", text_to_search)
                     for keyword, target_folder in learned_rules.items():
-                        if not keyword.strip():
+                        if not keyword.strip() or _is_target_rejected(f, target_folder):
                             continue
-                        if keyword.lower() in filename_only:
+                        kw_low = keyword.lower().strip()
+                        norm_kw = re.sub(r"[_\-\s]+", " ", kw_low)
+                        if kw_low in text_to_search or (
+                            len(norm_kw) >= 3 and norm_kw in norm_search
+                        ):
                             keyword_plan_files.append(
                                 (f, target_folder, keyword, "pattern", status_match)
                             )
@@ -1285,13 +1688,22 @@ class IncrementalAnalyzer:
             # Document-to-Document Content Similarity Matching Phase
             historical_docs = []
             for d in docs:
+                norm_df = str(d[0]).replace("\\", "/")
                 file_hash = d[2] if len(d) > 2 else None
                 assigned_folder = d[3] if len(d) > 3 else None
+                if assigned_folder is not None and (
+                    str(assigned_folder).startswith("!")
+                    or doc_ratings.get(norm_df) == "negative"
+                    or _is_quarantine_rel_path(assigned_folder)
+                ):
+                    assigned_folder = None
                 target = (
                     assigned_folder
                     if assigned_folder is not None
                     else hash_to_target.get(file_hash)
                 )
+                if _is_target_rejected(d[0], target):
+                    target = None
 
                 if target is not None and d[1]:
                     from app.core.extractor_strategies import registry
@@ -1531,15 +1943,24 @@ class IncrementalAnalyzer:
 
                     for i, f in enumerate(ai_filenames):
                         if len(historical_docs) > 0:
-                            max_sim = np.max(similarities[i])
-                            best_doc_idx = np.argmax(similarities[i])
-                            if max_sim >= 0.8:
-                                target_folder = historical_targets[best_doc_idx]
+                            ranked_hist = np.argsort(-similarities[i])
+                            matched_hist_folder = None
+                            matched_hist_sim = 0.0
+                            for doc_idx in ranked_hist:
+                                cand_sim = float(similarities[i][doc_idx])
+                                if cand_sim < 0.8:
+                                    break
+                                cand_target = historical_targets[int(doc_idx)]
+                                if not _is_target_rejected(f, cand_target):
+                                    matched_hist_folder = cand_target
+                                    matched_hist_sim = cand_sim
+                                    break
+                            if matched_hist_folder is not None:
                                 keyword_plan_files.append(
                                     (
                                         f,
-                                        target_folder,
-                                        f"similarity >= 0.8 ({max_sim:.2f})",
+                                        matched_hist_folder,
+                                        f"similarity >= 0.8 ({matched_hist_sim:.2f})",
                                         "similarity",
                                         None,
                                     )
@@ -1559,10 +1980,91 @@ class IncrementalAnalyzer:
                         exc_info=True,
                     )
 
+            # Discover and anchor candidate files to existing folders on disk
+            from app.core.scanner import discover_existing_folders
+
+            if existing_folders is not None:
+                active_existing_folders: list[str] = []
+                seen_ef: set[str] = set()
+                for ef in existing_folders:
+                    if ef and ef.lower() not in seen_ef:
+                        seen_ef.add(ef.lower())
+                        active_existing_folders.append(ef)
+            else:
+                disk_base = base_dir if base_dir and os.path.isdir(base_dir) else None
+                disk_dest = dest_dir if dest_dir and os.path.isdir(dest_dir) else None
+                discovered_ef = discover_existing_folders(
+                    disk_base, dest_dir=disk_dest, settings=runtime_settings
+                )
+                model_abs = (
+                    os.path.abspath(str(self.model_path))
+                    if getattr(self, "model_path", None)
+                    else None
+                )
+                if model_abs:
+                    active_existing_folders = []
+                    for ef in discovered_ef:
+                        is_model_dir = False
+                        for root_cand in (disk_base, disk_dest):
+                            if not root_cand:
+                                continue
+                            ef_abs = os.path.abspath(os.path.join(root_cand, ef))
+                            if model_abs == ef_abs or model_abs.startswith(
+                                ef_abs + os.sep
+                            ):
+                                is_model_dir = True
+                                break
+                        if not is_model_dir:
+                            active_existing_folders.append(ef)
+                else:
+                    active_existing_folders = discovered_ef
+
+            if active_existing_folders and ai_filenames and not fast_path_only:
+                anchored_items, ai_filenames, ai_documents = (
+                    self._anchor_files_to_existing_folders(
+                        ai_filenames,
+                        ai_documents,
+                        active_existing_folders,
+                        base_dir if base_dir and os.path.isdir(base_dir) else None,
+                        dest_dir if dest_dir and os.path.isdir(dest_dir) else None,
+                        _is_target_rejected,
+                    )
+                )
+                if anchored_items:
+                    keyword_plan_files.extend(anchored_items)
+
+            if active_existing_folders and unsupported_files and not fast_path_only:
+                unsup_fns = [uf for uf, _ in unsupported_files]
+                unsup_docs = ["" for _ in unsupported_files]
+                unsup_status_map = dict(unsupported_files)
+                anchored_unsup, rem_unsup_fns, _ = (
+                    self._anchor_files_to_existing_folders(
+                        unsup_fns,
+                        unsup_docs,
+                        active_existing_folders,
+                        base_dir if base_dir and os.path.isdir(base_dir) else None,
+                        dest_dir if dest_dir and os.path.isdir(dest_dir) else None,
+                        _is_target_rejected,
+                    )
+                )
+                if anchored_unsup:
+                    for fn, tgt, match_desc, r_by, _ in anchored_unsup:
+                        keyword_plan_files.append(
+                            (fn, tgt, match_desc, r_by, unsup_status_map.get(fn))
+                        )
+                    rem_set = set(rem_unsup_fns)
+                    unsupported_files = [
+                        (uf, st) for uf, st in unsupported_files if uf in rem_set
+                    ]
+
             self._last_reconstruction_error = 0.0
 
             active_strategy_name = self.strategy_name if not fast_path_only else None
-            if active_strategy_name and self.embedding_manager.is_mock:
+            if (
+                active_strategy_name
+                and active_strategy_name != "generative"
+                and self.embedding_manager.is_mock
+            ):
                 active_strategy_name = "default"
 
             if active_strategy_name:
@@ -1634,33 +2136,97 @@ class IncrementalAnalyzer:
                                 exc_info=True,
                             )
 
-                    plan, error = strategy.generate_plan(
-                        ai_filenames,
-                        ai_documents,
-                        self.max_folders,
-                        self.stop_words,
-                        max_depth,
-                        max_features,
-                        pre_fetched_vectors=pre_fetched_vectors,
-                        cancel_check=cancel_check,
-                        pre_fetched_corpus=pre_fetched_corpus,
-                    )
-                    if hasattr(plan, "plan") and isinstance(plan.plan, dict):
-                        plan = plan.plan
-                    self._last_reconstruction_error = error
+                    if ai_filenames:
+                        plan, error = strategy.generate_plan(
+                            ai_filenames,
+                            ai_documents,
+                            self.max_folders,
+                            self.stop_words,
+                            max_depth,
+                            max_features,
+                            pre_fetched_vectors=pre_fetched_vectors,
+                            cancel_check=cancel_check,
+                            pre_fetched_corpus=pre_fetched_corpus,
+                        )
+                        if hasattr(plan, "plan") and isinstance(plan.plan, dict):
+                            plan = plan.plan
+                        self._last_reconstruction_error = error
+                    else:
+                        plan = {}
+                        if active_strategy_name == "generative" and hasattr(
+                            strategy, "_record_degraded_fallback"
+                        ):
+                            from app.core.analyzer_strategies import (
+                                is_prompt_dump_enabled,
+                            )
+
+                            if (
+                                not getattr(strategy, "_model_initialized", False)
+                                and getattr(strategy, "_generator", None) is None
+                                and not getattr(strategy, "_gguf_active", False)
+                                and not is_prompt_dump_enabled()
+                            ):
+                                m_path = getattr(strategy, "model_path", None)
+                                if not m_path or not os.path.exists(m_path):
+                                    cast(Any, strategy)._record_degraded_fallback(
+                                        f"Model path does not exist: '{m_path}'"
+                                    )
+                                else:
+                                    try:
+                                        from app.core.exceptions import (
+                                            HashVerificationError,
+                                        )
+                                        from app.core.shared_registry import (
+                                            SharedModelRegistry,
+                                        )
+
+                                        SharedModelRegistry.get_instance().verify_integrity(
+                                            "generative_naming", m_path
+                                        )
+                                    except (
+                                        OSError,
+                                        ValueError,
+                                        RuntimeError,
+                                        HashVerificationError,
+                                    ) as e:
+                                        cast(Any, strategy)._record_degraded_fallback(
+                                            str(e)
+                                        )
 
                     # Data Boundary Safeguard: Clear/Garbage collect pre_fetched_corpus decrypted data immediately
                     if pre_fetched_corpus:
                         pre_fetched_corpus.clear()
                         del pre_fetched_corpus
                         pre_fetched_corpus = None
+
+                    if active_existing_folders and plan:
+                        plan = self._snap_clusters_to_existing_folders(
+                            plan, active_existing_folders, _is_target_rejected
+                        )
+
+                    if rejected_targets and isinstance(plan, dict):
+                        relocated_rejected: list[tuple[str, Any]] = []
+                        for top_folder, sub_dict in list(plan.items()):
+                            if not isinstance(sub_dict, dict):
+                                continue
+                            for fk, fv in list(sub_dict.items()):
+                                is_leaf = fv is None or (
+                                    isinstance(fv, dict)
+                                    and fv.get("__type__") == "file"
+                                )
+                                if is_leaf and _is_target_rejected(fk, top_folder):
+                                    relocated_rejected.append((fk, sub_dict.pop(fk)))
+                            if not sub_dict:
+                                plan.pop(top_folder, None)
+                        for fk, fv in relocated_rejected:
+                            alt_folder = (
+                                "Review Required"
+                                if not _is_target_rejected(fk, "Review Required")
+                                else "Miscellaneous"
+                            )
+                            plan.setdefault(alt_folder, {})[fk] = fv
                 else:
                     plan = {}
-
-                if runtime_settings and getattr(
-                    runtime_settings, "PRESERVE_HIERARCHY", False
-                ):
-                    plan = self._inject_hierarchy(plan)
             else:
                 plan = {}
 
@@ -1943,7 +2509,12 @@ class IncrementalAnalyzer:
                     else:
                         current = current[part]
 
-            # Post-process: ensure every file node in the plan has relative_source
+            if runtime_settings and getattr(
+                runtime_settings, "PRESERVE_HIERARCHY", False
+            ):
+                clean_plan = self._inject_hierarchy(clean_plan)
+
+            # Post-process: ensure every file node in the plan has source_path and relative_source
             def _ensure_relative_source(node, current_path=""):
                 for k, v in list(node.items()):
                     if v is None:
@@ -1959,28 +2530,36 @@ class IncrementalAnalyzer:
                         ).replace("\\", "/")
                         node[k] = {
                             "__type__": "file",
+                            "source_path": raw_k,
                             "relative_source": rel_src,
                             "source_root": src_root,
                             "status": None,
                         }
                     elif isinstance(v, dict):
                         if v.get("__type__") == "file":
+                            raw_k = k.split("::", 1)[1] if "::" in k else k
                             if "::" in k and "source_root" not in v:
-                                s_root, raw_k = k.split("::", 1)
+                                s_root, _ = k.split("::", 1)
                                 v["source_root"] = s_root
                             elif "source_root" not in v:
                                 v["source_root"] = base_dir
 
-                            if "relative_source" not in v:
-                                raw_k = k.split("::", 1)[1] if "::" in k else k
-                                s_root = v.get("source_root") or base_dir
-                                rel_src = safe_relpath(
-                                    os.path.join(s_root, raw_k),
-                                    os.path.join(s_root, current_path)
-                                    if current_path
-                                    else s_root,
-                                ).replace("\\", "/")
-                                v["relative_source"] = rel_src
+                            if not v.get("source_path"):
+                                v["source_path"] = raw_k
+                            elif "::" in str(v.get("source_path", "")):
+                                sp_root, sp_rel = str(v["source_path"]).split("::", 1)
+                                v.setdefault("source_root", sp_root)
+                                v["source_path"] = sp_rel
+
+                            src_rel_for_calc = v.get("source_path") or raw_k
+                            s_root = v.get("source_root") or base_dir
+                            rel_src = safe_relpath(
+                                os.path.join(s_root, src_rel_for_calc),
+                                os.path.join(s_root, current_path)
+                                if current_path
+                                else s_root,
+                            ).replace("\\", "/")
+                            v["relative_source"] = rel_src
                         else:
                             # It's a directory, recurse
                             _ensure_relative_source(
@@ -2023,8 +2602,7 @@ class IncrementalAnalyzer:
                         f"Contextual file renaming phase failed: {e}", exc_info=True
                     )
 
-            raw_plan = self._inject_hierarchy(clean_plan)
-            validated_plan = _validate_sorting_plan_nodes(raw_plan)
+            validated_plan = _validate_sorting_plan_nodes(clean_plan)
             return self._build_sorting_plan(validated_plan, invalid_locks=invalid_locks)
 
         except Exception as e:
@@ -2037,6 +2615,7 @@ class IncrementalAnalyzer:
                 active_strategy_name = self.strategy_name
                 if (
                     self.strategy_name
+                    and self.strategy_name != "generative"
                     and getattr(self, "embedding_manager", None)
                     and self.embedding_manager.is_mock
                 ):

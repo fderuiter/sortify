@@ -1,6 +1,7 @@
 """Plan tree selection, include/exclude, reassign, rename, lock and rating actions."""
 
 import os
+import re
 from typing import Any, Optional
 
 from textual.widgets.tree import TreeNode
@@ -11,6 +12,20 @@ from app.ui.modals.edit import (
     RenameModal,
     RenameResult,
 )
+
+
+def _derive_learned_pattern(raw_name: str) -> Optional[str]:
+    """Derive a normalized lowercase keyword pattern from a reassigned filename."""
+    if not raw_name:
+        return None
+    clean_raw = raw_name.split("::", 1)[1] if "::" in raw_name else raw_name
+    base = os.path.basename(clean_raw.replace("\\", "/"))
+    stem = os.path.splitext(base)[0].lower()
+    cleaned = re.sub(r"^[\s_\-\.()\d]+|[\s_\-\.()\d]+$", "", stem).strip(" _-.")
+    if len(cleaned) >= 3:
+        return cleaned
+    fallback = stem.strip(" _-.")
+    return fallback if len(fallback) >= 2 else None
 
 
 class SelectionActionsMixin:
@@ -161,22 +176,52 @@ class SelectionActionsMixin:
             self.announce("No file items available to reassign.")
             return
 
-        existing_folders = [
+        from app.core.scanner import discover_existing_folders
+
+        plan_folders = [
             k
             for k, v in self.plan.items()
             if isinstance(v, dict) and v.get("__type__") != "file"
         ]
+        disk_folders = discover_existing_folders(
+            getattr(self, "base_dir", None),
+            settings=getattr(self, "settings", None),
+        )
+        existing_folders: list[str] = []
+        seen_folders: set[str] = set()
+        for folder in plan_folders + disk_folders:
+            if folder and folder.lower() not in seen_folders:
+                seen_folders.add(folder.lower())
+                existing_folders.append(folder)
 
         def on_reassigned(target_folder: Optional[str]) -> None:
             if not target_folder:
                 return
+
+            from app.core.path_utils import safe_relpath, validate_target_path
+
+            host: Any = self
+            can_learn_rule = False
+            try:
+                validate_target_path(target_folder)
+                can_learn_rule = True
+            except ValueError:
+                can_learn_rule = False
+
+            settings_obj = getattr(host, "settings", None)
+            learned_rules = (
+                dict(getattr(settings_obj, "LEARNED_RULES", {}) or {})
+                if settings_obj is not None
+                else {}
+            )
+            learned_updated = False
 
             reassigned_count = 0
             for fi in target_files:
                 file_key = None
                 old_folder = fi.get("folder", "")
 
-                for f_name, f_content in list(self.plan.items()):
+                for f_name, f_content in list(host.plan.items()):
                     if isinstance(f_content, dict):
                         for k, v in list(f_content.items()):
                             if v is fi:
@@ -189,36 +234,69 @@ class SelectionActionsMixin:
                 if not file_key:
                     file_key = fi.get("target_filename") or fi.get("key")
 
-                if file_key and old_folder in self.plan:
-                    if file_key in self.plan[old_folder]:
-                        self.plan[old_folder].pop(file_key, None)
-                    if target_folder not in self.plan:
-                        self.plan[target_folder] = {}
+                if file_key and old_folder in host.plan:
+                    if file_key in host.plan[old_folder]:
+                        host.plan[old_folder].pop(file_key, None)
+                    if target_folder not in host.plan:
+                        host.plan[target_folder] = {}
 
                     from app.core.path_utils import _disambiguate_key
 
                     # Non-clobbering mutation with automatic numeric disambiguation
-                    if file_key in self.plan[target_folder]:
+                    if file_key in host.plan[target_folder]:
                         dest_key = _disambiguate_key(
-                            self.plan[target_folder], file_key, is_file=True
+                            host.plan[target_folder], file_key, is_file=True
                         )
                         fi["target_filename"] = dest_key
                         fi["confirmed"] = True
                     else:
                         dest_key = file_key
 
-                    self.plan[target_folder][dest_key] = fi
+                    host.plan[target_folder][dest_key] = fi
                     fi["folder"] = target_folder
                     fi["is_locked"] = True
-                    self.locked_files[dest_key] = target_folder
-                    if self.app_session:
-                        self.app_session.db.set_user_verified_target_path(
-                            self.base_dir, dest_key, target_folder
+                    host.locked_files[dest_key] = target_folder
+
+                    raw_src = fi.get("source_path") or dest_key
+                    if isinstance(raw_src, str) and "::" in raw_src:
+                        raw_src = raw_src.split("::", 1)[1]
+                    if (
+                        getattr(host, "base_dir", None)
+                        and isinstance(raw_src, str)
+                        and os.path.isabs(raw_src)
+                    ):
+                        rel = safe_relpath(raw_src, host.base_dir)
+                        doc_relpath = (
+                            rel.replace("\\", "/")
+                            if not rel.startswith("..")
+                            else dest_key
                         )
+                    else:
+                        doc_relpath = str(raw_src).replace("\\", "/")
+
+                    host.locked_files[doc_relpath] = target_folder
+                    if host.app_session:
+                        host.app_session.db.set_user_verified_target_path(
+                            host.base_dir, doc_relpath, target_folder
+                        )
+
+                    if can_learn_rule and settings_obj is not None:
+                        pattern = _derive_learned_pattern(
+                            str(fi.get("source_path") or file_key)
+                        )
+                        if pattern:
+                            learned_rules[pattern] = target_folder
+                            learned_updated = True
+
                     reassigned_count += 1
 
-            self.rebuild_tree()
-            self.announce(
+            if learned_updated and settings_obj is not None:
+                settings_obj.LEARNED_RULES = learned_rules
+                if hasattr(settings_obj, "flush"):
+                    settings_obj.flush()
+
+            host.rebuild_tree()
+            host.announce(
                 f"Reassigned {reassigned_count} file(s) to folder '{target_folder}'."
             )
 
@@ -229,6 +307,7 @@ class SelectionActionsMixin:
                 plan=self.plan,
                 base_dir=self.base_dir,
                 target_files=target_files,
+                settings=getattr(self, "settings", None),
             ),
             on_reassigned,
         )
@@ -724,27 +803,80 @@ class SelectionActionsMixin:
         self._set_rating_for_selected("negative")
 
     def _set_rating_for_selected(self, rating: str) -> None:
-        node = self._get_active_node()
+        host: Any = self
+        node = host._get_active_node()
         if not node or not node.data or not node.data.get("is_file"):
-            self.announce("Select a file node to rate [+][-].")
+            host.announce("Select a file node to rate [+][-].")
             return
+
+        from app.core.path_utils import safe_relpath
 
         data = node.data
         filepath = data["filepath"]
-        current = self._ratings_cache.get(filepath)
+        info = data.get("info") if isinstance(data.get("info"), dict) else {}
+        raw_src = info.get("source_path") or data.get("key") or filepath
+        if isinstance(raw_src, str) and "::" in raw_src:
+            raw_src = raw_src.split("::", 1)[1]
+        if (
+            getattr(host, "base_dir", None)
+            and isinstance(raw_src, str)
+            and os.path.isabs(raw_src)
+        ):
+            rel = safe_relpath(raw_src, host.base_dir)
+            doc_relpath = (
+                rel.replace("\\", "/")
+                if not rel.startswith("..")
+                else str(data.get("key") or filepath)
+            )
+        else:
+            doc_relpath = str(raw_src).replace("\\", "/")
+
+        current = (
+            host._ratings_cache.get(filepath)
+            or host._ratings_cache.get(doc_relpath)
+            or data.get("rating")
+        )
 
         rating_to_set = None if current == rating else rating
         if rating_to_set:
-            self._ratings_cache[filepath] = rating_to_set
+            host._ratings_cache[filepath] = rating_to_set
+            host._ratings_cache[doc_relpath] = rating_to_set
         else:
-            self._ratings_cache.pop(filepath, None)
+            host._ratings_cache.pop(filepath, None)
+            host._ratings_cache.pop(doc_relpath, None)
+        if isinstance(info, dict):
+            info["rating"] = rating_to_set
 
-        if self.app_session:
-            self.app_session.db.set_document_rating(
-                self.base_dir, filepath, rating_to_set
+        current_folder = data.get("folder") or (
+            info.get("folder") if isinstance(info, dict) else None
+        )
+        if rating_to_set == "negative":
+            host.locked_files.pop(str(data.get("key", "")), None)
+            host.locked_files.pop(doc_relpath, None)
+            host.locked_files.pop(filepath, None)
+            if isinstance(info, dict):
+                info["is_locked"] = False
+            data["is_locked"] = False
+
+        if host.app_session:
+            host.app_session.db.set_document_rating(
+                host.base_dir, doc_relpath, rating_to_set
             )
+            if rating_to_set == "negative" and current_folder:
+                host.app_session.db.set_user_verified_target_path(
+                    host.base_dir, doc_relpath, f"!{current_folder}"
+                )
+            elif current == "negative" and rating_to_set != "negative":
+                restored_target = (
+                    current_folder
+                    if rating_to_set == "positive" and current_folder
+                    else None
+                )
+                host.app_session.db.set_user_verified_target_path(
+                    host.base_dir, doc_relpath, restored_target
+                )
 
         data["rating"] = rating_to_set
-        self.rebuild_tree()
+        host.rebuild_tree()
         msg = f"Set rating '{rating_to_set or 'cleared'}' for '{data['key']}'"
-        self.announce(msg)
+        host.announce(msg)

@@ -750,7 +750,7 @@ class DropZoneModal(
         if not raw_items:
             return
 
-        from app.core.scanner import get_files_recursively
+        from app.core.scanner import ScanFilter, get_files_recursively
 
         protected = (
             getattr(self.settings, "PROTECTED_PATHS", []) if self.settings else []
@@ -761,7 +761,13 @@ class DropZoneModal(
             abs_p = os.path.abspath(item)
             if os.path.isdir(abs_p):
                 # The scanner returns paths relative to the folder it walked.
-                files = get_files_recursively(abs_p)
+                drop_filter = ScanFilter.from_settings(
+                    settings=self.settings, base_dir=abs_p
+                )
+                drop_filter.max_depth = None
+                files = get_files_recursively(
+                    abs_p, settings=self.settings, scan_filter=drop_filter
+                )
                 for f_path in files:
                     self._add_single_file_to_staging(
                         os.path.join(abs_p, f_path), protected, root_dir=abs_p
@@ -1178,7 +1184,7 @@ class DropZoneModal(
         try:
             from app.core.path_utils import safe_relpath
             from app.core.pipeline import SortPipeline, reroot_plan
-            from app.core.scanner import get_files_recursively
+            from app.core.scanner import ScanFilter, get_files_recursively
             from app.core.session import AppSession
 
             resolved_dest = (
@@ -1195,7 +1201,15 @@ class DropZoneModal(
             groups: dict[str, list[str]] = {}
             for path in target_paths:
                 if os.path.isdir(path):
-                    groups.setdefault(path, []).extend(get_files_recursively(path))
+                    drop_filter = ScanFilter.from_settings(
+                        settings=self.settings, base_dir=path
+                    )
+                    drop_filter.max_depth = None
+                    groups.setdefault(path, []).extend(
+                        get_files_recursively(
+                            path, settings=self.settings, scan_filter=drop_filter
+                        )
+                    )
                 else:
                     group_root = staged_roots.get(path) or os.path.dirname(path)
                     rel_item = safe_relpath(path, group_root)
@@ -1223,7 +1237,7 @@ class DropZoneModal(
                         "re_rooted": re_rooted,
                     }
                 )
-                plan = SortPipeline(session).plan(files)
+                plan = SortPipeline(session).plan(files, dest_dir=resolved_dest)
                 if re_rooted and resolved_dest is not None:
                     plan = reroot_plan(plan, resolved_dest, source_dir=base_dir)
                     session.base_dir = resolved_dest

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "3df08baaddfd6fb1ce5ebd72a74b44ed30b8d03fcdecc37b53e0302645f31ee8"
+    "checksum": "a9eb6b8fd369a32bdee550166ce68f5c1a68b53afc3e7517f50774bee0c7712d"
   },
   "classes": [
     {
@@ -130,6 +130,16 @@
               "annotation": "dict[str, Any] | None",
               "default": "None",
               "name": "jev_results"
+            },
+            {
+              "annotation": "list[str] | None",
+              "default": "None",
+              "name": "existing_folders"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "dest_dir"
             }
           ],
           "returns": null

@@ -853,12 +853,30 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
         plan: Optional[dict[str, Any]] = None,
         base_dir: Optional[str] = None,
         target_files: Optional[list[dict[str, Any]]] = None,
+        dest_dir: Optional[str] = None,
+        settings: Any = None,
     ):
         super().__init__()
-        self.existing_folders = [f for f in existing_folders if f]
+        from app.core.scanner import discover_existing_folders
+
+        disk_folders = discover_existing_folders(
+            base_dir, dest_dir=dest_dir, settings=settings
+        )
+        merged: list[str] = []
+        seen_lower: set[str] = set()
+        for folder in list(existing_folders or []) + disk_folders:
+            if not folder:
+                continue
+            key = folder.lower()
+            if key not in seen_lower:
+                seen_lower.add(key)
+                merged.append(folder)
+        self.existing_folders = merged
         self.count = count
         self.plan = plan
         self.base_dir = base_dir
+        self.dest_dir = dest_dir
+        self.settings = settings
         self.target_files = target_files or []
         self._last_collision_state: Optional[str] = None
 

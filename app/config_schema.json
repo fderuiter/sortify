@@ -101,6 +101,14 @@
       "title": "Preserve Hierarchy",
       "type": "boolean"
     },
+    "SCAN_MAX_DEPTH": {
+      "default": 0,
+      "description": "Maximum subfolder recursion depth when scanning directories (integer from 0 to 20 levels; 0 scans top-level files only).",
+      "maximum": 20,
+      "minimum": 0,
+      "title": "Scan Max Depth",
+      "type": "integer"
+    },
     "MAX_FOLDERS": {
       "default": 12,
       "description": "Maximum number of category folders generated per clustering level (integer from 1 to 50 folders).",
