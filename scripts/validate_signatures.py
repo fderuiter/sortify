@@ -282,9 +282,11 @@ def extract_protocols(file_path):
         if isinstance(node, ast.ClassDef):
             is_protocol = False
             for base in node.bases:
-                if is_protocol_node(base):
-                    is_protocol = True
-                elif isinstance(base, ast.Subscript) and is_protocol_node(base.value):
+                if (
+                    is_protocol_node(base)
+                    or isinstance(base, ast.Subscript)
+                    and is_protocol_node(base.value)
+                ):
                     is_protocol = True
 
             if is_protocol:
@@ -438,11 +440,9 @@ def collect_plugins_definitions(plugins_dir=None):
                 file_lower = file.lower()
                 stem = file_lower.removesuffix(".py")
                 if (
-                    stem.startswith("test_")
-                    or stem.endswith("_test")
+                    stem.startswith(("test_", "mock_"))
+                    or stem.endswith(("_test", "_mock"))
                     or stem in ("test", "tests", "conftest")
-                    or stem.startswith("mock_")
-                    or stem.endswith("_mock")
                     or stem in ("mock", "mocks")
                     or "mock" in stem
                 ):

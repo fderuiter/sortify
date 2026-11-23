@@ -93,7 +93,7 @@ def is_system_dll(dll_name: str) -> bool:
     if name_lower in STANDARD_SYSTEM_DLLS:
         return True
     if (
-        name_lower.startswith("api-ms-win-") or name_lower.startswith("ext-ms-win-")
+        name_lower.startswith(("api-ms-win-", "ext-ms-win-"))
     ) and not name_lower.startswith("api-ms-win-crt-"):
         return True
     return False

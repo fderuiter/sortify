@@ -125,7 +125,7 @@ class ClinicalRenamer:
         """
         from app.core.text_utils import sanitize_secret_patterns
 
-        base, ext = os.path.splitext(original_filename)
+        _base, ext = os.path.splitext(original_filename)
 
         clean_art = sanitize_secret_patterns(artifact_name)
         # Strip parentheses explanations e.g. "Form FDA 1572 (Statement of Investigator)" -> "Form FDA 1572"

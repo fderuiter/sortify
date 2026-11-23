@@ -785,7 +785,7 @@ class SelectionActionsMixin:
                     previews = modal.get_batch_previews(pattern_str)
                     batch_items = []
                     for idx, entry in enumerate(checked_entries):
-                        meta, fallback, key, folder, info = (
+                        _meta, fallback, key, folder, info = (
                             modal._extract_file_metadata(entry, modal.seq + idx)
                         )
                         target_fn = previews[idx] if idx < len(previews) else fallback

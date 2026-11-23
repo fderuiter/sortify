@@ -77,9 +77,7 @@ def sanitize_svg(svg: str) -> str:
             ]
 
             style_map = {}
-            sorted_unique_styles = sorted(
-                list(set(body.strip() for cls, body in used_rules))
-            )
+            sorted_unique_styles = sorted(set(body.strip() for cls, body in used_rules))
 
             for old_class, style_body in used_rules:
                 style_index = sorted_unique_styles.index(style_body.strip())
