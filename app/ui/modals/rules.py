@@ -967,13 +967,13 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
     ) -> None:
         """Cycle resolution strategy for the selected conflict row."""
         row_key = None
-        if isinstance(event, DataTable.RowSelected):
-            if event.row_key and event.row_key.value:
-                row_key = str(event.row_key.value)
-        elif isinstance(event, DataTable.CellSelected):
+        rk_attr = getattr(event, "row_key", None)
+        if rk_attr is not None and getattr(rk_attr, "value", None):
+            row_key = str(rk_attr.value)
+        elif (coord := getattr(event, "coordinate", None)) is not None:
             try:
                 dt_conf = self.query_one("#dt-rule-conflicts", DataTable)
-                rk = dt_conf.coordinate_to_cell_key(event.coordinate).row_key
+                rk = dt_conf.coordinate_to_cell_key(coord).row_key
                 if rk and rk.value:
                     row_key = str(rk.value)
             except Exception:

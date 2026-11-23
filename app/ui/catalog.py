@@ -19,6 +19,7 @@ from app.ui.modals.drop_zone import DropPlanConfirmModal, DropZoneModal
 from app.ui.modals.edit import (
     DirectorySelectModal,
     DuplicateReviewModal,
+    InteractiveCollisionResolverModal,
     ManualPathFallbackModal,
     NewFolderModal,
     ReassignModal,
@@ -119,8 +120,66 @@ CATALOG_REGISTRY: list[dict[str, Any]] = [
         "id": "duplicate_review_modal",
         "name": "Duplicate Review Modal",
         "category": "modal",
-        "description": "Modal dialog for inspecting duplicate file clusters.",
-        "factory": lambda settings=None: DuplicateReviewModal(),
+        "description": "Modal dialog for reviewing exact byte-verified duplicate file clusters and staging or trashing redundant copies.",
+        "factory": lambda settings=None: DuplicateReviewModal(
+            duplicate_groups=[
+                {
+                    "group_id": "dup_1",
+                    "group_kind": "duplicate",
+                    "target_filename": "invoice_q4.pdf",
+                    "target_dir": "/workspace/Finance",
+                    "byte_size": 248320,
+                    "sha256": "e3b0c44298fc1c149afbf4c8996fb924",
+                    "detect_original_by": "first_seen",
+                    "default_action": "stage",
+                    "items": [
+                        {
+                            "node_key": "invoice_q4.pdf",
+                            "source_path": "/workspace/Downloads/invoice_q4.pdf",
+                            "relative_source": "Downloads/invoice_q4.pdf",
+                            "is_primary": True,
+                            "byte_size": 248320,
+                        },
+                        {
+                            "node_key": "invoice_q4 (1).pdf",
+                            "source_path": "/workspace/Downloads/invoice_q4 (1).pdf",
+                            "relative_source": "Downloads/invoice_q4 (1).pdf",
+                            "is_primary": False,
+                            "byte_size": 248320,
+                        },
+                    ],
+                }
+            ]
+        ),
+    },
+    {
+        "id": "collision_resolver_modal",
+        "name": "Interactive Collision Resolver Modal",
+        "category": "modal",
+        "description": "Modal dialog for resolving destination filename collisions between distinct files.",
+        "factory": lambda settings=None: InteractiveCollisionResolverModal(
+            collision_groups=[
+                {
+                    "group_id": "group_1",
+                    "group_kind": "collision",
+                    "target_filename": "quarterly_summary.pdf",
+                    "target_dir": "/workspace/Reports",
+                    "default_action": "rename",
+                    "items": [
+                        {
+                            "node_key": "scan_001.pdf",
+                            "source_path": "/workspace/Inbox/scan_001.pdf",
+                            "relative_source": "Inbox/scan_001.pdf",
+                        },
+                        {
+                            "node_key": "scan_002.pdf",
+                            "source_path": "/workspace/Inbox/scan_002.pdf",
+                            "relative_source": "Inbox/scan_002.pdf",
+                        },
+                    ],
+                }
+            ]
+        ),
     },
     {
         "id": "shortcut_cheatsheet_modal",

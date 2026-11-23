@@ -679,12 +679,18 @@ def _resolve_pending_links(
 
 
 OVERWRITE_BACKUP_DIR = ".sortify_overwritten"
-_OWNED_HIDDEN_DIRS = {".branches", OVERWRITE_BACKUP_DIR}
+DUPLICATE_STAGING_DIR = ".sortify_duplicates"
+_OWNED_HIDDEN_DIRS = {".branches", OVERWRITE_BACKUP_DIR, DUPLICATE_STAGING_DIR}
 
 
 def overwrite_backup_dir(base_dir: str, session_id: str) -> str:
     """Return the folder where a session parks the files its overwrites displaced."""
     return os.path.join(base_dir, OVERWRITE_BACKUP_DIR, session_id)
+
+
+def duplicate_staging_dir(base_dir: str, session_id: str) -> str:
+    """Return the folder where a session parks verified duplicate or trashed copies for undo."""
+    return os.path.join(base_dir, DUPLICATE_STAGING_DIR, session_id)
 
 
 def _displace_for_overwrite(
@@ -1138,6 +1144,12 @@ def _collect_move_items(
         )
         if is_leaf:
             if node_type == "directory":
+                continue
+            if (
+                _get_val(content, "is_excluded")
+                or _get_val(content, "excluded")
+                or _get_val(content, "is_checked") is False
+            ):
                 continue
 
             if _get_val(content, "status") == "Already Sorted":
@@ -1602,6 +1614,205 @@ def _process_move_item(
     return True
 
 
+def _stage_disposal_item(
+    base_dir: str,
+    item: dict,
+    db,
+    path_map: dict,
+    session_id: str,
+    history_manager,
+    db_lock: threading.Lock,
+    db_updates_batch: list,
+    audit_records: list | None = None,
+) -> dict[str, Any] | None:
+    """Stage a redundant duplicate or policy-trashed file into ``.sortify_duplicates/<session_id>/``.
+
+    Enforces ADR 0005 (surviving primary must be ``verified`` in ``MoveLedger`` or
+    verified byte-identical on disk if stationary) and ADR 0006 (every staging
+    relocation is recorded in ``MoveLedger`` so ``SortPipeline.undo`` replays it).
+    """
+    from app.core.extractor import get_file_hash
+    from app.core.moves import VERIFIED
+    from app.core.resilient_file_ops import (
+        duplicate_staging_relpath,
+        resilient_move,
+        same_file_content,
+    )
+    from app.core.scanner import parse_item_identifier
+
+    source_path = item["source_path"]
+    if not os.path.lexists(source_path):
+        return None
+
+    content = item.get("content")
+    dup_action = _get_val(content, "duplicate_action")
+    pol_action = _get_val(content, "policy_action")
+    is_dup = bool(_get_val(content, "is_duplicate"))
+    dup_of = _get_val(content, "duplicate_of")
+    moves = getattr(history_manager, "moves", None) if history_manager else None
+
+    # ADR 0005: Never displace or trash a duplicate until the surviving primary is verified
+    if is_dup or dup_of:
+        if not dup_of:
+            logging.warning(
+                "ADR 0005 guard: refusing to stage duplicate %s without surviving primary reference.",
+                source_path,
+            )
+            return None
+
+        dup_of_str = str(dup_of)
+        if os.path.isabs(dup_of_str) and "::" not in dup_of_str:
+            primary_orig_abs = os.path.normpath(dup_of_str)
+        else:
+            p_root, p_rel = parse_item_identifier(dup_of_str, base_dir)
+            primary_orig_abs = os.path.normpath(
+                os.path.abspath(os.path.join(p_root, p_rel))
+            )
+        norm_primary_orig = os.path.normcase(os.path.abspath(primary_orig_abs))
+
+        verified_primary_path: str | None = None
+        primary_moved_in_ledger = False
+        if moves is not None and session_id:
+            session_moves = moves.list_moves(session_id)
+            matching_rows = [
+                m
+                for m in session_moves
+                if os.path.normcase(os.path.abspath(m.src)) == norm_primary_orig
+            ]
+            if matching_rows:
+                primary_moved_in_ledger = True
+                latest = matching_rows[-1]
+                if latest.state == VERIFIED and os.path.isfile(latest.dst):
+                    verified_primary_path = latest.dst
+
+        if primary_moved_in_ledger:
+            if not verified_primary_path:
+                logging.warning(
+                    "ADR 0005 guard: refusing to stage duplicate %s because surviving primary %s is not marked verified in MoveLedger.",
+                    source_path,
+                    primary_orig_abs,
+                )
+                return None
+        else:
+            cand_dst = path_map.get(norm_primary_orig) or primary_orig_abs
+            if moves is not None and not _is_same_path(cand_dst, primary_orig_abs):
+                # Primary was expected to move to cand_dst, but has no MoveLedger row!
+                if not os.path.isfile(cand_dst):
+                    logging.warning(
+                        "ADR 0005 guard: refusing to stage duplicate %s because primary destination %s is missing.",
+                        source_path,
+                        cand_dst,
+                    )
+                    return None
+                verified_primary_path = cand_dst
+            elif os.path.isfile(cand_dst):
+                verified_primary_path = cand_dst
+
+        if not verified_primary_path or not os.path.isfile(verified_primary_path):
+            logging.warning(
+                "ADR 0005 guard: refusing to stage duplicate %s because primary file could not be located on disk.",
+                source_path,
+            )
+            return None
+
+        try:
+            if os.path.samefile(verified_primary_path, source_path):
+                return None
+        except OSError:
+            if _is_same_path(verified_primary_path, source_path):
+                return None
+
+        if not same_file_content(verified_primary_path, source_path):
+            logging.warning(
+                "ADR 0005 guard: refusing to stage %s because its bytes do not match primary %s.",
+                source_path,
+                verified_primary_path,
+            )
+            return None
+
+    src_root = _get_val(content, "source_root") or base_dir
+    stage_rel = duplicate_staging_relpath(source_path, base_dir, source_root=src_root)
+    eff_session = session_id or f"nosession_{uuid.uuid4().hex}"
+    is_trash_target = dup_action == "trash" or pol_action == "trash"
+    stage_base = duplicate_staging_dir(base_dir, eff_session)
+    if is_trash_target:
+        stage_base = os.path.join(stage_base, "_trash")
+
+    planned_stage_target = os.path.normpath(os.path.join(stage_base, stage_rel))
+    stage_dir = os.path.dirname(planned_stage_target)
+    os.makedirs(stage_dir, exist_ok=True)
+    dest_path = os.path.normpath(
+        get_safe_path(stage_dir, os.path.basename(planned_stage_target), source_path)
+    )
+
+    pre_hash = ""
+    try:
+        pre_hash = get_file_hash(source_path)
+    except (OSError, ValueError, TypeError):
+        pre_hash = ""
+
+    move_seq = _record_move_intent(moves, session_id, source_path, dest_path, pre_hash)
+    try:
+        final_dest = resilient_move(source_path, dest_path)
+    except Exception as err:
+        _record_move_state(
+            moves,
+            session_id,
+            move_seq,
+            MoveOpState.FAILED,
+            required=False,
+            error=str(err),
+        )
+        raise
+
+    _record_move_state(
+        moves,
+        session_id,
+        move_seq,
+        MoveOpState.DONE,
+        dst=final_dest,
+        displaced=None,
+    )
+    post_hash = ""
+    if os.path.isfile(final_dest):
+        try:
+            post_hash = get_file_hash(final_dest)
+        except (OSError, ValueError, TypeError):
+            post_hash = ""
+    if pre_hash and post_hash == pre_hash:
+        _record_move_state(
+            moves, session_id, move_seq, MoveOpState.VERIFIED, required=False
+        )
+
+    _update_path_map_entry(path_map, source_path, final_dest, lock=db_lock)
+
+    source_rel_path = safe_relpath(source_path, base_dir).replace("\\", "/")
+    rel_dest = safe_relpath(final_dest, base_dir).replace("\\", "/")
+    with db_lock:
+        db_updates_batch.append(
+            {
+                "type": "document_path",
+                "args": (base_dir, source_rel_path, rel_dest),
+            }
+        )
+        if audit_records is not None:
+            audit_records.append(
+                {
+                    "source_path": source_path,
+                    "destination_path": final_dest,
+                    "pre_hash": pre_hash,
+                    "post_hash": post_hash or pre_hash,
+                }
+            )
+
+    return {
+        "source_path": source_path,
+        "staged_path": final_dest,
+        "action": "trash" if is_trash_target else "stage",
+        "sha256": pre_hash,
+    }
+
+
 class AsyncMoveEngine(LifecycleTelemetryMixin):
     """Asynchronous Chunked Thread Pool Execution Engine for file relocation."""
 
@@ -1797,7 +2008,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
             raw_move_items = _collect_move_items(
                 base_dir, plan, priority=effective_priority
             )
-            move_items = [
+            all_filtered_items = [
                 item
                 for item in raw_move_items
                 if not (
@@ -1806,14 +2017,26 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     or scan_filter.has_ignored_extension(item["source_path"])
                 )
             ]
-            total_items = len(move_items)
+            move_items = []
+            disposal_items = []
+            for item in all_filtered_items:
+                c_node = item.get("content")
+                d_act = _get_val(c_node, "duplicate_action")
+                p_act = _get_val(c_node, "policy_action")
+                if d_act == "skip":
+                    continue
+                if d_act in ("stage", "trash") or p_act == "trash":
+                    disposal_items.append(item)
+                else:
+                    move_items.append(item)
+            total_items = len(move_items) + len(disposal_items)
             chunks = [
                 move_items[i : i + effective_chunk_size]
                 for i in range(0, len(move_items), effective_chunk_size)
             ]
             total_chunks = len(chunks)
 
-            if total_chunks == 0:
+            if total_chunks == 0 and not disposal_items:
                 emit_progress(
                     effective_progress_cb,
                     1.0,
@@ -1977,6 +2200,35 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                 self.transition_to(MoveEngineState.CANCELLED)
                 summary.state = self.state
             else:
+                staged_duplicates: list[dict[str, Any]] = []
+                if disposal_items and not _is_cancelled(cancel_token):
+                    for disp_item in disposal_items:
+                        if _is_cancelled(cancel_token):
+                            summary.cancelled = True
+                            break
+                        staged_entry = _stage_disposal_item(
+                            base_dir=base_dir,
+                            item=disp_item,
+                            db=db,
+                            path_map=path_map,
+                            session_id=session_id,
+                            history_manager=history_manager,
+                            db_lock=db_lock,
+                            db_updates_batch=db_updates_batch,
+                            audit_records=audit_records,
+                        )
+                        if staged_entry is not None:
+                            staged_duplicates.append(staged_entry)
+                    if staged_duplicates:
+                        emit_progress(
+                            effective_progress_cb,
+                            1.0,
+                            stage=f"Staged {len(staged_duplicates)} verified duplicate(s)",
+                            unit_count=total_items,
+                            unit_type="files",
+                        )
+                summary["staged_duplicates"] = staged_duplicates
+
                 if pending_links:
                     self.transition_to(MoveEngineState.RESOLVING_LINKS)
                     summary.state = self.state

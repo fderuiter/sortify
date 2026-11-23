@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "896b665ae2171612dd0cee498949ed2a1b2d6b72b624f78a0de2b09892bf6d43"
+    "checksum": "9f589a4b823d50ef372d904663f5922aeefc32ccb79f164b3707752d76a22a8d"
   },
   "classes": [
     {
@@ -87,6 +87,49 @@
               "annotation": "Optional[str]",
               "default": "None",
               "name": "base_dir"
+            }
+          ],
+          "returns": "dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "flush_staged_duplicates",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "session_id"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "base_dir"
+            },
+            {
+              "annotation": "Optional[float]",
+              "default": "None",
+              "name": "max_age_days"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "trashed_only"
+            },
+            {
+              "annotation": "Optional[Any]",
+              "default": "None",
+              "name": "trash_fn"
+            },
+            {
+              "annotation": "Optional[Any]",
+              "default": "None",
+              "name": "audit_ledger"
             }
           ],
           "returns": "dict[str, Any]"

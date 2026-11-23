@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "6029dc7b65c8fe25cce8cde03485e08bdb4c824fbb69341e9a55824709e9bda0"
+    "checksum": "39b6c5da77a071f97226de83efab4e3ab1f7637976038cea2dfc4b3cc2d38352"
   },
   "classes": [
     {
@@ -117,6 +117,54 @@
               "annotation": "Optional[float]",
               "default": "None",
               "name": "created_at"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "log_trash_handoff",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "staged_path"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "original_source"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "sha256"
+            },
+            {
+              "annotation": "str",
+              "default": "'EXPORTED_TO_OS_TRASH'",
+              "name": "status"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "reason"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "db_path"
             }
           ],
           "returns": "str"

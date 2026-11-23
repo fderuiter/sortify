@@ -1,5 +1,6 @@
 """Session history, lifecycle state machine, and reverse-replay undo (ADR 0006)."""
 
+import contextlib
 import csv
 import json
 import logging
@@ -369,6 +370,25 @@ def _purge_overwrite_backups(base_dir: str, session_id: str) -> None:
             os.rmdir(root)
     except OSError as err:
         logging.warning(f"Could not purge overwrite backups in {backup_dir}: {err}")
+
+
+def _purge_duplicate_staging(base_dir: str, session_id: str) -> None:
+    """Delete staged duplicate files belonging to a pruned session."""
+    from app.core.mover import DUPLICATE_STAGING_DIR, duplicate_staging_dir
+    from app.core.resilient_file_ops import resilient_rmtree
+
+    if not base_dir:
+        return
+    stage_dir = duplicate_staging_dir(base_dir, session_id)
+    if not os.path.isdir(stage_dir) or os.path.islink(stage_dir):
+        return
+    try:
+        resilient_rmtree(stage_dir)
+        root = os.path.join(base_dir, DUPLICATE_STAGING_DIR)
+        if os.path.isdir(root) and not os.listdir(root):
+            os.rmdir(root)
+    except OSError as err:
+        logging.warning(f"Could not purge duplicate staging in {stage_dir}: {err}")
 
 
 def _move_aside_blocking_parents(path: str, base_dir: str, db_conn) -> None:
@@ -777,6 +797,7 @@ class HistoryManager:
             conn.execute("DELETE FROM moves WHERE session_id = ?", (sid,))
             conn.execute("DELETE FROM sessions WHERE session_id = ?", (sid,))
             _purge_overwrite_backups(base_dir, sid)
+            _purge_duplicate_staging(base_dir, sid)
 
     def get_sessions(self) -> list[dict[str, Any]]:
         """Retrieve a list of all historical sessions, newest first, with canonical move counts."""
@@ -1219,6 +1240,166 @@ class HistoryManager:
                 raise
 
         return self.db.worker.execute_write(_write)
+
+    def flush_staged_duplicates(
+        self,
+        session_id: Optional[str] = None,
+        *,
+        base_dir: Optional[str] = None,
+        max_age_days: Optional[float] = None,
+        trashed_only: bool = False,
+        trash_fn: Optional[Any] = None,
+        audit_ledger: Optional[Any] = None,
+    ) -> dict[str, Any]:
+        """Export staged duplicates in ``.sortify_duplicates/<session>/`` to native OS Trash.
+
+        Parameters
+        ----------
+        session_id : str | None, optional
+            Specific session to flush; flushes all sessions under ``base_dir`` when omitted.
+        base_dir : str | None, optional
+            Workspace root containing ``.sortify_duplicates``; inferred from ``session_id`` when omitted.
+        max_age_days : float | None, optional
+            Only export staged files older than ``max_age_days`` days when set.
+        trashed_only : bool, optional
+            When True, only export staged files inside the ``_trash`` subfolder.
+        trash_fn : Callable[[str], Any] | None, optional
+            Injectable ``send2trash`` callable for testing or custom Trash backends.
+        audit_ledger : KeyAuditLedger | None, optional
+            Optional audit ledger instance; defaults to ``KeyAuditLedger()``.
+
+        Returns
+        -------
+        dict[str, Any]
+            Summary containing ``exported``, ``kept_staged``, and ``errors``.
+        """
+        from app.core.ledger import KeyAuditLedger
+        from app.core.mover import (
+            DUPLICATE_STAGING_DIR,
+            _prune_emptied_dirs,
+            duplicate_staging_dir,
+        )
+        from app.core.resilient_file_ops import send_to_os_trash
+
+        target_sessions: list[tuple[str, str]] = []
+        if session_id:
+            resolved_base = base_dir
+            if not resolved_base:
+                conn = get_db_connection(self.db_path)
+                with conn:
+                    row = conn.execute(
+                        "SELECT base_dir FROM sessions WHERE session_id = ?",
+                        (session_id,),
+                    ).fetchone()
+                resolved_base = row[0] if row else None
+            if resolved_base:
+                target_sessions.append((session_id, resolved_base))
+        elif base_dir:
+            dup_root = os.path.join(base_dir, DUPLICATE_STAGING_DIR)
+            if os.path.isdir(dup_root) and not os.path.islink(dup_root):
+                for entry_name in sorted(os.listdir(dup_root)):
+                    cand = os.path.join(dup_root, entry_name)
+                    if os.path.isdir(cand) and not os.path.islink(cand):
+                        target_sessions.append((entry_name, base_dir))
+
+        ledger = audit_ledger or KeyAuditLedger()
+        exported_paths: list[str] = []
+        kept_staged_paths: list[str] = []
+        errors: dict[str, str] = {}
+        now = time.time()
+
+        for sid, b_dir in target_sessions:
+            stage_root = duplicate_staging_dir(b_dir, sid)
+            scan_root = (
+                os.path.join(stage_root, "_trash") if trashed_only else stage_root
+            )
+            if not os.path.isdir(scan_root) or os.path.islink(scan_root):
+                continue
+
+            move_by_dst: dict[str, Move] = {}
+            for m in self.moves.list_moves(sid):
+                if m.dst:
+                    move_by_dst[os.path.normcase(os.path.abspath(m.dst))] = m
+
+            flushed_seqs: list[int] = []
+            dirs_to_prune: set[str] = set()
+
+            for root, _dirs, files in os.walk(scan_root):
+                for fname in sorted(files):
+                    fpath = os.path.normpath(os.path.abspath(os.path.join(root, fname)))
+                    if max_age_days is not None:
+                        try:
+                            age_days = (now - os.stat(fpath).st_mtime) / 86400.0
+                            if age_days < max_age_days:
+                                kept_staged_paths.append(fpath)
+                                continue
+                        except OSError:
+                            continue
+
+                    matched_move = move_by_dst.get(os.path.normcase(fpath))
+                    orig_src = matched_move.src if matched_move else ""
+                    sha_val = (matched_move.src_sha256 or "") if matched_move else ""
+
+                    ok, err_reason = send_to_os_trash(fpath, trash_fn=trash_fn)
+                    if ok:
+                        exported_paths.append(fpath)
+                        dirs_to_prune.add(os.path.dirname(fpath))
+                        if matched_move is not None:
+                            flushed_seqs.append(matched_move.seq)
+                        logging.info(
+                            "Irreversible OS Trash handoff: exported staged duplicate '%s' (original source: '%s', session: %s) to native OS Trash.",
+                            fpath,
+                            orig_src or "<unknown>",
+                            sid,
+                        )
+                        ledger.log_trash_handoff(
+                            session_id=sid,
+                            staged_path=fpath,
+                            original_source=orig_src,
+                            sha256=sha_val,
+                            status="EXPORTED_TO_OS_TRASH",
+                            db_path=self.db_path,
+                        )
+                    else:
+                        kept_staged_paths.append(fpath)
+                        errors[fpath] = err_reason or "OS Trash unavailable"
+                        ledger.log_trash_handoff(
+                            session_id=sid,
+                            staged_path=fpath,
+                            original_source=orig_src,
+                            sha256=sha_val,
+                            status="KEPT_STAGED_FALLBACK",
+                            reason=err_reason,
+                            db_path=self.db_path,
+                        )
+
+            if flushed_seqs:
+
+                def _delete_flushed_rows(
+                    target_sid: str = sid, seqs: list[int] = list(flushed_seqs)
+                ) -> None:
+                    conn = get_db_connection(self.db_path)
+                    placeholders = ",".join("?" for _ in seqs)
+                    with conn:
+                        conn.execute(
+                            f"DELETE FROM moves WHERE session_id = ? AND seq IN ({placeholders})",
+                            [target_sid, *seqs],
+                        )
+
+                self.db.worker.execute_write(_delete_flushed_rows)
+
+            if dirs_to_prune:
+                _prune_emptied_dirs(dirs_to_prune, b_dir)
+                dup_parent = os.path.join(b_dir, DUPLICATE_STAGING_DIR)
+                if os.path.isdir(dup_parent) and not os.listdir(dup_parent):
+                    with contextlib.suppress(OSError):
+                        os.rmdir(dup_parent)
+
+        return {
+            "exported": exported_paths,
+            "kept_staged": kept_staged_paths,
+            "errors": errors,
+        }
 
     def preview_rollback(
         self,

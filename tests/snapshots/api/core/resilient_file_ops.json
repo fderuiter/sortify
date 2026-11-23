@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "1dd272c8ad90ae79c964480f572db41f2ed488ebed6357d2fc0240976cdd804b"
+    "checksum": "79007d45acafc003e974de3c2f69d6fbb77b74616881f4725efa1d973b428171"
   },
   "classes": [],
   "functions": [
@@ -41,6 +41,65 @@
         }
       ],
       "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "duplicate_staging_relpath",
+      "parameters": [
+        {
+          "annotation": "str | os.PathLike",
+          "default": null,
+          "name": "source_path"
+        },
+        {
+          "annotation": "str | os.PathLike",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "Optional[str | os.PathLike]",
+          "default": "None",
+          "name": "source_root"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "group_byte_identical_files",
+      "parameters": [
+        {
+          "annotation": "Sequence[str]",
+          "default": null,
+          "name": "file_paths"
+        },
+        {
+          "annotation": "str",
+          "default": "'first_seen'",
+          "name": "detect_original_by"
+        }
+      ],
+      "returns": "list[dict[str, Any]]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "raw_file_hash",
+      "parameters": [
+        {
+          "annotation": "str | os.PathLike",
+          "default": null,
+          "name": "filepath"
+        },
+        {
+          "annotation": "str",
+          "default": "'sha256'",
+          "name": "algorithm"
+        }
+      ],
+      "returns": "str"
     },
     {
       "async": false,
@@ -136,6 +195,42 @@
         }
       ],
       "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "select_original_from_cluster",
+      "parameters": [
+        {
+          "annotation": "Sequence[str]",
+          "default": null,
+          "name": "paths"
+        },
+        {
+          "annotation": "str",
+          "default": "'first_seen'",
+          "name": "mode"
+        }
+      ],
+      "returns": "tuple[str, list[str]]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "send_to_os_trash",
+      "parameters": [
+        {
+          "annotation": "str | os.PathLike",
+          "default": null,
+          "name": "path"
+        },
+        {
+          "annotation": "Optional[Callable[[str], Any]]",
+          "default": "None",
+          "name": "trash_fn"
+        }
+      ],
+      "returns": "tuple[bool, Optional[str]]"
     },
     {
       "async": false,

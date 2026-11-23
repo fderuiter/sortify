@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "c24a6ba61a0323dd4ae9a6ae2a61e50d51e096d3df00c418fb8d7f038e6472f8"
+    "checksum": "34a157aa4b2d7873c54f63b70e333fcf17cdc55b5242bd0dcaf53430469f9055"
   },
   "classes": [
     {
@@ -306,6 +306,48 @@
             }
           ],
           "returns": "'Settings'"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('DETECT_ORIGINAL_BY', mode='before')",
+            "@classmethod"
+          ],
+          "name": "validate_detect_original_by",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@field_validator('DUPLICATE_ACTION', mode='before')",
+            "@classmethod"
+          ],
+          "name": "validate_duplicate_action",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "cls"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "v"
+            }
+          ],
+          "returns": "str"
         },
         {
           "async": false,

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "3986ad7d041b1f642519c44387db760f52d76e7992cde15ab3442217d35044d1"
+    "checksum": "3c99f3a90abbfc85159aacf796fc32c638013ab06620e32e1a6f76c4bbd8a5ba"
   },
   "classes": [
     {
@@ -520,6 +520,24 @@
     }
   ],
   "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "duplicate_staging_dir",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "session_id"
+        }
+      ],
+      "returns": "str"
+    },
     {
       "async": false,
       "decorators": [],
