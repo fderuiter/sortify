@@ -1718,7 +1718,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
                 app_session.close()
 
 
-def start_daemon(settings: AppSettings, base_dir: str = None):
+def start_daemon(settings: AppSettings, base_dir: str | None = None):
     """Start the persistent directory-watching daemon service."""
     if not base_dir:
         base_dir = os.getcwd()

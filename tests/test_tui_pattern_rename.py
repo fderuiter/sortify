@@ -421,3 +421,116 @@ def test_action_rename_node_batch_branching(sample_plan):
             assert app.plan["Documents"]["01_draft_1.docx"]["is_locked"] is True
 
     asyncio.run(_test())
+
+
+def test_batch_rename_nested_folders_and_non_dict_metadata(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    """Verify on_batch_renamed mutates nested folder dicts and guards non-dict metadata safely."""
+    from app.config import AppSettings
+
+    async def _test() -> None:
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = False
+        app = AutoSorterTUI(settings=settings, base_dir="/app/sample")
+        inv1_info: dict[str, object] = {
+            "__type__": "file",
+            "filepath": "/app/sample/inv_1.pdf",
+            "target_filename": "inv_1.pdf",
+            "is_checked": True,
+            "is_excluded": False,
+            "folder": "Finance/2024/Invoices",
+        }
+        inv2_info: dict[str, object] = {
+            "__type__": "file",
+            "filepath": "/app/sample/inv_2.pdf",
+            "target_filename": "inv_2.pdf",
+            "is_checked": True,
+            "is_excluded": False,
+            "folder": "Finance/2024/Invoices",
+        }
+        app.plan = {
+            "Finance": {
+                "2024": {
+                    "Invoices": {
+                        "inv_1.pdf": inv1_info,
+                        "inv_2.pdf": inv2_info,
+                        "legacy_note.txt": "legacy_non_dict_metadata",
+                    }
+                }
+            }
+        }
+        mock_session = MagicMock()
+        mock_session.base_dir = "/app/sample"
+        app.app_session = mock_session
+
+        async with app.run_test() as pilot:
+            app.rebuild_tree()
+            await pilot.pause()
+
+            batch_res = RenameResult(
+                "{seq}_{original}",
+                batch_items=[
+                    {
+                        "key": "inv_1.pdf",
+                        "new_name": "01_inv_1.pdf",
+                        "folder": "Finance/2024/Invoices",
+                        "old_folder": "Finance/2024/Invoices",
+                        "info": inv1_info,
+                    },
+                    {
+                        "key": "inv_2.pdf",
+                        "new_name": "02_inv_2.pdf",
+                        "folder": "Finance/2024/Archive",
+                        "old_folder": "Finance/2024/Invoices",
+                        "info": inv2_info,
+                    },
+                    {
+                        "key": "legacy_note.txt",
+                        "new_name": "03_legacy_note.txt",
+                        "folder": "Finance/2024/Invoices",
+                        "old_folder": "Finance/2024/Invoices",
+                        "info": "legacy_non_dict_metadata",
+                    },
+                ],
+                is_batch=True,
+            )
+
+            app.active_tree_node = None
+            captured_callbacks: list[object] = []
+
+            def _capture_push(screen: object, callback: object = None) -> object:
+                captured_callbacks.append(callback)
+                if callable(callback):
+                    callback(batch_res)
+                return None
+
+            monkeypatch.setattr(app, "push_screen", _capture_push)
+            app.action_rename_node()
+            await pilot.pause()
+            assert len(captured_callbacks) == 1
+
+            nested_invoices = app.plan["Finance"]["2024"]["Invoices"]
+            nested_archive = app.plan["Finance"]["2024"]["Archive"]
+
+            assert "inv_1.pdf" not in nested_invoices
+            assert "inv_2.pdf" not in nested_invoices
+            assert "legacy_note.txt" not in nested_invoices
+            assert "01_inv_1.pdf" in nested_invoices
+            assert nested_invoices["01_inv_1.pdf"]["is_locked"] is True
+            assert "02_inv_2.pdf" in nested_archive
+            assert nested_archive["02_inv_2.pdf"]["is_locked"] is True
+            assert nested_archive["02_inv_2.pdf"]["folder"] == "Finance/2024/Archive"
+            assert isinstance(nested_invoices["03_legacy_note.txt"], dict)
+            assert (
+                nested_invoices["03_legacy_note.txt"]["target_filename"]
+                == "03_legacy_note.txt"
+            )
+            assert nested_invoices["03_legacy_note.txt"]["is_locked"] is True
+
+            assert "Finance/2024/Invoices" not in app.plan
+            assert "Finance/2024/Archive" not in app.plan
+            assert app.locked_files["01_inv_1.pdf"] == "Finance/2024/Invoices"
+            assert app.locked_files["02_inv_2.pdf"] == "Finance/2024/Archive"
+
+    asyncio.run(_test())

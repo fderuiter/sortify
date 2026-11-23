@@ -1,5 +1,6 @@
 """Automated documentation generator."""
 
+import contextlib
 import functools
 import glob
 import os
@@ -285,16 +286,47 @@ def _describe_type(annotation) -> str:
     return text
 
 
+@contextlib.contextmanager
+def _isolated_docs_env(pin_columns: str | None = "80"):
+    """Temporarily clear host config env vars and pin COLUMNS for deterministic docs."""
+    had_columns = "COLUMNS" in os.environ
+    prev_columns = os.environ.get("COLUMNS")
+    saved_env = {
+        key: os.environ.pop(key)
+        for key in list(os.environ)
+        if key == "AUTOSORTER_APP_DIR" or key.startswith("SORTIFY_")
+    }
+    if pin_columns is not None:
+        os.environ["COLUMNS"] = pin_columns
+    try:
+        yield
+    finally:
+        if pin_columns is not None:
+            if had_columns and prev_columns is not None:
+                os.environ["COLUMNS"] = prev_columns
+            else:
+                os.environ.pop("COLUMNS", None)
+        for key in [
+            k
+            for k in list(os.environ)
+            if k == "AUTOSORTER_APP_DIR" or k.startswith("SORTIFY_")
+        ]:
+            os.environ.pop(key, None)
+        os.environ.update(saved_env)
+
+
 def _describe_default(field) -> str:
     """Render a field default, calling factories and summarizing long values."""
     default = field.get_default(call_default_factory=True)
     if isinstance(default, set):
         default = sorted(default)
     if isinstance(default, str):
-        try:
-            default = f"~/{Path(default).relative_to(Path.home()).as_posix()}"
-        except ValueError:
-            pass
+        for home_candidate in (Path.home(), Path.home().resolve()):
+            try:
+                default = f"~/{Path(default).relative_to(home_candidate).as_posix()}"
+                break
+            except ValueError:
+                continue
     if isinstance(default, (list, dict)) and len(repr(default)) > 80:
         return f"{len(default)} built-in entries (see `app/config.py`)"
     return f"`{default!r}`" if isinstance(default, str) else f"`{default}`"
@@ -318,6 +350,12 @@ def _describe_bounds(field) -> str:
 
 def generate_admin_guide():
     """Generate Admin Guide from config and scripts."""
+    with _isolated_docs_env(pin_columns="80"):
+        _generate_admin_guide_impl()
+
+
+def _generate_admin_guide_impl():
+    """Write docs/admin_guide.md assuming isolated environment variables."""
     output_file = _resolve_output_path(os.path.join("docs", "admin_guide.md"))
 
     # Import config safely
@@ -683,7 +721,7 @@ def _is_non_network_url_literal(file_content: str, match_start: int, url: str) -
     return hostname == "proxy.example.com"
 
 
-def update_security_md(sec_file="SECURITY.md", local_only: bool = False):
+def update_security_md(sec_file="SECURITY.md", local_only: bool = True):
     """Scan for network dependencies and update SECURITY.md."""
     # Validate security policy prose in SECURITY.md against AppSettings
     policy_errors = validate_security_policy(doc_path=sec_file)
@@ -937,8 +975,8 @@ def audit_auto_merge_policy(content=None, doc_path="docs/auto_merge_policy.md"):
         except Exception as e:
             return [f"Could not read auto-merge policy document {doc_path}: {e}"]
 
-    lines = content.splitlines()
-    section_content = "\n".join(lines[14:52]) if len(lines) >= 52 else content
+    section = _extract_markdown_section(content, "1. Risk Classification & Eligibility")
+    section_content = section if section is not None else content
     for bot in sorted(BOT_AUTHORS):
         if bot not in section_content:
             errors.append(
@@ -1439,7 +1477,7 @@ def audit_adr_status(
     return errors
 
 
-def audit_handwritten_docs(local_only: bool = False):
+def audit_handwritten_docs(local_only: bool = True):
     """Audit external links and relative codebase path references in handwritten docs."""
     import re
 
@@ -1650,15 +1688,31 @@ def main():
         help="Disable strict validation mode on MkDocs build.",
     )
     parser.add_argument(
+        "--build",
+        dest="build",
+        action="store_true",
+        default=False,
+        help="Run MkDocs HTML site generation build step.",
+    )
+    parser.add_argument(
         "--no-build",
         "--skip-build",
-        action="store_true",
-        help="Skip MkDocs HTML site generation build step.",
+        dest="build",
+        action="store_false",
+        help="Skip MkDocs HTML site generation build step (default).",
     )
     parser.add_argument(
         "--local-only",
+        dest="local_only",
         action="store_true",
-        help="Validate external URL syntax locally without making live network requests.",
+        default=True,
+        help="Validate external URL syntax locally without making live network requests (default).",
+    )
+    parser.add_argument(
+        "--live-links",
+        dest="local_only",
+        action="store_false",
+        help="Perform live network reachability checks on external URLs.",
     )
 
     args = parser.parse_args()
@@ -1694,9 +1748,7 @@ def main():
         ("generate_keyboard_docs", generate_keyboard_docs),
         (
             "update_security_md",
-            (lambda: update_security_md(local_only=True))
-            if args.local_only
-            else update_security_md,
+            lambda: update_security_md(local_only=args.local_only),
         ),
         ("compile_diagram_assets", compile_diagram_assets),
         ("sync_config_schema", sync_config_schema),
@@ -1763,11 +1815,7 @@ def main():
                     if new_content != initial_contents.get(filepath):
                         changed_files.append(filepath)
 
-                doc_audit_errors = (
-                    audit_handwritten_docs(local_only=True)
-                    if args.local_only
-                    else audit_handwritten_docs()
-                )
+                doc_audit_errors = audit_handwritten_docs(local_only=args.local_only)
                 host_audit_errors = audit_model_hosts()
                 all_audit_errors = list(
                     dict.fromkeys(doc_audit_errors + host_audit_errors)
@@ -1783,8 +1831,8 @@ def main():
         finally:
             _CHECK_STAGE_DIR = None
 
-    # 4. Run MkDocs build (and preserve strict build flags)
-    if not args.no_build:
+    # 4. Run MkDocs build when explicitly requested (and preserve strict build flags)
+    if args.build:
         try:
             import mkdocs  # noqa: F401
 
@@ -1797,7 +1845,7 @@ def main():
                 "\nWarning: 'mkdocs' is not installed in the current environment.\n"
                 "Skipping MkDocs HTML site generation.\n"
                 "To build documentation with MkDocs, run with the docs dependency group:\n"
-                "  uv run --group docs python scripts/generate_docs.py\n"
+                "  uv run --group docs python scripts/generate_docs.py --build\n"
                 "  or: uv run --group docs mkdocs build\n\n"
             )
         else:
@@ -1824,7 +1872,7 @@ def main():
                 sys.exit(1)
                 return
     else:
-        print("Skipping MkDocs build (--no-build).")
+        print("Skipping MkDocs build (pass --build to generate HTML site).")
 
     # 5. Report if files were out of sync
     if args.check and changed_files:

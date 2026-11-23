@@ -464,7 +464,9 @@ def test_verify_offline_bundle_frozen_and_ml_verification():
 
 
 def test_type_check_job_installs_all_groups_emits_annotations_and_enforces_ratchet():
-    """Verify type-check preserves job ID/name, installs all groups, emits GitHub annotations, and enforces check_ty_warnings.py."""
+    """Verify type-check preserves job ID/name, installs all groups, emits GitHub annotations, and enforces multi-platform check_ty_warnings.py."""
+    from scripts.check_ty_warnings import PLATFORMS
+
     workflow = _load_ci_workflow()
     jobs = workflow.get("jobs", {})
     assert "type-check" in jobs, "Missing 'type-check' job in ci.yml"
@@ -477,10 +479,6 @@ def test_type_check_job_installs_all_groups_emits_annotations_and_enforces_ratch
     assert sync_step is not None, "Missing uv sync step in type-check"
     assert sync_step.get("run", "").strip() == "uv sync --frozen --all-groups"
 
-    ty_step = next((s for s in steps if "uv run ty check" in s.get("run", "")), None)
-    assert ty_step is not None, "Missing 'uv run ty check' step in type-check"
-    assert "--output-format github" in ty_step.get("run", "")
-
     ratchet_step = next(
         (s for s in steps if "scripts/check_ty_warnings.py" in s.get("run", "")),
         None,
@@ -488,12 +486,9 @@ def test_type_check_job_installs_all_groups_emits_annotations_and_enforces_ratch
     assert ratchet_step is not None, (
         "Missing 'scripts/check_ty_warnings.py' step in type-check"
     )
-    for platform in ("linux", "darwin", "win32"):
-        assert platform in ratchet_step.get("run", ""), (
-            f"Expected type-check ratchet step to check platform {platform!r}"
-        )
-
-    assert steps.index(sync_step) < steps.index(ty_step) < steps.index(ratchet_step)
+    assert "--github-annotations" in ratchet_step.get("run", "")
+    assert set(PLATFORMS) == {"linux", "darwin", "win32"}
+    assert steps.index(sync_step) < steps.index(ratchet_step)
 
 
 def test_pre_commit_ty_check_triggers_on_app_scripts_pyproject_and_lockfile():

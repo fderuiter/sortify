@@ -1,0 +1,1829 @@
+{
+  "_metadata": {
+    "checksum": "9a1fd110ea2022bae8f0a91ff14a4170094658f0e71ad9eeac6d9d8a580f8578"
+  },
+  "classes": [
+    {
+      "class_name": "TUIHostProtocol",
+      "decorators": [],
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_exclude_selected",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_execute_sort",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_include_selected",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_new_folder",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_open_audit_report",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[dict[str, Any]]",
+              "default": "None",
+              "name": "audit_report"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_rate_negative",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_rate_positive",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_reassign_selected",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_rename_node",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_scan_directory",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_select_dir",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_toggle_lock",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_toggle_select_all",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_toggle_selection",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_visual_range_select",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "announce",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "message"
+            },
+            {
+              "annotation": "str",
+              "default": "'polite'",
+              "name": "priority"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "help_url"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "call_from_thread",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable[..., _CallThreadReturnType | Awaitable[_CallThreadReturnType]]",
+              "default": null,
+              "name": "callback"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "_CallThreadReturnType"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "notify",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "message"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "title"
+            },
+            {
+              "annotation": "SeverityLevel",
+              "default": "'information'",
+              "name": "severity"
+            },
+            {
+              "annotation": "float | None",
+              "default": "None",
+              "name": "timeout"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "markup"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@overload"
+          ],
+          "name": "push_screen",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Screen[ScreenResultType] | str",
+              "default": null,
+              "name": "screen"
+            },
+            {
+              "annotation": "ScreenResultCallbackType[ScreenResultType] | None",
+              "default": "None",
+              "name": "callback"
+            },
+            {
+              "annotation": "Literal[False]",
+              "default": "False",
+              "name": "wait_for_dismiss"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "mode"
+            }
+          ],
+          "returns": "AwaitMount"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@overload"
+          ],
+          "name": "push_screen",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Screen[ScreenResultType] | str",
+              "default": null,
+              "name": "screen"
+            },
+            {
+              "annotation": "ScreenResultCallbackType[ScreenResultType] | None",
+              "default": "None",
+              "name": "callback"
+            },
+            {
+              "annotation": "Literal[True]",
+              "default": "True",
+              "name": "wait_for_dismiss"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "mode"
+            }
+          ],
+          "returns": "asyncio.Future[ScreenResultType]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@overload"
+          ],
+          "name": "query",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "selector"
+            }
+          ],
+          "returns": "DOMQuery[Widget]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@overload"
+          ],
+          "name": "query",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "type[_QueryType]",
+              "default": null,
+              "name": "selector"
+            }
+          ],
+          "returns": "DOMQuery[_QueryType]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@overload"
+          ],
+          "name": "query_one",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "selector"
+            }
+          ],
+          "returns": "Widget"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@overload"
+          ],
+          "name": "query_one",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "type[_QueryType]",
+              "default": null,
+              "name": "selector"
+            }
+          ],
+          "returns": "_QueryType"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@overload"
+          ],
+          "name": "query_one",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "selector"
+            },
+            {
+              "annotation": "type[_QueryType]",
+              "default": null,
+              "name": "expect_type"
+            }
+          ],
+          "returns": "_QueryType"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "rebuild_tree",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "search_query"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "run_validation"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "register_visual_selected_node",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "TreeNode[Any]",
+              "default": null,
+              "name": "node"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "render_tree",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "search_query"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "reset_progress_bar",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "run_execute_worker",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "run_scan_worker",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "run_validation_worker",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "update_status",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "text"
+            }
+          ],
+          "returns": "None"
+        }
+      ]
+    }
+  ],
+  "functions": [],
+  "protocols": {
+    "TUIHostProtocol": {
+      "class_name": "TUIHostProtocol",
+      "methods": [
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_announce_if_busy",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "action"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_apply_tree_node_styles",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_build_matching_node_ids",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "dict[str, Any]",
+              "default": null,
+              "name": "plan_dict"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "query"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "current_folder"
+            }
+          ],
+          "returns": "set[int]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_build_path_lookup_index",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[Any]",
+              "default": "None",
+              "name": "paths"
+            }
+          ],
+          "returns": "PathLookupIndex"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_build_tree_nodes",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "dict[str, Any]",
+              "default": null,
+              "name": "node_dict"
+            },
+            {
+              "annotation": "TreeNode[Any]",
+              "default": null,
+              "name": "parent_item"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "current_folder"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "query"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "parent_folder_matches"
+            },
+            {
+              "annotation": "Optional[set[int]]",
+              "default": "None",
+              "name": "matching_ids"
+            },
+            {
+              "annotation": "Optional[tuple[set[str], set[str]]]",
+              "default": "None",
+              "name": "crit_index"
+            },
+            {
+              "annotation": "Optional[tuple[set[str], set[str]]]",
+              "default": "None",
+              "name": "warn_index"
+            },
+            {
+              "annotation": "Optional[tuple[set[str], set[str]]]",
+              "default": "None",
+              "name": "collision_index"
+            }
+          ],
+          "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_capture_tree_state",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Tree[Any]",
+              "default": null,
+              "name": "tree"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "search_query"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_collect_file_nodes_from_dict",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "dict[str, Any]",
+              "default": null,
+              "name": "d"
+            }
+          ],
+          "returns": "list[dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_collect_visible_file_nodes_from_dict",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "dict[str, Any]",
+              "default": null,
+              "name": "node_dict"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "current_folder"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "query"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "parent_folder_matches"
+            },
+            {
+              "annotation": "Optional[set[int]]",
+              "default": "None",
+              "name": "matching_ids"
+            }
+          ],
+          "returns": "list[dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_get_active_node",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "Optional[TreeNode[Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_get_checked_file_entries",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "list[dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_get_checked_file_keys",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "list[str]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_get_current_search_query",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_get_executable_plan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[dict[str, Any]]",
+              "default": "None",
+              "name": "plan_dict"
+            }
+          ],
+          "returns": "dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_get_target_file_infos",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "list[dict[str, Any]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_handle_pipeline_state_transition",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "old_state"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "new_state"
+            },
+            {
+              "annotation": "dict[str, Any] | None",
+              "default": "None",
+              "name": "context"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_handle_pipeline_telemetry",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "event"
+            },
+            {
+              "annotation": "dict[str, Any]",
+              "default": null,
+              "name": "payload"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_handle_progress_update",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Any",
+              "default": "0.0",
+              "name": "update_or_prog"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "stage"
+            },
+            {
+              "annotation": "Optional[int]",
+              "default": "None",
+              "name": "unit_count"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "unit_type"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_has_file_nodes",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "dict[str, Any]",
+              "default": null,
+              "name": "plan_dict"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_is_text_control_focused",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "allow_tree_search"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_node_matches_query",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "key"
+            },
+            {
+              "annotation": "dict[str, Any]",
+              "default": null,
+              "name": "val"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "current_folder"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "query"
+            }
+          ],
+          "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_normalize_plan_for_verification",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "dict[str, Any]",
+              "default": null,
+              "name": "plan_dict"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            }
+          ],
+          "returns": "dict[str, Any]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_restore_tree_state",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Tree[Any]",
+              "default": null,
+              "name": "tree"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "search_query"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_running_pipeline_worker",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "str | None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_set_rating_for_selected",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "rating"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_start_hint",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_start_scan",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_update_inspector",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Any",
+              "default": "None",
+              "name": "node_or_data"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "announce"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_update_onboarding_cta_visibility",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "_update_validation_state",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "dict[str, Any]",
+              "default": null,
+              "name": "result"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_exclude_selected",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_execute_sort",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_include_selected",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_new_folder",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_open_audit_report",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[dict[str, Any]]",
+              "default": "None",
+              "name": "audit_report"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_rate_negative",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_rate_positive",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_reassign_selected",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_rename_node",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_scan_directory",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_select_dir",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_toggle_lock",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_toggle_select_all",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_toggle_selection",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "action_visual_range_select",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "announce",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "message"
+            },
+            {
+              "annotation": "str",
+              "default": "'polite'",
+              "name": "priority"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "help_url"
+            }
+          ],
+          "returns": "str"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "call_from_thread",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Callable[..., _CallThreadReturnType | Awaitable[_CallThreadReturnType]]",
+              "default": null,
+              "name": "callback"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "*args"
+            },
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "**kwargs"
+            }
+          ],
+          "returns": "_CallThreadReturnType"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "notify",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "message"
+            },
+            {
+              "annotation": "str",
+              "default": "''",
+              "name": "title"
+            },
+            {
+              "annotation": "SeverityLevel",
+              "default": "'information'",
+              "name": "severity"
+            },
+            {
+              "annotation": "float | None",
+              "default": "None",
+              "name": "timeout"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "markup"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@overload"
+          ],
+          "name": "push_screen",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Screen[ScreenResultType] | str",
+              "default": null,
+              "name": "screen"
+            },
+            {
+              "annotation": "ScreenResultCallbackType[ScreenResultType] | None",
+              "default": "None",
+              "name": "callback"
+            },
+            {
+              "annotation": "Literal[False]",
+              "default": "False",
+              "name": "wait_for_dismiss"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "mode"
+            }
+          ],
+          "returns": "AwaitMount"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@overload"
+          ],
+          "name": "push_screen",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Screen[ScreenResultType] | str",
+              "default": null,
+              "name": "screen"
+            },
+            {
+              "annotation": "ScreenResultCallbackType[ScreenResultType] | None",
+              "default": "None",
+              "name": "callback"
+            },
+            {
+              "annotation": "Literal[True]",
+              "default": "True",
+              "name": "wait_for_dismiss"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "mode"
+            }
+          ],
+          "returns": "asyncio.Future[ScreenResultType]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@overload"
+          ],
+          "name": "query",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "selector"
+            }
+          ],
+          "returns": "DOMQuery[Widget]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@overload"
+          ],
+          "name": "query",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "type[_QueryType]",
+              "default": null,
+              "name": "selector"
+            }
+          ],
+          "returns": "DOMQuery[_QueryType]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@overload"
+          ],
+          "name": "query_one",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "selector"
+            }
+          ],
+          "returns": "Widget"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@overload"
+          ],
+          "name": "query_one",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "type[_QueryType]",
+              "default": null,
+              "name": "selector"
+            }
+          ],
+          "returns": "_QueryType"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@overload"
+          ],
+          "name": "query_one",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "selector"
+            },
+            {
+              "annotation": "type[_QueryType]",
+              "default": null,
+              "name": "expect_type"
+            }
+          ],
+          "returns": "_QueryType"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "rebuild_tree",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "search_query"
+            },
+            {
+              "annotation": "bool",
+              "default": "True",
+              "name": "run_validation"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "register_visual_selected_node",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "TreeNode[Any]",
+              "default": null,
+              "name": "node"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "render_tree",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "search_query"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "reset_progress_bar",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "None"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "run_execute_worker",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "run_scan_worker",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "run_validation_worker",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "update_status",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "text"
+            }
+          ],
+          "returns": "None"
+        }
+      ]
+    }
+  }
+}

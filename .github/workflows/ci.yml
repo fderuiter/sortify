@@ -150,15 +150,9 @@ jobs:
       run: |
         uv sync --frozen --all-groups
 
-    - name: Run ty Type Check
+    - name: Run Multi-Platform ty Guardrail
       run: |
-        uv run ty check --output-format github
-
-    - name: Enforce ty Warning Ceilings
-      run: |
-        for platform in linux darwin win32; do
-          uv run python scripts/check_ty_warnings.py --platform "$platform" --github-annotations
-        done
+        uv run python scripts/check_ty_warnings.py --github-annotations
 
   static-checks:
     name: Static Checks
@@ -236,7 +230,7 @@ jobs:
 
     - name: Validate Documentation and Integrity
       run: |
-        uv run python scripts/generate_docs.py --check --local-only
+        uv run python scripts/generate_docs.py --check --local-only --build
 
     - name: Upload Documentation Site Artifact
       if: github.ref == 'refs/heads/main'
@@ -561,6 +555,10 @@ jobs:
       uses: actions/setup-python@6d4fd22b20465ccc0f7354476588e8df7c9ca0e0 # v7.1.0
       with:
         python-version: "3.12"
+
+    - name: Verify Offline Manifest Matches Lockfile
+      run: |
+        uv run --no-project python scripts/prepare_offline.py --cpu --verify-lockfile
 
     - name: Prepare Offline Bundle
       run: |

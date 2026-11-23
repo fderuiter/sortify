@@ -46,7 +46,7 @@ The controller **fails closed** and blocks auto-merge for PRs touching any of th
 - Safe file movement & rollback logic (`app/core/mover.py`, `app/core/history.py`)
 - Quarantine & interceptor logic (`app/core/quarantine_interceptor.py`, `app/core/session.py`)
 - Release & compilation toolchains and CI/merge tooling (`scripts/**`, `smart-autosorter.spec`)
-- Dependency manifests and lockfile (`pyproject.toml`, `uv.lock`), unless the PR is an approved native Dependabot update (`dependabot[bot]`) or an automated security patch with a maintainer-applied `automerge` label
+- Dependency manifests and lockfile (`pyproject.toml`, `uv.lock`, `offline_bundle/requirements.txt`), unless the PR is an approved native Dependabot update (`dependabot[bot]`) or an automated security patch with a maintainer-applied `automerge` label
 - Major dependency updates (e.g. major version bumps)
 - Snapshot baselines (`tests/snapshots/api/**`, `tests/snapshots/tui_svg/**`)
 

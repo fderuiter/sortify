@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -1191,7 +1192,7 @@ def test_process_queue_halts_when_head_mergeable_is_unknown():
 def test_fifo_four_pr_queue_updates_each_branch_once():
     """Simulate a 4-PR FIFO queue and verify 3 branch updates total (1 per trailing PR)."""
     client = MagicMock(spec=GitHubClient)
-    prs_state = {
+    prs_state: dict[int, dict[str, Any]] = {
         num: {
             "number": num,
             "title": f"docs: change {num}",
@@ -1345,21 +1346,16 @@ def test_github_client_remove_label_and_get_file_content(monkeypatch):
     client = GitHubClient("tok", "fderuiter", "sortify")
     deleted_urls: list[str] = []
 
-    class DummyResp:
-        def __init__(self, status_code: int = 200, text: str = ""):
-            self.status_code = status_code
-            self.text = text
-            self.content = text.encode("utf-8")
-
-        def raise_for_status(self) -> None:
-            if self.status_code >= 400:
-                err = requests.HTTPError(f"HTTP {self.status_code}")
-                err.response = self  # type: ignore[assignment]
-                raise err
+    def _make_response(status_code: int = 200, text: str = "") -> requests.Response:
+        resp = requests.Response()
+        resp.status_code = status_code
+        resp._content = text.encode("utf-8")
+        resp.encoding = "utf-8"
+        return resp
 
     def fake_delete(url, headers=None, timeout=None):
         deleted_urls.append(url)
-        return DummyResp(status_code=404)
+        return _make_response(status_code=404)
 
     monkeypatch.setattr(requests, "delete", fake_delete)
     client.remove_label(42, "automerge:eligible")
@@ -1367,28 +1363,28 @@ def test_github_client_remove_label_and_get_file_content(monkeypatch):
         "https://api.github.com/repos/fderuiter/sortify/issues/42/labels/automerge%3Aeligible"
     ]
 
-    captured_get: dict[str, object] = {}
+    captured_url: list[str] = []
+    captured_headers: dict[str, str] = {}
+    captured_params: dict[str, str] = {}
 
     def fake_get(url, headers=None, params=None, timeout=None):
-        captured_get["url"] = url
-        captured_get["headers"] = headers
-        captured_get["params"] = params
+        captured_url.append(url)
+        if headers:
+            captured_headers.update(headers)
+        if params:
+            captured_params.update(params)
         if params and params.get("ref") == "missing_sha":
-            return DummyResp(status_code=404)
-        return DummyResp(status_code=200, text="version = 1\n")
+            return _make_response(status_code=404)
+        return _make_response(status_code=200, text="version = 1\n")
 
     monkeypatch.setattr(requests, "get", fake_get)
     content = client.get_file_content("uv.lock", "abc123")
     assert content == "version = 1\n"
-    assert (
-        captured_get["url"]
-        == "https://api.github.com/repos/fderuiter/sortify/contents/uv.lock"
-    )
-    assert captured_get["params"] == {"ref": "abc123"}
-    assert (
-        captured_get["headers"]["Accept"]  # type: ignore[index]
-        == "application/vnd.github.raw+json"
-    )
+    assert captured_url == [
+        "https://api.github.com/repos/fderuiter/sortify/contents/uv.lock"
+    ]
+    assert captured_params == {"ref": "abc123"}
+    assert captured_headers["Accept"] == "application/vnd.github.raw+json"
     assert client.get_file_content("uv.lock", "missing_sha") is None
 
 

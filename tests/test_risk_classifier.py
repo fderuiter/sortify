@@ -826,3 +826,42 @@ def test_classify_pr_workflow_verifies_maintainer_and_fetches_manifests_via_api(
     assert "isApprovedBot" in script
     assert "github.rest.repos.getContent" in script
     assert "offline_bundle/requirements.txt" in script
+
+
+def test_offline_requirements_manifest_requires_automerge_opt_in_for_security_patch():
+    blocked_meta = PRMetadata(
+        pr_number=206,
+        title="[Security] Patch certifi from 2026.7.22 to 2026.10.19",
+        author="sortify-remediation[bot]",
+        is_security_patch=True,
+        labels=["security", "dependencies", "severity:high", "priority:urgent"],
+        changed_files=["uv.lock", "offline_bundle/requirements.txt"],
+        additions=14,
+        deletions=14,
+        dependency_update_type="minor",
+        all_commits_verified=True,
+    )
+    blocked_res = classify_pr(blocked_meta)
+    assert blocked_res.eligible is False
+    assert blocked_res.risk_level == "sensitive"
+    assert "automerge:blocked" in blocked_res.labels_to_add
+    assert any(
+        "offline_bundle/requirements.txt" in r for r in blocked_res.blocking_reasons
+    )
+
+    eligible_meta = PRMetadata(
+        pr_number=207,
+        title="[Security] Patch certifi from 2026.7.22 to 2026.10.19",
+        author="sortify-remediation[bot]",
+        is_security_patch=True,
+        labels=["security", "dependencies", "severity:high", "automerge"],
+        changed_files=["uv.lock", "offline_bundle/requirements.txt"],
+        additions=14,
+        deletions=14,
+        dependency_update_type="minor",
+        all_commits_verified=True,
+    )
+    eligible_res = classify_pr(eligible_meta)
+    assert eligible_res.eligible is True
+    assert eligible_res.risk_level == "low"
+    assert "automerge:eligible" in eligible_res.labels_to_add

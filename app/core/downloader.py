@@ -402,7 +402,7 @@ class DownloadManager(LifecycleTelemetryMixin):
                 handlers.append(urllib.request.ProxyHandler({}))
                 self._opener = urllib.request.build_opener(*handlers)
 
-    def get_opener(self, proxy: str = None) -> urllib.request.OpenerDirector:
+    def get_opener(self, proxy: str | None = None) -> urllib.request.OpenerDirector:
         """Retrieve the active cached opener or raise NetworkError if proxy configuration is invalid."""
         with self._opener_lock:
             if proxy is not None and proxy != "":

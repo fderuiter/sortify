@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "87072781a5087015ba10cbc7294fa6bd1bbeadd5972568434492b500a66c2517"
+    "checksum": "9df6ca195407120bb09c71a435bec487589fb3b8d12f848dc27bc7a7e58837ea"
   },
   "classes": [
     {
@@ -445,7 +445,7 @@
           "name": "settings"
         },
         {
-          "annotation": "str",
+          "annotation": "str | None",
           "default": "None",
           "name": "base_dir"
         }

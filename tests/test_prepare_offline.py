@@ -1,13 +1,23 @@
 import io
+import re
 import sys
 import tarfile
+from pathlib import Path
 from unittest.mock import MagicMock, patch
 
 import pytest
 
-from scripts.prepare_offline import _load_required_project_packages, main
+from scripts.prepare_offline import (
+    _load_required_project_packages,
+    _validate_manifest,
+    main,
+)
 
 DUMMY_HASH = "sha256:" + ("a" * 64)
+REPO_ROOT = Path(__file__).resolve().parent.parent
+TRACKED_OFFLINE_REQS = (
+    (REPO_ROOT / "offline_bundle" / "requirements.txt").read_bytes().decode("utf-8")
+)
 
 
 def _build_mock_requirements(
@@ -16,27 +26,48 @@ def _build_mock_requirements(
     include_hashes: bool = True,
     torch_lines: list[str] | None = None,
 ) -> str:
-    """Build a mocked requirements.txt covering base and ml packages from pyproject.toml."""
-    omit = omit_packages or set()
-    base_deps, ml_deps = _load_required_project_packages()
-    all_pkgs = sorted((base_deps | ml_deps) - omit - {"torch"})
+    """Build a mocked requirements.txt based on tracked uv.lock pins with optional test mutations."""
+    omit = {p.lower().replace("_", "-") for p in (omit_packages or set())}
+    logical_entries: list[str] = []
+    cur: list[str] = []
+    for raw_line in TRACKED_OFFLINE_REQS.splitlines():
+        stripped = raw_line.strip()
+        if not stripped or stripped.startswith("#"):
+            continue
+        cont = raw_line.rstrip().endswith("\\")
+        part = stripped[:-1].strip() if stripped.endswith("\\") else stripped
+        if part:
+            cur.append(part)
+        if not cont and cur:
+            logical_entries.append(" ".join(cur))
+            cur = []
+    if cur:
+        logical_entries.append(" ".join(cur))
 
-    hash_suffix = f" --hash={DUMMY_HASH}" if include_hashes else ""
-    lines = [f"{pkg}==1.0.0{hash_suffix}" for pkg in all_pkgs]
+    out_lines: list[str] = []
+    for entry in logical_entries:
+        pkg_prefix = entry.split("==", 1)[0].split("[", 1)[0].strip().lower()
+        pkg_norm = pkg_prefix.replace("_", "-").replace(".", "-")
+        if pkg_norm in omit:
+            continue
+        if torch_lines is not None and pkg_norm in ("torch", "torchvision"):
+            continue
+        if not include_hashes:
+            entry = entry.split(" --hash=", 1)[0].strip()
+        out_lines.append(entry)
 
-    if "torch" not in omit:
-        if torch_lines is not None:
-            lines.extend(torch_lines)
-        else:
-            lines.extend(
-                [
-                    f"torch==2.15.0 ; sys_platform == 'darwin'{hash_suffix}",
-                    f"torch==2.15.0+cpu ; sys_platform != 'darwin'{hash_suffix}",
-                    f"torchvision==0.29.2 ; sys_platform == 'darwin'{hash_suffix}",
-                    f"torchvision==0.29.2+cpu ; sys_platform != 'darwin'{hash_suffix}",
-                ]
-            )
-    return "\n".join(lines) + "\n"
+    if "torch" not in omit and torch_lines is not None:
+        out_lines.extend(torch_lines)
+
+    # Ensure all required pyproject packages are represented if TRACKED_OFFLINE_REQS was empty
+    if not out_lines and not omit:
+        base_deps, ml_deps = _load_required_project_packages()
+        hash_suffix = f" --hash={DUMMY_HASH}" if include_hashes else ""
+        out_lines = [
+            f"{pkg}==1.0.0{hash_suffix}" for pkg in sorted(base_deps | ml_deps)
+        ]
+
+    return "\n".join(out_lines) + "\n"
 
 
 def _default_cpu_torch_wheel() -> MagicMock:
@@ -57,7 +88,7 @@ def _default_cpu_torch_wheel() -> MagicMock:
 def test_prepare_offline_cpu_success(
     mock_print, mock_mkdir, mock_archive, mock_rmtree, mock_run
 ):
-    """Test that prepare_offline.py compiles --extra ml --universal and succeeds with CPU wheels."""
+    """Test that prepare_offline.py exports from uv.lock via uv export --frozen and succeeds with CPU wheels."""
     with patch("sys.argv", ["prepare_offline.py", "--cpu"]):
         with patch("sys.exit", side_effect=SystemExit) as mock_exit:
             mock_requirements = _build_mock_requirements()
@@ -79,23 +110,21 @@ def test_prepare_offline_cpu_success(
                     "offline_bundle", "zip", "offline_bundle"
                 )
 
-                # Verify subprocess.run invocations (compile, venv, download)
+                # Verify subprocess.run invocations (export, venv, download)
                 assert mock_run.call_count == 3
 
-                # Verify uv pip compile uses --extra ml, --universal, --generate-hashes,
-                # --index-strategy first-index, and --torch-backend cpu
-                compile_cmd = mock_run.call_args_list[0][0][0]
-                assert "--extra" in compile_cmd
-                assert compile_cmd[compile_cmd.index("--extra") + 1] == "ml"
-                assert "--universal" in compile_cmd
-                assert "--generate-hashes" in compile_cmd
-                assert "--index-strategy" in compile_cmd
+                # Verify uv export uses --frozen --format requirements.txt --extra ml --no-dev --no-emit-project
+                export_cmd = mock_run.call_args_list[0][0][0]
+                assert export_cmd[:2] == ["uv", "export"]
+                assert "--frozen" in export_cmd
+                assert "--format" in export_cmd
                 assert (
-                    compile_cmd[compile_cmd.index("--index-strategy") + 1]
-                    == "first-index"
+                    export_cmd[export_cmd.index("--format") + 1] == "requirements.txt"
                 )
-                assert "--torch-backend" in compile_cmd
-                assert compile_cmd[compile_cmd.index("--torch-backend") + 1] == "cpu"
+                assert "--extra" in export_cmd
+                assert export_cmd[export_cmd.index("--extra") + 1] == "ml"
+                assert "--no-dev" in export_cmd
+                assert "--no-emit-project" in export_cmd
 
                 # Verify pip download uses --require-hashes and --no-deps
                 download_cmd = mock_run.call_args_list[2][0][0]
@@ -111,7 +140,7 @@ def test_prepare_offline_cpu_success(
 def test_prepare_offline_frozen_skips_compile_and_succeeds(
     mock_print, mock_mkdir, mock_archive, mock_rmtree, mock_run
 ):
-    """Test that --frozen skips uv pip compile and validates tracked requirements.txt."""
+    """Test that --frozen skips uv export and validates tracked requirements.txt."""
     with patch("sys.argv", ["prepare_offline.py", "--cpu", "--frozen"]):
         with patch("sys.exit", side_effect=SystemExit) as mock_exit:
             mock_requirements = _build_mock_requirements()
@@ -129,10 +158,11 @@ def test_prepare_offline_frozen_skips_compile_and_succeeds(
                 main()
 
                 mock_exit.assert_not_called()
-                # Only uv venv --seed and pip download should run (no uv pip compile)
+                # Only uv venv --seed and pip download should run (no uv export / compile)
                 assert mock_run.call_count == 2
                 for call in mock_run.call_args_list:
                     assert "compile" not in call[0][0]
+                    assert "export" not in call[0][0]
 
 
 @pytest.mark.parametrize(
@@ -362,3 +392,54 @@ def test_prepare_offline_preserves_models(
                 assert "offline_bundle/wheels" in deleted_paths or any(
                     "wheels" in p for p in deleted_paths
                 )
+
+
+@patch("scripts.prepare_offline.subprocess.run")
+def test_verify_lockfile_passes_on_synchronized_repository_manifest(
+    mock_run, monkeypatch
+):
+    """--verify-lockfile validates tracked offline_bundle/requirements.txt against uv.lock without downloading wheels."""
+    monkeypatch.chdir(REPO_ROOT)
+    with patch("sys.argv", ["prepare_offline.py", "--cpu", "--verify-lockfile"]):
+        main()
+    mock_run.assert_not_called()
+
+
+@pytest.mark.parametrize(
+    "mutation",
+    [
+        "pin_drift",
+        "hash_mismatch",
+        "missing_locked_transitive",
+        "unexpected_extra_package",
+    ],
+)
+def test_validate_manifest_fails_closed_on_uv_lock_divergence(mutation: str):
+    """_validate_manifest must exit(1) whenever offline_bundle/requirements.txt diverges from uv.lock."""
+    base_manifest = _build_mock_requirements()
+    uv_lock_path = REPO_ROOT / "uv.lock"
+
+    if mutation == "pin_drift":
+        mutated = re.sub(
+            r"(?m)^attrs==[^\s]+",
+            "attrs==1999.1.1",
+            base_manifest,
+            count=1,
+        )
+    elif mutation == "hash_mismatch":
+        bogus_hash = "sha256:" + ("f" * 64)
+        mutated = re.sub(
+            r"--hash=sha256:[0-9a-f]{64}",
+            f"--hash={bogus_hash}",
+            base_manifest,
+            count=1,
+        )
+    elif mutation == "missing_locked_transitive":
+        mutated = _build_mock_requirements(omit_packages={"annotated-types"})
+    else:
+        mutated = base_manifest + f"pytest==9.99.0 --hash={DUMMY_HASH}\n"
+
+    assert mutated != base_manifest
+    with pytest.raises(SystemExit) as exc_info:
+        _validate_manifest(mutated, is_cpu=True, uv_lock_path=uv_lock_path)
+    assert exc_info.value.code == 1

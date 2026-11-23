@@ -283,8 +283,17 @@ def test_tui_rename_node_announcement(temp_workspace):
         async with app.run_test() as pilot:
             await pilot.pause(0.1)
             app.active_tree_node = None
-            announcements = []
-            app.announce = lambda msg: announcements.append(msg)
+            announcements: list[str] = []
+
+            def _mock_announce(
+                message: str,
+                priority: str = "polite",
+                help_url: str | None = None,
+            ) -> str:
+                announcements.append(message)
+                return message
+
+            app.announce = _mock_announce
             app.action_rename_node()
             assert any("[F2]" in a for a in announcements)
             assert any(

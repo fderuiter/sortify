@@ -353,9 +353,9 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
                     f"Using the existing sample dataset in {self.target_dir}."
                 )
             if hasattr(self.app, "base_dir"):
-                self.app.base_dir = self.target_dir
+                setattr(self.app, "base_dir", self.target_dir)
             if hasattr(self.app, "source_dirs"):
-                self.app.source_dirs = [self.target_dir]
+                setattr(self.app, "source_dirs", [self.target_dir])
             update_cta = getattr(self.app, "_update_onboarding_cta_visibility", None)
             if callable(update_cta):
                 try:
@@ -379,8 +379,9 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
         app_ref = self.app
         was_wizard_underneath = len(app_ref.screen_stack) > 2
         self.dismiss(None)
-        if not was_wizard_underneath and hasattr(app_ref, "action_scan_directory"):
-            app_ref.action_scan_directory()
+        scan_fn = getattr(app_ref, "action_scan_directory", None)
+        if not was_wizard_underneath and callable(scan_fn):
+            scan_fn()
 
     @on(Button.Pressed, "#btn-close-playground")
     def action_cancel(self) -> None:

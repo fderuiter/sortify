@@ -7,7 +7,7 @@ from app.core.path_utils import scrub_user_home_paths
 from app.core.text_utils import sanitize_secret_patterns
 
 
-def scrub_diagnostic_text(text: str, home_dir: str = None) -> str:
+def scrub_diagnostic_text(text: str, home_dir: str | None = None) -> str:
     """Scrub user home directory paths and sensitive credential tokens from diagnostic text."""
     if not isinstance(text, str) or not text:
         return text

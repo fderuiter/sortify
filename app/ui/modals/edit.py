@@ -1742,8 +1742,10 @@ class InteractiveCollisionResolverModal(
                         allow_blank=False,
                     )
                     batch_sel.tooltip = "Select batch deduplication action to apply to all collision groups"
-                    batch_sel.aria_label = (
-                        "Batch resolution action for all duplicate clusters"
+                    setattr(
+                        batch_sel,
+                        "aria_label",
+                        "Batch resolution action for all duplicate clusters",
                     )
                     yield batch_sel
 
@@ -1751,8 +1753,10 @@ class InteractiveCollisionResolverModal(
                     btn_apply.tooltip = (
                         "Apply selected resolution action to all duplicate clusters"
                     )
-                    btn_apply.aria_label = (
-                        "Apply selected resolution action to all duplicate clusters"
+                    setattr(
+                        btn_apply,
+                        "aria_label",
+                        "Apply selected resolution action to all duplicate clusters",
                     )
                     yield btn_apply
 
@@ -1799,8 +1803,10 @@ class InteractiveCollisionResolverModal(
                             sel.tooltip = (
                                 f"Select collision resolution action for {tf_name}"
                             )
-                            sel.aria_label = (
-                                f"Resolution action for duplicate group {tf_name}"
+                            setattr(
+                                sel,
+                                "aria_label",
+                                f"Resolution action for duplicate group {tf_name}",
                             )
                             yield sel
 

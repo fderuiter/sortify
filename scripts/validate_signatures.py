@@ -25,6 +25,7 @@ SNAPSHOT_PATH = SNAPSHOT_DIR  # Backwards-compatibility alias
 MAIN_CLI_PATH = os.path.join(BASE_DIR, "app", "main.py")
 SANDBOX_CLI_PATH = os.path.join(BASE_DIR, "sandbox_cli.py")
 CONFIG_PATH = os.path.join(BASE_DIR, "app", "config.py")
+UI_PROTOCOLS_PATH = os.path.join(BASE_DIR, "app", "ui", "protocols.py")
 PLUGINS_DIR = os.path.join(BASE_DIR, "app", "plugins")
 
 
@@ -467,8 +468,28 @@ def collect_config_definitions(config_path=None):
     return dict(sorted(config_data.items()))
 
 
+def collect_ui_protocol_definitions(ui_protocols_path=None):
+    """Extract UI host protocol contract signatures from app/ui/protocols.py."""
+    if ui_protocols_path is None:
+        ui_protocols_path = UI_PROTOCOLS_PATH
+
+    ui_data = {}
+    if os.path.exists(ui_protocols_path):
+        rel_path = safe_relpath(ui_protocols_path, BASE_DIR).replace("\\", "/")
+        ui_data[rel_path] = {
+            **extract_module_signatures(ui_protocols_path),
+            "protocols": extract_protocols(ui_protocols_path),
+        }
+
+    return dict(sorted(ui_data.items()))
+
+
 def collect_current_definitions(
-    cli_dir=None, core_dir=None, plugins_dir=None, config_path=None
+    cli_dir=None,
+    core_dir=None,
+    plugins_dir=None,
+    config_path=None,
+    ui_protocols_path=None,
 ):
     """Parse codebase files and return the complete current definitions structure."""
     return {
@@ -476,6 +497,7 @@ def collect_current_definitions(
         "core": collect_core_definitions(core_dir=core_dir),
         "plugins": collect_plugins_definitions(plugins_dir=plugins_dir),
         "config": collect_config_definitions(config_path=config_path),
+        "ui": collect_ui_protocol_definitions(ui_protocols_path=ui_protocols_path),
     }
 
 
@@ -648,6 +670,20 @@ def collect_modules_and_payloads():
                 modules.append(
                     {
                         "category": "config",
+                        "source_rel": source_rel,
+                        "snapshot_path": snap_path,
+                        "payload": payload,
+                    }
+                )
+
+        ui_dict = defs.get("ui", {})
+        if isinstance(ui_dict, dict):
+            for source_rel, ui_sigs in ui_dict.items():
+                snap_path = source_path_to_snapshot_path(source_rel)
+                payload = ui_sigs
+                modules.append(
+                    {
+                        "category": "ui",
                         "source_rel": source_rel,
                         "snapshot_path": snap_path,
                         "payload": payload,

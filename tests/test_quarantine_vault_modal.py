@@ -300,3 +300,54 @@ def test_auto_sorter_tui_ctrl_u_binding():
             assert isinstance(app.screen, QuarantineVaultModal)
 
     asyncio.run(_test())
+
+
+def test_quarantine_vault_modal_update_table_selections(staged_quarantine_item):
+    """Verify QuarantineVaultModal._update_table_selections updates Sel cells via RowKey membership."""
+    staged, db, _base_dir = staged_quarantine_item
+    job_id = str(staged["job_id"])
+
+    async def _test() -> None:
+        modal = QuarantineVaultModal(db=db, base_dir="")
+        settings = AppSettings()
+        settings._settings_model.AI_CONSENT_GRANTED = True
+        app = AutoSorterTUI(settings=settings)
+
+        async with app.run_test() as pilot:
+            await app.push_screen(modal)
+            await pilot.pause()
+            await app.workers.wait_for_complete()
+            await pilot.pause()
+
+            table = modal.query_one("#quarantine-table", DataTable)
+            assert table.row_count == 1
+            assert str(table.get_cell(job_id, "Sel")) == "[ ]"
+
+            modal.selected_job_ids = {job_id, "nonexistent-job-id"}
+            modal._update_table_selections()
+            assert str(table.get_cell(job_id, "Sel")) == "[x]"
+
+            modal.selected_job_ids.clear()
+            modal._update_table_selections()
+            assert str(table.get_cell(job_id, "Sel")) == "[ ]"
+
+            from textual.widgets import Checkbox
+
+            chk = modal.query_one("#chk-select-all", Checkbox)
+            chk.toggle()
+            for _ in range(20):
+                if job_id in modal.selected_job_ids:
+                    break
+                await pilot.pause(0.05)
+            assert job_id in modal.selected_job_ids
+            assert str(table.get_cell(job_id, "Sel")) == "[x]"
+
+            chk.toggle()
+            for _ in range(20):
+                if job_id not in modal.selected_job_ids:
+                    break
+                await pilot.pause(0.05)
+            assert job_id not in modal.selected_job_ids
+            assert str(table.get_cell(job_id, "Sel")) == "[ ]"
+
+    asyncio.run(_test())

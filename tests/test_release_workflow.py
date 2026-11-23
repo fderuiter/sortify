@@ -481,7 +481,11 @@ def test_check_release_changes_skips_tool_only_pyproject_and_builds_packaging_ed
     # Tool-only edits in lint/type/test/coverage tables do NOT affect packaging
     tool_only_edits = [
         base_pyproject.replace("line-length = 88", "line-length = 100"),
-        base_pyproject.replace("error-on-warning = false", "error-on-warning = true"),
+        base_pyproject.replace("error-on-warning = true", "error-on-warning = false"),
+        base_pyproject.replace(
+            'baseline = "tests/ty_baseline.json"',
+            'baseline = "tests/ty_baseline_v2.json"',
+        ),
         base_pyproject.replace("timeout = 360", "timeout = 400"),
         base_pyproject.replace("show_missing = true", "show_missing = false"),
         base_pyproject.replace(
@@ -489,7 +493,10 @@ def test_check_release_changes_skips_tool_only_pyproject_and_builds_packaging_ed
             'known_first_party = ["app", "scripts", "tests"]',
         ),
         base_pyproject + "\n[tool.mypy]\nstrict = true\n",
-        base_pyproject.replace('"app/config.py" = 1', '"app/config.py" = 0'),
+        base_pyproject.replace(
+            "[tool.sortify.ty-warning-ceilings]\n",
+            '[tool.sortify.ty-warning-ceilings]\n"tests/test_tui.py" = 1\n',
+        ),
         base_pyproject.replace('"app/core/mover.py" = 74', '"app/core/mover.py" = 76'),
     ]
     for edited in tool_only_edits:

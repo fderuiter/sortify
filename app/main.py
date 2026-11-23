@@ -1823,6 +1823,8 @@ def _main_impl():
     apply_config_overrides(settings, args)
 
     # Configure Centralized Logger
+    if settings.LOG_FILE:
+        Path(settings.LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
     logging.basicConfig(
         filename=settings.LOG_FILE,
         level=logging.INFO,

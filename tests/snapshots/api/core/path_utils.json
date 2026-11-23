@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "34186c55f7a8988eb22b99d2f882e81ef344a2f3a7109d7e303a431feefe2841"
+    "checksum": "95e133eb1ba5303fc1842515da85e55e2818b2fce8b2a47b0da11ed32a4e3933"
   },
   "classes": [],
   "functions": [
@@ -10,7 +10,7 @@
       "name": "get_base_path",
       "parameters": [
         {
-          "annotation": "str",
+          "annotation": "str | None",
           "default": "None",
           "name": "caller_file_path"
         }
@@ -245,7 +245,7 @@
       "name": "setup_session_directory",
       "parameters": [
         {
-          "annotation": "str",
+          "annotation": "str | None",
           "default": "None",
           "name": "session_id"
         }
