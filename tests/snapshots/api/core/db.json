@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "50d70adb7051a4390aba20cd0ba362adce817ebe70379e87286c0fd675a6d16d"
+    "checksum": "184e23cd929bf7da0bb9412d30fce9384713247f53a7c5612bedf6c590184a18"
   },
   "classes": [
     {
@@ -103,6 +103,11 @@
               "annotation": null,
               "default": null,
               "name": "updates"
+            },
+            {
+              "annotation": "Callable[[Any], None] | None",
+              "default": "None",
+              "name": "extra_conn_ops"
             }
           ],
           "returns": null
@@ -334,6 +339,29 @@
             }
           ],
           "returns": "list[tuple[str, str]]"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "get_documents_map",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "base_dir"
+            },
+            {
+              "annotation": "list[str]",
+              "default": null,
+              "name": "filepaths"
+            }
+          ],
+          "returns": "dict[str, dict[str, Any]]"
         },
         {
           "async": false,

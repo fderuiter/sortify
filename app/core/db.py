@@ -3,6 +3,7 @@
 import logging
 import os
 import weakref
+from collections.abc import Callable
 from pathlib import Path
 from typing import Any, Optional
 
@@ -461,6 +462,75 @@ class Database:
 
         return result
 
+    def get_documents_map(
+        self, base_dir: str, filepaths: list[str]
+    ) -> dict[str, dict[str, Any]]:
+        """Retrieve cached ``file_hash`` and decrypted ``extracted_text`` for ``filepaths`` in batches."""
+        if not base_dir or not filepaths:
+            return {}
+
+        reverse_norm: dict[str, list[str]] = {}
+        for fp in filepaths:
+            norm_fp = fp.replace("\\", "/")
+            reverse_norm.setdefault(norm_fp, []).append(fp)
+
+        result: dict[str, dict[str, Any]] = {}
+
+        with self._cache_lock:
+            if self._cached_base_dir == base_dir and self._cached_documents is not None:
+                if hasattr(self._cached_documents, "get") and not isinstance(
+                    self._cached_documents, list
+                ):
+                    for norm_fp, orig_fps in reverse_norm.items():
+                        row = self._cached_documents.get(norm_fp)
+                        if row is not None:
+                            entry = {
+                                "file_hash": row[2] or "",
+                                "extracted_text": row[1] or "",
+                            }
+                            result[norm_fp] = entry
+                            for orig_fp in orig_fps:
+                                result[orig_fp] = entry
+                else:
+                    for row in self._cached_documents:
+                        if row[0] in reverse_norm:
+                            entry = {
+                                "file_hash": row[2] or "",
+                                "extracted_text": row[1] or "",
+                            }
+                            result[row[0]] = entry
+                            for orig_fp in reverse_norm[row[0]]:
+                                result[orig_fp] = entry
+
+        unique_missing = [norm_fp for norm_fp in reverse_norm if norm_fp not in result]
+        if unique_missing:
+            conn = get_db_connection(self.db_path)
+            with conn:
+                batch_size = 500
+                for i in range(0, len(unique_missing), batch_size):
+                    batch = unique_missing[i : i + batch_size]
+                    placeholders = ",".join("?" for _ in batch)
+                    cursor = conn.execute(
+                        f"SELECT filepath, file_hash, extracted_text FROM documents WHERE base_dir = ? AND filepath IN ({placeholders})",
+                        [base_dir, *batch],
+                    )
+                    for db_fp, db_hash, enc_text in cursor.fetchall():
+                        decrypted_text = ""
+                        if enc_text:
+                            try:
+                                decrypted_text = self.crypto.decrypt_text(enc_text)
+                            except Exception:
+                                decrypted_text = ""
+                        entry = {
+                            "file_hash": db_hash or "",
+                            "extracted_text": decrypted_text,
+                        }
+                        result[db_fp] = entry
+                        for orig_fp in reverse_norm.get(db_fp, ()):
+                            result[orig_fp] = entry
+
+        return result
+
     def upsert_document(self, base_dir, filepath, file_hash, extracted_text):
         """Insert or update a document in the database."""
         if "::" in filepath:
@@ -523,7 +593,6 @@ class Database:
         """Insert or update multiple documents in the database."""
         if not documents:
             return
-        self.invalidate_cache()
 
         precomputed_term_counts = {}
 
@@ -553,34 +622,32 @@ class Database:
             key, counts = _process_doc(documents[0])
             precomputed_term_counts[key] = counts
 
+        from app.core.text_utils import sanitize_text
+
+        rows_to_insert = []
+        normalized_docs = []
+        for doc in documents:
+            base_dir, filepath, file_hash, extracted_text = doc[:4]
+            if "::" in filepath:
+                s_root, rel_p = filepath.split("::", 1)
+                base_dir = s_root
+                filepath = rel_p
+            filepath = filepath.replace("\\", "/")
+
+            sanitized_text = (
+                sanitize_text(extracted_text) if extracted_text is not None else None
+            )
+            enc_text = (
+                self.crypto.encrypt_text(sanitized_text)
+                if sanitized_text is not None
+                else None
+            )
+            rows_to_insert.append((base_dir, filepath, file_hash, enc_text))
+            normalized_docs.append((base_dir, filepath))
+
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
-                from app.core.text_utils import sanitize_text
-
-                rows_to_insert = []
-                for doc in documents:
-                    base_dir, filepath, file_hash, extracted_text = doc[:4]
-                    if "::" in filepath:
-                        s_root, rel_p = filepath.split("::", 1)
-                        base_dir = s_root
-                        filepath = rel_p
-                    filepath = filepath.replace("\\", "/")
-
-                    sanitized_text = (
-                        sanitize_text(extracted_text)
-                        if extracted_text is not None
-                        else None
-                    )
-
-                    enc_text = (
-                        self.crypto.encrypt_text(sanitized_text)
-                        if sanitized_text is not None
-                        else None
-                    )
-
-                    rows_to_insert.append((base_dir, filepath, file_hash, enc_text))
-
                 conn.executemany(
                     """
                     INSERT INTO documents (base_dir, filepath, file_hash, extracted_text)
@@ -592,13 +659,7 @@ class Database:
                     rows_to_insert,
                 )
 
-                for doc in documents:
-                    base_dir, filepath, file_hash, extracted_text = doc[:4]
-                    if "::" in filepath:
-                        s_root, rel_p = filepath.split("::", 1)
-                        base_dir = s_root
-                        filepath = rel_p
-                    filepath = filepath.replace("\\", "/")
+                for base_dir, filepath in normalized_docs:
                     cursor = conn.execute(
                         "SELECT user_verified_target_path FROM documents WHERE base_dir = ? AND filepath = ?",
                         (base_dir, filepath),
@@ -1489,18 +1550,28 @@ class Database:
                 )
                 was_in = cursor.fetchone() is not None
                 if was_in:
-                    cursor = conn.execute(
-                        "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
-                        (base_dir, new_filepath),
-                    )
-                    row = cursor.fetchone()
-                    decrypted_text = None
-                    if row and row[0]:
-                        try:
-                            decrypted_text = self.crypto.decrypt_text(row[0])
-                        except Exception:
-                            decrypted_text = None
-                    if self._is_tfidf_eligible(new_filepath, decrypted_text):
+                    if self._is_tfidf_eligible_extension(
+                        new_filepath
+                    ) and self._is_tfidf_eligible_extension(old_filepath):
+                        still_eligible = True
+                    elif not self._is_tfidf_eligible_extension(new_filepath):
+                        still_eligible = False
+                    else:
+                        cursor = conn.execute(
+                            "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                            (base_dir, new_filepath),
+                        )
+                        row = cursor.fetchone()
+                        decrypted_text = None
+                        if row and row[0]:
+                            try:
+                                decrypted_text = self.crypto.decrypt_text(row[0])
+                            except Exception:
+                                decrypted_text = None
+                        still_eligible = self._is_tfidf_eligible(
+                            new_filepath, decrypted_text
+                        )
+                    if still_eligible:
                         conn.execute(
                             "UPDATE tfidf_doc_terms SET filepath = ? WHERE base_dir = ? AND filepath = ?",
                             (new_filepath, base_dir, old_filepath),
@@ -1540,19 +1611,25 @@ class Database:
                                 term_counts=counts,
                             )
 
-    def execute_batch_updates(self, updates):
+    def execute_batch_updates(
+        self,
+        updates,
+        *,
+        extra_conn_ops: Callable[[Any], None] | None = None,
+    ):
         """Execute all collected database updates in a single unified database transaction."""
-        if not updates:
+        if not updates and extra_conn_ops is None:
             return
-        self.invalidate_cache()
 
         precomputed_updates_map = {}
-        for item in updates:
+        conn_read = None
+        for item in updates or ():
             if item["type"] == "verified_target":
                 base_dir, file_hash, target_path = item["args"]
                 if target_path:
                     try:
-                        conn_read = get_db_connection(self.db_path)
+                        if conn_read is None:
+                            conn_read = get_db_connection(self.db_path)
                         cursor = conn_read.execute(
                             "SELECT filepath, extracted_text FROM documents WHERE base_dir = ? AND file_hash = ?",
                             (base_dir, file_hash),
@@ -1579,23 +1656,42 @@ class Database:
                 new_dir = os.path.dirname(new_filepath).replace("\\", "/")
                 if new_dir:
                     try:
-                        doc = self.get_document(base_dir, old_filepath)
-                        if doc and doc.get("extracted_text"):
-                            ext_text = doc["extracted_text"]
-                            if self._is_tfidf_eligible(new_filepath, ext_text):
-                                precomputed_updates_map[(base_dir, new_filepath)] = (
-                                    self.compute_term_frequencies(ext_text)
-                                )
+                        ext_text = None
+                        with self._cache_lock:
+                            if (
+                                self._cached_base_dir == base_dir
+                                and self._cached_documents is not None
+                            ):
+                                cached_row = self._cached_documents.get(old_filepath)
+                                if cached_row:
+                                    ext_text = cached_row[2]
+                        if ext_text is None:
+                            if conn_read is None:
+                                conn_read = get_db_connection(self.db_path)
+                            row = conn_read.execute(
+                                "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
+                                (base_dir, old_filepath),
+                            ).fetchone()
+                            if row and row[0]:
+                                ext_text = self.crypto.decrypt_text(row[0])
+                        if ext_text and self._is_tfidf_eligible(new_filepath, ext_text):
+                            precomputed_updates_map[(base_dir, new_filepath)] = (
+                                self.compute_term_frequencies(ext_text)
+                            )
                     except Exception:
                         pass
 
         def _write():
             conn = get_db_connection(self.db_path)
             with conn:
-                self._apply_batch_updates_on_conn(
-                    conn, updates, precomputed_updates_map
-                )
-            self.invalidate_cache()
+                if extra_conn_ops is not None:
+                    extra_conn_ops(conn)
+                if updates:
+                    self._apply_batch_updates_on_conn(
+                        conn, updates, precomputed_updates_map
+                    )
+            if updates:
+                self.invalidate_cache()
 
         self.worker.execute_write(_write)
 

@@ -166,10 +166,15 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
     if ledger_cmd != "export":
         ledger_db_path = getattr(args, "ledger_db", None)
         if ledger_db_path is None:
-            from app.core.store import open_store
+            from app.core.services import acquire_services
 
-            ledger_db_path = str(open_store().path)
-        ledger = MoveLedger(db_path=ledger_db_path, auto_init=True)
+            lease = acquire_services()
+            db = lease.db
+            ledger = lease.history.moves
+        else:
+            ledger = MoveLedger(
+                db_path=ledger_db_path, auto_init=(ledger_cmd != "status")
+            )
 
     try:
         if ledger_cmd == "status":
@@ -219,13 +224,14 @@ def handle_ledger_command(args: argparse.Namespace, settings: AppSettings) -> bo
 
         elif ledger_cmd == "reconcile":
             assert ledger is not None
-            try:
-                from app.core.services import acquire_services
+            if lease is None:
+                try:
+                    from app.core.services import acquire_services
 
-                lease = acquire_services()
-                db = lease.db
-            except Exception:
-                pass
+                    lease = acquire_services()
+                    db = lease.db
+                except Exception:
+                    pass
 
             reconciled_count = ledger.reconcile_incomplete_transactions(db=db)
 

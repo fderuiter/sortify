@@ -7,6 +7,7 @@ import concurrent.futures
 import inspect
 import logging
 import os
+import threading
 from collections.abc import Callable
 from enum import Enum
 from typing import Any, Optional
@@ -412,6 +413,92 @@ def process_item_worker(
     return item, "", ""
 
 
+class _ChunkExtractionBatch:
+    """Per-chunk database adapter that prefetches cached hashes/texts and flushes upserts once."""
+
+    def __init__(self, db: Any, base_dir: str, items: list[Any]) -> None:
+        self._db = db
+        self._lock = threading.Lock()
+        self._pending: list[tuple[str, str, str, str]] = []
+        self._docs_by_root: dict[str, dict[str, dict[str, Any]]] = {}
+        self._prefetched_roots: set[str] = set()
+        self._prefetch(base_dir, items)
+
+    def _prefetch(self, base_dir: str, items: list[Any]) -> None:
+        if not self._db or not items:
+            return
+        from app.core.scanner import parse_item_identifier
+
+        paths_by_root: dict[str, list[str]] = {}
+        for item in items:
+            try:
+                src_root, rel_p = parse_item_identifier(item, default_base_dir=base_dir)
+            except (OSError, ValueError, TypeError):
+                continue
+            if src_root and rel_p:
+                paths_by_root.setdefault(src_root, []).append(rel_p)
+
+        for src_root, rel_paths in paths_by_root.items():
+            cached_hashes: dict[str, str] | None = None
+            if hasattr(self._db, "get_document_hashes"):
+                try:
+                    raw_hashes = self._db.get_document_hashes(src_root, rel_paths)
+                    if isinstance(raw_hashes, dict):
+                        cached_hashes = raw_hashes
+                except Exception:  # noqa: BLE001 - custom db doubles or driver errors fall back to per-item lookup
+                    cached_hashes = None
+
+            if cached_hashes is None:
+                continue
+
+            matched_paths = [p for p, h in cached_hashes.items() if h]
+            if not matched_paths:
+                self._docs_by_root[src_root] = {}
+                self._prefetched_roots.add(src_root)
+                continue
+
+            if hasattr(self._db, "get_documents_map"):
+                try:
+                    docs_map = self._db.get_documents_map(src_root, matched_paths)
+                    if isinstance(docs_map, dict):
+                        self._docs_by_root[src_root] = docs_map
+                        self._prefetched_roots.add(src_root)
+                except Exception as exc:  # noqa: BLE001 - fall back to get_document on error
+                    logger.debug("Batch document prefetch skipped: %s", exc)
+
+    def get_document(self, base_dir: str, filepath: str) -> dict[str, Any] | None:
+        """Return prefetched cached document metadata if available, else fall back to ``db``."""
+        if base_dir in self._prefetched_roots:
+            root_map = self._docs_by_root.get(base_dir, {})
+            norm_fp = filepath.replace("\\", "/")
+            return root_map.get(filepath) or root_map.get(norm_fp)
+        if self._db and hasattr(self._db, "get_document"):
+            return self._db.get_document(base_dir, filepath)
+        return None
+
+    def upsert_document(
+        self, base_dir: str, filepath: str, file_hash: str, extracted_text: str
+    ) -> None:
+        """Buffer an extracted document row to be persisted once at chunk completion."""
+        with self._lock:
+            self._pending.append((base_dir, filepath, file_hash, extracted_text))
+
+    def flush(self) -> None:
+        """Persist all buffered extraction rows in a single batch transaction."""
+        with self._lock:
+            if not self._pending:
+                return
+            rows = list(self._pending)
+            self._pending.clear()
+        if not self._db:
+            return
+        if hasattr(self._db, "upsert_documents"):
+            self._db.upsert_documents(rows)
+        elif hasattr(self._db, "upsert_document"):
+            for row in rows:
+                self._db.upsert_document(*row)
+
+
 async def build_corpus_generator_async(
     base_dir: str,
     items_to_sort: list,
@@ -462,14 +549,22 @@ async def build_corpus_generator_async(
             )
 
     items_to_sort = sorted(items_to_sort)
+    chunk_db: _ChunkExtractionBatch | None = None
     try:
         for i in range(0, len(items_to_sort), batch_size):
             if cancel_check and cancel_check():
                 break
 
             batch = items_to_sort[i : i + batch_size]
+            chunk_db = (
+                await asyncio.to_thread(_ChunkExtractionBatch, db, base_dir, batch)
+                if db is not None
+                else None
+            )
+            cancelled_in_batch = False
             for item in batch:
                 if cancel_check and cancel_check():
+                    cancelled_in_batch = True
                     break
 
                 from app.core.scanner import parse_item_identifier
@@ -480,10 +575,10 @@ async def build_corpus_generator_async(
                 # 1. Run file hashing in background thread to protect event loop
                 file_hash = await asyncio.to_thread(get_file_hash, item_path)
 
-                # 2. Check cache database
+                # 2. Check chunk-prefetched cache
                 doc = (
-                    await asyncio.to_thread(db.get_document, src_root, rel_p)
-                    if db
+                    await asyncio.to_thread(chunk_db.get_document, src_root, rel_p)
+                    if chunk_db is not None
                     else None
                 )
                 if doc and doc["file_hash"] == file_hash:
@@ -501,13 +596,26 @@ async def build_corpus_generator_async(
                 )
 
                 extracted_str = str(text)
-                if db:
-                    await asyncio.to_thread(
-                        db.upsert_document, src_root, rel_p, file_hash, extracted_str
-                    )
+                if chunk_db is not None:
+                    chunk_db.upsert_document(src_root, rel_p, file_hash, extracted_str)
 
                 yield item, text, file_hash, False
+
+            if chunk_db is not None:
+                await asyncio.to_thread(chunk_db.flush)
+                chunk_db = None
+
+            if cancelled_in_batch:
+                break
     finally:
+        if chunk_db is not None:
+            try:
+                chunk_db.flush()
+            except Exception:
+                logger.warning(
+                    "Failed to flush pending async extraction batch on exit",
+                    exc_info=True,
+                )
         from app.core.shared_registry import SharedModelRegistry
 
         registry = SharedModelRegistry.get_instance()
@@ -573,77 +681,88 @@ def build_corpus_generator(
 
             batch = items_to_sort[i : i + chunk_size]
             chunk = {}
+            chunk_db = (
+                _ChunkExtractionBatch(db, base_dir, batch) if db is not None else None
+            )
+            effective_db = chunk_db if chunk_db is not None else db
 
-            if sequential:
-                for item in batch:
-                    if cancel_check and cancel_check():
-                        break
-                    item_name, item_text, file_hash = process_item_worker(
-                        base_dir, item, progress_callback, db, settings=settings
-                    )
-
-                    item_text_str = str(item_text)
-                    chunk[item_name] = {
-                        "text": item_text_str
-                        if item_text_str.startswith("[STATUS:")
-                        or item_text_str.startswith(item_name + " ")
-                        else item_name + " " + item_text_str,
-                        "hash": file_hash,
-                    }
-                if chunk:
-                    yield chunk
-                    chunk = {}
-            else:
-                from app.core.shared_registry import SharedWorkerPool
-
-                pool = SharedWorkerPool.get_instance(max_workers=max_workers)
-                item_to_future = {
-                    item: pool.submit(
-                        process_item_worker,
-                        base_dir,
-                        item,
-                        progress_callback,
-                        db,
-                        settings,
-                    )
-                    for item in batch
-                }
-                timeout = (
-                    getattr(settings, "VISUAL_TIMEOUT", None) if settings else None
-                )
-                for item in batch:
-                    if cancel_check and cancel_check():
-                        # Attempt to cancel remaining futures in this batch
-                        for fut in item_to_future.values():
-                            fut.cancel()
-                        break
-                    future = item_to_future[item]
-                    try:
-                        item_name, item_text, file_hash = future.result(timeout=timeout)
-                    except concurrent.futures.TimeoutError:
-                        logging.warning(
-                            f"Extraction of '{item}' timed out after {timeout} seconds."
+            try:
+                if sequential:
+                    for item in batch:
+                        if cancel_check and cancel_check():
+                            break
+                        item_name, item_text, file_hash = process_item_worker(
+                            base_dir,
+                            item,
+                            progress_callback,
+                            effective_db,
+                            settings=settings,
                         )
-                        item_name = item
-                        item_text = "[STATUS:TIMEOUT]"
-                        file_hash = ""
-                        future.cancel()
 
-                    item_text_str = str(item_text)
-                    chunk[item_name] = {
-                        "text": item_text_str
-                        if item_text_str.startswith("[STATUS:")
-                        or item_text_str.startswith(item_name + " ")
-                        else item_name + " " + item_text_str,
-                        "hash": file_hash,
+                        item_text_str = str(item_text)
+                        chunk[item_name] = {
+                            "text": item_text_str
+                            if item_text_str.startswith("[STATUS:")
+                            or item_text_str.startswith(item_name + " ")
+                            else item_name + " " + item_text_str,
+                            "hash": file_hash,
+                        }
+                else:
+                    from app.core.shared_registry import SharedWorkerPool
+
+                    pool = SharedWorkerPool.get_instance(max_workers=max_workers)
+                    item_to_future = {
+                        item: pool.submit(
+                            process_item_worker,
+                            base_dir,
+                            item,
+                            progress_callback,
+                            effective_db,
+                            settings,
+                        )
+                        for item in batch
                     }
+                    timeout = (
+                        getattr(settings, "VISUAL_TIMEOUT", None) if settings else None
+                    )
+                    for item in batch:
+                        if cancel_check and cancel_check():
+                            # Attempt to cancel remaining futures in this batch
+                            for fut in item_to_future.values():
+                                fut.cancel()
+                            break
+                        future = item_to_future[item]
+                        try:
+                            item_name, item_text, file_hash = future.result(
+                                timeout=timeout
+                            )
+                        except concurrent.futures.TimeoutError:
+                            logging.warning(
+                                f"Extraction of '{item}' timed out after {timeout} seconds."
+                            )
+                            item_name = item
+                            item_text = "[STATUS:TIMEOUT]"
+                            file_hash = ""
+                            future.cancel()
 
-                item_to_future.clear()
-                del item_to_future
+                        item_text_str = str(item_text)
+                        chunk[item_name] = {
+                            "text": item_text_str
+                            if item_text_str.startswith("[STATUS:")
+                            or item_text_str.startswith(item_name + " ")
+                            else item_name + " " + item_text_str,
+                            "hash": file_hash,
+                        }
 
-                if chunk:
-                    yield chunk
-                    chunk = {}
+                    item_to_future.clear()
+                    del item_to_future
+            finally:
+                if chunk_db is not None:
+                    chunk_db.flush()
+
+            if chunk:
+                yield chunk
+                chunk = {}
     finally:
         from app.core.shared_registry import SharedModelRegistry
 

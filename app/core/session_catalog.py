@@ -49,6 +49,16 @@ def _has_files(folder: str) -> bool:
     return any(files for _root, _dirs, files in os.walk(folder))
 
 
+def _step_count_with_legacy_fallback(conn, session_id: str) -> int:
+    cnt = _count(conn, "moves", session_id)
+    if cnt:
+        return cnt
+    cnt = _count(conn, "step_ledger", session_id)
+    if cnt:
+        return cnt
+    return _count(conn, "transaction_ledger", session_id)
+
+
 def find_abandoned_sessions(store=None, session_root: Path | None = None) -> list:
     """Return the sessions a crash left unfinished, newest first.
 
@@ -63,14 +73,33 @@ def find_abandoned_sessions(store=None, session_root: Path | None = None) -> lis
     abandoned = []
 
     conn = get_db_connection(str(store.path))
-    with conn:
-        placeholders = ", ".join("?" for _ in UNFINISHED_STATUSES)
-        rows = conn.execute(
+    placeholders = ", ".join("?" for _ in UNFINISHED_STATUSES)
+    rows = list(
+        conn.execute(
             "SELECT session_id, base_dir, status FROM sessions "
             f"WHERE status IN ({placeholders}) ORDER BY timestamp DESC",
             UNFINISHED_STATUSES,
         ).fetchall()
-        steps = {sid: _count(conn, "moves", sid) for sid, _b, _s in rows}
+    )
+    seen_sids = {sid for sid, _b, _s in rows}
+    try:
+        orphan_intents = conn.execute(
+            "SELECT DISTINCT session_id FROM moves WHERE state = 'intent'"
+        ).fetchall()
+        for (sid,) in orphan_intents:
+            if sid and sid not in seen_sids:
+                srow = conn.execute(
+                    "SELECT session_id, base_dir, status FROM sessions WHERE session_id = ?",
+                    (sid,),
+                ).fetchone()
+                if srow:
+                    rows.append((srow[0], srow[1], srow[2]))
+                else:
+                    rows.append((sid, "", "uncommitted"))
+                seen_sids.add(sid)
+    except Exception as exc:  # noqa: BLE001 - moves table may not exist in legacy database
+        logger.debug("Skipping orphan moves lookup on legacy database: %s", exc)
+    steps = {sid: _step_count_with_legacy_fallback(conn, sid) for sid, _b, _s in rows}
 
     for sid, base_dir, status in rows:
         branch_dir = os.path.join(base_dir, ".branches", sid) if base_dir else ""
@@ -100,14 +129,20 @@ def find_abandoned_sessions(store=None, session_root: Path | None = None) -> lis
 def mark_session_abandoned(session_id: str, store=None) -> None:
     """Record that the user chose to leave an unfinished session as it is."""
     from app.core.db_conn import get_db_connection
-    from app.core.history import SessionStateMachine
+    from app.core.services import acquire_services
     from app.core.store import open_store
 
     store = store or open_store()
-    conn = get_db_connection(str(store.path))
-    with conn:
-        sm = SessionStateMachine(str(store.path))
-        sm.transition(session_id, "abandoned", conn=conn)
+    with acquire_services(store) as services:
+
+        def _write() -> None:
+            conn = get_db_connection(str(store.path))
+            with conn:
+                services.history.state_machine.transition(
+                    session_id, "abandoned", conn=conn
+                )
+
+        services.worker.execute_write(_write)
 
 
 def roll_back_abandoned_session(settings, session_info: dict) -> bool:

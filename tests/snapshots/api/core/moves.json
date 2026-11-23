@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "f6e3bef7627d793ae00ad2c34f32bf41017f610c38e9ac847229a78208bfd85d"
+    "checksum": "a17f38e70c1c080cd475ebd498bc93282d1640aa378f0a41e704d270aead8d33"
   },
   "classes": [
     {
@@ -41,6 +41,29 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "complete_moves",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "Sequence[dict[str, Any]]",
+              "default": null,
+              "name": "completions"
+            }
+          ],
+          "returns": "None"
         },
         {
           "async": false,
@@ -319,6 +342,29 @@
             }
           ],
           "returns": "int"
+        },
+        {
+          "async": false,
+          "decorators": [],
+          "name": "record_intents",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "session_id"
+            },
+            {
+              "annotation": "Sequence[tuple[str, str, str | None, int | None]]",
+              "default": null,
+              "name": "intents"
+            }
+          ],
+          "returns": "list[int]"
         }
       ]
     }
