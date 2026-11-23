@@ -146,6 +146,39 @@ def generate_audit_report(
     }
 
 
+def resolve_audit_report(
+    audit_report: Optional[dict[str, Any]],
+    base_dir: Optional[str],
+    plan: Any,
+) -> Optional[dict[str, Any]]:
+    """Return ``audit_report`` or synthesize an audit report from ``plan`` moves.
+
+    Parameters
+    ----------
+    audit_report : Optional[dict[str, Any]]
+        Existing post-sort audit report dictionary, if already generated.
+    base_dir : Optional[str]
+        Target base directory for resolving planned move paths.
+    plan : Any
+        Sorting plan dictionary or contract model used when ``audit_report`` is empty.
+
+    Returns
+    -------
+    Optional[dict[str, Any]]
+        Existing or synthesized audit report dictionary, or ``None`` when unavailable.
+    """
+    if audit_report:
+        return audit_report
+    if not plan:
+        return None
+    from app.core.verifier import VerificationEngine
+
+    effective_base = base_dir or "."
+    moves = VerificationEngine.get_moves(effective_base, plan)
+    records = [{"source_path": src, "destination_path": dst} for _, src, dst in moves]
+    return generate_audit_report(effective_base, records)
+
+
 def _validate_and_resolve_export_path(
     output_path: str,
     base_dir: Optional[str] = None,

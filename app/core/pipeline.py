@@ -303,6 +303,162 @@ def reroot_plan(
     return re_rooted_plan
 
 
+def validate_drop_destination(
+    dest_dir: str | None, *, settings: Any = None
+) -> tuple[str | None, str | None]:
+    """Resolve and validate an optional drop destination directory.
+
+    Parameters
+    ----------
+    dest_dir : str | None
+        Raw destination directory string supplied by CLI or TUI Drop Zone.
+    settings : Any, optional
+        Application settings containing ``PROTECTED_PATHS``.
+
+    Returns
+    -------
+    tuple[str | None, str | None]
+        ``(resolved_dest, error_reason)`` where ``error_reason`` is
+        ``"protected"``, ``"not_directory"``, or ``None``.
+    """
+    if not dest_dir or not str(dest_dir).strip():
+        return None, None
+    from app.core.scanner import ScanFilter
+
+    resolved_dest = str(Path(str(dest_dir)).expanduser().resolve())
+    if ScanFilter.from_settings(settings=settings).is_protected(resolved_dest):
+        return resolved_dest, "protected"
+    if os.path.exists(resolved_dest) and not os.path.isdir(resolved_dest):
+        return resolved_dest, "not_directory"
+    return resolved_dest, None
+
+
+def expand_drop_scope_files(
+    path: str,
+    *,
+    settings: Any = None,
+    group_root: str | None = None,
+) -> tuple[str, list[str]]:
+    """Resolve the base directory and relative file items for a dropped path.
+
+    Parameters
+    ----------
+    path : str
+        Dropped file or directory path.
+    settings : Any, optional
+        Application settings used when scanning dropped directories.
+    group_root : str | None, optional
+        Explicit root folder override for staged files originating from a dropped directory.
+
+    Returns
+    -------
+    tuple[str, list[str]]
+        ``(base_dir, relative_files)`` ready for ``SortPipeline.plan``.
+    """
+    from app.core.scanner import ScanFilter, get_files_recursively
+
+    scope_dir, scope_files = drop_scope(path)
+    if scope_files is None:
+        drop_filter = ScanFilter.from_settings(settings=settings, base_dir=scope_dir)
+        drop_filter.max_depth = None
+        files = get_files_recursively(
+            scope_dir, settings=settings, scan_filter=drop_filter
+        )
+        return scope_dir, files
+    effective_root = group_root or scope_dir
+    return effective_root, _relativize_items_to_base(scope_files, effective_root)
+
+
+def group_drop_targets(
+    paths: Sequence[str],
+    *,
+    settings: Any = None,
+    staged_roots: dict[str, str | None] | None = None,
+) -> dict[str, list[str]]:
+    """Group dropped file and folder paths by root directory for batch planning.
+
+    Parameters
+    ----------
+    paths : Sequence[str]
+        Validated dropped file or folder paths.
+    settings : Any, optional
+        Application settings used when scanning dropped directories.
+    staged_roots : dict[str, str | None] | None, optional
+        Optional mapping from file path to its staged folder root.
+
+    Returns
+    -------
+    dict[str, list[str]]
+        Mapping of ``base_dir`` to normalized relative file paths.
+    """
+    groups: dict[str, list[str]] = {}
+    root_lookup = staged_roots or {}
+    for path in paths:
+        group_root, rel_files = expand_drop_scope_files(
+            path,
+            settings=settings,
+            group_root=root_lookup.get(path),
+        )
+        groups.setdefault(group_root, []).extend(rel_files)
+    return groups
+
+
+def is_rerooted_destination(base_dir: str, resolved_dest: str | None) -> bool:
+    """Return True when ``resolved_dest`` points to a folder different from ``base_dir``."""
+    if not resolved_dest:
+        return False
+    return os.path.normcase(os.path.abspath(resolved_dest)) != os.path.normcase(
+        os.path.abspath(base_dir)
+    )
+
+
+def apply_drop_reroot(
+    session: Any,
+    plan: Any,
+    base_dir: str,
+    resolved_dest: str | None,
+    *,
+    force_reroot: bool = False,
+) -> tuple[Any, bool]:
+    """Re-root ``plan`` and update ``session.base_dir`` for a custom drop destination.
+
+    Parameters
+    ----------
+    session : Any
+        Active ``AppSession`` whose ``base_dir`` should move to ``resolved_dest``.
+    plan : Any
+        Generated sorting plan to re-root.
+    base_dir : str
+        Original source root directory.
+    resolved_dest : str | None
+        Validated destination directory, if specified.
+    force_reroot : bool, optional
+        Re-key ``plan`` even when ``resolved_dest`` equals ``base_dir``.
+
+    Returns
+    -------
+    tuple[Any, bool]
+        ``(updated_plan, re_rooted)`` where ``re_rooted`` indicates ``resolved_dest``
+        differed from ``base_dir``.
+    """
+    re_rooted = is_rerooted_destination(base_dir, resolved_dest)
+    if resolved_dest is not None and (re_rooted or force_reroot):
+        plan = reroot_plan(plan, resolved_dest, source_dir=base_dir)
+        session.base_dir = resolved_dest
+    return plan, re_rooted
+
+
+def restore_rerooted_source_dir(
+    source_dir: str | None,
+    *,
+    was_dir: bool,
+    re_rooted: bool,
+) -> None:
+    """Recreate an emptied source root directory after a re-rooted drop execution."""
+    if re_rooted and was_dir and source_dir and not os.path.exists(source_dir):
+        os.makedirs(source_dir, exist_ok=True)
+
+
 def _no_progress(info=None):
     pass
 
@@ -466,11 +622,12 @@ class SortPipeline(LifecycleTelemetryMixin):
 
     def __init__(
         self,
-        session,
+        session: Any = None,
         *,
         base_dir: str | None = None,
         settings: Any = None,
     ):
+        super().__init__()
         self.session = session
         self._base_dir = base_dir
         self._settings = settings
@@ -486,6 +643,12 @@ class SortPipeline(LifecycleTelemetryMixin):
         self._state = initial_state
         self._lock = threading.RLock()
         self._rollback_completed: bool | None = None
+        self._planned_items: list[Any] = []
+
+    @property
+    def planned_items(self) -> list[Any]:
+        """Return a copy of the items discovered or filtered during the latest plan."""
+        return list(self._planned_items)
 
     @property
     def state(self) -> PipelineLifecycleState:
@@ -579,19 +742,52 @@ class SortPipeline(LifecycleTelemetryMixin):
             from app.core.scanner import (
                 ScanFilter,
                 discover_existing_folders,
+                get_files_from_sources,
                 get_files_recursively,
                 parse_item_identifier,
             )
+
+            raw_source_dirs = getattr(self.session, "source_dirs", None)
+            candidate_roots: list[str] = []
+            if isinstance(raw_source_dirs, (list, tuple, set)):
+                candidate_roots = [
+                    str(d)
+                    for d in raw_source_dirs
+                    if isinstance(d, (str, os.PathLike)) and str(d)
+                ]
+            if not candidate_roots and self.base_dir:
+                candidate_roots = [self.base_dir]
+
+            resolved_source_dirs: list[str] = []
+            for root_dir in candidate_roots:
+                parent_dir = os.path.dirname(os.path.abspath(root_dir))
+                root_parent_filter = ScanFilter.from_settings(
+                    settings=self.settings, base_dir=parent_dir
+                )
+                if not root_parent_filter.is_quarantine(root_dir):
+                    resolved_source_dirs.append(root_dir)
 
             scan_filter = ScanFilter.from_settings(
                 settings=self.settings, base_dir=self.base_dir
             )
             if items is None:
-                items = get_files_recursively(
-                    self.base_dir,
-                    settings=self.settings,
-                    scan_filter=scan_filter,
-                )
+                if len(resolved_source_dirs) > 1:
+                    items = get_files_from_sources(
+                        resolved_source_dirs,
+                        settings=self.settings,
+                    )
+                elif len(resolved_source_dirs) == 1:
+                    single_root = resolved_source_dirs[0]
+                    single_filter = ScanFilter.from_settings(
+                        settings=self.settings, base_dir=single_root
+                    )
+                    items = get_files_recursively(
+                        single_root,
+                        settings=self.settings,
+                        scan_filter=single_filter,
+                    )
+                else:
+                    items = []
             else:
                 if self.base_dir:
                     items = _relativize_items_to_base(items, self.base_dir)
@@ -613,6 +809,8 @@ class SortPipeline(LifecycleTelemetryMixin):
                         filtered_items.append(it)
                 items = filtered_items
 
+            self._planned_items = list(items)
+
             metadata_bypassed: list[Any] = []
             if (
                 run_metadata_pass
@@ -627,9 +825,9 @@ class SortPipeline(LifecycleTelemetryMixin):
                         items,
                         self.settings,
                         self.session.db,
-                        progress_callback,
-                        cancel_check,
-                        source_dirs=getattr(self.session, "source_dirs", None),
+                        progress_callback=progress_callback,
+                        cancel_check=cancel_check,
+                        source_dirs=resolved_source_dirs or None,
                     )
                     or []
                 )
@@ -640,6 +838,7 @@ class SortPipeline(LifecycleTelemetryMixin):
 
             if not bool(fast_path_only):
                 from app.core.extractor import build_corpus_generator
+                from app.core.progress import emit_progress
 
                 bypassed_set = {
                     str(f).replace("\\", "/") for f in metadata_bypassed
@@ -654,9 +853,13 @@ class SortPipeline(LifecycleTelemetryMixin):
                     raw_workers = getattr(self.settings, "MAX_WORKERS", 2)
                     max_workers = (
                         raw_workers
-                        if isinstance(raw_workers, int) and raw_workers > 0
+                        if isinstance(raw_workers, int)
+                        and not isinstance(raw_workers, bool)
+                        and raw_workers > 0
                         else 2
                     )
+                    total_extract = len(items_to_extract)
+                    done_extract = 0
                     generator = build_corpus_generator(
                         base_dir=self.base_dir,
                         items_to_sort=items_to_extract,
@@ -673,6 +876,15 @@ class SortPipeline(LifecycleTelemetryMixin):
                             self.emit_telemetry("plan_cancelled")
                             return None
                         self.session.partial_fit(chunk)
+                        done_extract += len(chunk)
+                        if progress_callback is not None and total_extract > 0:
+                            emit_progress(
+                                progress_callback,
+                                done_extract / total_extract,
+                                stage=f"Extracting text ({done_extract}/{total_extract})",
+                                unit_count=done_extract,
+                                unit_type="files",
+                            )
 
             if cancel_check and cancel_check():
                 self.transition_to(PipelineLifecycleState.CANCELLED)
@@ -829,62 +1041,90 @@ class SortPipeline(LifecycleTelemetryMixin):
         from app.core.moves import FAILED, INTENT
         from app.core.path_utils import safe_relpath
 
-        history = self.session.history_manager
-        base_dir = next(
-            (
-                s["base_dir"]
-                for s in history.get_sessions()
-                if s["session_id"] == session_id
-            ),
-            None,
-        )
-        if base_dir is None:
-            self.transition_to(PipelineLifecycleState.FAILED)
-            raise ValueError(f"Session not found: {session_id}")
-        moves = [
-            m
-            for m in history.moves.list_moves(session_id)
-            if m.state not in (INTENT, FAILED)
-        ]
-        if selected_step_ids is not None:
-            sel_set = {str(x) for x in selected_step_ids}
-            moves = [m for m in moves if str(m.seq) in sel_set]
-
-        result = SortResult(
-            session_id=session_id, state=PipelineLifecycleState.ROLLING_BACK
-        )
-        reason = "Not moved back"
-        rollback_succeeded = False
+        lease = None
         try:
-            kwargs = {"ignore_missing": ignore_missing}
-            if selected_step_ids is not None:
-                kwargs["selected_step_ids"] = selected_step_ids
-            result.summary["restored"] = history.rollback(session_id, **kwargs)
-            rollback_succeeded = True
-        except (OSError, ValueError) as err:
-            # Undo still moves back every file it can before it reports the rest.
-            reason = str(err)
-            result.summary["error"] = reason
-            rollback_succeeded = False
-        for move in moves:
-            src = safe_relpath(move.src, base_dir).replace("\\", "/")
-            if os.path.lexists(move.src):
-                result.moved.append(src)
+            if (
+                self.session is not None
+                and getattr(self.session, "history_manager", None) is not None
+            ):
+                history = self.session.history_manager
             else:
-                result.failed.append((src, reason))
-        if "error" in result.summary and not result.failed:
-            result.failed.append((session_id, reason))
+                from app.core.services import acquire_services
 
-        result.rollback_completed = rollback_succeeded and not result.failed
-        if result.rollback_completed:
-            self.transition_to(PipelineLifecycleState.ROLLED_BACK)
-            result.state = PipelineLifecycleState.ROLLED_BACK
-        else:
-            self.transition_to(PipelineLifecycleState.FAILED)
-            result.state = PipelineLifecycleState.FAILED
+                lease = acquire_services()
+                history = lease.history
 
-        self.emit_telemetry("undo_finish", result=result)
-        return result
+            base_dir = next(
+                (
+                    s["base_dir"]
+                    for s in history.get_sessions()
+                    if s["session_id"] == session_id
+                ),
+                None,
+            )
+            if base_dir is None:
+                self.transition_to(PipelineLifecycleState.FAILED)
+                self.emit_telemetry(
+                    "undo_error",
+                    session_id=session_id,
+                    error=f"Session not found: {session_id}",
+                )
+                raise ValueError(f"Session not found: {session_id}")
+            moves = [
+                m
+                for m in history.moves.list_moves(session_id)
+                if m.state not in (INTENT, FAILED)
+            ]
+            if selected_step_ids is not None:
+                sel_set = {str(x) for x in selected_step_ids}
+                moves = [m for m in moves if str(m.seq) in sel_set]
+
+            result = SortResult(
+                session_id=session_id, state=PipelineLifecycleState.ROLLING_BACK
+            )
+            reason = "Not moved back"
+            rollback_succeeded = False
+            try:
+                kwargs = {"ignore_missing": ignore_missing}
+                if selected_step_ids is not None:
+                    kwargs["selected_step_ids"] = selected_step_ids
+                result.summary["restored"] = history.rollback(session_id, **kwargs)
+                rollback_succeeded = True
+            except (OSError, ValueError) as err:
+                # Undo still moves back every file it can before it reports the rest.
+                reason = str(err)
+                result.summary["error"] = reason
+                rollback_succeeded = False
+            for move in moves:
+                src = safe_relpath(move.src, base_dir).replace("\\", "/")
+                if os.path.lexists(move.src):
+                    result.moved.append(src)
+                else:
+                    result.failed.append((src, reason))
+            if "error" in result.summary and not result.failed:
+                result.failed.append((session_id, reason))
+
+            result.rollback_completed = rollback_succeeded and not result.failed
+            if result.rollback_completed:
+                self.transition_to(PipelineLifecycleState.ROLLED_BACK)
+                result.state = PipelineLifecycleState.ROLLED_BACK
+            else:
+                self.transition_to(PipelineLifecycleState.FAILED)
+                result.state = PipelineLifecycleState.FAILED
+
+            self.emit_telemetry("undo_finish", result=result)
+            return result
+        except Exception as err:
+            if self.state != PipelineLifecycleState.FAILED:
+                try:
+                    self.transition_to(PipelineLifecycleState.FAILED)
+                except IllegalStateTransitionError as trans_err:
+                    logger.debug(f"Failed to transition to FAILED state: {trans_err}")
+                self.emit_telemetry("undo_error", session_id=session_id, error=str(err))
+            raise
+        finally:
+            if lease is not None:
+                lease.close()
 
     def run(
         self,

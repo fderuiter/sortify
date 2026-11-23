@@ -84,7 +84,7 @@ _TOOLING = ("scripts", "sandbox_cli", "pytest")
 IMPORT_LAYER_RULES = {
     "app.core": ("app.ui", "app.cli", "app.main", "app.plugins") + _TOOLING,
     "app.plugins": ("app.cli", "app.main", "app.ui.tui") + _TOOLING,
-    "app.ui": ("app.cli", "app.main") + _TOOLING,
+    "app.ui": ("app.cli", "app.main", "app.core.history") + _TOOLING,
     "app.cli": ("app.ui", "app.main") + _TOOLING,
     "app.main": _TOOLING,
 }

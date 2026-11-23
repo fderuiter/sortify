@@ -6,7 +6,7 @@ import logging
 import os
 import time
 import uuid
-from collections.abc import Callable, Collection, Generator
+from collections.abc import Callable, Collection, Generator, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -1220,22 +1220,14 @@ class HistoryManager:
 
         return self.db.worker.execute_write(_write)
 
-    def preview_rollback(
-        self,
-        session_id: str,
-        selected_step_ids: Optional[Collection[int | str]] = None,
+    @staticmethod
+    def simulate_rollback_steps(
+        steps_to_analyze: Sequence[dict[str, Any]],
+        *,
+        session_id: Optional[str] = None,
         ignore_missing: bool = False,
     ) -> dict[str, Any]:
-        """Simulate pre-flight session rollback without making any disk modifications."""
-        all_moves = self.get_session_moves(session_id)
-        if selected_step_ids is not None:
-            sel_set = {str(x) for x in selected_step_ids}
-            steps_to_analyze = [
-                m for m in all_moves if str(m.get("step_id")) in sel_set
-            ]
-        else:
-            steps_to_analyze = list(all_moves)
-
+        """Simulate pre-flight rollback outcomes for a sequence of move step records."""
         from app.core.mover import get_safe_path
         from app.core.resilient_file_ops import same_file_content
 
@@ -1319,6 +1311,28 @@ class HistoryManager:
             "ignore_missing": ignore_missing,
             "steps": analyzed_steps,
         }
+
+    def preview_rollback(
+        self,
+        session_id: str,
+        selected_step_ids: Optional[Collection[int | str]] = None,
+        ignore_missing: bool = False,
+    ) -> dict[str, Any]:
+        """Simulate pre-flight session rollback without making any disk modifications."""
+        all_moves = self.get_session_moves(session_id)
+        if selected_step_ids is not None:
+            sel_set = {str(x) for x in selected_step_ids}
+            steps_to_analyze = [
+                m for m in all_moves if str(m.get("step_id")) in sel_set
+            ]
+        else:
+            steps_to_analyze = list(all_moves)
+
+        return self.simulate_rollback_steps(
+            steps_to_analyze,
+            session_id=session_id,
+            ignore_missing=ignore_missing,
+        )
 
 
 @contextmanager
