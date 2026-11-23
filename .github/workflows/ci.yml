@@ -495,6 +495,10 @@ jobs:
       with:
         python-version: "3.12"
 
+    - name: Verify Offline Manifest Matches Lockfile
+      run: |
+        uv run --no-project python scripts/prepare_offline.py --cpu --verify-lockfile
+
     - name: Prepare Offline Bundle
       run: |
         uv run --no-project python scripts/prepare_offline.py --cpu --frozen

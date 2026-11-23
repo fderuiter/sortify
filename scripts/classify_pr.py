@@ -54,6 +54,7 @@ SENSITIVE_PATHS = [_protected_path_regex(p) for p in PROTECTED_PATHS]
 DEPENDENCY_MANIFEST_PATHS = [
     r"^pyproject\.toml$",
     r"^uv\.lock$",
+    r"^offline_bundle/requirements\.txt$",
 ]
 
 BASELINE_PATHS = [
