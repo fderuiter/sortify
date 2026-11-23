@@ -464,7 +464,9 @@ def test_verify_offline_bundle_frozen_and_ml_verification():
 
 
 def test_type_check_job_installs_all_groups_emits_annotations_and_enforces_ratchet():
-    """Verify type-check preserves job ID/name, installs all groups, emits GitHub annotations, and enforces check_ty_warnings.py."""
+    """Verify type-check preserves job ID/name, installs all groups, emits GitHub annotations, and enforces multi-platform check_ty_warnings.py."""
+    from scripts.check_ty_warnings import PLATFORMS
+
     workflow = _load_ci_workflow()
     jobs = workflow.get("jobs", {})
     assert "type-check" in jobs, "Missing 'type-check' job in ci.yml"
@@ -477,10 +479,6 @@ def test_type_check_job_installs_all_groups_emits_annotations_and_enforces_ratch
     assert sync_step is not None, "Missing uv sync step in type-check"
     assert sync_step.get("run", "").strip() == "uv sync --frozen --all-groups"
 
-    ty_step = next((s for s in steps if "uv run ty check" in s.get("run", "")), None)
-    assert ty_step is not None, "Missing 'uv run ty check' step in type-check"
-    assert "--output-format github" in ty_step.get("run", "")
-
     ratchet_step = next(
         (s for s in steps if "scripts/check_ty_warnings.py" in s.get("run", "")),
         None,
@@ -488,12 +486,9 @@ def test_type_check_job_installs_all_groups_emits_annotations_and_enforces_ratch
     assert ratchet_step is not None, (
         "Missing 'scripts/check_ty_warnings.py' step in type-check"
     )
-    for platform in ("linux", "darwin", "win32"):
-        assert platform in ratchet_step.get("run", ""), (
-            f"Expected type-check ratchet step to check platform {platform!r}"
-        )
-
-    assert steps.index(sync_step) < steps.index(ty_step) < steps.index(ratchet_step)
+    assert "--github-annotations" in ratchet_step.get("run", "")
+    assert set(PLATFORMS) == {"linux", "darwin", "win32"}
+    assert steps.index(sync_step) < steps.index(ratchet_step)
 
 
 def test_pre_commit_ty_check_triggers_on_app_scripts_pyproject_and_lockfile():
@@ -612,3 +607,146 @@ def test_ci_and_precommit_isolate_live_link_checks_and_retire_validate_imports()
 
     pr_template = Path(".github/pull_request_template.md").read_text(encoding="utf-8")
     assert "scripts/generate_docs.py --check --no-build --local-only" in pr_template
+
+
+def test_ci_workflow_branch_concurrency_and_main_protection():
+    """Verify pull_request and workflow_dispatch share branch concurrency while main runs finish intact."""
+    workflow = _load_ci_workflow()
+    concurrency = workflow.get("concurrency")
+    assert isinstance(concurrency, dict), "Missing top-level concurrency in ci.yml"
+
+    group = str(concurrency.get("group", ""))
+    assert group.startswith("ci-${{"), f"Unexpected concurrency group: {group!r}"
+    # Feature branches share the branch name across pull_request (github.head_ref) and workflow_dispatch (github.ref_name)
+    assert "github.head_ref" in group
+    assert "github.ref_name" in group
+    # Fork PRs cannot collide with same-named branches (e.g. 'main') in the base repository
+    assert "github.event.pull_request.head.repo.full_name != github.repository" in group
+
+    cancel_expr = str(concurrency.get("cancel-in-progress", ""))
+    assert cancel_expr == "${{ github.ref != 'refs/heads/main' }}"
+
+
+def test_security_and_audit_scopes_gitleaks_on_workflow_dispatch(tmp_path: Path):
+    """Verify workflow_dispatch scopes gitleaks to branch commits rather than full repo history."""
+    import json
+
+    workflow = _load_ci_workflow()
+    steps = workflow["jobs"]["security-and-audit"]["steps"]
+
+    scope_step = next(
+        (s for s in steps if s.get("id") == "scope-gitleaks"),
+        None,
+    )
+    assert scope_step is not None, "Missing 'scope-gitleaks' step in security-and-audit"
+    assert scope_step.get("if") == "github.event_name == 'workflow_dispatch'"
+    assert scope_step.get("shell") == "python"
+
+    gitleaks_step = next(
+        (s for s in steps if "gitleaks/gitleaks-action@" in s.get("uses", "")),
+        None,
+    )
+    assert gitleaks_step is not None, (
+        "Missing gitleaks-action step in security-and-audit"
+    )
+    assert steps.index(scope_step) < steps.index(gitleaks_step)
+
+    gitleaks_env = gitleaks_step.get("env") or {}
+    assert (
+        gitleaks_env.get("GITHUB_EVENT_NAME")
+        == "${{ github.event_name == 'workflow_dispatch' && 'push' || github.event_name }}"
+    )
+    assert (
+        gitleaks_env.get("GITHUB_EVENT_PATH")
+        == "${{ steps.scope-gitleaks.outputs.event_path || github.event_path }}"
+    )
+
+    # Execute the scope-gitleaks Python script against a real git repository
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    _run_git(repo_dir, "init", "--quiet", "-b", "main")
+    _run_git(repo_dir, "config", "user.name", "Test User")
+    _run_git(repo_dir, "config", "user.email", "test@example.com")
+
+    main_shas: list[str] = []
+    for i in (1, 2):
+        (repo_dir / "main.txt").write_text(f"main {i}\n", encoding="utf-8")
+        _run_git(repo_dir, "add", "main.txt")
+        _run_git(repo_dir, "commit", "--quiet", "-m", f"main {i}")
+        main_shas.append(_run_git(repo_dir, "rev-parse", "HEAD"))
+
+    # Branch off main at main_shas[0], add 2 feature commits, then merge main_shas[1] (simulating update_branch)
+    _run_git(repo_dir, "checkout", "--quiet", "-b", "feat/branch", main_shas[0])
+    feat_shas: list[str] = []
+    for i in (1, 2):
+        (repo_dir / "feat.txt").write_text(f"feat {i}\n", encoding="utf-8")
+        _run_git(repo_dir, "add", "feat.txt")
+        _run_git(repo_dir, "commit", "--quiet", "-m", f"feat {i}")
+        feat_shas.append(_run_git(repo_dir, "rev-parse", "HEAD"))
+
+    _run_git(repo_dir, "update-ref", "refs/remotes/origin/main", main_shas[1])
+    _run_git(repo_dir, "merge", "--no-edit", "--quiet", "refs/remotes/origin/main")
+    merged_head_sha = _run_git(repo_dir, "rev-parse", "HEAD")
+
+    def run_scope_script(git_ref: str) -> dict:
+        runner_temp = tmp_path / f"temp_{git_ref.replace('/', '_')}"
+        runner_temp.mkdir(parents=True, exist_ok=True)
+        in_event = runner_temp / "in_event.json"
+        in_event.write_text(json.dumps({"inputs": None}), encoding="utf-8")
+        gh_out = runner_temp / "gh_output.txt"
+        gh_out.write_text("", encoding="utf-8")
+
+        env = os.environ.copy()
+        env.update(
+            {
+                "GITHUB_EVENT_PATH": str(in_event),
+                "GITHUB_REF": git_ref,
+                "RUNNER_TEMP": str(runner_temp),
+                "GITHUB_OUTPUT": str(gh_out),
+            }
+        )
+        subprocess.run(
+            [sys.executable, "-c", scope_step["run"]],
+            cwd=repo_dir,
+            env=env,
+            check=True,
+        )
+        out_lines = dict(
+            line.split("=", 1)
+            for line in gh_out.read_text(encoding="utf-8").splitlines()
+            if "=" in line
+        )
+        scoped_file = Path(out_lines["event_path"])
+        return json.loads(scoped_file.read_text(encoding="utf-8"))
+
+    feat_payload = run_scope_script("refs/heads/feat/branch")
+    assert feat_payload["commits"] == [
+        {"id": feat_shas[0]},
+        {"id": merged_head_sha},
+    ]
+
+    _run_git(repo_dir, "checkout", "--quiet", "main")
+    main_payload = run_scope_script("refs/heads/main")
+    assert main_payload["commits"] == [{"id": main_shas[1]}]
+
+
+def test_ci_heavy_tests_model_weights_cache_excludes_pyproject_toml():
+    """Verify heavy-tests model-weights cache hashes uv.lock and scripts/build.py without pyproject.toml or restore-keys."""
+    workflow = _load_ci_workflow()
+    steps = workflow["jobs"]["heavy-tests"]["steps"]
+    cache_step = next(
+        (
+            s
+            for s in steps
+            if "actions/cache@" in s.get("uses", "")
+            and str((s.get("with") or {}).get("key", "")).startswith("model-weights-")
+        ),
+        None,
+    )
+    assert cache_step is not None, "Missing model-weights cache step in heavy-tests"
+    cache_with = cache_step["with"]
+    key = cache_with["key"]
+    assert "'uv.lock'" in key
+    assert "'scripts/build.py'" in key
+    assert "pyproject.toml" not in key
+    assert "restore-keys" not in cache_with
