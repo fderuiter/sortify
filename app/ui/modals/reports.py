@@ -133,7 +133,7 @@ class ExtractionPreviewModal(
                     thresh_inp.tooltip = (
                         "Adjust PDF text density threshold in characters per page"
                     )
-                    thresh_inp.label = "Density Threshold (chars/page)"
+                    setattr(thresh_inp, "label", "Density Threshold (chars/page)")
                     yield thresh_inp
                     slider = DensitySlider(
                         value=self.current_threshold,
@@ -844,7 +844,7 @@ class AuditReportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         unverified_cnt = self.report_data.get("unverified_count", 0)
 
         try:
-            cards = self.query(".stat-card")
+            cards = list(self.query(".stat-card").results(Static))
             if len(cards) >= 5:
                 cards[0].update(f"Total: {total}")
                 cards[1].update(f"[PASS]: {pass_cnt}")

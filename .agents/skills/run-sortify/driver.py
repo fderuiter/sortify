@@ -82,6 +82,8 @@ def tree_lines(node, depth=0):
 
 async def run(args) -> int:
     """Launch the TUI under Pilot and execute driver commands."""
+    from textual.widgets import Tree
+
     from app.config import AppSettings
     from app.ui.tui import AutoSorterTUI
 
@@ -137,7 +139,7 @@ async def run(args) -> int:
                     + (f" and {png}" if ok else " (png conversion failed)")
                 )
             elif cmd == "tree":
-                print("\n".join(tree_lines(app.query_one("#plan-tree").root)))
+                print("\n".join(tree_lines(app.query_one("#plan-tree", Tree).root)))
             elif cmd == "screen":
                 focused = app.focused
                 status = (

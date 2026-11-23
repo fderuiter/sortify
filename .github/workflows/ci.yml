@@ -83,15 +83,9 @@ jobs:
       run: |
         uv sync --frozen --all-groups
 
-    - name: Run ty Type Check
+    - name: Run Multi-Platform ty Guardrail
       run: |
-        uv run ty check --output-format github
-
-    - name: Enforce ty Warning Ceilings
-      run: |
-        for platform in linux darwin win32; do
-          uv run python scripts/check_ty_warnings.py --platform "$platform" --github-annotations
-        done
+        uv run python scripts/check_ty_warnings.py --github-annotations
 
   static-checks:
     name: Static Checks

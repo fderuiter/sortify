@@ -9,6 +9,7 @@ from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
+from textual.coordinate import Coordinate
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static
 
@@ -1277,7 +1278,7 @@ class RollbackConfirmModal(
         dt = self.query_one("#rollback-items-table", DataTable)
         if dt.has_focus and dt.cursor_row is not None:
             try:
-                row_key, _ = dt.coordinate_to_cell_key((dt.cursor_row, 0))
+                row_key, _ = dt.coordinate_to_cell_key(Coordinate(dt.cursor_row, 0))
                 if row_key and row_key.value:
                     self._toggle_item_by_key(str(row_key.value))
             except Exception:

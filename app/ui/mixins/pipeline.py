@@ -10,6 +10,7 @@ from textual.widgets import Button, Static
 from app.ui.modals.edit import (
     InteractiveCollisionResolverModal,
 )
+from app.ui.protocols import TUIHostProtocol
 
 logger = logging.getLogger(__name__)
 
@@ -19,7 +20,7 @@ EXECUTE_NEEDS_SCAN_TOOLTIP = "Execution disabled: Scan a folder first [Ctrl+S]"
 class SortPipelineMixin:
     """Run the scan, plan validation and move execution workers for the TUI."""
 
-    def action_scan_directory(self) -> None:
+    def action_scan_directory(self: TUIHostProtocol) -> None:
         """Trigger directory scanning background worker."""
         if self._is_text_control_focused(allow_tree_search=True):
             return
@@ -34,12 +35,12 @@ class SortPipelineMixin:
             return
         self._start_scan()
 
-    def _start_scan(self) -> None:
+    def _start_scan(self: TUIHostProtocol) -> None:
         """Announce and launch the scan worker without the busy guard."""
         self.announce(f"Scanning directories: {', '.join(self.source_dirs)} ...")
         self.run_scan_worker()
 
-    def _running_pipeline_worker(self) -> str | None:
+    def _running_pipeline_worker(self: TUIHostProtocol) -> str | None:
         """Return the name of a running scan or execute worker, if any."""
         pipeline = getattr(self, "pipeline", None)
         if pipeline is not None and hasattr(pipeline, "state"):
@@ -63,7 +64,7 @@ class SortPipelineMixin:
                 return "run_execute_worker"
         return None
 
-    def _announce_if_busy(self, action: str) -> bool:
+    def _announce_if_busy(self: TUIHostProtocol, action: str) -> bool:
         """Refuse to start ``action`` while a scan or move is still running.
 
         Queries the pipeline lifecycle state rather than inspecting thread names.
@@ -101,17 +102,22 @@ class SortPipelineMixin:
         return False
 
     def _handle_pipeline_state_transition(
-        self, old_state: Any, new_state: Any, context: dict | None = None
+        self: TUIHostProtocol,
+        old_state: Any,
+        new_state: Any,
+        context: dict[str, Any] | None = None,
     ) -> None:
         """Track pipeline state transitions via registered event hook."""
         logger.debug(f"UI observed pipeline state change: {old_state} -> {new_state}")
 
-    def _handle_pipeline_telemetry(self, event: str, payload: dict) -> None:
+    def _handle_pipeline_telemetry(
+        self: TUIHostProtocol, event: str, payload: dict[str, Any]
+    ) -> None:
         """Handle telemetry events broadcast by the pipeline."""
         logger.debug(f"UI observed pipeline telemetry: {event} {payload}")
 
     @work(exclusive=True, thread=True)
-    def run_scan_worker(self) -> None:
+    def run_scan_worker(self: TUIHostProtocol) -> None:
         """Execute scan and plan generation in worker thread."""
         try:
             from app.core.session import AppSession
@@ -257,7 +263,7 @@ class SortPipelineMixin:
         finally:
             self.call_from_thread(self.reset_progress_bar)
 
-    def action_execute_sort(self) -> None:
+    def action_execute_sort(self: TUIHostProtocol) -> None:
         """Trigger sorting plan execution worker with pre-move duplicate cluster review."""
         if self._is_text_control_focused(allow_tree_search=True):
             return
@@ -278,7 +284,11 @@ class SortPipelineMixin:
             )
             return
 
-        base_dir = self.app_session.base_dir if self.app_session else "."
+        base_dir: str = (
+            (self.app_session.base_dir if self.app_session else None)
+            or self.base_dir
+            or "."
+        )
         from app.core.verifier import VerificationEngine
 
         duplicate_groups = VerificationEngine.get_duplicate_groups(base_dir, exec_plan)
@@ -308,7 +318,7 @@ class SortPipelineMixin:
             self.run_execute_worker()
 
     def _normalize_plan_for_verification(
-        self, plan_dict: dict[str, Any], base_dir: str
+        self: TUIHostProtocol, plan_dict: dict[str, Any], base_dir: str
     ) -> dict[str, Any]:
         """Ensure file nodes in plan dictionary have source_path and relative_source populated."""
         if not isinstance(plan_dict, dict):
@@ -335,7 +345,7 @@ class SortPipelineMixin:
         return normalized
 
     @work(group="validation", exclusive=True, thread=True)
-    def run_validation_worker(self) -> None:
+    def run_validation_worker(self: TUIHostProtocol) -> None:
         """Asynchronously verify plan integrity in background worker thread."""
         try:
             from app.core.verifier import VerificationEngine
@@ -345,10 +355,10 @@ class SortPipelineMixin:
                 self.call_from_thread(self._update_validation_state, {})
                 return
 
-            base_dir = (
-                self.app_session.base_dir
-                if self.app_session
-                else (self.base_dir or ".")
+            base_dir: str = (
+                (self.app_session.base_dir if self.app_session else None)
+                or self.base_dir
+                or "."
             )
             conflict_policy = str(
                 getattr(self.settings, "CONFLICT_POLICY", "rename")
@@ -361,7 +371,7 @@ class SortPipelineMixin:
         except Exception as e:
             logger.error(f"Error running validation worker: {e}")
 
-    def _update_validation_state(self, result: dict[str, Any]) -> None:
+    def _update_validation_state(self: TUIHostProtocol, result: dict[str, Any]) -> None:
         """Update UI controls, alert banner, and tree highlights based on validation result."""
         self.verification_result = result or {}
 
@@ -509,7 +519,7 @@ class SortPipelineMixin:
         self._apply_tree_node_styles()
 
     @work(exclusive=True, thread=True)
-    def run_execute_worker(self) -> None:
+    def run_execute_worker(self: TUIHostProtocol) -> None:
         """Execute moves in worker thread."""
         try:
 
@@ -552,7 +562,11 @@ class SortPipelineMixin:
                 from app.core.audit_reporter import generate_audit_report
                 from app.core.verifier import VerificationEngine
 
-                base_dir = self.app_session.base_dir if self.app_session else "."
+                base_dir: str = (
+                    (self.app_session.base_dir if self.app_session else None)
+                    or self.base_dir
+                    or "."
+                )
                 moves = VerificationEngine.get_moves(base_dir, exec_plan)
                 records = [
                     {"source_path": src, "destination_path": dst}

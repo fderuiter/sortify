@@ -2,8 +2,19 @@ import json
 import subprocess
 import sys
 from pathlib import Path
+from typing import Any
 
-from scripts.check_ty_warnings import REPO_ROOT, check, load_ceilings, main
+import pytest
+
+from scripts.check_ty_warnings import (
+    PLATFORMS,
+    REPO_ROOT,
+    check,
+    check_baseline,
+    load_ceilings,
+    main,
+    run_ty_reports_parallel,
+)
 
 
 def _diag(
@@ -13,7 +24,7 @@ def _diag(
     rule: str = "missing-attribute",
     line: int = 10,
     col: int = 5,
-) -> dict:
+) -> dict[str, Any]:
     return {
         "check_name": rule,
         "description": f"{rule}: sample diagnostic",
@@ -28,25 +39,25 @@ def _diag(
     }
 
 
-def test_matching_ceilings_and_clean_unlisted_files_pass():
+def test_matching_ceilings_and_clean_unlisted_files_pass() -> None:
     report = [
-        _diag("app/ui/tui.py", line=12),
-        _diag("app/ui/tui.py", line=30),
-        _diag("app/config.py", rule="invalid-parameter-default", line=40),
+        _diag("tests/test_alpha.py", line=12),
+        _diag("tests/test_alpha.py", line=30),
+        _diag("tests/test_beta.py", rule="invalid-parameter-default", line=40),
     ]
-    ceilings = {"app/ui/tui.py": 2, "app/config.py": 1}
+    ceilings = {"tests/test_alpha.py": 2, "tests/test_beta.py": 1}
 
     assert check(report, ceilings) == []
 
 
-def test_empty_ceilings_and_empty_report_pass():
+def test_empty_ceilings_and_empty_report_pass() -> None:
     assert check([], {}) == []
 
 
-def test_warning_in_unlisted_file_fails():
+def test_warning_in_unlisted_file_fails() -> None:
     failures = check(
         [_diag("scripts/build.py", rule="missing-attribute", line=42)],
-        {"app/ui/tui.py": 2},
+        {"tests/test_alpha.py": 1},
     )
 
     assert any(
@@ -54,38 +65,95 @@ def test_warning_in_unlisted_file_fails():
     )
 
 
-def test_warning_above_ceiling_fails():
+def test_warning_above_ceiling_fails() -> None:
     report = [
-        _diag("app/ui/tui.py", line=10),
-        _diag("app/ui/tui.py", line=20),
-        _diag("app/ui/tui.py", line=30),
+        _diag("tests/test_alpha.py", line=10),
+        _diag("tests/test_alpha.py", line=20),
+        _diag("tests/test_alpha.py", line=30),
     ]
-    failures = check(report, {"app/ui/tui.py": 2})
+    failures = check(report, {"tests/test_alpha.py": 2})
 
     assert len(failures) == 1
-    assert "app/ui/tui.py: 3 warning(s) exceeds its ceiling of 2" in failures[0]
+    assert "tests/test_alpha.py: 3 warning(s) exceeds its ceiling of 2" in failures[0]
 
 
-def test_warning_below_ceiling_prompts_lowering():
-    report = [_diag("app/ui/tui.py", line=10)]
-    failures = check(report, {"app/ui/tui.py": 2})
+def test_warning_below_ceiling_prompts_lowering() -> None:
+    report = [_diag("tests/test_alpha.py", line=10)]
+    failures = check(report, {"tests/test_alpha.py": 2})
 
     assert failures == [
-        "app/ui/tui.py: 1 warning(s) is below its ceiling of 2; "
+        "tests/test_alpha.py: 1 warning(s) is below its ceiling of 2; "
         "lower it to 1 in [tool.sortify.ty-warning-ceilings]"
     ]
 
 
-def test_zero_warnings_prompts_removing_ceiling():
-    failures = check([], {"app/ui/tui.py": 2})
+def test_zero_warnings_prompts_removing_ceiling() -> None:
+    failures = check([], {"tests/test_alpha.py": 2})
 
     assert failures == [
-        "app/ui/tui.py: 0 warnings is below its ceiling of 2; "
+        "tests/test_alpha.py: 0 warnings is below its ceiling of 2; "
         "remove it from [tool.sortify.ty-warning-ceilings]"
     ]
 
 
-def test_error_diagnostic_fails_immediately():
+def test_multi_platform_upper_bound_accepts_sys_platform_branches() -> None:
+    """Platform-specific warnings pass when <= ceiling on each OS and max == ceiling."""
+    reports = {
+        "linux": [],
+        "darwin": [],
+        "win32": [_diag("tests/test_win32_branch.py", line=18)],
+    }
+    ceilings = {"tests/test_win32_branch.py": 1}
+
+    assert check(reports, ceilings) == []
+    # Single-platform mode disables stale-ceiling ratchet so OS-gated ceilings pass
+    assert check([], ceilings, enforce_ratchet=False) == []
+    # If all 3 platforms drop to 0 warnings, multi-platform ratchet flags stale ceiling
+    stale_failures = check({"linux": [], "darwin": [], "win32": []}, ceilings)
+    assert len(stale_failures) == 1
+    assert "0 warnings is below its ceiling of 1" in stale_failures[0]
+
+
+def test_forbidden_source_roots_rejected_in_ceilings_and_baseline(
+    tmp_path: Path,
+) -> None:
+    ceiling_failures = check(
+        [],
+        {
+            "app/ui/tui.py": 1,
+            "scripts/build.py": 1,
+            ".agents/skills/run-sortify/driver.py": 1,
+        },
+    )
+    assert len(ceiling_failures) == 3
+    assert all("warning ceilings are forbidden" in f for f in ceiling_failures)
+
+    pyproject = tmp_path / "pyproject.toml"
+    pyproject.write_text(
+        '[tool.ty]\nbaseline = "tests/ty_baseline.json"\n', encoding="utf-8"
+    )
+    baseline = tmp_path / "tests" / "ty_baseline.json"
+    baseline.parent.mkdir(parents=True)
+    baseline.write_text(
+        json.dumps(
+            {
+                "version": 0,
+                "files": {
+                    "tests/test_legacy.py": [],
+                    "app/ui/tui.py": [],
+                    "scripts/check_ty_warnings.py": [],
+                    ".agents/skills/run-sortify/driver.py": [],
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    baseline_failures = check_baseline(pyproject, repo_root=tmp_path)
+    assert len(baseline_failures) == 3
+    assert all("baseline entries are forbidden" in f for f in baseline_failures)
+
+
+def test_error_diagnostic_fails_immediately() -> None:
     report = [_diag("scripts/validate_architecture.py", severity="major", line=103)]
     failures = check(report, {})
 
@@ -93,68 +161,68 @@ def test_error_diagnostic_fails_immediately():
     assert failures[0].startswith("error: scripts/validate_architecture.py:103:")
 
 
-def test_missing_file_and_non_positive_ceiling_fail(tmp_path: Path):
-    existing = tmp_path / "app" / "present.py"
+def test_missing_file_and_non_positive_ceiling_fail(tmp_path: Path) -> None:
+    existing = tmp_path / "tests" / "present.py"
     existing.parent.mkdir(parents=True)
     existing.write_text("x = 1\n", encoding="utf-8")
 
     failures = check(
         [],
-        {"app/missing.py": 2, "app/present.py": 0},
+        {"tests/missing.py": 2, "tests/present.py": 0},
         repo_root=tmp_path,
     )
 
-    assert any("app/missing.py: file does not exist" in f for f in failures)
-    assert any("app/present.py: invalid ceiling 0" in f for f in failures)
+    assert any("tests/missing.py: file does not exist" in f for f in failures)
+    assert any("tests/present.py: invalid ceiling 0" in f for f in failures)
 
 
-def test_windows_and_repo_prefixed_paths_normalize(tmp_path: Path):
-    mod = tmp_path / "app" / "ui" / "tui.py"
+def test_windows_and_repo_prefixed_paths_normalize(tmp_path: Path) -> None:
+    mod = tmp_path / "tests" / "ui" / "test_tui.py"
     mod.parent.mkdir(parents=True)
     mod.write_text("x = 1\n", encoding="utf-8")
 
     report = [
-        _diag("app\\ui\\tui.py", line=10),
+        _diag("tests\\ui\\test_tui.py", line=10),
         _diag(str(mod.resolve()), line=20),
     ]
-    assert check(report, {"app/ui/tui.py": 2}, repo_root=tmp_path) == []
+    assert check(report, {"tests/ui/test_tui.py": 2}, repo_root=tmp_path) == []
 
 
-def test_every_configured_ceiling_names_a_real_module():
-    ceilings = load_ceilings(REPO_ROOT / "pyproject.toml")
-
-    assert ceilings, "no ty warning ceilings configured"
-    for module, limit in ceilings.items():
-        assert (REPO_ROOT / module).is_file(), module
-        assert limit > 0, f"{module} must have positive ceiling, got {limit}"
+def test_pyproject_has_zero_app_warning_ceilings_and_clean_baseline() -> None:
+    pyproject = REPO_ROOT / "pyproject.toml"
+    ceilings = load_ceilings(pyproject)
+    assert ceilings == {}, f"Expected zero warning ceilings, found {ceilings}"
+    assert check_baseline(pyproject, repo_root=REPO_ROOT) == []
 
 
-def test_main_report_modes_and_github_annotations(tmp_path: Path, capsys):
+def test_main_report_modes_and_github_annotations(
+    tmp_path: Path, capsys: pytest.CaptureFixture[str]
+) -> None:
     pyproject = tmp_path / "pyproject.toml"
     pyproject.write_text(
-        '[tool.sortify.ty-warning-ceilings]\n"app/mod.py" = 1\n',
+        '[tool.sortify.ty-warning-ceilings]\n"tests/mod.py" = 1\n',
         encoding="utf-8",
     )
-    mod = tmp_path / "app" / "mod.py"
+    mod = tmp_path / "tests" / "mod.py"
     mod.parent.mkdir(parents=True)
     mod.write_text("x = 1\n", encoding="utf-8")
 
     passing = tmp_path / "pass.json"
-    passing.write_text(json.dumps([_diag("app/mod.py")]), encoding="utf-8")
+    passing.write_text(json.dumps([_diag("tests/mod.py")]), encoding="utf-8")
     assert main(["prog", str(passing)], repo_root=tmp_path) == 0
     out = capsys.readouterr().out
     assert "All 1 ty warning ceilings matched" in out
 
     exceeding = tmp_path / "exceed.json"
     exceeding.write_text(
-        json.dumps([_diag("app/mod.py", line=1), _diag("app/mod.py", line=2)]),
+        json.dumps([_diag("tests/mod.py", line=1), _diag("tests/mod.py", line=2)]),
         encoding="utf-8",
     )
     assert (
         main(["prog", str(exceeding), "--github-annotations"], repo_root=tmp_path) == 1
     )
     out = capsys.readouterr().out
-    assert "::error file=app/mod.py,title=ty warning ceiling::" in out
+    assert "::error file=tests/mod.py,title=ty warning ceiling::" in out
 
     stale = tmp_path / "stale.json"
     stale.write_text("[]", encoding="utf-8")
@@ -163,7 +231,25 @@ def test_main_report_modes_and_github_annotations(tmp_path: Path, capsys):
     assert "::error file=pyproject.toml,title=ty warning ceiling::" in out
 
 
-def test_main_cli_help_and_invalid_report_paths(tmp_path: Path):
+def test_parallel_platform_runner_invokes_all_platforms(
+    tmp_path: Path, monkeypatch: pytest.MonkeyPatch
+) -> None:
+    seen_platforms: list[str] = []
+
+    def _fake_run(
+        repo_root: Path, *, platform: str | None = None
+    ) -> tuple[int, list[dict[str, Any]], str]:
+        assert platform is not None
+        seen_platforms.append(platform)
+        return 0, [], ""
+
+    monkeypatch.setattr("scripts.check_ty_warnings.run_ty_report", _fake_run)
+    results = run_ty_reports_parallel(tmp_path)
+    assert set(results.keys()) == set(PLATFORMS)
+    assert set(seen_platforms) == set(PLATFORMS)
+
+
+def test_main_cli_help_and_invalid_report_paths(tmp_path: Path) -> None:
     script_path = str(REPO_ROOT / "scripts" / "check_ty_warnings.py")
 
     res_help = subprocess.run(
@@ -192,7 +278,7 @@ def test_main_cli_help_and_invalid_report_paths(tmp_path: Path):
     assert "not a regular file" in res_dir.stderr
 
 
-def test_head_passes_live_ty_warning_ratchet():
+def test_head_passes_live_ty_warning_ratchet() -> None:
     assert main(["prog"]) == 0
-    for platform in ("linux", "darwin", "win32"):
+    for platform in PLATFORMS:
         assert main(["prog", "--platform", platform]) == 0

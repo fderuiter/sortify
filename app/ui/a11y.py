@@ -33,13 +33,14 @@ class A11yMixin:
     def update_status(self, text: str) -> None:
         """Update visual status region on self or parent application."""
         try:
-            if (
-                hasattr(self, "app")
-                and self.app
-                and self.app is not self
-                and hasattr(self.app, "update_status")
-            ):
-                self.app.update_status(text)
+            app_obj = getattr(self, "app", None)
+            update_fn = (
+                getattr(app_obj, "update_status", None)
+                if app_obj and app_obj is not self
+                else None
+            )
+            if callable(update_fn):
+                update_fn(text)
         except Exception:
             pass
 
@@ -54,23 +55,25 @@ class A11yMixin:
                     pass
             if not speech_thread.is_alive():
                 self._speech_thread = None
-        if (
-            hasattr(self, "app")
-            and self.app
-            and self.app is not self
-            and hasattr(self.app, "join_speech_thread")
-        ):
+        app_obj = getattr(self, "app", None)
+        join_fn = (
+            getattr(app_obj, "join_speech_thread", None)
+            if app_obj and app_obj is not self
+            else None
+        )
+        if callable(join_fn):
             try:
-                self.app.join_speech_thread(timeout=timeout)
+                join_fn(timeout=timeout)
             except Exception:
                 pass
 
     def on_unmount(self) -> None:
         """Lifecycle hook called when component is unmounted from Textual app."""
         self.join_speech_thread(timeout=0.5)
-        if hasattr(super(), "on_unmount"):
+        unmount_fn = getattr(super(), "on_unmount", None)
+        if callable(unmount_fn):
             try:
-                super().on_unmount()  # type: ignore[misc]
+                unmount_fn()
             except Exception:
                 pass
 
@@ -211,7 +214,9 @@ class A11yMixin:
         violations = []
 
         try:
-            for widget in self.query("*"):
+            query_fn = getattr(self, "query", None)
+            widgets = list(query_fn("*")) if callable(query_fn) else []
+            for widget in widgets:
                 w_type = type(widget).__name__
                 if w_type in (
                     "Input",
@@ -280,7 +285,8 @@ class A11yMixin:
             )
 
         try:
-            nodes = list(self.query("*"))
+            query_fn = getattr(self, "query", None)
+            nodes = list(query_fn("*")) if callable(query_fn) else []
             if nodes:
                 headings = [
                     w for w in nodes if isinstance(w, Heading) or hasattr(w, "level")
@@ -338,8 +344,10 @@ class A11yMixin:
 
         def _unhide() -> None:
             try:
-                btn = self.query_one("#btn-help", Button)
-                btn.remove_class("hidden")
+                query_one_fn = getattr(self, "query_one", None)
+                if callable(query_one_fn):
+                    btn = query_one_fn("#btn-help", Button)
+                    btn.remove_class("hidden")
             except Exception:
                 pass
 

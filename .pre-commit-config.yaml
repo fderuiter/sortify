@@ -41,7 +41,7 @@ repos:
         entry: uv run python scripts/check_ty_warnings.py
         language: system
         pass_filenames: false
-        files: '^(app/.*\.py|scripts/.*\.py|pyproject\.toml|uv\.lock)$'
+        files: '^((app|scripts|tests|\.agents)/.*\.py|tests/ty_baseline\.json|pyproject\.toml|uv\.lock)$'
       - id: forbid-cache-files
         name: Block cache files, virtual environments, and bytecode
         entry: Cannot commit cache files, bytecode, or virtual environments. Please clean your workspace.

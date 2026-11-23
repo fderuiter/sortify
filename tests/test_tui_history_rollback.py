@@ -599,8 +599,17 @@ async def test_undo_last_sort_no_completed_session(tmp_path, monkeypatch):
 
     app = AutoSorterTUI(settings=settings)
     async with app.run_test() as pilot:
-        announced = []
-        app.announce = lambda msg, *args, **kwargs: announced.append(msg)
+        announced: list[str] = []
+
+        def _mock_announce(
+            message: str,
+            priority: str = "polite",
+            help_url: str | None = None,
+        ) -> str:
+            announced.append(message)
+            return message
+
+        app.announce = _mock_announce
 
         await pilot.press("ctrl+z")
         await pilot.pause()
@@ -710,9 +719,13 @@ async def test_pipeline_execution_announces_undo_available(tmp_path):
         announced = []
         orig_announce = app.announce
 
-        def track_announce(msg, *args, **kwargs):
-            announced.append(str(msg))
-            return orig_announce(msg, *args, **kwargs)
+        def track_announce(
+            message: str,
+            priority: str = "polite",
+            help_url: str | None = None,
+        ) -> str:
+            announced.append(str(message))
+            return orig_announce(message, priority=priority, help_url=help_url)
 
         app.announce = track_announce
         app.app_session = MagicMock()

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "a432c8ce2b343d2f460debf12e0ece87f68dc4e794d6aaf1dbcbd6bf016b7934"
+    "checksum": "6eaa87608d61b749c86dd7d625cf7bece8acdb19d382b20ae8724d2b4834abc6"
   },
   "classes": [
     {
@@ -117,7 +117,7 @@
               "name": "self"
             },
             {
-              "annotation": "str",
+              "annotation": "str | None",
               "default": "None",
               "name": "proxy"
             }

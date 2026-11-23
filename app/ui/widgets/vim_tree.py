@@ -23,14 +23,24 @@ class VimTree(Tree):
 
         if event.key == "j":
             self.action_cursor_down()
-            if getattr(self.app, "visual_select_active", False) and self.cursor_node:
-                self.app.register_visual_selected_node(self.cursor_node)
+            reg_fn = getattr(self.app, "register_visual_selected_node", None)
+            if (
+                getattr(self.app, "visual_select_active", False)
+                and self.cursor_node
+                and callable(reg_fn)
+            ):
+                reg_fn(self.cursor_node)
             event.stop()
             event.prevent_default()
         elif event.key == "k":
             self.action_cursor_up()
-            if getattr(self.app, "visual_select_active", False) and self.cursor_node:
-                self.app.register_visual_selected_node(self.cursor_node)
+            reg_fn = getattr(self.app, "register_visual_selected_node", None)
+            if (
+                getattr(self.app, "visual_select_active", False)
+                and self.cursor_node
+                and callable(reg_fn)
+            ):
+                reg_fn(self.cursor_node)
             event.stop()
             event.prevent_default()
         elif event.key == "h":

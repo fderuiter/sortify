@@ -1365,7 +1365,7 @@ class AppSettings:
                 cls._class_observers[key].remove(callback)
 
     @classmethod
-    def clear_observers(cls, key: str = None) -> None:
+    def clear_observers(cls, key: str | None = None) -> None:
         """Clear all registered observers or observers for a specific key."""
         with cls._class_observer_lock:
             if key is None:
