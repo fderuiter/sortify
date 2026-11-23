@@ -18,6 +18,7 @@ from typing import Any, Protocol
 
 from app.core.db_conn import DB_ERRORS, get_db_connection
 from app.core.lifecycle import LifecycleTelemetryMixin
+from app.core.migrations import add_missing_columns
 
 logger = logging.getLogger(__name__)
 
@@ -26,6 +27,25 @@ DONE = "done"
 VERIFIED = "verified"
 FAILED = "failed"
 MOVE_STATES = (INTENT, DONE, VERIFIED, FAILED)
+
+OP_MOVE = "move"
+OP_COPY = "copy"
+OP_ARCHIVE = "archive"
+OP_UNARCHIVE = "unarchive"
+OP_UNARCHIVE_SOURCE = "unarchive_source"
+OP_REDACT = "redact"
+OP_RETAIN = "retain"
+OP_QUARANTINE = "quarantine"
+MOVE_OP_KINDS = (
+    OP_MOVE,
+    OP_COPY,
+    OP_ARCHIVE,
+    OP_UNARCHIVE,
+    OP_UNARCHIVE_SOURCE,
+    OP_REDACT,
+    OP_RETAIN,
+    OP_QUARANTINE,
+)
 
 STATUS_PENDING = "PENDING"
 STATUS_ABORTED = "ABORTED"
@@ -78,12 +98,15 @@ class Move:
     error: str | None
     created_at: float | None
     updated_at: float | None
+    op_kind: str = OP_MOVE
+    dst_sha256: str | None = None
 
 
-_COLUMNS = (
+_LEGACY_COLUMNS = (
     "session_id, seq, src, dst, src_sha256, size, displaced, state, error, "
     "created_at, updated_at"
 )
+_COLUMNS = f"{_LEGACY_COLUMNS}, op_kind, dst_sha256"
 
 
 def format_move_failure(status_code: str, reason: str | None = None) -> str:
@@ -389,6 +412,23 @@ def migrate_import_legacy_moves(conn) -> None:
     import_transaction_ledger(conn)
 
 
+def migrate_add_move_op_kind(conn) -> None:
+    """Migration: add ``op_kind`` and ``dst_sha256`` columns to ``moves`` for unified policy operations."""
+    has_moves = conn.execute(
+        "SELECT 1 FROM sqlite_master WHERE type='table' AND name='moves'"
+    ).fetchone()
+    if not has_moves:
+        create_moves_table(conn)
+    add_missing_columns(
+        conn,
+        "moves",
+        {
+            "op_kind": "TEXT NOT NULL DEFAULT 'move'",
+            "dst_sha256": "TEXT",
+        },
+    )
+
+
 def query_session_summaries(
     db_path: str,
 ) -> list[tuple[str, float | None, str | None, str | None, int, int]]:
@@ -450,7 +490,12 @@ class MoveLedger(LifecycleTelemetryMixin):
             ).fetchone()
             if not has_moves:
                 create_moves_table(conn)
+            migrate_add_move_op_kind(conn)
             migrate_import_legacy_moves(conn)
+
+    @staticmethod
+    def _moves_table_columns(conn) -> set[str]:
+        return {row[1] for row in conn.execute('PRAGMA table_info("moves")')}
 
     def record_intent(
         self,
@@ -459,19 +504,45 @@ class MoveLedger(LifecycleTelemetryMixin):
         dst: str,
         src_sha256: str | None = None,
         size: int | None = None,
+        *,
+        op_kind: str = OP_MOVE,
+        dst_sha256: str | None = None,
     ) -> int:
-        """Record a move about to happen and return its ``seq``; committed on return."""
+        """Record a move or policy lifecycle operation about to happen and return its ``seq``."""
         if not session_id:
             raise ValueError("A move needs a session id.")
+        normalized_kind = str(op_kind or OP_MOVE).strip().lower()
+        if normalized_kind not in MOVE_OP_KINDS:
+            raise ValueError(f"Unsupported move ledger op_kind: {op_kind!r}")
         return self._writer.execute_write(
-            self._insert_intent, str(session_id), src, dst, src_sha256 or None, size
+            self._insert_intent,
+            str(session_id),
+            src,
+            dst,
+            src_sha256 or None,
+            size,
+            normalized_kind,
+            dst_sha256 or None,
         )
 
     def mark_done(
-        self, session_id: str, seq: int, dst: str, displaced: str | None = None
+        self,
+        session_id: str,
+        seq: int,
+        dst: str,
+        displaced: str | None = None,
+        *,
+        dst_sha256: str | None = None,
     ) -> None:
-        """Record that the move finished at ``dst``, having moved ``displaced`` aside."""
-        self._change_state(session_id, seq, DONE, dst=dst, displaced=displaced)
+        """Record that the operation finished at ``dst``, having moved ``displaced`` aside."""
+        self._change_state(
+            session_id,
+            seq,
+            DONE,
+            dst=dst,
+            displaced=displaced,
+            dst_sha256=dst_sha256,
+        )
 
     def record_displacement(self, session_id: str, seq: int, displaced: str) -> None:
         """Record, before it happens, where the file at the move's ``dst`` is moved aside to."""
@@ -489,8 +560,10 @@ class MoveLedger(LifecycleTelemetryMixin):
         """Return the session's moves in the order they were recorded."""
         conn = get_db_connection(self.db_path)
         with conn:
+            cols = self._moves_table_columns(conn)
+            select_cols = _COLUMNS if "op_kind" in cols else _LEGACY_COLUMNS
             rows = conn.execute(
-                f"SELECT {_COLUMNS} FROM moves WHERE session_id = ? ORDER BY seq",
+                f"SELECT {select_cols} FROM moves WHERE session_id = ? ORDER BY seq",
                 (str(session_id),),
             ).fetchall()
         return [Move(*row) for row in rows]
@@ -505,6 +578,9 @@ class MoveLedger(LifecycleTelemetryMixin):
         """Retrieve incomplete (``intent``) and/or ``failed`` move entries."""
         conn = get_db_connection(self.db_path)
         with conn:
+            cols = self._moves_table_columns(conn)
+            has_op_kind = "op_kind" in cols
+            has_dst_sha = "dst_sha256" in cols
             has_sessions = bool(
                 conn.execute(
                     "SELECT 1 FROM sqlite_master WHERE type='table' AND name='sessions'"
@@ -516,6 +592,8 @@ class MoveLedger(LifecycleTelemetryMixin):
                 else ""
             )
             bdir_col = "COALESCE(s.base_dir, '')" if has_sessions else "''"
+            op_kind_col = "COALESCE(m.op_kind, 'move')" if has_op_kind else "'move'"
+            dst_sha_col = "m.dst_sha256" if has_dst_sha else "NULL"
 
             if aborted_only or failed_only:
                 state_clause = "m.state = 'failed'"
@@ -534,7 +612,9 @@ class MoveLedger(LifecycleTelemetryMixin):
                 f"""
                 SELECT m.session_id, m.seq, m.src, m.dst, m.src_sha256,
                        m.displaced, m.state, m.error, m.created_at, m.updated_at,
-                       {bdir_col} AS base_dir
+                       {bdir_col} AS base_dir,
+                       {op_kind_col} AS op_kind,
+                       {dst_sha_col} AS dst_sha256
                 FROM moves m
                 {join_sql}
                 WHERE {state_clause}{session_clause}
@@ -556,6 +636,8 @@ class MoveLedger(LifecycleTelemetryMixin):
             created_at,
             updated_at,
             base_dir,
+            op_kind,
+            dst_sha256,
         ) in rows:
             if state == INTENT:
                 status = STATUS_PENDING
@@ -586,6 +668,8 @@ class MoveLedger(LifecycleTelemetryMixin):
                     "dest_rel_path": dst_rel,
                     "displaced": displaced,
                     "file_hash": src_sha256 or "",
+                    "dst_file_hash": dst_sha256 or "",
+                    "op_kind": op_kind or OP_MOVE,
                     "status": status,
                     "failure_reason": reason,
                     "created_at": created_at,
@@ -635,9 +719,183 @@ class MoveLedger(LifecycleTelemetryMixin):
             dst_rel = entry["dest_rel_path"]
             displaced = entry.get("displaced")
             expected_hash = entry.get("file_hash") or None
+            expected_dst_hash = entry.get("dst_file_hash") or expected_hash
+            op_kind = (entry.get("op_kind") or OP_MOVE).lower()
 
             src_exists = os.path.exists(src) or os.path.islink(src)
             dst_exists = os.path.exists(dst) or os.path.islink(dst)
+            displaced_exists = bool(
+                displaced and (os.path.exists(displaced) or os.path.islink(displaced))
+            )
+
+            if op_kind in (OP_COPY, OP_UNARCHIVE):
+                # Copy and unarchive preserve src in place while materializing dst.
+                if dst_exists:
+                    hash_ok = True
+                    verified = False
+                    if (
+                        expected_dst_hash
+                        and not os.path.islink(dst)
+                        and os.path.isfile(dst)
+                    ):
+                        try:
+                            actual_hash = _sha256_file(dst)
+                        except OSError:
+                            actual_hash = None
+                        if actual_hash == expected_dst_hash:
+                            verified = True
+                        else:
+                            hash_ok = False
+                    if hash_ok:
+                        self.mark_done(
+                            sid,
+                            seq,
+                            dst=dst,
+                            displaced=displaced,
+                            dst_sha256=expected_dst_hash,
+                        )
+                        if verified:
+                            self.mark_verified(sid, seq)
+                    elif displaced_exists and displaced:
+                        try:
+                            resilient_remove(dst)
+                            resilient_move(displaced, dst)
+                            self.mark_failed(
+                                sid, seq, format_move_failure(STATUS_ABORTED)
+                            )
+                        except OSError as exc:
+                            self.mark_failed(
+                                sid,
+                                seq,
+                                format_move_failure(
+                                    STATUS_FAILED_CONFLICT,
+                                    f"Could not restore displaced target for {entry_id}: {exc}",
+                                ),
+                            )
+                    else:
+                        self.mark_failed(
+                            sid,
+                            seq,
+                            format_move_failure(
+                                STATUS_FAILED_CONFLICT,
+                                "Destination file content does not match expected output hash; both files preserved.",
+                            ),
+                        )
+                elif src_exists:
+                    if displaced_exists and displaced:
+                        try:
+                            resilient_move(displaced, dst)
+                        except OSError as exc:
+                            logger.warning(
+                                "Could not restore displaced file %s -> %s during reconciliation: %s",
+                                displaced,
+                                dst,
+                                exc,
+                            )
+                    self.mark_failed(sid, seq, format_move_failure(STATUS_ABORTED))
+                else:
+                    self.mark_failed(
+                        sid, seq, format_move_failure(STATUS_FAILED_MISSING)
+                    )
+                reconciled_count += 1
+                self.emit_telemetry(
+                    "reconciliation_progress",
+                    {
+                        "entry_id": entry_id,
+                        "reconciled_count": reconciled_count,
+                        "total_incomplete": len(incomplete),
+                        "timestamp": time.time(),
+                    },
+                )
+                continue
+
+            if op_kind in (OP_ARCHIVE, OP_REDACT):
+                # Archive and redact park the original source in ``displaced`` and write a transformed ``dst``.
+                if dst_exists and not src_exists:
+                    hash_ok = True
+                    verified = False
+                    if (
+                        expected_dst_hash
+                        and not os.path.islink(dst)
+                        and os.path.isfile(dst)
+                    ):
+                        try:
+                            actual_hash = _sha256_file(dst)
+                        except OSError:
+                            actual_hash = None
+                        if actual_hash == expected_dst_hash:
+                            verified = True
+                        else:
+                            hash_ok = False
+                    if hash_ok:
+                        if db and base_dir and hasattr(db, "update_document_path"):
+                            try:
+                                db.update_document_path(base_dir, src_rel, dst_rel)
+                            except Exception as exc:  # noqa: BLE001
+                                logger.warning(
+                                    "Reconciliation DB roll-forward failed for %s: %s",
+                                    entry_id,
+                                    exc,
+                                )
+                        self.mark_done(
+                            sid,
+                            seq,
+                            dst=dst,
+                            displaced=displaced,
+                            dst_sha256=expected_dst_hash,
+                        )
+                        if verified:
+                            self.mark_verified(sid, seq)
+                    else:
+                        self.mark_failed(
+                            sid,
+                            seq,
+                            format_move_failure(
+                                STATUS_FAILED_CONFLICT,
+                                "Transformed destination hash mismatch during reconciliation; files preserved.",
+                            ),
+                        )
+                elif not src_exists and displaced_exists and displaced:
+                    # Source was parked in backup dir before transformed output completed: restore source!
+                    try:
+                        if dst_exists and expected_dst_hash:
+                            try:
+                                if _sha256_file(dst) == expected_dst_hash:
+                                    resilient_remove(dst)
+                            except OSError:
+                                pass
+                        resilient_move(displaced, src)
+                        self.mark_failed(sid, seq, format_move_failure(STATUS_ABORTED))
+                    except OSError as exc:
+                        self.mark_failed(
+                            sid,
+                            seq,
+                            format_move_failure(
+                                STATUS_FAILED_CONFLICT,
+                                f"Could not restore parked source {displaced} -> {src}: {exc}",
+                            ),
+                        )
+                elif src_exists and not dst_exists:
+                    self.mark_failed(sid, seq, format_move_failure(STATUS_ABORTED))
+                elif src_exists and dst_exists:
+                    self.mark_failed(
+                        sid, seq, format_move_failure(STATUS_FAILED_CONFLICT)
+                    )
+                else:
+                    self.mark_failed(
+                        sid, seq, format_move_failure(STATUS_FAILED_MISSING)
+                    )
+                reconciled_count += 1
+                self.emit_telemetry(
+                    "reconciliation_progress",
+                    {
+                        "entry_id": entry_id,
+                        "reconciled_count": reconciled_count,
+                        "total_incomplete": len(incomplete),
+                        "timestamp": time.time(),
+                    },
+                )
+                continue
 
             if dst_exists and not src_exists:
                 hash_ok = True
@@ -837,21 +1095,55 @@ class MoveLedger(LifecycleTelemetryMixin):
             cursor = conn.execute(f"DELETE FROM moves WHERE {where_sql}", params)
         return max(cursor.rowcount, 0)
 
-    def _insert_intent(self, session_id, src, dst, src_sha256, size) -> int:
+    def _insert_intent(
+        self,
+        session_id,
+        src,
+        dst,
+        src_sha256,
+        size,
+        op_kind=OP_MOVE,
+        dst_sha256=None,
+    ) -> int:
         now = time.time()
         conn = get_db_connection(self.db_path)
         with conn:
-            cursor = conn.execute(
-                """
-                INSERT INTO moves (
-                    session_id, seq, src, dst, src_sha256, size, state,
-                    created_at, updated_at
+            cols = self._moves_table_columns(conn)
+            if "op_kind" in cols:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO moves (
+                        session_id, seq, src, dst, src_sha256, size, state,
+                        created_at, updated_at, op_kind, dst_sha256
+                    )
+                    SELECT ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, 'intent', ?, ?, ?, ?
+                    FROM moves WHERE session_id = ?
+                    """,
+                    (
+                        session_id,
+                        src,
+                        dst,
+                        src_sha256,
+                        size,
+                        now,
+                        now,
+                        op_kind,
+                        dst_sha256,
+                        session_id,
+                    ),
                 )
-                SELECT ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, 'intent', ?, ?
-                FROM moves WHERE session_id = ?
-                """,
-                (session_id, src, dst, src_sha256, size, now, now, session_id),
-            )
+            else:
+                cursor = conn.execute(
+                    """
+                    INSERT INTO moves (
+                        session_id, seq, src, dst, src_sha256, size, state,
+                        created_at, updated_at
+                    )
+                    SELECT ?, COALESCE(MAX(seq), 0) + 1, ?, ?, ?, ?, 'intent', ?, ?
+                    FROM moves WHERE session_id = ?
+                    """,
+                    (session_id, src, dst, src_sha256, size, now, now, session_id),
+                )
             row = conn.execute(
                 "SELECT seq FROM moves WHERE id = ?", (cursor.lastrowid,)
             ).fetchone()
@@ -869,20 +1161,61 @@ class MoveLedger(LifecycleTelemetryMixin):
             )
 
     def _transition(
-        self, session_id, seq, state, dst=None, displaced=None, error=None
+        self,
+        session_id,
+        seq,
+        state,
+        dst=None,
+        displaced=None,
+        error=None,
+        dst_sha256=None,
     ) -> bool:
         allowed = _ALLOWED_FROM[state]
         conn = get_db_connection(self.db_path)
         with conn:
-            cursor = conn.execute(
-                f"""
-                UPDATE moves
-                SET state = ?, dst = COALESCE(?, dst),
-                    displaced = COALESCE(?, displaced),
-                    error = COALESCE(?, error), updated_at = ?
-                WHERE session_id = ? AND seq = ?
-                  AND state IN ({", ".join("?" for _ in allowed)})
-                """,
-                (state, dst, displaced, error, time.time(), session_id, seq, *allowed),
-            )
+            cols = self._moves_table_columns(conn)
+            if "dst_sha256" in cols:
+                cursor = conn.execute(
+                    f"""
+                    UPDATE moves
+                    SET state = ?, dst = COALESCE(?, dst),
+                        displaced = COALESCE(?, displaced),
+                        dst_sha256 = COALESCE(?, dst_sha256),
+                        error = COALESCE(?, error), updated_at = ?
+                    WHERE session_id = ? AND seq = ?
+                      AND state IN ({", ".join("?" for _ in allowed)})
+                    """,
+                    (
+                        state,
+                        dst,
+                        displaced,
+                        dst_sha256,
+                        error,
+                        time.time(),
+                        session_id,
+                        seq,
+                        *allowed,
+                    ),
+                )
+            else:
+                cursor = conn.execute(
+                    f"""
+                    UPDATE moves
+                    SET state = ?, dst = COALESCE(?, dst),
+                        displaced = COALESCE(?, displaced),
+                        error = COALESCE(?, error), updated_at = ?
+                    WHERE session_id = ? AND seq = ?
+                      AND state IN ({", ".join("?" for _ in allowed)})
+                    """,
+                    (
+                        state,
+                        dst,
+                        displaced,
+                        error,
+                        time.time(),
+                        session_id,
+                        seq,
+                        *allowed,
+                    ),
+                )
         return cursor.rowcount == 1

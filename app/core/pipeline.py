@@ -730,9 +730,10 @@ class SortPipeline(LifecycleTelemetryMixin):
         plan,
         *,
         move_context: Callable[[Any], AbstractContextManager[Any]] | None = None,
+        copy_mode: bool = False,
         **kwargs,
     ) -> SortResult:
-        """Move the files in ``plan`` and return what happened."""
+        """Move or apply policy actions on the files in ``plan`` and return what happened."""
         if self.state != PipelineLifecycleState.PLANNED:
             raise IllegalStateTransitionError(
                 f"Cannot execute pipeline in state '{self.state.value}'; pipeline must be in 'planned' state."
@@ -741,6 +742,8 @@ class SortPipeline(LifecycleTelemetryMixin):
         self.emit_telemetry("execute_start", plan=plan)
 
         call_kwargs = dict(kwargs)
+        if copy_mode:
+            call_kwargs["copy_mode"] = True
         try:
             fn = (
                 getattr(self.session.execute_moves, "side_effect", None)
@@ -891,6 +894,7 @@ class SortPipeline(LifecycleTelemetryMixin):
         items: list | None = None,
         *,
         dry_run: bool = False,
+        copy_mode: bool = False,
         move_context: Callable[[Any], AbstractContextManager[Any]] | None = None,
         **kwargs,
     ):
@@ -901,4 +905,4 @@ class SortPipeline(LifecycleTelemetryMixin):
         plan = self.plan(items, **kwargs)
         if dry_run or plan is None:
             return plan, None
-        return plan, self.execute(plan, move_context=move_context)
+        return plan, self.execute(plan, move_context=move_context, copy_mode=copy_mode)

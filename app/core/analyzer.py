@@ -1323,53 +1323,6 @@ class IncrementalAnalyzer:
                 if locked_files and f in locked_files:
                     target = locked_files[f]
 
-                # Check against unified policies first!
-                # return_halting=True always yields a (result, halt) tuple.
-                matched_policy, halt_evaluation = cast(
-                    "tuple[PolicyEvaluationResult | None, bool]",
-                    PolicyEngine.evaluate_policies(
-                        f,
-                        doc,
-                        status_match,
-                        sorted_policies,
-                        return_halting=True,
-                        is_sorted=True,
-                    ),
-                )
-
-                if matched_policy:
-                    policy_plan_files.append(
-                        (
-                            f,
-                            matched_policy.target_path
-                            if hasattr(matched_policy, "target_path")
-                            else matched_policy["target_path"],
-                            matched_policy.expression
-                            if hasattr(matched_policy, "expression")
-                            else matched_policy["expression"],
-                            matched_policy.type
-                            if hasattr(matched_policy, "type")
-                            else matched_policy["type"],
-                            status_match,
-                        )
-                    )
-                    matched_policies_map[f] = matched_policy
-                    if target is not None:
-                        historical_overrides[f] = (target, status_match)
-                    continue
-
-                if halt_evaluation:
-                    if status_match:
-                        unsupported_files.append((f, status_match))
-                    else:
-                        ai_filenames.append(f)
-                        ai_documents.append(doc)
-                    continue
-
-                if locked_files and f in locked_files and target is not None:
-                    historical_overrides[f] = (target, status_match)
-                    continue
-
                 src_root, rel_f = parse_item_identifier(f, base_dir)
                 abs_f = (
                     os.path.join(src_root, rel_f)
@@ -1377,6 +1330,105 @@ class IncrementalAnalyzer:
                     else rel_f
                 )
                 abs_src_root = os.path.abspath(src_root) if src_root else ""
+
+                eval_status = (
+                    None if status_match in ("IGNORED", "HALTED") else status_match
+                )
+
+                # Check against unified policies first!
+                # return_halting=True always yields a (result, halt) tuple.
+                matched_policy, halt_evaluation = cast(
+                    "tuple[PolicyEvaluationResult | None, bool]",
+                    PolicyEngine.evaluate_policies(
+                        f,
+                        doc,
+                        eval_status,
+                        sorted_policies,
+                        return_halting=True,
+                        is_sorted=True,
+                    ),
+                )
+
+                if matched_policy:
+                    eff_action = PolicyEngine.resolve_effective_action(matched_policy)
+                    if eff_action == "ignore":
+                        continue
+
+                    raw_target_path = (
+                        matched_policy.target_path
+                        if hasattr(matched_policy, "target_path")
+                        else matched_policy.get("target_path", "")
+                    ) or ""
+                    resolved_target_path = str(raw_target_path).strip()
+                    if resolved_target_path == ".":
+                        resolved_target_path = ""
+                    if not resolved_target_path:
+                        if eff_action == "unarchive":
+                            resolved_target_path = (
+                                os.path.dirname(rel_f).replace("\\", "/").strip("/")
+                            )
+                        elif eff_action == "quarantine":
+                            resolved_target_path = quarantine_dir_name
+                        elif eff_action == "archive":
+                            resolved_target_path = "Archive"
+                        elif eff_action == "redact":
+                            resolved_target_path = "Redacted_Documents"
+                        elif eff_action == "retain":
+                            resolved_target_path = "Retained"
+                        elif eff_action == "copy":
+                            resolved_target_path = "Copied"
+                        else:
+                            resolved_target_path = (
+                                os.path.dirname(rel_f).replace("\\", "/").strip("/")
+                            )
+
+                    post_act = (
+                        getattr(matched_policy, "post_unarchive_action", None)
+                        or getattr(matched_policy, "post_action", None)
+                        or getattr(matched_policy, "archive_action", None)
+                        or (
+                            matched_policy.get("post_unarchive_action")
+                            or matched_policy.get("post_action")
+                            or matched_policy.get("archive_action")
+                            if isinstance(matched_policy, dict)
+                            else None
+                        )
+                    )
+                    post_tgt = getattr(
+                        matched_policy, "post_unarchive_target", None
+                    ) or (
+                        matched_policy.get("post_unarchive_target")
+                        if isinstance(matched_policy, dict)
+                        else None
+                    )
+
+                    policy_plan_files.append(
+                        (
+                            f,
+                            resolved_target_path,
+                            matched_policy.expression
+                            if hasattr(matched_policy, "expression")
+                            else matched_policy["expression"],
+                            matched_policy.type
+                            if hasattr(matched_policy, "type")
+                            else matched_policy["type"],
+                            status_match,
+                            eff_action,
+                            post_act,
+                            post_tgt,
+                        )
+                    )
+                    matched_policies_map[f] = matched_policy
+                    if target is not None:
+                        historical_overrides[f] = (target, status_match)
+                    continue
+
+                if halt_evaluation or status_match in ("IGNORED", "HALTED"):
+                    continue
+
+                if locked_files and f in locked_files and target is not None:
+                    historical_overrides[f] = (target, status_match)
+                    continue
 
                 matched = False
                 jev_res = None
@@ -2232,6 +2284,42 @@ class IncrementalAnalyzer:
             else:
                 plan = {}
 
+            def _build_policy_node_meta(
+                f_item: str,
+                rule_type_val: str | None,
+                expr_val: str | None,
+                status_val: str | None,
+                eff_action_val: str | None,
+                post_act_val: str | None,
+                post_tgt_val: str | None,
+                *,
+                include_legacy_keys: bool = False,
+            ) -> dict:
+                node_meta: dict = {
+                    "__type__": "file",
+                    "routed_by": rule_type_val,
+                }
+                if include_legacy_keys:
+                    node_meta["keyword"] = expr_val
+                    node_meta["extraction_status"] = status_val
+                else:
+                    node_meta["match"] = expr_val
+                    node_meta["status"] = status_val
+                if eff_action_val:
+                    node_meta["action"] = eff_action_val
+                    if eff_action_val == "archive":
+                        _, clean_rel_item = parse_item_identifier(f_item, base_dir)
+                        base_item_name = os.path.basename(clean_rel_item)
+                        if base_item_name and not base_item_name.lower().endswith(
+                            ".zip"
+                        ):
+                            node_meta["target_filename"] = f"{base_item_name}.zip"
+                if post_act_val:
+                    node_meta["post_unarchive_action"] = str(post_act_val).lower()
+                if post_tgt_val:
+                    node_meta["post_unarchive_target"] = str(post_tgt_val)
+                return node_meta
+
             # Inject policy routed files back into the plan
             for (
                 f,
@@ -2239,9 +2327,14 @@ class IncrementalAnalyzer:
                 expression,
                 rule_type,
                 ext_status,
+                eff_action,
+                post_act,
+                post_tgt,
             ) in policy_plan_files:
                 if cancel_check and cancel_check():
                     return SortingPlan()
+                if not target_folder:
+                    continue
                 parts = target_folder.replace("\\", "/").split("/")
                 current = plan
                 for i, part in enumerate(parts):
@@ -2250,12 +2343,16 @@ class IncrementalAnalyzer:
                     if not isinstance(current[part], dict):
                         current[part] = {"_original": current[part]}
                     if i == len(parts) - 1:
-                        current[part][f] = {
-                            "__type__": "file",
-                            "routed_by": rule_type,
-                            "keyword": expression,
-                            "extraction_status": ext_status,
-                        }
+                        current[part][f] = _build_policy_node_meta(
+                            f,
+                            rule_type,
+                            expression,
+                            ext_status,
+                            eff_action,
+                            post_act,
+                            post_tgt,
+                            include_legacy_keys=True,
+                        )
                     else:
                         current = current[part]
 
@@ -2354,9 +2451,26 @@ class IncrementalAnalyzer:
 
             # Phase 1: Policy, Keyword, and Learned Rule sorting
             compliance_targets = {}
-            for f, target_folder, expression, rule_type, status in policy_plan_files:
+            policy_meta_by_file = {}
+            for (
+                f,
+                target_folder,
+                expression,
+                rule_type,
+                status,
+                eff_action,
+                post_act,
+                post_tgt,
+            ) in policy_plan_files:
                 compliance_targets[f] = target_folder
                 compliance_targets[f.replace("\\", "/")] = target_folder
+                policy_meta_by_file[f] = (
+                    rule_type,
+                    expression,
+                    eff_action,
+                    post_act,
+                    post_tgt,
+                )
             for f, target_folder, keyword, routed_by, ext_status in keyword_plan_files:
                 compliance_targets[f] = target_folder
                 compliance_targets[f.replace("\\", "/")] = target_folder
@@ -2364,17 +2478,29 @@ class IncrementalAnalyzer:
                 compliance_targets[f] = target_folder
                 compliance_targets[f.replace("\\", "/")] = target_folder
 
-            for f, target_folder, expression, rule_type, status in policy_plan_files:
+            for (
+                f,
+                target_folder,
+                expression,
+                rule_type,
+                status,
+                eff_action,
+                post_act,
+                post_tgt,
+            ) in policy_plan_files:
                 if cancel_check and cancel_check():
                     return SortingPlan()
                 if target_folder not in plan:
                     plan[target_folder] = {}
-                plan[target_folder][f] = {
-                    "__type__": "file",
-                    "routed_by": rule_type,
-                    "match": expression,
-                    "status": status,
-                }
+                plan[target_folder][f] = _build_policy_node_meta(
+                    f,
+                    rule_type,
+                    expression,
+                    status,
+                    eff_action,
+                    post_act,
+                    post_tgt,
+                )
 
             for f, target_folder, keyword, rule_type, status in keyword_plan_files:
                 if cancel_check and cancel_check():
@@ -2435,15 +2561,33 @@ class IncrementalAnalyzer:
 
                 matched_pol = matched_policies_map.get(f)
                 if matched_pol:
-                    info["routed_by"] = getattr(matched_pol, "type", None) or (
-                        matched_pol.get("type", "policy")
-                        if isinstance(matched_pol, dict)
-                        else "policy"
-                    )
-                    info["match"] = getattr(matched_pol, "expression", None) or (
-                        matched_pol.get("expression")
-                        if isinstance(matched_pol, dict)
-                        else None
+                    pol_tuple = policy_meta_by_file.get(f)
+                    if pol_tuple:
+                        r_type, r_expr, eff_act, p_act, p_tgt = pol_tuple
+                    else:
+                        r_type = getattr(matched_pol, "type", None) or (
+                            matched_pol.get("type", "policy")
+                            if isinstance(matched_pol, dict)
+                            else "policy"
+                        )
+                        r_expr = getattr(matched_pol, "expression", None) or (
+                            matched_pol.get("expression")
+                            if isinstance(matched_pol, dict)
+                            else None
+                        )
+                        eff_act = PolicyEngine.resolve_effective_action(matched_pol)
+                        p_act = getattr(matched_pol, "post_unarchive_action", None)
+                        p_tgt = getattr(matched_pol, "post_unarchive_target", None)
+                    info.update(
+                        _build_policy_node_meta(
+                            f,
+                            r_type,
+                            r_expr,
+                            status,
+                            eff_act,
+                            p_act,
+                            p_tgt,
+                        )
                     )
                 else:
                     info["routed_by"] = "historical"
@@ -2489,6 +2633,11 @@ class IncrementalAnalyzer:
                 if cancel_check and cancel_check():
                     return SortingPlan()
                 if not isinstance(files, dict) or not files:
+                    continue
+
+                if target_folder == "":
+                    for f, info in files.items():
+                        clean_plan[f] = info
                     continue
 
                 if os.path.isabs(target_folder) or ntpath.isabs(target_folder):

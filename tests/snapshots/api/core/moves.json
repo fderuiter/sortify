@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "f6e3bef7627d793ae00ad2c34f32bf41017f610c38e9ac847229a78208bfd85d"
+    "checksum": "adb0993f4cdf82e8fd63e7eca08f39f156e3e928086969cafef0a9649974beb8"
   },
   "classes": [
     {
@@ -122,6 +122,11 @@
               "annotation": "str | None",
               "default": "None",
               "name": "displaced"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "dst_sha256"
             }
           ],
           "returns": "None"
@@ -316,6 +321,16 @@
               "annotation": "int | None",
               "default": "None",
               "name": "size"
+            },
+            {
+              "annotation": "str",
+              "default": "OP_MOVE",
+              "name": "op_kind"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "dst_sha256"
             }
           ],
           "returns": "int"
@@ -411,6 +426,19 @@
         }
       ],
       "returns": "int"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "migrate_add_move_op_kind",
+      "parameters": [
+        {
+          "annotation": null,
+          "default": null,
+          "name": "conn"
+        }
+      ],
+      "returns": "None"
     },
     {
       "async": false,

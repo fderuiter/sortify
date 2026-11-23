@@ -19,8 +19,15 @@ from app.core.migrations import Migration, add_missing_columns, migrate
 from app.core.moves import (
     FAILED,
     INTENT,
+    OP_ARCHIVE,
+    OP_COPY,
+    OP_MOVE,
+    OP_REDACT,
+    OP_RETAIN,
+    OP_UNARCHIVE,
     Move,
     MoveLedger,
+    migrate_add_move_op_kind,
     migrate_add_moves,
     migrate_import_legacy_moves,
 )
@@ -599,6 +606,7 @@ HISTORY_DB_MIGRATIONS = (
     Migration(1, "baseline", _history_db_baseline),
     Migration(2, "moves", migrate_add_moves),
     Migration(3, "legacy_moves", migrate_import_legacy_moves),
+    Migration(4, "move_op_kind", migrate_add_move_op_kind),
 )
 
 
@@ -814,6 +822,8 @@ class HistoryManager:
                     "target_path": m.dst,
                     "size": sz,
                     "status": m.state,
+                    "op_kind": m.op_kind,
+                    "displaced": m.displaced,
                 }
             )
         return items
@@ -1066,7 +1076,147 @@ class HistoryManager:
         for move in reversed(moves):
             # The sort may have created the destination folder even if the move failed.
             dirs_to_prune.add(os.path.dirname(move.dst))
+            op_kind = (move.op_kind or OP_MOVE).lower()
             try:
+                if op_kind == OP_COPY:
+                    expected_copy_hash = move.dst_sha256 or move.src_sha256
+                    has_copy_dst = (
+                        move.state != FAILED
+                        and os.path.lexists(move.dst)
+                        and (
+                            move.state != INTENT
+                            or _holds_bytes(move.dst, expected_copy_hash)
+                        )
+                    )
+                    if has_copy_dst:
+                        if (
+                            move.size is not None
+                            and expected_copy_hash
+                            and not _holds_bytes(move.dst, expected_copy_hash)
+                        ):
+                            logging.error(
+                                f"Undo conflict: copied file {move.dst} changed since the sort; left it in place."
+                            )
+                            conflicts.append(move.dst)
+                        elif os.path.lexists(move.src):
+                            resilient_remove(move.dst)
+                            restored += 1
+                            if move.displaced and os.path.lexists(move.displaced):
+                                dirs_to_prune.add(os.path.dirname(move.displaced))
+                                resilient_move(move.displaced, move.dst)
+                        else:
+                            # Original source was deleted after copy; restore copy back to src so bytes are preserved.
+                            if base_dir:
+                                _move_aside_blocking_parents(
+                                    move.src, base_dir, docs_conn
+                                )
+                            os.makedirs(os.path.dirname(move.src), exist_ok=True)
+                            resilient_move(move.dst, move.src)
+                            restored += 1
+                            if move.displaced and os.path.lexists(move.displaced):
+                                dirs_to_prune.add(os.path.dirname(move.displaced))
+                                resilient_move(move.displaced, move.dst)
+                    elif (
+                        move.state == INTENT
+                        and move.displaced
+                        and os.path.lexists(move.displaced)
+                        and not os.path.lexists(move.dst)
+                    ):
+                        dirs_to_prune.add(os.path.dirname(move.displaced))
+                        resilient_move(move.displaced, move.dst)
+                    continue
+
+                if op_kind == OP_UNARCHIVE:
+                    expected_child_hash = move.dst_sha256
+                    has_child = (
+                        move.state != FAILED
+                        and os.path.lexists(move.dst)
+                        and (
+                            move.state != INTENT
+                            or _holds_bytes(move.dst, expected_child_hash)
+                        )
+                    )
+                    if has_child:
+                        if expected_child_hash and not _holds_bytes(
+                            move.dst, expected_child_hash
+                        ):
+                            logging.error(
+                                f"Undo conflict: extracted file {move.dst} changed since unarchive; left it in place."
+                            )
+                            conflicts.append(move.dst)
+                        elif not os.path.lexists(move.src):
+                            logging.error(
+                                f"Undo conflict: source archive {move.src} is missing; keeping extracted file {move.dst} so no bytes are lost."
+                            )
+                            conflicts.append(move.dst)
+                        else:
+                            resilient_remove(move.dst)
+                            restored += 1
+                            if move.displaced and os.path.lexists(move.displaced):
+                                dirs_to_prune.add(os.path.dirname(move.displaced))
+                                resilient_move(move.displaced, move.dst)
+                    elif (
+                        move.state == INTENT
+                        and move.displaced
+                        and os.path.lexists(move.displaced)
+                        and not os.path.lexists(move.dst)
+                    ):
+                        dirs_to_prune.add(os.path.dirname(move.displaced))
+                        resilient_move(move.displaced, move.dst)
+                    continue
+
+                if op_kind in (OP_ARCHIVE, OP_REDACT):
+                    # ``displaced`` holds the parked original source file; ``dst`` holds the zip or redacted output.
+                    dst_exists = os.path.lexists(move.dst)
+                    parked_exists = bool(
+                        move.displaced and os.path.lexists(move.displaced)
+                    )
+                    if (
+                        dst_exists
+                        and move.state != INTENT
+                        and move.dst_sha256
+                        and not _holds_bytes(move.dst, move.dst_sha256)
+                    ):
+                        logging.error(
+                            f"Undo conflict: {move.dst} changed since {op_kind}; left it in place."
+                        )
+                        conflicts.append(move.dst)
+                        continue
+                    if parked_exists and move.displaced:
+                        if move.src_sha256 and not _holds_bytes(
+                            move.displaced, move.src_sha256
+                        ):
+                            logging.error(
+                                f"Undo conflict: parked source backup {move.displaced} hash mismatch; keeping {move.dst}."
+                            )
+                            conflicts.append(move.displaced)
+                            continue
+                        dirs_to_prune.add(os.path.dirname(move.displaced))
+                        if base_dir:
+                            _move_aside_blocking_parents(move.src, base_dir, docs_conn)
+                        os.makedirs(os.path.dirname(move.src), exist_ok=True)
+                        if dst_exists and _is_same_restored_path(move.dst, move.src):
+                            resilient_remove(move.dst)
+                            dst_exists = False
+                        restored_to = resilient_move(move.displaced, move.src)
+                        if dst_exists:
+                            resilient_remove(move.dst)
+                        restored += 1
+                        if db and base_dir:
+                            try:
+                                db.update_document_path(
+                                    base_dir,
+                                    safe_relpath(move.dst, base_dir).replace("\\", "/"),
+                                    safe_relpath(restored_to, base_dir).replace(
+                                        "\\", "/"
+                                    ),
+                                )
+                            except Exception as err:
+                                logging.warning(
+                                    f"Could not update the document path for {restored_to}: {err}"
+                                )
+                    continue
+
                 moved = _find_moved_file(move, claimed)
                 # Rows the mover wrote carry the size of the bytes it hashed; rows
                 # imported from step_ledger may hold a text hash instead (#844).
@@ -1081,6 +1231,11 @@ class HistoryManager:
                     conflicts.append(moved)
                     moved = None
                 if moved:
+                    if op_kind == OP_RETAIN and not os.path.islink(moved):
+                        try:
+                            os.chmod(moved, 0o600)
+                        except OSError:
+                            pass
                     claimed.add(moved)
                     dirs_to_prune.add(os.path.dirname(moved))
                     if base_dir:
@@ -1250,11 +1405,58 @@ class HistoryManager:
             source_path = step.get("source_path") or step.get("original_path") or ""
             target_path = step.get("target_path") or ""
             size = step.get("size")
+            op_kind = (step.get("op_kind") or OP_MOVE).lower()
+            displaced_path = step.get("displaced")
 
             target_exists = bool(target_path and os.path.lexists(target_path))
             source_exists = bool(source_path and os.path.lexists(source_path))
+            displaced_exists = bool(displaced_path and os.path.lexists(displaced_path))
 
-            if not target_exists:
+            if op_kind in (OP_COPY, OP_UNARCHIVE):
+                if not target_exists:
+                    st = "MISSING_TARGET"
+                    is_coll = False
+                    restoration_path = source_path
+                    det = "Target output file is missing on disk"
+                    missing_count += 1
+                else:
+                    st = "CLEAN"
+                    is_coll = False
+                    restoration_path = source_path
+                    det = (
+                        "Copied file will be removed; original preserved at source"
+                        if op_kind == OP_COPY
+                        else "Extracted file will be removed; archive restored"
+                    )
+                    clean_count += 1
+            elif op_kind in (OP_ARCHIVE, OP_REDACT):
+                if not displaced_exists:
+                    st = "MISSING_TARGET"
+                    is_coll = False
+                    restoration_path = source_path
+                    det = "Original source backup is missing on disk"
+                    missing_count += 1
+                elif source_exists and not _is_same_restored_path(
+                    target_path, source_path
+                ):
+                    st = "COLLISION"
+                    is_coll = True
+                    dest_dir = os.path.dirname(source_path) or "."
+                    orig_filename = os.path.basename(source_path)
+                    restoration_path = os.path.normpath(
+                        get_safe_path(dest_dir, orig_filename, displaced_path)
+                    )
+                    det = f"Original path is occupied by a different file; will restore as {os.path.basename(restoration_path)}"
+                    collision_count += 1
+                else:
+                    st = "CLEAN"
+                    is_coll = False
+                    restoration_path = source_path
+                    det = (
+                        f"Original source will be restored and {op_kind} output removed"
+                    )
+                    clean_count += 1
+            elif not target_exists:
                 st = "MISSING_TARGET"
                 is_coll = False
                 restoration_path = source_path

@@ -13,7 +13,8 @@ def format_plan_tree(plan: dict) -> tuple[list[str], int, int]:
 
     def _is_file(node) -> bool:
         return node is None or (
-            isinstance(node, dict) and node.get("__type__") == "file"
+            isinstance(node, dict)
+            and (node.get("__type__") == "file" or node.get("node_type") == "file")
         )
 
     def _walk(tree: dict, depth: int) -> None:

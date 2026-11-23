@@ -593,7 +593,7 @@ def test_explicit_compliance_policies_still_run_when_auto_quarantine_disabled(
     j_a = service.stage_incoming_file(str(a_file), str(ws))["job_id"]
     res_a = service.process_quarantine_job(j_a)
     assert res_a["status"] == "ARCHIVED"
-    assert (ws / "Archived_2020" / "legacy_ledger.txt").exists()
+    assert (ws / "Archived_2020" / "legacy_ledger.txt.zip").exists()
 
 
 def test_tui_partial_settings_without_consent_attr_does_not_schedule_deferred_wizard(

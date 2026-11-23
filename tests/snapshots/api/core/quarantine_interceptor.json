@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "189966a96a97b5b0871ca366a1e54181eb416fd961fdb4a5f6dfdf129a237d61"
+    "checksum": "c546589afceb24612cd68548bac6164c8e601fdb95d306c0ffa518694b267aee"
   },
   "classes": [
     {
@@ -46,6 +46,11 @@
               "annotation": "Optional[Any]",
               "default": "None",
               "name": "runtime_settings"
+            },
+            {
+              "annotation": "Optional[Any]",
+              "default": "None",
+              "name": "history_manager"
             }
           ],
           "returns": null

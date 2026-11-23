@@ -190,6 +190,12 @@ _MOVE_ACTION_CORES = frozenset(
 _COPY_ACTION_CORES = frozenset(
     {"copy", "copyfile", "copyto", "copytofolder", "duplicate"}
 )
+_IGNORE_ACTION_CORES = frozenset(
+    {"ignore", "ignorefile", "skip", "skipfile", "donothing", "noop"}
+)
+_ARCHIVE_ACTION_CORES = frozenset(
+    {"archive", "archivefile", "compress", "zip", "createarchive", "pack"}
+)
 _INLINE_SIZE_RE = re.compile(
     r"^(?:"
     r"(?:size|filesize|file_size|bytes?)\s*(?:[<>]=?|!=|==|=|:)\s*\S+"
@@ -553,6 +559,7 @@ class RuleConflictAnalyzer:
 
         for policy in imported_policies:
             p_type = str(policy.get("type", "")).strip().lower()
+            p_action = str(policy.get("action", "") or "").strip().lower()
             p_expr = str(policy.get("expression", "")).strip().lower()
             p_target = policy.get("target_path", "")
             p_prio = policy.get("priority", 75)
@@ -562,13 +569,14 @@ class RuleConflictAnalyzer:
 
             for ex_p in existing_policies:
                 ex_type = str(ex_p.get("type", "")).strip().lower()
+                ex_action = str(ex_p.get("action", "") or "").strip().lower()
                 ex_expr = str(ex_p.get("expression", "")).strip().lower()
                 if ex_type == p_type and ex_expr == p_expr:
                     ex_target = ex_p.get("target_path", "")
                     ex_prio = ex_p.get("priority", 75)
                     san_ex = normalize_rule_path(ex_target)
                     san_imp = normalize_rule_path(p_target)
-                    if san_ex != san_imp or ex_prio != p_prio:
+                    if san_ex != san_imp or ex_prio != p_prio or ex_action != p_action:
                         ident = f"{ex_expr} ({ex_type})" if ex_type else ex_expr
                         conflicts.append(
                             RuleConflict(
@@ -707,6 +715,7 @@ class ImportResult:
 
         for policy in self.policies:
             p_type = str(policy.get("type", "")).strip().lower()
+            p_action = str(policy.get("action", "") or "").strip().lower()
             p_expr = str(policy.get("expression", "")).strip()
             p_expr_lower = p_expr.lower()
 
@@ -714,8 +723,16 @@ class ImportResult:
                 continue
 
             raw_target = str(policy.get("target_path", ""))
-            norm_target, was_conv, err = normalize_imported_target_path(raw_target)
-            if err is not None or not norm_target:
+            allows_empty_target = p_action in (
+                "ignore",
+                "unarchive",
+                "quarantine",
+            ) or p_type in ("ignore", "unarchive")
+            if not raw_target.strip() and allows_empty_target:
+                norm_target, was_conv, err = "", False, None
+            else:
+                norm_target, was_conv, err = normalize_imported_target_path(raw_target)
+            if err is not None or (not norm_target and not allows_empty_target):
                 reason = err or "Empty destination folder"
                 self.warnings.append(
                     f"Policy rule '{p_expr}' skipped before merge: {reason}"
@@ -918,11 +935,60 @@ class BaseRuleImporter(abc.ABC):
 
         if core in _UNARCHIVE_ACTION_CORES:
             return "unarchive", raw_label
+        if core in _ARCHIVE_ACTION_CORES:
+            return "archive", raw_label
         if core in _MOVE_ACTION_CORES:
             return "move", raw_label
         if core in _COPY_ACTION_CORES:
             return "copy", raw_label
+        if core in _IGNORE_ACTION_CORES:
+            return "ignore", raw_label
         return "unsupported", raw_label
+
+    @staticmethod
+    def _build_policy_for_action(
+        expression: str,
+        target_dir: str,
+        policy_action: str | None,
+        *,
+        is_pattern: bool = False,
+        priority: int = 75,
+    ) -> dict[str, Any]:
+        """Construct a normalized Sortify policy rule dict for an imported external action."""
+        if policy_action == "unarchive":
+            return {
+                "type": "unarchive",
+                "action": "unarchive",
+                "expression": expression,
+                "target_path": target_dir,
+                "priority": priority,
+                "halting": False,
+            }
+        if policy_action in ("copy", "ignore"):
+            return {
+                "type": "pattern" if is_pattern else policy_action,
+                "action": policy_action,
+                "expression": expression,
+                "target_path": target_dir,
+                "priority": priority,
+                "halting": False,
+            }
+        if policy_action == "archive":
+            return {
+                "type": "pattern" if is_pattern else "keyword",
+                "action": "archive",
+                "expression": expression,
+                "target_path": target_dir,
+                "priority": priority,
+                "halting": False,
+            }
+        return {
+            "type": "pattern" if is_pattern else "keyword",
+            "expression": expression,
+            "target_path": target_dir,
+            "priority": priority,
+            "halting": False,
+        }
 
 
 class HazelRuleImporter(BaseRuleImporter):
@@ -1014,7 +1080,7 @@ class HazelRuleImporter(BaseRuleImporter):
                 actions = [actions]
 
             raw_target = ""
-            is_unarchive = False
+            policy_action: str | None = None
             saw_explicit_actions = False
             saw_supported_action = False
 
@@ -1033,18 +1099,6 @@ class HazelRuleImporter(BaseRuleImporter):
                             f"Hazel rule '{rule_name}' contains embedded script action which was omitted for security."
                         )
                         continue
-                    if act_kind == "copy":
-                        saw_explicit_actions = True
-                        result.unsupported.append(
-                            {
-                                "rule": rule_name,
-                                "reason": f"Unsupported copy action '{act_label}' omitted.",
-                            }
-                        )
-                        result.warnings.append(
-                            f"Hazel rule '{rule_name}' skipped unsupported copy action '{act_label}'."
-                        )
-                        continue
                     if act_kind == "unsupported":
                         saw_explicit_actions = True
                         result.unsupported.append(
@@ -1060,8 +1114,8 @@ class HazelRuleImporter(BaseRuleImporter):
 
                     saw_explicit_actions = True
                     saw_supported_action = True
-                    if act_kind == "unarchive":
-                        is_unarchive = True
+                    if act_kind in ("unarchive", "copy", "ignore", "archive"):
+                        policy_action = act_kind
 
                     if isinstance(act, dict):
                         act_target = (
@@ -1096,17 +1150,6 @@ class HazelRuleImporter(BaseRuleImporter):
                         f"Hazel rule '{rule_name}' contains embedded script action which was omitted for security."
                     )
                     continue
-                if top_kind == "copy":
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Unsupported copy action '{top_label}' omitted.",
-                        }
-                    )
-                    result.warnings.append(
-                        f"Hazel rule '{rule_name}' skipped unsupported copy action '{top_label}'."
-                    )
-                    continue
                 if top_kind == "unsupported":
                     result.unsupported.append(
                         {
@@ -1118,8 +1161,8 @@ class HazelRuleImporter(BaseRuleImporter):
                         f"Hazel rule '{rule_name}' skipped unsupported action '{top_label}'."
                     )
                     continue
-                if top_kind == "unarchive":
-                    is_unarchive = True
+                if top_kind in ("unarchive", "copy", "ignore", "archive"):
+                    policy_action = top_kind
                     saw_supported_action = True
 
             if not raw_target and (not saw_explicit_actions or saw_supported_action):
@@ -1131,7 +1174,7 @@ class HazelRuleImporter(BaseRuleImporter):
                 if top_target and isinstance(top_target, str):
                     raw_target = top_target
 
-            if not raw_target:
+            if not raw_target and policy_action != "ignore":
                 if saw_explicit_actions and not saw_supported_action:
                     continue
                 result.warnings.append(
@@ -1142,11 +1185,14 @@ class HazelRuleImporter(BaseRuleImporter):
                 )
                 continue
 
-            target_dir = self._resolve_safe_destination(
-                raw_target, rule_name, result, "Hazel rule"
-            )
-            if target_dir is None:
-                continue
+            if raw_target:
+                target_dir = self._resolve_safe_destination(
+                    raw_target, rule_name, result, "Hazel rule"
+                )
+                if target_dir is None:
+                    continue
+            else:
+                target_dir = ""
 
             cond_mode = (
                 str(
@@ -1178,22 +1224,15 @@ class HazelRuleImporter(BaseRuleImporter):
             )
 
             if not isinstance(conditions, list) or not conditions:
-                if is_unarchive:
+                if policy_action is not None:
                     expr_val = rule_name if rule_name else "*"
-                    p_type = (
-                        "pattern"
-                        if _has_wildcard_or_ext_mask(expr_val)
-                        else "unarchive"
-                    )
                     result.policies.append(
-                        {
-                            "type": p_type,
-                            "action": "unarchive",
-                            "expression": expr_val,
-                            "target_path": target_dir,
-                            "priority": 75,
-                            "halting": False,
-                        }
+                        self._build_policy_for_action(
+                            expr_val,
+                            target_dir,
+                            policy_action,
+                            is_pattern=_has_wildcard_or_ext_mask(expr_val),
+                        )
                     )
                 elif rule_name and len(rule_name.split()) == 1:
                     result.keyword_rules[rule_name.lower()] = target_dir
@@ -1326,28 +1365,18 @@ class HazelRuleImporter(BaseRuleImporter):
 
                 if op_kind == "starts_with":
                     expr = val_str if val_str.endswith("*") else f"{val_str}*"
-                    pol_dict: dict[str, Any] = {
-                        "type": "unarchive" if is_unarchive else "pattern",
-                        "expression": expr,
-                        "target_path": target_dir,
-                        "priority": 75,
-                        "halting": False,
-                    }
-                    if is_unarchive:
-                        pol_dict["action"] = "unarchive"
-                    result.policies.append(pol_dict)
+                    result.policies.append(
+                        self._build_policy_for_action(
+                            expr, target_dir, policy_action, is_pattern=True
+                        )
+                    )
                 elif op_kind == "ends_with":
                     expr = val_str if val_str.startswith("*") else f"*{val_str}"
-                    pol_dict = {
-                        "type": "unarchive" if is_unarchive else "pattern",
-                        "expression": expr,
-                        "target_path": target_dir,
-                        "priority": 75,
-                        "halting": False,
-                    }
-                    if is_unarchive:
-                        pol_dict["action"] = "unarchive"
-                    result.policies.append(pol_dict)
+                    result.policies.append(
+                        self._build_policy_for_action(
+                            expr, target_dir, policy_action, is_pattern=True
+                        )
+                    )
                 elif (
                     "extension" in attribute
                     or "pattern" in attribute
@@ -1365,26 +1394,16 @@ class HazelRuleImporter(BaseRuleImporter):
                         )
                     else:
                         expr = val_str
-                    pol_dict = {
-                        "type": "unarchive" if is_unarchive else "pattern",
-                        "expression": expr,
-                        "target_path": target_dir,
-                        "priority": 75,
-                        "halting": False,
-                    }
-                    if is_unarchive:
-                        pol_dict["action"] = "unarchive"
-                    result.policies.append(pol_dict)
-                elif is_unarchive:
                     result.policies.append(
-                        {
-                            "type": "unarchive",
-                            "action": "unarchive",
-                            "expression": val_str,
-                            "target_path": target_dir,
-                            "priority": 75,
-                            "halting": False,
-                        }
+                        self._build_policy_for_action(
+                            expr, target_dir, policy_action, is_pattern=True
+                        )
+                    )
+                elif policy_action is not None:
+                    result.policies.append(
+                        self._build_policy_for_action(
+                            val_str, target_dir, policy_action, is_pattern=False
+                        )
                     )
                 else:
                     if len(val_str.split()) == 1 and all(
@@ -1558,17 +1577,6 @@ class DropItRuleImporter(BaseRuleImporter):
                 f"DropIt rule '{rule_name}' contains command/script execution action which was omitted for security."
             )
             return
-        if act_kind == "copy":
-            result.unsupported.append(
-                {
-                    "rule": rule_name,
-                    "reason": f"Unsupported copy action '{act_label}' omitted.",
-                }
-            )
-            result.warnings.append(
-                f"DropIt rule '{rule_name}' skipped unsupported copy action '{act_label}'."
-            )
-            return
         if act_kind == "unsupported":
             result.unsupported.append(
                 {
@@ -1581,9 +1589,11 @@ class DropItRuleImporter(BaseRuleImporter):
             )
             return
 
-        is_unarchive = act_kind == "unarchive"
+        policy_action = (
+            act_kind if act_kind in ("unarchive", "copy", "ignore", "archive") else None
+        )
 
-        if not dest or not str(dest).strip():
+        if (not dest or not str(dest).strip()) and policy_action != "ignore":
             result.warnings.append(
                 f"DropIt rule '{rule_name}' has no target directory; omitted auto-routing."
             )
@@ -1592,11 +1602,14 @@ class DropItRuleImporter(BaseRuleImporter):
             )
             return
 
-        target_dir = self._resolve_safe_destination(
-            str(dest), rule_name, result, "DropIt rule"
-        )
-        if target_dir is None:
-            return
+        if dest and str(dest).strip():
+            target_dir = self._resolve_safe_destination(
+                str(dest), rule_name, result, "DropIt rule"
+            )
+            if target_dir is None:
+                return
+        else:
+            target_dir = ""
 
         omitted_extra = False
         if extra_fields:
@@ -1611,7 +1624,7 @@ class DropItRuleImporter(BaseRuleImporter):
             pattern,
             target_dir,
             result,
-            is_unarchive=is_unarchive,
+            policy_action=policy_action,
             allow_name_fallback=not omitted_extra,
         )
 
@@ -1843,9 +1856,11 @@ class DropItRuleImporter(BaseRuleImporter):
         result: ImportResult,
         *,
         is_unarchive: bool = False,
+        policy_action: str | None = None,
         allow_name_fallback: bool = True,
     ) -> None:
         """Convert DropIt pattern mask string into keyword rules or policy rules."""
+        eff_action = policy_action or ("unarchive" if is_unarchive else None)
         pattern_clean = str(pattern or "").strip()
         if not pattern_clean:
             if not allow_name_fallback:
@@ -1897,26 +1912,16 @@ class DropItRuleImporter(BaseRuleImporter):
                 continue
 
             if _has_wildcard_or_ext_mask(mask):
-                pol_dict: dict[str, Any] = {
-                    "type": "unarchive" if is_unarchive else "pattern",
-                    "expression": mask,
-                    "target_path": target_dir,
-                    "priority": 75,
-                    "halting": False,
-                }
-                if is_unarchive:
-                    pol_dict["action"] = "unarchive"
-                result.policies.append(pol_dict)
-            elif is_unarchive:
                 result.policies.append(
-                    {
-                        "type": "unarchive",
-                        "action": "unarchive",
-                        "expression": mask,
-                        "target_path": target_dir,
-                        "priority": 75,
-                        "halting": False,
-                    }
+                    self._build_policy_for_action(
+                        mask, target_dir, eff_action, is_pattern=True
+                    )
+                )
+            elif eff_action is not None:
+                result.policies.append(
+                    self._build_policy_for_action(
+                        mask, target_dir, eff_action, is_pattern=False
+                    )
                 )
             else:
                 if len(mask.split()) == 1 and all(
@@ -2286,7 +2291,7 @@ class TagSpacesRuleImporter(BaseRuleImporter):
             actions = [actions]
 
         has_script = False
-        is_unarchive = False
+        policy_action: str | None = None
         saw_non_script_unsupported = False
         action_dest = ""
 
@@ -2294,18 +2299,6 @@ class TagSpacesRuleImporter(BaseRuleImporter):
             act_kind, act_label = self._classify_action_kind(act)
             if act_kind == "script":
                 has_script = True
-                continue
-            if act_kind == "copy":
-                saw_non_script_unsupported = True
-                result.unsupported.append(
-                    {
-                        "rule": rule_name,
-                        "reason": f"Unsupported copy action '{act_label}' omitted.",
-                    }
-                )
-                result.warnings.append(
-                    f"TagSpaces rule '{rule_name}' skipped unsupported copy action '{act_label}'."
-                )
                 continue
             if act_kind == "unsupported":
                 saw_non_script_unsupported = True
@@ -2320,8 +2313,8 @@ class TagSpacesRuleImporter(BaseRuleImporter):
                 )
                 continue
 
-            if act_kind == "unarchive":
-                is_unarchive = True
+            if act_kind in ("unarchive", "copy", "ignore", "archive"):
+                policy_action = act_kind
             if isinstance(act, dict) and not action_dest:
                 cand = (
                     act.get("target")
@@ -2357,7 +2350,7 @@ class TagSpacesRuleImporter(BaseRuleImporter):
         )
         dest = str(top_dest) if top_dest else action_dest
 
-        if not dest:
+        if not dest and policy_action != "ignore":
             if saw_non_script_unsupported:
                 return
             result.warnings.append(
@@ -2371,11 +2364,14 @@ class TagSpacesRuleImporter(BaseRuleImporter):
         if saw_non_script_unsupported and not action_dest and not top_dest:
             return
 
-        target_dir = self._resolve_safe_destination(
-            dest, rule_name, result, "TagSpaces rule"
-        )
-        if target_dir is None:
-            return
+        if dest:
+            target_dir = self._resolve_safe_destination(
+                dest, rule_name, result, "TagSpaces rule"
+            )
+            if target_dir is None:
+                return
+        else:
+            target_dir = ""
 
         conditions = (
             rule.get("conditions")
@@ -2394,7 +2390,7 @@ class TagSpacesRuleImporter(BaseRuleImporter):
                     target_dir,
                     result,
                     rule_name=rule_name,
-                    is_unarchive=is_unarchive,
+                    policy_action=policy_action,
                 )
             elif isinstance(cond, dict):
                 raw_cond_type = str(
@@ -2455,16 +2451,15 @@ class TagSpacesRuleImporter(BaseRuleImporter):
 
                 if "ext" in cond_type or "extension" in cond_type:
                     expr = val if val.startswith("*.") else f"*.{val.lstrip('.')}"
-                    pol_dict: dict[str, Any] = {
-                        "type": "unarchive" if is_unarchive else "pattern",
-                        "expression": expr,
-                        "target_path": target_dir,
-                        "priority": 85,
-                        "halting": False,
-                    }
-                    if is_unarchive:
-                        pol_dict["action"] = "unarchive"
-                    result.policies.append(pol_dict)
+                    result.policies.append(
+                        self._build_policy_for_action(
+                            expr,
+                            target_dir,
+                            policy_action,
+                            is_pattern=True,
+                            priority=85,
+                        )
+                    )
                 else:
                     self._add_smart_rule_condition(
                         val,
@@ -2472,7 +2467,7 @@ class TagSpacesRuleImporter(BaseRuleImporter):
                         result,
                         priority=85,
                         rule_name=rule_name,
-                        is_unarchive=is_unarchive,
+                        policy_action=policy_action,
                     )
 
     def _add_smart_rule_condition(
@@ -2484,8 +2479,10 @@ class TagSpacesRuleImporter(BaseRuleImporter):
         *,
         rule_name: str = "TagSpaces Smart Rule",
         is_unarchive: bool = False,
+        policy_action: str | None = None,
     ) -> None:
         """Add smart rule condition matcher to keyword rules or policy list."""
+        eff_action = policy_action or ("unarchive" if is_unarchive else None)
         val_clean = val_str.strip()
         if not val_clean:
             return
@@ -2518,26 +2515,24 @@ class TagSpacesRuleImporter(BaseRuleImporter):
             return
 
         if _has_wildcard_or_ext_mask(val_clean):
-            pol_dict: dict[str, Any] = {
-                "type": "unarchive" if is_unarchive else "pattern",
-                "expression": val_clean,
-                "target_path": target_dir,
-                "priority": priority,
-                "halting": False,
-            }
-            if is_unarchive:
-                pol_dict["action"] = "unarchive"
-            result.policies.append(pol_dict)
-        elif is_unarchive:
             result.policies.append(
-                {
-                    "type": "unarchive",
-                    "action": "unarchive",
-                    "expression": val_clean,
-                    "target_path": target_dir,
-                    "priority": priority,
-                    "halting": False,
-                }
+                self._build_policy_for_action(
+                    val_clean,
+                    target_dir,
+                    eff_action,
+                    is_pattern=True,
+                    priority=priority,
+                )
+            )
+        elif eff_action is not None:
+            result.policies.append(
+                self._build_policy_for_action(
+                    val_clean,
+                    target_dir,
+                    eff_action,
+                    is_pattern=False,
+                    priority=priority,
+                )
             )
         elif len(val_clean.split()) == 1 and all(
             c.isalnum() or c in "_-" for c in val_clean
@@ -2634,17 +2629,31 @@ class SortifyRuleImporter(BaseRuleImporter):
             for pol in raw_pol:
                 if isinstance(pol, dict):
                     p_type = str(pol.get("type", "keyword")).strip().lower()
+                    p_action_raw = (
+                        pol["action"].strip().lower()
+                        if isinstance(pol.get("action"), str) and pol["action"].strip()
+                        else ""
+                    )
                     p_expr = str(pol.get("expression", "")).strip()
                     if not p_expr:
                         continue
-                    p_target = self._resolve_safe_destination(
-                        str(pol.get("target_path", "")),
-                        p_expr,
-                        result,
-                        "Sortify policy rule",
-                    )
-                    if not p_target:
-                        continue
+                    raw_p_target = str(pol.get("target_path", ""))
+                    allows_empty = p_action_raw in (
+                        "ignore",
+                        "unarchive",
+                        "quarantine",
+                    ) or p_type in ("ignore", "unarchive")
+                    if not raw_p_target.strip() and allows_empty:
+                        p_target = ""
+                    else:
+                        p_target = self._resolve_safe_destination(
+                            raw_p_target,
+                            p_expr,
+                            result,
+                            "Sortify policy rule",
+                        )
+                        if not p_target:
+                            continue
                     p_prio = pol.get("priority", 75)
                     p_halt = bool(pol.get("halting", False))
                     pol_out: dict[str, Any] = {

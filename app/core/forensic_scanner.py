@@ -16,7 +16,7 @@ from dataclasses import dataclass
 from pathlib import Path
 from typing import Optional
 
-from app.core.exceptions import ArchiveSafetyError
+from app.core.exceptions import ArchiveSafetyError, UnsupportedArchiveFormatError
 from app.core.extractor import extract_file_text
 from app.core.path_utils import safe_extract_path, safe_relpath, sanitize_filename
 from app.core.progress import emit_progress
@@ -45,7 +45,18 @@ ARCHIVE_EXTENSIONS = {
     ".tgz",
     ".tar.gz",
     ".bz2",
+    ".xz",
+    ".txz",
+    ".tbz2",
 }
+
+UNSUPPORTED_ARCHIVE_EXTENSIONS = {
+    ".7z",
+    ".rar",
+}
+
+_SEVENZ_MAGIC = b"7z\xbc\xaf\x27\x1c"
+_RAR_MAGIC = b"Rar!\x1a\x07"
 
 
 @dataclass
@@ -119,14 +130,42 @@ class ForensicScanner:
 
         extracted_files = []
         created_paths = []
+
+        if not archive_path or not os.path.isfile(archive_path):
+            raise ArchiveSafetyError(
+                f"Archive path does not exist or is not a regular file: '{archive_path}'"
+            )
+
+        lower_name = os.path.basename(archive_path).lower()
+        _, ext = os.path.splitext(lower_name)
+        header = b""
+        try:
+            with open(archive_path, "rb") as hf:
+                header = hf.read(8)
+        except OSError as read_err:
+            raise ArchiveSafetyError(
+                f"Unable to read archive header for '{archive_path}': {read_err}"
+            ) from read_err
+
+        if (
+            ext in UNSUPPORTED_ARCHIVE_EXTENSIONS
+            or header.startswith(_SEVENZ_MAGIC)
+            or header.startswith(_RAR_MAGIC)
+        ):
+            fmt = (
+                ".7z" if (ext == ".7z" or header.startswith(_SEVENZ_MAGIC)) else ".rar"
+            )
+            raise UnsupportedArchiveFormatError(
+                f"Unsupported archive format '{fmt}' for '{os.path.basename(archive_path)}': "
+                "only stdlib .zip and .tar archives are supported."
+            )
+
         os.makedirs(destination_dir, exist_ok=True)
 
-        archive_size = 0
-        if os.path.exists(archive_path):
-            try:
-                archive_size = os.path.getsize(archive_path)
-            except OSError:
-                archive_size = 0
+        try:
+            archive_size = os.path.getsize(archive_path)
+        except OSError:
+            archive_size = 0
 
         file_count = 0
         total_uncompressed_bytes = 0
@@ -244,6 +283,11 @@ class ForensicScanner:
                                         dst.write(chunk)
                                 _set_posix_mode(target, 0o600)
                                 extracted_files.append(target)
+            else:
+                raise UnsupportedArchiveFormatError(
+                    f"Unsupported or invalid archive format for '{os.path.basename(archive_path)}': "
+                    "expected a valid stdlib .zip or .tar archive."
+                )
 
         except ArchiveSafetyError as ase:
             logger.warning(
@@ -263,6 +307,17 @@ class ForensicScanner:
             logger.warning(
                 f"Error unpacking archive {archive_path}: {e}", exc_info=True
             )
+            for p in reversed(created_paths):
+                try:
+                    if os.path.isfile(p) or os.path.islink(p):
+                        os.remove(p)
+                    elif os.path.isdir(p):
+                        os.rmdir(p)
+                except OSError as cleanup_err:
+                    logger.debug(f"Cleanup error for {p}: {cleanup_err}")
+            raise ArchiveSafetyError(
+                f"Corrupted or unreadable archive '{os.path.basename(archive_path)}': {e}"
+            ) from e
 
         return extracted_files
 

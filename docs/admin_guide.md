@@ -409,24 +409,28 @@ Each entry in `POLICIES` follows the typed `PolicyRule` schema in `app/config_sc
 - **Required keys**: `type` (`str`), `expression` (non-empty `str`), `target_path` (relative `str`), and `priority` (`int`).
 - **Optional keys**: `halting` (`bool`, default `false`), `enabled` (`bool`, default `true`), `action` (`str`), and `post_unarchive_action` (`str`, with legacy aliases `post_action` and `archive_action` accepted when loading existing `settings.json` files).
 
-Compliance and routing policies support all **6** rule `type` values:
+Compliance and routing policies support all **8** rule `type` values:
 
 - **`keyword`**: Case-insensitive substring match against the filename and extracted document text (or the filename alone when a preliminary status match is present; expressions `'secret'` and `'credential'` invoke credential/secret scanning across the path and text).
 - **`pattern`**: Case-insensitive substring match against the **lowercase filename (`os.path.basename(file_path).lower()`) only**—does not inspect extracted document text.
 - **`override`**: Case-insensitive match against the **lowercase filename or full file path (`file_path.lower()`)**—does not inspect extracted document text, allowing deterministic path-level routing overrides.
 - **`action`**: Lifecycle directive rule evaluated via case-insensitive substring matching against the filename and extracted document text.
 - **`compliance`**: Regulatory and sensitivity rule evaluated via case-insensitive substring matching against the filename and extracted document text (plus secret detection when `expression` is `'secret'` or `'credential'`).
-- **`unarchive`**: Archive ingestion rule evaluated via case-insensitive substring matching against the filename and extracted document text to trigger archive extraction workflows.
+- **`unarchive`**: Archive ingestion rule evaluated via glob/extension masks or case-insensitive substring matching against the filename and extracted document text to trigger archive extraction workflows.
+- **`copy`**: Non-destructive copy rule evaluated via glob/extension masks or case-insensitive substring matching against the filename and extracted document text to write a verified copy to `target_path` while preserving the original.
+- **`ignore`**: Exclusion rule evaluated via glob/extension masks or case-insensitive substring matching against the filename and extracted document text to leave matching files untouched at origin.
 
 ### Lifecycle Actions & Post-Unarchive Directives
 
-When a policy rule specifies an optional `action` key (`PolicyEngine.SUPPORTED_ACTIONS`), it must be one of the **5** supported lifecycle actions:
+When a policy rule specifies an optional `action` key (`PolicyEngine.SUPPORTED_ACTIONS`), it must be one of the **7** supported lifecycle actions:
 
-- **`archive`**: Route or package matching files into designated archive storage.
-- **`retain`**: Keep matching files under retention governance at the target destination.
+- **`archive`**: Package matching files into verified `.zip` archives inside `target_path` before removing the original.
+- **`retain`**: Relocate matching files under read-only retention governance (`0o444` POSIX mode) at `target_path`.
 - **`quarantine`**: Intercept and stage matching files in compliance quarantine for forensic review before release.
-- **`redact`**: Flag or process matching files through PII/secret redaction handling.
-- **`unarchive`**: Safely extract supported `.zip` archives into `target_path` with zip-bomb/size safety checks and enqueue extracted child files for sorting.
+- **`redact`**: Scrub PII and secrets in verified UTF-8 text files before moving to `target_path`, or hold binary documents (`.pdf`, `.docx`) intact in compliance quarantine.
+- **`unarchive`**: Safely extract supported `.zip` and `.tar`/`.tar.gz`/`.tgz` archives into `target_path` with zip-bomb/size safety checks while rejecting unsupported `.7z`/`.rar` formats without deleting source archives.
+- **`copy`**: Copy matching files to `target_path` with SHA-256 verification while keeping the source file intact.
+- **`ignore`**: Leave matching files completely untouched at their original location (`target_path` may be empty).
 
 When `action` is set to `'unarchive'`, `post_unarchive_action` controls how the original archive file is handled after extraction and supports **8** values across three behaviors:
 
@@ -471,7 +475,7 @@ Main command-line interface for Smart AutoSorter AI Pro.
 usage: smart-autosorter [-h] [-q] [--no-color] [--demo] [--smoke-test]
                         [--json] [--daemon] [--tui] [--interactive]
                         [--accept-ai-consent | --decline-ai-consent]
-                        [--skip-wizard] [--non-interactive]
+                        [--skip-wizard] [--non-interactive] [--copy]
                         {sort,scan,config,daemon,undo,drop,ledger,model,quarantine,rules}
                         ...
 
@@ -517,6 +521,8 @@ options:
   --skip-wizard         Bypass onboarding wizard modal during startup
   --non-interactive     Run in non-interactive mode and bypass interactive
                         modal dialogs
+  --copy                Copy files into target folders instead of moving
+                        originals
 
 examples:
   smart-autosorter                         open the full-screen TUI
@@ -557,8 +563,9 @@ Automation pipelines invoking CLI commands with `--json` can rely on determinist
 ##### `sort`
 ```text
 usage: smart-autosorter sort [-h] [--preset {demo,downloads,documents}]
-                             [--json] [--dest-dir DEST_DIR] [--dry-run] [-q]
-                             [--no-color] [--max-folders MAX_FOLDERS]
+                             [--json] [--dest-dir DEST_DIR] [--dry-run]
+                             [--copy] [-q] [--no-color]
+                             [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename}]
                              [--contextual-renaming]
@@ -582,6 +589,8 @@ options:
   --dest-dir DEST_DIR   Destination directory for sorted files
   --dry-run             Perform dry run analysis without executing physical
                         moves
+  --copy                Copy files into target folders instead of moving
+                        originals
   -q, --quiet           Suppress informational prints and non-essential
                         progress output
   --no-color            Disable ANSI color and style formatting
@@ -815,8 +824,9 @@ options:
 
 ##### `drop`
 ```text
-usage: smart-autosorter drop [-h] [--dest-dir DEST_DIR] [--dry-run] [--json]
-                             [-q] [--no-color] [--max-folders MAX_FOLDERS]
+usage: smart-autosorter drop [-h] [--dest-dir DEST_DIR] [--dry-run] [--copy]
+                             [--json] [-q] [--no-color]
+                             [--max-folders MAX_FOLDERS]
                              [--strategy {default,generative,clinical_tmf,clinical_isf}]
                              [--conflict-policy {skip,rename}]
                              [--contextual-renaming]
@@ -836,6 +846,8 @@ options:
   --dest-dir DEST_DIR   Destination directory for sorted files
   --dry-run             Perform dry run analysis without executing physical
                         moves
+  --copy                Copy files into target folders instead of moving
+                        originals
   --json                Output result in structured JSON format
   -q, --quiet           Suppress informational prints and non-essential
                         progress output

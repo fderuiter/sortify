@@ -1308,26 +1308,30 @@ def test_hazel_importer_normalizes_paths_filters_clauses_and_maps_unarchive(tmp_
     assert "rootfile" not in res.keyword_rules
     assert "pure size rule" not in res.keyword_rules
 
-    # 2. Unarchive rule mapped to built-in unarchive policy with normalized relative folder; Copy PDF rule skipped!
-    assert len(res.policies) == 1
-    pol = res.policies[0]
+    # 2. Copy and Unarchive rules mapped to built-in policies with normalized relative folders!
+    assert len(res.policies) == 2
+    by_expr_hazel = {p["expression"]: p for p in res.policies}
+    assert by_expr_hazel["*.pdf"]["type"] == "pattern"
+    assert by_expr_hazel["*.pdf"]["action"] == "copy"
+    assert by_expr_hazel["*.pdf"]["target_path"] == "Backups/PDFs"
+
+    pol = by_expr_hazel["*.zip"]
     assert pol["type"] == "unarchive"
     assert pol["action"] == "unarchive"
     assert pol["expression"] == "*.zip"
     assert pol["target_path"] == "Downloads/Unpacked"
 
-    # 3. Warnings emitted for path conversion, size, date, negated, copy, and unsafe root path
+    # 3. Warnings emitted for path conversion, size, date, negated, and unsafe root path
     joined_warnings = "\n".join(res.warnings)
     assert "converted destination path" in joined_warnings.lower()
     assert "size" in joined_warnings.lower()
     assert "date" in joined_warnings.lower()
     assert "negated" in joined_warnings.lower()
-    assert "copy" in joined_warnings.lower()
     assert "Unsafe Root Destination" in joined_warnings
 
 
 def test_dropit_ini_xml_json_filtering_normalization_and_unarchive(tmp_path):
-    """Verify DropIt INI/XML/JSON normalize paths, filter negated/size/date/copy clauses, and map Extract to unarchive."""
+    """Verify DropIt INI/XML/JSON normalize paths, filter negated/size/date clauses, and map Copy and Extract actions."""
     ini_content = (
         "[DropIt]\n"
         "Profile = Enterprise Rules\n\n"
@@ -1366,11 +1370,15 @@ def test_dropit_ini_xml_json_filtering_normalization_and_unarchive(tmp_path):
     assert res.keyword_rules == {}
 
     by_expr = {p["expression"]: p for p in res.policies}
-    assert set(by_expr.keys()) == {"*.pdf", "*.tar.gz", "archive_bundle"}
+    assert set(by_expr.keys()) == {"*.pdf", "*.docx", "*.tar.gz", "archive_bundle"}
 
     assert by_expr["*.pdf"]["type"] == "pattern"
     assert by_expr["*.pdf"]["target_path"] == "Finance/PDFs"
     assert "action" not in by_expr["*.pdf"]
+
+    assert by_expr["*.docx"]["type"] == "pattern"
+    assert by_expr["*.docx"]["action"] == "copy"
+    assert by_expr["*.docx"]["target_path"] == "Backups/Docs"
 
     assert by_expr["*.tar.gz"]["type"] == "unarchive"
     assert by_expr["*.tar.gz"]["action"] == "unarchive"
@@ -1382,7 +1390,6 @@ def test_dropit_ini_xml_json_filtering_normalization_and_unarchive(tmp_path):
 
     joined_warnings = "\n".join(res.warnings)
     assert "converted destination path" in joined_warnings.lower()
-    assert "Copy" in joined_warnings
     assert "negated" in joined_warnings.lower()
     assert "size" in joined_warnings.lower()
     assert "date" in joined_warnings.lower()

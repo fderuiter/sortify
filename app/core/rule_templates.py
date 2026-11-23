@@ -348,11 +348,16 @@ def export_active_rules(
                 cond_target = "Name"
                 cond_op = "contains"
 
-            hazel_act_type = (
-                "NSRuleActionUnarchive"
-                if (p_action == "unarchive" or p_type == "unarchive")
-                else "NSRuleActionMove"
+            effective_act = p_action or (
+                p_type if p_type in ("unarchive", "copy", "ignore") else ""
             )
+            hazel_action_map = {
+                "unarchive": "NSRuleActionUnarchive",
+                "copy": "NSRuleActionCopy",
+                "ignore": "NSRuleActionIgnore",
+                "archive": "NSRuleActionArchive",
+            }
+            hazel_act_type = hazel_action_map.get(effective_act, "NSRuleActionMove")
 
             rules_list.append(
                 {
@@ -407,11 +412,16 @@ def export_active_rules(
             p_target = str(pol.get("target_path", "")).strip()
             if not p_expr:
                 continue
-            dropit_act = (
-                "Extract"
-                if (p_action == "unarchive" or p_type == "unarchive")
-                else "Move"
+            effective_act = p_action or (
+                p_type if p_type in ("unarchive", "copy", "ignore") else ""
             )
+            dropit_action_map = {
+                "unarchive": "Extract",
+                "copy": "Copy",
+                "ignore": "Ignore",
+                "archive": "Compress",
+            }
+            dropit_act = dropit_action_map.get(effective_act, "Move")
             sec_name = f"Association_{assoc_idx}"
             config[sec_name] = {
                 "Name": p_expr,

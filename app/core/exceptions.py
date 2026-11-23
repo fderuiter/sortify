@@ -91,6 +91,12 @@ class ArchiveSafetyError(SortifyBaseError):
     pass
 
 
+class UnsupportedArchiveFormatError(ArchiveSafetyError):
+    """Raised when an archive uses an unsupported format (such as .7z or .rar) or fails stdlib container validation."""
+
+    pass
+
+
 class SchemaValidationError(SortifyBaseError, ValueError):
     """Base exception for schema contract validation failures across event loop boundaries."""
 

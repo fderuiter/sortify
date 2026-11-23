@@ -72,9 +72,11 @@ smart-autosorter scan ~/Downloads --json     # the same plan as JSON, for script
 smart-autosorter sort ~/Downloads --dry-run  # verify the plan without moving
 smart-autosorter sort ~/Downloads            # sort in place
 smart-autosorter sort ~/Downloads --dest-dir ~/Sorted
+smart-autosorter sort ~/Downloads --dest-dir ~/Sorted --copy  # copy files without removing originals
 ```
 
 Useful options for `sort` and `scan`:
+- `--copy`: copy files into sorted folders with SHA-256 verification instead of moving originals (also supported on `drop --copy`).
 - `--max-folders N`: maximum folders per level (default 12, up to 50).
 - `--strategy`: `default` (keyword clustering), `generative` (local LLM folder names, needs the `ml` extra), or the clinical `clinical_tmf` / `clinical_isf` strategies.
 - `--conflict-policy skip|rename`: what to do when a destination file already exists.
@@ -187,12 +189,12 @@ You can open the active rule manager using either of the following methods:
 *Note on focus*: When focus is inside a text input field (such as the tree search box or modal input fields), `[Ctrl+R]` and `[F2]` do not trigger modal actions. Defocus the text input or press `[Esc]` before using these shortcuts.
 
 #### Managing Rules and Controls
-The active rule manager displays all configured rules in the interactive **Rules Table** (`#rules-table`) with columns for `Status` (Active or Disabled), `Type` (e.g. `keyword`, `compliance`, `pattern`), `Pattern`, `Target Folder`, and `Priority`.
+The active rule manager displays all configured rules in the interactive **Rules Table** (`#rules-table`) with columns for `Status` (Active or Disabled), `Type` (e.g. `keyword`, `pattern [copy]`, `ignore [ignore]`, `unarchive [unarchive]`, `compliance [redact]`), `Pattern`, `Target Folder`, and `Priority`.
 
 Use the following shortcuts and button controls:
 - **Toggle Rule Status** (`[Space]` or `#btn-toggle-rule`): Toggles the selected rule between *Active* and *Disabled*. Toggling a keyword rule moves it between `KEYWORD_RULES` and `DISABLED_KEYWORD_RULES` without deleting its destination path, preserving row cursor focus on the table.
-- **Add Rule** (`#btn-add-rule`): Opens the rule editor modal (`RuleEditModal`) to define a new keyword rule. Enter a matching pattern and target folder. Target paths are validated to ensure they are relative paths and do not contain directory traversal (`..`) or invalid characters.
-- **Edit Rule** (`[Enter]` or `#btn-edit-rule`): Opens the rule editor modal for the highlighted rule, allowing you to update its pattern expression or target folder.
+- **Add Rule** (`#btn-add-rule`): Opens the rule editor modal (`RuleEditModal`) to define a new rule with a matching pattern, lifecycle action (`Move`, `Copy`, `Ignore`, `Archive (.zip)`, `Unarchive`, `Redact PII`, `Retain (Read-Only)`, or `Quarantine`), and target folder (`ignore`, `unarchive`, and `quarantine` allow an empty target folder). Target paths are validated to ensure they are relative paths and do not contain directory traversal (`..`) or invalid characters.
+- **Edit Rule** (`[Enter]` or `#btn-edit-rule`): Opens the rule editor modal for the highlighted rule, allowing you to update its pattern expression, lifecycle action, or target folder.
 - **Delete Rule** (`[Delete]` or `#btn-delete-rule`): Prompts a confirmation dialog (`DeleteRuleConfirmModal`) before permanently deleting the selected rule or policy from settings.
 - **Import Rules** (`[Ctrl+I]` / `[I]` or `#btn-import-rules`): Opens the external rule import dialog (`RuleImportModal`) to import rules from Hazel, DropIt, or TagSpaces. Completing the import workflow updates the rules table immediately without closing the active rule manager.
 - **Export Rules** (`[Ctrl+E]` / `[E]` or `#btn-export-rules`): Opens the export dialog (`ExportRulesModal`) displaying active rule counts and exports active rules to Sortify JSON, Hazel, or DropIt formats.
@@ -204,9 +206,9 @@ Use the following shortcuts and button controls:
 The **Import External Rules** modal lets you import rules from third-party tools into Sortify:
 
 #### Supported Importers
-- **Hazel (`.hazelrules`, `.plist`)**: Parses Apple property list rule packages (`HazelRuleImporter`). Extracted conditions (such as filename contains, wildcard masks, or extension matches), move actions, and archive extraction actions (`NSRuleActionUnarchive` / `Unarchive`) are converted into Sortify keyword rules and policies.
-- **DropIt (`.ini`, `.xml`, `.json`, `.dropit`)**: Parses DropIt INI, XML, and JSON association packages (`DropItRuleImporter`), translating move and archive extraction (`Extract` / `Unarchive`) rules into keyword rules and glob/extension pattern policies (`*`, `?`, `[...]`, `.pdf`).
-- **TagSpaces (`taggroup.json`, `taggroups.json`)**: Parses TagSpaces tag taxonomy and smart rule exports (`TagSpacesRuleImporter`), converting tag groupings and matchers into sorting rules.
+- **Hazel (`.hazelrules`, `.plist`)**: Parses Apple property list rule packages (`HazelRuleImporter`). Extracted conditions (such as filename contains, wildcard masks, or extension matches) and `Move`, `Copy` (`NSRuleActionCopy`), `Ignore` (`NSRuleActionIgnore`), `Archive` (`NSRuleActionArchive`), and `Unarchive` (`NSRuleActionUnarchive`) actions are converted into Sortify keyword rules and policies.
+- **DropIt (`.ini`, `.xml`, `.json`, `.dropit`)**: Parses DropIt INI, XML, and JSON association packages (`DropItRuleImporter`), translating `Move`, `Copy`, `Ignore` / `Skip`, `Compress`, and `Extract` / `Unarchive` rules into keyword rules and glob/extension pattern policies (`*`, `?`, `[...]`, `.pdf`).
+- **TagSpaces (`taggroup.json`, `taggroups.json`)**: Parses TagSpaces tag taxonomy and smart rule exports (`TagSpacesRuleImporter`), converting tag groupings and matchers (including `copy`, `ignore`, `archive`, and `unarchive` rule actions) into sorting rules.
 - **Sortify JSON (`*.json`)**: Imports native Sortify JSON rule backups (`SortifyRuleImporter`).
 
 #### Import Workflow
@@ -215,15 +217,15 @@ The **Import External Rules** modal lets you import rules from third-party tools
 3. Keep **Import new rules disabled for review** (`#chk-import-disabled`) checked (the default) to stage newly imported keyword rules in `DISABLED_KEYWORD_RULES` and new policies with `enabled: false` until you inspect and enable them, or uncheck it to activate new rules immediately.
 4. Inspect the parsed preview:
    - **Imported Keywords**: Displays extracted keyword mappings and normalized relative destination folders.
-   - **Imported Policies**: Displays rule types (including `[unarchive]` extraction badges), wildcard/extension expressions, target paths, and rule priorities.
+   - **Imported Policies**: Displays rule types (including `[unarchive]`, `[copy]`, `[ignore]`, and `[archive]` action badges), wildcard/extension expressions, target paths, and rule priorities.
    - **Warnings Banner**: Displays converted destination paths (`'original' -> 'relative'`), skipped unsafe paths, and omitted unsupported clauses.
 5. Resolve any detected conflicts (see [Conflict Resolution](#conflict-resolution) below).
 6. Select **Merge Rules into Settings** (`#btn-merge-imported-rules`) to commit the imported rules.
 
-#### Path Normalization, Unarchive Mapping, and Clause Filtering
-- **Destination Path Normalization**: Exported absolute destination paths (POSIX `/Users/...`, Windows `C:\...`, UNC shares `\\server\share\...`, `~/...`, `%ENV%\...`, and `file://` URIs) are converted into safe relative folder paths and listed with a preview warning. Rules whose destination cannot become a safe relative folder (such as `/`, `C:\`, traversal segments `..`, illegal characters, or OS-reserved names) are skipped before merge with a warning.
-- **Archive Extraction Mapping**: External extraction rules (`Unarchive`, `NSRuleActionUnarchive`, `Extract`, `Unpack`, `Decompress`) map to Sortify's built-in `unarchive` policy action when destination folders are valid.
-- **Unsupported Clause Filtering and Unmapped Operators**: Negated operators/masks (`does not contain`, `!mask`, `-mask`, `#exclude`), numeric size or date filters, script executions, `Copy` actions, and unmapped or unrecognized condition operators are flagged as non-blocking warnings and skipped rather than creating unintended keyword move rules.
+#### Path Normalization, Lifecycle Action Mapping, and Clause Filtering
+- **Destination Path Normalization**: Exported absolute destination paths (POSIX `/Users/...`, Windows `C:\...`, UNC shares `\\server\share\...`, `~/...`, `%ENV%\...`, and `file://` URIs) are converted into safe relative folder paths and listed with a preview warning. Rules whose destination cannot become a safe relative folder (such as `/`, `C:\`, traversal segments `..`, illegal characters, or OS-reserved names) are skipped before merge with a warning (`Ignore` rules do not require a destination folder).
+- **Lifecycle Action Mapping**: External `Copy` (`NSRuleActionCopy`, `Copy`), `Ignore` (`NSRuleActionIgnore`, `Ignore`, `Skip`), `Compress` / `Archive` (`NSRuleActionArchive`, `Compress`), and extraction (`Unarchive`, `NSRuleActionUnarchive`, `Extract`, `Unpack`, `Decompress`) rules map directly to Sortify's `copy`, `ignore`, `archive`, and `unarchive` policy actions.
+- **Unsupported Clause Filtering and Unmapped Operators**: Negated operators/masks (`does not contain`, `!mask`, `-mask`, `#exclude`), numeric size or date filters, script executions, and unmapped or unrecognized condition operators are flagged as non-blocking warnings and skipped rather than creating unintended keyword move rules.
 - **Syntax Errors and Malformed Files**: If a file cannot be parsed or contains syntax errors, the importer surfaces non-blocking warnings without corrupting existing settings.
 - **TagSpaces Asymmetry**: TagSpaces taxonomy imports generate keyword rules, while exporting back to native TagSpaces taxonomy files is not supported (see [Exporting Active Rules](#exporting-active-rules)).
 
@@ -261,9 +263,9 @@ When an imported rule targets a keyword or pattern that already exists in your s
 The **Export Active Rules** modal serializes your active keyword rules and compliance policies to disk for backups or migration into other workflow tools.
 
 #### Supported Export Formats
-- **Sortify JSON (`*.json`)**: Native Sortify JSON format (`format: "sortify"`, version 1) preserving full rule structure, keyword mappings, and policy configurations.
-- **Hazel Rules (`*.hazelrules`)**: Apple property list format mapping keyword rules and policies to Hazel-compatible move rules (`NSRuleActionMove`).
-- **DropIt Configuration (`*.ini`)**: Standard DropIt configuration file with `[DropIt]` header and `[Association_N]` sections.
+- **Sortify JSON (`*.json`)**: Native Sortify JSON format (`format: "sortify"`, version 1) preserving full rule structure, keyword mappings, and policy configurations (including `copy`, `ignore`, `archive`, `unarchive`, `redact`, `retain`, and `quarantine` actions).
+- **Hazel Rules (`*.hazelrules`)**: Apple property list format mapping keyword rules and policies to Hazel-compatible move, copy, ignore, archive, and unarchive rules (`NSRuleActionMove`, `NSRuleActionCopy`, `NSRuleActionIgnore`, `NSRuleActionArchive`, `NSRuleActionUnarchive`).
+- **DropIt Configuration (`*.ini`)**: Standard DropIt configuration file with `[DropIt]` header and `[Association_N]` sections mapping `Move`, `Copy`, `Ignore`, `Compress`, and `Extract` actions.
 
 *Note: While TagSpaces tag groups can be imported into keyword rules, exporting back to native TagSpaces taxonomy files is not supported.*
 

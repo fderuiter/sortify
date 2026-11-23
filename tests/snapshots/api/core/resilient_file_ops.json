@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "1dd272c8ad90ae79c964480f572db41f2ed488ebed6357d2fc0240976cdd804b"
+    "checksum": "f45b3157641c13a46956a6d1a48f9fe1f5becebadc897355920c6eafa9931972"
   },
   "classes": [],
   "functions": [
@@ -41,6 +41,47 @@
         }
       ],
       "returns": null
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "create_verified_zip_archive",
+      "parameters": [
+        {
+          "annotation": "str | os.PathLike",
+          "default": null,
+          "name": "src"
+        },
+        {
+          "annotation": "str | os.PathLike",
+          "default": null,
+          "name": "dst_zip"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "arcname"
+        },
+        {
+          "annotation": "bool",
+          "default": "True",
+          "name": "allow_rename_on_collision"
+        }
+      ],
+      "returns": "tuple[str, str, str]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_verified_utf8_text_file",
+      "parameters": [
+        {
+          "annotation": "str | os.PathLike",
+          "default": null,
+          "name": "file_path"
+        }
+      ],
+      "returns": "tuple[bool, str | None]"
     },
     {
       "async": false,
@@ -122,6 +163,29 @@
     {
       "async": false,
       "decorators": [],
+      "name": "resilient_verified_copy",
+      "parameters": [
+        {
+          "annotation": "str | os.PathLike",
+          "default": null,
+          "name": "src"
+        },
+        {
+          "annotation": "str | os.PathLike",
+          "default": null,
+          "name": "dst"
+        },
+        {
+          "annotation": "bool",
+          "default": "True",
+          "name": "allow_rename_on_collision"
+        }
+      ],
+      "returns": "tuple[str, str, str]"
+    },
+    {
+      "async": false,
+      "decorators": [],
       "name": "same_file_content",
       "parameters": [
         {
@@ -174,6 +238,34 @@
         }
       ],
       "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "write_verified_utf8_file",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "content"
+        },
+        {
+          "annotation": "str | os.PathLike",
+          "default": null,
+          "name": "dst"
+        },
+        {
+          "annotation": "int",
+          "default": "384",
+          "name": "mode"
+        },
+        {
+          "annotation": "bool",
+          "default": "True",
+          "name": "allow_rename_on_collision"
+        }
+      ],
+      "returns": "tuple[str, str]"
     }
   ]
 }

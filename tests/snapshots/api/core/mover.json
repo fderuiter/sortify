@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "3986ad7d041b1f642519c44387db760f52d76e7992cde15ab3442217d35044d1"
+    "checksum": "73ec87a0ef2922612ad20618c295f576e5027ce3c7f2207c6477034b30235c5c"
   },
   "classes": [
     {
@@ -104,6 +104,11 @@
               "annotation": "Any",
               "default": "None",
               "name": "pipeline"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "copy_mode"
             },
             {
               "annotation": "Any",
@@ -606,6 +611,11 @@
           "name": "pipeline"
         },
         {
+          "annotation": "bool",
+          "default": "False",
+          "name": "copy_mode"
+        },
+        {
           "annotation": "Any",
           "default": null,
           "name": "**kwargs"
@@ -687,6 +697,11 @@
           "annotation": null,
           "default": "None",
           "name": "progress_callback"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "copy_mode"
         }
       ],
       "returns": "dict"

@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "4411d289f8b77fe14659503aa0eae5ecee36181a7d1592fa49c95988f3af4058"
+    "checksum": "54d5e927e8961993691f650b9637319a29f90e8374c0106dcece711354bc74d8"
   },
   "classes": [],
   "functions": [
@@ -55,6 +55,19 @@
       "parameters": [
         {
           "annotation": "str",
+          "default": null,
+          "name": "text"
+        }
+      ],
+      "returns": "str"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "scrub_pii_text",
+      "parameters": [
+        {
+          "annotation": "object",
           "default": null,
           "name": "text"
         }

@@ -342,20 +342,23 @@ def test_rule_import_modal_browse_ini_preview_and_enable_toggle(tmp_path, mocker
             )
 
             dt_pol = modal.query_one("#dt-imported-policies", DataTable)
-            assert dt_pol.row_count == 1
+            assert dt_pol.row_count == 2
             first_row = dt_pol.get_row_at(0)
             assert "unarchive" in str(first_row[0]).lower()
             assert first_row[1] == "*.zip"
             assert first_row[2] == "Archives/Unpacked"
+            second_row = dt_pol.get_row_at(1)
+            assert "copy" in str(second_row[0]).lower()
+            assert second_row[1] == "*.bak"
+            assert second_row[2] == "Backups"
 
-            # Warnings should report both converted absolute paths and skipped Copy action
+            # Warnings should report converted absolute paths
             warn_labels = [
                 str(lbl.render())
                 for lbl in modal.query("#container-import-warnings Label")
             ]
             joined_warnings = "\n".join(warn_labels)
             assert "converted destination path" in joined_warnings.lower()
-            assert "Copy" in joined_warnings
 
             # 3. Uncheck disabled-by-default checkbox to import active immediately
             chk_disabled.toggle()

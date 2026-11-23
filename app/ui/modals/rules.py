@@ -878,11 +878,21 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
 
         for pol in res.policies:
             pol_type_label = str(pol.get("type", "keyword"))
+            pol_action = str(pol.get("action", "") or "").strip().lower()
             if (
-                str(pol.get("action", "")).lower() == "unarchive"
-                and pol_type_label.lower() != "unarchive"
+                pol_action
+                in (
+                    "unarchive",
+                    "copy",
+                    "ignore",
+                    "archive",
+                    "redact",
+                    "quarantine",
+                    "retain",
+                )
+                and pol_type_label.lower() != pol_action
             ):
-                pol_type_label = f"{pol_type_label} [unarchive]"
+                pol_type_label = f"{pol_type_label} [{pol_action}]"
             dt_pol.add_row(
                 pol_type_label,
                 pol.get("expression", ""),
@@ -967,9 +977,9 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
     ) -> None:
         """Cycle resolution strategy for the selected conflict row."""
         row_key = None
-        if isinstance(event, DataTable.RowSelected):
-            if event.row_key and event.row_key.value:
-                row_key = str(event.row_key.value)
+        ev_rk = getattr(event, "row_key", None)
+        if ev_rk is not None and getattr(ev_rk, "value", None):
+            row_key = str(ev_rk.value)
         elif isinstance(event, DataTable.CellSelected):
             try:
                 dt_conf = self.query_one("#dt-rule-conflicts", DataTable)
@@ -1164,25 +1174,48 @@ class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]
         height: auto;
         align: right middle;
     }
-    Button:focus, Input:focus {
+    #select-rule-action {
+        width: 100%;
+    }
+    Button:focus, Input:focus, Select:focus {
         border: heavy $accent;
         text-style: bold;
     }
     """
+
+    RULE_ACTION_OPTIONS: list[tuple[str, str]] = [
+        ("Move to Folder", "move"),
+        ("Copy to Folder", "copy"),
+        ("Ignore (Leave Untouched)", "ignore"),
+        ("Archive to ZIP", "archive"),
+        ("Unarchive (Extract)", "unarchive"),
+        ("Redact PII", "redact"),
+        ("Quarantine", "quarantine"),
+        ("Retain (Read-Only)", "retain"),
+    ]
 
     def __init__(
         self,
         title: str = "Add Keyword Rule",
         pattern: str = "",
         target_folder: str = "",
+        action: str = "move",
     ):
         super().__init__()
         self.title_text = title
         self.initial_pattern = pattern
         self.initial_target = target_folder
+        norm_act = str(action or "move").strip().lower()
+        valid_actions = {val for _lbl, val in self.RULE_ACTION_OPTIONS}
+        self.initial_action = norm_act if norm_act in valid_actions else "move"
 
     def compose(self) -> ComposeResult:
         """Compose rule editor inputs and action buttons."""
+        target_placeholder = (
+            "Optional (ignored files stay in place)"
+            if self.initial_action == "ignore"
+            else "e.g. Finances/Invoices"
+        )
         with ModalBox(classes="rule-edit-box modal-box"):
             yield Heading(
                 self.title_text, level=1, classes="modal-title", id="modal-title"
@@ -1194,10 +1227,17 @@ class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]
                     placeholder="e.g. invoice or receipt",
                     id="input-rule-pattern",
                 )
+                yield Label("Action:", classes="field-label")
+                yield Select(
+                    self.RULE_ACTION_OPTIONS,
+                    value=self.initial_action,
+                    id="select-rule-action",
+                    allow_blank=False,
+                )
                 yield Label("Target Folder:", classes="field-label")
                 yield Input(
                     value=self.initial_target,
-                    placeholder="e.g. Finances/Invoices",
+                    placeholder=target_placeholder,
                     id="input-rule-target",
                 )
                 yield Label("", classes="error-label", id="lbl-rule-error")
@@ -1216,6 +1256,22 @@ class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]
         self._update_layout(self.size.width)
         self.query_one("#input-rule-pattern", Input).focus()
 
+    @on(Select.Changed, "#select-rule-action")
+    def _on_action_changed(self, event: Select.Changed) -> None:
+        """Update target folder placeholder when rule action changes."""
+        if not event.value or event.value == Select.BLANK:
+            return
+        act = str(event.value).strip().lower()
+        try:
+            inp_target = self.query_one("#input-rule-target", Input)
+            inp_target.placeholder = (
+                "Optional (ignored files stay in place)"
+                if act == "ignore"
+                else "e.g. Finances/Invoices"
+            )
+        except Exception:
+            pass
+
     @on(Button.Pressed, "#btn-save-rule")
     def action_save(self) -> None:
         """Validate inputs and dismiss modal with rule definition."""
@@ -1224,6 +1280,13 @@ class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]
         pattern = self.query_one("#input-rule-pattern", Input).value.strip()
         target = self.query_one("#input-rule-target", Input).value.strip()
         err_lbl = self.query_one("#lbl-rule-error", Label)
+        selected_action = self.initial_action
+        try:
+            sel_val = self.query_one("#select-rule-action", Select).value
+            if sel_val and sel_val != Select.BLANK:
+                selected_action = str(sel_val).strip().lower()
+        except Exception:
+            pass
 
         if not pattern:
             err_lbl.update("Rule pattern/keyword cannot be empty.")
@@ -1231,23 +1294,24 @@ class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]
             self.announce("Rule pattern/keyword cannot be empty.", priority="assertive")
             return
 
-        if not target:
+        if not target and selected_action not in ("ignore", "unarchive", "quarantine"):
             err_lbl.update("Target folder cannot be empty.")
             err_lbl.add_class("visible")
             self.announce("Target folder cannot be empty.", priority="assertive")
             return
 
-        try:
-            validate_target_path(target, keyword=pattern)
-        except (ValueError, Exception) as exc:
-            err_lbl.update(f"Invalid path: {exc}")
-            err_lbl.add_class("visible")
-            self.announce(f"Invalid target path: {exc}", priority="assertive")
-            if hasattr(self.app, "notify"):
-                self.app.notify(str(exc), severity="error")
-            return
+        if target:
+            try:
+                validate_target_path(target, keyword=pattern)
+            except (ValueError, Exception) as exc:
+                err_lbl.update(f"Invalid path: {exc}")
+                err_lbl.add_class("visible")
+                self.announce(f"Invalid target path: {exc}", priority="assertive")
+                if hasattr(self.app, "notify"):
+                    self.app.notify(str(exc), severity="error")
+                return
 
-        self.dismiss({"pattern": pattern, "target": target})
+        self.dismiss({"pattern": pattern, "target": target, "action": selected_action})
 
     @on(Button.Pressed, "#btn-cancel-edit-rule")
     def action_cancel_button(self) -> None:
@@ -1585,11 +1649,22 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
         for idx, pol in enumerate(policies):
             if isinstance(pol, dict):
                 is_enabled = pol.get("enabled", True)
+                raw_type = str(pol.get("type", "policy"))
+                raw_action = str(pol.get("action", "") or "").strip().lower()
+                eff_action = raw_action or (
+                    raw_type.lower()
+                    if raw_type.lower() in ("copy", "ignore", "unarchive")
+                    else "move"
+                )
+                type_label = raw_type
+                if raw_action and raw_action != raw_type.lower():
+                    type_label = f"{raw_type} [{raw_action}]"
                 rules.append(
                     {
                         "kind": "policy",
                         "status": "Active" if is_enabled else "Disabled",
-                        "type": str(pol.get("type", "policy")),
+                        "type": type_label,
+                        "action": eff_action,
                         "pattern": str(pol.get("expression", "")),
                         "target_folder": str(pol.get("target_path", "")),
                         "priority": pol.get("priority", 0),
@@ -1705,22 +1780,66 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
         if hasattr(self.app, "notify"):
             self.app.notify(msg)
 
+    @staticmethod
+    def _build_policy_dict(
+        pattern: str,
+        target: str,
+        action: str,
+        *,
+        enabled: bool = True,
+        priority: int = 75,
+    ) -> dict[str, Any]:
+        """Build a validated policy rule dictionary for non-move lifecycle actions."""
+        from app.core.rule_importers import _has_wildcard_or_ext_mask
+
+        has_mask = _has_wildcard_or_ext_mask(pattern)
+        if has_mask:
+            p_type = "unarchive" if action == "unarchive" else "pattern"
+        elif action in ("copy", "ignore", "unarchive"):
+            p_type = action
+        else:
+            p_type = "keyword"
+        pol: dict[str, Any] = {
+            "type": p_type,
+            "expression": pattern,
+            "target_path": target,
+            "priority": priority,
+            "halting": False,
+            "enabled": enabled,
+        }
+        if action and action != "move":
+            pol["action"] = action
+        return pol
+
     @on(Button.Pressed, "#btn-add-rule")
     def action_add_rule(self) -> None:
-        """Open editor modal to add a new keyword rule."""
+        """Open editor modal to add a new keyword or lifecycle rule."""
 
         def on_rule_added(result: Optional[dict]) -> None:
             if not result:
                 return
             pattern = result["pattern"]
             target = result["target"]
-            kw_rules = dict(getattr(self.settings, "KEYWORD_RULES", {}) or {})
-            kw_rules[pattern] = target
-            self.settings.KEYWORD_RULES = kw_rules
+            action = str(result.get("action") or "move").strip().lower()
+            if action == "move":
+                kw_rules = dict(getattr(self.settings, "KEYWORD_RULES", {}) or {})
+                kw_rules[pattern] = target
+                self.settings.KEYWORD_RULES = kw_rules
+                msg = f"Added rule '{pattern}' routing to '{target}'."
+            else:
+                policies = [
+                    dict(p) for p in getattr(self.settings, "POLICIES", []) or []
+                ]
+                policies.append(
+                    self._build_policy_dict(pattern, target, action, enabled=True)
+                )
+                self.settings.POLICIES = policies
+                msg = f"Added {action} rule '{pattern}'" + (
+                    f" targeting '{target}'." if target else "."
+                )
             if hasattr(self.settings, "flush"):
                 self.settings.flush()
             self._refresh_table(preserve_focus=False)
-            msg = f"Added rule '{pattern}' routing to '{target}'."
             self.announce(msg)
             if hasattr(self.app, "notify"):
                 self.app.notify(msg)
@@ -1740,19 +1859,40 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
                 return
             new_pattern = result["pattern"]
             new_target = result["target"]
+            new_action = (
+                str(result.get("action") or rule.get("action") or "move")
+                .strip()
+                .lower()
+            )
 
             if rule["kind"] == "keyword":
                 old_key = rule["original_key"]
                 is_active = rule["status"] == "Active"
                 dict_name = "KEYWORD_RULES" if is_active else "DISABLED_KEYWORD_RULES"
                 rules_dict = dict(getattr(self.settings, dict_name, {}) or {})
-                if old_key in rules_dict and old_key != new_pattern:
-                    del rules_dict[old_key]
-                rules_dict[new_pattern] = new_target
-                setattr(self.settings, dict_name, rules_dict)
+                if new_action == "move":
+                    if old_key in rules_dict and old_key != new_pattern:
+                        del rules_dict[old_key]
+                    rules_dict[new_pattern] = new_target
+                    setattr(self.settings, dict_name, rules_dict)
+                    msg = (
+                        f"Updated rule '{new_pattern}' target folder to '{new_target}'."
+                    )
+                else:
+                    rules_dict.pop(old_key, None)
+                    setattr(self.settings, dict_name, rules_dict)
+                    policies = [
+                        dict(p) for p in getattr(self.settings, "POLICIES", []) or []
+                    ]
+                    policies.append(
+                        self._build_policy_dict(
+                            new_pattern, new_target, new_action, enabled=is_active
+                        )
+                    )
+                    self.settings.POLICIES = policies
+                    msg = f"Updated rule '{new_pattern}' to action '{new_action}'."
                 if hasattr(self.settings, "flush"):
                     self.settings.flush()
-                msg = f"Updated rule '{new_pattern}' target folder to '{new_target}'."
             elif rule["kind"] == "learned":
                 old_key = rule["original_key"]
                 learned_dict = dict(getattr(self.settings, "LEARNED_RULES", {}) or {})
@@ -1769,12 +1909,41 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
                 ]
                 idx = rule["policy_idx"]
                 if 0 <= idx < len(policies):
+                    from app.core.rule_importers import _has_wildcard_or_ext_mask
+
                     policies[idx]["expression"] = new_pattern
                     policies[idx]["target_path"] = new_target
+                    curr_type = (
+                        str(policies[idx].get("type", "keyword")).strip().lower()
+                    )
+                    if new_action == "move":
+                        policies[idx].pop("action", None)
+                        if curr_type in ("copy", "ignore", "unarchive"):
+                            policies[idx]["type"] = (
+                                "pattern"
+                                if _has_wildcard_or_ext_mask(new_pattern)
+                                else "keyword"
+                            )
+                    else:
+                        policies[idx]["action"] = new_action
+                        if curr_type in ("copy", "ignore", "unarchive"):
+                            policies[idx]["type"] = (
+                                "unarchive"
+                                if (
+                                    new_action == "unarchive"
+                                    or not _has_wildcard_or_ext_mask(new_pattern)
+                                )
+                                and new_action in ("copy", "ignore", "unarchive")
+                                else (
+                                    "pattern"
+                                    if _has_wildcard_or_ext_mask(new_pattern)
+                                    else "keyword"
+                                )
+                            )
                     self.settings.POLICIES = policies
                     if hasattr(self.settings, "flush"):
                         self.settings.flush()
-                    msg = f"Updated policy '{new_pattern}' target folder to '{new_target}'."
+                    msg = f"Updated policy '{new_pattern}' ({new_action})."
                 else:
                     return
             else:
@@ -1790,6 +1959,7 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
                 title=f"Edit Rule: {rule['pattern']}",
                 pattern=rule["pattern"],
                 target_folder=rule["target_folder"],
+                action=rule.get("action", "move"),
             ),
             on_rule_edited,
         )

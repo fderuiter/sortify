@@ -325,7 +325,7 @@ def test_policy_action_archive():
     assert result["status"] == "ARCHIVED"
     assert result["policy_action"] == "archive"
     assert os.path.exists(
-        os.path.join(sample_dir, "Deep_Storage", "obsolete_record.txt")
+        os.path.join(sample_dir, "Deep_Storage", "obsolete_record.txt.zip")
     )
 
 
@@ -436,7 +436,9 @@ def test_quarantine_job_sanitizes_traversal_target_path():
 
     assert result["status"] == "ARCHIVED"
     # File must be placed in fallback "Archive" directory inside sample_dir
-    expected_archived_file = os.path.join(sample_dir, "Archive", "malicious_doc.txt")
+    expected_archived_file = os.path.join(
+        sample_dir, "Archive", "malicious_doc.txt.zip"
+    )
     assert os.path.exists(expected_archived_file)
 
     # File must NOT exist outside sample_dir

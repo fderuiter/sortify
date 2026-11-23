@@ -18,16 +18,28 @@ from app.core.exceptions import ArchiveSafetyError
 from app.core.extractor import extract_file_text
 from app.core.forensic_scanner import ForensicScanner
 from app.core.mover import get_safe_path, is_subpath_or_equal, overwrite_backup_dir
+from app.core.moves import (
+    OP_ARCHIVE,
+    OP_COPY,
+    OP_QUARANTINE,
+    OP_REDACT,
+    OP_RETAIN,
+    OP_UNARCHIVE,
+    OP_UNARCHIVE_SOURCE,
+)
 from app.core.path_utils import safe_relpath, validate_target_path
 from app.core.policy_engine import PolicyEngine
 from app.core.resilient_file_ops import (
     _set_posix_mode,
     atomic_quarantine_relocation,
+    create_verified_zip_archive,
+    is_verified_utf8_text_file,
     resilient_file_hash,
     resilient_move,
     resilient_remove,
+    resilient_verified_copy,
 )
-from app.core.text_utils import sanitize_secret_patterns
+from app.core.text_utils import scrub_pii_text
 
 logger = logging.getLogger(__name__)
 
@@ -104,23 +116,8 @@ def scrub_pii_from_text(text: Any) -> str:
         return ""
 
     text_str = str(text)
-
-    # Standard prompt extract redaction
     redacted = redact_sensitive_text(text_str)
-
-    # SSN pattern
-    redacted = SSN_PATTERN.sub("[REDACTED_SSN]", redacted)
-    # Credit Card pattern
-    redacted = CREDIT_CARD_PATTERN.sub("[REDACTED_CARD]", redacted)
-    # Email pattern
-    redacted = EMAIL_PATTERN.sub("[REDACTED_EMAIL]", redacted)
-    # Clinical/PII Sensitive phrases
-    redacted = CLINICAL_PII_PATTERN.sub("[REDACTED_PII]", redacted)
-
-    # Centralized secret pattern redaction (API keys, JWT tokens, Bearer tokens, private keys, high-entropy secrets)
-    redacted = sanitize_secret_patterns(redacted, replacement="[REDACTED_SECRET]")
-
-    return redacted
+    return scrub_pii_text(redacted)
 
 
 class QuarantineInterceptorService:
@@ -137,12 +134,14 @@ class QuarantineInterceptorService:
         jev_classifier: Optional[Any] = None,
         auto_quarantine_ratings: Optional[list[str]] = None,
         runtime_settings: Optional[Any] = None,
+        history_manager: Optional[Any] = None,
     ):
         self.db = db
         self.policies = PolicyEngine.sort_policies(policies)
         self.worker_timeout = worker_timeout
         self.forensic_scanner = ForensicScanner()
         self.dlq_records: list[dict[str, Any]] = []
+        self.history_manager = history_manager
         if jev_classifier is not None:
             self.jev_classifier = jev_classifier
         else:
@@ -373,6 +372,7 @@ class QuarantineInterceptorService:
                         self.db.update_quarantine_status(
                             job_id=job_id,
                             status="MANUAL_REVIEW_REQUIRED",
+                            policy_action="unarchive",
                             error_message=err_msg,
                             audit_entry={
                                 "timestamp": time.time(),
@@ -418,23 +418,21 @@ class QuarantineInterceptorService:
                 )
 
             # 4. Extended Policy Engine Evaluation
-            matched_rule = PolicyEngine.evaluate_policies(
+            eval_res = PolicyEngine.evaluate_policies(
                 file_path=orig_rel_path,
                 doc_text=extracted_text,
                 status_match="",
                 policies=self.policies,
                 is_sorted=True,
+                return_halting=True,
             )
+            if isinstance(eval_res, tuple):
+                matched_rule, halt_evaluation = eval_res
+            else:
+                matched_rule, halt_evaluation = eval_res, False
 
             action = (
-                (
-                    getattr(matched_rule, "action", "")
-                    or (
-                        matched_rule.get("action", "")
-                        if isinstance(matched_rule, dict)
-                        else ""
-                    )
-                ).lower()
+                (PolicyEngine.resolve_effective_action(matched_rule) or "")
                 if matched_rule
                 else (record.get("policy_action") or "").lower()
             )
@@ -480,8 +478,17 @@ class QuarantineInterceptorService:
             # 4b. Upstream Barrier: Jev Pre-Classification & Sensitivity Hold for unguided / default documents
             if (
                 not is_approved_release
+                and not (halt_evaluation and matched_rule is None)
                 and action
-                not in ("redact", "archive", "quarantine", "retain", "unarchive")
+                not in (
+                    "redact",
+                    "archive",
+                    "quarantine",
+                    "retain",
+                    "unarchive",
+                    "copy",
+                    "ignore",
+                )
                 and self.jev_classifier is not None
             ):
                 try:
@@ -532,6 +539,19 @@ class QuarantineInterceptorService:
                                 "category": category_val,
                             },
                         )
+                        orig_full_hold = os.path.join(base_dir, orig_rel_path)
+                        self._record_ledger_entries(
+                            base_dir,
+                            [
+                                {
+                                    "src": orig_full_hold,
+                                    "dst": staged_path,
+                                    "op_kind": OP_QUARANTINE,
+                                    "sha256": current_file_hash,
+                                    "dst_sha256": current_file_hash,
+                                }
+                            ],
+                        )
                         rec = self.db.get_quarantine_record(job_id)
                         if rec:
                             return validate_quarantine_record(rec)
@@ -544,81 +564,233 @@ class QuarantineInterceptorService:
                         exc_info=True,
                     )
 
+            orig_full_path = os.path.join(base_dir, orig_rel_path)
+
             # 5. Policy Lifecycle Action Execution
-            if action == "redact":
-                # Execute PII Scrubbing & Release Pipeline
-                scrubbed_text = scrub_pii_from_text(extracted_text)
-
-                # Overwrite staged file with sanitized content. A failure must
-                # stop the job here: releasing the file now would publish the
-                # unredacted original as "sanitized". It propagates to the
-                # handler below, which routes the job to manual review.
-                if os.path.exists(staged_path):
-                    with open(staged_path, "w", encoding="utf-8") as f:
-                        f.write(scrubbed_text)
-                    _set_posix_mode(staged_path, 0o600)
-
-                # If vector exists in DB, scrub vector
-                if record.get("file_hash"):
-                    try:
-                        vec = self.db.get_document_vector(base_dir, orig_rel_path)
-                        if vec:
-                            zero_vector_buffer(vec)
-                    except Exception:
-                        logger.warning(
-                            f"Failed to scrub document vector for '{orig_rel_path}'",
-                            exc_info=True,
-                        )
-
-                # Log REDACTED transition
+            if action == "ignore" or (halt_evaluation and matched_rule is None):
+                effective_pol_action = "ignore" if action == "ignore" else "halted"
+                if (
+                    staged_path
+                    and os.path.exists(staged_path)
+                    and os.path.abspath(staged_path) != os.path.abspath(orig_full_path)
+                ):
+                    resilient_remove(staged_path)
                 self.db.update_quarantine_status(
                     job_id=job_id,
-                    status="REDACTED",
-                    policy_action="redact",
+                    status="RELEASED",
+                    policy_action=effective_pol_action,
                     audit_entry={
                         "timestamp": time.time(),
-                        "status": "REDACTED",
-                        "details": "PII scrubbing completed; sensitive tokens sanitized",
+                        "status": "RELEASED",
+                        "policy_action": effective_pol_action,
+                        "details": (
+                            f"Document left untouched at origin due to {effective_pol_action} policy"
+                        ),
                     },
                 )
 
-                # Release document to target folder
+            elif action == "copy":
                 dest_dir = self.resolve_safe_target_dir(
-                    base_dir, target_subfolder, default_subfolder="Redacted_Documents"
+                    base_dir, target_subfolder, default_subfolder="Copied_Documents"
                 )
                 dest_subfolder = safe_relpath(dest_dir, base_dir).replace("\\", "/")
                 if dest_subfolder == ".":
                     dest_subfolder = ""
                 os.makedirs(dest_dir, exist_ok=True)
                 dest_file_path = os.path.join(dest_dir, os.path.basename(orig_rel_path))
+                copy_src = (
+                    staged_path
+                    if staged_path and os.path.exists(staged_path)
+                    else orig_full_path
+                )
+                actual_dest, src_sha, dst_sha = resilient_verified_copy(
+                    copy_src, dest_file_path
+                )
+                if (
+                    staged_path
+                    and os.path.exists(staged_path)
+                    and os.path.abspath(staged_path) != os.path.abspath(orig_full_path)
+                ):
+                    resilient_remove(staged_path)
+                self._record_ledger_entries(
+                    base_dir,
+                    [
+                        {
+                            "src": orig_full_path,
+                            "dst": actual_dest,
+                            "op_kind": OP_COPY,
+                            "sha256": src_sha,
+                            "dst_sha256": dst_sha,
+                        }
+                    ],
+                )
+                self.db.update_quarantine_status(
+                    job_id=job_id,
+                    status="RELEASED",
+                    policy_action="copy",
+                    audit_entry={
+                        "timestamp": time.time(),
+                        "status": "RELEASED",
+                        "policy_action": "copy",
+                        "details": f"Verified copy written to {dest_subfolder or '.'} while preserving original",
+                    },
+                )
+                self.db.upsert_document(
+                    base_dir,
+                    safe_relpath(actual_dest, base_dir).replace("\\", "/"),
+                    dst_sha,
+                    str(extracted_text),
+                )
 
-                with atomic_quarantine_relocation(
-                    staged_path, dest_file_path
-                ) as actual_dest:
-                    # Transition to RELEASED
+            elif action == "redact":
+                is_utf8, raw_utf8_text = (
+                    is_verified_utf8_text_file(staged_path)
+                    if staged_path and os.path.exists(staged_path)
+                    else (True, extracted_text)
+                )
+                if not is_utf8:
+                    # Binary document (.pdf, .docx, etc.): hold intact in quarantine
+                    # without corrupting binary headers via UTF-8 text overwrite.
                     self.db.update_quarantine_status(
                         job_id=job_id,
-                        status="RELEASED",
+                        status="QUARANTINED",
                         policy_action="redact",
                         audit_entry={
                             "timestamp": time.time(),
-                            "status": "RELEASED",
-                            "details": f"Sanitized document released to {dest_subfolder}",
+                            "status": "QUARANTINED",
+                            "policy_action": "redact",
+                            "details": (
+                                "Binary document cannot be safely scrubbed as UTF-8 text; "
+                                "retained intact in compliance quarantine for manual review"
+                            ),
+                        },
+                    )
+                    self._record_ledger_entries(
+                        base_dir,
+                        [
+                            {
+                                "src": orig_full_path,
+                                "dst": staged_path,
+                                "op_kind": OP_QUARANTINE,
+                                "sha256": current_file_hash,
+                                "dst_sha256": current_file_hash,
+                            }
+                        ],
+                    )
+                else:
+                    # Execute PII Scrubbing & Release Pipeline on verified UTF-8 text
+                    source_text = (
+                        raw_utf8_text if raw_utf8_text is not None else extracted_text
+                    )
+                    scrubbed_text = scrub_pii_from_text(source_text)
+
+                    redact_backup_path = None
+                    if (
+                        self.history_manager is not None
+                        and staged_path
+                        and os.path.exists(staged_path)
+                    ):
+                        bkp_dir = os.path.join(
+                            overwrite_backup_dir(
+                                base_dir, f"qredact_{uuid.uuid4().hex[:12]}"
+                            ),
+                            "redacted_originals",
+                        )
+                        os.makedirs(bkp_dir, exist_ok=True)
+                        bkp_target = os.path.join(
+                            bkp_dir, os.path.basename(orig_rel_path)
+                        )
+                        redact_backup_path, _, _ = resilient_verified_copy(
+                            staged_path, bkp_target
+                        )
+
+                    # Overwrite staged file with sanitized content. A failure must
+                    # stop the job here: releasing the file now would publish the
+                    # unredacted original as "sanitized". It propagates to the
+                    # handler below, which routes the job to manual review.
+                    if os.path.exists(staged_path):
+                        with open(staged_path, "w", encoding="utf-8") as f:
+                            f.write(scrubbed_text)
+                        _set_posix_mode(staged_path, 0o600)
+
+                    # If vector exists in DB, scrub vector
+                    if record.get("file_hash"):
+                        try:
+                            vec = self.db.get_document_vector(base_dir, orig_rel_path)
+                            if vec:
+                                zero_vector_buffer(vec)
+                        except Exception:
+                            logger.warning(
+                                f"Failed to scrub document vector for '{orig_rel_path}'",
+                                exc_info=True,
+                            )
+
+                    # Log REDACTED transition
+                    self.db.update_quarantine_status(
+                        job_id=job_id,
+                        status="REDACTED",
+                        policy_action="redact",
+                        audit_entry={
+                            "timestamp": time.time(),
+                            "status": "REDACTED",
+                            "details": "PII scrubbing completed; sensitive tokens sanitized",
                         },
                     )
 
-                    # Upsert sanitized document record in DB
-                    final_hash = (
-                        resilient_file_hash(actual_dest)
-                        if os.path.exists(actual_dest)
-                        else record["file_hash"]
-                    )
-                    self.db.upsert_document(
+                    # Release document to target folder
+                    dest_dir = self.resolve_safe_target_dir(
                         base_dir,
-                        safe_relpath(actual_dest, base_dir).replace("\\", "/"),
-                        final_hash,
-                        scrubbed_text,
+                        target_subfolder,
+                        default_subfolder="Redacted_Documents",
                     )
+                    dest_subfolder = safe_relpath(dest_dir, base_dir).replace("\\", "/")
+                    if dest_subfolder == ".":
+                        dest_subfolder = ""
+                    os.makedirs(dest_dir, exist_ok=True)
+                    dest_file_path = os.path.join(
+                        dest_dir, os.path.basename(orig_rel_path)
+                    )
+
+                    with atomic_quarantine_relocation(
+                        staged_path, dest_file_path
+                    ) as actual_dest:
+                        # Transition to RELEASED
+                        self.db.update_quarantine_status(
+                            job_id=job_id,
+                            status="RELEASED",
+                            policy_action="redact",
+                            audit_entry={
+                                "timestamp": time.time(),
+                                "status": "RELEASED",
+                                "details": f"Sanitized document released to {dest_subfolder}",
+                            },
+                        )
+
+                        # Upsert sanitized document record in DB
+                        final_hash = (
+                            resilient_file_hash(actual_dest)
+                            if os.path.exists(actual_dest)
+                            else record["file_hash"]
+                        )
+                        self._record_ledger_entries(
+                            base_dir,
+                            [
+                                {
+                                    "src": orig_full_path,
+                                    "dst": actual_dest,
+                                    "op_kind": OP_REDACT,
+                                    "sha256": current_file_hash,
+                                    "dst_sha256": final_hash,
+                                    "backup_path": redact_backup_path,
+                                }
+                            ],
+                        )
+                        self.db.upsert_document(
+                            base_dir,
+                            safe_relpath(actual_dest, base_dir).replace("\\", "/"),
+                            final_hash,
+                            scrubbed_text,
+                        )
 
             elif action == "archive":
                 archive_dir = self.resolve_safe_target_dir(
@@ -630,21 +802,61 @@ class QuarantineInterceptorService:
                 if archive_subfolder == ".":
                     archive_subfolder = ""
                 os.makedirs(archive_dir, exist_ok=True)
-                archive_file_path = os.path.join(
-                    archive_dir, os.path.basename(orig_rel_path)
+                orig_basename = os.path.basename(orig_rel_path)
+                zip_filename = (
+                    orig_basename
+                    if orig_basename.lower().endswith(".zip")
+                    else f"{orig_basename}.zip"
                 )
+                archive_file_path = os.path.join(archive_dir, zip_filename)
 
-                with atomic_quarantine_relocation(staged_path, archive_file_path):
-                    self.db.update_quarantine_status(
-                        job_id=job_id,
-                        status="ARCHIVED",
-                        policy_action="archive",
-                        audit_entry={
-                            "timestamp": time.time(),
-                            "status": "ARCHIVED",
-                            "details": f"Document archived to {archive_subfolder}",
-                        },
+                actual_zip_dest, src_sha, zip_sha = create_verified_zip_archive(
+                    staged_path,
+                    archive_file_path,
+                    arcname=orig_basename,
+                )
+                archive_backup_path = None
+                if (
+                    self.history_manager is not None
+                    and staged_path
+                    and os.path.exists(staged_path)
+                ):
+                    bkp_dir = os.path.join(
+                        overwrite_backup_dir(
+                            base_dir, f"qarchive_{uuid.uuid4().hex[:12]}"
+                        ),
+                        "archived_sources",
                     )
+                    os.makedirs(bkp_dir, exist_ok=True)
+                    parked_target = get_safe_path(bkp_dir, orig_basename)
+                    archive_backup_path = resilient_move(staged_path, parked_target)
+                elif staged_path and os.path.exists(staged_path):
+                    resilient_remove(staged_path)
+
+                self._record_ledger_entries(
+                    base_dir,
+                    [
+                        {
+                            "src": orig_full_path,
+                            "dst": actual_zip_dest,
+                            "op_kind": OP_ARCHIVE,
+                            "sha256": src_sha,
+                            "dst_sha256": zip_sha,
+                            "backup_path": archive_backup_path,
+                        }
+                    ],
+                )
+                self.db.update_quarantine_status(
+                    job_id=job_id,
+                    status="ARCHIVED",
+                    policy_action="archive",
+                    audit_entry={
+                        "timestamp": time.time(),
+                        "status": "ARCHIVED",
+                        "details": f"Document archived as verified ZIP to {archive_subfolder}",
+                        "archive_path": actual_zip_dest,
+                    },
+                )
 
             elif action == "quarantine":
                 self.db.update_quarantine_status(
@@ -657,6 +869,18 @@ class QuarantineInterceptorService:
                         "details": "Document retained in quarantine staging for compliance review",
                     },
                 )
+                self._record_ledger_entries(
+                    base_dir,
+                    [
+                        {
+                            "src": orig_full_path,
+                            "dst": staged_path,
+                            "op_kind": OP_QUARANTINE,
+                            "sha256": current_file_hash,
+                            "dst_sha256": current_file_hash,
+                        }
+                    ],
+                )
 
             elif action == "retain":
                 dest_dir = self.resolve_safe_target_dir(
@@ -668,7 +892,27 @@ class QuarantineInterceptorService:
                 os.makedirs(dest_dir, exist_ok=True)
                 dest_file_path = os.path.join(dest_dir, os.path.basename(orig_rel_path))
 
-                with atomic_quarantine_relocation(staged_path, dest_file_path):
+                with atomic_quarantine_relocation(
+                    staged_path, dest_file_path
+                ) as actual_dest:
+                    _set_posix_mode(actual_dest, 0o444)
+                    ret_hash = (
+                        resilient_file_hash(actual_dest)
+                        if os.path.exists(actual_dest)
+                        else current_file_hash
+                    )
+                    self._record_ledger_entries(
+                        base_dir,
+                        [
+                            {
+                                "src": orig_full_path,
+                                "dst": actual_dest,
+                                "op_kind": OP_RETAIN,
+                                "sha256": current_file_hash,
+                                "dst_sha256": ret_hash,
+                            }
+                        ],
+                    )
                     self.db.update_quarantine_status(
                         job_id=job_id,
                         status="RELEASED",
@@ -695,14 +939,24 @@ class QuarantineInterceptorService:
                     logger.warning(
                         f"Archive safety limit error during unarchive action in job {job_id}: {ase}"
                     )
+                    if (
+                        staged_path
+                        and os.path.exists(staged_path)
+                        and os.path.abspath(staged_path)
+                        != os.path.abspath(orig_full_path)
+                    ):
+                        with contextlib.suppress(OSError):
+                            resilient_remove(staged_path)
                     err_msg = f"Archive safety violation during unarchive: {ase}"
                     self.db.update_quarantine_status(
                         job_id=job_id,
                         status="MANUAL_REVIEW_REQUIRED",
+                        policy_action="unarchive",
                         error_message=err_msg,
                         audit_entry={
                             "timestamp": time.time(),
                             "status": "MANUAL_REVIEW_REQUIRED",
+                            "policy_action": "unarchive",
                             "details": f"Unarchive policy action aborted: {ase}",
                         },
                     )
@@ -713,6 +967,7 @@ class QuarantineInterceptorService:
                     fallback = {
                         "job_id": job_id,
                         "status": "MANUAL_REVIEW_REQUIRED",
+                        "policy_action": "unarchive",
                         "error_message": err_msg,
                         "error": err_msg,
                     }
@@ -742,7 +997,19 @@ class QuarantineInterceptorService:
                     or "delete"
                 ).lower()
 
-                orig_full_path = os.path.join(base_dir, orig_rel_path)
+                ledger_ops: list[dict[str, Any]] = []
+                for child_path in unpacked_child_files:
+                    if os.path.isfile(child_path):
+                        child_sha = resilient_file_hash(child_path)
+                        ledger_ops.append(
+                            {
+                                "src": orig_full_path,
+                                "dst": child_path,
+                                "op_kind": OP_UNARCHIVE,
+                                "sha256": current_file_hash,
+                                "dst_sha256": child_sha,
+                            }
+                        )
 
                 if post_action in ("move", "archive", "relocate"):
                     archive_target = (
@@ -766,25 +1033,60 @@ class QuarantineInterceptorService:
                     archive_file_path = os.path.join(
                         archive_dir, os.path.basename(orig_rel_path)
                     )
+                    actual_relocated = archive_file_path
                     if os.path.exists(staged_path):
                         with atomic_quarantine_relocation(
                             staged_path, archive_file_path
-                        ):
-                            pass
+                        ) as relocated_dest:
+                            actual_relocated = relocated_dest
                     if os.path.exists(orig_full_path) and os.path.abspath(
                         orig_full_path
-                    ) != os.path.abspath(archive_file_path):
+                    ) != os.path.abspath(actual_relocated):
                         resilient_remove(orig_full_path)
+                    ledger_ops.append(
+                        {
+                            "src": orig_full_path,
+                            "dst": actual_relocated,
+                            "op_kind": OP_UNARCHIVE_SOURCE,
+                            "sha256": current_file_hash,
+                            "dst_sha256": current_file_hash,
+                        }
+                    )
                 elif post_action in ("retain", "keep"):
                     if os.path.exists(staged_path):
                         if not os.path.exists(orig_full_path):
                             shutil.copy2(staged_path, orig_full_path)
                         resilient_remove(staged_path)
                 else:
-                    if os.path.exists(staged_path):
+                    parked_archive = None
+                    if self.history_manager is not None and os.path.exists(staged_path):
+                        bkp_dir = os.path.join(
+                            overwrite_backup_dir(
+                                base_dir, f"qunarchive_{uuid.uuid4().hex[:12]}"
+                            ),
+                            "unarchived_sources",
+                        )
+                        os.makedirs(bkp_dir, exist_ok=True)
+                        parked_target = get_safe_path(
+                            bkp_dir, os.path.basename(orig_rel_path)
+                        )
+                        parked_archive = resilient_move(staged_path, parked_target)
+                        ledger_ops.append(
+                            {
+                                "src": orig_full_path,
+                                "dst": parked_archive,
+                                "op_kind": OP_UNARCHIVE_SOURCE,
+                                "sha256": current_file_hash,
+                                "dst_sha256": current_file_hash,
+                                "backup_path": parked_archive,
+                            }
+                        )
+                    elif os.path.exists(staged_path):
                         resilient_remove(staged_path)
                     if os.path.exists(orig_full_path):
                         resilient_remove(orig_full_path)
+
+                self._record_ledger_entries(base_dir, ledger_ops)
 
                 dest_subfolder = safe_relpath(dest_dir, base_dir).replace("\\", "/")
                 if dest_subfolder == ".":
@@ -912,6 +1214,51 @@ class QuarantineInterceptorService:
                 "error": err_msg,
             }
             return validate_quarantine_record(fallback)
+
+    def _record_ledger_entries(
+        self, base_dir: str, entries: list[dict[str, Any]]
+    ) -> None:
+        """Record completed quarantine lifecycle actions in MoveLedger via DBWorker when HistoryManager is attached."""
+        if not entries or self.history_manager is None or not base_dir:
+            return
+        moves = getattr(self.history_manager, "moves", None)
+        if moves is None:
+            return
+        try:
+            session_id = self.history_manager.start_session(base_dir)
+            for item in entries:
+                dst_path = item.get("dst") or ""
+                size_val = (
+                    os.path.getsize(dst_path)
+                    if dst_path and os.path.exists(dst_path)
+                    else 0
+                )
+                seq = moves.record_intent(
+                    session_id,
+                    item["src"],
+                    dst_path,
+                    src_sha256=item.get("sha256"),
+                    size=size_val,
+                    op_kind=item.get("op_kind", "move"),
+                    dst_sha256=item.get("dst_sha256"),
+                )
+                backup_path = item.get("backup_path")
+                if backup_path:
+                    moves.record_displacement(session_id, seq, backup_path)
+                moves.mark_done(
+                    session_id,
+                    seq,
+                    dst=dst_path,
+                    displaced=backup_path,
+                    dst_sha256=item.get("dst_sha256"),
+                )
+                moves.mark_verified(session_id, seq)
+            self.history_manager.complete_session(session_id)
+        except Exception as exc:
+            logger.warning(
+                f"Failed to record quarantine lifecycle entry in MoveLedger: {exc}",
+                exc_info=True,
+            )
 
     def process_quarantine_batch(
         self, job_ids: list[str], timeout_override: Optional[float] = None

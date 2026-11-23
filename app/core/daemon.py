@@ -1000,6 +1000,7 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
             policies=policies,
             worker_timeout=worker_timeout,
             runtime_settings=self.settings,
+            history_manager=getattr(app_session, "history_manager", None),
         )
 
         try:
@@ -1031,7 +1032,40 @@ class ContinuousWatchdogDaemon(LifecycleTelemetryMixin):
         quarantine_record = validate_quarantine_record(raw_record)
 
         status = quarantine_record.status
-        policy_action = quarantine_record.policy_action
+        policy_action = (quarantine_record.policy_action or "").lower()
+        err_msg_lower = str(
+            getattr(quarantine_record, "error_message", None)
+            or quarantine_record.get("error_message")
+            or ""
+        ).lower()
+
+        # Ignored, halted, or non-destructive copy rules leave the original untouched at origin
+        if policy_action in ("ignore", "halted", "copy"):
+            if (
+                staged_filepath
+                and os.path.exists(staged_filepath)
+                and os.path.abspath(abs_path) != os.path.abspath(staged_filepath)
+            ):
+                resilient_remove(staged_filepath)
+            logger.info(
+                f"Quarantine interceptor completed {policy_action} for {rel_path}; original preserved"
+            )
+            return
+
+        # Aborted archive extraction (.7z, .rar, corrupted, or safety-limit archive) MUST keep source archive intact on disk
+        if status in ("MANUAL_REVIEW_REQUIRED", "DEAD_LETTER_QUEUE") and (
+            policy_action == "unarchive" or "archive safety violation" in err_msg_lower
+        ):
+            if (
+                staged_filepath
+                and os.path.exists(staged_filepath)
+                and os.path.abspath(abs_path) != os.path.abspath(staged_filepath)
+            ):
+                resilient_remove(staged_filepath)
+            logger.warning(
+                f"Daemon aborted archive extraction for {rel_path}; source archive preserved intact"
+            )
+            return
 
         # If file was quarantined, archived, or routed to DLQ / manual review, triage is complete
         if status in (

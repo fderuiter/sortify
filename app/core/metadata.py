@@ -7,7 +7,7 @@ import os
 
 from app.core.extractor import get_file_hash
 from app.core.extractor_strategies import registry
-from app.core.policy_engine import match_pattern_expression
+from app.core.policy_engine import PolicyEngine, match_pattern_expression
 from app.core.progress import emit_progress
 
 DEFAULT_EXTENSION_CATEGORIES = {
@@ -125,15 +125,18 @@ class MetadataPass:
         keyword_rules = getattr(settings, "KEYWORD_RULES", {})
         learned_rules = getattr(settings, "LEARNED_RULES", {})
         policies = getattr(settings, "POLICIES", [])
-        auto_quarantine_ratings = [
-            r for r in (getattr(settings, "AUTO_QUARANTINE_RATINGS", []) or []) if r
-        ]
+        raw_aqr = getattr(settings, "AUTO_QUARANTINE_RATINGS", [])
+        auto_quarantine_ratings = (
+            [r for r in raw_aqr if r] if isinstance(raw_aqr, (list, tuple, set)) else []
+        )
         has_content_compliance_policy = bool(auto_quarantine_ratings) or any(
             isinstance(p, dict)
             and p.get("enabled", True)
             and (
-                str(p.get("type", "")).lower() == "compliance"
+                str(p.get("type", "")).lower() in ("compliance", "secret", "credential")
                 or str(p.get("action", "")).lower() in ("quarantine", "redact")
+                or str(p.get("expression", "")).strip().lower()
+                in ("secret", "credential")
             )
             for p in (policies or [])
         )
@@ -212,12 +215,18 @@ class MetadataPass:
             is_supported = registry.is_supported(ext)
 
             matched_target = None
-            if file_hash in hash_to_target:
+            matched_policy_action = None
+            halt_evaluation = False
+            halted_definitively = False
+            ignored_definitively = False
+
+            if file_hash in hash_to_target and not sorted_policies:
                 matched_target = hash_to_target[file_hash]
             else:
                 filename_only = os.path.basename(rel_p).lower()
                 file_path_lower = item_path.lower()
-                halt_evaluation = False
+                saw_unmatched_content_policy = False
+                saw_unmatched_compliance_policy = False
 
                 for policy in sorted_policies:
                     if not policy.get("enabled", True):
@@ -226,6 +235,38 @@ class MetadataPass:
                     expression = policy.get("expression", "")
                     target_path = policy.get("target_path")
                     expr_lower = expression.lower()
+                    p_action = PolicyEngine.resolve_effective_action(policy)
+                    is_glob_or_ext = (
+                        "*" in expr_lower
+                        or "?" in expr_lower
+                        or ("[" in expr_lower and "]" in expr_lower)
+                        or (
+                            expr_lower.startswith(".")
+                            and "/" not in expr_lower
+                            and "\\" not in expr_lower
+                        )
+                    )
+                    can_match_doc_text = is_supported and (
+                        p_type
+                        in (
+                            "keyword",
+                            "action",
+                            "compliance",
+                            "secret",
+                            "credential",
+                            "",
+                        )
+                        or (
+                            p_type in ("copy", "ignore")
+                            and bool(expr_lower)
+                            and not is_glob_or_ext
+                        )
+                    )
+                    is_compliance_rule = (
+                        p_type in ("compliance", "secret", "credential")
+                        or p_action in ("quarantine", "redact")
+                        or expr_lower in ("secret", "credential")
+                    )
 
                     is_match = False
                     if p_type == "override":
@@ -238,24 +279,57 @@ class MetadataPass:
                     elif p_type == "pattern":
                         if match_pattern_expression(expr_lower, filename_only):
                             is_match = True
-                    elif p_type == "unarchive":
-                        if expr_lower and match_pattern_expression(
-                            expr_lower, filename_only
+                    elif p_type in ("unarchive", "copy", "ignore"):
+                        if expr_lower and (
+                            match_pattern_expression(expr_lower, filename_only)
+                            or expr_lower in filename_only
                         ):
                             is_match = True
-                    elif p_type == "keyword":
+                    elif p_type in ("keyword", "action", "compliance", ""):
                         if expr_lower and expr_lower in filename_only:
+                            is_match = True
+                        elif not expr_lower and p_action:
                             is_match = True
 
                     if is_match:
-                        matched_target = target_path
+                        if p_action == "ignore":
+                            if not saw_unmatched_content_policy:
+                                ignored_definitively = True
+                        elif not saw_unmatched_compliance_policy:
+                            matched_policy_action = p_action
+                            matched_target = (
+                                target_path
+                                if target_path
+                                else (f"__policy_{p_action}__" if p_action else None)
+                            )
                         break
                     else:
+                        if can_match_doc_text:
+                            saw_unmatched_content_policy = True
+                            if is_compliance_rule:
+                                saw_unmatched_compliance_policy = True
                         if policy.get("halting", False):
                             halt_evaluation = True
+                            if (
+                                not can_match_doc_text
+                                and not saw_unmatched_content_policy
+                            ):
+                                halted_definitively = True
                             break
 
-                if not halt_evaluation and not matched_target:
+                if (
+                    not halt_evaluation
+                    and not ignored_definitively
+                    and not matched_target
+                    and file_hash in hash_to_target
+                ):
+                    matched_target = hash_to_target[file_hash]
+
+                if (
+                    not halt_evaluation
+                    and not ignored_definitively
+                    and not matched_target
+                ):
                     for keyword, target_folder in keyword_rules.items():
                         if keyword.strip() and keyword.lower() in filename_only:
                             matched_target = target_folder
@@ -267,12 +341,41 @@ class MetadataPass:
                                 break
 
                 # Evaluate extension category mapping / MIME fallback rules for unregistered extensions
-                if not halt_evaluation and not matched_target and not is_supported:
+                if (
+                    not halt_evaluation
+                    and not ignored_definitively
+                    and not matched_target
+                    and not is_supported
+                ):
                     matched_target = get_extension_category_target(item, settings)
+
+            if ignored_definitively:
+                bypassed_files.append(item)
+                docs_to_upsert.append((src_root, rel_p, file_hash, "[STATUS:IGNORED]"))
+                emit_progress(
+                    effective_callback,
+                    progress_or_update=progress_ratio,
+                    stage=f"Ignored {item} via policy rule",
+                    unit_count=idx + 1,
+                    unit_type="files",
+                )
+                continue
+
+            if halted_definitively:
+                bypassed_files.append(item)
+                docs_to_upsert.append((src_root, rel_p, file_hash, "[STATUS:HALTED]"))
+                emit_progress(
+                    effective_callback,
+                    progress_or_update=progress_ratio,
+                    stage=f"Halted {item} via halting policy rule",
+                    unit_count=idx + 1,
+                    unit_type="files",
+                )
+                continue
 
             norm_rel_p = rel_p.replace("\\", "/")
             rejected_set = rejected_by_doc.get(norm_rel_p, set())
-            if matched_target:
+            if matched_target and not matched_policy_action:
                 mt_clean = str(matched_target).replace("\\", "/").strip("/").lower()
                 if mt_clean in rejected_set or (mt_clean.split("/")[0] in rejected_set):
                     matched_target = None

@@ -727,19 +727,47 @@ def _restore_displaced(backup_path: str, dest_path: str) -> None:
         )
 
 
-def _record_move_intent(moves, session_id, source_path, dest_path, src_sha256):
+def _record_move_intent(
+    moves,
+    session_id,
+    source_path,
+    dest_path,
+    src_sha256,
+    *,
+    size_override: int | None = None,
+    op_kind: str = "move",
+    dst_sha256: str | None = None,
+):
     """Commit the move's intent row (ADR 0006) and return its seq.
 
     A failure raises, so the move never happens without its row.
     """
     if not (moves and session_id):
         return None
-    size = None
-    try:
-        if os.path.isfile(source_path) and not os.path.islink(source_path):
-            size = os.lstat(source_path).st_size
-    except OSError:
-        pass
+    size = size_override
+    if size is None:
+        try:
+            if os.path.isfile(source_path) and not os.path.islink(source_path):
+                size = os.lstat(source_path).st_size
+        except OSError:
+            pass
+    extra_kwargs: dict[str, Any] = {}
+    if op_kind and op_kind != "move":
+        extra_kwargs["op_kind"] = op_kind
+    if dst_sha256 is not None:
+        extra_kwargs["dst_sha256"] = dst_sha256
+    if extra_kwargs:
+        try:
+            return moves.record_intent(
+                session_id,
+                source_path,
+                dest_path,
+                src_sha256=src_sha256,
+                size=size,
+                **extra_kwargs,
+            )
+        except TypeError:
+            pass
     return moves.record_intent(
         session_id, source_path, dest_path, src_sha256=src_sha256, size=size
     )
@@ -753,8 +781,20 @@ def _record_move_state(
         return
     st_val = state.value if isinstance(state, MoveOpState) else str(state)
     method = "record_displacement" if st_val == "displacement" else f"mark_{st_val}"
+    clean_fields = {
+        k: v for k, v in fields.items() if k != "dst_sha256" or v is not None
+    }
     try:
-        getattr(moves, method)(session_id, seq, **fields)
+        try:
+            getattr(moves, method)(session_id, seq, **clean_fields)
+        except TypeError:
+            if "dst_sha256" in clean_fields:
+                fallback_fields = {
+                    k: v for k, v in clean_fields.items() if k != "dst_sha256"
+                }
+                getattr(moves, method)(session_id, seq, **fallback_fields)
+            else:
+                raise
     except Exception as err:
         if required:
             raise
@@ -1202,6 +1242,614 @@ def _collect_move_items(
     return items
 
 
+def _execute_archive_item(
+    *,
+    base_dir: str,
+    source_path: str,
+    dest_path: str,
+    pre_hash: str,
+    src_size: int | None,
+    collision: bool,
+    conflict_policy: str,
+    session_id: str,
+    moves,
+    db_lock: threading.Lock,
+    db_updates_batch: list,
+    audit_records: list | None,
+    source_rel_path: str,
+    rel_dest: str,
+    current_dest: str,
+    file_hash: str,
+    is_quarantine_dest: bool,
+) -> bool:
+    """Compress ``source_path`` into a verified ``.zip`` at ``dest_path`` and park the original for lossless undo."""
+    from app.core.extractor import get_file_hash
+    from app.core.moves import OP_ARCHIVE, OP_MOVE
+    from app.core.resilient_file_ops import (
+        create_verified_zip_archive,
+        resilient_move,
+        resilient_remove,
+    )
+
+    dest_dir = os.path.dirname(dest_path)
+    os.makedirs(dest_dir, exist_ok=True)
+
+    # If overwrite is enabled and an existing target file differs from source, displace it first as its own move row.
+    if (
+        collision
+        and conflict_policy == "overwrite"
+        and os.path.lexists(dest_path)
+        and not _is_same_path(source_path, dest_path)
+    ):
+        existing_hash = get_file_hash(dest_path) if os.path.isfile(dest_path) else ""
+        planned_disp = os.path.join(
+            overwrite_backup_dir(
+                base_dir, session_id or f"nosession_{uuid.uuid4().hex}"
+            ),
+            "overwritten_targets",
+            safe_relpath(dest_path, base_dir),
+        )
+        os.makedirs(os.path.dirname(planned_disp), exist_ok=True)
+        disp_dst = get_safe_path(
+            os.path.dirname(planned_disp), os.path.basename(planned_disp)
+        )
+        disp_seq = _record_move_intent(
+            moves, session_id, dest_path, disp_dst, existing_hash, op_kind=OP_MOVE
+        )
+        disp_final = resilient_move(dest_path, disp_dst)
+        _record_move_state(
+            moves, session_id, disp_seq, MoveOpState.DONE, dst=disp_final
+        )
+        _record_move_state(
+            moves, session_id, disp_seq, MoveOpState.VERIFIED, required=False
+        )
+
+    staged_zip = os.path.join(
+        dest_dir, f".tmp_stage_{uuid.uuid4().hex}_{os.path.basename(dest_path)}"
+    )
+    try:
+        _, computed_src_sha, zip_sha = create_verified_zip_archive(
+            source_path,
+            staged_zip,
+            arcname=os.path.basename(source_path),
+            allow_rename_on_collision=False,
+        )
+        effective_pre_hash = pre_hash or computed_src_sha
+
+        planned_park = os.path.join(
+            overwrite_backup_dir(
+                base_dir, session_id or f"nosession_{uuid.uuid4().hex}"
+            ),
+            "archived_sources",
+            safe_relpath(source_path, base_dir),
+        )
+        os.makedirs(os.path.dirname(planned_park), exist_ok=True)
+        parked_src = get_safe_path(
+            os.path.dirname(planned_park), os.path.basename(planned_park)
+        )
+
+        move_seq = _record_move_intent(
+            moves,
+            session_id,
+            source_path,
+            dest_path,
+            effective_pre_hash,
+            size_override=src_size,
+            op_kind=OP_ARCHIVE,
+            dst_sha256=zip_sha,
+        )
+        _record_move_state(
+            moves,
+            session_id,
+            move_seq,
+            MoveOpState.DISPLACEMENT,
+            displaced=parked_src,
+        )
+        try:
+            parked_final = resilient_move(source_path, parked_src)
+            os.replace(staged_zip, dest_path)
+            actual_zip_sha = get_file_hash(dest_path)
+            if actual_zip_sha != zip_sha:
+                resilient_remove(dest_path)
+                resilient_move(parked_final, source_path)
+                raise OSError(
+                    f"Archive verification mismatch for {dest_path}: expected {zip_sha}, got {actual_zip_sha}"
+                )
+        except Exception as err:
+            _record_move_state(
+                moves,
+                session_id,
+                move_seq,
+                MoveOpState.FAILED,
+                required=False,
+                error=str(err),
+            )
+            raise
+
+        _record_move_state(
+            moves,
+            session_id,
+            move_seq,
+            MoveOpState.DONE,
+            dst=dest_path,
+            displaced=parked_final,
+            dst_sha256=zip_sha,
+        )
+        _record_move_state(
+            moves, session_id, move_seq, MoveOpState.VERIFIED, required=False
+        )
+    finally:
+        if os.path.lexists(staged_zip):
+            try:
+                resilient_remove(staged_zip)
+            except OSError:
+                pass
+
+    with db_lock:
+        if file_hash and not is_quarantine_dest:
+            db_updates_batch.append(
+                {
+                    "type": "verified_target",
+                    "args": (base_dir, file_hash, current_dest.replace("\\", "/")),
+                }
+            )
+        db_updates_batch.append(
+            {
+                "type": "document_path",
+                "args": (base_dir, source_rel_path, rel_dest),
+            }
+        )
+
+    if audit_records is not None:
+        with db_lock:
+            audit_records.append(
+                {
+                    "source_path": source_path,
+                    "destination_path": dest_path,
+                    "pre_hash": pre_hash,
+                    "post_hash": zip_sha,
+                    "status": "VERIFIED_PASS",
+                }
+            )
+    return True
+
+
+def _execute_redact_text_item(
+    *,
+    base_dir: str,
+    source_path: str,
+    dest_path: str,
+    raw_text: str,
+    pre_hash: str,
+    src_size: int | None,
+    collision: bool,
+    conflict_policy: str,
+    session_id: str,
+    moves,
+    db_lock: threading.Lock,
+    db_updates_batch: list,
+    audit_records: list | None,
+    source_rel_path: str,
+    rel_dest: str,
+    current_dest: str,
+    file_hash: str,
+) -> bool:
+    """Scrub PII from verified UTF-8 ``raw_text``, park original source with 0o600 permissions, and publish scrubbed text."""
+    from app.core.extractor import get_file_hash
+    from app.core.moves import OP_MOVE, OP_REDACT
+    from app.core.resilient_file_ops import (
+        resilient_move,
+        resilient_remove,
+        write_verified_utf8_file,
+    )
+    from app.core.text_utils import scrub_pii_text
+
+    dest_dir = os.path.dirname(dest_path)
+    os.makedirs(dest_dir, exist_ok=True)
+
+    if (
+        collision
+        and conflict_policy == "overwrite"
+        and os.path.lexists(dest_path)
+        and not _is_same_path(source_path, dest_path)
+    ):
+        existing_hash = get_file_hash(dest_path) if os.path.isfile(dest_path) else ""
+        planned_disp = os.path.join(
+            overwrite_backup_dir(
+                base_dir, session_id or f"nosession_{uuid.uuid4().hex}"
+            ),
+            "overwritten_targets",
+            safe_relpath(dest_path, base_dir),
+        )
+        os.makedirs(os.path.dirname(planned_disp), exist_ok=True)
+        disp_dst = get_safe_path(
+            os.path.dirname(planned_disp), os.path.basename(planned_disp)
+        )
+        disp_seq = _record_move_intent(
+            moves, session_id, dest_path, disp_dst, existing_hash, op_kind=OP_MOVE
+        )
+        disp_final = resilient_move(dest_path, disp_dst)
+        _record_move_state(
+            moves, session_id, disp_seq, MoveOpState.DONE, dst=disp_final
+        )
+        _record_move_state(
+            moves, session_id, disp_seq, MoveOpState.VERIFIED, required=False
+        )
+
+    scrubbed_text = scrub_pii_text(raw_text)
+    staged_redact = os.path.join(
+        dest_dir, f".tmp_stage_{uuid.uuid4().hex}_{os.path.basename(dest_path)}"
+    )
+    try:
+        _, scrubbed_sha = write_verified_utf8_file(
+            scrubbed_text,
+            staged_redact,
+            mode=0o600,
+            allow_rename_on_collision=False,
+        )
+
+        planned_park = os.path.join(
+            overwrite_backup_dir(
+                base_dir, session_id or f"nosession_{uuid.uuid4().hex}"
+            ),
+            "redacted_sources",
+            safe_relpath(source_path, base_dir),
+        )
+        os.makedirs(os.path.dirname(planned_park), mode=0o700, exist_ok=True)
+        parked_src = get_safe_path(
+            os.path.dirname(planned_park), os.path.basename(planned_park)
+        )
+
+        move_seq = _record_move_intent(
+            moves,
+            session_id,
+            source_path,
+            dest_path,
+            pre_hash,
+            size_override=src_size,
+            op_kind=OP_REDACT,
+            dst_sha256=scrubbed_sha,
+        )
+        _record_move_state(
+            moves,
+            session_id,
+            move_seq,
+            MoveOpState.DISPLACEMENT,
+            displaced=parked_src,
+        )
+        try:
+            parked_final = resilient_move(source_path, parked_src)
+            try:
+                os.chmod(parked_final, 0o600)
+            except OSError:
+                pass
+            os.replace(staged_redact, dest_path)
+            try:
+                os.chmod(dest_path, 0o600)
+            except OSError:
+                pass
+            actual_sha = get_file_hash(dest_path)
+            if actual_sha != scrubbed_sha:
+                resilient_remove(dest_path)
+                resilient_move(parked_final, source_path)
+                raise OSError(
+                    f"Redacted output hash mismatch for {dest_path}: expected {scrubbed_sha}, got {actual_sha}"
+                )
+        except Exception as err:
+            _record_move_state(
+                moves,
+                session_id,
+                move_seq,
+                MoveOpState.FAILED,
+                required=False,
+                error=str(err),
+            )
+            raise
+
+        _record_move_state(
+            moves,
+            session_id,
+            move_seq,
+            MoveOpState.DONE,
+            dst=dest_path,
+            displaced=parked_final,
+            dst_sha256=scrubbed_sha,
+        )
+        _record_move_state(
+            moves, session_id, move_seq, MoveOpState.VERIFIED, required=False
+        )
+    finally:
+        if os.path.lexists(staged_redact):
+            try:
+                resilient_remove(staged_redact)
+            except OSError:
+                pass
+
+    with db_lock:
+        if file_hash:
+            db_updates_batch.append(
+                {
+                    "type": "verified_target",
+                    "args": (base_dir, file_hash, current_dest.replace("\\", "/")),
+                }
+            )
+        db_updates_batch.append(
+            {
+                "type": "document_path",
+                "args": (base_dir, source_rel_path, rel_dest),
+            }
+        )
+
+    if audit_records is not None:
+        with db_lock:
+            audit_records.append(
+                {
+                    "source_path": source_path,
+                    "destination_path": dest_path,
+                    "pre_hash": pre_hash,
+                    "post_hash": scrubbed_sha,
+                    "status": "VERIFIED_PASS",
+                }
+            )
+    return True
+
+
+def _execute_unarchive_item(
+    *,
+    base_dir: str,
+    source_path: str,
+    dest_dir: str,
+    content: Any,
+    pre_hash: str,
+    src_size: int | None,
+    conflict_policy: str,
+    session_id: str,
+    moves,
+    db_lock: threading.Lock,
+    audit_records: list | None,
+    path_map: dict,
+) -> bool:
+    """Safely unpack ``source_path`` into ``dest_dir`` and handle post-unarchive source disposition."""
+    from app.core.exceptions import ArchiveSafetyError
+    from app.core.extractor import get_file_hash
+    from app.core.forensic_scanner import ForensicScanner
+    from app.core.moves import OP_UNARCHIVE, OP_UNARCHIVE_SOURCE
+    from app.core.resilient_file_ops import resilient_move, resilient_rmtree
+
+    os.makedirs(dest_dir, exist_ok=True)
+    if not is_subpath_or_equal(dest_dir, base_dir):
+        raise ValueError(
+            f"Runtime boundary violation: Unarchive destination '{dest_dir}' escapes '{base_dir}'."
+        )
+
+    stage_unpack_dir = os.path.join(dest_dir, f".tmp_stage_unpack_{uuid.uuid4().hex}")
+    try:
+        extracted_staged = ForensicScanner().unpack_archive(
+            source_path, stage_unpack_dir
+        )
+    except ArchiveSafetyError as err:
+        resilient_rmtree(stage_unpack_dir, ignore_errors=True)
+        logging.warning(
+            f"Unarchive blocked for {source_path} (archive preserved intact): {err}"
+        )
+        fail_seq = _record_move_intent(
+            moves,
+            session_id,
+            source_path,
+            dest_dir,
+            pre_hash,
+            size_override=src_size,
+            op_kind=OP_UNARCHIVE,
+        )
+        _record_move_state(
+            moves,
+            session_id,
+            fail_seq,
+            MoveOpState.FAILED,
+            required=False,
+            error=str(err),
+        )
+        if audit_records is not None:
+            with db_lock:
+                audit_records.append(
+                    {
+                        "source_path": source_path,
+                        "destination_path": dest_dir,
+                        "pre_hash": pre_hash,
+                        "post_hash": "",
+                        "status": "MOVE_FAIL",
+                        "error": str(err),
+                    }
+                )
+        return False
+
+    first_final_child: str | None = None
+    first_child_hash: str = ""
+    try:
+        for staged_file in sorted(extracted_staged):
+            rel_inside = os.path.relpath(staged_file, stage_unpack_dir)
+            child_target_dir = os.path.normpath(
+                os.path.join(dest_dir, os.path.dirname(rel_inside))
+            )
+            child_fname = os.path.basename(rel_inside)
+            if not is_subpath_or_equal(child_target_dir, base_dir):
+                raise ValueError(
+                    f"Unarchive member target '{child_target_dir}' escapes '{base_dir}'."
+                )
+            os.makedirs(child_target_dir, exist_ok=True)
+            candidate_dst = os.path.normpath(
+                os.path.join(child_target_dir, child_fname)
+            )
+            child_collision = os.path.lexists(candidate_dst)
+
+            if child_collision and conflict_policy == "skip":
+                continue
+            if child_collision and conflict_policy == "overwrite":
+                child_dst = candidate_dst
+            else:
+                child_dst = os.path.normpath(
+                    get_safe_path(child_target_dir, child_fname, staged_file)
+                )
+
+            child_sha = get_file_hash(staged_file)
+            child_sz = os.path.getsize(staged_file)
+            child_seq = _record_move_intent(
+                moves,
+                session_id,
+                source_path,
+                child_dst,
+                pre_hash,
+                size_override=child_sz,
+                op_kind=OP_UNARCHIVE,
+                dst_sha256=child_sha,
+            )
+            child_displaced = None
+            try:
+                if (
+                    child_collision
+                    and conflict_policy == "overwrite"
+                    and os.path.lexists(child_dst)
+                ):
+                    child_displaced = _displace_for_overwrite(
+                        child_dst,
+                        base_dir,
+                        session_id,
+                        journal=lambda path, _seq=child_seq: _record_move_state(
+                            moves,
+                            session_id,
+                            _seq,
+                            MoveOpState.DISPLACEMENT,
+                            displaced=path,
+                        ),
+                    )
+                final_child_dst = resilient_move(staged_file, child_dst)
+                verified_child_sha = get_file_hash(final_child_dst)
+                if verified_child_sha != child_sha:
+                    raise OSError(
+                        f"Extracted member hash mismatch for {final_child_dst}"
+                    )
+            except Exception as child_err:
+                _record_move_state(
+                    moves,
+                    session_id,
+                    child_seq,
+                    MoveOpState.FAILED,
+                    required=False,
+                    error=str(child_err),
+                )
+                raise
+
+            _record_move_state(
+                moves,
+                session_id,
+                child_seq,
+                MoveOpState.DONE,
+                dst=final_child_dst,
+                displaced=child_displaced,
+                dst_sha256=child_sha,
+            )
+            _record_move_state(
+                moves, session_id, child_seq, MoveOpState.VERIFIED, required=False
+            )
+            if first_final_child is None:
+                first_final_child = final_child_dst
+                first_child_hash = child_sha
+    finally:
+        resilient_rmtree(stage_unpack_dir, ignore_errors=True)
+
+    post_act = (
+        str(_get_val(content, "post_unarchive_action") or "delete").strip().lower()
+    )
+    post_tgt = str(_get_val(content, "post_unarchive_target") or "").strip()
+
+    if post_act in ("keep", "retain"):
+        pass
+    elif post_act in ("move", "archive", "relocate"):
+        reloc_rel = post_tgt or "Archives"
+        cand_reloc_dir = os.path.normpath(
+            reloc_rel if os.path.isabs(reloc_rel) else os.path.join(base_dir, reloc_rel)
+        )
+        if not is_subpath_or_equal(cand_reloc_dir, base_dir):
+            cand_reloc_dir = os.path.normpath(os.path.join(base_dir, "Archives"))
+        os.makedirs(cand_reloc_dir, exist_ok=True)
+        reloc_dst = os.path.normpath(
+            get_safe_path(cand_reloc_dir, os.path.basename(source_path), source_path)
+        )
+        src_seq = _record_move_intent(
+            moves,
+            session_id,
+            source_path,
+            reloc_dst,
+            pre_hash,
+            size_override=src_size,
+            op_kind=OP_UNARCHIVE_SOURCE,
+            dst_sha256=pre_hash,
+        )
+        final_reloc_dst = resilient_move(source_path, reloc_dst)
+        _update_path_map_entry(path_map, source_path, final_reloc_dst, lock=db_lock)
+        _record_move_state(
+            moves,
+            session_id,
+            src_seq,
+            MoveOpState.DONE,
+            dst=final_reloc_dst,
+            dst_sha256=pre_hash,
+        )
+        _record_move_state(
+            moves, session_id, src_seq, MoveOpState.VERIFIED, required=False
+        )
+    else:
+        # Default ("delete", "remove", "cleanup"): park source archive in session backup dir so undo restores it losslessly.
+        planned_archive_park = os.path.join(
+            overwrite_backup_dir(
+                base_dir, session_id or f"nosession_{uuid.uuid4().hex}"
+            ),
+            "unarchived_sources",
+            safe_relpath(source_path, base_dir),
+        )
+        os.makedirs(os.path.dirname(planned_archive_park), exist_ok=True)
+        archive_park_dst = get_safe_path(
+            os.path.dirname(planned_archive_park),
+            os.path.basename(planned_archive_park),
+        )
+        src_seq = _record_move_intent(
+            moves,
+            session_id,
+            source_path,
+            archive_park_dst,
+            pre_hash,
+            size_override=src_size,
+            op_kind=OP_UNARCHIVE_SOURCE,
+            dst_sha256=pre_hash,
+        )
+        final_park_dst = resilient_move(source_path, archive_park_dst)
+        _update_path_map_entry(path_map, source_path, final_park_dst, lock=db_lock)
+        _record_move_state(
+            moves,
+            session_id,
+            src_seq,
+            MoveOpState.DONE,
+            dst=final_park_dst,
+            dst_sha256=pre_hash,
+        )
+        _record_move_state(
+            moves, session_id, src_seq, MoveOpState.VERIFIED, required=False
+        )
+
+    if audit_records is not None:
+        with db_lock:
+            audit_records.append(
+                {
+                    "source_path": source_path,
+                    "destination_path": first_final_child or dest_dir,
+                    "pre_hash": pre_hash,
+                    "post_hash": first_child_hash or pre_hash,
+                    "status": "VERIFIED_PASS",
+                }
+            )
+    return True
+
+
 def _process_move_item(
     base_dir: str,
     item: dict,
@@ -1215,8 +1863,9 @@ def _process_move_item(
     audit_records: list | None = None,
     pending_links: list | None = None,
     chunk_hash_map: dict | None = None,
+    copy_mode: bool = False,
 ) -> bool:
-    """Execute a single physical move and SHA-256 hash calculation off-thread."""
+    """Execute a single physical move or policy lifecycle action and SHA-256 verification off-thread."""
     source_path = item["source_path"]
     if not os.path.lexists(source_path):
         return False
@@ -1238,12 +1887,36 @@ def _process_move_item(
     filename = item["filename"]
     current_dest = item["current_dest"]
 
+    raw_node_action = str(_get_val(content, "action") or "").strip().lower()
+    if raw_node_action == "ignore":
+        if audit_records is not None:
+            with db_lock:
+                audit_records.append(
+                    {
+                        "source_path": source_path,
+                        "destination_path": source_path,
+                        "status": "SKIPPED",
+                        "skipped": True,
+                    }
+                )
+        return True
+
+    if raw_node_action and raw_node_action != "move":
+        effective_action = raw_node_action
+    elif copy_mode:
+        effective_action = "copy"
+    else:
+        effective_action = "move"
+
     # Downstream Barrier: Evaluate Sensitivity Metadata Before Physical Relocation
     sens_rating = None
     sens_score = 0.0
     if isinstance(content, dict):
         sens_rating = content.get("sensitivity_rating")
         sens_score = content.get("sensitivity_score", 0.0)
+    elif content is not None:
+        sens_rating = _get_val(content, "sensitivity_rating")
+        sens_score = _get_val(content, "sensitivity_score") or 0.0
 
     sens_rating_str = str(sens_rating or "LOW").upper()
     auto_ratings = [
@@ -1276,16 +1949,43 @@ def _process_move_item(
         )
 
     is_sensitivity_hold = sens_rating_str in auto_ratings and not is_approved_release
-    active_dest = current_dest
-    if is_sensitivity_hold:
+    is_binary_redact_hold = False
+    redact_utf8_text: str | None = None
+
+    if effective_action == "redact" and not is_sensitivity_hold:
+        from app.core.resilient_file_ops import is_verified_utf8_text_file
+
+        is_utf8, decoded_text = is_verified_utf8_text_file(source_path)
+        if is_utf8 and decoded_text is not None:
+            redact_utf8_text = decoded_text
+        else:
+            # Binary / layout documents (.pdf, .docx, etc.) cannot be safely scrubbed as UTF-8:
+            # hold intact in _Compliance_Quarantine without modifying a single byte.
+            is_binary_redact_hold = True
+            effective_action = "quarantine"
+
+    dest_override = _get_val(content, "destination_override")
+    active_dest = str(dest_override) if dest_override else current_dest
+    if is_sensitivity_hold or is_binary_redact_hold:
         if active_dest != quarantine_dir_name:
             logging.warning(
-                f"Downstream Barrier Interception: File {source_path} has sensitivity rating {sens_rating_str}. "
-                f"Blocking move to '{current_dest}' and redirecting to '{quarantine_dir_name}'."
+                f"Downstream Barrier Interception: Redirecting {source_path} to '{quarantine_dir_name}'."
             )
         active_dest = quarantine_dir_name
+        if is_sensitivity_hold and effective_action == "move":
+            effective_action = "quarantine"
+    elif effective_action == "quarantine" and not active_dest:
+        active_dest = quarantine_dir_name
 
-    dest_dir = os.path.normpath(os.path.join(base_dir, active_dest))
+    if effective_action == "archive" and not filename.lower().endswith(".zip"):
+        filename = f"{filename}.zip"
+
+    from app.core.path_utils import _is_absolute_path
+
+    if _is_absolute_path(active_dest):
+        dest_dir = os.path.normpath(active_dest)
+    else:
+        dest_dir = os.path.normpath(os.path.join(base_dir, active_dest))
     dest_dir = unicodedata.normalize("NFC", dest_dir)
 
     if not os.path.exists(dest_dir):
@@ -1307,18 +2007,22 @@ def _process_move_item(
     if runtime_settings:
         conflict_policy = getattr(runtime_settings, "CONFLICT_POLICY", "rename")
 
-    if collision and conflict_policy == "skip":
-        logging.info(
-            f"Collision detected for {target_path}. Policy is 'skip', bypassing move."
-        )
-        return False
+    if effective_action != "unarchive":
+        if collision and conflict_policy == "skip":
+            logging.info(
+                f"Collision detected for {target_path}. Policy is 'skip', bypassing move."
+            )
+            return False
 
-    if collision and conflict_policy == "overwrite":
-        dest_path = target_path
+        if collision and conflict_policy == "overwrite":
+            dest_path = target_path
+        else:
+            dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
+        dest_path = unicodedata.normalize("NFC", dest_path)
+        if effective_action != "copy":
+            _update_path_map_entry(path_map, source_path, dest_path, lock=db_lock)
     else:
-        dest_path = os.path.normpath(get_safe_path(dest_dir, filename, source_path))
-    dest_path = unicodedata.normalize("NFC", dest_path)
-    _update_path_map_entry(path_map, source_path, dest_path, lock=db_lock)
+        dest_path = unicodedata.normalize("NFC", target_path)
 
     if not is_subpath_or_equal(dest_path, base_dir):
         msg = f"Runtime boundary violation: Destination path '{dest_path}' attempts to escape target base directory '{base_dir}'."
@@ -1329,10 +2033,19 @@ def _process_move_item(
     rel_dest = safe_relpath(dest_path, base_dir).replace("\\", "/")
     abs_dest_path = os.path.abspath(dest_path)
 
-    if is_sensitivity_hold and db:
+    if (
+        is_sensitivity_hold or is_binary_redact_hold or effective_action == "quarantine"
+    ) and db:
         with db_lock:
             try:
                 job_id = f"qjob_mover_{uuid.uuid4().hex[:12]}"
+                pol_act_label = (
+                    "sensitivity_hold"
+                    if is_sensitivity_hold
+                    else (
+                        "redact_binary_hold" if is_binary_redact_hold else "quarantine"
+                    )
+                )
                 if hasattr(db, "stage_quarantine_record"):
                     db.stage_quarantine_record(
                         job_id=job_id,
@@ -1340,7 +2053,7 @@ def _process_move_item(
                         original_filepath=source_rel_path,
                         staged_filepath=abs_dest_path,
                         file_hash=candidate_sha256,
-                        policy_action="sensitivity_hold",
+                        policy_action=pol_act_label,
                     )
                 if hasattr(db, "update_quarantine_status"):
                     import time
@@ -1357,14 +2070,15 @@ def _process_move_item(
                     db.update_quarantine_status(
                         job_id=job_id,
                         status="QUARANTINED",
-                        policy_action="sensitivity_hold",
+                        policy_action=pol_act_label,
                         audit_entry={
                             "timestamp": time.time(),
                             "status": "QUARANTINED",
-                            "policy_action": "sensitivity_hold",
+                            "policy_action": pol_act_label,
                             "details": (
-                                f"Downstream AsyncMoveEngine barrier intercepted {sens_rating_str} sensitivity file; "
-                                f"redirected to {quarantine_dir_name}"
+                                f"Held binary/layout document in {quarantine_dir_name} with intact headers for manual redaction review"
+                                if is_binary_redact_hold
+                                else f"Compliance quarantine hold in {quarantine_dir_name}"
                             ),
                             "sensitivity_rating": sens_rating_str,
                             "sensitivity_score": sens_score,
@@ -1428,7 +2142,17 @@ def _process_move_item(
 
     moved_as_link = False
 
-    if link_info and pending_links is not None:
+    if (
+        link_info
+        and pending_links is not None
+        and effective_action
+        not in (
+            "copy",
+            "unarchive",
+            "archive",
+            "redact",
+        )
+    ):
         with db_lock:
             pending_links.append(
                 {
@@ -1446,7 +2170,72 @@ def _process_move_item(
         qdir_top,
     )
 
+    moves = getattr(history_manager, "moves", None) if history_manager else None
+
+    if effective_action == "unarchive":
+        return _execute_unarchive_item(
+            base_dir=base_dir,
+            source_path=source_path,
+            dest_dir=dest_dir,
+            content=content,
+            pre_hash=pre_hash,
+            src_size=src_size,
+            conflict_policy=conflict_policy,
+            session_id=session_id,
+            moves=moves,
+            db_lock=db_lock,
+            audit_records=audit_records,
+            path_map=path_map,
+        )
+
+    if effective_action == "archive":
+        return _execute_archive_item(
+            base_dir=base_dir,
+            source_path=source_path,
+            dest_path=dest_path,
+            pre_hash=pre_hash,
+            src_size=src_size,
+            collision=collision,
+            conflict_policy=conflict_policy,
+            session_id=session_id,
+            moves=moves,
+            db_lock=db_lock,
+            db_updates_batch=db_updates_batch,
+            audit_records=audit_records,
+            source_rel_path=source_rel_path,
+            rel_dest=rel_dest,
+            current_dest=current_dest,
+            file_hash=file_hash,
+            is_quarantine_dest=is_quarantine_dest,
+        )
+
+    if effective_action == "redact" and redact_utf8_text is not None:
+        return _execute_redact_text_item(
+            base_dir=base_dir,
+            source_path=source_path,
+            dest_path=dest_path,
+            raw_text=redact_utf8_text,
+            pre_hash=pre_hash,
+            src_size=src_size,
+            collision=collision,
+            conflict_policy=conflict_policy,
+            session_id=session_id,
+            moves=moves,
+            db_lock=db_lock,
+            db_updates_batch=db_updates_batch,
+            audit_records=audit_records,
+            source_rel_path=source_rel_path,
+            rel_dest=rel_dest,
+            current_dest=current_dest,
+            file_hash=file_hash,
+        )
+
     if dest_path == source_path:
+        if effective_action == "retain" and not os.path.islink(dest_path):
+            try:
+                os.chmod(dest_path, 0o444)
+            except OSError:
+                pass
         with db_lock:
             if file_hash and not is_quarantine_dest:
                 db_updates_batch.append(
@@ -1461,9 +2250,104 @@ def _process_move_item(
                 )
         return True
 
+    if effective_action == "copy":
+        from app.core.moves import OP_COPY
+        from app.core.resilient_file_ops import resilient_verified_copy
+
+        move_seq = _record_move_intent(
+            moves,
+            session_id,
+            source_path,
+            dest_path,
+            pre_hash,
+            size_override=src_size,
+            op_kind=OP_COPY,
+            dst_sha256=pre_hash or None,
+        )
+        displaced_path = overwritten_path = None
+        try:
+            if (
+                collision
+                and conflict_policy == "overwrite"
+                and os.path.lexists(dest_path)
+                and not _is_same_path(source_path, dest_path)
+            ):
+                overwritten_path = dest_path
+                displaced_path = _displace_for_overwrite(
+                    dest_path,
+                    base_dir,
+                    session_id,
+                    journal=lambda path: _record_move_state(
+                        moves,
+                        session_id,
+                        move_seq,
+                        MoveOpState.DISPLACEMENT,
+                        displaced=path,
+                    ),
+                )
+            try:
+                if link_info and os.path.islink(source_path):
+                    os.symlink(os.readlink(source_path), dest_path)
+                    copy_sha = pre_hash
+                else:
+                    dest_path, _src_sha, copy_sha = resilient_verified_copy(
+                        source_path,
+                        dest_path,
+                        allow_rename_on_collision=(conflict_policy != "overwrite"),
+                    )
+            except Exception:
+                if displaced_path and overwritten_path:
+                    _restore_displaced(displaced_path, overwritten_path)
+                raise
+        except Exception as err:
+            _record_move_state(
+                moves,
+                session_id,
+                move_seq,
+                MoveOpState.FAILED,
+                required=False,
+                error=str(err),
+            )
+            raise
+
+        _record_move_state(
+            moves,
+            session_id,
+            move_seq,
+            MoveOpState.DONE,
+            dst=dest_path,
+            displaced=displaced_path,
+            dst_sha256=copy_sha or None,
+        )
+        if copy_sha and (not pre_hash or copy_sha == pre_hash):
+            _record_move_state(
+                moves, session_id, move_seq, MoveOpState.VERIFIED, required=False
+            )
+        if audit_records is not None:
+            with db_lock:
+                audit_records.append(
+                    {
+                        "source_path": source_path,
+                        "destination_path": dest_path,
+                        "pre_hash": pre_hash,
+                        "post_hash": copy_sha or pre_hash,
+                        "status": "VERIFIED_PASS",
+                    }
+                )
+        return True
+
     # The intent row is committed before anything on disk changes (ADR 0006).
-    moves = getattr(history_manager, "moves", None) if history_manager else None
-    move_seq = _record_move_intent(moves, session_id, source_path, dest_path, pre_hash)
+    op_kind_for_move = (
+        effective_action if effective_action in ("retain", "quarantine") else "move"
+    )
+    move_seq = _record_move_intent(
+        moves,
+        session_id,
+        source_path,
+        dest_path,
+        pre_hash,
+        op_kind=op_kind_for_move,
+    )
 
     displaced_path = overwritten_path = None
     if not moved_as_link:
@@ -1552,6 +2436,11 @@ def _process_move_item(
         _record_move_state(
             moves, session_id, move_seq, MoveOpState.VERIFIED, required=False
         )
+        if effective_action == "retain" and not os.path.islink(dest_path):
+            try:
+                os.chmod(dest_path, 0o444)
+            except OSError:
+                pass
     elif move_seq is not None and pre_hash:
         logging.warning(
             f"Moved {source_path} to {dest_path}, but its hash no longer matches the source."
@@ -1669,6 +2558,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
         priority: str | None = None,
         progress_callback=None,
         pipeline: Any = None,
+        copy_mode: bool = False,
         **kwargs: Any,
     ) -> MoveResult:
         """Partition relocation plan into bounded worker chunks and execute file moves off-thread.
@@ -1788,6 +2678,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
             )
 
             effective_priority = priority or getattr(runtime_settings, "priority", None)
+            effective_copy_mode = bool(copy_mode or kwargs.get("copy_mode"))
 
             from app.core.scanner import ScanFilter
 
@@ -1924,6 +2815,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         audit_records,
                         pending_links,
                         chunk_hash_map,
+                        effective_copy_mode,
                     )
                     for item in chunk
                 ]
@@ -2208,6 +3100,7 @@ def execute_moves(
     progress_callback=None,
     source_dirs: list[str] | None = None,
     pipeline: Any = None,
+    copy_mode: bool = False,
     **kwargs: Any,
 ) -> MoveResult:
     """Create directories and safely move files using chunked asynchronous execution.
@@ -2250,6 +3143,7 @@ def execute_moves(
         priority=priority,
         progress_callback=progress_callback,
         pipeline=pipeline,
+        copy_mode=copy_mode,
         **kwargs,
     )
 
@@ -2269,6 +3163,7 @@ async def execute_moves_async(
     cancellation_token=None,
     priority: str | None = None,
     progress_callback=None,
+    copy_mode: bool = False,
 ) -> dict:
     """Asynchronously execute move operations off the main event loop thread.
 
@@ -2308,6 +3203,7 @@ async def execute_moves_async(
         cancellation_token=cancellation_token,
         priority=priority,
         progress_callback=progress_callback,
+        copy_mode=copy_mode,
     )
 
 

@@ -402,9 +402,19 @@ class AppSession:
                 if hasattr(self, "lifecycle_state"):
                     from app.core.pipeline import PipelineLifecycleState
 
+                    audit_records = (
+                        (summary.get("audit_report") or {}).get("records") or []
+                        if isinstance(summary, dict)
+                        else []
+                    )
+                    has_audit_failures = any(
+                        isinstance(rec, dict)
+                        and rec.get("status") in ("MOVE_FAIL", "MISMATCH_FAIL")
+                        for rec in audit_records
+                    )
                     if summary.get("cancelled"):
                         self.transition_to(PipelineLifecycleState.CANCELLED)
-                    elif summary.get("error"):
+                    elif summary.get("error") or has_audit_failures:
                         self.transition_to(PipelineLifecycleState.FAILED)
                     else:
                         self.transition_to(PipelineLifecycleState.COMPLETED)

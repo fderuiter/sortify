@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "21a7a89f1c5421209970181d3356b6efb20feb02277def537ea6326dcd959626"
+    "checksum": "e546696a743b6d92d2b60accc50715e23d1aafb4629686649539731c28b36759"
   },
   "classes": [
     {
@@ -138,6 +138,11 @@
     },
     {
       "class_name": "SortifyBaseError",
+      "decorators": [],
+      "methods": []
+    },
+    {
+      "class_name": "UnsupportedArchiveFormatError",
       "decorators": [],
       "methods": []
     }

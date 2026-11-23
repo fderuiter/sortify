@@ -5,14 +5,16 @@
       "description": "Typed dictionary schema for unified compliance and routing policy rules.",
       "properties": {
         "type": {
-          "description": "Rule evaluation strategy: 'keyword', 'action', 'compliance', or 'unarchive' match filenames and document text; 'pattern' matches lowercase filenames only; 'override' matches lowercase filenames or full file paths.",
+          "description": "Rule evaluation strategy: 'keyword', 'action', 'compliance', 'unarchive', 'copy', or 'ignore' match filenames and document text (with glob mask support for 'unarchive', 'copy', and 'ignore'); 'pattern' matches lowercase filenames only; 'override' matches lowercase filenames or full file paths.",
           "enum": [
             "keyword",
             "pattern",
             "override",
             "action",
             "compliance",
-            "unarchive"
+            "unarchive",
+            "copy",
+            "ignore"
           ],
           "title": "Type",
           "type": "string"
@@ -50,7 +52,9 @@
             "retain",
             "quarantine",
             "redact",
-            "unarchive"
+            "unarchive",
+            "copy",
+            "ignore"
           ],
           "title": "Action",
           "type": "string"

@@ -1202,7 +1202,13 @@ class VirtualFilesystemTracker:
                     target_filename = re.split(r"[/\\]+", raw_tf)[-1]
 
                     # Check if target_filename differs from src_filename (rename proposal)
+                    node_action = str(_get_val(content, "action") or "").strip().lower()
                     if target_filename != src_filename:
+                        if (
+                            node_action == "archive"
+                            and target_filename.lower() == f"{src_filename}.zip".lower()
+                        ):
+                            continue
                         src_stem, src_ext = os.path.splitext(src_filename)
                         tgt_stem, tgt_ext = os.path.splitext(target_filename)
 

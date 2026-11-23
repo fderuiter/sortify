@@ -23,6 +23,7 @@ from app.core.moves import (
     import_sidecar_ledger,
     import_step_ledger,
     import_transaction_ledger,
+    migrate_add_move_op_kind,
     migrate_add_moves,
     migrate_import_legacy_moves,
 )
@@ -54,6 +55,7 @@ STORE_MIGRATIONS = (
     Migration(1, "initial", _store_initial),
     Migration(2, "moves", migrate_add_moves),
     Migration(3, "legacy_moves", migrate_import_legacy_moves),
+    Migration(4, "move_op_kind", migrate_add_move_op_kind),
 )
 
 

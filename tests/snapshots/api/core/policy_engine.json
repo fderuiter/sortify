@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "d0d6da2a6c7278f8ec714412bc0088fd6f8a30dcee417bfa39005207518e4fbf"
+    "checksum": "6c1d99b5447451c691a6af4bf9d564a960b7f4b748ab508ef5ec163c023b5f0a"
   },
   "classes": [
     {
@@ -96,6 +96,21 @@
             }
           ],
           "returns": "bool"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "resolve_effective_action",
+          "parameters": [
+            {
+              "annotation": "Any",
+              "default": null,
+              "name": "rule"
+            }
+          ],
+          "returns": "str | None"
         },
         {
           "async": false,

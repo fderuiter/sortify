@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "13293328d0b0cfa8a3bfc08cfc3f7a6094e4ac758153a3bc5a8dd5007c556416"
+    "checksum": "2a8c7d7291382487284049855c8aa4b170e2d0c6f8b20b59d5756598ab196bb6"
   },
   "classes": [
     {
@@ -119,6 +119,11 @@
               "name": "move_context"
             },
             {
+              "annotation": "bool",
+              "default": "False",
+              "name": "copy_mode"
+            },
+            {
               "annotation": null,
               "default": null,
               "name": "**kwargs"
@@ -213,6 +218,11 @@
               "annotation": "bool",
               "default": "False",
               "name": "dry_run"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "copy_mode"
             },
             {
               "annotation": "Callable[[Any], AbstractContextManager[Any]] | None",

@@ -735,3 +735,333 @@ def _set_posix_mode(path: str, mode: int) -> None:
             os.chmod(path, mode)
         except OSError:
             pass
+
+
+_BINARY_CONTAINER_EXTENSIONS = frozenset(
+    {
+        ".pdf",
+        ".docx",
+        ".doc",
+        ".xlsx",
+        ".xls",
+        ".pptx",
+        ".ppt",
+        ".odt",
+        ".ods",
+        ".odp",
+        ".epub",
+        ".rtf",
+        ".msg",
+        ".zip",
+        ".tar",
+        ".gz",
+        ".tgz",
+        ".bz2",
+        ".tbz2",
+        ".xz",
+        ".txz",
+        ".7z",
+        ".rar",
+        ".png",
+        ".jpg",
+        ".jpeg",
+        ".gif",
+        ".webp",
+        ".bmp",
+        ".tiff",
+        ".tif",
+        ".ico",
+        ".heic",
+        ".mp3",
+        ".m4a",
+        ".wav",
+        ".flac",
+        ".ogg",
+        ".mp4",
+        ".mov",
+        ".avi",
+        ".mkv",
+        ".webm",
+        ".exe",
+        ".dll",
+        ".so",
+        ".dylib",
+        ".bin",
+        ".iso",
+        ".dmg",
+        ".sqlite",
+        ".sqlite3",
+        ".db",
+        ".parquet",
+        ".feather",
+        ".onnx",
+        ".safetensors",
+    }
+)
+
+_BINARY_MAGIC_PREFIXES = (
+    b"%PDF-",
+    b"PK\x03\x04",
+    b"PK\x05\x06",
+    b"PK\x07\x08",
+    b"\xd0\xcf\x11\xe0\xa1\xb1\x1a\xe1",
+    b"7z\xbc\xaf\x27\x1c",
+    b"Rar!\x1a\x07",
+    b"\x1f\x8b\x08",
+    b"BZh",
+    b"\xfd7zXZ\x00",
+    b"\x89PNG\r\n\x1a\n",
+    b"\xff\xd8\xff",
+    b"GIF87a",
+    b"GIF89a",
+    b"SQLite format 3\x00",
+    b"\x7fELF",
+    b"MZ",
+)
+
+
+def is_verified_utf8_text_file(
+    file_path: str | os.PathLike,
+) -> tuple[bool, str | None]:
+    """Return ``(True, decoded_text)`` only if ``file_path`` is verified plain-text UTF-8.
+
+    Rejects rich binary document containers (such as ``.pdf``, ``.docx``, ``.xlsx``,
+    archives, images, and executables), binary magic headers, files containing NUL
+    bytes, and non-UTF-8 byte sequences so binary layouts are never corrupted.
+    """
+    str_path = os.fspath(file_path)
+    lower_name = os.path.basename(str_path).lower()
+    if lower_name.endswith(".tar.gz"):
+        return False, None
+    _, ext = os.path.splitext(lower_name)
+    if ext in _BINARY_CONTAINER_EXTENSIONS:
+        return False, None
+
+    try:
+        with open(str_path, "rb") as fh:
+            raw = fh.read()
+    except OSError:
+        return False, None
+
+    if any(raw.startswith(prefix) for prefix in _BINARY_MAGIC_PREFIXES):
+        return False, None
+    if b"\x00" in raw:
+        return False, None
+
+    try:
+        decoded = raw.decode("utf-8")
+    except UnicodeDecodeError:
+        return False, None
+
+    return True, decoded
+
+
+def resilient_verified_copy(
+    src: str | os.PathLike,
+    dst: str | os.PathLike,
+    *,
+    allow_rename_on_collision: bool = True,
+) -> tuple[str, str, str]:
+    """Copy ``src`` to ``dst`` via a staged temp file, verifying SHA-256 before publishing.
+
+    Leaves ``src`` untouched at origin and returns ``(actual_dst, src_sha256, dst_sha256)``.
+    """
+    from app.core.mover import get_safe_path
+
+    src_str = os.fspath(src)
+    dst_str = os.fspath(dst)
+    if not os.path.lexists(src_str):
+        raise FileNotFoundError(f"Source file does not exist: {src_str}")
+
+    src_sha = _hash_file(src_str)
+    if _is_same_path(src_str, dst_str):
+        if not allow_rename_on_collision:
+            return dst_str, src_sha, src_sha
+        dest_dir_same = os.path.dirname(dst_str) or "."
+        base, ext = os.path.splitext(os.path.basename(dst_str))
+        dst_str = get_safe_path(dest_dir_same, f"{base}_copy{ext}")
+
+    dest_dir = os.path.dirname(dst_str) or "."
+    os.makedirs(dest_dir, exist_ok=True)
+    orig_filename = os.path.basename(dst_str)
+    current_dst = dst_str
+
+    max_attempts = MAX_ATTEMPTS if IS_WINDOWS else 15
+    for attempt in range(max_attempts):
+        stage_path = os.path.join(dest_dir, f".tmp_copy_{uuid.uuid4().hex}")
+        try:
+            shutil.copy2(src_str, stage_path)
+            _fsync_path(stage_path)
+            staged_sha = _hash_file(stage_path)
+            if staged_sha != src_sha:
+                raise RuntimeError(
+                    f"Copy hash verification failed for {src_str} -> {current_dst}"
+                )
+            _rename_noreplace(stage_path, current_dst)
+            _fsync_path(dest_dir)
+            final_sha = _hash_file(current_dst)
+            if final_sha != src_sha:
+                resilient_remove(current_dst)
+                raise RuntimeError(
+                    f"Published copy hash mismatch for {src_str} -> {current_dst}"
+                )
+            return current_dst, src_sha, final_sha
+        except FileExistsError:
+            if os.path.lexists(stage_path):
+                resilient_remove(stage_path)
+            if not allow_rename_on_collision or attempt == max_attempts - 1:
+                raise
+            current_dst = os.path.normpath(get_safe_path(dest_dir, orig_filename, None))
+        except Exception:
+            if os.path.lexists(stage_path):
+                try:
+                    resilient_remove(stage_path)
+                except OSError:
+                    pass
+            raise
+
+    raise RuntimeError(f"Exhausted copy collision attempts for {src_str} -> {dst_str}")
+
+
+def create_verified_zip_archive(
+    src: str | os.PathLike,
+    dst_zip: str | os.PathLike,
+    *,
+    arcname: str | None = None,
+    allow_rename_on_collision: bool = True,
+) -> tuple[str, str, str]:
+    """Compress ``src`` into a verified stdlib ``.zip`` archive at ``dst_zip``.
+
+    Verifies uncompressed member SHA-256 and ``ZipFile.testzip()`` before publishing,
+    leaving ``src`` untouched on disk until the caller records or parks it.
+    Returns ``(actual_dst_zip, src_sha256, dst_zip_sha256)``.
+    """
+    import zipfile
+
+    from app.core.mover import get_safe_path
+
+    src_str = os.fspath(src)
+    dst_str = os.fspath(dst_zip)
+    if not os.path.isfile(src_str):
+        raise FileNotFoundError(f"Source file does not exist for archiving: {src_str}")
+
+    if not dst_str.lower().endswith(".zip"):
+        dst_str = f"{dst_str}.zip"
+
+    src_sha = _hash_file(src_str)
+    member_name = arcname or os.path.basename(src_str)
+    dest_dir = os.path.dirname(dst_str) or "."
+    os.makedirs(dest_dir, exist_ok=True)
+    orig_zip_name = os.path.basename(dst_str)
+    current_dst = dst_str
+
+    max_attempts = MAX_ATTEMPTS if IS_WINDOWS else 15
+    for attempt in range(max_attempts):
+        stage_zip = os.path.join(dest_dir, f".tmp_archive_{uuid.uuid4().hex}.zip")
+        try:
+            with zipfile.ZipFile(
+                stage_zip, mode="w", compression=zipfile.ZIP_DEFLATED
+            ) as zf:
+                zf.write(src_str, arcname=member_name)
+            _fsync_path(stage_zip)
+
+            with zipfile.ZipFile(stage_zip, mode="r") as zf_check:
+                bad_member = zf_check.testzip()
+                if bad_member is not None:
+                    raise RuntimeError(
+                        f"ZIP integrity check failed on member '{bad_member}'"
+                    )
+                digest = hashlib.sha256()
+                with zf_check.open(member_name, "r") as member_fh:
+                    for block in iter(lambda: member_fh.read(1024 * 1024), b""):
+                        digest.update(block)
+                if digest.hexdigest() != src_sha:
+                    raise RuntimeError(
+                        f"Archived member SHA-256 mismatch for '{src_str}'"
+                    )
+
+            zip_sha = _hash_file(stage_zip)
+            _rename_noreplace(stage_zip, current_dst)
+            _fsync_path(dest_dir)
+            if _hash_file(current_dst) != zip_sha:
+                resilient_remove(current_dst)
+                raise RuntimeError(
+                    f"Published ZIP SHA-256 mismatch for '{current_dst}'"
+                )
+            return current_dst, src_sha, zip_sha
+        except FileExistsError:
+            if os.path.lexists(stage_zip):
+                resilient_remove(stage_zip)
+            if not allow_rename_on_collision or attempt == max_attempts - 1:
+                raise
+            current_dst = os.path.normpath(get_safe_path(dest_dir, orig_zip_name, None))
+        except Exception:
+            if os.path.lexists(stage_zip):
+                try:
+                    resilient_remove(stage_zip)
+                except OSError:
+                    pass
+            raise
+
+    raise RuntimeError(
+        f"Exhausted archive collision attempts for {src_str} -> {dst_str}"
+    )
+
+
+def write_verified_utf8_file(
+    content: str,
+    dst: str | os.PathLike,
+    *,
+    mode: int = 0o600,
+    allow_rename_on_collision: bool = True,
+) -> tuple[str, str]:
+    """Write ``content`` as UTF-8 via a staged temp file, fsync, verify SHA-256, and publish.
+
+    Returns ``(actual_dst, dst_sha256)``.
+    """
+    from app.core.mover import get_safe_path
+
+    dst_str = os.fspath(dst)
+    dest_dir = os.path.dirname(dst_str) or "."
+    os.makedirs(dest_dir, exist_ok=True)
+    payload = content.encode("utf-8")
+    expected_sha = hashlib.sha256(payload).hexdigest()
+    orig_filename = os.path.basename(dst_str)
+    current_dst = dst_str
+
+    max_attempts = MAX_ATTEMPTS if IS_WINDOWS else 15
+    for attempt in range(max_attempts):
+        stage_path = os.path.join(dest_dir, f".tmp_utf8_{uuid.uuid4().hex}")
+        try:
+            with open(stage_path, "wb") as fh:
+                fh.write(payload)
+                fh.flush()
+                os.fsync(fh.fileno())
+            _set_posix_mode(stage_path, mode)
+            if _hash_file(stage_path) != expected_sha:
+                raise RuntimeError(f"Staged UTF-8 write verification failed: {dst_str}")
+            _rename_noreplace(stage_path, current_dst)
+            _fsync_path(dest_dir)
+            if _hash_file(current_dst) != expected_sha:
+                resilient_remove(current_dst)
+                raise RuntimeError(
+                    f"Published UTF-8 write verification failed: {current_dst}"
+                )
+            return current_dst, expected_sha
+        except FileExistsError:
+            if os.path.lexists(stage_path):
+                resilient_remove(stage_path)
+            if not allow_rename_on_collision or attempt == max_attempts - 1:
+                raise
+            current_dst = os.path.normpath(get_safe_path(dest_dir, orig_filename, None))
+        except Exception:
+            if os.path.lexists(stage_path):
+                try:
+                    resilient_remove(stage_path)
+                except OSError:
+                    pass
+            raise
+
+    raise RuntimeError(
+        f"Exhausted UTF-8 write collision attempts for destination '{dst_str}'"
+    )

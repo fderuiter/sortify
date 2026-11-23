@@ -113,11 +113,14 @@ class PolicyRule(TypedDict):
             "action",
             "compliance",
             "unarchive",
+            "copy",
+            "ignore",
         ],
         Field(
             description=(
-                "Rule evaluation strategy: 'keyword', 'action', 'compliance', or 'unarchive' "
-                "match filenames and document text; 'pattern' matches lowercase filenames only; "
+                "Rule evaluation strategy: 'keyword', 'action', 'compliance', 'unarchive', "
+                "'copy', or 'ignore' match filenames and document text (with glob mask support "
+                "for 'unarchive', 'copy', and 'ignore'); 'pattern' matches lowercase filenames only; "
                 "'override' matches lowercase filenames or full file paths."
             )
         ),
@@ -163,7 +166,15 @@ class PolicyRule(TypedDict):
     ]
     action: NotRequired[
         Annotated[
-            Literal["archive", "retain", "quarantine", "redact", "unarchive"],
+            Literal[
+                "archive",
+                "retain",
+                "quarantine",
+                "redact",
+                "unarchive",
+                "copy",
+                "ignore",
+            ],
             Field(
                 description="Optional lifecycle directive executed when the policy matches."
             ),
@@ -825,19 +836,34 @@ class Settings(BaseSettings):
                 "action",
                 "compliance",
                 "unarchive",
+                "copy",
+                "ignore",
             ):
                 raise ValueError(
-                    f"Invalid policy type: {rule_type}. Must be keyword, pattern, override, action, compliance, or unarchive."
+                    f"Invalid policy type: {rule_type}. Must be keyword, pattern, override, action, compliance, unarchive, copy, or ignore."
                 )
 
             expression = rule.get("expression")
             if not isinstance(expression, str) or not expression.strip():
                 raise ValueError("Policy expression must be a non-empty string.")
 
+            raw_action_val = rule.get("action")
+            is_ignore_rule = rule_type == "ignore" or (
+                isinstance(raw_action_val, str)
+                and raw_action_val.strip().lower() == "ignore"
+            )
             target_path = rule.get("target_path")
+            if target_path is None and is_ignore_rule and "target_path" not in rule:
+                target_path = ""
             if target_path is None or not isinstance(target_path, str):
                 raise ValueError("Policy target_path must be a string.")
             validate_target_path(target_path, keyword=expression)
+
+            post_target = rule.get("post_unarchive_target")
+            if post_target is not None:
+                if not isinstance(post_target, str):
+                    raise ValueError("Policy post_unarchive_target must be a string.")
+                validate_target_path(post_target, keyword=expression)
 
             if (
                 "priority" not in rule
@@ -882,7 +908,8 @@ class Settings(BaseSettings):
                     raise ValueError(f"Invalid post_unarchive_action: {post_act}.")
 
             needs_copy = (
-                ("action" in rule and rule["action"] is None)
+                ("target_path" not in rule and is_ignore_rule)
+                or ("action" in rule and rule["action"] is None)
                 or (isinstance(action, str) and action != action.lower())
                 or (
                     "post_unarchive_action" in rule
@@ -896,6 +923,8 @@ class Settings(BaseSettings):
             )
             if needs_copy:
                 updated_rule = dict(rule)
+                if "target_path" not in updated_rule and is_ignore_rule:
+                    updated_rule["target_path"] = ""
                 if "action" in updated_rule:
                     if updated_rule["action"] is None:
                         updated_rule.pop("action")

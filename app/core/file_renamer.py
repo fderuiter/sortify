@@ -418,7 +418,13 @@ class FileRenamerEngine:
                             "target_filename": target_fn,
                         }
                     elif isinstance(v, dict):
-                        v["target_filename"] = target_fn
+                        if v.get("action") not in (
+                            "unarchive",
+                            "archive",
+                            "ignore",
+                            "quarantine",
+                        ):
+                            v["target_filename"] = target_fn
                 elif isinstance(v, dict) and not is_file:
                     _traverse(v)
 

@@ -76,6 +76,10 @@ PRIVATE_KEY_PATTERN = re.compile(
 )
 SSN_PATTERN = re.compile(r"\b\d{3}-\d{2}-\d{4}\b")
 CREDIT_CARD_PATTERN = re.compile(r"\b(?:\d[ -]*?){13,16}\b")
+EMAIL_PII_PATTERN = re.compile(r"\b[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\.[A-Za-z]{2,}\b")
+CLINICAL_PII_PATTERN = re.compile(
+    r"(?i)(Confidential Medical Report|Subject \d+|Diagnosis:[^\n]*)"
+)
 SUB_TOKEN_PATTERN = re.compile(r"([_\-/\\])")
 
 
@@ -309,3 +313,19 @@ def sanitize_text(text: str) -> str:
     text = VERTICAL_WHITESPACE_PATTERN.sub("\n", text)
 
     return text.strip()
+
+
+def scrub_pii_text(text: object) -> str:
+    """Scrub PII, sensitive identifiers, and secret credentials from plain-text content."""
+    if not text:
+        return ""
+
+    from app.core.analyzer_strategies import redact_sensitive_text
+
+    redacted = redact_sensitive_text(str(text))
+    redacted = SSN_PATTERN.sub("[REDACTED_SSN]", redacted)
+    redacted = CREDIT_CARD_PATTERN.sub("[REDACTED_CARD]", redacted)
+    redacted = EMAIL_PII_PATTERN.sub("[REDACTED_EMAIL]", redacted)
+    redacted = CLINICAL_PII_PATTERN.sub("[REDACTED_PII]", redacted)
+    redacted = sanitize_secret_patterns(redacted, replacement="[REDACTED_SECRET]")
+    return redacted

@@ -1322,14 +1322,39 @@ class DropZoneModal(
                     ):
                         os.makedirs(src_dir, exist_ok=True)
                     outcomes.append(outcome)
-                    processed_items.append(
-                        {
-                            "path": item["path"],
-                            "summary": outcome.summary,
-                            "file_count": item.get("file_count", 1),
-                            "status": "success",
-                        }
-                    )
+                    outcome_failed = getattr(outcome, "failed", None)
+                    if isinstance(outcome_failed, (list, tuple)) and outcome_failed:
+                        err_detail = "; ".join(
+                            f"{src}: {reason}" for src, reason in outcome_failed
+                        )
+                        if outcome.moved or outcome.quarantined or outcome.skipped:
+                            processed_items.append(
+                                {
+                                    "path": item["path"],
+                                    "summary": outcome.summary,
+                                    "file_count": len(outcome.moved)
+                                    + len(outcome.quarantined)
+                                    + len(outcome.skipped),
+                                    "status": "partial",
+                                }
+                            )
+                        failed_items.append(
+                            {
+                                "path": item.get("path"),
+                                "error": err_detail,
+                                "file_count": len(outcome_failed),
+                                "status": "failed",
+                            }
+                        )
+                    else:
+                        processed_items.append(
+                            {
+                                "path": item["path"],
+                                "summary": outcome.summary,
+                                "file_count": item.get("file_count", 1),
+                                "status": "success",
+                            }
+                        )
                 except Exception as e:
                     logger.exception(
                         f"Error during dropzone relocation for {item.get('path')}: {e}"

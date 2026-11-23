@@ -59,6 +59,8 @@ EXPECTED_POLICY_TYPES = {
     "action",
     "compliance",
     "unarchive",
+    "copy",
+    "ignore",
 }
 EXPECTED_POLICY_ACTIONS = {
     "archive",
@@ -66,6 +68,8 @@ EXPECTED_POLICY_ACTIONS = {
     "quarantine",
     "redact",
     "unarchive",
+    "copy",
+    "ignore",
 }
 EXPECTED_POST_UNARCHIVE_ACTIONS = {
     "delete",

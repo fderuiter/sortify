@@ -735,6 +735,7 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
         dest_dir = getattr(args, "dest_dir", None)
         dest_abs = str(Path(dest_dir).resolve()) if dest_dir else None
         dry_run = getattr(args, "dry_run", False)
+        copy_mode = bool(getattr(args, "copy", False))
         json_output = getattr(args, "json", False)
 
         session = AppSession(settings, base_dir=str(target_path))
@@ -758,8 +759,10 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                 ),
                 "plan": serializable_plan,
             }
+            if copy_mode:
+                result["copy"] = True
         else:
-            outcome = pipeline.execute(plan)
+            outcome = pipeline.execute(plan, copy_mode=copy_mode)
             result = {
                 "status": "success",
                 "dry_run": False,
@@ -770,16 +773,23 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
                 "plan": serializable_plan,
                 "summary": outcome.summary,
             }
+            if copy_mode:
+                result["copy"] = True
 
         quiet = getattr(args, "quiet", False)
         if json_output:
             sys.stdout.write(json.dumps(result, indent=2) + "\n")
             sys.stdout.flush()
         else:
+            plan_verb = (
+                "Would copy"
+                if (dry_run and copy_mode)
+                else ("Copied" if copy_mode else ("Would move" if dry_run else "Moved"))
+            )
             _print_plan_for_humans(
                 serializable_plan,
                 target_path,
-                "Would move" if dry_run else "Moved",
+                plan_verb,
                 quiet=quiet,
             )
             if not quiet:
@@ -1286,6 +1296,7 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
             )
 
     dry_run = getattr(args, "dry_run", False)
+    copy_mode = bool(getattr(args, "copy", False))
     quiet = getattr(args, "quiet", False)
 
     processed_results = []
@@ -1315,7 +1326,7 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
                 summary = {"status": "dry_run", "plan": serializable_plan}
             else:
                 src_was_dir = os.path.isdir(base_dir)
-                summary = pipeline.execute(plan).summary
+                summary = pipeline.execute(plan, copy_mode=copy_mode).summary
                 if (
                     resolved_dest
                     and src_was_dir
@@ -1485,6 +1496,12 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         default=False,
         help="Run in non-interactive mode and bypass interactive modal dialogs",
     )
+    parser.add_argument(
+        "--copy",
+        action="store_true",
+        default=False,
+        help="Copy files into target folders instead of moving originals",
+    )
 
     subparsers = parser.add_subparsers(dest="subcommand", help="Available subcommands")
 
@@ -1617,6 +1634,12 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         action="store_true",
         help="Perform dry run analysis without executing physical moves",
     )
+    parser_sort.add_argument(
+        "--copy",
+        action="store_true",
+        default=False,
+        help="Copy files into target folders instead of moving originals",
+    )
     add_common_override_args(parser_sort)
 
     # Subcommand: scan
@@ -1747,6 +1770,12 @@ def build_parser(prog: str | None = "smart-autosorter") -> argparse.ArgumentPars
         "--dry-run",
         action="store_true",
         help="Perform dry run analysis without executing physical moves",
+    )
+    parser_drop.add_argument(
+        "--copy",
+        action="store_true",
+        default=False,
+        help="Copy files into target folders instead of moving originals",
     )
     parser_drop.add_argument(
         "--json",

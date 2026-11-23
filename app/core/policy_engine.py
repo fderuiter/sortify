@@ -89,7 +89,15 @@ class PolicyEvaluationResult(BaseModel):
 class PolicyEngine:
     """Standalone evaluation engine for enforcing compliance overrides on folder locks and lifecycle policy actions."""
 
-    SUPPORTED_ACTIONS = {"archive", "retain", "quarantine", "redact", "unarchive"}
+    SUPPORTED_ACTIONS = {
+        "archive",
+        "retain",
+        "quarantine",
+        "redact",
+        "unarchive",
+        "copy",
+        "ignore",
+    }
 
     @staticmethod
     def validate_policy_action(action: str) -> bool:
@@ -97,6 +105,33 @@ class PolicyEngine:
         if not action or not isinstance(action, str):
             return False
         return action.lower() in PolicyEngine.SUPPORTED_ACTIONS
+
+    @staticmethod
+    def resolve_effective_action(rule: Any) -> str | None:
+        """Resolve the normalized lifecycle action for a policy rule dictionary or model."""
+        if rule is None:
+            return None
+        raw_action = (
+            rule.get("action")
+            if isinstance(rule, dict)
+            else getattr(rule, "action", None)
+        )
+        if raw_action is None and hasattr(rule, "get"):
+            raw_action = rule.get("action")
+        if isinstance(raw_action, str) and raw_action.strip():
+            act = raw_action.strip().lower()
+            if act in PolicyEngine.SUPPORTED_ACTIONS:
+                return act
+        raw_type = (
+            rule.get("type", "")
+            if isinstance(rule, dict) or hasattr(rule, "get")
+            else getattr(rule, "type", "")
+        )
+        if isinstance(raw_type, str):
+            t_low = raw_type.strip().lower()
+            if t_low in ("unarchive", "copy", "ignore"):
+                return t_low
+        return None
 
     @staticmethod
     def contains_secrets(text: str) -> bool:
@@ -133,13 +168,13 @@ class PolicyEngine:
                 file_path
             ) or PolicyEngine.contains_secrets(doc_text_str)
 
-        if rule_type == "unarchive":
+        if rule_type in ("unarchive", "copy", "ignore"):
             if expression:
                 if match_pattern_expression(expression, fn_only):
                     return True
                 text_to_search = fn_only if status_match else (fn_only + " " + dl_lower)
                 return expression in text_to_search
-            return bool(rule.get("action"))
+            return bool(PolicyEngine.resolve_effective_action(rule))
         if rule_type in ("keyword", "action", "compliance", ""):
             if expression:
                 text_to_search = fn_only if status_match else (fn_only + " " + dl_lower)
