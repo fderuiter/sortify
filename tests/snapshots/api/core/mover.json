@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "e67beb914915a5a7dedb5e58fc1b1fa07d77d35c493e4e91ae60c817b5b7472a"
+    "checksum": "3986ad7d041b1f642519c44387db760f52d76e7992cde15ab3442217d35044d1"
   },
   "classes": [
     {
@@ -18,12 +18,12 @@
               "name": "self"
             },
             {
-              "annotation": "int",
+              "annotation": "int | None",
               "default": "None",
               "name": "max_workers"
             },
             {
-              "annotation": "int",
+              "annotation": "int | None",
               "default": "None",
               "name": "chunk_size"
             }
@@ -91,7 +91,7 @@
               "name": "cancellation_token"
             },
             {
-              "annotation": "str",
+              "annotation": "str | None",
               "default": "None",
               "name": "priority"
             },
@@ -561,12 +561,12 @@
           "name": "batch_size"
         },
         {
-          "annotation": "int",
+          "annotation": "int | None",
           "default": "None",
           "name": "chunk_size"
         },
         {
-          "annotation": "int",
+          "annotation": "int | None",
           "default": "None",
           "name": "max_workers"
         },
@@ -586,7 +586,7 @@
           "name": "cancellation_token"
         },
         {
-          "annotation": "str",
+          "annotation": "str | None",
           "default": "None",
           "name": "priority"
         },
@@ -654,12 +654,12 @@
           "name": "batch_size"
         },
         {
-          "annotation": "int",
+          "annotation": "int | None",
           "default": "None",
           "name": "chunk_size"
         },
         {
-          "annotation": "int",
+          "annotation": "int | None",
           "default": "None",
           "name": "max_workers"
         },
@@ -679,7 +679,7 @@
           "name": "cancellation_token"
         },
         {
-          "annotation": "str",
+          "annotation": "str | None",
           "default": "None",
           "name": "priority"
         },
@@ -707,7 +707,7 @@
           "name": "filename"
         },
         {
-          "annotation": "str",
+          "annotation": "str | None",
           "default": "None",
           "name": "source_path"
         }

@@ -378,7 +378,7 @@ def is_subpath_or_equal(child: str, parent: str) -> bool:
     return False
 
 
-def get_safe_path(dest_dir: str, filename: str, source_path: str = None) -> str:
+def get_safe_path(dest_dir: str, filename: str, source_path: str | None = None) -> str:
     """Generate a safe file path to avoid overwriting existing files."""
     base, extension = os.path.splitext(filename)
     counter = 1
@@ -518,7 +518,7 @@ def _resolve_pending_links(
     pending_links: list,
     path_map: dict,
     db=None,
-    session_id: str = None,
+    session_id: str | None = None,
 ) -> None:
     """Secondary pass: resolve and update shortcut/link targets after all physical moves in batch complete."""
     if not pending_links:
@@ -799,7 +799,7 @@ def _remove_empty_dirs(path: str, protected_paths: list[str] | None = None):
 
 
 def _prune_emptied_dirs(
-    dirs: set, base_dir: str, protected_paths: list[str] = None
+    dirs: set, base_dir: str, protected_paths: list[str] | None = None
 ) -> None:
     """Remove the given directories, and then their parents, while they are empty.
 
@@ -1212,9 +1212,9 @@ def _process_move_item(
     history_manager,
     db_lock: threading.Lock,
     db_updates_batch: list,
-    audit_records: list = None,
-    pending_links: list = None,
-    chunk_hash_map: dict = None,
+    audit_records: list | None = None,
+    pending_links: list | None = None,
+    chunk_hash_map: dict | None = None,
 ) -> bool:
     """Execute a single physical move and SHA-256 hash calculation off-thread."""
     source_path = item["source_path"]
@@ -1605,7 +1605,7 @@ def _process_move_item(
 class AsyncMoveEngine(LifecycleTelemetryMixin):
     """Asynchronous Chunked Thread Pool Execution Engine for file relocation."""
 
-    def __init__(self, max_workers: int = None, chunk_size: int = None):
+    def __init__(self, max_workers: int | None = None, chunk_size: int | None = None):
         self.max_workers = max_workers
         self.chunk_size = chunk_size
         self._state_lock = threading.RLock()
@@ -1666,7 +1666,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
         cancel_check=None,
         cancel_event=None,
         cancellation_token=None,
-        priority: str = None,
+        priority: str | None = None,
         progress_callback=None,
         pipeline: Any = None,
         **kwargs: Any,
@@ -2199,12 +2199,12 @@ def execute_moves(
     runtime_settings=None,
     resume: bool = False,
     batch_size: int = 50,
-    chunk_size: int = None,
-    max_workers: int = None,
+    chunk_size: int | None = None,
+    max_workers: int | None = None,
     cancel_check=None,
     cancel_event=None,
     cancellation_token=None,
-    priority: str = None,
+    priority: str | None = None,
     progress_callback=None,
     source_dirs: list[str] | None = None,
     pipeline: Any = None,
@@ -2262,12 +2262,12 @@ async def execute_moves_async(
     runtime_settings=None,
     resume: bool = False,
     batch_size: int = 50,
-    chunk_size: int = None,
-    max_workers: int = None,
+    chunk_size: int | None = None,
+    max_workers: int | None = None,
     cancel_check=None,
     cancel_event=None,
     cancellation_token=None,
-    priority: str = None,
+    priority: str | None = None,
     progress_callback=None,
 ) -> dict:
     """Asynchronously execute move operations off the main event loop thread.

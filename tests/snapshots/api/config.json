@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "0cfb158ea729f1c571b7066e3f5fac4f984e3158106fa67568253646ed60f63f"
+    "checksum": "c24a6ba61a0323dd4ae9a6ae2a61e50d51e096d3df00c418fb8d7f038e6472f8"
   },
   "classes": [
     {
@@ -63,7 +63,7 @@
               "name": "cls"
             },
             {
-              "annotation": "str",
+              "annotation": "str | None",
               "default": "None",
               "name": "key"
             }

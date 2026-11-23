@@ -807,7 +807,7 @@ class SettingsModal(
         v_count = _get_vector_count(db_inst)
         footprint_mb = _get_model_cache_footprint_mb()
 
-        def _on_scrub_modal_result(confirmed: bool) -> None:
+        def _on_scrub_modal_result(confirmed: bool | None) -> None:
             if confirmed:
                 self._execute_scrub_and_purge()
 
@@ -824,16 +824,17 @@ class SettingsModal(
             v_count = _get_vector_count(db_inst)
             footprint_mb = _get_model_cache_footprint_mb()
 
-            def _on_revoke_modal_result(confirmed: bool) -> None:
+            def _on_revoke_modal_result(confirmed: bool | None) -> None:
                 if confirmed:
                     if self.settings:
                         self.settings.AI_CONSENT_GRANTED = False
-                    if (
-                        hasattr(self, "app")
-                        and hasattr(self.app, "settings")
-                        and self.app.settings
-                    ):
-                        self.app.settings.AI_CONSENT_GRANTED = False
+                    app_settings = (
+                        getattr(self.app, "settings", None)
+                        if hasattr(self, "app")
+                        else None
+                    )
+                    if app_settings is not None:
+                        app_settings.AI_CONSENT_GRANTED = False
                     self._execute_scrub_and_purge()
                     if hasattr(self, "announce"):
                         self.announce(
@@ -876,8 +877,9 @@ class SettingsModal(
             pass
 
         try:
-            if hasattr(self, "app") and hasattr(self.app, "db") and self.app.db:
-                self.app.db.clear_all_document_vectors()
+            app_db = getattr(self.app, "db", None) if hasattr(self, "app") else None
+            if app_db is not None:
+                app_db.clear_all_document_vectors()
         except Exception:
             pass
 

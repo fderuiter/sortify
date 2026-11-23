@@ -224,8 +224,9 @@ class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
                 self.announce(msg)
                 if hasattr(self.app, "notify"):
                     self.app.notify(msg)
-                if hasattr(self.app, "action_scan_directory"):
-                    self.app.action_scan_directory()
+                scan_fn = getattr(self.app, "action_scan_directory", None)
+                if callable(scan_fn):
+                    scan_fn()
             except Exception as exc:
                 err_msg = f"Failed to apply starter rule template pack(s): {exc}"
                 self.announce(err_msg)
@@ -966,9 +967,10 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
     ) -> None:
         """Cycle resolution strategy for the selected conflict row."""
         row_key = None
-        if hasattr(event, "row_key") and event.row_key and event.row_key.value:
-            row_key = str(event.row_key.value)
-        elif hasattr(event, "coordinate") and event.coordinate:
+        if isinstance(event, DataTable.RowSelected):
+            if event.row_key and event.row_key.value:
+                row_key = str(event.row_key.value)
+        elif isinstance(event, DataTable.CellSelected):
             try:
                 dt_conf = self.query_one("#dt-rule-conflicts", DataTable)
                 rk = dt_conf.coordinate_to_cell_key(event.coordinate).row_key

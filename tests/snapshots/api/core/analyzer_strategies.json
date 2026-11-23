@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "ec855d3b39fce20201f691ab7510a895ace958c950d7494f91977928418d865f"
+    "checksum": "18abd24acecca221aa6d0f6fb310b11ab216e16d17cfeb79eb16fa2f3793c791"
   },
   "classes": [
     {
@@ -142,7 +142,7 @@
               "name": "self"
             },
             {
-              "annotation": "str",
+              "annotation": "str | None",
               "default": "None",
               "name": "model_path"
             }

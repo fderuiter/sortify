@@ -470,18 +470,20 @@ class IncrementalAnalyzer:
         stop_words: set,
         db,
         strategy_name: str = "generative",
-        model_path: str | None = _UNSPECIFIED,
+        model_path: str | object | None = _UNSPECIFIED,
     ) -> None:
         self.db = db
         self.max_folders = max_folders
         self.stop_words = stop_words
         self.strategy_name = strategy_name
-        self.model_path = model_path
+        self.model_path: str | None = (
+            model_path if isinstance(model_path, str) else None
+        )
         self.model_name = None
         self.corpus = {}
         self._last_reconstruction_error = 0.0
 
-        if self.model_path is _UNSPECIFIED:
+        if model_path is _UNSPECIFIED:
             self.model_path = None
             from app.core.path_utils import get_meipass_dir
 

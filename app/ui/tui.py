@@ -6,7 +6,7 @@ import logging
 import os
 import sys
 from pathlib import Path
-from typing import Any, Optional
+from typing import TYPE_CHECKING, Any, Optional
 
 from textual import events, on, work
 from textual.app import App, ComposeResult
@@ -82,6 +82,7 @@ from app.ui.modals.settings import (
 )
 from app.ui.modals.settings import _get_vector_count as _get_vector_count
 from app.ui.modals.wizard import WizardModal
+from app.ui.protocols import TUIHostProtocol as TUIHostProtocol
 from app.ui.widgets.density_slider import DensitySlider as DensitySlider
 from app.ui.widgets.labeled_switch import LabeledSwitch as LabeledSwitch
 from app.ui.widgets.path_diff import (
@@ -387,22 +388,23 @@ class AutoSorterTUI(
         self.plan: dict[str, Any] = {}
         self.locked_files: dict[str, str] = {}
         self._ratings_cache: dict[str, str] = {}
-        self.app_session = None
-        self.active_tree_node = None
+        self.app_session: Optional[Any] = None
+        self.pipeline: Optional[Any] = None
+        self.active_tree_node: Optional[TreeNode[Any]] = None
         self.visual_select_active: bool = False
-        self.visual_selected_nodes: list = []
+        self.visual_selected_nodes: list[TreeNode[Any]] = []
         self._wizard_dismissed_this_session: bool = False
         self.verification_result: dict[str, Any] = {}
         self.has_critical_errors: bool = False
-        self.critical_error_paths: set = set()
-        self.warning_paths: set = set()
-        self.collision_paths: set = set()
+        self.critical_error_paths: set[str] = set()
+        self.warning_paths: set[str] = set()
+        self.collision_paths: set[str] = set()
         self._daemon_state: str = "idle"
         self._daemon_is_moving: bool = False
 
     def compose(self) -> ComposeResult:
         """Compose main dual-pane TUI layout."""
-        yield Heading(self.TITLE, level=1, id="app-title-heading")
+        yield Heading(self.TITLE or "", level=1, id="app-title-heading")
         yield Header(show_clock=True)
         with Horizontal(id="main-dual-pane"):
             with Vertical(id="left-tree-pane"):
@@ -1055,13 +1057,14 @@ class AutoSorterTUI(
         except Exception as e:
             logger.debug(f"Error updating onboarding CTA visibility: {e}")
 
-    def _get_active_node(self) -> Optional[TreeNode]:
+    def _get_active_node(self) -> Optional[TreeNode[Any]]:
         try:
             tree = self.query_one("#plan-tree", Tree)
             if tree.cursor_node and tree.cursor_node.data:
                 return tree.cursor_node
-            if getattr(self, "active_tree_node", None) and self.active_tree_node.data:
-                return self.active_tree_node
+            active_node = getattr(self, "active_tree_node", None)
+            if active_node is not None and active_node.data:
+                return active_node
         except Exception:
             pass
         return None
@@ -1886,6 +1889,12 @@ class AutoSorterTUI(
     async def action_quit(self) -> None:
         """Quit application [Ctrl+Q], from any focused widget."""
         await super().action_quit()
+
+
+if TYPE_CHECKING:
+
+    def _verify_tui_host_protocol(host: AutoSorterTUI) -> TUIHostProtocol:
+        return host
 
 
 def run_tui(

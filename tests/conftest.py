@@ -208,7 +208,7 @@ def block_live_external_downloads(monkeypatch):
 
     orig_get_opener = DownloadManager.get_opener
 
-    def _guarded_get_opener(self, proxy: str = None):
+    def _guarded_get_opener(self, proxy: str | None = None):
         opener = orig_get_opener(self, proxy)
         if type(opener) is urllib.request.OpenerDirector:
 

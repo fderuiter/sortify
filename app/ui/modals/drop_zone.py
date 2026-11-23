@@ -1348,8 +1348,14 @@ class DropZoneModal(
                     except Exception:
                         pass
 
-            succeeded_files = sum(i["file_count"] for i in processed_items)
-            failed_files = sum(i["file_count"] for i in failed_items)
+            succeeded_files = sum(
+                int(fc) if isinstance(fc := i.get("file_count"), (int, str)) else 0
+                for i in processed_items
+            )
+            failed_files = sum(
+                int(fc) if isinstance(fc := i.get("file_count"), (int, str)) else 0
+                for i in failed_items
+            )
             total_items = len(pending)
 
             if not failed_items:
