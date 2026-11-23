@@ -964,7 +964,15 @@ class MoveLedger(LifecycleTelemetryMixin):
                             elif upd["type"] == "document_path" and hasattr(
                                 db, "update_document_path"
                             ):
-                                db.update_document_path(*upd["args"])
+                                if upd.get("clear_verified_target"):
+                                    try:
+                                        db.update_document_path(
+                                            *upd["args"], clear_verified_target=True
+                                        )
+                                    except TypeError:
+                                        db.update_document_path(*upd["args"])
+                                else:
+                                    db.update_document_path(*upd["args"])
                         except Exception as exc:  # noqa: BLE001
                             logger.debug("Reconciliation DB update skipped: %s", exc)
 
@@ -1013,7 +1021,12 @@ class MoveLedger(LifecycleTelemetryMixin):
                     )
                 else:
                     if db and base_dir:
-                        target_folder = os.path.dirname(dst_rel).replace("\\", "/")
+                        raw_folder = (
+                            os.path.dirname(dst_rel).replace("\\", "/").strip("/")
+                        )
+                        target_folder = (
+                            raw_folder if raw_folder and raw_folder != "." else None
+                        )
                         if expected_hash:
                             pending_db_updates.append(
                                 {
@@ -1056,6 +1069,7 @@ class MoveLedger(LifecycleTelemetryMixin):
                         {
                             "type": "document_path",
                             "args": (base_dir, src_rel, src_rel),
+                            "clear_verified_target": True,
                         }
                     )
                 pending_completions.append(
@@ -1080,6 +1094,7 @@ class MoveLedger(LifecycleTelemetryMixin):
                                 {
                                     "type": "document_path",
                                     "args": (base_dir, src_rel, src_rel),
+                                    "clear_verified_target": True,
                                 }
                             )
                         pending_completions.append(
@@ -1121,6 +1136,7 @@ class MoveLedger(LifecycleTelemetryMixin):
                             {
                                 "type": "document_path",
                                 "args": (base_dir, src_rel, src_rel),
+                                "clear_verified_target": True,
                             }
                         )
                     pending_completions.append(

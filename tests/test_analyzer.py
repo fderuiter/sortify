@@ -159,14 +159,15 @@ def test_naming_collision_resolution():
 
 def test_conflict_detection():
     db.clear("test_conflict_base")
-    # File matches both a keyword rule and has a historical override
+    # File matches both a keyword rule and has an unlocked historical assignment
     # keyword rule: "invoice" -> "Accounting"
-    # historical override: "Archive"
+    # unlocked historical assignment: "Archive"
+    # Per CONTEXT.md precedence, keyword rules beat unlocked history while flagging the conflict.
 
     analyzer = IncrementalAnalyzer(max_folders=2, stop_words={"the", "and"}, db=db)
     corpus = {"invoice_2025.txt": "Some invoice text"}
 
-    # Put document in DB with an assigned folder (historical override)
+    # Put document in DB with an assigned folder (unlocked historical target)
     db.upsert_document(
         "test_conflict_base", "invoice_2025.txt", "hash123", "Some invoice text"
     )
@@ -178,10 +179,11 @@ def test_conflict_detection():
 
     plan = analyzer.generate_sorting_plan("test_conflict_base", settings)
 
-    # invoice_2025.txt should be in the plan under 'Archive' and flagged as conflicted
+    # invoice_2025.txt should route to 'Accounting' (keyword rule > unlocked history) and retain conflict metadata
     plan_dict = plan.plan if hasattr(plan, "plan") else plan
-    assert "Archive" in plan_dict
-    file_info = plan_dict["Archive"]["invoice_2025.txt"]
+    assert "Accounting" in plan_dict
+    assert "Archive" not in plan_dict
+    file_info = plan_dict["Accounting"]["invoice_2025.txt"]
     assert (
         getattr(file_info, "is_conflicted", None)
         or (file_info.get("is_conflicted") if isinstance(file_info, dict) else None)
@@ -194,6 +196,15 @@ def test_conflict_detection():
         getattr(file_info, "historical_path", None)
         or (file_info.get("historical_path") if isinstance(file_info, dict) else None)
     ) == "Archive"
+
+    # Explicit locked_files override still takes precedence over keyword rules
+    locked_plan = analyzer.generate_sorting_plan(
+        "test_conflict_base", settings, locked_files={"invoice_2025.txt": "Archive"}
+    )
+    locked_dict = locked_plan.plan if hasattr(locked_plan, "plan") else locked_plan
+    assert "Archive" in locked_dict
+    assert "invoice_2025.txt" in locked_dict["Archive"]
+    assert "Accounting" not in locked_dict
 
 
 def test_conflict_resolution():

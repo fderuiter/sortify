@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "184e23cd929bf7da0bb9412d30fce9384713247f53a7c5612bedf6c590184a18"
+    "checksum": "c8b66a9dbeb2202daf3729ddb3862ac07ab6b23eee690a5bbf43a7c27d7827be"
   },
   "classes": [
     {
@@ -798,6 +798,11 @@
               "annotation": null,
               "default": null,
               "name": "new_filepath"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "clear_verified_target"
             }
           ],
           "returns": null

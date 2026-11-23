@@ -199,7 +199,7 @@ class BoundedMemoryCache(Generic[K, V]):
                 return False
             # A key found in the cache has the cache's key type.
             k = cast(K, key)
-            val, expire_time = self._cache[k]
+            _val, expire_time = self._cache[k]
             if self._is_expired(expire_time):
                 self._remove_item(k, call_on_evict=True)
                 return False

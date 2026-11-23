@@ -37,6 +37,19 @@ ELIGIBLE_DOCUMENT_EXTENSIONS = (
 )
 
 
+def _normalize_verified_target_folder(folder: str | None) -> str | None:
+    """Normalize empty, dot, or root-only folder targets to None."""
+    if folder is None:
+        return None
+    norm = str(folder).strip().replace("\\", "/")
+    if not norm or norm in (".", "./"):
+        return None
+    stripped = norm.strip("/")
+    if not stripped or stripped == ".":
+        return None
+    return norm
+
+
 def _main_db_baseline(conn) -> None:
     """Bring a new or pre-migration main database to the schema of version 7.
 
@@ -418,7 +431,7 @@ class Database:
             norm_fp = fp.replace("\\", "/")
             reverse_norm.setdefault(norm_fp, []).append(fp)
 
-        result = {orig_fp: "" for orig_fp in filepaths}
+        result = dict.fromkeys(filepaths, "")
 
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
@@ -933,6 +946,7 @@ class Database:
 
     def set_user_verified_target(self, base_dir, file_hash, target_path):
         """Record the historical folder assignment for a specific document hash."""
+        target_path = _normalize_verified_target_folder(target_path)
         precomputed_counts_map = {}
         cached_texts_to_tokenize: list[tuple[str, str]] = []
         cached_hit = False
@@ -1078,13 +1092,27 @@ class Database:
 
         self.worker.execute_write(_write)
 
-    def update_document_path(self, base_dir, old_filepath, new_filepath):
-        """Update a document's path and historical assignment when moved."""
+    def update_document_path(
+        self,
+        base_dir,
+        old_filepath,
+        new_filepath,
+        clear_verified_target: bool = False,
+    ):
+        """Update a document's path and historical assignment when moved.
+
+        When ``clear_verified_target`` is True (or the destination directory is
+        empty), ``user_verified_target_path`` is cleared to ``NULL``.
+        """
         import os
 
         old_filepath = old_filepath.replace("\\", "/")
         new_filepath = new_filepath.replace("\\", "/")
-        new_dir = os.path.dirname(new_filepath).replace("\\", "/")
+        new_dir = (
+            None
+            if clear_verified_target
+            else _normalize_verified_target_folder(os.path.dirname(new_filepath))
+        )
 
         ext_text = None
         cached_row_found = False
@@ -1171,7 +1199,9 @@ class Database:
                                 decrypted_text = self.crypto.decrypt_text(row[0])
                             except Exception:
                                 decrypted_text = None
-                    if self._is_tfidf_eligible(new_filepath, decrypted_text):
+                    if new_dir and self._is_tfidf_eligible(
+                        new_filepath, decrypted_text
+                    ):
                         conn.execute(
                             "UPDATE tfidf_doc_terms SET filepath = ? WHERE base_dir = ? AND filepath = ?",
                             (new_filepath, base_dir, old_filepath),
@@ -1249,6 +1279,7 @@ class Database:
     def set_user_verified_target_path(self, base_dir, filepath, target_path):
         """Record the historical folder assignment for a specific document path."""
         filepath = filepath.replace("\\", "/")
+        target_path = _normalize_verified_target_folder(target_path)
         self._populate_cache_if_needed(base_dir)
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
@@ -1506,6 +1537,7 @@ class Database:
         for item in updates:
             if item["type"] == "verified_target":
                 base_dir, file_hash, target_path = item["args"]
+                target_path = _normalize_verified_target_folder(target_path)
                 cursor = conn.execute(
                     "SELECT filepath FROM documents WHERE base_dir = ? AND file_hash = ?",
                     (base_dir, file_hash),
@@ -1527,11 +1559,18 @@ class Database:
                     )
             elif item["type"] == "document_path":
                 base_dir, old_filepath, new_filepath = item["args"]
+                clear_vt = bool(item.get("clear_verified_target", False))
                 old_filepath = old_filepath.replace("\\", "/")
                 new_filepath = new_filepath.replace("\\", "/")
                 import os
 
-                new_dir = os.path.dirname(new_filepath).replace("\\", "/")
+                new_dir = (
+                    None
+                    if clear_vt
+                    else _normalize_verified_target_folder(
+                        os.path.dirname(new_filepath)
+                    )
+                )
                 self._drop_stale_destination_row_conn(
                     conn, base_dir, old_filepath, new_filepath
                 )
@@ -1550,12 +1589,12 @@ class Database:
                 )
                 was_in = cursor.fetchone() is not None
                 if was_in:
-                    if self._is_tfidf_eligible_extension(
+                    if not new_dir or not self._is_tfidf_eligible_extension(
                         new_filepath
-                    ) and self._is_tfidf_eligible_extension(old_filepath):
-                        still_eligible = True
-                    elif not self._is_tfidf_eligible_extension(new_filepath):
+                    ):
                         still_eligible = False
+                    elif self._is_tfidf_eligible_extension(old_filepath):
+                        still_eligible = True
                     else:
                         cursor = conn.execute(
                             "SELECT extracted_text FROM documents WHERE base_dir = ? AND filepath = ?",
@@ -1626,6 +1665,7 @@ class Database:
         for item in updates or ():
             if item["type"] == "verified_target":
                 base_dir, file_hash, target_path = item["args"]
+                target_path = _normalize_verified_target_folder(target_path)
                 if target_path:
                     try:
                         if conn_read is None:
@@ -1649,11 +1689,18 @@ class Database:
                         pass
             elif item["type"] == "document_path":
                 base_dir, old_filepath, new_filepath = item["args"]
+                clear_vt = bool(item.get("clear_verified_target", False))
                 old_filepath = old_filepath.replace("\\", "/")
                 new_filepath = new_filepath.replace("\\", "/")
                 import os
 
-                new_dir = os.path.dirname(new_filepath).replace("\\", "/")
+                new_dir = (
+                    None
+                    if clear_vt
+                    else _normalize_verified_target_folder(
+                        os.path.dirname(new_filepath)
+                    )
+                )
                 if new_dir:
                     try:
                         ext_text = None
@@ -1662,9 +1709,19 @@ class Database:
                                 self._cached_base_dir == base_dir
                                 and self._cached_documents is not None
                             ):
-                                cached_row = self._cached_documents.get(old_filepath)
-                                if cached_row:
-                                    ext_text = cached_row[2]
+                                if hasattr(
+                                    self._cached_documents, "get"
+                                ) and not isinstance(self._cached_documents, list):
+                                    cached_row = self._cached_documents.get(
+                                        old_filepath
+                                    )
+                                    if cached_row:
+                                        ext_text = cached_row[1]
+                                elif isinstance(self._cached_documents, list):
+                                    for r in self._cached_documents:
+                                        if r[0] == old_filepath:
+                                            ext_text = r[1]
+                                            break
                         if ext_text is None:
                             if conn_read is None:
                                 conn_read = get_db_connection(self.db_path)

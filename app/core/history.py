@@ -6,7 +6,7 @@ import logging
 import os
 import time
 import uuid
-from collections.abc import Callable, Collection, Generator
+from collections.abc import Callable, Collection, Generator, Sequence
 from contextlib import contextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -152,7 +152,7 @@ class SessionStateMachine(LifecycleTelemetryMixin):
         if allowed is None or target not in allowed:
             raise InvalidStateTransitionError(
                 f"Invalid session lifecycle transition from '{curr}' to '{target}'. "
-                f"Allowed transitions from '{curr}': {sorted(list(allowed)) if allowed else []}"
+                f"Allowed transitions from '{curr}': {sorted(allowed) if allowed else []}"
             )
 
     def transition(
@@ -270,7 +270,7 @@ class SessionStateMachine(LifecycleTelemetryMixin):
         for listener in list(self._listeners):
             try:
                 listener(telemetry_event)
-            except Exception as listener_exc:  # noqa: BLE001 - user-supplied listener callback
+            except Exception as listener_exc:
                 logging.warning(
                     "Error executing session telemetry listener: %s", listener_exc
                 )
@@ -509,7 +509,7 @@ def _restore_trapped_branch_files(
                 os.makedirs(os.path.dirname(restore_dst), exist_ok=True)
                 resilient_move(trapped_src, restore_dst)
                 restored_count += 1
-            except Exception as err:  # noqa: BLE001 - preserve safety branch on any move error
+            except Exception as err:
                 logging.error(
                     f"Failed to restore trapped branch file {trapped_src}: {err}"
                 )
@@ -699,7 +699,7 @@ class HistoryManager:
             from app.config import AppSettings
 
             policies = getattr(AppSettings(), "RETENTION_POLICIES", None)
-        except Exception:  # noqa: BLE001
+        except Exception:
             policies = None
 
         conn = get_db_connection(self.db_path)
@@ -1200,7 +1200,15 @@ class HistoryManager:
                         db.execute_batch_updates(batch)
                     elif hasattr(db, "update_document_path"):
                         for upd in batch:
-                            db.update_document_path(*upd["args"])
+                            if upd.get("clear_verified_target"):
+                                try:
+                                    db.update_document_path(
+                                        *upd["args"], clear_verified_target=True
+                                    )
+                                except TypeError:
+                                    db.update_document_path(*upd["args"])
+                            else:
+                                db.update_document_path(*upd["args"])
                 except Exception as err:
                     logging.warning(
                         f"Could not batch-update document paths during undo: {err}"
@@ -1266,6 +1274,7 @@ class HistoryManager:
                                         "\\", "/"
                                     ),
                                 ),
+                                "clear_verified_target": True,
                             }
                         )
                         if len(doc_path_updates) >= UNDO_BATCH_SIZE:
@@ -1278,7 +1287,7 @@ class HistoryManager:
                             f"Undo conflict: {move.dst} is occupied; restored the file "
                             f"an overwrite displaced to {put_back} instead."
                         )
-            except Exception as err:  # noqa: BLE001
+            except Exception as err:
                 logging.error(f"Failed to undo move {session_id}#{move.seq}: {err}")
                 failures.append(err)
 
@@ -1305,7 +1314,7 @@ class HistoryManager:
                     error_details=str(failures[0]),
                     metadata={"failures_count": len(failures)},
                 )
-            except Exception as st_err:  # noqa: BLE001
+            except Exception as st_err:
                 logging.warning(
                     f"Could not transition session {session_id} to failed: {st_err}"
                 )
@@ -1325,7 +1334,7 @@ class HistoryManager:
                     error_details=f"Rollback incomplete: file hash mismatch for {len(conflicts)} file(s)",
                     metadata={"conflicts_count": len(conflicts)},
                 )
-            except Exception as st_err:  # noqa: BLE001
+            except Exception as st_err:
                 logging.warning(
                     f"Could not transition session {session_id} to failed: {st_err}"
                 )
@@ -1358,7 +1367,7 @@ class HistoryManager:
             jev_engine = SharedModelRegistry.get_instance().get_jev_classifier()
             if jev_engine and hasattr(jev_engine, "clear_cache"):
                 jev_engine.clear_cache()
-        except Exception:  # noqa: BLE001
+        except Exception:
             pass
         return restored
 
@@ -1389,26 +1398,18 @@ class HistoryManager:
                     self._transition_session_status(
                         session_id, FAILED_STATUS, error_details=str(exc)
                     )
-                except Exception:  # noqa: BLE001
+                except Exception:
                     pass
             raise
 
-    def preview_rollback(
-        self,
-        session_id: str,
-        selected_step_ids: Optional[Collection[int | str]] = None,
+    @staticmethod
+    def simulate_rollback_steps(
+        steps_to_analyze: Sequence[dict[str, Any]],
+        *,
+        session_id: Optional[str] = None,
         ignore_missing: bool = False,
     ) -> dict[str, Any]:
-        """Simulate pre-flight session rollback without making any disk modifications."""
-        all_moves = self.get_session_moves(session_id)
-        if selected_step_ids is not None:
-            sel_set = {str(x) for x in selected_step_ids}
-            steps_to_analyze = [
-                m for m in all_moves if str(m.get("step_id")) in sel_set
-            ]
-        else:
-            steps_to_analyze = list(all_moves)
-
+        """Simulate pre-flight rollback outcomes for a sequence of move step records."""
         from app.core.mover import get_safe_path
         from app.core.resilient_file_ops import same_file_content
 
@@ -1492,6 +1493,28 @@ class HistoryManager:
             "ignore_missing": ignore_missing,
             "steps": analyzed_steps,
         }
+
+    def preview_rollback(
+        self,
+        session_id: str,
+        selected_step_ids: Optional[Collection[int | str]] = None,
+        ignore_missing: bool = False,
+    ) -> dict[str, Any]:
+        """Simulate pre-flight session rollback without making any disk modifications."""
+        all_moves = self.get_session_moves(session_id)
+        if selected_step_ids is not None:
+            sel_set = {str(x) for x in selected_step_ids}
+            steps_to_analyze = [
+                m for m in all_moves if str(m.get("step_id")) in sel_set
+            ]
+        else:
+            steps_to_analyze = list(all_moves)
+
+        return self.simulate_rollback_steps(
+            steps_to_analyze,
+            session_id=session_id,
+            ignore_missing=ignore_missing,
+        )
 
 
 @contextmanager

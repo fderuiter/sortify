@@ -24,7 +24,7 @@ from app.ui.modals.edit import (
     ReassignModal,
     RenameModal,
 )
-from app.ui.modals.help import ShortcutCheatSheetModal
+from app.ui.modals.help import ShortcutCheatSheetModal, TroubleshootingHelpModal
 from app.ui.modals.models import ModelManagerModal
 from app.ui.modals.quarantine import QuarantineVaultModal
 from app.ui.modals.reports import (
@@ -772,6 +772,10 @@ def test_all_modals_button_labels_tables_and_sticky_footers(
             ),
             ("ShortcutCheatSheetModal", lambda: ShortcutCheatSheetModal()),
             (
+                "TroubleshootingHelpModal",
+                lambda: TroubleshootingHelpModal(anchor="session-recovery"),
+            ),
+            (
                 "SamplePlaygroundModal",
                 lambda: SamplePlaygroundModal(
                     settings=settings, target_dir=str(tmp_path)
@@ -821,5 +825,59 @@ def test_all_modals_button_labels_tables_and_sticky_footers(
                     if not _is_visible(dt):
                         continue
                     _assert_datatable_min_rows(dt, min_rows=3)
+
+    asyncio.run(_run())
+
+
+def test_cro_forensic_and_migrated_modals_resize_breakpoints(tmp_path: Path) -> None:
+    """Verify CROForensicModal preserves compact on 120x28 resize and migrated modals apply breakpoints."""
+
+    async def _run() -> None:
+        settings = AppSettings()
+        host = _ModalHostApp(settings=settings, base_dir=str(tmp_path))
+        async with host.run_test(size=(120, 40)) as pilot:
+            cro_modal = CROForensicModal(settings=settings, base_dir=str(tmp_path))
+            host.push_screen(cro_modal)
+            await pilot.pause()
+            assert "compact" not in cro_modal.classes
+            assert "narrow" not in cro_modal.classes
+
+            # Height-only resize to 120x28 must set compact without self.size.height overwriting it
+            await pilot.resize_terminal(120, 28)
+            await pilot.pause()
+            assert "compact" in cro_modal.classes
+            assert "narrow" not in cro_modal.classes
+
+            await pilot.resize_terminal(76, 24)
+            await pilot.pause()
+            assert "compact" in cro_modal.classes
+            assert "narrow" in cro_modal.classes
+            host.pop_screen()
+            await pilot.pause()
+
+            # DropPlanConfirmModal and RollbackErrorModal gain ResponsiveModalScreen classes
+            for modal in (
+                DropPlanConfirmModal("Move 2 files", ["a.pdf -> Finance/"]),
+                RollbackErrorModal("Rollback Failed", "Details"),
+            ):
+                host.push_screen(modal)
+                await pilot.pause()
+                assert "compact" in modal.classes
+                assert "narrow" in modal.classes
+                host.pop_screen()
+                await pilot.pause()
+
+            # InteractiveCollisionResolverModal uses NARROW_WIDTH_BREAKPOINT = 60
+            await pilot.resize_terminal(70, 40)
+            await pilot.pause()
+            collision_modal = InteractiveCollisionResolverModal(duplicate_groups=[])
+            host.push_screen(collision_modal)
+            await pilot.pause()
+            assert "narrow" not in collision_modal.classes
+            assert "compact" in collision_modal.classes
+
+            await pilot.resize_terminal(58, 40)
+            await pilot.pause()
+            assert "narrow" in collision_modal.classes
 
     asyncio.run(_run())

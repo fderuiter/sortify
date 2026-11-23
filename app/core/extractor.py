@@ -172,7 +172,20 @@ def evaluate_text_confidence(text: str, ext: str) -> float:
         return 0.0
 
     # Native text and tabular formats
-    if ext in (".txt", ".csv", ".md", ".json", ".log", ".tsv", ".xml", ".html", ".rst"):
+    if ext in (
+        ".txt",
+        ".csv",
+        ".md",
+        ".json",
+        ".log",
+        ".tsv",
+        ".xml",
+        ".html",
+        ".htm",
+        ".rst",
+        ".yaml",
+        ".yml",
+    ):
         stripped = text.strip()
         if len(stripped) > 0:
             return 1.0
@@ -377,10 +390,9 @@ def process_item_worker(
         item_path = os.path.join(src_root, rel_p) if src_root else item
         if os.path.isfile(item_path):
             _, ext = os.path.splitext(item_path)
-            if not registry.is_supported(ext):
-                return item, "[STATUS:UNSUPPORTED]", ""
-
             file_hash = get_file_hash(item_path)
+            if not registry.is_supported(ext):
+                return item, "[STATUS:UNSUPPORTED]", file_hash
             doc = db.get_document(src_root, rel_p) if db else None
             if doc and doc["file_hash"] == file_hash:
                 # Skip extraction if unchanged
@@ -702,8 +714,7 @@ def build_corpus_generator(
                         item_text_str = str(item_text)
                         chunk[item_name] = {
                             "text": item_text_str
-                            if item_text_str.startswith("[STATUS:")
-                            or item_text_str.startswith(item_name + " ")
+                            if item_text_str.startswith(("[STATUS:", item_name + " "))
                             else item_name + " " + item_text_str,
                             "hash": file_hash,
                         }
@@ -748,8 +759,7 @@ def build_corpus_generator(
                         item_text_str = str(item_text)
                         chunk[item_name] = {
                             "text": item_text_str
-                            if item_text_str.startswith("[STATUS:")
-                            or item_text_str.startswith(item_name + " ")
+                            if item_text_str.startswith(("[STATUS:", item_name + " "))
                             else item_name + " " + item_text_str,
                             "hash": file_hash,
                         }

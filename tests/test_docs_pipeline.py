@@ -18,6 +18,7 @@ from scripts.generate_docs import (
     main,
     update_security_md,
     validate_mermaid_diagrams,
+    validate_mkdocs_config,
     validate_mkdocs_site,
     validate_security_policy,
 )
@@ -775,7 +776,7 @@ def test_main_detects_unsynced_files_on_check():
                 Path("app/config_schema.json").as_posix(): ["schema1", "schema1"],
             }
 
-            counters = {k: 0 for k in file_contents}
+            counters = dict.fromkeys(file_contents, 0)
 
             class MockFile:
                 def __init__(self, filepath):
@@ -841,7 +842,7 @@ def test_main_clean_on_check():
                 Path("app/config_schema.json").as_posix(): ["schema1", "schema1"],
             }
 
-            counters = {k: 0 for k in file_contents}
+            counters = dict.fromkeys(file_contents, 0)
 
             class MockFile:
                 def __init__(self, filepath):
@@ -907,7 +908,7 @@ def test_main_detects_unsynced_config_schema_on_check():
                 Path("app/config_schema.json").as_posix(): ["schema_old", "schema_new"],
             }
 
-            counters = {k: 0 for k in file_contents}
+            counters = dict.fromkeys(file_contents, 0)
 
             class MockFile:
                 def __init__(self, filepath):
@@ -2354,3 +2355,125 @@ def test_generate_docs_offline_check_and_sync_under_host_env(tmp_path):
     assert (stage_dir / "docs" / "admin_guide.md").read_text(encoding="utf-8") == Path(
         "docs/admin_guide.md"
     ).read_text(encoding="utf-8")
+
+
+def test_validate_mkdocs_config_accepts_allowlisted_superfences_tag_and_rejects_unsafe_tags(
+    tmp_path,
+):
+    assert validate_mkdocs_config("mkdocs.yml") == []
+
+    valid_cfg = tmp_path / "valid_mkdocs.yml"
+    valid_cfg.write_text(
+        "site_name: Sortify\n"
+        "markdown_extensions:\n"
+        "  - pymdownx.superfences:\n"
+        "      custom_fences:\n"
+        "        - name: mermaid\n"
+        "          class: mermaid\n"
+        "          format: !!python/name:pymdownx.superfences.fence_code_format\n",
+        encoding="utf-8",
+    )
+    assert validate_mkdocs_config(valid_cfg) == []
+
+    for bad_snippet, expected_substr in (
+        (
+            "site_name: !!python/object/apply:os.system ['echo pwned']\n",
+            "python/object/apply:os.system",
+        ),
+        (
+            "site_name: Sortify\n"
+            "markdown_extensions:\n"
+            "  - pymdownx.superfences:\n"
+            "      format: !!python/name:os.system\n",
+            "python/name:os.system",
+        ),
+        (
+            "site_name: !ENV [SITE_NAME, Sortify]\n",
+            "!ENV",
+        ),
+        (
+            "site_name: !!python/name:pymdownx.superfences.fence_code_format unexpected_arg\n",
+            "empty scalar",
+        ),
+    ):
+        bad_cfg = tmp_path / "bad_mkdocs.yml"
+        bad_cfg.write_text(bad_snippet, encoding="utf-8")
+        errors = validate_mkdocs_config(bad_cfg)
+        assert errors, f"Expected errors for {bad_snippet!r}"
+        assert any(expected_substr in err for err in errors), errors
+
+
+def test_generate_docs_check_no_build_and_build_reject_unsafe_mkdocs_yaml_before_build(
+    tmp_path, capsys
+):
+    import subprocess
+    import sys
+
+    valid_cfg = tmp_path / "mkdocs_ok.yml"
+    valid_cfg.write_text(
+        Path("mkdocs.yml").read_text(encoding="utf-8"),
+        encoding="utf-8",
+    )
+    ok_proc = subprocess.run(
+        [
+            sys.executable,
+            "scripts/generate_docs.py",
+            "--check",
+            "--no-build",
+            "--local-only",
+            "--mkdocs-config",
+            str(valid_cfg),
+        ],
+        capture_output=True,
+        text=True,
+        check=False,
+    )
+    assert ok_proc.returncode == 0, f"stderr:\n{ok_proc.stderr}"
+
+    for bad_tag in (
+        "!!python/object/apply:os.system ['id']",
+        "!!python/name:builtins.eval",
+    ):
+        bad_cfg = tmp_path / "mkdocs_bad.yml"
+        bad_cfg.write_text(
+            f"site_name: Sortify\nextra_payload: {bad_tag}\n",
+            encoding="utf-8",
+        )
+        bad_proc = subprocess.run(
+            [
+                sys.executable,
+                "scripts/generate_docs.py",
+                "--check",
+                "--no-build",
+                "--local-only",
+                "--mkdocs-config",
+                str(bad_cfg),
+            ],
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        assert bad_proc.returncode != 0
+        assert "Disallowed YAML tag" in bad_proc.stderr
+
+        # Also verify --build halts before invoking mkdocs build subprocess
+        with (
+            patch(
+                "sys.argv",
+                [
+                    "generate_docs.py",
+                    "--check",
+                    "--build",
+                    "--mkdocs-config",
+                    str(bad_cfg),
+                ],
+            ),
+            patch("subprocess.run") as mock_mkdocs_build,
+            patch.dict("sys.modules", {"mkdocs": MagicMock()}),
+        ):
+            with pytest.raises(SystemExit) as exc_info:
+                main()
+            assert exc_info.value.code == 1
+            mock_mkdocs_build.assert_not_called()
+            captured = capsys.readouterr()
+            assert "Disallowed YAML tag" in captured.err

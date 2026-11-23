@@ -10,55 +10,37 @@ from textual import events, on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Log, ProgressBar
 
-from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ModalBox
+from app.ui.layout import ModalBox, ResponsiveModalScreen
 from app.ui.notifications import TROUBLESHOOTING_URL
 
 logger = logging.getLogger(__name__)
 
 
-class CROForensicModal(A11yMixin, ModalScreen[None]):
+class CROForensicModal(ResponsiveModalScreen[None]):
     """Modal dialog for running CRO multi-study forensic ingestion worker."""
+
+    HELP_URL = f"{TROUBLESHOOTING_URL}#cro-forensic-ingestion"
 
     BINDINGS = [
         Binding("escape", "close", "Close dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    CROForensicModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
+    MODAL_CSS = """
     .modal-box {
-        padding: 1 2;
-        background: $panel;
         border: thick $success;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
     }
     .compact .modal-box, .narrow .modal-box {
         padding: 0 1;
         width: 96%;
         max-height: 96%;
     }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
     .modal-title {
-        text-style: bold;
         color: $success;
-        margin-bottom: 1;
     }
     ProgressBar {
         margin-top: 1;
@@ -73,18 +55,10 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
         margin-bottom: 1;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        align: right middle;
-        height: auto;
         min-height: 3;
-        margin-top: 1;
     }
     .button-row Button {
         margin-left: 1;
-    }
-    Button.hidden {
-        display: none;
     }
     """
 
@@ -157,23 +131,14 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
                 )
                 yield btn_run
 
-    def _call_ui(self, func: Any, *args: Any, **kwargs: Any) -> None:
-        """Safely dispatch UI callback to the main event loop thread."""
-        app_obj = getattr(self, "app", None)
-
-        if app_obj and hasattr(app_obj, "call_from_thread"):
-            try:
-                app_obj.call_from_thread(func, *args, **kwargs)
-                return
-            except Exception as e:  # noqa: BLE001
-                logger.debug(f"call_from_thread failed: {e}")
-        try:
-            func(*args, **kwargs)
-        except Exception as e:  # noqa: BLE001
-            logger.debug(f"Direct UI function call failed: {e}")
-
     def _set_run_button_disabled(self, disabled: bool) -> None:
-        """Set disabled status of the run button."""
+        """Set disabled status of the run button.
+
+        Parameters
+        ----------
+        disabled : bool
+            Whether the run button should be disabled.
+        """
         try:
             btn = self.query_one("#btn-run", Button)
             btn.disabled = disabled
@@ -187,28 +152,21 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
     def on_unmount(self) -> None:
         """Ensure cancellation signal is emitted if modal unmounts during active execution."""
         self.cancel_worker()
-
-    def _update_layout(self, width: int) -> None:
-        """Update modal layout based on viewport width and height breakpoints."""
-        self.set_class(width < 80, "narrow")
-        size_height = getattr(getattr(self, "size", None), "height", 0)
-        app_height = getattr(
-            getattr(getattr(self, "app", None), "size", None), "height", 0
-        )
-        effective_height = (
-            size_height if size_height > 0 else (app_height if app_height > 0 else 24)
-        )
-        self.set_class(width <= 100 or effective_height <= 30, "compact")
+        super().on_unmount()
 
     def on_resize(self, event: events.Resize) -> None:
-        """Handle modal viewport resize event."""
-        self.set_class(event.size.width < 80, "narrow")
-        self.set_class(event.size.width <= 100 or event.size.height <= 30, "compact")
-        self._update_layout(event.size.width)
+        """Handle modal viewport resize event.
+
+        Parameters
+        ----------
+        event : events.Resize
+            Resize event carrying new viewport dimensions.
+        """
+        super().on_resize(event)
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit announcement."""
-        self._update_layout(self.size.width)
+        super().on_mount()
         self.query_one("#input-source", Input).focus()
         self.announce("Opened CRO multi-study forensic ingestion dialog.")
 
@@ -357,15 +315,7 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
     @on(Button.Pressed, "#btn-help")
     def action_help(self) -> None:
         """Open troubleshooting documentation link."""
-        url = getattr(
-            self,
-            "help_url",
-            f"{TROUBLESHOOTING_URL}#cro-forensic-ingestion",
-        )
-        from app.ui.notifications import notify
-
-        notify(f"Opening help link: {url}", type="info", help_url=url)
-        self.announce(f"Opened documentation link: {url}")
+        super().action_help()
 
     @on(Button.Pressed, "#btn-close")
     def action_close(self) -> None:

@@ -339,9 +339,9 @@ def test_onnx_semantic_anchoring_and_post_cluster_snapping(tmp_path):
             mock.patch.object(
                 session.analyzer.embedding_manager,
                 "get_vectors_batch",
-                side_effect=lambda _base, fns, regenerate=False: {
-                    fn: tax_vec for fn in fns
-                },
+                side_effect=lambda _base, fns, regenerate=False: dict.fromkeys(
+                    fns, tax_vec
+                ),
             ),
         ):
             plan = SortPipeline(session).plan()

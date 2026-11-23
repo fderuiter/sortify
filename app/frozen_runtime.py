@@ -120,11 +120,11 @@ def attach_console() -> bool:
     if not allocated:
         return False
     with contextlib.suppress(OSError):
-        sys.stdout = open("CONOUT$", "w", encoding="utf-8")  # noqa: SIM115
+        sys.stdout = open("CONOUT$", "w", encoding="utf-8")
     with contextlib.suppress(OSError):
-        sys.stderr = open("CONERR$", "w", encoding="utf-8")  # noqa: SIM115
+        sys.stderr = open("CONERR$", "w", encoding="utf-8")
     with contextlib.suppress(OSError):
-        sys.stdin = open("CONIN$", encoding="utf-8")  # noqa: SIM115
+        sys.stdin = open("CONIN$", encoding="utf-8")
     return True
 
 

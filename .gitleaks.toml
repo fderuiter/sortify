@@ -1,13 +1,173 @@
 title = "Gitleaks configuration"
 
+[extend]
+useDefault = true
+
 [allowlist]
-description = "Global allowlist for SHA256 checksum manifests and test mocks"
+description = "Global allowlist for local caches, build artifacts, SHA-256 checksum registries, and dedicated secret-sanitization test suites"
 paths = [
-    '''app/core/hf_manifest.json''',
-    '''app/core/hashes_registry.py''',
-    '''tests/test_secret_sanitization.py''',
-    '''tests/test_extraction_pii_scrubbing.py''',
-    '''tests/test_secret_path_sanitization.py''',
-    '''tests/test_simulation_exporter.py''',
-    '''tests/test_prompt_dump.py'''
+    '''(?:^|/)\.?venv/''',
+    '''(?:^|/)\.git/''',
+    '''(?:^|/)__pycache__/''',
+    '''\.py[co]$''',
+    '''(?:^|/)\.(?:pytest_cache|ruff_cache|hypothesis|mypy_cache|ty_cache|sortify-driver)/''',
+    '''(?:^|/)(?:\.coverage(?:\..*)?|coverage\.(?:json|xml)$|htmlcov/)''',
+    '''(?:^|/)(?:build|dist|site|offline_bundle/wheels)/''',
+    '''(?:^|/)[^/]+\.egg-info/''',
+    '''(?:^|/)offline_bundle\.zip$''',
+    '''(?:^|/)app/core/hf_manifest\.json$''',
+    '''(?:^|/)app/core/hashes_registry\.py$''',
+    '''(?:^|/)tests/test_secret_sanitization\.py$''',
+    '''(?:^|/)tests/test_extraction_pii_scrubbing\.py$''',
+    '''(?:^|/)tests/test_secret_path_sanitization\.py$''',
+    '''(?:^|/)tests/test_simulation_exporter\.py$''',
+    '''(?:^|/)tests/test_prompt_dump\.py$''',
 ]
+
+[[rules]]
+id = "generic-api-key"
+
+    [[rules.allowlists]]
+    description = "Historical SQLCipher binary SHA-256 checksums in removed app/binaries/manifest.json"
+    condition = "AND"
+    commits = [
+        "c501b29b8b503622bcf81b4cfe39ff308397ad10",
+        "2174c81a7e883a0ca46bc0220d6bc18c1b5e5166",
+        "78525ca1bd270557938ec5c7e1e67de177fa3b38",
+    ]
+    paths = [
+        '''^app/binaries/manifest\.json$''',
+    ]
+    regexes = [
+        '''^(?:c8bffac5e6ce6bee1fc4e1e1ab773fff37cf3cb70586f377df6d93bf73d6f0e5|8fa5c6ae7b32600a601c164c75e2a14bed13ea9d9240e4791c4dcca508262394|ba106bfef32aba0d3716a83b588625188fd3ce4a28a802de12da4589f36d9846)$''',
+    ]
+
+    [[rules.allowlists]]
+    description = "Three pinned Hugging Face tokenizer SHA-256 checksums in scripts/build.py"
+    condition = "AND"
+    paths = [
+        '''(?:^|/)scripts/build\.py$''',
+    ]
+    regexTarget = "match"
+    regexes = [
+        '''^tokenizer_config\.json":\s*"9261e7d79b44c8195c1cada2b453e55b00aeb81e907a6664974b4d7776172ab3"$''',
+        '''^special_tokens_map\.json":\s*"b6d346be366a7d1d48332dbc9fdf3bf8960b5d879522b7799ddba59e76237ee3"$''',
+        '''^tokenizer\.json":\s*"da0e79933b9ed51798a3ae27893d3c5fa4a201126cef75586296df9b4d2c62a0"$''',
+    ]
+
+    [[rules.allowlists]]
+    description = "Overlapping generic-api-key matches on synthetic redaction fixtures in tests/test_notifications.py"
+    condition = "AND"
+    paths = [
+        '''(?:^|/)tests/test_notifications\.py$''',
+    ]
+    regexes = [
+        '''^(?:sk_live_1234567890123456789012345|sk_live_9999988888777776666655555)$''',
+    ]
+
+    [[rules.allowlists]]
+    description = "Synthetic audit redaction fixtures and overlapping patterns in tests/test_key_audit_ledger.py"
+    condition = "AND"
+    paths = [
+        '''(?:^|/)tests/test_key_audit_ledger\.py$''',
+    ]
+    regexes = [
+        '''^(?:gAAAAABk1234567890abcdefsecretkeybytes==|ghp_123456789012345678901234567890123456|sk_live_123456789012345678901234)$''',
+    ]
+
+    [[rules.allowlists]]
+    description = "Synthetic telemetry redaction fixtures and overlapping patterns in tests/test_unified_lifecycle_telemetry.py"
+    condition = "AND"
+    paths = [
+        '''(?:^|/)tests/test_unified_lifecycle_telemetry\.py$''',
+    ]
+    regexes = [
+        '''^(?:12345-abcdef|ghp_123456789012345678901234567890123456)$''',
+    ]
+
+    [[rules.allowlists]]
+    description = "Cross-origin port redirect test URL in tests/test_validate_links.py"
+    condition = "AND"
+    paths = [
+        '''(?:^|/)tests/test_validate_links\.py$''',
+    ]
+    regexTarget = "match"
+    regexes = [
+        '''^api\.github\.com:8443/advisories"?$''',
+    ]
+
+    [[rules.allowlists]]
+    description = "Overlapping generic-api-key match on synthetic rollback diagnostic fixture in tests/test_tui.py"
+    condition = "AND"
+    paths = [
+        '''(?:^|/)tests/test_tui\.py$''',
+    ]
+    regexes = [
+        '''^sk_live_1234567890123456789012345$''',
+    ]
+
+[[rules]]
+id = "stripe-access-token"
+
+    [[rules.allowlists]]
+    description = "Synthetic Stripe token redaction fixtures in tests/test_notifications.py"
+    condition = "AND"
+    paths = [
+        '''(?:^|/)tests/test_notifications\.py$''',
+    ]
+    regexes = [
+        '''^(?:sk_live_1234567890123456789012345|sk_live_9999988888777776666655555)$''',
+    ]
+
+    [[rules.allowlists]]
+    description = "Synthetic Stripe token redaction fixture in tests/test_key_audit_ledger.py"
+    condition = "AND"
+    paths = [
+        '''(?:^|/)tests/test_key_audit_ledger\.py$''',
+    ]
+    regexes = [
+        '''^sk_live_123456789012345678901234$''',
+    ]
+
+    [[rules.allowlists]]
+    description = "Synthetic Stripe token sanitization fixture in tests/test_file_renamer.py"
+    condition = "AND"
+    paths = [
+        '''(?:^|/)tests/test_file_renamer\.py$''',
+    ]
+    regexes = [
+        '''^sk_live_51Nxabc123XYZ4567890abcdef$''',
+    ]
+
+    [[rules.allowlists]]
+    description = "Synthetic Stripe token diagnostic export fixture in tests/test_tui.py"
+    condition = "AND"
+    paths = [
+        '''(?:^|/)tests/test_tui\.py$''',
+    ]
+    regexes = [
+        '''^sk_live_1234567890123456789012345$''',
+    ]
+
+[[rules]]
+id = "github-pat"
+
+    [[rules.allowlists]]
+    description = "Synthetic GitHub PAT redaction fixture in tests/test_key_audit_ledger.py"
+    condition = "AND"
+    paths = [
+        '''(?:^|/)tests/test_key_audit_ledger\.py$''',
+    ]
+    regexes = [
+        '''^ghp_123456789012345678901234567890123456$''',
+    ]
+
+    [[rules.allowlists]]
+    description = "Synthetic GitHub PAT telemetry redaction fixture in tests/test_unified_lifecycle_telemetry.py"
+    condition = "AND"
+    paths = [
+        '''(?:^|/)tests/test_unified_lifecycle_telemetry\.py$''',
+    ]
+    regexes = [
+        '''^ghp_123456789012345678901234567890123456$''',
+    ]

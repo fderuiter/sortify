@@ -14,12 +14,12 @@ os.environ.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
 
 # Clear pre-loaded standard database modules to prevent library collision
 for mod_name in list(sys.modules.keys()):
-    if (
-        mod_name in ("sqlcipher3", "_sqlite3", "sqlite3", "pysqlcipher3")
-        or mod_name.startswith("sqlcipher3.")
-        or mod_name.startswith("sqlite3.")
-        or mod_name.startswith("pysqlcipher3.")
-    ):
+    if mod_name in (
+        "sqlcipher3",
+        "_sqlite3",
+        "sqlite3",
+        "pysqlcipher3",
+    ) or mod_name.startswith(("sqlcipher3.", "sqlite3.", "pysqlcipher3.")):
         sys.modules.pop(mod_name, None)
 
 
