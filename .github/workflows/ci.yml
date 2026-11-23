@@ -7,12 +7,12 @@ on:
     branches: [ main ]
   workflow_dispatch:
 
-# A new push to a PR supersedes the run in progress. On main, a run in
-# progress always finishes, so main gets a result even when merges land
-# faster than CI runs; only the newest waiting run is kept.
+# A new push or controller branch update supersedes any in-progress run on the
+# same feature branch across pull_request and workflow_dispatch. On main, an
+# in-progress run always finishes intact; only the newest waiting run is kept.
 concurrency:
-  group: ci-${{ github.event.pull_request.number || github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  group: ci-${{ (github.event_name == 'pull_request' && github.event.pull_request.head.repo.full_name != github.repository && format('{0}:{1}', github.event.pull_request.head.repo.full_name, github.head_ref)) || github.head_ref || github.ref_name }}
+  cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
 
 # Least privilege: jobs that need more ask for it themselves.
 permissions:
@@ -51,10 +51,77 @@ jobs:
       run: |
         uv audit --ignore-until-fixed GHSA-w8v5-vhqr-4h9v
 
+    - name: Scope Secret Scan Commits
+      id: scope-gitleaks
+      if: github.event_name == 'workflow_dispatch'
+      shell: python
+      run: |
+        import json
+        import os
+        import subprocess
+        from pathlib import Path
+
+        event_path = Path(os.environ["GITHUB_EVENT_PATH"])
+        payload = json.loads(event_path.read_text(encoding="utf-8"))
+        ref = os.environ.get("GITHUB_REF", "")
+        head_sha = subprocess.check_output(["git", "rev-parse", "HEAD"], text=True).strip()
+
+        if ref == "refs/heads/main":
+            commits = [{"id": head_sha}]
+        else:
+            has_origin_main = (
+                subprocess.run(
+                    ["git", "rev-parse", "--verify", "refs/remotes/origin/main"],
+                    capture_output=True,
+                    text=True,
+                ).returncode
+                == 0
+            )
+            if not has_origin_main:
+                subprocess.run(
+                    [
+                        "git",
+                        "fetch",
+                        "--no-tags",
+                        "origin",
+                        "+refs/heads/main:refs/remotes/origin/main",
+                    ],
+                    check=True,
+                )
+            branch_shas = [
+                line.strip()
+                for line in subprocess.check_output(
+                    [
+                        "git",
+                        "rev-list",
+                        "--reverse",
+                        "--first-parent",
+                        "--no-merges",
+                        "refs/remotes/origin/main..HEAD",
+                    ],
+                    text=True,
+                ).splitlines()
+                if line.strip()
+            ]
+            if not branch_shas:
+                commits = []
+            elif branch_shas[0] == head_sha:
+                commits = [{"id": head_sha}]
+            else:
+                commits = [{"id": branch_shas[0]}, {"id": head_sha}]
+
+        payload["commits"] = commits
+        scoped_path = Path(os.environ["RUNNER_TEMP"]) / "gitleaks_scoped_event.json"
+        scoped_path.write_text(json.dumps(payload), encoding="utf-8")
+        with open(os.environ["GITHUB_OUTPUT"], "a", encoding="utf-8") as out_f:
+            out_f.write(f"event_path={scoped_path}\n")
+
     - name: Secret Scanning Guardrails
       uses: gitleaks/gitleaks-action@e0c47f4f8be36e29cdc102c57e68cb5cbf0e8d1e # v3.0.0
       env:
         GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        GITHUB_EVENT_NAME: ${{ github.event_name == 'workflow_dispatch' && 'push' || github.event_name }}
+        GITHUB_EVENT_PATH: ${{ steps.scope-gitleaks.outputs.event_path || github.event_path }}
 
     - name: Workflow Linting
       uses: raven-actions/actionlint@3d39aea434753780c3b3d4a1a31c854b4dbf49d7 # v2.2.0
@@ -429,7 +496,7 @@ jobs:
           ~/.cache/huggingface
         # No restore-keys: weights saved for another manifest must not be
         # restored and tested as if they were the pinned ones.
-        key: model-weights-${{ runner.os }}-${{ hashFiles('pyproject.toml', 'offline_bundle/**', 'scripts/prompt_manifest.py', '.github/AGENTS/manifest.json') }}
+        key: model-weights-${{ runner.os }}-${{ hashFiles('uv.lock', 'scripts/build.py', 'offline_bundle/**', 'scripts/prompt_manifest.py', '.github/AGENTS/manifest.json') }}
 
     - name: Install uv
       uses: astral-sh/setup-uv@68559e99cc807c1eb7e9238fd43a15bba460eec2 # v10.3.3

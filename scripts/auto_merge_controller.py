@@ -30,6 +30,7 @@ from scripts.classify_pr import (
     ClassificationResult,
     PRMetadata,
     classify_pr,
+    dependency_update_type_from_diffs,
     dependency_update_type_from_title,
 )
 
@@ -44,6 +45,7 @@ GITHUB_ACTIONS_APP_SLUG = "github-actions"
 DEPENDABOT_LOGIN = "dependabot[bot]"
 AUTOMERGE_OPT_IN_LABEL = "automerge"
 MAINTAINER_PERMISSIONS = {"admin", "maintain", "write"}
+PENDING_CI_STATES = {None, "queued", "in_progress", "waiting", "pending", "requested"}
 
 
 class AutoMergeAction(str, Enum):
@@ -100,6 +102,23 @@ class GitHubClient:
         resp = requests.put(url, headers=self.headers, json=json_data, timeout=30)
         resp.raise_for_status()
         return resp.json() if resp.content else {}
+
+    def _delete(self, endpoint: str) -> None:
+        url = f"{self.base_url}/{endpoint.lstrip('/')}"
+        resp = requests.delete(url, headers=self.headers, timeout=30)
+        if resp.status_code == 404:
+            return
+        resp.raise_for_status()
+
+    def get_file_content(self, path: str, ref: str) -> Optional[str]:
+        """Fetch raw UTF-8 text content of a repository file at a specific git ref."""
+        url = f"{self.base_url}/contents/{path.lstrip('/')}"
+        headers = {**self.headers, "Accept": "application/vnd.github.raw+json"}
+        resp = requests.get(url, headers=headers, params={"ref": ref}, timeout=30)
+        if resp.status_code == 404:
+            return None
+        resp.raise_for_status()
+        return resp.text
 
     def list_open_pull_requests(self) -> list[dict[str, Any]]:
         """Fetch list of open pull requests."""
@@ -215,6 +234,16 @@ class GitHubClient:
         """Add labels to a PR."""
         self._post(f"issues/{pr_number}/labels", {"labels": labels})
 
+    def remove_label(self, pr_number: int, label: str) -> None:
+        """Remove a label from a PR if present."""
+        encoded = requests.utils.quote(label, safe="")
+        try:
+            self._delete(f"issues/{pr_number}/labels/{encoded}")
+        except requests.RequestException as exc:
+            logger.warning(
+                f"Failed to remove label '{label}' from PR #{pr_number}: {exc}"
+            )
+
     def dispatch_workflow(
         self,
         workflow_id: str,
@@ -287,11 +316,58 @@ def build_pr_metadata(client: GitHubClient, full_pr: dict[str, Any]) -> PRMetada
         ("security" in labels and "dependencies" in labels)
         or full_pr.get("head", {}).get("ref", "").startswith("security/")
     ) and (author in BOT_AUTHORS or author.endswith("[bot]"))
-    dependency_update_type = (
-        dependency_update_type_from_title(title)
-        if (is_dependabot or is_security_patch)
-        else "minor"
-    )
+    changed_files = [f["filename"] for f in files]
+    base_sha = str((full_pr.get("base") or {}).get("sha") or "").strip()
+    head_sha = str((full_pr.get("head") or {}).get("sha") or "").strip()
+    base_uv_lock: str | None = None
+    head_uv_lock: str | None = None
+    base_requirements_txt: str | None = None
+    head_requirements_txt: str | None = None
+    manifest_diffs_evaluated = False
+
+    if (
+        (is_dependabot or is_security_patch)
+        and base_sha
+        and head_sha
+        and (
+            "uv.lock" in changed_files
+            or "offline_bundle/requirements.txt" in changed_files
+        )
+    ):
+        manifest_diffs_evaluated = True
+        try:
+            if "uv.lock" in changed_files:
+                base_uv_lock = client.get_file_content("uv.lock", base_sha)
+                head_uv_lock = client.get_file_content("uv.lock", head_sha)
+            if "offline_bundle/requirements.txt" in changed_files:
+                base_requirements_txt = client.get_file_content(
+                    "offline_bundle/requirements.txt", base_sha
+                )
+                head_requirements_txt = client.get_file_content(
+                    "offline_bundle/requirements.txt", head_sha
+                )
+        except Exception as exc:
+            logger.warning(
+                f"Could not fetch manifest contents for PR #{pr_number}: {exc}"
+            )
+            base_uv_lock = None
+            head_uv_lock = None
+            base_requirements_txt = None
+            head_requirements_txt = None
+        dependency_update_type = dependency_update_type_from_diffs(
+            changed_files,
+            base_uv_lock=base_uv_lock,
+            head_uv_lock=head_uv_lock,
+            base_requirements_txt=base_requirements_txt,
+            head_requirements_txt=head_requirements_txt,
+        )
+    else:
+        dependency_update_type = (
+            dependency_update_type_from_title(title)
+            if (is_dependabot or is_security_patch)
+            else "minor"
+        )
+
     if (
         AUTOMERGE_OPT_IN_LABEL in labels
         and not is_dependabot
@@ -305,7 +381,7 @@ def build_pr_metadata(client: GitHubClient, full_pr: dict[str, Any]) -> PRMetada
         author=author,
         is_draft=bool(full_pr.get("draft")),
         labels=labels,
-        changed_files=[f["filename"] for f in files],
+        changed_files=changed_files,
         additions=sum(f.get("additions", 0) for f in files),
         deletions=sum(f.get("deletions", 0) for f in files),
         is_dependabot=is_dependabot,
@@ -313,6 +389,11 @@ def build_pr_metadata(client: GitHubClient, full_pr: dict[str, Any]) -> PRMetada
         dependency_update_type=dependency_update_type,
         all_commits_verified=bool(commits) and not unverified,
         unverified_commit_shas=unverified,
+        base_uv_lock=base_uv_lock,
+        head_uv_lock=head_uv_lock,
+        base_requirements_txt=base_requirements_txt,
+        head_requirements_txt=head_requirements_txt,
+        manifest_diffs_evaluated=manifest_diffs_evaluated,
     )
 
 
@@ -420,6 +501,7 @@ def process_auto_merge_queue(
             logger.warning(
                 f"PR #{pr_number} has merge conflicts. Applying 'automerge:conflict'."
             )
+            client.remove_label(pr_number, "automerge:eligible")
             client.add_labels(pr_number, ["automerge:conflict", "automerge:blocked"])
             continue
 
@@ -430,6 +512,7 @@ def process_auto_merge_queue(
             logger.warning(
                 f"Head commit {head_sha[:8]} signature verification failed ({reason}) for PR #{pr_number}. Blocking auto-merge."
             )
+            client.remove_label(pr_number, "automerge:eligible")
             client.add_labels(pr_number, ["automerge:blocked", "risk:high"])
             continue
 
@@ -441,7 +524,18 @@ def process_auto_merge_queue(
                 f"PR #{pr_number} is labelled eligible but trusted re-classification "
                 f"blocks it: {'; '.join(classification.blocking_reasons)}"
             )
+            client.remove_label(pr_number, "automerge:eligible")
+            blocked_labels = list(classification.labels_to_add)
+            if "automerge:blocked" not in blocked_labels:
+                blocked_labels.append("automerge:blocked")
+            client.add_labels(pr_number, blocked_labels)
             continue
+
+        if full_pr.get("mergeable") is None or mergeable_state == "unknown":
+            logger.info(
+                f"PR #{pr_number} mergeability is still being computed ({mergeable_state}); halting queue."
+            )
+            return AutoMergeResult(action=AutoMergeAction.NONE, pr_id=None)
 
         # Check if branch is behind main
         if mergeable_state == "behind":
@@ -457,6 +551,7 @@ def process_auto_merge_queue(
                 logger.warning(
                     f"Branch update failed for PR #{pr_number} due to conflict."
                 )
+                client.remove_label(pr_number, "automerge:eligible")
                 client.add_labels(
                     pr_number, ["automerge:conflict", "automerge:blocked"]
                 )
@@ -478,9 +573,14 @@ def process_auto_merge_queue(
 
         # Verify Required CI on head SHA (GitHub Actions check run only)
         required_ci = client.get_required_ci_conclusion(head_sha)
+        if required_ci in PENDING_CI_STATES:
+            logger.info(
+                f"PR #{pr_number} Required CI is still active/pending on head SHA ({required_ci}); waiting for head PR before updating later branches."
+            )
+            return AutoMergeResult(action=AutoMergeAction.NONE, pr_id=None)
         if required_ci != "success":
             logger.info(
-                f"PR #{pr_number} Required CI is not green on head SHA ({required_ci})."
+                f"PR #{pr_number} Required CI did not succeed on head SHA ({required_ci}); advancing to next candidate."
             )
             continue
 
