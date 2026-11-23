@@ -1152,10 +1152,14 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
     target_session_id: str = cast(dict[str, Any], target_session)["session_id"]
 
     try:
-        from app.core.history import open_session_history
+        from app.core.pipeline import SortPipeline
 
-        with open_session_history() as history_mgr:
-            history_mgr.rollback(target_session_id, ignore_missing=force_flag)
+        undo_result = SortPipeline(None, settings=settings).undo(
+            target_session_id,
+            ignore_missing=force_flag,
+        )
+        if "error" in undo_result.summary:
+            raise RuntimeError(str(undo_result.summary["error"]))
 
         result = {
             "status": "success",
@@ -1230,15 +1234,14 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
             exit_code=1,
         )
 
-    from app.core.mover import is_subpath_or_equal
     from app.core.pipeline import (
         SortPipeline,
-        _relativize_items_to_base,
-        drop_scope,
-        reroot_plan,
+        apply_drop_reroot,
+        expand_drop_scope_files,
+        restore_rerooted_source_dir,
+        validate_drop_destination,
         validate_drop_paths,
     )
-    from app.core.scanner import ScanFilter, get_files_recursively
     from app.core.session import AppSession
 
     validated_paths, issues = validate_drop_paths(raw_paths, settings=settings)
@@ -1265,50 +1268,39 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
         )
 
     dest_dir = getattr(args, "dest_dir", None)
-    resolved_dest: str | None = None
-    if dest_dir:
-        resolved_dest = str(Path(dest_dir).expanduser().resolve())
-        protected_paths = getattr(settings, "PROTECTED_PATHS", []) or []
-        if isinstance(protected_paths, (list, tuple, set)) and any(
-            prot and is_subpath_or_equal(resolved_dest, prot)
-            for prot in protected_paths
-        ):
-            emit_cli_error(
-                f"Error: Destination path '{dest_dir}' is protected.",
-                json_mode=json_output,
-                exit_code=1,
-            )
-        if os.path.exists(resolved_dest) and not os.path.isdir(resolved_dest):
-            emit_cli_error(
-                f"Error: Destination path '{dest_dir}' is not a directory.",
-                json_mode=json_output,
-                exit_code=1,
-            )
+    resolved_dest, dest_err = validate_drop_destination(dest_dir, settings=settings)
+    if dest_err == "protected":
+        emit_cli_error(
+            f"Error: Destination path '{dest_dir}' is protected.",
+            json_mode=json_output,
+            exit_code=1,
+        )
+    if dest_err == "not_directory":
+        emit_cli_error(
+            f"Error: Destination path '{dest_dir}' is not a directory.",
+            json_mode=json_output,
+            exit_code=1,
+        )
 
     dry_run = getattr(args, "dry_run", False)
     quiet = getattr(args, "quiet", False)
 
     processed_results = []
     for path in validated_paths:
-        base_dir, files = drop_scope(path)
-        if files is None:
-            drop_filter = ScanFilter.from_settings(settings=settings, base_dir=base_dir)
-            drop_filter.max_depth = None
-            norm_files = get_files_recursively(
-                base_dir, settings=settings, scan_filter=drop_filter
-            )
-        else:
-            norm_files = _relativize_items_to_base(files, base_dir)
+        base_dir, norm_files = expand_drop_scope_files(path, settings=settings)
 
         session = None
         try:
             session = AppSession(settings, base_dir=base_dir)
             pipeline = SortPipeline(session)
             plan = pipeline.plan(norm_files, dest_dir=resolved_dest)
-
-            if resolved_dest:
-                plan = reroot_plan(plan, resolved_dest, source_dir=base_dir)
-                session.base_dir = resolved_dest
+            plan, re_rooted = apply_drop_reroot(
+                session,
+                plan,
+                base_dir,
+                resolved_dest,
+                force_reroot=True,
+            )
 
             serializable_plan = _make_json_serializable(plan)
             if dry_run:
@@ -1316,14 +1308,11 @@ def handle_drop_command(args: argparse.Namespace, settings: AppSettings):
             else:
                 src_was_dir = os.path.isdir(base_dir)
                 summary = pipeline.execute(plan).summary
-                if (
-                    resolved_dest
-                    and src_was_dir
-                    and os.path.normcase(os.path.abspath(resolved_dest))
-                    != os.path.normcase(os.path.abspath(base_dir))
-                    and not os.path.exists(base_dir)
-                ):
-                    os.makedirs(base_dir, exist_ok=True)
+                restore_rerooted_source_dir(
+                    base_dir,
+                    was_dir=src_was_dir,
+                    re_rooted=re_rooted,
+                )
 
             processed_results.append(
                 {

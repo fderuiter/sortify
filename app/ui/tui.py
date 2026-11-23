@@ -817,7 +817,7 @@ class AutoSorterTUI(
         )
         self.action_execute_sort()
 
-    def _do_recovery_rollback(self, session_info: dict[str, Any]) -> None:
+    def _do_recovery_rollback(self, session_info: dict[str, Any]) -> bool:
         """Rollback interrupted sorting operation."""
         from app.core.session_catalog import roll_back_abandoned_session
 
@@ -826,7 +826,8 @@ class AutoSorterTUI(
             **session_info,
             "base_dir": session_info.get("base_dir") or self.base_dir,
         }
-        if roll_back_abandoned_session(self.settings, info):
+        succeeded = bool(roll_back_abandoned_session(self.settings, info))
+        if succeeded:
             self.announce(f"Rolled back session '{session_id}'.")
         else:
             self.announce(
@@ -835,6 +836,7 @@ class AutoSorterTUI(
 
         if self.base_dir:
             self.action_scan_directory()
+        return succeeded
 
     def _do_recovery_clean(self, session_info: dict[str, Any]) -> None:
         """Leave an abandoned session as it is and stop offering to recover it."""
@@ -1728,14 +1730,29 @@ class AutoSorterTUI(
     ) -> None:
         """Execute session rollback restoration asynchronously in background worker thread."""
         try:
-            from app.core.history import open_session_history
+            from app.core.pipeline import SortPipeline
 
-            kwargs: dict[str, Any] = {"ignore_missing": ignore_missing}
-            if selected_step_ids is not None:
-                kwargs["selected_step_ids"] = selected_step_ids
+            pipeline = self.pipeline
+            if pipeline is None or pipeline.state.is_active:
+                pipeline = SortPipeline(
+                    self.app_session,
+                    base_dir=self.base_dir,
+                    settings=self.settings,
+                )
+                pipeline.add_state_change_hook(self._handle_pipeline_state_transition)
+                pipeline.add_telemetry_hook(self._handle_pipeline_telemetry)
+                self.pipeline = pipeline
 
-            with open_session_history() as history_mgr:
-                restored_count = history_mgr.rollback(session_id, **kwargs)
+            undo_result = pipeline.undo(
+                session_id,
+                ignore_missing=ignore_missing,
+                selected_step_ids=selected_step_ids,
+            )
+            if "error" in undo_result.summary:
+                raise RuntimeError(str(undo_result.summary["error"]))
+            restored_count = int(
+                undo_result.summary.get("restored", len(undo_result.moved))
+            )
 
             if hasattr(self, "call_from_thread"):
                 self.call_from_thread(self._on_undo_success, session_id, restored_count)
@@ -1794,15 +1811,13 @@ class AutoSorterTUI(
     ) -> None:
         """Open the Audit Report Modal Screen."""
         if not audit_report and self.app_session and self.plan:
-            from app.core.audit_reporter import generate_audit_report
-            from app.core.verifier import VerificationEngine
+            from app.core.audit_reporter import resolve_audit_report
 
-            base_dir = self.app_session.base_dir or "."
-            moves = VerificationEngine.get_moves(base_dir, self.plan)
-            records = [
-                {"source_path": src, "destination_path": dst} for _, src, dst in moves
-            ]
-            audit_report = generate_audit_report(base_dir, records)
+            audit_report = resolve_audit_report(
+                audit_report,
+                self.app_session.base_dir or ".",
+                self.plan,
+            )
 
         if audit_report:
             self.push_screen(AuditReportModal(audit_report))
