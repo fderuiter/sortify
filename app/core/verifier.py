@@ -219,6 +219,9 @@ def check_ai_status(settings) -> tuple[bool, str | None]:
     return True, None
 
 
+_RECOVERABLE_COLLISION_TYPES = ("target_collision", "duplicate_target")
+
+
 class VerificationEngine:
     """Engine to verify file operations before execution."""
 
@@ -229,8 +232,13 @@ class VerificationEngine:
             return False
         if result.get("has_critical_errors") is not None:
             return bool(result.get("has_critical_errors"))
+        critical_collisions = [
+            c
+            for c in result.get("collisions", [])
+            if c.get("type") not in _RECOVERABLE_COLLISION_TYPES
+        ]
         return bool(
-            result.get("collisions")
+            critical_collisions
             or result.get("circular_renames")
             or result.get("invalid_renames")
             or result.get("long_paths")
@@ -305,6 +313,8 @@ class VerificationEngine:
         if not isinstance(plan, dict):
             return moves
 
+        from app.core.scanner import parse_item_identifier
+
         for key, content in plan.items():
             node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
             is_node = (
@@ -322,12 +332,17 @@ class VerificationEngine:
                 ):
                     continue
 
+                parsed_root, rel_key = parse_item_identifier(str(key), base_dir)
                 src_root = _get_val(content, "source_root")
+                if not src_root and "::" in str(key):
+                    src_root = parsed_root
                 effective_base = src_root if src_root else base_dir
 
                 src_p = _get_val(content, "source_path")
                 if src_p and "::" in str(src_p):
-                    parsed_r, parsed_p = str(src_p).split("::", 1)
+                    parsed_r, parsed_p = parse_item_identifier(
+                        str(src_p), effective_base
+                    )
                     effective_base = src_root or parsed_r
                     src_p = parsed_p
 
@@ -398,20 +413,23 @@ class VerificationEngine:
                             os.path.join(effective_base, src_p)
                         )
                     elif rel_src_val is not None:
-                        relative_source = rel_src_val
+                        _, relative_source = parse_item_identifier(
+                            str(rel_src_val), effective_base
+                        )
                         source_path = os.path.normpath(
                             os.path.join(effective_base, relative_source)
                         )
                     else:
                         source_path = os.path.normpath(
-                            os.path.join(effective_base, key)
+                            os.path.join(effective_base, rel_key)
                         )
 
                 tgt_fn = _get_val(content, "target_filename")
                 if tgt_fn is not None:
-                    filename = re.split(r"[/\\]+", tgt_fn)[-1]
+                    _, clean_tf = parse_item_identifier(str(tgt_fn), effective_base)
+                    filename = re.split(r"[/\\]+", clean_tf)[-1]
                 else:
-                    filename = re.split(r"[/\\]+", key)[-1]
+                    filename = re.split(r"[/\\]+", rel_key)[-1]
 
                 from app.core.path_utils import _is_absolute_path
 
@@ -491,7 +509,7 @@ class VerificationEngine:
             return entries
 
         from app.core.path_utils import _is_absolute_path
-        from app.core.resilient_file_ops import duplicate_staging_relpath
+        from app.core.scanner import parse_item_identifier
 
         for key, content in plan.items():
             node_type = _get_val(content, "node_type") or _get_val(content, "__type__")
@@ -522,12 +540,16 @@ class VerificationEngine:
                     continue
                 _, source_path, dest_path = single_moves[0]
 
-                tgt_fn = _get_val(content, "target_filename")
-                filename = (
-                    re.split(r"[/\\]+", tgt_fn)[-1]
-                    if tgt_fn is not None
-                    else re.split(r"[/\\]+", key)[-1]
+                parsed_root, rel_key = parse_item_identifier(str(key), base_dir)
+                src_root = _get_val(content, "source_root") or (
+                    parsed_root if "::" in str(key) else base_dir
                 )
+                tgt_fn = _get_val(content, "target_filename")
+                if tgt_fn is not None:
+                    _, clean_tf = parse_item_identifier(str(tgt_fn), src_root)
+                    filename = re.split(r"[/\\]+", clean_tf)[-1]
+                else:
+                    filename = re.split(r"[/\\]+", rel_key)[-1]
                 dest_override = _get_val(content, "destination_override")
                 if dest_override and _is_absolute_path(dest_override):
                     dest_dir = dest_override
@@ -544,8 +566,6 @@ class VerificationEngine:
                 else:
                     planned_dest = os.path.normpath(os.path.join(dest_dir, filename))
 
-                src_root = _get_val(content, "source_root") or base_dir
-                _ = duplicate_staging_relpath  # imported above
                 entries.append(
                     {
                         "node_key": key,
@@ -894,6 +914,8 @@ class VerificationEngine:
         if not groups:
             return plan
 
+        from app.core.scanner import parse_item_identifier
+
         entries = VerificationEngine.get_move_entries(base_dir, plan)
         entry_by_src = {entry["source_path"]: entry for entry in entries}
         entry_by_key = {entry["node_key"]: entry for entry in entries}
@@ -943,7 +965,10 @@ class VerificationEngine:
                     or item_obj.get("target_filename")
                     or n_key
                 )
-                filename = re.split(r"[/\\]+", str(raw_tf))[-1]
+                _, clean_raw_tf = parse_item_identifier(
+                    str(raw_tf), entry.get("source_root") or base_dir
+                )
+                filename = re.split(r"[/\\]+", str(clean_raw_tf))[-1]
                 item_action = (
                     (selections.get(src_p) if src_p else None)
                     or (selections.get(n_key) if n_key else None)
@@ -1452,6 +1477,31 @@ class VirtualFilesystemTracker:
         collisions = self.check_collisions(
             moves_list, base_dir, conflict_policy=conflict_policy
         )
+        recoverable_collisions = [
+            c for c in collisions if c.get("type") in _RECOVERABLE_COLLISION_TYPES
+        ]
+        seen_dup_paths = {
+            c.get("path")
+            for c in recoverable_collisions
+            if c.get("type") == "duplicate_target"
+        }
+        dest_to_srcs: dict[str, list[str]] = {}
+        for _, src, dst in moves_list:
+            abs_dst = os.path.abspath(dst)
+            dest_to_srcs.setdefault(abs_dst, []).append(os.path.abspath(src))
+        for dst, srcs in dest_to_srcs.items():
+            if len(srcs) > 1 and dst not in seen_dup_paths:
+                recoverable_collisions.append(
+                    {
+                        "path": dst,
+                        "type": "duplicate_target",
+                        "sources": srcs,
+                        "message": f"Multiple files are planned to be moved to the same destination: {dst}",
+                    }
+                )
+        critical_collisions = [
+            c for c in collisions if c.get("type") not in _RECOVERABLE_COLLISION_TYPES
+        ]
         circular_renames = self.check_circular_renames(moves_list)
 
         # Simulate final VFS state
@@ -1486,6 +1536,8 @@ class VirtualFilesystemTracker:
         warnings = []
         for c in collisions:
             warnings.append(c["message"])
+        for rc in recoverable_collisions:
+            warnings.append(rc["message"])
         for r in circular_renames:
             warnings.append(r["message"])
         for link in broken_links:
@@ -1504,6 +1556,7 @@ class VirtualFilesystemTracker:
 
         success = (
             len(collisions) == 0
+            and len(recoverable_collisions) == 0
             and len(circular_renames) == 0
             and len(broken_links) == 0
             and len(long_paths) == 0
@@ -1513,7 +1566,7 @@ class VirtualFilesystemTracker:
         )
 
         has_critical_errors = (
-            len(collisions) > 0
+            len(critical_collisions) > 0
             or len(circular_renames) > 0
             or len(invalid_renames) > 0
             or len(long_paths) > 0
@@ -1523,6 +1576,7 @@ class VirtualFilesystemTracker:
             "success": success,
             "has_critical_errors": has_critical_errors,
             "collisions": collisions,
+            "recoverable_collisions": recoverable_collisions,
             "circular_renames": circular_renames,
             "broken_links": broken_links,
             "long_paths": long_paths,
@@ -1557,6 +1611,7 @@ class VirtualFilesystemTracker:
     def check_rename_proposals(self, base_dir: str, plan: dict) -> tuple[list, list]:
         """Check all rename proposals in plan for OS character safety, extension preservation, and user confirmation."""
         from app.core.path_utils import is_valid_name
+        from app.core.scanner import parse_item_identifier
 
         invalid_renames = []
         unconfirmed_renames = []
@@ -1592,18 +1647,47 @@ class VirtualFilesystemTracker:
                     ):
                         continue
 
-                    rel_src = _get_val(content, "relative_source") or key
+                    parsed_root, rel_key = parse_item_identifier(str(key), base_dir)
+                    src_root = _get_val(content, "source_root")
+                    if not src_root and "::" in str(key):
+                        src_root = parsed_root
+                    effective_base = src_root if src_root else base_dir
+
+                    raw_rel_src = _get_val(content, "relative_source")
+                    if raw_rel_src is not None:
+                        _, rel_src = parse_item_identifier(
+                            str(raw_rel_src), effective_base
+                        )
+                    else:
+                        rel_src = rel_key
                     src_filename = re.split(r"[/\\]+", rel_src)[-1]
 
-                    raw_tf = _get_val(content, "target_filename") or key
-                    target_filename = re.split(r"[/\\]+", raw_tf)[-1]
+                    raw_tf = _get_val(content, "target_filename")
+                    if raw_tf is not None:
+                        _, clean_tf = parse_item_identifier(str(raw_tf), effective_base)
+                        target_filename = re.split(r"[/\\]+", clean_tf)[-1]
+                    else:
+                        target_filename = re.split(r"[/\\]+", rel_key)[-1]
 
                     # Check if target_filename differs from src_filename (rename proposal)
                     if target_filename != src_filename:
-                        src_stem, src_ext = os.path.splitext(src_filename)
-                        tgt_stem, tgt_ext = os.path.splitext(target_filename)
+                        _src_stem, src_ext = os.path.splitext(src_filename)
+                        _tgt_stem, tgt_ext = os.path.splitext(target_filename)
 
-                        source_path = os.path.normpath(os.path.join(base_dir, rel_src))
+                        src_p = _get_val(content, "source_path")
+                        if src_p:
+                            _, clean_sp = parse_item_identifier(
+                                str(src_p), effective_base
+                            )
+                            source_path = os.path.normpath(
+                                clean_sp
+                                if os.path.isabs(clean_sp)
+                                else os.path.join(effective_base, clean_sp)
+                            )
+                        else:
+                            source_path = os.path.normpath(
+                                os.path.join(effective_base, rel_src)
+                            )
                         dest_dir = os.path.normpath(
                             os.path.join(base_dir, current_dest)
                         )

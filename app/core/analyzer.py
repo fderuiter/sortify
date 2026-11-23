@@ -794,7 +794,14 @@ class IncrementalAnalyzer:
         from sklearn.feature_extraction.text import TfidfVectorizer
         from sklearn.metrics.pairwise import cosine_similarity
 
-        excl_rels = {fn.replace("\\", "/").lower() for fn in filenames if fn}
+        from app.core.scanner import parse_item_identifier
+
+        excl_rels: set[str] = set()
+        for fn in filenames:
+            if fn:
+                _, rel_fn = parse_item_identifier(fn, base_dir or "")
+                excl_rels.add(rel_fn.replace("\\", "/").lower())
+                excl_rels.add(fn.replace("\\", "/").lower())
         folder_profiles = [
             self._build_folder_anchor_profile(
                 folder, base_dir, dest_dir, exclude_rel_paths=excl_rels
@@ -803,7 +810,7 @@ class IncrementalAnalyzer:
         ]
         candidate_profiles = [
             self._augment_text_for_anchoring(
-                f"{os.path.splitext(os.path.basename(fn))[0]} {doc or ''}"
+                f"{os.path.splitext(os.path.basename(parse_item_identifier(fn, base_dir or '')[1]))[0]} {doc or ''}"
             )
             for fn, doc in zip(filenames, documents)
         ]
@@ -1006,31 +1013,52 @@ class IncrementalAnalyzer:
         if not isinstance(node, dict) or node.get("__type__") == "file":
             return node
 
-        new_node = {}
-        for k, v in node.items():
-            if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
-                norm_k = k.replace("\\", "/")
-                dirname = os.path.dirname(norm_k)
-                if not dirname:
-                    new_node[k] = v
+        from app.core.scanner import parse_item_identifier
+
+        default_base = getattr(self, "base_dir", "") or ""
+
+        def _walk(curr_node: dict, parent_parts: tuple[str, ...] = ()) -> dict:
+            if not isinstance(curr_node, dict) or curr_node.get("__type__") == "file":
+                return curr_node
+
+            new_node = {}
+            for k, v in curr_node.items():
+                if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
+                    _, rel_k = parse_item_identifier(k, default_base)
+                    norm_k = rel_k.replace("\\", "/")
+                    dirname = os.path.dirname(norm_k).strip("/")
+                    parts = [p for p in dirname.split("/") if p and p != "."]
+                    if (
+                        parent_parts
+                        and len(parts) >= len(parent_parts)
+                        and [p.lower() for p in parts[: len(parent_parts)]]
+                        == [p.lower() for p in parent_parts]
+                    ):
+                        parts = parts[len(parent_parts) :]
+                    if not parts:
+                        new_node[k] = v
+                    else:
+                        current = new_node
+                        for part in parts:
+                            if (
+                                part not in current
+                                or current[part] is None
+                                or (
+                                    isinstance(current[part], dict)
+                                    and current[part].get("__type__") == "file"
+                                )
+                            ):
+                                current[part] = {}
+                            current = current[part]
+                        current[k] = v
                 else:
-                    parts = dirname.split("/")
-                    current = new_node
-                    for part in parts:
-                        if (
-                            part not in current
-                            or current[part] is None
-                            or (
-                                isinstance(current[part], dict)
-                                and current[part].get("__type__") == "file"
-                            )
-                        ):
-                            current[part] = {}
-                        current = current[part]
-                    current[k] = v
-            else:
-                new_node[k] = self._inject_hierarchy(v)
-        return new_node
+                    child_prefix = (
+                        () if os.path.isabs(k) or "::" in k else parent_parts + (k,)
+                    )
+                    new_node[k] = _walk(v, child_prefix)
+            return new_node
+
+        return _walk(node)
 
     def _build_sorting_plan(
         self,
@@ -1203,9 +1231,11 @@ class IncrementalAnalyzer:
                 _, clean_rel = parse_item_identifier(str(path_val), base_dir)
                 top_seg = clean_rel.replace("\\", "/").strip("/").split("/")[0]
                 return (
-                    top_seg.startswith("_Quarantine_Staging")
-                    or top_seg.startswith("_Compliance_Quarantine")
-                    or (bool(qdir_top) and top_seg == qdir_top)
+                    top_seg.startswith(
+                        ("_Quarantine_Staging", "_Compliance_Quarantine")
+                    )
+                    or bool(qdir_top)
+                    and top_seg == qdir_top
                 )
 
             if docs:
@@ -1343,11 +1373,23 @@ class IncrementalAnalyzer:
                     return False
                 return cand_norm in rej_set or cand_norm.split("/")[0] in rej_set
 
+            def _clean_verified_folder(val: Optional[str]) -> Optional[str]:
+                if val is None:
+                    return None
+                s = str(val).strip().replace("\\", "/")
+                if not s or s in (".", "./"):
+                    return None
+                stripped = s.strip("/")
+                if not stripped or stripped == ".":
+                    return None
+                return str(val).strip()
+
             if locked_files:
                 locked_files = {
                     k: v
                     for k, v in locked_files.items()
-                    if not _is_target_rejected(k, v)
+                    if _clean_verified_folder(v) is not None
+                    and not _is_target_rejected(k, v)
                 }
 
             # Map file hashes to their historical targets (excluding quarantine and rejected targets)
@@ -1356,14 +1398,14 @@ class IncrementalAnalyzer:
                 if cancel_check and cancel_check():
                     return SortingPlan()
                 norm_df = str(d[0]).replace("\\", "/")
+                clean_d3 = _clean_verified_folder(d[3] if len(d) > 3 else None)
                 if (
-                    len(d) > 3
-                    and d[3] is not None
-                    and not str(d[3]).startswith("!")
+                    clean_d3 is not None
+                    and not clean_d3.startswith("!")
                     and doc_ratings.get(norm_df) != "negative"
-                    and not _is_quarantine_rel_path(d[3])
+                    and not _is_quarantine_rel_path(clean_d3)
                 ):
-                    hash_to_target[d[2]] = d[3]
+                    hash_to_target[d[2]] = clean_d3
 
             for d in docs:
                 if cancel_check and cancel_check():
@@ -1371,7 +1413,7 @@ class IncrementalAnalyzer:
                 f, doc = d[0], d[1]
                 norm_f_key = str(f).replace("\\", "/")
                 file_hash = d[2] if len(d) > 2 else None
-                assigned_folder = d[3] if len(d) > 3 else None
+                assigned_folder = _clean_verified_folder(d[3] if len(d) > 3 else None)
                 if assigned_folder is not None and (
                     str(assigned_folder).startswith("!")
                     or doc_ratings.get(norm_f_key) == "negative"
@@ -1400,8 +1442,15 @@ class IncrementalAnalyzer:
                     status_match = "UNSUPPORTED"
 
                 # Check if this file has a path lock / manual override first!
-                if locked_files and f in locked_files:
-                    target = locked_files[f]
+                locked_target = None
+                if locked_files:
+                    locked_target = _clean_verified_folder(
+                        locked_files.get(f)
+                        if f in locked_files
+                        else locked_files.get(norm_f_key)
+                    )
+                if locked_target is not None:
+                    target = locked_target
 
                 # Check against unified policies first!
                 # return_halting=True always yields a (result, halt) tuple.
@@ -1447,7 +1496,7 @@ class IncrementalAnalyzer:
                         ai_documents.append(doc)
                     continue
 
-                if locked_files and f in locked_files and target is not None:
+                if locked_target is not None and target is not None:
                     historical_overrides[f] = (target, status_match)
                     continue
 
@@ -1773,7 +1822,7 @@ class IncrementalAnalyzer:
             for d in docs:
                 norm_df = str(d[0]).replace("\\", "/")
                 file_hash = d[2] if len(d) > 2 else None
-                assigned_folder = d[3] if len(d) > 3 else None
+                assigned_folder = _clean_verified_folder(d[3] if len(d) > 3 else None)
                 if assigned_folder is not None and (
                     str(assigned_folder).startswith("!")
                     or doc_ratings.get(norm_df) == "negative"
@@ -1793,7 +1842,7 @@ class IncrementalAnalyzer:
 
                     ext = os.path.splitext(d[0])[1].lower()
                     if (
-                        ext not in {".png", ".jpg", ".jpeg"}
+                        ext not in {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp"}
                         and registry.is_supported(ext)
                         and not d[1].startswith("[STATUS:")
                         and d[1].strip()
@@ -1899,7 +1948,7 @@ class IncrementalAnalyzer:
                     from sklearn.preprocessing import normalize
 
                     # Database TF-IDF Statistics Retrieval
-                    N, top_terms, doc_terms, doc_metadata = self.db.get_tfidf_stats(
+                    N, top_terms, doc_terms, _doc_metadata = self.db.get_tfidf_stats(
                         base_dir
                     )
 
@@ -2409,41 +2458,71 @@ class IncrementalAnalyzer:
                         "extraction_status": ext_status,
                     }
 
+            def _is_file_leaf(val: Any) -> bool:
+                if val is None or isinstance(val, SortingPlanNode):
+                    return True
+                if hasattr(val, "node_type") and getattr(val, "node_type") == "file":
+                    return True
+                if isinstance(val, dict):
+                    return bool(
+                        val.get("__type__") == "file"
+                        or val.get("routed_by")
+                        or val.get("extraction_status")
+                    )
+                return False
+
             def remove_from_plan(node, target_f):
+                removed = None
+                norm_target_f = str(target_f).replace("\\", "/")
                 for k, v in list(node.items()):
-                    if k == target_f:
-                        if v is None or (
-                            isinstance(v, dict)
-                            and (v.get("routed_by") or v.get("extraction_status"))
-                        ):
-                            return node.pop(k)
-                        elif isinstance(v, dict) and "_original" in v:
-                            val = v.pop("_original")
+                    norm_k = str(k).replace("\\", "/")
+                    if k == target_f or norm_k == norm_target_f:
+                        if _is_file_leaf(v):
+                            removed = node.pop(k)
+                            continue
+                        if isinstance(v, dict) and "_original" in v:
+                            removed = v.pop("_original")
                             if not v:
                                 node.pop(k)
-                            return val
-                    if isinstance(v, dict):
+                            continue
+                    if isinstance(v, dict) and not _is_file_leaf(v):
                         res = remove_from_plan(v, target_f)
                         if res is not None:
-                            if not v:
-                                node.pop(k)
-                            return res
-                return None
+                            removed = res
+                        if not v:
+                            node.pop(k)
+                return removed
 
             if locked_files is None:
                 locked_files = {}
+            norm_locked_files = {
+                str(k).replace("\\", "/"): v for k, v in locked_files.items()
+            }
 
             # Phase 1: Policy, Keyword, and Learned Rule sorting
             compliance_targets = {}
+            rule_info_map = {}
             for f, target_folder, expression, rule_type, status in policy_plan_files:
                 compliance_targets[f] = target_folder
                 compliance_targets[f.replace("\\", "/")] = target_folder
+                rule_info_map[f] = (rule_type, expression)
+                rule_info_map[f.replace("\\", "/")] = (rule_type, expression)
             for f, target_folder, keyword, routed_by, ext_status in keyword_plan_files:
                 compliance_targets[f] = target_folder
                 compliance_targets[f.replace("\\", "/")] = target_folder
+                rule_info_map[f] = (routed_by, keyword)
+                rule_info_map[f.replace("\\", "/")] = (routed_by, keyword)
             for f, target_folder, jev_res, ext_status in jev_plan_files:
                 compliance_targets[f] = target_folder
                 compliance_targets[f.replace("\\", "/")] = target_folder
+                rule_info_map[f] = (
+                    "jev_classifier",
+                    getattr(jev_res, "category", None),
+                )
+                rule_info_map[f.replace("\\", "/")] = (
+                    "jev_classifier",
+                    getattr(jev_res, "category", None),
+                )
 
             for f, target_folder, expression, rule_type, status in policy_plan_files:
                 if cancel_check and cancel_check():
@@ -2481,38 +2560,54 @@ class IncrementalAnalyzer:
             for f, (target_folder, status) in historical_overrides.items():
                 if cancel_check and cancel_check():
                     return SortingPlan()
+                target_folder = _clean_verified_folder(target_folder)
+                if target_folder is None:
+                    continue
+
+                norm_f = str(f).replace("\\", "/")
+                is_explicit_lock = f in locked_files or norm_f in norm_locked_files
+                explicit_lock_target = (
+                    locked_files.get(f)
+                    if f in locked_files
+                    else norm_locked_files.get(norm_f)
+                )
+
                 is_conflicted = False
                 is_overridden_lock = False
-                compliance_path = None
+                compliance_path = compliance_targets.get(
+                    f, compliance_targets.get(norm_f)
+                )
+                original_hist_path = target_folder
+                original_lock_path = target_folder
+                used_rule_routing = False
 
-                if f in compliance_targets and compliance_targets[f] != target_folder:
-                    compliance_path = compliance_targets[f]
+                if compliance_path is not None and compliance_path != target_folder:
                     if f in matched_policies_map:
                         # Compliance policy always takes absolute precedence!
                         is_conflicted = True
                         is_overridden_lock = True
                         original_lock_path = target_folder
                         target_folder = compliance_path
-                    else:
-                        # Non-policy rule conflict (e.g. keyword rules vs historical target)
-                        # Original behavior: target_folder is NOT overridden, but we flag it as conflicted.
-                        if (
-                            locked_files
-                            and f in locked_files
-                            and locked_files[f]
-                            in (
-                                target_folder,
-                                compliance_path,
-                            )
-                        ):
-                            target_folder = locked_files[f]
-                        else:
+                    elif is_explicit_lock and explicit_lock_target:
+                        # Explicit user lock stays ahead of non-policy rules (CONTEXT.md:L43-L45)
+                        target_folder = explicit_lock_target
+                        if target_folder != compliance_path:
                             is_conflicted = True
+                    else:
+                        # Fixed rules (keyword, learned, extension category, sensitivity) stay ahead of unlocked history
+                        is_conflicted = True
+                        original_hist_path = target_folder
+                        target_folder = compliance_path
+                        used_rule_routing = True
+                elif (
+                    compliance_path is not None
+                    and compliance_path == target_folder
+                    and not is_explicit_lock
+                ):
+                    used_rule_routing = True
 
-                # Remove from other locations if present
-                for t in plan.values():
-                    if isinstance(t, dict) and f in t:
-                        del t[f]
+                # Remove from all prior locations (including nested folders like Finance/2025)
+                remove_from_plan(plan, f)
 
                 if target_folder not in plan:
                     plan[target_folder] = {}
@@ -2523,6 +2618,7 @@ class IncrementalAnalyzer:
                 }
 
                 matched_pol = matched_policies_map.get(f)
+                matched_rule = rule_info_map.get(f, rule_info_map.get(norm_f))
                 if matched_pol:
                     info["routed_by"] = getattr(matched_pol, "type", None) or (
                         matched_pol.get("type", "policy")
@@ -2542,6 +2638,9 @@ class IncrementalAnalyzer:
                     if pol_action == "trash":
                         info["policy_action"] = "trash"
                         info["duplicate_action"] = "trash"
+                elif used_rule_routing and matched_rule:
+                    info["routed_by"] = matched_rule[0]
+                    info["match"] = matched_rule[1]
                 else:
                     info["routed_by"] = "historical"
                     info["match"] = "user assignment"
@@ -2562,7 +2661,7 @@ class IncrementalAnalyzer:
                 elif is_conflicted:
                     info["is_conflicted"] = True
                     info["compliance_path"] = compliance_path
-                    info["historical_path"] = target_folder
+                    info["historical_path"] = original_hist_path
 
                 plan[target_folder][f] = info
 
@@ -2618,7 +2717,37 @@ class IncrementalAnalyzer:
             ):
                 clean_plan = self._inject_hierarchy(clean_plan)
 
-            # Post-process: ensure every file node in the plan has source_path and relative_source
+            configured_dup_action = (
+                str(getattr(runtime_settings, "DUPLICATE_ACTION", "off") or "off")
+                .strip()
+                .lower()
+                if runtime_settings
+                else "off"
+            )
+
+            # Post-process: ensure every file node in the plan has source_path and relative_source,
+            # and prune no-op leaves where source already equals destination (unless slated for
+            # trash/duplicate staging or active duplicate review).
+            eff_dest_root = dest_dir or base_dir
+
+            def _is_noop_destination(
+                s_root: str, src_rel: str, dst_folder: str, raw_key: str
+            ) -> bool:
+                src_abs = os.path.normcase(
+                    os.path.normpath(os.path.abspath(os.path.join(s_root, src_rel)))
+                )
+                if os.path.isabs(dst_folder) or ntpath.isabs(dst_folder):
+                    dst_dir_abs = dst_folder
+                elif dst_folder:
+                    dst_dir_abs = os.path.join(eff_dest_root, dst_folder)
+                else:
+                    dst_dir_abs = eff_dest_root
+                dst_fn = os.path.basename(raw_key.replace("\\", "/"))
+                dst_abs = os.path.normcase(
+                    os.path.normpath(os.path.abspath(os.path.join(dst_dir_abs, dst_fn)))
+                )
+                return src_abs == dst_abs
+
             def _ensure_relative_source(node, current_path=""):
                 for k, v in list(node.items()):
                     if v is None:
@@ -2626,6 +2755,18 @@ class IncrementalAnalyzer:
                         raw_k = k
                         if "::" in k:
                             src_root, raw_k = k.split("::", 1)
+                        cand_abs = os.path.normpath(
+                            os.path.abspath(os.path.join(src_root, raw_k))
+                        )
+                        keep_for_dup = (
+                            cand_abs in primary_by_abs
+                            and configured_dup_action in ("stage", "trash", "review")
+                        )
+                        if not keep_for_dup and _is_noop_destination(
+                            src_root, raw_k, current_path, raw_k
+                        ):
+                            del node[k]
+                            continue
                         rel_src = safe_relpath(
                             os.path.join(src_root, raw_k),
                             os.path.join(src_root, current_path)
@@ -2657,6 +2798,27 @@ class IncrementalAnalyzer:
 
                             src_rel_for_calc = v.get("source_path") or raw_k
                             s_root = v.get("source_root") or base_dir
+                            cand_abs = os.path.normpath(
+                                os.path.abspath(
+                                    src_rel_for_calc
+                                    if os.path.isabs(str(src_rel_for_calc))
+                                    else os.path.join(s_root, str(src_rel_for_calc))
+                                )
+                            )
+                            keep_for_disposal = (
+                                v.get("policy_action") == "trash"
+                                or v.get("duplicate_action") in ("stage", "trash")
+                                or (
+                                    cand_abs in primary_by_abs
+                                    and configured_dup_action
+                                    in ("stage", "trash", "review")
+                                )
+                            )
+                            if not keep_for_disposal and _is_noop_destination(
+                                s_root, src_rel_for_calc, current_path, raw_k
+                            ):
+                                del node[k]
+                                continue
                             rel_src = safe_relpath(
                                 os.path.join(s_root, src_rel_for_calc),
                                 os.path.join(s_root, current_path)
@@ -2669,16 +2831,10 @@ class IncrementalAnalyzer:
                             _ensure_relative_source(
                                 v, os.path.join(current_path, k) if current_path else k
                             )
+                            if not v:
+                                del node[k]
 
             _ensure_relative_source(clean_plan)
-
-            configured_dup_action = (
-                str(getattr(runtime_settings, "DUPLICATE_ACTION", "off") or "off")
-                .strip()
-                .lower()
-                if runtime_settings
-                else "off"
-            )
 
             def _tag_byte_duplicates(node: dict[str, Any]) -> None:
                 for k, v in list(node.items()):

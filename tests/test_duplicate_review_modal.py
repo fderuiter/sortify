@@ -471,8 +471,10 @@ def test_apply_deduplication_selections_overwrite_and_keep_both(tmp_path):
     assert plan_keep_both["doc2.pdf"].get("confirmed") is True
 
 
-def test_verifier_categorizes_destination_collisions_as_critical_errors(tmp_path):
-    """Test that destination collisions set has_critical_errors to True."""
+def test_verifier_categorizes_destination_collisions_as_recoverable_and_structural_as_critical(
+    tmp_path,
+):
+    """Test that file destination collisions report as recoverable_collisions (non-critical) while directory collisions stay critical."""
     base_dir = str(tmp_path)
     f1 = tmp_path / "a.txt"
     f2 = tmp_path / "b.txt"
@@ -485,18 +487,41 @@ def test_verifier_categorizes_destination_collisions_as_critical_errors(tmp_path
             "relative_source": "a.txt",
             "target_filename": "out.txt",
             "is_checked": True,
+            "confirmed": True,
         },
         "b.txt": {
             "node_type": "file",
             "relative_source": "b.txt",
             "target_filename": "out.txt",
             "is_checked": True,
+            "confirmed": True,
         },
     }
 
     result = VerificationEngine.verify_plan_integrity(base_dir, plan)
     assert len(result["collisions"]) > 0
-    assert result["has_critical_errors"] is True
+    assert len(result["recoverable_collisions"]) > 0
+    assert result["recoverable_collisions"][0]["type"] == "duplicate_target"
+    assert result["has_critical_errors"] is False
+    assert VerificationEngine.is_critical_error(result) is False
+
+    # Structural collision (file targeting an existing directory) remains a critical error
+    existing_dir = tmp_path / "ExistingDir"
+    existing_dir.mkdir()
+    structural_plan = {
+        "a.txt": {
+            "node_type": "file",
+            "relative_source": "a.txt",
+            "target_filename": "ExistingDir",
+            "is_checked": True,
+            "confirmed": True,
+        }
+    }
+    structural_result = VerificationEngine.verify_plan_integrity(
+        base_dir, structural_plan
+    )
+    assert structural_result["has_critical_errors"] is True
+    assert VerificationEngine.is_critical_error(structural_result) is True
 
 
 @pytest.mark.anyio

@@ -20,6 +20,8 @@ class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -263,6 +265,8 @@ class ExportRulesModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Pa
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -495,6 +499,8 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -1110,6 +1116,8 @@ class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -1266,6 +1274,8 @@ class DeleteRuleConfirmModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[bool]
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel deletion", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -1372,6 +1382,8 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
         Binding("e", "export_rules", "Export Rules", show=False),
         Binding("ctrl+b", "browse_templates", "Browse Templates", show=True),
         Binding("b", "browse_templates", "Browse Templates", show=False),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """

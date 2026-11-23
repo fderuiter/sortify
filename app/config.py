@@ -966,7 +966,7 @@ class Settings(BaseSettings):
                     action, str
                 ) or not PolicyEngine.validate_policy_action(action):
                     raise ValueError(
-                        f"Invalid policy action: {action}. Must be one of {sorted(list(PolicyEngine.SUPPORTED_ACTIONS))}."
+                        f"Invalid policy action: {action}. Must be one of {sorted(PolicyEngine.SUPPORTED_ACTIONS)}."
                     )
 
             detect_by = rule.get("detect_original_by")

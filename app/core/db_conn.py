@@ -77,6 +77,11 @@ def clear_connection_cache(only_current_and_inactive: bool = True):
     global _connection_cache
     import gc
 
+    from app.core.crypto import (
+        _clear_session_crypto_cache,
+        _reset_keyring_probe_cache,
+    )
+
     with _cache_lock:
         if only_current_and_inactive:
             calling_thread_id = threading.get_ident()
@@ -102,6 +107,8 @@ def clear_connection_cache(only_current_and_inactive: bool = True):
                 if k[1] == calling_thread_id or k[1] not in active_thread_ids
             ]:
                 _raw_key_to_abs.pop(rk, None)
+            remaining_db_paths = {db_abs for (db_abs, _tid) in _connection_cache.keys()}
+            _clear_session_crypto_cache(keep_db_paths=remaining_db_paths)
         else:
             for k, conn in _connection_cache.items():
                 try:
@@ -116,6 +123,8 @@ def clear_connection_cache(only_current_and_inactive: bool = True):
             _raw_key_to_abs.clear()
             with _path_locks_lock:
                 _path_init_locks.clear()
+            _clear_session_crypto_cache()
+            _reset_keyring_probe_cache()
     gc.collect()
 
 

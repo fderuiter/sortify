@@ -225,6 +225,8 @@ class CommandPaletteModal(
         Binding("escape", "cancel", "Close palette", show=True),
         Binding("up", "cursor_up", "Move selection up", show=False),
         Binding("down", "cursor_down", "Move selection down", show=False),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """

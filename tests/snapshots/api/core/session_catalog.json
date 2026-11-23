@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "ce2c9952eda6dd1e2fe8f59a5f3980323d84b18759a25f1516a7f13ca401441f"
+    "checksum": "3339c69e5a7f5c9da675c622a9168b07e265eb341883cc7040178fe96f32edb2"
   },
   "classes": [],
   "functions": [
@@ -43,6 +43,24 @@
     {
       "async": false,
       "decorators": [],
+      "name": "get_session_moves",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "session_id"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "store"
+        }
+      ],
+      "returns": "list[dict[str, Any]]"
+    },
+    {
+      "async": false,
+      "decorators": [],
       "name": "list_sessions",
       "parameters": [
         {
@@ -70,6 +88,39 @@
         }
       ],
       "returns": "None"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "preview_session_rollback",
+      "parameters": [
+        {
+          "annotation": "str | None",
+          "default": null,
+          "name": "session_id"
+        },
+        {
+          "annotation": "Collection[int | str] | None",
+          "default": "None",
+          "name": "selected_step_ids"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "ignore_missing"
+        },
+        {
+          "annotation": "Sequence[dict[str, Any]] | None",
+          "default": "None",
+          "name": "fallback_items"
+        },
+        {
+          "annotation": null,
+          "default": "None",
+          "name": "store"
+        }
+      ],
+      "returns": "dict[str, Any]"
     },
     {
       "async": false,

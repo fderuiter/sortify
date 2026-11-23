@@ -25,7 +25,7 @@ from app.ui.modals.edit import (
     ReassignModal,
     RenameModal,
 )
-from app.ui.modals.help import ShortcutCheatSheetModal
+from app.ui.modals.help import ShortcutCheatSheetModal, TroubleshootingHelpModal
 from app.ui.modals.models import ModelManagerModal
 from app.ui.modals.quarantine import QuarantineVaultModal
 from app.ui.modals.reports import (
@@ -126,7 +126,7 @@ CATALOG_REGISTRY: list[dict[str, Any]] = [
                 {
                     "group_id": "dup_1",
                     "group_kind": "duplicate",
-                    "target_filename": "invoice_q4.pdf",
+                    "target_filename": "memo_0001.pdf",
                     "target_dir": "/workspace/Finance",
                     "byte_size": 248320,
                     "sha256": "e3b0c44298fc1c149afbf4c8996fb924",
@@ -134,16 +134,16 @@ CATALOG_REGISTRY: list[dict[str, Any]] = [
                     "default_action": "stage",
                     "items": [
                         {
-                            "node_key": "invoice_q4.pdf",
-                            "source_path": "/workspace/Downloads/invoice_q4.pdf",
-                            "relative_source": "Downloads/invoice_q4.pdf",
+                            "node_key": "memo_0001.pdf",
+                            "source_path": "/workspace/Downloads/memo_0001.pdf",
+                            "relative_source": "Downloads/memo_0001.pdf",
                             "is_primary": True,
                             "byte_size": 248320,
                         },
                         {
-                            "node_key": "invoice_q4 (1).pdf",
-                            "source_path": "/workspace/Downloads/invoice_q4 (1).pdf",
-                            "relative_source": "Downloads/invoice_q4 (1).pdf",
+                            "node_key": "memo_0001 (1).pdf",
+                            "source_path": "/workspace/Downloads/memo_0001 (1).pdf",
+                            "relative_source": "Downloads/memo_0001 (1).pdf",
                             "is_primary": False,
                             "byte_size": 248320,
                         },
@@ -187,6 +187,15 @@ CATALOG_REGISTRY: list[dict[str, Any]] = [
         "category": "modal",
         "description": "Modal cheat sheet displaying keyboard shortcut bindings.",
         "factory": lambda settings=None: ShortcutCheatSheetModal(),
+    },
+    {
+        "id": "troubleshooting_help_modal",
+        "name": "Troubleshooting Help Modal",
+        "category": "modal",
+        "description": "Offline troubleshooting guide viewer modal dialog.",
+        "factory": lambda settings=None: TroubleshootingHelpModal(
+            anchor="session-recovery"
+        ),
     },
     {
         "id": "model_manager_modal",

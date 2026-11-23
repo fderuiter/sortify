@@ -35,12 +35,12 @@ are lazy and TF-IDF clustering works without it.
 
 ## Run the TUI (agent path)
 
-One-shot, commands as `-c` flags (stderr is keyring noise, drop it):
+One-shot, commands as `-c` flags (stderr stays visible for real errors while routine logs go to `autosorter.log`):
 
 ```bash
 uv run python .agents/skills/run-sortify/driver.py \
   -c "press ctrl+s" -c "idle" -c "tree" -c "press down down" -c "ss planned" \
-  -c "press ctrl+e" -c "idle" -c "screen" -c "ss executed" -c "files" 2>/dev/null
+  -c "press ctrl+e" -c "idle" -c "screen" -c "ss executed" -c "files"
 ```
 
 That is the full user flow: scan (Ctrl+S) and plan the corpus into `Budget-Balance/` and
@@ -69,7 +69,7 @@ Options: `--dir PATH` (sort your own folder - it **moves files** on
 REPL mode under tmux, for poking around interactively:
 
 ```bash
-tmux new-session -d -s drv -x 200 -y 50 "uv run python .agents/skills/run-sortify/driver.py 2>/dev/null"
+tmux new-session -d -s drv -x 200 -y 50 "uv run python .agents/skills/run-sortify/driver.py"
 until tmux capture-pane -t drv -p | grep -q "sortify>"; do sleep 1; done
 tmux send-keys -t drv "press ctrl+f" Enter "type fin 2" Enter "eval app.query_one('#tree-search-input').value" Enter
 tmux send-keys -t drv "press ctrl+o" Enter "screen" Enter "ss settings" Enter
@@ -100,16 +100,17 @@ tmux kill-session -t sortify
 Reuses the `$D/inbox` corpus from the block above:
 
 ```bash
-export AUTOSORTER_APP_DIR=$D/app        # always isolate state
-uv run smart-autosorter sort $D/inbox --dry-run --json --accept-ai-consent --non-interactive 2>/dev/null > $D/plan.json
+export AUTOSORTER_APP_DIR=$D/app        # isolate app state
+export SORTIFY_KEYS_DIR=$D/keys         # isolate fallback .key files
+uv run smart-autosorter sort $D/inbox --dry-run --json --accept-ai-consent --non-interactive > $D/plan.json
 uv run smart-autosorter sort $D/inbox --accept-ai-consent --non-interactive   # really moves files
 uv run smart-autosorter undo --list
 uv run smart-autosorter undo --latest   # "Rollback completed successfully for session ..."
 ```
 
 The `--json` output has keys `status, dry_run, target_directory,
-destination_directory, plan`; stdout is clean JSON when stderr is
-redirected. A sort of the 8-file corpus takes ~13s.
+destination_directory, plan`; stdout is clean JSON while stderr stays visible
+for actionable diagnostics. A sort of the 8-file corpus takes ~13s.
 
 ## Test
 
@@ -134,16 +135,18 @@ uv run pytest tests/test_visual_snapshots.py   # TUI SVG snapshots (slow marker)
 - **Never redirect stderr of the real TUI** (`2>file`): Textual draws to
   stderr, so the whole UI goes into the file and tmux shows raw escapes.
 - **State leaks across runs.** Sessions live under `AUTOSORTER_APP_DIR`
-  (default `~/.autosorter`); key files go to `~/.sortify/keys` regardless.
-  A crashed or killed sort shows up as "Interrupted Session Detected" on
-  the next TUI start. The driver isolates both by
-  default; for the CLI set `AUTOSORTER_APP_DIR` (and `HOME`) to a temp dir.
+  (default `~/.autosorter`); fallback key files go to `SORTIFY_KEYS_DIR`
+  (default `~/.sortify/keys`). A crashed or killed sort shows up as
+  "Interrupted Session Detected" on the next TUI start. `--demo`,
+  `sandbox_cli.py`, and `driver.py` isolate both automatically; for manual
+  CLI runs set `AUTOSORTER_APP_DIR` and `SORTIFY_KEYS_DIR` to a temp dir.
 - Textual SVGs pull Fira Code from cdnjs, which the container proxy
   blocks; the PNG renders with a fallback monospace font. Proxy
   "connect_rejected" notices for cdnjs/google during `ss` are that, harmless.
-- **No OS keyring in the container**: every DB open logs "Keyring lookup
-  failed ... No recommended backend" to stderr. Harmless; keys fall back to
-  files. That is why the commands above use `2>/dev/null`.
+- **No OS keyring in the container**: Sortify probes the OS keyring at most
+  once per process within a 2-second timeout, records the fallback warning in
+  `autosorter.log`, and uses local `.key` files without spamming `stderr`.
+  Keep `stderr` unredirected so real errors remain visible.
 - **`undo` leaves the empty generated folders behind**; only files move back.
 - After Ctrl+E the TUI rescans the now-sorted folder, so the status bar
   shows the scan message, not the move result. Check `files` or the modal.

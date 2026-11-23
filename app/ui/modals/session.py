@@ -2,7 +2,9 @@
 
 import logging
 import os
+import tempfile
 import time
+from pathlib import Path
 from typing import Any, Optional
 
 from textual import on, work
@@ -13,8 +15,11 @@ from textual.coordinate import Coordinate
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static
 
+from app.config import get_app_dir
 from app.core.path_utils import scrub_user_home_paths
+from app.core.resilient_file_ops import _set_posix_mode
 from app.core.text_utils import sanitize_secret_patterns
+from app.log_filter import scrub_diagnostic_text
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
 from app.ui.layout import ModalBox, ResponsiveLayoutMixin
@@ -30,6 +35,8 @@ class SessionRecoveryModal(
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -163,10 +170,7 @@ class SessionRecoveryModal(
     def action_help(self) -> None:
         """Open session recovery troubleshooting guide."""
         url = f"{TROUBLESHOOTING_URL}#session-recovery"
-        from app.ui.notifications import notify
-
-        notify(f"Opening help link: {url}", type="info", help_url=url)
-        self.announce(f"Opened documentation link: {url}")
+        self.open_help_section(url)
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
@@ -203,6 +207,8 @@ class MultiSessionRecoveryModal(
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -519,12 +525,19 @@ class MultiSessionRecoveryModal(
         if not selected:
             return
         sid = selected.get("session_id", "Unknown")
-        from app.core.session_catalog import forget_abandoned_session
+        app_clean = getattr(self.app, "_do_recovery_clean", None)
+        if callable(app_clean):
+            try:
+                app_clean(selected)
+            except Exception as e:
+                logger.error(f"Error cleaning session {sid}: {e}")
+        else:
+            from app.core.session_catalog import forget_abandoned_session
 
-        try:
-            forget_abandoned_session(selected)
-        except Exception as e:
-            logger.error(f"Error cleaning session {sid}: {e}")
+            try:
+                forget_abandoned_session(selected)
+            except Exception as e:
+                logger.error(f"Error cleaning session {sid}: {e}")
 
         self.announce(f"Cleaned session files for '{sid}'.")
         self.sessions = [s for s in self.sessions if s.get("session_id") != sid]
@@ -539,19 +552,33 @@ class MultiSessionRecoveryModal(
         if not selected:
             return
         sid = selected.get("session_id", "Unknown")
-        from app.core.session_catalog import roll_back_abandoned_session
+        app_rollback = getattr(self.app, "_do_recovery_rollback", None)
+        if callable(app_rollback):
+            outcome = app_rollback(selected)
+            succeeded = outcome is not False
+        else:
+            from app.core.session_catalog import roll_back_abandoned_session
 
-        settings = getattr(self, "settings", None) or getattr(
-            self.app, "settings", None
-        )
-        if settings:
-            roll_back_abandoned_session(settings, selected)
-        action_scan = getattr(self.app, "action_scan_directory", None)
-        if callable(action_scan):
-            try:
-                action_scan()
-            except Exception:
-                pass
+            settings = getattr(self, "settings", None) or getattr(
+                self.app, "settings", None
+            )
+            succeeded = (
+                bool(roll_back_abandoned_session(settings, selected))
+                if settings
+                else False
+            )
+            action_scan = getattr(self.app, "action_scan_directory", None)
+            if callable(action_scan):
+                try:
+                    action_scan()
+                except Exception:
+                    pass
+
+        if not succeeded:
+            self.announce(
+                f"Session recovery failed for '{sid}': write/permission error. Session files and safety storage preserved."
+            )
+            return
 
         self.announce(f"Rolled back session '{sid}'.")
         self.sessions = [s for s in self.sessions if s.get("session_id") != sid]
@@ -563,10 +590,7 @@ class MultiSessionRecoveryModal(
     def action_help(self) -> None:
         """Open session recovery troubleshooting guide."""
         url = f"{TROUBLESHOOTING_URL}#multi-session-recovery"
-        from app.ui.notifications import notify
-
-        notify(f"Opening help link: {url}", type="info", help_url=url)
-        self.announce(f"Opened documentation link: {url}")
+        self.open_help_section(url)
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
@@ -583,6 +607,8 @@ class RollbackConfirmModal(
     BINDINGS = [
         Binding("escape", "cancel", "Cancel rollback dialog", show=True),
         Binding("space", "toggle_current_row", "Toggle selection", show=False),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -930,10 +956,9 @@ class RollbackConfirmModal(
         sid = self.session_info.get("session_id")
         if not self.all_items and sid:
             try:
-                from app.core.history import open_session_history
+                from app.core.session_catalog import get_session_moves
 
-                with open_session_history() as history_mgr:
-                    self.all_items = history_mgr.get_session_moves(sid)
+                self.all_items = get_session_moves(sid)
             except Exception as exc:
                 logger.exception(
                     "Failed to load session history for rollback modal: %s", exc
@@ -1052,104 +1077,21 @@ class RollbackConfirmModal(
             pass
 
     def _compute_dryrun_preview(self) -> dict[str, Any]:
-        """Compute dry-run simulation preview using HistoryManager or local simulation."""
+        """Compute dry-run simulation preview via session_catalog."""
+        from app.core.session_catalog import preview_session_rollback
+
         sid = self.session_info.get("session_id")
         chk = self.query("#chk-ignore-missing").results(Checkbox)
         chk_box = next(iter(chk), None)
         ignore_missing = chk_box.value if chk_box else False
-
         selected_ids = list(self.selected_step_ids) if self.selected_step_ids else []
 
-        if sid:
-            try:
-                from app.core.history import open_session_history
-
-                with open_session_history() as history_mgr:
-                    return history_mgr.preview_rollback(
-                        session_id=sid,
-                        selected_step_ids=selected_ids,
-                        ignore_missing=ignore_missing,
-                    )
-            except Exception:
-                pass
-
-        # Fallback local computation if history DB context is not active
-        from app.core.mover import get_safe_path
-        from app.core.resilient_file_ops import same_file_content
-
-        steps_to_analyze = [
-            item for item in self.all_items if item["step_id"] in self.selected_step_ids
-        ]
-        analyzed = []
-        clean = identical = collision = missing = 0
-        for item in steps_to_analyze:
-            step_id = item["step_id"]
-            src = str(item.get("source_path") or "")
-            dst = str(item.get("target_path") or "")
-            sz = item.get("size")
-
-            t_exists = bool(dst and os.path.lexists(dst))
-            s_exists = bool(src and os.path.lexists(src))
-
-            if not t_exists:
-                st = "MISSING_TARGET"
-                is_coll = False
-                rest_path = src
-                det = "Target sorted file is missing on disk"
-                missing += 1
-            elif s_exists:
-                if same_file_content(src, dst):
-                    st = "IDENTICAL_EXISTS"
-                    is_coll = False
-                    rest_path = src
-                    det = "Identical copy exists at original path; sorted copy will be removed"
-                    identical += 1
-                else:
-                    st = "COLLISION"
-                    is_coll = True
-                    dest_dir = os.path.dirname(src) or "."
-                    orig_filename = os.path.basename(src)
-                    rest_path = os.path.normpath(
-                        get_safe_path(dest_dir, orig_filename, dst)
-                    )
-                    det = f"Original path is occupied; will restore as {os.path.basename(rest_path)}"
-                    collision += 1
-            else:
-                st = "CLEAN"
-                is_coll = False
-                rest_path = src
-                det = "Ready for clean restoration"
-                clean += 1
-
-            analyzed.append(
-                {
-                    "step_id": step_id,
-                    "source_path": src,
-                    "target_path": dst,
-                    "restoration_path": rest_path,
-                    "status": st,
-                    "collision": is_coll,
-                    "size": sz,
-                    "detail": det,
-                }
-            )
-
-        tot = len(analyzed)
-        return {
-            "session_id": sid,
-            "total_operations": tot,
-            "summary": {
-                "total": tot,
-                "clean": clean,
-                "identical_exists": identical,
-                "collision": collision,
-                "missing_target": missing,
-            },
-            "has_collisions": collision > 0,
-            "has_missing": missing > 0,
-            "ignore_missing": ignore_missing,
-            "steps": analyzed,
-        }
+        return preview_session_rollback(
+            sid,
+            selected_step_ids=selected_ids,
+            ignore_missing=ignore_missing,
+            fallback_items=self.all_items,
+        )
 
     def _show_stage_2(self) -> None:
         """Compute dry-run preview and switch UI view to Stage 2."""
@@ -1333,11 +1275,13 @@ class RollbackConfirmModal(
         self.dismiss(None)
 
 
-class RollbackErrorModal(A11yMixin, ModalScreen[None]):
+class RollbackErrorModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     """Modal dialog displaying error messages encountered during session rollback."""
 
     BINDINGS = [
         Binding("escape", "close", "Close error dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -1349,11 +1293,17 @@ class RollbackErrorModal(A11yMixin, ModalScreen[None]):
         padding: 1 2;
         background: $panel;
         border: thick $error;
-        width: 85%;
-        max-width: 75;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
         height: auto;
         max-height: 90%;
         overflow-y: hidden;
+    }
+    .compact .error-box, .narrow .error-box {
+        padding: 0 1;
+        width: 96%;
+        max-height: 96%;
     }
     .modal-body {
         width: 100%;
@@ -1378,12 +1328,27 @@ class RollbackErrorModal(A11yMixin, ModalScreen[None]):
         height: auto;
         align: right middle;
     }
+    .button-row Button {
+        margin-left: 1;
+    }
+    Button:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
     """
 
-    def __init__(self, title: str = "Rollback Failed", error_message: str = ""):
+    def __init__(
+        self,
+        title: str = "Rollback Failed",
+        error_message: str = "",
+        settings: Any = None,
+    ):
         super().__init__()
         self.error_title = title
         self.error_message = error_message
+        self.settings = settings
+        self.help_url = f"{TROUBLESHOOTING_URL}#session-recovery"
+        self.last_exported_diagnostics_path: Optional[str] = None
 
     def compose(self) -> ComposeResult:
         """Compose error modal widgets."""
@@ -1396,12 +1361,132 @@ class RollbackErrorModal(A11yMixin, ModalScreen[None]):
                     self.error_message, classes="error-text", id="lbl-error-message"
                 )
             with Horizontal(classes="button-row"):
-                yield Button("Close", id="btn-close-error", variant="primary")
+                btn_help = Button("Help", id="btn-help", variant="default")
+                btn_help.tooltip = "Open session recovery troubleshooting guide"
+                yield btn_help
+
+                btn_export = Button(
+                    "Export Diagnostics",
+                    id="btn-export-diagnostics",
+                    variant="warning",
+                )
+                btn_export.tooltip = "Export scrubbed diagnostic log report"
+                yield btn_export
+
+                btn_close = Button("Close", id="btn-close-error", variant="primary")
+                btn_close.tooltip = "Close rollback error dialog"
+                yield btn_close
 
     def on_mount(self) -> None:
         """Focus close button and announce error message."""
+        self._update_layout(self.size.width, self.size.height)
         self.query_one("#btn-close-error", Button).focus()
         self.announce(f"Error dialog: {self.error_title}")
+
+    def _build_scrubbed_diagnostics_payload(self, settings_obj: Any) -> str:
+        """Build a redacted diagnostic report from error context and ``settings.LOG_FILE``."""
+        ts_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        clean_title = scrub_diagnostic_text(str(self.error_title or "Rollback Failed"))
+        clean_error = scrub_diagnostic_text(str(self.error_message or ""))
+
+        lines = [
+            "Sortify Rollback Diagnostic Report",
+            f"Generated: {ts_iso}",
+            f"Title: {clean_title}",
+            f"Error: {clean_error}",
+            "",
+            "--- Application Log Excerpt ---",
+        ]
+
+        log_file_val = (
+            getattr(settings_obj, "LOG_FILE", None)
+            if settings_obj is not None
+            else None
+        )
+        log_loaded = False
+        if log_file_val:
+            try:
+                log_path = Path(str(log_file_val))
+                if log_path.is_file():
+                    raw_lines = log_path.read_text(
+                        encoding="utf-8", errors="replace"
+                    ).splitlines()
+                    for raw_line in raw_lines[-500:]:
+                        if "enc:" in raw_line:
+                            continue
+                        lines.append(scrub_diagnostic_text(raw_line))
+                    log_loaded = True
+            except OSError:
+                log_loaded = False
+
+        if not log_loaded:
+            lines.append("Application log file unavailable or absent on disk.")
+
+        return "\n".join(lines) + "\n"
+
+    def _write_secure_diagnostic_file(self, payload: str, app_obj: Any) -> str:
+        """Write diagnostic payload with ``0o600`` permissions across fallback directories."""
+        stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+        filename = f"sortify-diagnostics-{stamp}.log"
+        candidate_dirs: list[tuple[Path, bool]] = []
+
+        base_dir = getattr(app_obj, "base_dir", None) if app_obj is not None else None
+        if base_dir:
+            base_path = Path(str(base_dir))
+            if base_path.is_dir():
+                candidate_dirs.append((base_path, False))
+
+        try:
+            candidate_dirs.append((Path(get_app_dir()), True))
+        except Exception:
+            pass
+
+        for target_dir, allow_create in candidate_dirs:
+            try:
+                if allow_create:
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                out_path = target_dir / filename
+                fd = os.open(
+                    str(out_path),
+                    os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                    0o600,
+                )
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    fh.write(payload)
+                _set_posix_mode(str(out_path), 0o600)
+                return str(out_path)
+            except OSError:
+                continue
+
+        fd, tmp_path = tempfile.mkstemp(prefix="sortify-diagnostics-", suffix=".log")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+        _set_posix_mode(tmp_path, 0o600)
+        return tmp_path
+
+    @on(Button.Pressed, "#btn-help")
+    def action_help(self) -> None:
+        """Open session recovery troubleshooting guide."""
+        url = getattr(
+            self,
+            "help_url",
+            f"{TROUBLESHOOTING_URL}#session-recovery",
+        )
+        self.open_help_section(url)
+
+    @on(Button.Pressed, "#btn-export-diagnostics")
+    def action_export_diagnostics(self) -> str:
+        """Export scrubbed diagnostic log report with ``0o600`` permissions."""
+        app_obj = self._resolve_app_instance()
+        settings_obj = getattr(self, "settings", None) or getattr(
+            app_obj, "settings", None
+        )
+        payload = self._build_scrubbed_diagnostics_payload(settings_obj)
+        out_path = self._write_secure_diagnostic_file(payload, app_obj)
+        self.last_exported_diagnostics_path = out_path
+        notify(f"Exported scrubbed diagnostics: {out_path}", type="positive")
+        self.announce(f"Exported scrubbed diagnostics: {out_path}")
+        return out_path
 
     @on(Button.Pressed, "#btn-close-error")
     def action_close(self) -> None:
@@ -1416,6 +1501,8 @@ class HistoryModal(
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -1506,6 +1593,25 @@ class HistoryModal(
         self.sessions = sessions or []
         self.base_dir = base_dir
         self._rollback_in_progress = False
+        self._rollback_pipeline: Any = None
+
+    def _build_session_select_options(self) -> list[tuple[str, str]]:
+        """Build Select widget options for available historical sessions."""
+        if not self.sessions:
+            return [("No historical sessions found", "none")]
+        options = [("All Sessions (Aggregate Audit Log)", "all")]
+        for s in self.sessions:
+            sid = s.get("session_id", "unknown")
+            b_dir = s.get("base_dir") or "N/A"
+            status = s.get("status") or "completed"
+            step_cnt = s.get("step_count") or s.get("file_count") or 0
+            options.append(
+                (
+                    f"{sid[:8]}... | {status.upper()} | {step_cnt} file(s) | {b_dir}",
+                    sid,
+                )
+            )
+        return options
 
     def compose(self) -> ComposeResult:
         """Compose history view, export, and rollback modal widgets."""
@@ -1522,21 +1628,7 @@ class HistoryModal(
                     classes="modal-subtitle",
                 )
 
-                options = [("All Sessions (Aggregate Audit Log)", "all")]
-                for s in self.sessions:
-                    sid = s.get("session_id", "unknown")
-                    b_dir = s.get("base_dir") or "N/A"
-                    status = s.get("status") or "completed"
-                    step_cnt = s.get("step_count") or s.get("file_count") or 0
-                    options.append(
-                        (
-                            f"{sid[:8]}... | {status.upper()} | {step_cnt} file(s) | {b_dir}",
-                            sid,
-                        )
-                    )
-
-                if len(options) == 1 and not self.sessions:
-                    options = [("No historical sessions found", "none")]
+                options = self._build_session_select_options()
 
                 select_sess = Select(
                     options,
@@ -1736,17 +1828,38 @@ class HistoryModal(
         selected_step_ids: Optional[list[Any]] = None,
     ) -> None:
         """Execute session rollback asynchronously in background worker thread."""
+        app_obj = getattr(self, "app", None)
         try:
-            from app.core.history import open_session_history
+            from app.core.pipeline import SortPipeline
 
-            kwargs: dict[str, Any] = {"ignore_missing": ignore_missing}
-            if selected_step_ids is not None:
-                kwargs["selected_step_ids"] = selected_step_ids
+            app_session = getattr(app_obj, "app_session", None)
+            settings = getattr(app_obj, "settings", None)
+            pipeline = getattr(app_obj, "pipeline", None)
+            if pipeline is None or pipeline.state.is_active:
+                pipeline = SortPipeline(app_session, settings=settings)
+                if app_obj is not None and getattr(app_obj, "pipeline", None) is None:
+                    app_obj.pipeline = pipeline
+                    state_hook = getattr(
+                        app_obj, "_handle_pipeline_state_transition", None
+                    )
+                    tel_hook = getattr(app_obj, "_handle_pipeline_telemetry", None)
+                    if callable(state_hook):
+                        pipeline.add_state_change_hook(state_hook)
+                    if callable(tel_hook):
+                        pipeline.add_telemetry_hook(tel_hook)
+            self._rollback_pipeline = pipeline
 
-            with open_session_history() as history_mgr:
-                restored_count = history_mgr.rollback(session_id, **kwargs)
+            undo_result = pipeline.undo(
+                session_id,
+                ignore_missing=ignore_missing,
+                selected_step_ids=selected_step_ids,
+            )
+            if "error" in undo_result.summary:
+                raise RuntimeError(str(undo_result.summary["error"]))
+            restored_count = int(
+                undo_result.summary.get("restored", len(undo_result.moved))
+            )
 
-            app_obj = getattr(self, "app", None)
             if app_obj and hasattr(app_obj, "call_from_thread"):
                 app_obj.call_from_thread(
                     self._on_rollback_success, session_id, restored_count
@@ -1754,11 +1867,12 @@ class HistoryModal(
             else:
                 self._on_rollback_success(session_id, restored_count)
         except Exception as err:
-            app_obj = getattr(self, "app", None)
             if app_obj and hasattr(app_obj, "call_from_thread"):
                 app_obj.call_from_thread(self._on_rollback_failure, session_id, err)
             else:
                 self._on_rollback_failure(session_id, err)
+        finally:
+            self._rollback_pipeline = None
 
     def _on_rollback_success(self, session_id: str, restored_count: int) -> None:
         """Handle successful session rollback completion on main thread."""
@@ -1805,24 +1919,17 @@ class HistoryModal(
         self.query_one("#btn-rollback-session", Button).disabled = False
 
         self.app.push_screen(
-            RollbackErrorModal(title="Rollback Failed", error_message=str(err))
+            RollbackErrorModal(
+                title="Rollback Failed",
+                error_message=str(err),
+                settings=getattr(self.app, "settings", None),
+            )
         )
 
     def _refresh_session_options(self, selected_sid: Optional[str] = None) -> None:
         """Re-populate session select dropdown widget options after state update."""
         select_sess = self.query_one("#select-history-session", Select)
-        options = [("All Sessions (Aggregate Audit Log)", "all")]
-        for s in self.sessions:
-            sid = s.get("session_id", "unknown")
-            b_dir = s.get("base_dir") or "N/A"
-            status = s.get("status") or "completed"
-            step_cnt = s.get("step_count") or s.get("file_count") or 0
-            options.append(
-                (f"{sid[:8]}... | {status.upper()} | {step_cnt} file(s) | {b_dir}", sid)
-            )
-
-        if len(options) == 1 and not self.sessions:
-            options = [("No historical sessions found", "none")]
+        options = self._build_session_select_options()
 
         select_sess.set_options(options)
         if selected_sid:
@@ -1832,7 +1939,12 @@ class HistoryModal(
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
         """Cancel history export modal, unless a rollback is still running."""
-        if self._rollback_in_progress:
+        from app.core.pipeline import PipelineLifecycleState
+
+        rb_pipe = getattr(self, "_rollback_pipeline", None)
+        if self._rollback_in_progress or (
+            rb_pipe is not None and rb_pipe.state == PipelineLifecycleState.ROLLING_BACK
+        ):
             self.announce("Rollback in progress. Please wait for it to finish.")
             return
         self.dismiss(None)

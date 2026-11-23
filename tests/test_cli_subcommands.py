@@ -225,49 +225,52 @@ def test_subcommand_invalid_argument_exit_code():
 
 
 @pytest.mark.xdist_group(name="cli_subcommands")
-def test_sandbox_cli_json():
+def test_sandbox_cli_json(tmp_path, monkeypatch):
     """Test sandbox_cli.py analyze --json outputs raw JSON without decorative borders."""
+    import sandbox_cli
+
+    golden_dir = tmp_path / "sandbox" / "dataset_golden"
+    dataset_dir = tmp_path / "sandbox" / "dataset"
+    sandbox_db = tmp_path / "sandbox" / "sandbox.db"
+    golden_dir.mkdir(parents=True)
+    create_sample_corpus(str(golden_dir))
+
+    monkeypatch.setattr(sandbox_cli, "GOLDEN_DIR", str(golden_dir))
+    monkeypatch.setattr(sandbox_cli, "SANDBOX_DIR", str(dataset_dir))
+    monkeypatch.setattr(sandbox_cli, "SANDBOX_DB_PATH", str(sandbox_db))
+
+    # First reset sandbox
+    with (
+        patch("sys.argv", ["sandbox_cli.py", "reset"]),
+        patch("sys.stdout", io.StringIO()),
+        patch("sys.stderr", io.StringIO()),
+    ):
+        sandbox_cli.main()
+
     stdout_cap = io.StringIO()
     stderr_cap = io.StringIO()
 
-    try:
-        # First reset sandbox
-        with (
-            patch("sys.argv", ["sandbox_cli.py", "reset"]),
-            patch("sys.stdout", stdout_cap),
-            patch("sys.stderr", stderr_cap),
-        ):
-            import sandbox_cli
+    # Run analyze with --json
+    with (
+        patch("sys.argv", ["sandbox_cli.py", "analyze", "--json"]),
+        patch("sys.stdout", stdout_cap),
+        patch("sys.stderr", stderr_cap),
+    ):
+        sandbox_cli.main()
 
-            sandbox_cli.main()
+    out = stdout_cap.getvalue()
+    assert "--- Analysis Sorting Plan ---" not in out
+    data = json.loads(out)
+    assert isinstance(data, dict)
 
-        stdout_cap = io.StringIO()
-        stderr_cap = io.StringIO()
-
-        # Run analyze with --json
-        with (
-            patch("sys.argv", ["sandbox_cli.py", "analyze", "--json"]),
-            patch("sys.stdout", stdout_cap),
-            patch("sys.stderr", stderr_cap),
-        ):
-            sandbox_cli.main()
-
-        out = stdout_cap.getvalue()
-        assert "--- Analysis Sorting Plan ---" not in out
-        data = json.loads(out)
-        assert isinstance(data, dict)
-    finally:
-        try:
-            with (
-                patch("sys.argv", ["sandbox_cli.py", "reset"]),
-                patch("sys.stdout", io.StringIO()),
-                patch("sys.stderr", io.StringIO()),
-            ):
-                import sandbox_cli
-
-                sandbox_cli.main()
-        except Exception:
-            pass
+    # Reset removes isolated .key files and pipeline-state
+    with (
+        patch("sys.argv", ["sandbox_cli.py", "reset"]),
+        patch("sys.stdout", io.StringIO()),
+        patch("sys.stderr", io.StringIO()),
+    ):
+        sandbox_cli.main()
+    assert list((tmp_path / "sandbox").rglob("*.key")) == []
 
 
 @pytest.mark.xdist_group(name="cli_subcommands")

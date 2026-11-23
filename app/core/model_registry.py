@@ -375,6 +375,14 @@ class SharedModelRegistry:
                     download_enabled=False,
                 )
                 info = (langs, use_gpu)
+            except ImportError as imp_err:
+                if not getattr(self, "_easyocr_missing_logged", False):
+                    logging.info(
+                        f"Optional EasyOCR package not installed ({imp_err}); OCR reader unavailable."
+                    )
+                    self._easyocr_missing_logged = True
+                reader = None
+                info = (None, None)
             except Exception as e:
                 logging.error(
                     f"Failed to load EasyOCR reader with languages {langs} and gpu={use_gpu}: {e}. Falling back to 'en' and cpu.",
@@ -533,8 +541,7 @@ class SharedModelRegistry:
                 return True
             if model_id == "onnx":
                 return any(
-                    (k.startswith("onnx_") or k.startswith("tokenizer_"))
-                    and v is not None
+                    (k.startswith(("onnx_", "tokenizer_"))) and v is not None
                     for k, v in self._models.items()
                 )
             if model_id == "easyocr":
@@ -556,7 +563,7 @@ class SharedModelRegistry:
                     k
                     for k in set(self._models.keys())
                     | set(self._per_model_locks.keys())
-                    if k.startswith("onnx_") or k.startswith("tokenizer_")
+                    if k.startswith(("onnx_", "tokenizer_"))
                 ]
             else:
                 keys_to_remove = [

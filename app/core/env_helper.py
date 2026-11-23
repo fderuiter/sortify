@@ -464,8 +464,6 @@ else:
     class RestrictedPopen(object):
         """Fallback mock/placeholder of RestrictedPopen for non-Windows platforms."""
 
-        pass
-
 
 def check_windows_sandbox_support() -> bool:
     """Verify that required Win32 APIs for restricted tokens are available and functional."""

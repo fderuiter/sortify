@@ -397,3 +397,51 @@ def test_notification_tui_dispatch_fallbacks():
     mgr.set_mode(NotificationMode.CLI)
     res_err = notify("stream write error")
     assert res_err["message"] == "stream write error"
+
+
+def test_notification_and_announce_do_not_duplicate_help_url():
+    """Verify notifications and announcements do not append a second [Help: ...] suffix when help_url is already present."""
+    from app.ui.a11y import A11yMixin
+    from app.ui.tui import AutoSorterTUI
+
+    help_url = "https://docs.sortify.ai/troubleshooting.md#session-recovery"
+    pre_suffixed = f"Rollback failed [Help: {help_url}]"
+
+    # 1. CLI dispatch deduplication
+    mgr = NotificationManager.get_instance()
+    stream = io.StringIO()
+    mgr.set_output_stream(stream)
+    mgr.set_mode(NotificationMode.CLI)
+    notify(pre_suffixed, type="error", help_url=help_url)
+    assert stream.getvalue().count(help_url) == 1
+
+    # 2. TUI dispatch deduplication
+    mgr.set_mode(NotificationMode.TUI)
+    mock_tui_app = MagicMock()
+    mock_log_widget = MagicMock()
+    mock_tui_app.query_one.return_value = mock_log_widget
+    mock_tui_app.is_headless = True
+    mgr.register_tui(mock_tui_app)
+    notify(pre_suffixed, type="error", help_url=help_url)
+    toast_msg = mock_tui_app.notify.call_args[0][0]
+    log_msg = mock_log_widget.write_line.call_args[0][0]
+    assert toast_msg.count(help_url) == 1
+    assert log_msg.count(help_url) == 1
+
+    # 3. A11yMixin.announce deduplication
+    class _DummyA11y(A11yMixin):
+        pass
+
+    comp = _DummyA11y()
+    ann_text = comp.announce(pre_suffixed, help_url=help_url)
+    assert ann_text.count(help_url) == 1
+
+    # 4. AutoSorterTUI.announce deduplication
+    app = AutoSorterTUI(settings=MagicMock())
+    tui_log = MagicMock()
+    app.query_one = lambda selector, *a, **kw: (
+        tui_log if selector == "#tui-log" else (_ for _ in ()).throw(RuntimeError())
+    )
+    tui_ann = app.announce(pre_suffixed, help_url=help_url)
+    assert tui_ann.count(help_url) == 1
+    assert tui_log.write_line.call_args[0][0].count(help_url) == 1

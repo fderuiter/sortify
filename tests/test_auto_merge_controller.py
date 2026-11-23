@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from pathlib import Path
+from typing import Any
 from unittest.mock import MagicMock
 
 import pytest
@@ -31,6 +32,7 @@ def _stub_pr_contents(client, filenames, labels=None):
         {"filename": name, "additions": 1, "deletions": 0} for name in filenames
     ]
     client.list_pull_request_commits.return_value = [VERIFIED_COMMIT]
+    client.get_collaborator_permission.return_value = "write"
 
 
 def test_is_pr_eligible_for_automerge():
@@ -155,7 +157,7 @@ def test_process_queue_updates_behind_branch():
         },
         "mergeable": True,
         "mergeable_state": "behind",
-        "user": {"login": "stitch"},
+        "user": {"login": "fderuiter"},
     }
     updated_pr = {
         **behind_pr,
@@ -194,10 +196,18 @@ def test_process_queue_does_not_update_blocked_mergeable_state():
         "title": "fix: minor bug",
         "draft": False,
         "state": "open",
-        "head": {"sha": "sha99999"},
+        "head": {
+            "sha": "sha99999",
+            "ref": "docs/blocked-state",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "base": {
+            "ref": "main",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
         "mergeable": True,
         "mergeable_state": "blocked",  # blocked due to requirements, not base staleness
-        "user": {"login": "stitch"},
+        "user": {"login": "fderuiter"},
     }
     client.get_commit_verification.return_value = {
         "verified": True,
@@ -234,7 +244,7 @@ def test_process_queue_handles_branch_update_conflict():
         },
         "mergeable": True,
         "mergeable_state": "behind",
-        "user": {"login": "jules"},
+        "user": {"login": "fderuiter"},
     }
     client.get_commit_verification.return_value = {
         "verified": True,
@@ -344,7 +354,18 @@ def test_process_queue_requires_green_required_ci_check_run():
     client.list_open_pull_requests.return_value = [
         {"number": 301, "labels": [{"name": "automerge:eligible"}], "draft": False}
     ]
-    client.get_pull_request.return_value = _eligible_pr(301)
+    pr = _eligible_pr(301)
+    pr["user"] = {"login": "fderuiter"}
+    pr["head"] = {
+        "sha": "sha_head",
+        "ref": "docs/tweak",
+        "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+    }
+    pr["base"] = {
+        "ref": "main",
+        "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+    }
+    client.get_pull_request.return_value = pr
     client.get_commit_verification.return_value = {"verified": True}
     _stub_pr_contents(client, ["docs/guide.md"])
     client.get_required_ci_conclusion.return_value = "failure"
@@ -877,6 +898,7 @@ def test_process_queue_skips_behind_fork_branch_and_merges_next_eligible_pr():
         "mergeable": True,
         "mergeable_state": "behind",
         "user": {"login": "contributor"},
+        "labels": [{"name": "automerge:eligible"}, {"name": "automerge"}],
     }
     in_repo_clean_pr = {
         "number": 601,
@@ -902,6 +924,7 @@ def test_process_queue_skips_behind_fork_branch_and_merges_next_eligible_pr():
         "reason": "valid",
     }
     _stub_pr_contents(client, ["docs/guide.md"])
+    client.list_issue_events.return_value = [_label_event("fderuiter")]
     client.get_required_ci_conclusion.return_value = "success"
     client.merge_pull_request.return_value = True
 
@@ -934,7 +957,7 @@ def test_process_queue_polls_until_new_head_sha_before_dispatching_ci():
         },
         "mergeable": True,
         "mergeable_state": "behind",
-        "user": {"login": "stitch"},
+        "user": {"login": "fderuiter"},
     }
     updated_pr = {
         **behind_pr,
@@ -985,7 +1008,7 @@ def test_process_queue_skips_ci_dispatch_when_head_sha_does_not_advance(caplog):
         },
         "mergeable": True,
         "mergeable_state": "behind",
-        "user": {"login": "stitch"},
+        "user": {"login": "fderuiter"},
     }
     client.get_pull_request.return_value = behind_pr
     client.get_commit_verification.return_value = {"verified": True}
@@ -1065,3 +1088,573 @@ def test_auto_merge_controller_workflow_uses_job_level_concurrency_and_permissio
         "checks": "read",
         "statuses": "read",
     }
+
+
+@pytest.mark.parametrize("pending_state", [None, "queued", "in_progress", "waiting"])
+def test_process_queue_halts_on_pending_head_required_ci_without_updating_later_prs(
+    pending_state,
+):
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 701, "labels": [{"name": "automerge:eligible"}], "draft": False},
+        {"number": 702, "labels": [{"name": "automerge:eligible"}], "draft": False},
+        {"number": 703, "labels": [{"name": "automerge:eligible"}], "draft": False},
+    ]
+    head_pr = {
+        "number": 701,
+        "title": "docs: head pr running ci",
+        "draft": False,
+        "state": "open",
+        "head": {
+            "sha": "sha_701",
+            "ref": "docs/pr-701",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "base": {"ref": "main", "repo": {"id": 1, "full_name": "fderuiter/sortify"}},
+        "mergeable": True,
+        "mergeable_state": "blocked",
+        "user": {"login": "fderuiter"},
+        "labels": [{"name": "automerge:eligible"}],
+    }
+    client.get_pull_request.return_value = head_pr
+    client.get_commit_verification.return_value = {"verified": True}
+    _stub_pr_contents(client, ["docs/guide.md"])
+    client.get_required_ci_conclusion.return_value = pending_state
+
+    res = process_auto_merge_queue(client)
+    assert res.action == AutoMergeAction.NONE
+    assert res.pr_id is None
+    client.get_pull_request.assert_called_once_with(701)
+    client.update_branch.assert_not_called()
+    client.merge_pull_request.assert_not_called()
+
+
+@pytest.mark.parametrize("failed_state", ["failure", "cancelled", "timed_out"])
+def test_process_queue_advances_past_failed_head_required_ci_to_next_candidate(
+    failed_state,
+):
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 704, "labels": [{"name": "automerge:eligible"}], "draft": False},
+        {"number": 705, "labels": [{"name": "automerge:eligible"}], "draft": False},
+    ]
+    pr_704 = {
+        "number": 704,
+        "title": "docs: broken links",
+        "draft": False,
+        "state": "open",
+        "head": {
+            "sha": "sha_704",
+            "ref": "docs/pr-704",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "base": {"ref": "main", "repo": {"id": 1, "full_name": "fderuiter/sortify"}},
+        "mergeable": True,
+        "mergeable_state": "blocked",
+        "user": {"login": "fderuiter"},
+        "labels": [{"name": "automerge:eligible"}],
+    }
+    pr_705 = {
+        "number": 705,
+        "title": "docs: green fix",
+        "draft": False,
+        "state": "open",
+        "head": {
+            "sha": "sha_705",
+            "ref": "docs/pr-705",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "base": {"ref": "main", "repo": {"id": 1, "full_name": "fderuiter/sortify"}},
+        "mergeable": True,
+        "mergeable_state": "clean",
+        "user": {"login": "fderuiter"},
+        "labels": [{"name": "automerge:eligible"}],
+    }
+    client.get_pull_request.side_effect = [pr_704, pr_705]
+    client.get_commit_verification.return_value = {"verified": True}
+    _stub_pr_contents(client, ["docs/guide.md"])
+    client.get_required_ci_conclusion.side_effect = [failed_state, "success"]
+    client.merge_pull_request.return_value = True
+
+    res = process_auto_merge_queue(client)
+    assert res.action == AutoMergeAction.MERGED
+    assert res.pr_id == 705
+    client.merge_pull_request.assert_called_once()
+    assert client.merge_pull_request.call_args[0][0] == 705
+
+
+def test_process_queue_halts_when_head_mergeable_is_unknown():
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 706, "labels": [{"name": "automerge:eligible"}], "draft": False},
+        {"number": 707, "labels": [{"name": "automerge:eligible"}], "draft": False},
+    ]
+    pr_706 = {
+        "number": 706,
+        "title": "docs: computing mergeability",
+        "draft": False,
+        "state": "open",
+        "head": {
+            "sha": "sha_706",
+            "ref": "docs/pr-706",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "base": {"ref": "main", "repo": {"id": 1, "full_name": "fderuiter/sortify"}},
+        "mergeable": None,
+        "mergeable_state": "unknown",
+        "user": {"login": "fderuiter"},
+        "labels": [{"name": "automerge:eligible"}],
+    }
+    client.get_pull_request.return_value = pr_706
+    client.get_commit_verification.return_value = {"verified": True}
+    _stub_pr_contents(client, ["docs/guide.md"])
+
+    res = process_auto_merge_queue(client)
+    assert res.action == AutoMergeAction.NONE
+    assert res.pr_id is None
+    client.get_pull_request.assert_called_once_with(706)
+    client.update_branch.assert_not_called()
+
+
+def test_fifo_four_pr_queue_updates_each_branch_once():
+    """Simulate a 4-PR FIFO queue and verify 3 branch updates total (1 per trailing PR)."""
+    client = MagicMock(spec=GitHubClient)
+    prs_state: dict[int, dict[str, Any]] = {
+        num: {
+            "number": num,
+            "title": f"docs: change {num}",
+            "draft": False,
+            "state": "open",
+            "head": {
+                "sha": f"sha_{num}_v1",
+                "ref": f"docs/pr-{num}",
+                "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+            },
+            "base": {
+                "ref": "main",
+                "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+            },
+            "mergeable": True,
+            "mergeable_state": "clean",
+            "user": {"login": "fderuiter"},
+            "labels": [{"name": "automerge:eligible"}],
+        }
+        for num in (710, 711, 712, 713)
+    }
+    ci_state = {
+        "sha_710_v1": "success",
+        "sha_711_v1": "success",
+        "sha_712_v1": "success",
+        "sha_713_v1": "success",
+    }
+    updates_by_pr: list[int] = []
+    merges_by_pr: list[int] = []
+
+    def list_open():
+        return [
+            {
+                "number": p["number"],
+                "labels": list(p["labels"]),
+                "draft": p["draft"],
+            }
+            for p in prs_state.values()
+            if p["state"] == "open"
+        ]
+
+    def get_pr(num: int):
+        return dict(prs_state[num])
+
+    def update_branch(num: int, expected_sha: str) -> bool:
+        assert prs_state[num]["head"]["sha"] == expected_sha
+        updates_by_pr.append(num)
+        new_sha = f"sha_{num}_updated_{len(updates_by_pr)}"
+        prs_state[num]["head"] = {
+            **prs_state[num]["head"],
+            "sha": new_sha,
+        }
+        prs_state[num]["mergeable_state"] = "blocked"
+        ci_state[new_sha] = "in_progress"
+        return True
+
+    def merge_pr(num: int, head_sha: str, title: str, msg: str) -> bool:
+        assert prs_state[num]["head"]["sha"] == head_sha
+        merges_by_pr.append(num)
+        prs_state[num]["state"] = "closed"
+        for other in prs_state.values():
+            if other["state"] == "open":
+                other["mergeable_state"] = "behind"
+        return True
+
+    client.list_open_pull_requests.side_effect = list_open
+    client.get_pull_request.side_effect = get_pr
+    client.get_commit_verification.return_value = {"verified": True}
+    _stub_pr_contents(client, ["docs/guide.md"])
+    client.get_required_ci_conclusion.side_effect = lambda sha: ci_state.get(sha)
+    client.update_branch.side_effect = update_branch
+    client.merge_pull_request.side_effect = merge_pr
+
+    # Cycle 1: PR #710 merges directly; #711-#713 become behind main.
+    res = process_auto_merge_queue(client, sleep_fn=lambda _: None)
+    assert (res.action, res.pr_id) == (AutoMergeAction.MERGED, 710)
+
+    for expected_pr in (711, 712, 713):
+        # Next poll updates only the leading behind PR.
+        res_upd = process_auto_merge_queue(client, sleep_fn=lambda _: None)
+        assert (res_upd.action, res_upd.pr_id) == (
+            AutoMergeAction.UPDATED,
+            expected_pr,
+        )
+
+        # While the updated head PR's CI is in_progress, subsequent polls halt and do NOT update trailing PRs!
+        res_wait = process_auto_merge_queue(client, sleep_fn=lambda _: None)
+        assert (res_wait.action, res_wait.pr_id) == (AutoMergeAction.NONE, None)
+
+        # Once CI finishes green, the head PR merges cleanly.
+        current_sha = prs_state[expected_pr]["head"]["sha"]
+        ci_state[current_sha] = "success"
+        prs_state[expected_pr]["mergeable_state"] = "clean"
+        res_merge = process_auto_merge_queue(client, sleep_fn=lambda _: None)
+        assert (res_merge.action, res_merge.pr_id) == (
+            AutoMergeAction.MERGED,
+            expected_pr,
+        )
+
+    assert merges_by_pr == [710, 711, 712, 713]
+    assert updates_by_pr == [711, 712, 713]
+
+
+def test_reclassify_pr_rejection_blocks_pr_and_skips_subsequent_polls():
+    client = MagicMock(spec=GitHubClient)
+    labels_on_pr = ["automerge:eligible"]
+
+    def list_open():
+        return [
+            {
+                "number": 720,
+                "labels": [{"name": name} for name in labels_on_pr],
+                "draft": False,
+            }
+        ]
+
+    def remove_lbl(pr_num: int, name: str) -> None:
+        assert pr_num == 720
+        if name in labels_on_pr:
+            labels_on_pr.remove(name)
+
+    def add_lbls(pr_num: int, names: list[str]) -> None:
+        assert pr_num == 720
+        for name in names:
+            if name not in labels_on_pr:
+                labels_on_pr.append(name)
+
+    client.list_open_pull_requests.side_effect = list_open
+    client.remove_label.side_effect = remove_lbl
+    client.add_labels.side_effect = add_lbls
+    client.get_pull_request.return_value = _eligible_pr(720)
+    client.get_commit_verification.return_value = {"verified": True}
+    _stub_pr_contents(client, ["scripts/classify_pr.py"])
+
+    # Poll 1: reclassify_pr rejects PR #720, removes automerge:eligible, and adds automerge:blocked.
+    res1 = process_auto_merge_queue(client)
+    assert res1.action == AutoMergeAction.NONE
+    assert "automerge:eligible" not in labels_on_pr
+    assert "automerge:blocked" in labels_on_pr
+    assert "risk:sensitive" in labels_on_pr
+    client.remove_label.assert_called_once_with(720, "automerge:eligible")
+    assert client.get_pull_request.call_count == 1
+
+    # Poll 2: PR #720 now carries automerge:blocked and lacks automerge:eligible, so it is skipped immediately.
+    res2 = process_auto_merge_queue(client)
+    assert res2.action == AutoMergeAction.NONE
+    assert client.get_pull_request.call_count == 1
+
+
+def test_github_client_remove_label_and_get_file_content(monkeypatch):
+    client = GitHubClient("tok", "fderuiter", "sortify")
+    deleted_urls: list[str] = []
+
+    def _make_response(status_code: int = 200, text: str = "") -> requests.Response:
+        resp = requests.Response()
+        resp.status_code = status_code
+        resp._content = text.encode("utf-8")
+        resp.encoding = "utf-8"
+        return resp
+
+    def fake_delete(url, headers=None, timeout=None):
+        deleted_urls.append(url)
+        return _make_response(status_code=404)
+
+    monkeypatch.setattr(requests, "delete", fake_delete)
+    client.remove_label(42, "automerge:eligible")
+    assert deleted_urls == [
+        "https://api.github.com/repos/fderuiter/sortify/issues/42/labels/automerge%3Aeligible"
+    ]
+
+    captured_url: list[str] = []
+    captured_headers: dict[str, str] = {}
+    captured_params: dict[str, str] = {}
+
+    def fake_get(url, headers=None, params=None, timeout=None):
+        captured_url.append(url)
+        if headers:
+            captured_headers.update(headers)
+        if params:
+            captured_params.update(params)
+        if params and params.get("ref") == "missing_sha":
+            return _make_response(status_code=404)
+        return _make_response(status_code=200, text="version = 1\n")
+
+    monkeypatch.setattr(requests, "get", fake_get)
+    content = client.get_file_content("uv.lock", "abc123")
+    assert content == "version = 1\n"
+    assert captured_url == [
+        "https://api.github.com/repos/fderuiter/sortify/contents/uv.lock"
+    ]
+    assert captured_params == {"ref": "abc123"}
+    assert captured_headers["Accept"] == "application/vnd.github.raw+json"
+    assert client.get_file_content("uv.lock", "missing_sha") is None
+
+
+def test_build_pr_metadata_evaluates_grouped_dependabot_lockfile_diffs():
+    client = MagicMock(spec=GitHubClient)
+    _stub_pr_contents(
+        client, ["pyproject.toml", "uv.lock", "offline_bundle/requirements.txt"]
+    )
+    pr = {
+        "number": 730,
+        "title": "Bump the pip group across 1 directory with 2 updates",
+        "draft": False,
+        "state": "open",
+        "base": {"sha": "base_sha_730", "ref": "main"},
+        "head": {"sha": "head_sha_730", "ref": "dependabot/pip/group"},
+        "user": {"login": "dependabot[bot]"},
+        "labels": [{"name": "dependencies"}],
+    }
+    base_lock = (
+        "version = 1\n"
+        '[[package]]\nname = "requests"\nversion = "2.31.0"\n'
+        '[[package]]\nname = "certifi"\nversion = "2026.7.22"\n'
+    )
+    minor_head_lock = (
+        "version = 1\n"
+        '[[package]]\nname = "requests"\nversion = "2.32.3"\n'
+        '[[package]]\nname = "certifi"\nversion = "2026.10.19"\n'
+    )
+    major_head_lock = (
+        "version = 1\n"
+        '[[package]]\nname = "requests"\nversion = "3.0.0"\n'
+        '[[package]]\nname = "certifi"\nversion = "2026.10.19"\n'
+    )
+    base_reqs = (
+        "requests==2.31.0 --hash=sha256:aaa\ncertifi==2026.7.22 --hash=sha256:bbb\n"
+    )
+    minor_head_reqs = (
+        "requests==2.32.3 --hash=sha256:ccc\ncertifi==2026.10.19 --hash=sha256:ddd\n"
+    )
+
+    def fetch_minor(path: str, ref: str):
+        if path == "uv.lock":
+            return base_lock if ref == "base_sha_730" else minor_head_lock
+        return base_reqs if ref == "base_sha_730" else minor_head_reqs
+
+    client.get_file_content.side_effect = fetch_minor
+    meta_minor = build_pr_metadata(client, pr)
+    assert meta_minor.dependency_update_type == "minor"
+    assert classify_pr_from_controller(meta_minor).eligible is True
+
+    def fetch_major(path: str, ref: str):
+        if path == "uv.lock":
+            return base_lock if ref == "base_sha_730" else major_head_lock
+        return base_reqs if ref == "base_sha_730" else minor_head_reqs
+
+    client.get_file_content.side_effect = fetch_major
+    meta_major = build_pr_metadata(client, pr)
+    assert meta_major.dependency_update_type == "major"
+    assert classify_pr_from_controller(meta_major).eligible is False
+
+    # Network/API error fetching manifest fails closed to "major"
+    client.get_file_content.side_effect = RuntimeError("API down")
+    meta_err = build_pr_metadata(client, pr)
+    assert meta_err.dependency_update_type == "major"
+    assert classify_pr_from_controller(meta_err).eligible is False
+
+
+def classify_pr_from_controller(meta):
+    from scripts.classify_pr import classify_pr
+
+    return classify_pr(meta)
+
+
+@pytest.mark.parametrize(
+    ("user", "head_repo", "permission", "additions", "deletions"),
+    [
+        (
+            {"login": "google-labs-stitch[bot]", "type": "Bot"},
+            {"id": 1, "full_name": "fderuiter/sortify"},
+            "write",
+            5,
+            2,
+        ),
+        (
+            {"login": "stitch", "type": "User"},
+            {"id": 1, "full_name": "fderuiter/sortify"},
+            "write",
+            5,
+            2,
+        ),
+        (
+            {"login": "contributor", "type": "User"},
+            {"id": 99, "full_name": "contributor/sortify", "fork": True},
+            "write",
+            5,
+            2,
+        ),
+        (
+            {"login": "reader", "type": "User"},
+            {"id": 1, "full_name": "fderuiter/sortify"},
+            "read",
+            5,
+            2,
+        ),
+        (
+            {"login": "fderuiter", "type": "User"},
+            {"id": 1, "full_name": "fderuiter/sortify"},
+            "admin",
+            350,
+            200,
+        ),
+    ],
+)
+def test_process_queue_blocks_unlabelled_bot_fork_non_collaborator_and_oversized_docs_prs(
+    user, head_repo, permission, additions, deletions
+):
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 810, "labels": [{"name": "automerge:eligible"}], "draft": False}
+    ]
+    client.get_pull_request.return_value = {
+        "number": 810,
+        "title": "docs: update guide",
+        "draft": False,
+        "state": "open",
+        "head": {
+            "sha": "sha_810",
+            "ref": "docs/update",
+            "repo": head_repo,
+        },
+        "base": {
+            "ref": "main",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "mergeable": True,
+        "mergeable_state": "clean",
+        "user": user,
+        "labels": [{"name": "automerge:eligible"}],
+    }
+    client.get_commit_verification.return_value = {"verified": True}
+    client.list_pull_request_files.return_value = [
+        {
+            "filename": "docs/user_guide.md",
+            "additions": additions,
+            "deletions": deletions,
+        },
+        {"filename": "README.md", "additions": 1, "deletions": 0},
+    ]
+    client.list_pull_request_commits.return_value = [VERIFIED_COMMIT]
+    client.get_collaborator_permission.return_value = permission
+    client.get_required_ci_conclusion.return_value = "success"
+
+    res = process_auto_merge_queue(client)
+    assert res.action == AutoMergeAction.NONE
+    assert res.pr_id is None
+    client.remove_label.assert_called_once_with(810, "automerge:eligible")
+    added = client.add_labels.call_args.args[1]
+    assert "automerge:blocked" in added
+    client.merge_pull_request.assert_not_called()
+
+
+def test_process_queue_fails_closed_when_collaborator_permission_lookup_errors():
+    client = MagicMock(spec=GitHubClient)
+    client.list_open_pull_requests.return_value = [
+        {"number": 811, "labels": [{"name": "automerge:eligible"}], "draft": False}
+    ]
+    client.get_pull_request.return_value = {
+        "number": 811,
+        "title": "docs: fix readme typo",
+        "draft": False,
+        "state": "open",
+        "head": {
+            "sha": "sha_811",
+            "ref": "docs/readme-typo",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "base": {
+            "ref": "main",
+            "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+        },
+        "mergeable": True,
+        "mergeable_state": "clean",
+        "user": {"login": "fderuiter", "type": "User"},
+        "labels": [{"name": "automerge:eligible"}],
+    }
+    client.get_commit_verification.return_value = {"verified": True}
+    _stub_pr_contents(client, ["README.md"])
+    client.get_collaborator_permission.side_effect = RuntimeError("API 500")
+    client.get_required_ci_conclusion.return_value = "success"
+
+    res = process_auto_merge_queue(client)
+    assert res.action == AutoMergeAction.NONE
+    client.remove_label.assert_called_once_with(811, "automerge:eligible")
+    client.merge_pull_request.assert_not_called()
+
+
+def test_process_queue_merges_bot_and_fork_docs_pr_when_maintainer_applies_automerge():
+    for pr_num, user, head_repo in (
+        (
+            812,
+            {"login": "google-labs-stitch[bot]", "type": "Bot"},
+            {"id": 1, "full_name": "fderuiter/sortify"},
+        ),
+        (
+            813,
+            {"login": "contributor", "type": "User"},
+            {"id": 99, "full_name": "contributor/sortify", "fork": True},
+        ),
+    ):
+        client = MagicMock(spec=GitHubClient)
+        client.list_open_pull_requests.return_value = [
+            {
+                "number": pr_num,
+                "labels": [{"name": "automerge:eligible"}, {"name": "automerge"}],
+                "draft": False,
+            }
+        ]
+        client.get_pull_request.return_value = {
+            "number": pr_num,
+            "title": "docs: reviewed contribution",
+            "draft": False,
+            "state": "open",
+            "head": {
+                "sha": f"sha_{pr_num}",
+                "ref": "docs/reviewed",
+                "repo": head_repo,
+            },
+            "base": {
+                "ref": "main",
+                "repo": {"id": 1, "full_name": "fderuiter/sortify"},
+            },
+            "mergeable": True,
+            "mergeable_state": "clean",
+            "user": user,
+            "labels": [{"name": "automerge:eligible"}, {"name": "automerge"}],
+        }
+        client.get_commit_verification.return_value = {"verified": True}
+        _stub_pr_contents(client, ["docs/user_guide.md"])
+        client.list_issue_events.return_value = [_label_event("fderuiter")]
+        client.get_collaborator_permission.return_value = "admin"
+        client.get_required_ci_conclusion.return_value = "success"
+        client.merge_pull_request.return_value = True
+
+        res = process_auto_merge_queue(client)
+        assert res.action == AutoMergeAction.MERGED
+        assert res.pr_id == pr_num

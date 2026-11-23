@@ -36,6 +36,19 @@ ELIGIBLE_DOCUMENT_EXTENSIONS = (
 )
 
 
+def _normalize_verified_target_folder(folder: str | None) -> str | None:
+    """Normalize empty, dot, or root-only folder targets to None."""
+    if folder is None:
+        return None
+    norm = str(folder).strip().replace("\\", "/")
+    if not norm or norm in (".", "./"):
+        return None
+    stripped = norm.strip("/")
+    if not stripped or stripped == ".":
+        return None
+    return norm
+
+
 def _main_db_baseline(conn) -> None:
     """Bring a new or pre-migration main database to the schema of version 7.
 
@@ -417,7 +430,7 @@ class Database:
             norm_fp = fp.replace("\\", "/")
             reverse_norm.setdefault(norm_fp, []).append(fp)
 
-        result = {orig_fp: "" for orig_fp in filepaths}
+        result = dict.fromkeys(filepaths, "")
 
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
@@ -872,6 +885,7 @@ class Database:
 
     def set_user_verified_target(self, base_dir, file_hash, target_path):
         """Record the historical folder assignment for a specific document hash."""
+        target_path = _normalize_verified_target_folder(target_path)
         precomputed_counts_map = {}
         cached_texts_to_tokenize: list[tuple[str, str]] = []
         cached_hit = False
@@ -1017,13 +1031,27 @@ class Database:
 
         self.worker.execute_write(_write)
 
-    def update_document_path(self, base_dir, old_filepath, new_filepath):
-        """Update a document's path and historical assignment when moved."""
+    def update_document_path(
+        self,
+        base_dir,
+        old_filepath,
+        new_filepath,
+        clear_verified_target: bool = False,
+    ):
+        """Update a document's path and historical assignment when moved.
+
+        When ``clear_verified_target`` is True (or the destination directory is
+        empty), ``user_verified_target_path`` is cleared to ``NULL``.
+        """
         import os
 
         old_filepath = old_filepath.replace("\\", "/")
         new_filepath = new_filepath.replace("\\", "/")
-        new_dir = os.path.dirname(new_filepath).replace("\\", "/")
+        new_dir = (
+            None
+            if clear_verified_target
+            else _normalize_verified_target_folder(os.path.dirname(new_filepath))
+        )
 
         ext_text = None
         cached_row_found = False
@@ -1110,7 +1138,9 @@ class Database:
                                 decrypted_text = self.crypto.decrypt_text(row[0])
                             except Exception:
                                 decrypted_text = None
-                    if self._is_tfidf_eligible(new_filepath, decrypted_text):
+                    if new_dir and self._is_tfidf_eligible(
+                        new_filepath, decrypted_text
+                    ):
                         conn.execute(
                             "UPDATE tfidf_doc_terms SET filepath = ? WHERE base_dir = ? AND filepath = ?",
                             (new_filepath, base_dir, old_filepath),
@@ -1188,6 +1218,7 @@ class Database:
     def set_user_verified_target_path(self, base_dir, filepath, target_path):
         """Record the historical folder assignment for a specific document path."""
         filepath = filepath.replace("\\", "/")
+        target_path = _normalize_verified_target_folder(target_path)
         self._populate_cache_if_needed(base_dir)
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:
@@ -1445,6 +1476,7 @@ class Database:
         for item in updates:
             if item["type"] == "verified_target":
                 base_dir, file_hash, target_path = item["args"]
+                target_path = _normalize_verified_target_folder(target_path)
                 cursor = conn.execute(
                     "SELECT filepath FROM documents WHERE base_dir = ? AND file_hash = ?",
                     (base_dir, file_hash),
@@ -1470,7 +1502,9 @@ class Database:
                 new_filepath = new_filepath.replace("\\", "/")
                 import os
 
-                new_dir = os.path.dirname(new_filepath).replace("\\", "/")
+                new_dir = _normalize_verified_target_folder(
+                    os.path.dirname(new_filepath)
+                )
                 self._drop_stale_destination_row_conn(
                     conn, base_dir, old_filepath, new_filepath
                 )
@@ -1500,7 +1534,9 @@ class Database:
                             decrypted_text = self.crypto.decrypt_text(row[0])
                         except Exception:
                             decrypted_text = None
-                    if self._is_tfidf_eligible(new_filepath, decrypted_text):
+                    if new_dir and self._is_tfidf_eligible(
+                        new_filepath, decrypted_text
+                    ):
                         conn.execute(
                             "UPDATE tfidf_doc_terms SET filepath = ? WHERE base_dir = ? AND filepath = ?",
                             (new_filepath, base_dir, old_filepath),
@@ -1550,6 +1586,7 @@ class Database:
         for item in updates:
             if item["type"] == "verified_target":
                 base_dir, file_hash, target_path = item["args"]
+                target_path = _normalize_verified_target_folder(target_path)
                 if target_path:
                     try:
                         conn_read = get_db_connection(self.db_path)
@@ -1576,7 +1613,9 @@ class Database:
                 new_filepath = new_filepath.replace("\\", "/")
                 import os
 
-                new_dir = os.path.dirname(new_filepath).replace("\\", "/")
+                new_dir = _normalize_verified_target_folder(
+                    os.path.dirname(new_filepath)
+                )
                 if new_dir:
                     try:
                         doc = self.get_document(base_dir, old_filepath)

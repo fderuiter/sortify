@@ -31,6 +31,8 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         Binding("d", "dismiss_selected", "Dismiss item", show=True),
         Binding("i", "reinspect_selected", "Re-inspect item", show=True),
         Binding("ctrl+r", "refresh_records", "Refresh vault", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """

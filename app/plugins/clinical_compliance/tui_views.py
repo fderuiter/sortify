@@ -26,6 +26,8 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
 
     BINDINGS = [
         Binding("escape", "close", "Close dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -365,10 +367,7 @@ class CROForensicModal(A11yMixin, ModalScreen[None]):
             "help_url",
             f"{TROUBLESHOOTING_URL}#cro-forensic-ingestion",
         )
-        from app.ui.notifications import notify
-
-        notify(f"Opening help link: {url}", type="info", help_url=url)
-        self.announce(f"Opened documentation link: {url}")
+        self.open_help_section(url)
 
     @on(Button.Pressed, "#btn-close")
     def action_close(self) -> None:

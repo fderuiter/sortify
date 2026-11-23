@@ -75,9 +75,7 @@ def _is_quarantine_entry_name(name: str, ignore_prefixes: tuple[str, ...]) -> bo
     """Return True if directory/entry name belongs to internal staging, backup, or compliance quarantine."""
     if name in _INTERNAL_OWNED_DIRS:
         return True
-    if name.startswith("_Quarantine_Staging") or name.startswith(
-        "_Compliance_Quarantine"
-    ):
+    if name.startswith(("_Quarantine_Staging", "_Compliance_Quarantine")):
         return True
     return name in ignore_prefixes
 
