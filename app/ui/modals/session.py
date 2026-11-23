@@ -2,7 +2,9 @@
 
 import logging
 import os
+import tempfile
 import time
+from pathlib import Path
 from typing import Any, Optional
 
 from textual import on, work
@@ -13,8 +15,11 @@ from textual.coordinate import Coordinate
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static
 
+from app.config import get_app_dir
 from app.core.path_utils import scrub_user_home_paths
+from app.core.resilient_file_ops import _set_posix_mode
 from app.core.text_utils import sanitize_secret_patterns
+from app.log_filter import scrub_diagnostic_text
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
 from app.ui.layout import ModalBox, ResponsiveLayoutMixin
@@ -30,6 +35,8 @@ class SessionRecoveryModal(
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -163,10 +170,7 @@ class SessionRecoveryModal(
     def action_help(self) -> None:
         """Open session recovery troubleshooting guide."""
         url = f"{TROUBLESHOOTING_URL}#session-recovery"
-        from app.ui.notifications import notify
-
-        notify(f"Opening help link: {url}", type="info", help_url=url)
-        self.announce(f"Opened documentation link: {url}")
+        self.open_help_section(url)
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
@@ -203,6 +207,8 @@ class MultiSessionRecoveryModal(
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -563,10 +569,7 @@ class MultiSessionRecoveryModal(
     def action_help(self) -> None:
         """Open session recovery troubleshooting guide."""
         url = f"{TROUBLESHOOTING_URL}#multi-session-recovery"
-        from app.ui.notifications import notify
-
-        notify(f"Opening help link: {url}", type="info", help_url=url)
-        self.announce(f"Opened documentation link: {url}")
+        self.open_help_section(url)
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
@@ -583,6 +586,8 @@ class RollbackConfirmModal(
     BINDINGS = [
         Binding("escape", "cancel", "Cancel rollback dialog", show=True),
         Binding("space", "toggle_current_row", "Toggle selection", show=False),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -1333,11 +1338,13 @@ class RollbackConfirmModal(
         self.dismiss(None)
 
 
-class RollbackErrorModal(A11yMixin, ModalScreen[None]):
+class RollbackErrorModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     """Modal dialog displaying error messages encountered during session rollback."""
 
     BINDINGS = [
         Binding("escape", "close", "Close error dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -1349,11 +1356,17 @@ class RollbackErrorModal(A11yMixin, ModalScreen[None]):
         padding: 1 2;
         background: $panel;
         border: thick $error;
-        width: 85%;
-        max-width: 75;
+        width: 90%;
+        max-width: 80;
+        min-width: 30;
         height: auto;
         max-height: 90%;
         overflow-y: hidden;
+    }
+    .compact .error-box, .narrow .error-box {
+        padding: 0 1;
+        width: 96%;
+        max-height: 96%;
     }
     .modal-body {
         width: 100%;
@@ -1378,12 +1391,27 @@ class RollbackErrorModal(A11yMixin, ModalScreen[None]):
         height: auto;
         align: right middle;
     }
+    .button-row Button {
+        margin-left: 1;
+    }
+    Button:focus {
+        border: heavy $accent;
+        text-style: bold;
+    }
     """
 
-    def __init__(self, title: str = "Rollback Failed", error_message: str = ""):
+    def __init__(
+        self,
+        title: str = "Rollback Failed",
+        error_message: str = "",
+        settings: Any = None,
+    ):
         super().__init__()
         self.error_title = title
         self.error_message = error_message
+        self.settings = settings
+        self.help_url = f"{TROUBLESHOOTING_URL}#session-recovery"
+        self.last_exported_diagnostics_path: Optional[str] = None
 
     def compose(self) -> ComposeResult:
         """Compose error modal widgets."""
@@ -1396,12 +1424,132 @@ class RollbackErrorModal(A11yMixin, ModalScreen[None]):
                     self.error_message, classes="error-text", id="lbl-error-message"
                 )
             with Horizontal(classes="button-row"):
-                yield Button("Close", id="btn-close-error", variant="primary")
+                btn_help = Button("Help", id="btn-help", variant="default")
+                btn_help.tooltip = "Open session recovery troubleshooting guide"
+                yield btn_help
+
+                btn_export = Button(
+                    "Export Diagnostics",
+                    id="btn-export-diagnostics",
+                    variant="warning",
+                )
+                btn_export.tooltip = "Export scrubbed diagnostic log report"
+                yield btn_export
+
+                btn_close = Button("Close", id="btn-close-error", variant="primary")
+                btn_close.tooltip = "Close rollback error dialog"
+                yield btn_close
 
     def on_mount(self) -> None:
         """Focus close button and announce error message."""
+        self._update_layout(self.size.width, self.size.height)
         self.query_one("#btn-close-error", Button).focus()
         self.announce(f"Error dialog: {self.error_title}")
+
+    def _build_scrubbed_diagnostics_payload(self, settings_obj: Any) -> str:
+        """Build a redacted diagnostic report from error context and ``settings.LOG_FILE``."""
+        ts_iso = time.strftime("%Y-%m-%dT%H:%M:%SZ", time.gmtime())
+        clean_title = scrub_diagnostic_text(str(self.error_title or "Rollback Failed"))
+        clean_error = scrub_diagnostic_text(str(self.error_message or ""))
+
+        lines = [
+            "Sortify Rollback Diagnostic Report",
+            f"Generated: {ts_iso}",
+            f"Title: {clean_title}",
+            f"Error: {clean_error}",
+            "",
+            "--- Application Log Excerpt ---",
+        ]
+
+        log_file_val = (
+            getattr(settings_obj, "LOG_FILE", None)
+            if settings_obj is not None
+            else None
+        )
+        log_loaded = False
+        if log_file_val:
+            try:
+                log_path = Path(str(log_file_val))
+                if log_path.is_file():
+                    raw_lines = log_path.read_text(
+                        encoding="utf-8", errors="replace"
+                    ).splitlines()
+                    for raw_line in raw_lines[-500:]:
+                        if "enc:" in raw_line:
+                            continue
+                        lines.append(scrub_diagnostic_text(raw_line))
+                    log_loaded = True
+            except OSError:
+                log_loaded = False
+
+        if not log_loaded:
+            lines.append("Application log file unavailable or absent on disk.")
+
+        return "\n".join(lines) + "\n"
+
+    def _write_secure_diagnostic_file(self, payload: str, app_obj: Any) -> str:
+        """Write diagnostic payload with ``0o600`` permissions across fallback directories."""
+        stamp = time.strftime("%Y%m%d-%H%M%S", time.gmtime())
+        filename = f"sortify-diagnostics-{stamp}.log"
+        candidate_dirs: list[tuple[Path, bool]] = []
+
+        base_dir = getattr(app_obj, "base_dir", None) if app_obj is not None else None
+        if base_dir:
+            base_path = Path(str(base_dir))
+            if base_path.is_dir():
+                candidate_dirs.append((base_path, False))
+
+        try:
+            candidate_dirs.append((Path(get_app_dir()), True))
+        except Exception:
+            pass
+
+        for target_dir, allow_create in candidate_dirs:
+            try:
+                if allow_create:
+                    target_dir.mkdir(parents=True, exist_ok=True)
+                out_path = target_dir / filename
+                fd = os.open(
+                    str(out_path),
+                    os.O_WRONLY | os.O_CREAT | os.O_TRUNC,
+                    0o600,
+                )
+                with os.fdopen(fd, "w", encoding="utf-8") as fh:
+                    fh.write(payload)
+                _set_posix_mode(str(out_path), 0o600)
+                return str(out_path)
+            except OSError:
+                continue
+
+        fd, tmp_path = tempfile.mkstemp(prefix="sortify-diagnostics-", suffix=".log")
+        with os.fdopen(fd, "w", encoding="utf-8") as fh:
+            fh.write(payload)
+        _set_posix_mode(tmp_path, 0o600)
+        return tmp_path
+
+    @on(Button.Pressed, "#btn-help")
+    def action_help(self) -> None:
+        """Open session recovery troubleshooting guide."""
+        url = getattr(
+            self,
+            "help_url",
+            f"{TROUBLESHOOTING_URL}#session-recovery",
+        )
+        self.open_help_section(url)
+
+    @on(Button.Pressed, "#btn-export-diagnostics")
+    def action_export_diagnostics(self) -> str:
+        """Export scrubbed diagnostic log report with ``0o600`` permissions."""
+        app_obj = self._resolve_app_instance()
+        settings_obj = getattr(self, "settings", None) or getattr(
+            app_obj, "settings", None
+        )
+        payload = self._build_scrubbed_diagnostics_payload(settings_obj)
+        out_path = self._write_secure_diagnostic_file(payload, app_obj)
+        self.last_exported_diagnostics_path = out_path
+        notify(f"Exported scrubbed diagnostics: {out_path}", type="positive")
+        self.announce(f"Exported scrubbed diagnostics: {out_path}")
+        return out_path
 
     @on(Button.Pressed, "#btn-close-error")
     def action_close(self) -> None:
@@ -1416,6 +1564,8 @@ class HistoryModal(
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -1805,7 +1955,11 @@ class HistoryModal(
         self.query_one("#btn-rollback-session", Button).disabled = False
 
         self.app.push_screen(
-            RollbackErrorModal(title="Rollback Failed", error_message=str(err))
+            RollbackErrorModal(
+                title="Rollback Failed",
+                error_message=str(err),
+                settings=getattr(self.app, "settings", None),
+            )
         )
 
     def _refresh_session_options(self, selected_sid: Optional[str] = None) -> None:
