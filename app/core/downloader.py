@@ -38,8 +38,6 @@ _REQUIRED_BUNDLE_FILES: tuple[str, ...] = (
 class DownloadError(DownloaderError):
     """Base class for download exceptions."""
 
-    pass
-
 
 ALLOWED_MODEL_HOSTS: frozenset[str] = frozenset({"huggingface.co", "hf.co"})
 _ALLOWED_MODEL_HOSTS = ALLOWED_MODEL_HOSTS
@@ -64,8 +62,7 @@ def _normalize_trusted_model_hosts(trusted_hosts=None) -> frozenset[str]:
             not candidate
             or candidate.startswith(".")
             or candidate in _LOCAL_HOSTNAMES
-            or candidate.endswith(".local")
-            or candidate.endswith(".localhost")
+            or candidate.endswith((".local", ".localhost"))
         ):
             continue
         try:
@@ -136,11 +133,7 @@ def _validate_url(url: str, trusted_hosts=None) -> None:
         pass
 
     # Reject local hostnames and loopback names
-    if (
-        host_clean in _LOCAL_HOSTNAMES
-        or host_clean.endswith(".local")
-        or host_clean.endswith(".localhost")
-    ):
+    if host_clean in _LOCAL_HOSTNAMES or host_clean.endswith((".local", ".localhost")):
         raise DownloadError(
             f"Local or loopback hostnames are not permitted: {hostname}"
         )
@@ -158,25 +151,17 @@ _validate_model_url = _validate_url
 class InvalidStateTransitionError(DownloadError, ValueError):
     """Raised when an invalid lifecycle state transition is attempted."""
 
-    pass
-
 
 class NetworkError(DownloadError):
     """Raised when a network/connection error occurs."""
-
-    pass
 
 
 class DiskSpaceError(DownloadError):
     """Raised when there is insufficient disk space."""
 
-    pass
-
 
 class DownloadCancelledError(DownloadError):
     """Raised when the download is cancelled by the user."""
-
-    pass
 
 
 class DownloadState(str, Enum):
@@ -865,7 +850,7 @@ def run_background_download(
             remote_files, generated_files, expected_hashes = _resolve_bundle_plan(url)
             for remote_url in remote_files.values():
                 _validate_url(remote_url, trusted_hosts=trusted_hosts)
-        except Exception as val_err:  # noqa: BLE001 - report validation errors via on_failure callback
+        except Exception as val_err:
             logger.warning(
                 "Model download URL validation failed: %s",
                 val_err,
@@ -886,7 +871,7 @@ def run_background_download(
 
             advisory_client = SecurityAdvisoryClient.get_instance()
             advisory_client.check_advisory(repo_id=url)
-        except Exception as adv_err:  # noqa: BLE001 - report advisory failures via on_failure callback
+        except Exception as adv_err:
             logger.warning(
                 "Pre-download security advisory check failed: %s",
                 adv_err,
@@ -913,7 +898,7 @@ def run_background_download(
                 if dm is None:
                     try:
                         dm = DownloadManager.get_instance()
-                    except Exception:  # noqa: BLE001 - fallback to direct opener if singleton init fails
+                    except Exception:
                         logger.debug(
                             "DownloadManager unavailable; using direct opener",
                             exc_info=True,
@@ -992,7 +977,7 @@ def run_background_download(
 
                                         try:
                                             chunk = response.read(chunk_size)
-                                        except Exception as e:  # noqa: BLE001 - normalize transport read failures
+                                        except Exception as e:
                                             raise NetworkError(
                                                 f"Network error during read: {e}"
                                             ) from e
@@ -1048,7 +1033,7 @@ def run_background_download(
 
                         except (DownloadCancelledError, DiskSpaceError):
                             raise
-                        except Exception as net_err:  # noqa: BLE001 - retry transient network failures with backoff
+                        except Exception as net_err:
                             if os.path.exists(staged_tmp):
                                 with contextlib.suppress(OSError):
                                     os.remove(staged_tmp)
@@ -1157,7 +1142,7 @@ def run_background_download(
             if on_failure:
                 on_failure(e)
 
-        except Exception as e:  # noqa: BLE001 - ensure immediate staging cleanup and error callback reporting
+        except Exception as e:
             logger.debug("Model download failed", exc_info=True)
             if staging_dir and os.path.exists(staging_dir):
                 shutil.rmtree(staging_dir, ignore_errors=True)

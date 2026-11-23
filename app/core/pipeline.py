@@ -57,8 +57,6 @@ class PipelineLifecycleState(str, Enum):
 class IllegalStateTransitionError(RuntimeError, ValueError):
     """Raised when an illegal lifecycle state transition is attempted."""
 
-    pass
-
 
 _ALLOWED_TRANSITIONS: dict[PipelineLifecycleState, set[PipelineLifecycleState]] = {
     PipelineLifecycleState.CREATED: {

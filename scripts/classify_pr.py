@@ -37,6 +37,14 @@ PROTECTED_PATHS = [
     "smart-autosorter.spec",
     "network_rules.json",
     ".gitleaks.toml",
+    "mkdocs.yml",
+    ".pre-commit-config.yaml",
+    ".claude/",
+    ".agents/",
+    "AGENTS.md",
+    "CLAUDE.md",
+    ".gitattributes",
+    "offline_bundle/requirements.txt",
 ]
 
 
@@ -66,8 +74,9 @@ BASELINE_PATHS = [
 DOCS_PATHS = [
     r"^docs/.*",
     r"^README\.md$",
-    r"^mkdocs\.yml$",
 ]
+
+MAINTAINER_PERMISSIONS = frozenset({"admin", "maintain", "write"})
 
 _DEPENDABOT_VERSION_RE = re.compile(
     r"\bfrom\s+v?(?P<old>\d+(?:\.\d+)*)\S*\s+to\s+v?(?P<new>\d+(?:\.\d+)*)",
@@ -465,6 +474,9 @@ class PRMetadata:
     base_requirements_txt: str | None = None
     head_requirements_txt: str | None = None
     manifest_diffs_evaluated: bool = False
+    author_permission: str = "none"
+    author_is_bot: bool = False
+    is_fork: bool = False
 
 
 @dataclass
@@ -496,6 +508,7 @@ def classify_pr(meta: PRMetadata) -> ClassificationResult:
 
     is_dependabot = bool(meta.is_dependabot and meta.author == "dependabot[bot]")
     is_bot_author = is_approved_automation_bot(meta.author)
+    is_any_bot = bool(is_bot_author or meta.author_is_bot)
     is_automated_security_patch = (
         is_bot_author
         and (
@@ -560,11 +573,12 @@ def classify_pr(meta: PRMetadata) -> ClassificationResult:
     non_docs_files = []
 
     for path in meta.changed_files:
-        is_sens = any(re.match(pat, path) for pat in SENSITIVE_PATHS) or (
-            not is_dependabot
-            and not is_automated_security_patch
-            and any(re.match(pat, path) for pat in DEPENDENCY_MANIFEST_PATHS)
-        )
+        is_dep_manifest = any(re.match(pat, path) for pat in DEPENDENCY_MANIFEST_PATHS)
+        is_protected = any(re.match(pat, path) for pat in SENSITIVE_PATHS)
+        is_sens = (
+            is_protected
+            and not (is_dep_manifest and (is_dependabot or is_automated_security_patch))
+        ) or (is_dep_manifest and not is_dependabot and not is_automated_security_patch)
         if is_sens:
             sensitive_file_matches.append(path)
 
@@ -607,8 +621,7 @@ def classify_pr(meta: PRMetadata) -> ClassificationResult:
         if risk_level not in ("sensitive", "high", "baseline-change"):
             risk_level = "medium"
         if (
-            non_docs_files
-            and "automerge" not in meta.labels
+            "automerge" not in meta.labels
             and not is_dependabot
             and not is_automated_security_patch
         ):
@@ -616,10 +629,30 @@ def classify_pr(meta: PRMetadata) -> ClassificationResult:
                 f"PR size exceeds low-risk thresholds ({len(meta.changed_files)} files, {total_diff} lines) without 'automerge' label."
             )
 
-    # 7. Production code opt-in requirement
+    # 7. Opt-in requirement for production code and untrusted/bot/fork docs changes
     is_docs_only = len(meta.changed_files) > 0 and len(non_docs_files) == 0
+    is_trusted_human_docs_author = (
+        bool(meta.author)
+        and not is_any_bot
+        and not meta.is_fork
+        and meta.author_permission in MAINTAINER_PERMISSIONS
+    )
     is_safe_dependabot = is_dependabot and effective_dependency_update_type != "major"
-    if not is_docs_only and not is_safe_dependabot:
+    if is_docs_only:
+        if not is_trusted_human_docs_author and "automerge" not in meta.labels:
+            if is_any_bot:
+                blocking_reasons.append(
+                    "Documentation changes by automated bots require a maintainer-applied 'automerge' label."
+                )
+            elif meta.is_fork:
+                blocking_reasons.append(
+                    "Documentation changes from external forks require a maintainer-applied 'automerge' label."
+                )
+            else:
+                blocking_reasons.append(
+                    "Documentation changes by authors without collaborator write access require a maintainer-applied 'automerge' label."
+                )
+    elif not is_safe_dependabot:
         if "automerge" not in meta.labels:
             blocking_reasons.append(
                 "Production code changes require an explicit 'automerge' label to opt into automated evaluation."
@@ -726,6 +759,17 @@ def main() -> None:
     else:
         dep_update_type = "minor"
 
+    raw_permission = data.get("author_permission")
+    author_permission = (
+        raw_permission.strip().lower()
+        if isinstance(raw_permission, str) and raw_permission.strip()
+        else "none"
+    )
+    author_is_bot = bool(
+        data.get("author_is_bot", False) or is_approved_automation_bot(author)
+    )
+    is_fork = bool(data.get("is_fork", False))
+
     meta = PRMetadata(
         pr_number=data.get("pr_number", 0),
         title=title,
@@ -745,6 +789,9 @@ def main() -> None:
         base_requirements_txt=base_requirements_txt,
         head_requirements_txt=head_requirements_txt,
         manifest_diffs_evaluated=has_manifest_keys,
+        author_permission=author_permission,
+        author_is_bot=author_is_bot,
+        is_fork=is_fork,
     )
 
     result = classify_pr(meta)

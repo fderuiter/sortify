@@ -72,9 +72,7 @@ def _get_quarantine_ignore_prefixes(settings: Any = None) -> tuple[str, ...]:
 
 def _is_quarantine_entry_name(name: str, ignore_prefixes: tuple[str, ...]) -> bool:
     """Return True if directory/entry name belongs to staging or compliance quarantine."""
-    if name.startswith("_Quarantine_Staging") or name.startswith(
-        "_Compliance_Quarantine"
-    ):
+    if name.startswith(("_Quarantine_Staging", "_Compliance_Quarantine")):
         return True
     return name in ignore_prefixes
 

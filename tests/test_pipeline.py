@@ -183,7 +183,7 @@ def test_undo_reports_a_file_changed_since_the_sort_as_failed(session):
     pipeline = SortPipeline(session)
     _plan, sorted_result = pipeline.run()
     base = Path(session.base_dir)
-    (changed,) = [p for p in base.rglob("tech_doc.txt")]
+    (changed,) = list(base.rglob("tech_doc.txt"))
     changed.write_text("Edited after the sort.")
 
     result = pipeline.undo(sorted_result.session_id)

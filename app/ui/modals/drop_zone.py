@@ -30,6 +30,8 @@ class DropPlanConfirmModal(A11yMixin, ModalScreen[bool]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -123,6 +125,8 @@ class DropZoneModal(
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """
@@ -718,9 +722,7 @@ class DropZoneModal(
                         or expr_lower in filename_only
                         or expr_lower in file_path_lower
                     )
-                elif p_type == "pattern" and expr_lower:
-                    is_match = match_pattern_expression(expr_lower, filename_only)
-                elif p_type == "unarchive" and expr_lower:
+                elif p_type in ("pattern", "unarchive") and expr_lower:
                     is_match = match_pattern_expression(expr_lower, filename_only)
                 elif p_type == "keyword" and expr_lower:
                     is_match = expr_lower in filename_only
@@ -1068,10 +1070,7 @@ class DropZoneModal(
             "help_url",
             f"{TROUBLESHOOTING_URL}#dropzone-errors",
         )
-        from app.ui.notifications import notify
-
-        notify(f"Opening help link: {url}", type="info", help_url=url)
-        self.announce(f"Opened documentation link: {url}")
+        self.open_help_section(url)
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:

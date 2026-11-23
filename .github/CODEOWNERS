@@ -18,5 +18,13 @@ scripts/ @fderuiter
 smart-autosorter.spec @fderuiter
 network_rules.json @fderuiter
 .gitleaks.toml @fderuiter
+mkdocs.yml @fderuiter
+.pre-commit-config.yaml @fderuiter
+.claude/ @fderuiter
+.agents/ @fderuiter
+AGENTS.md @fderuiter
+CLAUDE.md @fderuiter
+.gitattributes @fderuiter
+offline_bundle/requirements.txt @fderuiter
 tests/snapshots/api/ @fderuiter
 tests/snapshots/tui_svg/ @fderuiter
