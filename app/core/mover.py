@@ -5,6 +5,7 @@ This module is responsible for safely moving files to new directories.
 
 import asyncio
 import concurrent.futures
+import contextlib
 import logging
 import os
 import shutil  # noqa: F401
@@ -1138,6 +1139,13 @@ def _collect_move_items(
             if node_type == "directory":
                 continue
 
+            if (
+                _get_val(content, "is_excluded")
+                or _get_val(content, "excluded")
+                or _get_val(content, "is_checked") is False
+            ):
+                continue
+
             if _get_val(content, "status") == "Already Sorted":
                 pass
 
@@ -1151,11 +1159,15 @@ def _collect_move_items(
                 base_dir, key, content, active_parent_path, depth
             )
 
+            from app.core.scanner import parse_item_identifier
+
             tgt_fn = _get_val(content, "target_filename")
             if tgt_fn is not None:
-                filename = tgt_fn
+                _, clean_tf = parse_item_identifier(str(tgt_fn), base_dir)
+                filename = os.path.basename(clean_tf)
             else:
-                filename = os.path.basename(key)
+                _, rel_key = parse_item_identifier(str(key), base_dir)
+                filename = os.path.basename(rel_key)
 
             items.append(
                 {
@@ -1198,6 +1210,61 @@ def _collect_move_items(
     return items
 
 
+def _get_target_lock(
+    target_locks: dict[str, threading.Lock] | None,
+    lock_guard: threading.Lock,
+    target_path: str,
+) -> contextlib.AbstractContextManager[Any]:
+    """Return a per-destination lock so concurrent workers never race on the same target path."""
+    if target_locks is None:
+        return contextlib.nullcontext()
+    norm_target = os.path.normcase(os.path.abspath(target_path))
+    with lock_guard:
+        t_lock = target_locks.get(norm_target)
+        if t_lock is None:
+            t_lock = threading.Lock()
+            target_locks[norm_target] = t_lock
+    return t_lock
+
+
+def _process_move_group(
+    base_dir: str,
+    group_items: list[dict],
+    db,
+    path_map: dict,
+    runtime_settings,
+    session_id: str,
+    history_manager,
+    db_lock: threading.Lock,
+    db_updates_batch: list,
+    audit_records: list | None = None,
+    pending_links: list | None = None,
+    chunk_hash_map: dict | None = None,
+    target_locks: dict[str, threading.Lock] | None = None,
+) -> list[bool]:
+    """Execute a bucket of move items targeting the same destination sequentially in plan order."""
+    results: list[bool] = []
+    for item in group_items:
+        results.append(
+            _process_move_item(
+                base_dir,
+                item,
+                db,
+                path_map,
+                runtime_settings,
+                session_id,
+                history_manager,
+                db_lock,
+                db_updates_batch,
+                audit_records,
+                pending_links,
+                chunk_hash_map,
+                target_locks=target_locks,
+            )
+        )
+    return results
+
+
 def _process_move_item(
     base_dir: str,
     item: dict,
@@ -1211,6 +1278,7 @@ def _process_move_item(
     audit_records: list | None = None,
     pending_links: list | None = None,
     chunk_hash_map: dict | None = None,
+    target_locks: dict[str, threading.Lock] | None = None,
 ) -> bool:
     """Execute a single physical move and SHA-256 hash calculation off-thread."""
     source_path = item["source_path"]
@@ -1288,6 +1356,67 @@ def _process_move_item(
         os.makedirs(dest_dir, exist_ok=True)
 
     target_path = os.path.normpath(os.path.join(dest_dir, filename))
+    target_ctx = _get_target_lock(target_locks, db_lock, target_path)
+    with target_ctx:
+        return _execute_locked_target_move(
+            base_dir=base_dir,
+            source_path=source_path,
+            content=content,
+            filename=filename,
+            current_dest=current_dest,
+            active_dest=active_dest,
+            quarantine_dir_name=quarantine_dir_name,
+            candidate_sha256=candidate_sha256,
+            dest_dir=dest_dir,
+            target_path=target_path,
+            is_sensitivity_hold=is_sensitivity_hold,
+            sens_rating_str=sens_rating_str,
+            sens_score=sens_score,
+            abs_base_dir=abs_base_dir,
+            db=db,
+            path_map=path_map,
+            runtime_settings=runtime_settings,
+            session_id=session_id,
+            history_manager=history_manager,
+            db_lock=db_lock,
+            db_updates_batch=db_updates_batch,
+            audit_records=audit_records,
+            pending_links=pending_links,
+            chunk_hash_map=chunk_hash_map,
+        )
+
+
+def _execute_locked_target_move(
+    *,
+    base_dir: str,
+    source_path: str,
+    content: Any,
+    filename: str,
+    current_dest: str,
+    active_dest: str,
+    quarantine_dir_name: str,
+    candidate_sha256: str | None,
+    dest_dir: str,
+    target_path: str,
+    is_sensitivity_hold: bool,
+    sens_rating_str: str,
+    sens_score: float,
+    abs_base_dir: str,
+    db,
+    path_map: dict,
+    runtime_settings,
+    session_id: str,
+    history_manager,
+    db_lock: threading.Lock,
+    db_updates_batch: list,
+    audit_records: list | None,
+    pending_links: list | None,
+    chunk_hash_map: dict | None,
+) -> bool:
+    """Perform collision evaluation, optional overwrite displacement, physical move, and verification under target lock."""
+    if not os.path.lexists(source_path):
+        return False
+
     collision = False
     if os.path.lexists(target_path):
         is_same = False
@@ -1299,9 +1428,22 @@ def _process_move_item(
         if not is_same:
             collision = True
 
-    conflict_policy = "rename"
-    if runtime_settings:
+    node_overwrite = bool(
+        _get_val(content, "overwrite") or _get_val(content, "allow_overwrite")
+    )
+    node_policy_raw = _get_val(content, "conflict_policy")
+    if node_overwrite:
+        conflict_policy = "overwrite"
+    elif isinstance(node_policy_raw, str) and node_policy_raw.lower() in (
+        "rename",
+        "skip",
+        "overwrite",
+    ):
+        conflict_policy = node_policy_raw.lower()
+    elif runtime_settings:
         conflict_policy = getattr(runtime_settings, "CONFLICT_POLICY", "rename")
+    else:
+        conflict_policy = "rename"
 
     if collision and conflict_policy == "skip":
         logging.info(
@@ -1840,6 +1982,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
             from app.core.shared_registry import SharedWorkerPool
 
             pool = SharedWorkerPool.get_instance(max_workers=effective_max_workers)
+            target_locks: dict[str, threading.Lock] = {}
             for chunk_idx, chunk in enumerate(chunks):
                 if _is_cancelled(cancel_token):
                     logging.info(
@@ -1905,11 +2048,24 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                 elif db is None:
                     chunk_hash_map = dict.fromkeys(chunk_rel_paths, "")
 
+                target_buckets: dict[str, list[dict]] = {}
+                for item in chunk:
+                    cand_target = os.path.normcase(
+                        os.path.abspath(
+                            os.path.join(
+                                base_dir,
+                                item.get("current_dest", ""),
+                                item.get("filename", ""),
+                            )
+                        )
+                    )
+                    target_buckets.setdefault(cand_target, []).append(item)
+
                 futures = [
                     pool.submit(
-                        _process_move_item,
+                        _process_move_group,
                         base_dir,
-                        item,
+                        bucket_items,
                         db,
                         path_map,
                         runtime_settings,
@@ -1920,8 +2076,9 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         audit_records,
                         pending_links,
                         chunk_hash_map,
+                        target_locks,
                     )
-                    for item in chunk
+                    for bucket_items in target_buckets.values()
                 ]
 
                 # Never leave moves in flight: on the first failure, cancel
