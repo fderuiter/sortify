@@ -375,6 +375,14 @@ class SharedModelRegistry:
                     download_enabled=False,
                 )
                 info = (langs, use_gpu)
+            except ImportError as imp_err:
+                if not getattr(self, "_easyocr_missing_logged", False):
+                    logging.info(
+                        f"Optional EasyOCR package not installed ({imp_err}); OCR reader unavailable."
+                    )
+                    self._easyocr_missing_logged = True
+                reader = None
+                info = (None, None)
             except Exception as e:
                 logging.error(
                     f"Failed to load EasyOCR reader with languages {langs} and gpu={use_gpu}: {e}. Falling back to 'en' and cpu.",

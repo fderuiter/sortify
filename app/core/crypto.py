@@ -20,6 +20,15 @@ logger = logging.getLogger(__name__)
 _key_mgmt_lock = threading.RLock()
 _audit_thread_local = threading.local()
 
+_KEYRING_PROBE_TIMEOUT_SECONDS = 2.0
+_keyring_probe_lock = threading.RLock()
+_keyring_probe_token: tuple[int, int, int, int, str] | None = None
+_keyring_read_available: bool | None = None
+_keyring_write_available: bool | None = None
+
+_session_crypto_cache_lock = threading.RLock()
+_session_crypto_cache: dict[tuple[str, str], "SessionCrypto"] = {}
+
 try:
     import numpy as np
 except ImportError:
@@ -37,9 +46,18 @@ except ImportError:
 def get_fallback_keys_dir() -> Path:
     """Get the centralized fallback key store directory based on OS.
 
+    Honors ``SORTIFY_KEYS_DIR`` or ``AUTOSORTER_KEYS_DIR`` when set so demo and
+    sandbox runs keep fallback keys out of the host user profile.
+
     Windows: %APPDATA%/Sortify/keys
     POSIX: ~/.sortify/keys
     """
+    override = os.environ.get("SORTIFY_KEYS_DIR") or os.environ.get(
+        "AUTOSORTER_KEYS_DIR"
+    )
+    if override:
+        return Path(override)
+
     if os.name == "nt":
         appdata = os.environ.get("APPDATA")
         if appdata:
@@ -107,6 +125,207 @@ def secure_delete_dir(dir_path: Path):
         from app.core.resilient_file_ops import resilient_rmtree
 
         resilient_rmtree(dir_path, ignore_errors=True)
+
+
+def _norm_cache_path(path: Path | str) -> str:
+    """Normalize a filesystem path string for case-aware cache lookups."""
+    return os.path.normcase(str(Path(os.path.abspath(os.fspath(path)))))
+
+
+def _current_keyring_token() -> tuple[int, int, int, int, str]:
+    """Build a token identifying the active keyring callables and backend env."""
+    core_mod = getattr(keyring, "core", None)
+    backend_obj = getattr(core_mod, "_keyring_backend", None)
+    return (
+        id(backend_obj),
+        id(keyring.get_password),
+        id(keyring.set_password),
+        id(keyring.delete_password),
+        os.environ.get("PYTHON_KEYRING_BACKEND", ""),
+    )
+
+
+def _reset_keyring_probe_cache() -> None:
+    """Reset cached OS keyring probe availability state."""
+    global _keyring_probe_token, _keyring_read_available, _keyring_write_available
+    with _keyring_probe_lock:
+        _keyring_probe_token = None
+        _keyring_read_available = None
+        _keyring_write_available = None
+
+
+def _sync_keyring_probe_state() -> None:
+    """Reset cached probe flags if keyring callables or backend env changed."""
+    global _keyring_probe_token, _keyring_read_available, _keyring_write_available
+    token = _current_keyring_token()
+    if _keyring_probe_token != token:
+        _keyring_probe_token = token
+        _keyring_read_available = None
+        _keyring_write_available = None
+
+
+def _call_keyring_bounded(
+    func: Any,
+    *args: Any,
+    timeout: float | None = None,
+) -> Any:
+    """Invoke a keyring callable on a daemon thread with a strict timeout budget."""
+    effective_timeout = (
+        _KEYRING_PROBE_TIMEOUT_SECONDS if timeout is None else float(timeout)
+    )
+    done = threading.Event()
+    timed_out = threading.Event()
+    outcome: dict[str, Any] = {}
+
+    def _runner() -> None:
+        global _keyring_probe_token
+        try:
+            outcome["result"] = func(*args)
+        except BaseException as exc:  # noqa: BLE001 - propagate exact backend failure
+            outcome["error"] = exc
+        finally:
+            done.set()
+            if timed_out.is_set():
+                with _keyring_probe_lock:
+                    if (
+                        _keyring_read_available is False
+                        or _keyring_write_available is False
+                    ):
+                        _keyring_probe_token = _current_keyring_token()
+
+    worker = threading.Thread(
+        target=_runner,
+        name="sortify-keyring-probe",
+        daemon=True,
+    )
+    worker.start()
+    if not done.wait(timeout=effective_timeout):
+        timed_out.set()
+        raise TimeoutError(f"OS keyring probe timed out after {effective_timeout:.1f}s")
+    if "error" in outcome:
+        err = outcome["error"]
+        if isinstance(err, Exception):
+            raise err
+        raise RuntimeError(str(err)) from err
+    return outcome.get("result")
+
+
+def _keyring_get_password(
+    service: str,
+    account: str,
+    failure_message: str | None = None,
+) -> str | None:
+    """Read a password from the OS keyring if available within the probe budget."""
+    global _keyring_probe_token, _keyring_read_available, _keyring_write_available
+    with _keyring_probe_lock:
+        _sync_keyring_probe_state()
+        if _keyring_read_available is False:
+            return None
+        try:
+            value = _call_keyring_bounded(keyring.get_password, service, account)
+            _keyring_read_available = True
+            _keyring_probe_token = _current_keyring_token()
+            return value
+        except Exception as exc:  # noqa: BLE001 - keyring backends raise arbitrary errors
+            _keyring_read_available = False
+            _keyring_write_available = False
+            _keyring_probe_token = _current_keyring_token()
+            if failure_message:
+                logger.warning(f"{failure_message}: {exc}")
+            return None
+
+
+def _keyring_set_password(
+    service: str,
+    account: str,
+    secret: str,
+    failure_message: str | None = None,
+) -> bool:
+    """Store a password in the OS keyring if writable within the probe budget."""
+    global _keyring_probe_token, _keyring_write_available
+    with _keyring_probe_lock:
+        _sync_keyring_probe_state()
+        if _keyring_write_available is False:
+            return False
+        try:
+            _call_keyring_bounded(keyring.set_password, service, account, secret)
+            _keyring_write_available = True
+            _keyring_probe_token = _current_keyring_token()
+            return True
+        except Exception as exc:  # noqa: BLE001 - keyring backends raise arbitrary errors
+            _keyring_write_available = False
+            _keyring_probe_token = _current_keyring_token()
+            if failure_message:
+                logger.warning(f"{failure_message}: {exc}")
+            return False
+
+
+def _keyring_delete_password(service: str, account: str) -> bool:
+    """Delete a password entry from the OS keyring within the probe budget."""
+    global _keyring_probe_token
+    with _keyring_probe_lock:
+        _sync_keyring_probe_state()
+        if _keyring_read_available is False:
+            return False
+        try:
+            _call_keyring_bounded(keyring.delete_password, service, account)
+            _keyring_probe_token = _current_keyring_token()
+            return True
+        except Exception as del_err:  # noqa: BLE001 - keyring backends raise arbitrary errors
+            _keyring_probe_token = _current_keyring_token()
+            logger.debug(
+                f"Keyring delete failed during key rotation: {type(del_err).__name__}"
+            )
+            return False
+
+
+def _resolve_cached_session_crypto(key_path: Path, db_path: Path) -> "SessionCrypto":
+    """Return a cached SessionCrypto instance for ``(db_path, fallback_keys_dir)``."""
+    resolved_db = Path(db_path).resolve()
+    resolved_key = Path(key_path).resolve()
+    cache_key = (
+        _norm_cache_path(resolved_db),
+        _norm_cache_path(get_fallback_keys_dir()),
+    )
+    with _session_crypto_cache_lock:
+        cached = _session_crypto_cache.get(cache_key)
+        if cached is not None:
+            return cached
+        instance = SessionCrypto(resolved_key, resolved_db)
+        _session_crypto_cache[cache_key] = instance
+        return instance
+
+
+def _invalidate_session_crypto(
+    db_path: Path | str, exclude: "SessionCrypto | None" = None
+) -> None:
+    """Evict cached SessionCrypto entries matching ``db_path`` and reset stale state."""
+    target = _norm_cache_path(db_path)
+    evicted: list[SessionCrypto] = []
+    with _session_crypto_cache_lock:
+        stale_keys = [k for k in _session_crypto_cache if k[0] == target]
+        for key in stale_keys:
+            inst = _session_crypto_cache.pop(key, None)
+            if inst is not None and inst is not exclude:
+                evicted.append(inst)
+    if evicted:
+        with _key_mgmt_lock:
+            for inst in evicted:
+                inst._key = None
+                inst._cipher = None
+                inst._audited_exports.clear()
+
+
+def _clear_session_crypto_cache(keep_db_paths: set[str] | None = None) -> None:
+    """Clear cached SessionCrypto instances, optionally preserving active DB paths."""
+    with _session_crypto_cache_lock:
+        if keep_db_paths is None:
+            _session_crypto_cache.clear()
+            return
+        normalized_keep = {_norm_cache_path(p) for p in keep_db_paths}
+        stale_keys = [k for k in _session_crypto_cache if k[0] not in normalized_keep]
+        for key in stale_keys:
+            _session_crypto_cache.pop(key, None)
 
 
 class CryptoManager:
@@ -228,6 +447,8 @@ class SessionCrypto:
         self._vector_cache_max_entries = 10000
         self._vector_parsed_cache: dict[Any, Any] = {}
         self._vector_decrypt_lock = threading.Lock()
+        self._audit_export_lock = threading.RLock()
+        self._audited_exports: set[tuple[str | None, str, str, str]] = set()
 
         # Centralized key store location under user's home directory / APPDATA
         self.isolated_dir = get_fallback_keys_dir()
@@ -278,16 +499,15 @@ class SessionCrypto:
             key = None
 
             # 1. OS Keyring Lookup (SHA-256)
-            try:
-                key_str = keyring.get_password(
-                    self.keyring_service, self.keyring_account
-                )
-                if key_str:
-                    key = key_str.encode("utf-8")
-            except Exception as e:  # noqa: BLE001 - keyring backends raise anything; logged without traceback
-                logger.warning(
-                    f"Keyring lookup failed for account '{self.keyring_account}': {e}"
-                )
+            key_str = _keyring_get_password(
+                self.keyring_service,
+                self.keyring_account,
+                failure_message=(
+                    f"Keyring lookup failed for account '{self.keyring_account}'"
+                ),
+            )
+            if key_str:
+                key = key_str.encode("utf-8")
 
             # 2. Centralized Fallback Key Lookup (SHA-256 file)
             if key is None and self.isolated_key_path.exists():
@@ -305,16 +525,16 @@ class SessionCrypto:
 
             # 3a. Legacy MD5 Keyring Lookup
             if key is None:
-                try:
-                    legacy_key_str = keyring.get_password(
-                        self.keyring_service, self.legacy_md5_keyring_account
-                    )
-                    if legacy_key_str:
-                        legacy_key = legacy_key_str.encode("utf-8")
-                except Exception as e:  # noqa: BLE001 - keyring backends raise anything; logged without traceback
-                    logger.warning(
-                        f"Legacy MD5 keyring lookup failed for account '{self.legacy_md5_keyring_account}': {e}"
-                    )
+                legacy_key_str = _keyring_get_password(
+                    self.keyring_service,
+                    self.legacy_md5_keyring_account,
+                    failure_message=(
+                        "Legacy MD5 keyring lookup failed for account "
+                        f"'{self.legacy_md5_keyring_account}'"
+                    ),
+                )
+                if legacy_key_str:
+                    legacy_key = legacy_key_str.encode("utf-8")
 
             # 3b. Legacy MD5 Isolated Key File
             if (
@@ -426,16 +646,14 @@ class SessionCrypto:
                         )
 
                 # Try to migrate to SHA-256 keyring
-                try:
-                    keyring.set_password(
-                        self.keyring_service,
-                        self.keyring_account,
-                        legacy_key.decode("utf-8"),
-                    )
-                except Exception as e:  # noqa: BLE001 - keyring backends raise anything; logged without traceback
-                    logger.warning(
-                        f"Failed to set keyring password during legacy migration: {e}"
-                    )
+                _keyring_set_password(
+                    self.keyring_service,
+                    self.keyring_account,
+                    legacy_key.decode("utf-8"),
+                    failure_message=(
+                        "Failed to set keyring password during legacy migration"
+                    ),
+                )
 
             # Remove only this database's legacy key, and only once the
             # migrated copy is verified. Sibling databases' keys stay put.
@@ -493,17 +711,19 @@ class SessionCrypto:
                 # 5. New Key Generation
                 key = Fernet.generate_key()
                 saved_to_keyring = False
-                try:
-                    keyring.set_password(
-                        self.keyring_service, self.keyring_account, key.decode("utf-8")
-                    )
-                    verify_str = keyring.get_password(
-                        self.keyring_service, self.keyring_account
+                if key is not None and _keyring_set_password(
+                    self.keyring_service,
+                    self.keyring_account,
+                    key.decode("utf-8"),
+                    failure_message="Failed to store generated key in OS keyring",
+                ):
+                    verify_str = _keyring_get_password(
+                        self.keyring_service,
+                        self.keyring_account,
+                        failure_message="Failed to verify generated key in OS keyring",
                     )
                     if verify_str and verify_str.encode("utf-8") == key:
                         saved_to_keyring = True
-                except Exception as e:  # noqa: BLE001 - keyring backends raise anything; logged without traceback
-                    logger.warning(f"Failed to store generated key in OS keyring: {e}")
 
                 if not saved_to_keyring:
                     # Fallback to isolated fallback key path with secure permissions
@@ -555,37 +775,52 @@ class SessionCrypto:
         caller_context: dict[str, Any] | None = None,
     ) -> str | None:
         """Get the raw key string for SQLCipher and emit a KEY_EXPORT audit entry."""
+        context_token = (
+            json.dumps(caller_context, sort_keys=True, default=str)
+            if caller_context
+            else ""
+        )
         with _key_mgmt_lock:
             key_val = self._get_raw_key_internal()
+            audit_key = (key_val, session_id, actor, context_token)
+            already_audited = audit_key in self._audited_exports
 
-        if not getattr(_audit_thread_local, "in_key_audit_logging", False):
-            try:
-                _audit_thread_local.in_key_audit_logging = True
-                from app.core.ledger import KeyAuditLedger
+        if not already_audited and not getattr(
+            _audit_thread_local, "in_key_audit_logging", False
+        ):
+            with self._audit_export_lock:
+                with _key_mgmt_lock:
+                    already_audited = audit_key in self._audited_exports
+                if not already_audited:
+                    try:
+                        _audit_thread_local.in_key_audit_logging = True
+                        from app.core.ledger import KeyAuditLedger
 
-                db_hash = CryptoManager.derive_db_hash(self.db_path)
-                meta: dict[str, Any] = {
-                    "actor": actor,
-                    "db_path": str(self.db_path),
-                }
-                if caller_context:
-                    meta.update(caller_context)
+                        db_hash = CryptoManager.derive_db_hash(self.db_path)
+                        meta: dict[str, Any] = {
+                            "actor": actor,
+                            "db_path": str(self.db_path),
+                        }
+                        if caller_context:
+                            meta.update(caller_context)
 
-                status = "SUCCESS" if key_val is not None else "NOT_FOUND"
-                KeyAuditLedger().log_key_audit(
-                    event_type="KEY_EXPORT",
-                    db_path_hash=db_hash,
-                    session_id=session_id,
-                    status=status,
-                    metadata=meta,
-                )
-            except Exception as audit_err:
-                logger.error(
-                    f"Failed to record KEY_EXPORT audit log in get_raw_key: {audit_err}",
-                    exc_info=True,
-                )
-            finally:
-                _audit_thread_local.in_key_audit_logging = False
+                        status = "SUCCESS" if key_val is not None else "NOT_FOUND"
+                        KeyAuditLedger().log_key_audit(
+                            event_type="KEY_EXPORT",
+                            db_path_hash=db_hash,
+                            session_id=session_id,
+                            status=status,
+                            metadata=meta,
+                        )
+                        with _key_mgmt_lock:
+                            self._audited_exports.add(audit_key)
+                    except Exception as audit_err:
+                        logger.error(
+                            f"Failed to record KEY_EXPORT audit log in get_raw_key: {audit_err}",
+                            exc_info=True,
+                        )
+                    finally:
+                        _audit_thread_local.in_key_audit_logging = False
 
         return key_val
 
@@ -605,12 +840,13 @@ class SessionCrypto:
             return self._key.decode("utf-8")
         # Fallback (same hierarchy)
         key = None
-        try:
-            key_str = keyring.get_password(self.keyring_service, self.keyring_account)
-            if key_str:
-                key = key_str.encode("utf-8")
-        except Exception as e:  # noqa: BLE001 - keyring backends raise anything; logged without traceback
-            logger.warning(f"Keyring lookup failed in get_raw_key: {e}")
+        key_str = _keyring_get_password(
+            self.keyring_service,
+            self.keyring_account,
+            failure_message="Keyring lookup failed in get_raw_key",
+        )
+        if key_str:
+            key = key_str.encode("utf-8")
         if key is None and self.isolated_key_path.exists():
             try:
                 with open(self.isolated_key_path, "rb") as f:
@@ -618,14 +854,13 @@ class SessionCrypto:
             except OSError as e:
                 logger.warning(f"Failed to read isolated key in get_raw_key: {e}")
         if key is None:
-            try:
-                legacy_key_str = keyring.get_password(
-                    self.keyring_service, self.legacy_md5_keyring_account
-                )
-                if legacy_key_str:
-                    key = legacy_key_str.encode("utf-8")
-            except Exception as e:  # noqa: BLE001 - keyring backends raise anything; logged without traceback
-                logger.warning(f"Legacy keyring lookup failed in get_raw_key: {e}")
+            legacy_key_str = _keyring_get_password(
+                self.keyring_service,
+                self.legacy_md5_keyring_account,
+                failure_message="Legacy keyring lookup failed in get_raw_key",
+            )
+            if legacy_key_str:
+                key = legacy_key_str.encode("utf-8")
         if key is None and self.legacy_md5_isolated_key_path.exists():
             try:
                 with open(self.legacy_md5_isolated_key_path, "rb") as f:
@@ -685,29 +920,25 @@ class SessionCrypto:
     def _store_rotated_key(self, key: bytes) -> None:
         """Store ``key`` so that get_cipher() finds it first, or raise."""
         raw = key.decode("utf-8")
-        try:
-            keyring.set_password(self.keyring_service, self.keyring_account, raw)
-        except Exception as e:
-            logger.warning(f"Keyring update failed during key rotation: {e}")
+        if not _keyring_set_password(
+            self.keyring_service,
+            self.keyring_account,
+            raw,
+            failure_message="Keyring update failed during key rotation",
+        ):
             # get_cipher() reads the keyring before the key file, so an old
-            # entry left there would hide the new key.
-            try:
-                keyring.delete_password(self.keyring_service, self.keyring_account)
-            except Exception as del_err:  # noqa: BLE001 - keyring backends raise anything
-                logger.debug(
-                    f"Keyring delete failed during key rotation: {type(del_err).__name__}"
+            # entry left there would hide the new key if keyring reads work.
+            if _keyring_read_available is not False:
+                _keyring_delete_password(self.keyring_service, self.keyring_account)
+                stale = _keyring_get_password(
+                    self.keyring_service,
+                    self.keyring_account,
+                    failure_message=None,
                 )
-            try:
-                stale = keyring.get_password(self.keyring_service, self.keyring_account)
-            except Exception as get_err:  # noqa: BLE001 - keyring backends raise anything
-                logger.debug(
-                    f"Keyring re-read failed during key rotation: {type(get_err).__name__}"
-                )
-                stale = None
-            if stale and stale != raw:
-                raise CryptoError(
-                    "The keyring still holds the old key and can't be updated."
-                ) from e
+                if stale and stale != raw:
+                    raise CryptoError(
+                        "The keyring still holds the old key and can't be updated."
+                    )
         self._write_isolated_key(key)
 
     def _undo_rotation(self, new_raw: str, old_key: bytes) -> None:
@@ -721,10 +952,12 @@ class SessionCrypto:
                 f"It is now encrypted with the new key, which was not stored."
             )
             raise
-        try:
-            keyring.set_password(self.keyring_service, self.keyring_account, raw)
-        except Exception as e:  # noqa: BLE001 - keyring backends raise anything; logged without traceback
-            logger.warning(f"Could not restore the old key in the keyring: {e}")
+        _keyring_set_password(
+            self.keyring_service,
+            self.keyring_account,
+            raw,
+            failure_message="Could not restore the old key in the keyring",
+        )
         try:
             self._write_isolated_key(old_key)
         except OSError as e:
@@ -806,8 +1039,10 @@ class SessionCrypto:
                         f"Could not store the new key; rotation was undone: {store_err}"
                     ) from store_err
 
-                # 4. Update internal cipher state
+                # 4. Update internal cipher state and invalidate process key cache
                 self._key = new_key_bytes
+                self._audited_exports.clear()
+                _invalidate_session_crypto(self.db_path, exclude=self)
                 try:
                     self._cipher = Fernet(new_key_bytes)
                 except Exception as e:  # noqa: BLE001 - the new key needn't be a Fernet key
@@ -841,6 +1076,7 @@ class SessionCrypto:
                 return new_raw_key
 
             except Exception as rotation_err:
+                _invalidate_session_crypto(self.db_path)
                 # Audit FAILED
                 if not getattr(_audit_thread_local, "in_key_audit_logging", False):
                     try:

@@ -365,11 +365,11 @@ def setup_session_directory(session_id: str | None = None) -> tuple[str, Path]:
 
 def resolve_db_crypto(db_path: Path | str):
     """Resolve and return the standard SessionCrypto instance for a given database path."""
-    from app.core.crypto import SessionCrypto
+    from app.core.crypto import _resolve_cached_session_crypto
 
     db_path_obj = Path(db_path).resolve()
     key_path = db_path_obj.parent / "secret.key"
-    return SessionCrypto(key_path, db_path_obj)
+    return _resolve_cached_session_crypto(key_path, db_path_obj)
 
 
 def validate_target_path(target_path: str, keyword: str | None = None) -> None:
