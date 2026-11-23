@@ -18,6 +18,12 @@ repos:
     hooks:
       - id: gitleaks
         args: ['--config', '.gitleaks.toml']
+      - id: gitleaks
+        alias: gitleaks-dir
+        name: Detect hardcoded secrets (working tree)
+        entry: gitleaks dir . --redact --verbose
+        args: ['--config', '.gitleaks.toml']
+        pass_filenames: false
 
   - repo: https://github.com/rhysd/actionlint
     rev: v1.7.7
