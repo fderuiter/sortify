@@ -894,11 +894,11 @@ def test_explicit_change_of_env_value_is_persisted(tmp_path, monkeypatch):
     assert saved["MAX_FOLDERS"] == 5
 
 
-def test_all_54_settings_fields_have_descriptions():
-    """Verify all 55 Settings fields define non-empty descriptions in Python and JSON schema."""
+def test_all_settings_fields_have_descriptions():
+    """Verify all Settings fields define non-empty descriptions in Python and match JSON schema keys."""
     from pathlib import Path
 
-    assert len(Settings.model_fields) == 55
+    assert Settings.model_fields
     for field_name, field_info in Settings.model_fields.items():
         assert (
             isinstance(field_info.description, str) and field_info.description.strip()
@@ -907,7 +907,7 @@ def test_all_54_settings_fields_have_descriptions():
     schema_path = Path(__file__).resolve().parent.parent / "app" / "config_schema.json"
     schema = json.loads(schema_path.read_text(encoding="utf-8"))
     properties = schema["properties"]
-    assert len(properties) == 55
+    assert set(properties.keys()) == set(Settings.model_fields.keys())
     for prop_name, prop_schema in properties.items():
         assert (
             isinstance(prop_schema.get("description"), str)
@@ -1090,3 +1090,97 @@ def test_validate_config_rejects_invalid_hatchling_bounds(tmp_path, monkeypatch)
     with pytest.raises(SystemExit) as exc_info:
         vc.main(["--check"])
     assert exc_info.value.code == 1
+
+
+def test_config_import_and_env_file_defer_app_dir_creation(tmp_path):
+    """Importing app.config or calling app_env_file() must not create AUTOSORTER_APP_DIR until get_app_dir() runs."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent
+    target_app_dir = tmp_path / "deferred_app_dir"
+    env = dict(os.environ)
+    env["AUTOSORTER_APP_DIR"] = str(target_app_dir)
+    env.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
+
+    probe = (
+        "import os\n"
+        "from pathlib import Path\n"
+        "import app.config as cfg\n"
+        "target = Path(os.environ['AUTOSORTER_APP_DIR'])\n"
+        "assert not target.exists(), 'import created AUTOSORTER_APP_DIR'\n"
+        "env_path = cfg.app_env_file()\n"
+        "assert env_path == target.resolve() / '.env'\n"
+        "assert not target.exists(), 'app_env_file() created AUTOSORTER_APP_DIR'\n"
+        "s = cfg.Settings(_env_file=None)\n"
+        "assert Path(s.LOG_FILE) == target.resolve() / 'autosorter.log'\n"
+        "assert not target.exists(), 'Settings() created AUTOSORTER_APP_DIR'\n"
+        "created = cfg.get_app_dir()\n"
+        "assert created == target.resolve()\n"
+        "assert target.is_dir(), 'get_app_dir() did not create directory on demand'\n"
+    )
+    result = subprocess.run(
+        [sys.executable, "-c", probe],
+        cwd=str(repo_root),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+
+
+def test_generate_config_schema_isolates_and_restores_host_env(tmp_path, monkeypatch):
+    """generate_config_schema() ignores AUTOSORTER_APP_DIR and SORTIFY_ overrides and restores env."""
+    import os
+    from unittest.mock import patch
+
+    from scripts.validate_config import generate_config_schema
+
+    uncreated_app_dir = tmp_path / "isolated_schema_app_dir"
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(uncreated_app_dir))
+    monkeypatch.setenv("SORTIFY_MAX_FOLDERS", "999")
+    monkeypatch.setenv("SORTIFY_LOG_FILE", str(tmp_path / "custom.log"))
+
+    schema = generate_config_schema()
+    assert schema["properties"]["LOG_FILE"]["default"] == "autosorter.log"
+    assert not uncreated_app_dir.exists()
+    assert os.environ.get("AUTOSORTER_APP_DIR") == str(uncreated_app_dir)
+    assert os.environ.get("SORTIFY_MAX_FOLDERS") == "999"
+    assert os.environ.get("SORTIFY_LOG_FILE") == str(tmp_path / "custom.log")
+
+    with patch.object(
+        Settings, "model_json_schema", side_effect=RuntimeError("schema boom")
+    ):
+        with pytest.raises(RuntimeError, match="schema boom"):
+            generate_config_schema()
+
+    assert os.environ.get("AUTOSORTER_APP_DIR") == str(uncreated_app_dir)
+    assert os.environ.get("SORTIFY_MAX_FOLDERS") == "999"
+
+
+def test_main_creates_log_file_parent_dir_before_basic_config(tmp_path):
+    """CLI startup creates Path(settings.LOG_FILE).parent before opening log file."""
+    import os
+    import subprocess
+    import sys
+    from pathlib import Path
+
+    repo_root = Path(__file__).resolve().parent.parent
+    nested_log = tmp_path / "nested_logs" / "sub" / "autosorter.log"
+    app_dir = tmp_path / "cli_app_dir"
+    env = dict(os.environ)
+    env["AUTOSORTER_APP_DIR"] = str(app_dir)
+    env["SORTIFY_LOG_FILE"] = str(nested_log)
+    env.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
+
+    result = subprocess.run(
+        [sys.executable, "-m", "app.main", "config", "--show", "--json"],
+        cwd=str(repo_root),
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert nested_log.parent.is_dir()

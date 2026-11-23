@@ -169,7 +169,7 @@ jobs:
 
     - name: Validate Documentation and Integrity
       run: |
-        uv run python scripts/generate_docs.py --check --local-only
+        uv run python scripts/generate_docs.py --check --local-only --build
 
     - name: Upload Documentation Site Artifact
       if: github.ref == 'refs/heads/main'
