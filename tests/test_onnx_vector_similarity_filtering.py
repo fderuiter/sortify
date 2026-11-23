@@ -42,7 +42,7 @@ def test_vector_similarity_filtering_below_threshold():
 
     pre_fetched_vectors = [[1.0, 0.0, 0.0], [0.9, 0.1, 0.0], [0.0, 0.0, 1.0]]
 
-    strategy._vector_map = {f: v for f, v in zip(filenames, pre_fetched_vectors)}
+    strategy._vector_map = dict(zip(filenames, pre_fetched_vectors))
 
     # Mock super().generate_plan to return the initial plan (all files in one cluster "Finance")
     initial_plan = {
@@ -82,7 +82,7 @@ def test_vector_similarity_filtering_no_outliers():
 
     pre_fetched_vectors = [[1.0, 0.0, 0.0], [0.9, 0.1, 0.0], [0.8, 0.2, 0.0]]
 
-    strategy._vector_map = {f: v for f, v in zip(filenames, pre_fetched_vectors)}
+    strategy._vector_map = dict(zip(filenames, pre_fetched_vectors))
 
     initial_plan = {
         "Finance": {"finance1.txt": None, "finance2.txt": None, "finance3.txt": None}

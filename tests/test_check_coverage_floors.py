@@ -49,9 +49,9 @@ def test_every_configured_floor_names_a_real_module():
 def test_main_exit_code_follows_the_check(tmp_path, capsys):
     floors = load_floors(REPO_ROOT / "pyproject.toml")
     passing = tmp_path / "pass.json"
-    passing.write_text(json.dumps(_report(**{m: 100.0 for m in floors})))
+    passing.write_text(json.dumps(_report(**dict.fromkeys(floors, 100.0))))
     failing = tmp_path / "fail.json"
-    failing.write_text(json.dumps(_report(**{m: 0.0 for m in floors})))
+    failing.write_text(json.dumps(_report(**dict.fromkeys(floors, 0.0))))
 
     assert main(["prog", str(passing)]) == 0
     assert main(["prog", str(failing)]) == 1

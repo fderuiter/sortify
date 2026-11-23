@@ -183,8 +183,6 @@ class DaemonState(str, Enum):
 class InvalidStateError(RuntimeError, ValueError):
     """Raised when an invalid daemon state transition is attempted."""
 
-    pass
-
 
 _VALID_TRANSITIONS: dict[DaemonState, set[DaemonState]] = {
     DaemonState.STOPPED: {DaemonState.STOPPED, DaemonState.RUNNING},

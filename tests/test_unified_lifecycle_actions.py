@@ -980,3 +980,125 @@ def test_drop_zone_modal_executes_unified_policy_actions(tmp_path, monkeypatch):
     )
     assert "123-45-6789" not in scrubbed
     assert "[REDACTED_SSN]" in scrubbed
+
+
+def test_lifecycle_actions_overwrite_displacement_post_unarchive_move_and_undo(
+    tmp_path, monkeypatch
+):
+    """Overwrite displacement across archive/redact/unarchive and post_unarchive_action='move' undo losslessly."""
+    app_dir = tmp_path / "app_overwrite_lifecycle"
+    ws = tmp_path / "ws_overwrite_lifecycle"
+    ws.mkdir()
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(app_dir))
+
+    # Pre-existing target files that will be overwritten and displaced
+    existing_zip_target = ws / "Archived_Logs" / "audit.log.zip"
+    existing_zip_target.parent.mkdir(parents=True)
+    old_zip_bytes = _make_zip(existing_zip_target, {"old.txt": b"old-archive-target"})
+
+    existing_redact_target = ws / "Sanitized_Notes" / "clinical_note.txt"
+    existing_redact_target.parent.mkdir(parents=True)
+    old_redact_bytes = b"Previous sanitized report content"
+    existing_redact_target.write_bytes(old_redact_bytes)
+
+    existing_member_target = ws / "Unpacked_Zip" / "member.txt"
+    existing_member_target.parent.mkdir(parents=True)
+    old_member_bytes = b"Pre-existing unpacked member bytes"
+    existing_member_target.write_bytes(old_member_bytes)
+
+    # Incoming files in staging inbox dropped into ws
+    inbox = tmp_path / "inbox"
+    inbox.mkdir()
+    src_log = inbox / "audit.log"
+    src_log_bytes = b"2026-11-23 INFO lifecycle archive overwrite test"
+    src_log.write_bytes(src_log_bytes)
+
+    src_redact = inbox / "clinical_note.txt"
+    src_redact_bytes = b"Patient clinical SSN 123-45-6789 email jane.doe@example.org"
+    src_redact.write_bytes(src_redact_bytes)
+
+    src_bundle = inbox / "bundle.zip"
+    new_member_bytes = b"Freshly unpacked member payload"
+    src_bundle_bytes = _make_zip(src_bundle, {"member.txt": new_member_bytes})
+
+    app_dir.mkdir(parents=True, exist_ok=True)
+    settings = AppSettings(filepath=str(app_dir / "settings.json"))
+    settings.AI_CONSENT_GRANTED = False
+    settings.CONFLICT_POLICY = "overwrite"
+    settings.POLICIES = [
+        {
+            "type": "pattern",
+            "expression": "*.log",
+            "action": "archive",
+            "target_path": "Archived_Logs",
+            "priority": 110,
+        },
+        {
+            "type": "compliance",
+            "expression": "clinical",
+            "action": "redact",
+            "target_path": "Sanitized_Notes",
+            "priority": 105,
+        },
+        {
+            "type": "unarchive",
+            "expression": "*.zip",
+            "action": "unarchive",
+            "post_unarchive_action": "move",
+            "post_unarchive_target": "Moved_Archives",
+            "target_path": "Unpacked_Zip",
+            "priority": 100,
+        },
+    ]
+    settings._save()
+
+    parser = build_parser()
+    args_drop = parser.parse_args(
+        [
+            "drop",
+            str(src_log),
+            str(src_redact),
+            str(src_bundle),
+            "--dest-dir",
+            str(ws),
+            "--quiet",
+        ]
+    )
+    with pytest.raises(SystemExit) as exc_info:
+        handle_drop_command(args_drop, settings)
+    assert exc_info.value.code == 0
+
+    assert not src_log.exists()
+    assert existing_zip_target.exists()
+    assert existing_zip_target.read_bytes() != old_zip_bytes
+
+    assert not src_redact.exists()
+    scrubbed = existing_redact_target.read_text(encoding="utf-8")
+    assert "123-45-6789" not in scrubbed
+    assert "[REDACTED_SSN]" in scrubbed
+
+    assert not src_bundle.exists()
+    assert (ws / "Moved_Archives" / "bundle.zip").read_bytes() == src_bundle_bytes
+    assert existing_member_target.read_bytes() == new_member_bytes
+
+    # Undo must restore both all original sources and all displaced overwritten targets
+    store = open_store(app_dir)
+    worker = DBWorker()
+    try:
+        db = store.database(worker)
+        history = store.history(db, store.cache(worker))
+        sessions = history.get_sessions()
+        assert len(sessions) == 3
+        for s in sessions:
+            assert history.rollback(s["session_id"]) >= 1
+        worker.q.join()
+    finally:
+        worker.stop()
+
+    assert src_log.read_bytes() == src_log_bytes
+    assert src_redact.read_bytes() == src_redact_bytes
+    assert src_bundle.read_bytes() == src_bundle_bytes
+    assert not (ws / "Moved_Archives" / "bundle.zip").exists()
+    assert existing_zip_target.read_bytes() == old_zip_bytes
+    assert existing_redact_target.read_bytes() == old_redact_bytes
+    assert existing_member_target.read_bytes() == old_member_bytes

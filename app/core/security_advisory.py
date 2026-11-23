@@ -43,8 +43,7 @@ def _normalize_trusted_hosts(trusted_hosts=None) -> frozenset[str]:
             not candidate
             or candidate.startswith(".")
             or candidate in _LOCAL_HOSTNAMES
-            or candidate.endswith(".local")
-            or candidate.endswith(".localhost")
+            or candidate.endswith((".local", ".localhost"))
         ):
             continue
         try:
@@ -118,11 +117,7 @@ def _validate_advisory_url(url: str, trusted_hosts=None) -> None:
         )
 
     # Reject local hostnames and loopback names
-    if (
-        host_clean in _LOCAL_HOSTNAMES
-        or host_clean.endswith(".local")
-        or host_clean.endswith(".localhost")
-    ):
+    if host_clean in _LOCAL_HOSTNAMES or host_clean.endswith((".local", ".localhost")):
         raise ModelVerificationError(
             f"Local or loopback hostnames are not permitted: {hostname}"
         )
@@ -457,7 +452,7 @@ class SecurityAdvisoryClient:
         if match:
             return match.group(1)
         # If it's already a repo string or model name (e.g., 'sentence-transformers/all-MiniLM-L6-v2')
-        if s.startswith("http://") or s.startswith("https://"):
+        if s.startswith(("http://", "https://")):
             # Parse path fallback
             parsed = urllib.parse.urlparse(s)
             path_parts = [p for p in parsed.path.split("/") if p]
@@ -683,7 +678,7 @@ class SecurityAdvisoryClient:
 
             except ModelVerificationError:
                 raise
-            except Exception as e:  # noqa: BLE001 - network/JSON/mocked transport errors routed via fallback policy
+            except Exception as e:
                 logger.warning(
                     "Security advisory query failed for '%s': %s",
                     norm_repo or norm_hash,

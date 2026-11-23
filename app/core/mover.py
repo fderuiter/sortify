@@ -5,6 +5,7 @@ This module is responsible for safely moving files to new directories.
 
 import asyncio
 import concurrent.futures
+import contextlib
 import logging
 import os
 import shutil  # noqa: F401
@@ -50,8 +51,6 @@ class MoveEngineState(str, Enum):
 
 class InvalidMoveStateError(SortifyBaseError, RuntimeError, ValueError):
     """Raised when an invalid MoveEngineState transition is attempted."""
-
-    pass
 
 
 _VALID_MOVE_ENGINE_TRANSITIONS: dict[MoveEngineState, set[MoveEngineState]] = {
@@ -1180,13 +1179,18 @@ def _collect_move_items(
             if node_type == "directory":
                 continue
 
+            if (
+                _get_val(content, "is_excluded")
+                or _get_val(content, "excluded")
+                or _get_val(content, "is_checked") is False
+            ):
+                continue
+
             if _get_val(content, "status") == "Already Sorted":
                 pass
 
             if depth > 0 and _get_val(content, "relative_source") is None:
-                if content is not None and not (
-                    isinstance(content, dict) or isinstance(content, BaseModel)
-                ):
+                if content is not None and not (isinstance(content, (dict, BaseModel))):
                     raise ValueError(
                         f"Missing required relative source metadata field for nested item '{key}'"
                     )
@@ -1195,11 +1199,15 @@ def _collect_move_items(
                 base_dir, key, content, active_parent_path, depth
             )
 
+            from app.core.scanner import parse_item_identifier
+
             tgt_fn = _get_val(content, "target_filename")
             if tgt_fn is not None:
-                filename = tgt_fn
+                _, clean_tf = parse_item_identifier(str(tgt_fn), base_dir)
+                filename = os.path.basename(clean_tf)
             else:
-                filename = os.path.basename(key)
+                _, rel_key = parse_item_identifier(str(key), base_dir)
+                filename = os.path.basename(rel_key)
 
             items.append(
                 {
@@ -1850,6 +1858,63 @@ def _execute_unarchive_item(
     return True
 
 
+def _get_target_lock(
+    target_locks: dict[str, threading.Lock] | None,
+    lock_guard: threading.Lock,
+    target_path: str,
+) -> contextlib.AbstractContextManager[Any]:
+    """Return a per-destination lock so concurrent workers never race on the same target path."""
+    if target_locks is None:
+        return contextlib.nullcontext()
+    norm_target = os.path.normcase(os.path.abspath(target_path))
+    with lock_guard:
+        t_lock = target_locks.get(norm_target)
+        if t_lock is None:
+            t_lock = threading.Lock()
+            target_locks[norm_target] = t_lock
+    return t_lock
+
+
+def _process_move_group(
+    base_dir: str,
+    group_items: list[dict],
+    db,
+    path_map: dict,
+    runtime_settings,
+    session_id: str,
+    history_manager,
+    db_lock: threading.Lock,
+    db_updates_batch: list,
+    audit_records: list | None = None,
+    pending_links: list | None = None,
+    chunk_hash_map: dict | None = None,
+    copy_mode: bool = False,
+    target_locks: dict[str, threading.Lock] | None = None,
+) -> list[bool]:
+    """Execute a bucket of move items targeting the same destination sequentially in plan order."""
+    results: list[bool] = []
+    for item in group_items:
+        results.append(
+            _process_move_item(
+                base_dir,
+                item,
+                db,
+                path_map,
+                runtime_settings,
+                session_id,
+                history_manager,
+                db_lock,
+                db_updates_batch,
+                audit_records,
+                pending_links,
+                chunk_hash_map,
+                copy_mode=copy_mode,
+                target_locks=target_locks,
+            )
+        )
+    return results
+
+
 def _process_move_item(
     base_dir: str,
     item: dict,
@@ -1864,6 +1929,7 @@ def _process_move_item(
     pending_links: list | None = None,
     chunk_hash_map: dict | None = None,
     copy_mode: bool = False,
+    target_locks: dict[str, threading.Lock] | None = None,
 ) -> bool:
     """Execute a single physical move or policy lifecycle action and SHA-256 verification off-thread."""
     source_path = item["source_path"]
@@ -1992,6 +2058,73 @@ def _process_move_item(
         os.makedirs(dest_dir, exist_ok=True)
 
     target_path = os.path.normpath(os.path.join(dest_dir, filename))
+    target_ctx = _get_target_lock(target_locks, db_lock, target_path)
+    with target_ctx:
+        return _execute_locked_target_move(
+            base_dir=base_dir,
+            source_path=source_path,
+            content=content,
+            filename=filename,
+            current_dest=current_dest,
+            active_dest=active_dest,
+            effective_action=effective_action,
+            quarantine_dir_name=quarantine_dir_name,
+            candidate_sha256=candidate_sha256,
+            dest_dir=dest_dir,
+            target_path=target_path,
+            is_sensitivity_hold=is_sensitivity_hold,
+            is_binary_redact_hold=is_binary_redact_hold,
+            redact_utf8_text=redact_utf8_text,
+            sens_rating_str=sens_rating_str,
+            sens_score=sens_score,
+            abs_base_dir=abs_base_dir,
+            db=db,
+            path_map=path_map,
+            runtime_settings=runtime_settings,
+            session_id=session_id,
+            history_manager=history_manager,
+            db_lock=db_lock,
+            db_updates_batch=db_updates_batch,
+            audit_records=audit_records,
+            pending_links=pending_links,
+            chunk_hash_map=chunk_hash_map,
+        )
+
+
+def _execute_locked_target_move(
+    *,
+    base_dir: str,
+    source_path: str,
+    content: Any,
+    filename: str,
+    current_dest: str,
+    active_dest: str,
+    effective_action: str,
+    quarantine_dir_name: str,
+    candidate_sha256: str | None,
+    dest_dir: str,
+    target_path: str,
+    is_sensitivity_hold: bool,
+    is_binary_redact_hold: bool,
+    redact_utf8_text: str | None,
+    sens_rating_str: str,
+    sens_score: float,
+    abs_base_dir: str,
+    db,
+    path_map: dict,
+    runtime_settings,
+    session_id: str,
+    history_manager,
+    db_lock: threading.Lock,
+    db_updates_batch: list,
+    audit_records: list | None,
+    pending_links: list | None,
+    chunk_hash_map: dict | None,
+) -> bool:
+    """Perform collision evaluation, optional overwrite displacement, physical move, and verification under target lock."""
+    if not os.path.lexists(source_path):
+        return False
+
     collision = False
     if os.path.lexists(target_path):
         is_same = False
@@ -2003,9 +2136,22 @@ def _process_move_item(
         if not is_same:
             collision = True
 
-    conflict_policy = "rename"
-    if runtime_settings:
+    node_overwrite = bool(
+        _get_val(content, "overwrite") or _get_val(content, "allow_overwrite")
+    )
+    node_policy_raw = _get_val(content, "conflict_policy")
+    if node_overwrite:
+        conflict_policy = "overwrite"
+    elif isinstance(node_policy_raw, str) and node_policy_raw.lower() in (
+        "rename",
+        "skip",
+        "overwrite",
+    ):
+        conflict_policy = node_policy_raw.lower()
+    elif runtime_settings:
         conflict_policy = getattr(runtime_settings, "CONFLICT_POLICY", "rename")
+    else:
+        conflict_policy = "rename"
 
     if effective_action != "unarchive":
         if collision and conflict_policy == "skip":
@@ -2617,42 +2763,6 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                 )
                 raise ValueError(f"Plan validation or confirmation failed: {warn_text}")
 
-            if not resume and history_manager:
-                # Without a registered session nothing could undo or roll back the
-                # moves, so refuse to start rather than move files untracked.
-                try:
-                    session_id = history_manager.start_session(base_dir)
-                except Exception as sess_err:
-                    raise RuntimeError(
-                        f"Refusing to move files: could not register sort session for {base_dir}: {sess_err}"
-                    ) from sess_err
-                if not session_id:
-                    raise RuntimeError(
-                        f"Refusing to move files: could not register sort session for {base_dir}."
-                    )
-                logging.info(f"Started sort session {session_id} for {base_dir}")
-            elif history_manager:
-                logging.info(f"Resuming sort session for {base_dir}")
-                try:
-                    sessions = history_manager.get_sessions()
-                    for s in sessions:
-                        if (
-                            _is_same_path(s["base_dir"], base_dir)
-                            and s["status"] == "active"
-                        ):
-                            session_id = s["session_id"]
-                            break
-                except Exception:
-                    pass
-                if not session_id and hasattr(history_manager, "start_session"):
-                    try:
-                        session_id = history_manager.start_session(base_dir)
-                    except Exception:
-                        pass
-
-            if not session_id:
-                session_id = str(uuid.uuid4())
-
             # No transaction spans the sort. Documents and move records share one
             # store (ADR 0008), so a sort-long write lock would stall every move
             # committed from a worker thread. Each chunk's updates commit on their own,
@@ -2697,6 +2807,99 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     or scan_filter.has_ignored_extension(item["source_path"])
                 )
             ]
+            auto_ratings = {
+                str(r).upper()
+                for r in (
+                    getattr(runtime_settings, "AUTO_QUARANTINE_RATINGS", []) or []
+                )
+                if r
+            }
+            quarantine_dir_name = (
+                getattr(
+                    runtime_settings,
+                    "QUARANTINE_DIR_NAME",
+                    "_Compliance_Quarantine",
+                )
+                or "_Compliance_Quarantine"
+            )
+
+            def _item_may_move(item: dict) -> bool:
+                content = item.get("content")
+                raw_act = str(_get_val(content, "action") or "").strip().lower()
+                if raw_act == "ignore":
+                    return False
+                if raw_act in (
+                    "unarchive",
+                    "archive",
+                    "redact",
+                    "retain",
+                    "quarantine",
+                    "copy",
+                ):
+                    return True
+                src_abs = os.path.normcase(os.path.abspath(item["source_path"]))
+                dst_abs = os.path.normcase(
+                    os.path.abspath(
+                        os.path.join(base_dir, item["current_dest"], item["filename"])
+                    )
+                )
+                if src_abs != dst_abs:
+                    return True
+                if auto_ratings and isinstance(content, dict):
+                    sens = str(content.get("sensitivity_rating") or "LOW").upper()
+                    if (
+                        sens in auto_ratings
+                        and item["current_dest"] != quarantine_dir_name
+                    ):
+                        return True
+                return False
+
+            has_candidate_moves = any(_item_may_move(item) for item in move_items)
+
+            registered_session = False
+            if not resume and history_manager and has_candidate_moves:
+                # Without a registered session nothing could undo or roll back the
+                # moves, so refuse to start rather than move files untracked.
+                try:
+                    session_id = history_manager.start_session(base_dir)
+                except Exception as sess_err:
+                    raise RuntimeError(
+                        f"Refusing to move files: could not register sort session for {base_dir}: {sess_err}"
+                    ) from sess_err
+                if not session_id:
+                    raise RuntimeError(
+                        f"Refusing to move files: could not register sort session for {base_dir}."
+                    )
+                registered_session = True
+                logging.info(f"Started sort session {session_id} for {base_dir}")
+            elif resume and history_manager:
+                logging.info(f"Resuming sort session for {base_dir}")
+                try:
+                    sessions = history_manager.get_sessions()
+                    for s in sessions:
+                        if (
+                            _is_same_path(s["base_dir"], base_dir)
+                            and s["status"] == "active"
+                        ):
+                            session_id = s["session_id"]
+                            registered_session = True
+                            break
+                except Exception:
+                    pass
+                if (
+                    not session_id
+                    and has_candidate_moves
+                    and hasattr(history_manager, "start_session")
+                ):
+                    try:
+                        session_id = history_manager.start_session(base_dir)
+                        if session_id:
+                            registered_session = True
+                    except Exception:
+                        pass
+
+            if not session_id and (resume or has_candidate_moves):
+                session_id = str(uuid.uuid4())
             total_items = len(move_items)
             chunks = [
                 move_items[i : i + effective_chunk_size]
@@ -2735,6 +2938,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
             from app.core.shared_registry import SharedWorkerPool
 
             pool = SharedWorkerPool.get_instance(max_workers=effective_max_workers)
+            target_locks: dict[str, threading.Lock] = {}
             for chunk_idx, chunk in enumerate(chunks):
                 if _is_cancelled(cancel_token):
                     logging.info(
@@ -2798,13 +3002,26 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     except Exception:
                         chunk_hash_map = None
                 elif db is None:
-                    chunk_hash_map = {p: "" for p in chunk_rel_paths}
+                    chunk_hash_map = dict.fromkeys(chunk_rel_paths, "")
+
+                target_buckets: dict[str, list[dict]] = {}
+                for item in chunk:
+                    cand_target = os.path.normcase(
+                        os.path.abspath(
+                            os.path.join(
+                                base_dir,
+                                item.get("current_dest", ""),
+                                item.get("filename", ""),
+                            )
+                        )
+                    )
+                    target_buckets.setdefault(cand_target, []).append(item)
 
                 futures = [
                     pool.submit(
-                        _process_move_item,
+                        _process_move_group,
                         base_dir,
-                        item,
+                        bucket_items,
                         db,
                         path_map,
                         runtime_settings,
@@ -2816,13 +3033,14 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         pending_links,
                         chunk_hash_map,
                         effective_copy_mode,
+                        target_locks,
                     )
-                    for item in chunk
+                    for bucket_items in target_buckets.values()
                 ]
 
                 # Never leave moves in flight: on the first failure, cancel
                 # what hasn't started and wait for the rest before any rollback.
-                done, not_done = concurrent.futures.wait(
+                _done, not_done = concurrent.futures.wait(
                     futures, return_when=concurrent.futures.FIRST_EXCEPTION
                 )
                 if not_done:
@@ -2927,20 +3145,17 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         ):
                             try:
                                 src_path = node.get("source_path")
-                                if src_path and (
-                                    is_junction_path(src_path)
-                                    or os.path.islink(src_path)
-                                ):
-                                    from app.core.resilient_file_ops import (
-                                        resilient_remove,
-                                    )
-
-                                    resilient_remove(src_path)
-                                    summary["deleted_folders"] += 1
-                                elif (
+                                if (
                                     src_path
-                                    and os.path.isdir(src_path)
-                                    and not os.listdir(src_path)
+                                    and (
+                                        is_junction_path(src_path)
+                                        or os.path.islink(src_path)
+                                    )
+                                    or (
+                                        src_path
+                                        and os.path.isdir(src_path)
+                                        and not os.listdir(src_path)
+                                    )
                                 ):
                                     from app.core.resilient_file_ops import (
                                         resilient_remove,
@@ -2974,9 +3189,26 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         db_updates_batch.clear()
                         has_flushed_db = True
 
+                real_move_count = len(audit_records)
+                if session_id and history_manager:
+                    ledger = getattr(history_manager, "moves", None)
+                    if ledger is not None and hasattr(ledger, "list_moves"):
+                        try:
+                            from app.core.moves import DONE, VERIFIED
+
+                            recorded_moves = ledger.list_moves(session_id)
+                            real_move_count = sum(
+                                1
+                                for m in recorded_moves
+                                if getattr(m, "state", None) in (DONE, VERIFIED)
+                            )
+                        except Exception:
+                            real_move_count = len(audit_records)
+
                 if (
                     session_id
                     and history_manager
+                    and real_move_count > 0
                     and hasattr(history_manager, "complete_session")
                 ):
                     try:
@@ -2985,6 +3217,35 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         logging.warning(
                             f"Failed to mark session {session_id} completed: {complete_err}"
                         )
+                elif (
+                    session_id
+                    and registered_session
+                    and history_manager
+                    and real_move_count == 0
+                ):
+                    try:
+                        if hasattr(history_manager, "_transition_session_status"):
+                            hm_db = getattr(history_manager, "db", None)
+                            hm_worker = getattr(hm_db, "worker", None)
+                            if hm_worker is not None and hasattr(
+                                hm_worker, "execute_write"
+                            ):
+                                hm_worker.execute_write(
+                                    lambda: history_manager._transition_session_status(
+                                        session_id, "abandoned"
+                                    )
+                                )
+                            else:
+                                history_manager._transition_session_status(
+                                    session_id, "abandoned"
+                                )
+                    except Exception as abandon_err:
+                        logging.debug(
+                            f"Could not mark empty session {session_id} abandoned: {abandon_err}"
+                        )
+                    if not resume:
+                        session_id = None
+                        summary["session_id"] = None
 
                 self.transition_to(MoveEngineState.COMPLETED)
                 summary.state = self.state

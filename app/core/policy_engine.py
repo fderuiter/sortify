@@ -184,6 +184,13 @@ class PolicyEngine:
         elif rule_type == "pattern":
             return match_pattern_expression(expression, fn_only)
         elif rule_type == "override":
+            if not expression:
+                action_val = (
+                    rule.get("action")
+                    if isinstance(rule, dict)
+                    else getattr(rule, "action", None)
+                )
+                return bool(action_val)
             return (
                 expression == fn_only
                 or expression in fn_only

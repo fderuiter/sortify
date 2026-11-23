@@ -922,7 +922,12 @@ class MoveLedger(LifecycleTelemetryMixin):
                 else:
                     if db and base_dir:
                         try:
-                            target_folder = os.path.dirname(dst_rel).replace("\\", "/")
+                            raw_folder = (
+                                os.path.dirname(dst_rel).replace("\\", "/").strip("/")
+                            )
+                            target_folder = (
+                                raw_folder if raw_folder and raw_folder != "." else None
+                            )
                             if expected_hash and hasattr(
                                 db, "set_user_verified_target"
                             ):
@@ -957,7 +962,12 @@ class MoveLedger(LifecycleTelemetryMixin):
                         )
                 if db and base_dir and hasattr(db, "update_document_path"):
                     try:
-                        db.update_document_path(base_dir, src_rel, src_rel)
+                        try:
+                            db.update_document_path(
+                                base_dir, src_rel, src_rel, clear_verified_target=True
+                            )
+                        except TypeError:
+                            db.update_document_path(base_dir, src_rel, src_rel)
                     except Exception as exc:  # noqa: BLE001 - best-effort DB sync on crash recovery
                         logger.debug(
                             "Reconciliation DB path check skipped for %s: %s",
@@ -976,7 +986,15 @@ class MoveLedger(LifecycleTelemetryMixin):
                             resilient_remove(dst)
                         if db and base_dir and hasattr(db, "update_document_path"):
                             try:
-                                db.update_document_path(base_dir, src_rel, src_rel)
+                                try:
+                                    db.update_document_path(
+                                        base_dir,
+                                        src_rel,
+                                        src_rel,
+                                        clear_verified_target=True,
+                                    )
+                                except TypeError:
+                                    db.update_document_path(base_dir, src_rel, src_rel)
                             except Exception as exc:  # noqa: BLE001 - best-effort DB sync on crash recovery
                                 logger.debug(
                                     "Reconciliation DB path check skipped for %s: %s",
@@ -1013,7 +1031,15 @@ class MoveLedger(LifecycleTelemetryMixin):
                     )
                     if db and base_dir and hasattr(db, "update_document_path"):
                         try:
-                            db.update_document_path(base_dir, src_rel, src_rel)
+                            try:
+                                db.update_document_path(
+                                    base_dir,
+                                    src_rel,
+                                    src_rel,
+                                    clear_verified_target=True,
+                                )
+                            except TypeError:
+                                db.update_document_path(base_dir, src_rel, src_rel)
                         except Exception as exc:  # noqa: BLE001 - best-effort DB sync on crash recovery
                             logger.debug(
                                 "Reconciliation DB path check skipped for %s: %s",

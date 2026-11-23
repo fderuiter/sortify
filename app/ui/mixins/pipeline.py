@@ -128,6 +128,9 @@ class SortPipelineMixin:
                 except Exception:
                     pass
 
+            s_dirs = getattr(self, "source_dirs", None) or (
+                [self.base_dir] if self.base_dir else []
+            )
             self.app_session = AppSession(
                 self.settings,
                 self.base_dir,
@@ -136,21 +139,13 @@ class SortPipelineMixin:
 
             from app.core.pipeline import PipelineLifecycleState, SortPipeline
 
-            self.pipeline = SortPipeline(self.app_session)
+            self.pipeline = SortPipeline(
+                self.app_session,
+                base_dir=self.base_dir,
+                settings=self.settings,
+            )
             self.pipeline.add_state_change_hook(self._handle_pipeline_state_transition)
             self.pipeline.add_telemetry_hook(self._handle_pipeline_telemetry)
-            self.pipeline.transition_to(PipelineLifecycleState.PLANNING)
-
-            from app.core.scanner import get_files_from_sources
-
-            s_dirs = getattr(self, "source_dirs", None) or (
-                [self.base_dir] if self.base_dir else []
-            )
-            files = get_files_from_sources(
-                s_dirs, settings=getattr(self, "settings", None)
-            )
-
-            from app.core.metadata import MetadataPass
 
             def scan_progress_cb(
                 update_or_prog: Any, stage: str | None = None, **kwargs: Any
@@ -159,38 +154,11 @@ class SortPipelineMixin:
                     self._handle_progress_update, update_or_prog, stage, **kwargs
                 )
 
-            bypassed = MetadataPass.run(
-                self.base_dir,
-                files,
-                self.settings,
-                self.app_session.db,
+            self.plan = self.pipeline.plan(
                 progress_callback=scan_progress_cb,
                 cancel_check=lambda: False,
-                source_dirs=s_dirs,
             )
-
-            # Files no metadata rule matched still need their text extracted and
-            # fitted, otherwise clustering sees no documents and the plan is empty.
-            bypassed_set = {str(f).replace("\\", "/") for f in (bypassed or [])}
-            items_to_extract = [
-                f for f in files if str(f).replace("\\", "/") not in bypassed_set
-            ]
-            if items_to_extract:
-                from app.core.extractor import build_corpus_generator
-
-                total = len(items_to_extract)
-                done = 0
-                for chunk in build_corpus_generator(
-                    base_dir=self.base_dir,
-                    items_to_sort=items_to_extract,
-                    progress_callback=lambda *args, **kwargs: None,
-                    max_workers=getattr(self.settings, "MAX_WORKERS", 2),
-                    db=self.app_session.db,
-                    settings=self.settings,
-                ):
-                    self.app_session.partial_fit(chunk)
-                    done += len(chunk)
-                    scan_progress_cb(done / total, f"Extracting text ({done}/{total})")
+            files = self.pipeline.planned_items
 
             # Load locks & ratings
             try:
@@ -210,9 +178,6 @@ class SortPipelineMixin:
             except Exception:
                 pass
 
-            self.plan = self.app_session.generate_sorting_plan()
-            if hasattr(self, "pipeline") and self.pipeline:
-                self.pipeline.transition_to(PipelineLifecycleState.PLANNED)
             self.call_from_thread(self.rebuild_tree)
             model_status = getattr(self.plan, "model_status", "HEALTHY")
             invalid_locks = getattr(self.plan, "invalid_locks", {}) or {}
@@ -376,6 +341,15 @@ class SortPipelineMixin:
         self.verification_result = result or {}
 
         collisions = result.get("collisions", [])
+        recoverable_types = ("target_collision", "duplicate_target")
+        critical_collisions = [
+            c for c in collisions if c.get("type") not in recoverable_types
+        ]
+        recoverable_collisions = list(
+            (result.get("recoverable_collisions") or [])
+            if "recoverable_collisions" in result
+            else [c for c in collisions if c.get("type") in recoverable_types]
+        )
         circular = result.get("circular_renames", [])
         invalid = result.get("invalid_renames", [])
         long_paths = result.get("long_paths", [])
@@ -386,15 +360,15 @@ class SortPipelineMixin:
         has_critical = bool(
             result.get("has_critical_errors")
             if "has_critical_errors" in result
-            else (collisions or circular or invalid or long_paths)
+            else (critical_collisions or circular or invalid or long_paths)
         )
-        has_warnings = bool(broken_links or unconfirmed)
+        has_warnings = bool(recoverable_collisions or broken_links or unconfirmed)
 
         self.has_critical_errors = has_critical
 
         # Build path sets for tree node highlighting
         crit_paths = set()
-        for c in collisions:
+        for c in critical_collisions:
             if c.get("path"):
                 crit_paths.add(os.path.normpath(c["path"]))
             if c.get("source"):
@@ -418,6 +392,13 @@ class SortPipelineMixin:
                 crit_paths.add(os.path.normpath(lp["source"]))
 
         warn_paths = set()
+        for rc in recoverable_collisions:
+            if rc.get("path"):
+                warn_paths.add(os.path.normpath(rc["path"]))
+            if rc.get("source"):
+                warn_paths.add(os.path.normpath(rc["source"]))
+            for s in rc.get("sources", []):
+                warn_paths.add(os.path.normpath(s))
         for bl in broken_links:
             if bl.get("path"):
                 warn_paths.add(os.path.normpath(bl["path"]))
@@ -428,7 +409,7 @@ class SortPipelineMixin:
                 warn_paths.add(os.path.normpath(unc["source"]))
 
         collision_paths = set()
-        for c in collisions:
+        for c in list(collisions) + list(recoverable_collisions):
             if c.get("path"):
                 collision_paths.add(os.path.normpath(c["path"]))
             if c.get("source"):
@@ -471,11 +452,11 @@ class SortPipelineMixin:
                 alert_banner.add_class("alert-critical")
 
                 msgs = []
-                if collisions:
+                if critical_collisions:
                     msgs.append(
                         "⛔ CRITICAL FILE COLLISION(S) / STRUCTURAL DIRECTORY COLLISION(S) DETECTED:"
                     )
-                    for c in collisions:
+                    for c in critical_collisions:
                         dst_p = c.get("path", "")
                         msgs.append(
                             f"  • Destination: {dst_p} ({c.get('message', 'Collision')})"
@@ -502,6 +483,11 @@ class SortPipelineMixin:
                 alert_banner.add_class("alert-warning")
 
                 msgs = ["⚠️ NON-FATAL WARNING(S) REPORTED (Execution unblocked):"]
+                for rc in recoverable_collisions:
+                    dst_p = rc.get("path", "")
+                    msgs.append(
+                        f"  • Recoverable collision at {dst_p} ({rc.get('message', 'Collision')} — resolve on [Ctrl+E])"
+                    )
                 for bl in broken_links:
                     msgs.append(f"  • {bl.get('message')}")
                 for unc in unconfirmed:
@@ -555,24 +541,18 @@ class SortPipelineMixin:
             msg = f"Execution completed successfully! [Ctrl+Z] Undo available. Summary: {summary}"
             self.call_from_thread(self.announce, msg)
 
-            audit_report = (
-                summary.get("audit_report") if isinstance(summary, dict) else None
-            )
-            if not audit_report and exec_plan:
-                from app.core.audit_reporter import generate_audit_report
-                from app.core.verifier import VerificationEngine
+            from app.core.audit_reporter import resolve_audit_report
 
-                base_dir: str = (
-                    (self.app_session.base_dir if self.app_session else None)
-                    or self.base_dir
-                    or "."
-                )
-                moves = VerificationEngine.get_moves(base_dir, exec_plan)
-                records = [
-                    {"source_path": src, "destination_path": dst}
-                    for _, src, dst in moves
-                ]
-                audit_report = generate_audit_report(base_dir, records)
+            base_dir: str = (
+                (self.app_session.base_dir if self.app_session else None)
+                or self.base_dir
+                or "."
+            )
+            audit_report = resolve_audit_report(
+                summary.get("audit_report") if isinstance(summary, dict) else None,
+                base_dir,
+                exec_plan,
+            )
 
             if audit_report:
                 self.call_from_thread(self.action_open_audit_report, audit_report)

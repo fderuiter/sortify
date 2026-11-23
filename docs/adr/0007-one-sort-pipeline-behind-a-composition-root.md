@@ -14,7 +14,7 @@ We chose this because the scan, extract, fit, plan and move sequence is copied a
 
 ## Implementation
 
-Active: `SortPipeline` (`plan`, `execute`, `undo`, `run`) in `app/core/pipeline.py`, managed store leases in `app/core/services.py`, `PluginRegistry` in `app/core/plugin_registry.py`, and downward `app.core` import checks in `scripts/validate_architecture.py`. Still open: `IMPORT_LAYER_RULES` in `scripts/validate_architecture.py` leaves five front-end store callers unblocked (`app/main.py`, `app/cli/ledger_cli.py`, `app/ui/tui.py`, `app/ui/modals/session.py`, and `app/ui/modals/settings.py`), and consolidating the remaining direct session construction and production test branches behind one composition root is pending.
+Active: `SortPipeline` (`plan`, `execute`, `undo`, `run`) in `app/core/pipeline.py`, managed store leases in `app/core/services.py`, session history and rollback preview facades in `app/core/session_catalog.py`, `PluginRegistry` in `app/core/plugin_registry.py`, and downward `app.core` plus `app.ui` -> `app.core.history` import checks in `scripts/validate_architecture.py`. Still open: `IMPORT_LAYER_RULES` in `scripts/validate_architecture.py` leaves two front-end store/ledger callers unblocked (`app/ui/modals/settings.py` importing `app.core.db` and `app/cli/ledger_cli.py` importing `app.core.moves`), and consolidating the remaining direct session construction and production test branches behind one composition root is pending.
 
 ## Considered options
 

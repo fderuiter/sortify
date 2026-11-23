@@ -4,43 +4,29 @@
 class SortifyBaseError(Exception):
     """Common base exception class for all custom application errors in Sortify."""
 
-    pass
-
 
 class DownloaderError(SortifyBaseError):
     """Base exception for model downloading and network transfer operations."""
-
-    pass
 
 
 class OfflineLoaderError(SortifyBaseError):
     """Base exception for offline model resolution and sandboxed loading routines."""
 
-    pass
-
 
 class OfflineModelLoadError(OfflineLoaderError):
     """Base exception for all offline model loading errors."""
-
-    pass
 
 
 class ArchiveCorruptionError(OfflineModelLoadError):
     """Raised when sidecar archive extraction fails due to file corruption or invalid zip format."""
 
-    pass
-
 
 class HashVerificationError(OfflineModelLoadError, ValueError):
     """Raised when cryptographic SHA-256 hash verification fails for model files."""
 
-    pass
-
 
 class ModelVerificationError(DownloaderError, OfflineModelLoadError, ValueError):
     """Raised when model weight security advisory checks, cryptographic signatures, or integrity validation fails."""
-
-    pass
 
 
 class ModelWeightsNotFoundError(OfflineModelLoadError, FileNotFoundError):
@@ -70,31 +56,21 @@ class ModelWeightsNotFoundError(OfflineModelLoadError, FileNotFoundError):
 class SemanticEmbeddingError(SortifyBaseError):
     """Base exception for semantic vector embeddings and ONNX model validation."""
 
-    pass
-
 
 class CryptoError(SortifyBaseError, RuntimeError):
     """Base exception for cryptographic operations and key store operations."""
-
-    pass
 
 
 class CacheError(SortifyBaseError):
     """Base exception for database-backed cache operations."""
 
-    pass
-
 
 class ArchiveSafetyError(SortifyBaseError):
     """Base exception for archive decompression guardrail and safety limit failures."""
 
-    pass
-
 
 class UnsupportedArchiveFormatError(ArchiveSafetyError):
     """Raised when an archive uses an unsupported format (such as .7z or .rar) or fails stdlib container validation."""
-
-    pass
 
 
 class SchemaValidationError(SortifyBaseError, ValueError):
@@ -108,8 +84,6 @@ class SchemaValidationError(SortifyBaseError, ValueError):
 class AuditExportError(SortifyBaseError, OSError):
     """Base exception for audit report export and file write operations."""
 
-    pass
-
 
 class PartialMoveError(SortifyBaseError, RuntimeError):
     """Raised when a folder was copied to its target but the source could only be partly removed.
@@ -118,16 +92,10 @@ class PartialMoveError(SortifyBaseError, RuntimeError):
     move retries don't copy the leftover source again.
     """
 
-    pass
-
 
 class InvalidStateTransitionError(SortifyBaseError, ValueError):
     """Raised when an illegal transaction status transition or terminal record mutation is attempted."""
 
-    pass
-
 
 class EntryNotFoundError(InvalidStateTransitionError, KeyError):
     """Raised when a transaction entry identifier is not found in the transaction ledger."""
-
-    pass

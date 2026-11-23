@@ -360,10 +360,9 @@ def handle_rules_command(args: argparse.Namespace, settings: AppSettings) -> boo
             and not import_res.policies
             and not import_res.unsupported
             and any(
-                w.startswith("Failed to parse")
-                or w.startswith("Failed to read")
-                or w.startswith("Invalid ")
-                or w.startswith("Unrecognized ")
+                w.startswith(
+                    ("Failed to parse", "Failed to read", "Invalid ", "Unrecognized ")
+                )
                 for w in import_res.warnings
             )
         )

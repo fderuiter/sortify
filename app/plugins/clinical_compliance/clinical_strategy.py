@@ -111,7 +111,7 @@ class ClinicalTMFStrategy(IsolatedStrategyMixin):
                 break
 
             doc_text = doc_map.get(fn, "")
-            artifact, score = self._classify_document(fn, doc_text)
+            artifact, _score = self._classify_document(fn, doc_text)
             self.last_classified_artifacts[fn] = artifact
 
             if artifact is not None:

@@ -4,7 +4,6 @@ Extracts documents from filesystems, compressed archives (.zip, .tar, .tar.gz),
 and email files (.eml, .msg), calculating SHA-256 digests for chain-of-custody tracking.
 """
 
-import email
 import hashlib
 import logging
 import os
@@ -18,6 +17,7 @@ from typing import Optional
 
 from app.core.exceptions import ArchiveSafetyError, UnsupportedArchiveFormatError
 from app.core.extractor import extract_file_text
+from app.core.extractor_strategies import _extract_eml_parts
 from app.core.path_utils import safe_extract_path, safe_relpath, sanitize_filename
 from app.core.progress import emit_progress
 from app.core.resilient_file_ops import _set_posix_mode, resilient_rmtree
@@ -29,13 +29,31 @@ SUPPORTED_DOC_EXTENSIONS = {
     ".pdf",
     ".docx",
     ".doc",
+    ".pptx",
     ".txt",
+    ".md",
+    ".rst",
+    ".log",
     ".csv",
+    ".tsv",
+    ".json",
+    ".yaml",
+    ".yml",
+    ".html",
+    ".htm",
+    ".xml",
     ".xlsx",
     ".xls",
     ".rtf",
+    ".odt",
     ".eml",
     ".msg",
+    ".png",
+    ".jpg",
+    ".jpeg",
+    ".bmp",
+    ".tiff",
+    ".webp",
 }
 
 ARCHIVE_EXTENSIONS = {
@@ -147,10 +165,8 @@ class ForensicScanner:
                 f"Unable to read archive header for '{archive_path}': {read_err}"
             ) from read_err
 
-        if (
-            ext in UNSUPPORTED_ARCHIVE_EXTENSIONS
-            or header.startswith(_SEVENZ_MAGIC)
-            or header.startswith(_RAR_MAGIC)
+        if ext in UNSUPPORTED_ARCHIVE_EXTENSIONS or header.startswith(
+            (_SEVENZ_MAGIC, _RAR_MAGIC)
         ):
             fmt = (
                 ".7z" if (ext == ".7z" or header.startswith(_SEVENZ_MAGIC)) else ".rar"
@@ -329,62 +345,49 @@ class ForensicScanner:
         body_text = ""
 
         try:
-            with open(eml_path, "rb") as f:
-                msg = email.message_from_binary_file(f)
+            body_text, attachment_parts, _ = _extract_eml_parts(
+                eml_path, collect_attachments=True
+            )
 
-            subject = msg.get("Subject", "")
-            sender = msg.get("From", "")
-            body_text = f"Email Subject: {subject}\nFrom: {sender}\n\n"
-
-            for part in msg.walk():
-                content_type = part.get_content_type()
-                disposition = str(part.get("Content-Disposition", ""))
-
-                if content_type == "text/plain" and "attachment" not in disposition:
-                    charset = part.get_content_charset() or "utf-8"
-                    payload = part.get_payload(decode=True)
-                    if isinstance(payload, bytes) and payload:
-                        body_text += payload.decode(charset, errors="ignore") + "\n"
-
-                elif "attachment" in disposition or part.get_filename():
-                    raw_filename = part.get_filename()
-                    if not raw_filename or not raw_filename.strip():
+            for part in attachment_parts:
+                raw_filename = part.get_filename()
+                if not raw_filename or not raw_filename.strip():
+                    safe_filename = "Unnamed_safe"
+                else:
+                    safe_filename, _ = sanitize_filename(raw_filename)
+                    if not safe_filename or not safe_filename.strip():
                         safe_filename = "Unnamed_safe"
-                    else:
-                        safe_filename, _ = sanitize_filename(raw_filename)
-                        if not safe_filename or not safe_filename.strip():
-                            safe_filename = "Unnamed_safe"
 
-                    dest_abs = os.path.abspath(destination_dir)
-                    dest_prefix = (
-                        dest_abs if dest_abs.endswith(os.sep) else dest_abs + os.sep
+                dest_abs = os.path.abspath(destination_dir)
+                dest_prefix = (
+                    dest_abs if dest_abs.endswith(os.sep) else dest_abs + os.sep
+                )
+                att_path = os.path.abspath(os.path.join(dest_abs, safe_filename))
+
+                if not att_path.startswith(dest_prefix):
+                    logger.warning(
+                        f"Skipping email attachment extraction: path '{att_path}' is outside destination '{dest_abs}'"
                     )
-                    att_path = os.path.abspath(os.path.join(dest_abs, safe_filename))
+                    continue
 
-                    if not att_path.startswith(dest_prefix):
-                        logger.warning(
-                            f"Skipping email attachment extraction: path '{att_path}' is outside destination '{dest_abs}'"
-                        )
-                        continue
+                try:
+                    att_path_obj = safe_extract_path(destination_dir, safe_filename)
+                    rel_member = att_path_obj.relative_to(
+                        Path(destination_dir).resolve()
+                    )
+                    att_path = os.path.abspath(os.path.join(dest_abs, rel_member))
+                except ValueError as err:
+                    logger.warning(
+                        f"Skipping email attachment extraction: path '{att_path}' is outside destination '{dest_abs}': {err}"
+                    )
+                    continue
 
-                    try:
-                        att_path_obj = safe_extract_path(destination_dir, safe_filename)
-                        rel_member = att_path_obj.relative_to(
-                            Path(destination_dir).resolve()
-                        )
-                        att_path = os.path.abspath(os.path.join(dest_abs, rel_member))
-                    except ValueError as err:
-                        logger.warning(
-                            f"Skipping email attachment extraction: path '{att_path}' is outside destination '{dest_abs}': {err}"
-                        )
-                        continue
-
-                    payload = part.get_payload(decode=True)
-                    if isinstance(payload, bytes) and payload:
-                        os.makedirs(os.path.dirname(att_path), exist_ok=True)
-                        with open(att_path, "wb") as af:
-                            af.write(payload)
-                        extracted_attachments.append(att_path)
+                payload = part.get_payload(decode=True)
+                if isinstance(payload, bytes) and payload:
+                    os.makedirs(os.path.dirname(att_path), exist_ok=True)
+                    with open(att_path, "wb") as af:
+                        af.write(payload)
+                    extracted_attachments.append(att_path)
         except Exception as e:
             logger.warning(f"Failed to parse email {eml_path}: {e}", exc_info=True)
 

@@ -81,6 +81,18 @@ CLINICAL_PII_PATTERN = re.compile(
     r"(?i)(Confidential Medical Report|Subject \d+|Diagnosis:[^\n]*)"
 )
 SUB_TOKEN_PATTERN = re.compile(r"([_\-/\\])")
+_DB_DECRYPTION_KEY_ID_PATTERN = re.compile(
+    r"^DatabaseDecryptionKey_(?:[0-9a-f]{32}|[0-9a-f]{64})$",
+    re.IGNORECASE,
+)
+_DB_DECRYPTION_KEY_ID_SUB_PATTERN = re.compile(
+    r"DatabaseDecryptionKey_(?:[0-9a-f]{32}|[0-9a-f]{64})(?![0-9a-zA-Z])",
+    re.IGNORECASE,
+)
+_HEX_KEY_DIGEST_PATTERN = re.compile(
+    r"^(?:[0-9a-f]{32}|[0-9a-f]{64})$",
+    re.IGNORECASE,
+)
 
 
 def calculate_shannon_entropy(text: str) -> float:
@@ -126,6 +138,14 @@ def _is_high_entropy_token(token: str) -> bool:
     clean_token = token.strip(".,;:\"'()[]{}<>!@#$%^&*+=/\\")
     if len(clean_token) < 20:
         return False
+    if _DB_DECRYPTION_KEY_ID_PATTERN.match(clean_token):
+        return False
+    if "DatabaseDecryptionKey_" in clean_token:
+        clean_token = _DB_DECRYPTION_KEY_ID_SUB_PATTERN.sub("", clean_token).strip(
+            ".,;:\"'()[]{}<>!@#$%^&*+=/\\_- "
+        )
+        if len(clean_token) < 20:
+            return False
 
     segments = [s for s in re.split(r"[_\-/\\:]+", clean_token) if s]
     if len(segments) > 1:
@@ -235,14 +255,50 @@ def sanitize_secret_patterns(text: str, replacement: str = "") -> str:
             new_words.append(word)
             continue
 
+        stripped_id = word.strip(".,;:\"'()[]{}<>")
+        if _DB_DECRYPTION_KEY_ID_PATTERN.match(stripped_id):
+            new_words.append(word)
+            continue
+
         if any(sep in word for sep in ("_", "-", "/", "\\")):
-            sub_tokens = SUB_TOKEN_PATTERN.split(word)
+            lead_len = len(word) - len(word.lstrip("\"'([<{"))
+            lead_punct = word[:lead_len]
+            rest = word[lead_len:]
+            trail_len = len(rest) - len(rest.rstrip("\"')]>},;:"))
+            trail_punct = rest[len(rest) - trail_len :] if trail_len else ""
+            core_word = rest[: len(rest) - trail_len] if trail_len else rest
+
+            sub_tokens = SUB_TOKEN_PATTERN.split(core_word)
             new_sub_tokens = []
             sub_modified = False
             has_kept_content = False
-            for st in sub_tokens:
-                if st in ("_", "-", "/", "\\") or not st:
+            for idx, st in enumerate(sub_tokens):
+                is_db_key_digest = (
+                    idx >= 2
+                    and sub_tokens[idx - 1] == "_"
+                    and sub_tokens[idx - 2].endswith("DatabaseDecryptionKey")
+                    and bool(_HEX_KEY_DIGEST_PATTERN.match(st.strip(".,;:\"'()[]{}<>")))
+                )
+                is_db_key_prefix = (
+                    st.endswith("DatabaseDecryptionKey")
+                    and idx + 2 < len(sub_tokens)
+                    and sub_tokens[idx + 1] == "_"
+                    and bool(
+                        _HEX_KEY_DIGEST_PATTERN.match(
+                            sub_tokens[idx + 2].strip(".,;:\"'()[]{}<>")
+                        )
+                    )
+                    and not _is_high_entropy_token(st[: -len("DatabaseDecryptionKey")])
+                )
+                if (
+                    st in ("_", "-", "/", "\\")
+                    or not st
+                    or is_db_key_digest
+                    or is_db_key_prefix
+                ):
                     new_sub_tokens.append(st)
+                    if st not in ("_", "-", "/", "\\") and st:
+                        has_kept_content = True
                 elif len(st) >= 20 and _is_high_entropy_token(st):
                     if replacement:
                         new_sub_tokens.append(replacement)
@@ -253,13 +309,20 @@ def sanitize_secret_patterns(text: str, replacement: str = "") -> str:
                     has_kept_content = True
             if sub_modified:
                 if has_kept_content:
-                    new_words.append("".join(new_sub_tokens))
+                    new_words.append(
+                        f"{lead_punct}{''.join(new_sub_tokens)}{trail_punct}"
+                    )
                 modified = True
             else:
                 new_words.append(word)
         elif _is_high_entropy_token(word):
+            lead_len = len(word) - len(word.lstrip("\"'([<{"))
+            lead_punct = word[:lead_len]
+            rest = word[lead_len:]
+            trail_len = len(rest) - len(rest.rstrip("\"')]>},;:"))
+            trail_punct = rest[len(rest) - trail_len :] if trail_len else ""
             if replacement:
-                new_words.append(replacement)
+                new_words.append(f"{lead_punct}{replacement}{trail_punct}")
             modified = True
         else:
             new_words.append(word)

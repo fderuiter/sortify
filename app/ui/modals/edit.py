@@ -9,13 +9,11 @@ from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select, Static
 
 from app.core.path_utils import _is_absolute_path
-from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ModalBox, ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveModalScreen
 
 logger = logging.getLogger(__name__)
 
@@ -51,9 +49,7 @@ class RenameResult(str):
         return (str(self), self.destination_override)
 
 
-def _set_collision_warning_helper(
-    modal: ModalScreen[Any], msg: str, is_error: bool = False
-) -> None:
+def _set_collision_warning_helper(modal: Any, msg: str, is_error: bool = False) -> None:
     """Update collision warning label widget text and styles on a modal screen."""
     try:
         lbl = modal.query_one("#warning-collision", Label)
@@ -72,51 +68,37 @@ _set_collision_warning = _set_collision_warning_helper
 _update_collision_warning = _set_collision_warning_helper
 
 
+class _SubmittableModalMixin:
+    """Mixin forwarding Enter submission on modal Input fields to ``action_confirm``."""
+
+    @on(Input.Submitted)
+    def action_submit(self) -> None:
+        """Submit input on Enter key press."""
+        getattr(self, "action_confirm")()
+
+
+class _CollisionWarningMixin:
+    """Mixin updating ``#warning-collision`` inline feedback state."""
+
+    def _set_collision_warning(self, msg: str, is_error: bool = False) -> None:
+        """Update collision warning label widget text and styles."""
+        _set_collision_warning_helper(self, msg, is_error=is_error)
+
+
 class RenameModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str | RenameResult]]
+    _CollisionWarningMixin,
+    _SubmittableModalMixin,
+    ResponsiveModalScreen[Optional[str | RenameResult]],
 ):
     """Modal dialog for renaming a file or folder node with pattern token formatting and destination path override support."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    RenameModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
-    .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-    }
+    MODAL_CSS = """
     .modal-subtitle {
         color: $text-muted;
         margin-bottom: 1;
@@ -138,12 +120,7 @@ class RenameModal(
         text-style: bold;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
         min-height: 3;
-        align: right middle;
     }
     .button-row Button {
         margin-left: 1;
@@ -378,7 +355,7 @@ class RenameModal(
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit screen reader announcement."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         self.query_one("#input-name", Input).focus()
         self.announce(
             f"Opened rename dialog for '{self.modal_title}'. Enter new name or pattern and press Enter or click Rename."
@@ -395,10 +372,6 @@ class RenameModal(
         if ".." in segments:
             return "Directory traversal ('..') segments are not permitted."
         return None
-
-    def _set_collision_warning(self, msg: str, is_error: bool = False) -> None:
-        """Update warning label widget text and styles."""
-        _set_collision_warning_helper(self, msg, is_error=is_error)
 
     def _check_collision_and_update_ui(self) -> tuple[bool, Optional[str]]:
         """Run live collision check and path validation across plan and filesystem.
@@ -606,7 +579,7 @@ class RenameModal(
             batch_items = []
             for idx, f in enumerate(self.files):
                 file_seq = self.seq + idx
-                meta, fallback, key, folder, info = self._extract_file_metadata(
+                _meta, fallback, key, folder, info = self._extract_file_metadata(
                     f, file_seq
                 )
                 formatted_name = (
@@ -656,62 +629,19 @@ class RenameModal(
         self.announce("Cancelled rename action.")
         self.dismiss(None)
 
-    @on(Input.Submitted)
-    def action_submit(self) -> None:
-        """Submit input on Enter key press."""
-        self.action_confirm()
 
-
-class NewFolderModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]):
+class NewFolderModal(_SubmittableModalMixin, ResponsiveModalScreen[Optional[str]]):
     """Modal dialog for creating a new folder node in the plan."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    NewFolderModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
-    .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-    }
+    MODAL_CSS = """
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
         min-height: 3;
-        align: right middle;
     }
     .button-row Button {
         margin-left: 1;
@@ -748,7 +678,7 @@ class NewFolderModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit screen reader announcement."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         self.query_one("#input-folder-name", Input).focus()
         self.announce("Opened create new target folder dialog.")
 
@@ -768,55 +698,21 @@ class NewFolderModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]
         self.announce("Cancelled folder creation.")
         self.dismiss(None)
 
-    @on(Input.Submitted)
-    def action_submit(self) -> None:
-        """Submit input on Enter key press."""
-        self.action_confirm()
 
-
-class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]):
+class ReassignModal(
+    _CollisionWarningMixin,
+    _SubmittableModalMixin,
+    ResponsiveModalScreen[Optional[str]],
+):
     """Modal dialog for reassigning checked file nodes to a target category folder."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    ReassignModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
-    .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-    }
+    MODAL_CSS = """
     .modal-warning {
         color: $warning;
         text-style: bold;
@@ -830,12 +726,7 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
         margin-bottom: 1;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
         min-height: 3;
-        align: right middle;
     }
     .button-row Button {
         margin-left: 1;
@@ -916,14 +807,10 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit announcement."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         self.query_one("#input-target-folder", Input).focus()
         self.announce(f"Opened bulk reassign dialog for {self.count} items.")
         self._check_collision_and_update_ui()
-
-    def _set_collision_warning(self, msg: str, is_error: bool = False) -> None:
-        """Update collision warning label."""
-        _set_collision_warning_helper(self, msg, is_error=is_error)
 
     def _check_collision_and_update_ui(self) -> tuple[bool, Optional[str]]:
         """Run live collision check and path validation across plan and filesystem."""
@@ -1060,57 +947,20 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
         self.announce("Cancelled bulk reassign.")
         self.dismiss(None)
 
-    @on(Input.Submitted)
-    def action_submit(self) -> None:
-        """Submit reassign on Enter key press."""
-        self.action_confirm()
-
 
 class DirectorySelectModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str | list[str]]]
+    _SubmittableModalMixin,
+    ResponsiveModalScreen[Optional[str | list[str]]],
 ):
     """Modal dialog for choosing target base directory or presets."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    DirectorySelectModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
-    .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-    }
+    MODAL_CSS = """
     .error-banner {
         color: $error;
         text-style: bold;
@@ -1136,18 +986,27 @@ class DirectorySelectModal(
         border: solid $primary;
         padding: 0 1;
     }
-    .button-row {
-        dock: bottom;
+    .source-actions-row {
         width: 100%;
         layout: grid;
-        grid-size: 4;
+        grid-size: 2;
         grid-gutter: 0 1;
-        margin-top: 1;
+        margin-bottom: 1;
         height: auto;
         min-height: 3;
     }
+    .source-actions-row Button {
+        width: 100%;
+        min-width: 0;
+    }
+    .button-row {
+        layout: grid;
+        grid-size: 3;
+        grid-gutter: 0 1;
+        min-height: 3;
+    }
     .compact .button-row, .narrow .button-row {
-        grid-size: 2;
+        grid-size: 3;
     }
     .button-row Button {
         width: 100%;
@@ -1250,6 +1109,15 @@ class DirectorySelectModal(
                     id="static-sources-list",
                     classes="sources-list",
                 )
+                with Horizontal(classes="source-actions-row"):
+                    btn_add = Button("Add Path", id="btn-add-dir", variant="default")
+                    btn_add.tooltip = "Add current path to multi-root source list"
+                    yield btn_add
+                    btn_clear = Button(
+                        "Clear Sources", id="btn-clear-sources", variant="default"
+                    )
+                    btn_clear.tooltip = "Clear staged multi-root source directories"
+                    yield btn_clear
                 yield Label("Quick Presets:")
                 with Horizontal(classes="preset-row"):
                     p_demo = Button(
@@ -1269,9 +1137,6 @@ class DirectorySelectModal(
                 btn_browse = Button("Native Browse", id="btn-browse", variant="default")
                 btn_browse.tooltip = "Launch native OS directory browser dialog"
                 yield btn_browse
-                btn_add = Button("Add Path", id="btn-add-dir", variant="default")
-                btn_add.tooltip = "Add current path to multi-root source list"
-                yield btn_add
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel directory selection and close dialog"
                 yield btn_cancel
@@ -1293,7 +1158,7 @@ class DirectorySelectModal(
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit screen reader announcement."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         try:
             self.query_one("#input-dir", Input).focus()
         except Exception:
@@ -1321,6 +1186,18 @@ class DirectorySelectModal(
             self.query_one("#lbl-error", Static).update("")
         except Exception:
             pass
+
+    @on(Button.Pressed, "#btn-clear-sources")
+    def action_clear_sources(self) -> None:
+        """Clear staged source directories and reset multi-source add state."""
+        self.selected_sources.clear()
+        self.added_via_btn = False
+        self._update_sources_widget()
+        try:
+            self.query_one("#lbl-error", Static).update("")
+        except Exception:
+            pass
+        self.announce("Cleared selected source directories.")
 
     @on(Button.Pressed, "#preset-demo")
     def action_demo(self) -> None:
@@ -1352,28 +1229,37 @@ class DirectorySelectModal(
             self.announce(err_msg, priority="assertive")
             notify(err_msg, type="error")
 
+        self.added_via_btn = False
+        self.selected_sources = [path]
+        self._update_sources_widget()
         self.announce(f"Selected demo workspace preset: {path}")
         self.dismiss(path)
 
     @on(Button.Pressed, "#preset-downloads")
     def action_downloads(self) -> None:
         """Select user Downloads directory preset."""
-        path = os.path.expanduser("~/Downloads")
+        path = os.path.abspath(os.path.expanduser("~/Downloads"))
         err = self._validate_directory_path(path)
         if err:
             self._show_error(err)
             return
+        self.added_via_btn = False
+        self.selected_sources = [path]
+        self._update_sources_widget()
         self.announce(f"Selected Downloads preset: {path}")
         self.dismiss(path)
 
     @on(Button.Pressed, "#preset-documents")
     def action_documents(self) -> None:
         """Select user Documents directory preset."""
-        path = os.path.expanduser("~/Documents")
+        path = os.path.abspath(os.path.expanduser("~/Documents"))
         err = self._validate_directory_path(path)
         if err:
             self._show_error(err)
             return
+        self.added_via_btn = False
+        self.selected_sources = [path]
+        self._update_sources_widget()
         self.announce(f"Selected Documents preset: {path}")
         self.dismiss(path)
 
@@ -1388,7 +1274,9 @@ class DirectorySelectModal(
                 return
 
             abs_p = os.path.abspath(os.path.expanduser(val))
-            if not self.added_via_btn and len(self.selected_sources) <= 1:
+            if not self.added_via_btn:
+                self.selected_sources = [abs_p]
+                self._update_sources_widget()
                 self.announce(f"Confirmed directory selection: '{abs_p}'")
                 self.dismiss(abs_p)
                 return
@@ -1419,11 +1307,6 @@ class DirectorySelectModal(
         """Cancel directory selection."""
         self.announce("Cancelled directory selection.")
         self.dismiss(None)
-
-    @on(Input.Submitted)
-    def action_submit(self) -> None:
-        """Submit input on Enter key press."""
-        self.action_confirm()
 
     @on(Button.Pressed, "#btn-browse")
     @work(thread=True)
@@ -1457,7 +1340,10 @@ class DirectorySelectModal(
             inp.value = abs_p
         except Exception:
             pass
-        if abs_p not in self.selected_sources:
+        if not self.added_via_btn:
+            self.selected_sources = [abs_p]
+            self._update_sources_widget()
+        elif abs_p not in self.selected_sources:
             self.selected_sources.append(abs_p)
             self._update_sources_widget()
         self.announce(f"Selected native folder path: {abs_p}")
@@ -1476,48 +1362,22 @@ class DirectorySelectModal(
             pass
 
 
-class ManualPathFallbackModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
-):
+class ManualPathFallbackModal(ResponsiveModalScreen[Optional[str]]):
     """Fallback modal dialog for manual directory path entry when native selection fails."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    ManualPathFallbackModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
+    MODAL_CSS = """
     .modal-box {
-        padding: 1 2;
-        background: $panel;
         border: thick $warning;
-        width: 90%;
         max-width: 70;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box, .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
         min-height: 3;
-        align: right middle;
     }
     .button-row Button {
         margin-left: 1;
@@ -1555,7 +1415,7 @@ class ManualPathFallbackModal(
 
     def on_mount(self) -> None:
         """Focus input field on mount and announce screen reader alert."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         self.query_one("#input-fallback-dir", Input).focus()
         self.announce("Opened manual directory entry fallback dialog.")
 
@@ -1594,49 +1454,25 @@ def _format_file_size(size_bytes: int) -> str:
 
 
 class InteractiveCollisionResolverModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict[str, str]]]
+    ResponsiveModalScreen[Optional[dict[str, str]]]
 ):
     """Interactive per-file collision resolution modal before execution."""
 
+    NARROW_WIDTH_BREAKPOINT = 60
+
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
+    MODAL_CSS = """
     InteractiveCollisionResolverModal, DuplicateReviewModal {
-        align: center middle;
         background: rgba(0, 0, 0, 0.65);
     }
     .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
         max-width: 90;
         min-width: 40;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
     }
     .modal-subtitle {
         color: $text-muted;
@@ -1683,12 +1519,7 @@ class InteractiveCollisionResolverModal(
         height: auto;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
         min-height: 3;
-        align: right middle;
     }
     .button-row Button {
         margin-left: 1;
@@ -1818,21 +1649,9 @@ class InteractiveCollisionResolverModal(
                 )
                 yield Button("Cancel", id="btn-cancel-duplicates")
 
-    def _update_layout(self, width: int, height: Optional[int] = None) -> None:
-        """Update responsiveness based on modal container width and height."""
-        effective_height = self._resolve_viewport_height(height)
-        if width < 60:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-        if width <= 100 or effective_height <= 30:
-            self.add_class("compact")
-        else:
-            self.remove_class("compact")
-
     def on_mount(self) -> None:
         """Focus initial widget on mount and announce to screen reader."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         try:
             self.query_one("#batch-action-select", Select).focus()
         except Exception:

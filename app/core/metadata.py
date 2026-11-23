@@ -100,6 +100,106 @@ def get_extension_category_target(item: str, settings) -> str | None:
     return None
 
 
+def evaluate_static_file_routing(
+    file_path: str,
+    settings: object,
+    *,
+    filename_only: str | None = None,
+    check_extension_categories: bool = True,
+    sorted_policies: list[dict] | None = None,
+) -> tuple[str | None, bool, bool]:
+    """Evaluate static policies, keyword/learned rules, and extension categories.
+
+    Parameters
+    ----------
+    file_path : str
+        File path to evaluate against static rules.
+    settings : object
+        Application settings containing ``POLICIES``, ``KEYWORD_RULES``,
+        ``LEARNED_RULES``, and ``EXTENSION_CATEGORIES``.
+    filename_only : str | None, optional
+        Pre-computed lowercase basename of ``file_path``.
+    check_extension_categories : bool, optional
+        Whether to evaluate ``get_extension_category_target`` when no policy
+        or keyword/learned rule matches.
+    sorted_policies : list[dict] | None, optional
+        Pre-sorted policy definitions to avoid re-sorting on every file.
+
+    Returns
+    -------
+    tuple[str | None, bool, bool]
+        ``(matched_target, matched_action, halt_evaluation)`` describing any
+        matched destination folder, whether a valid policy action matched,
+        and whether a halting rule stopped downstream evaluation.
+    """
+    fn_lower = (
+        filename_only
+        if filename_only is not None
+        else os.path.basename(file_path).lower()
+    )
+    if sorted_policies is None:
+        raw_policies = getattr(settings, "POLICIES", []) if settings else []
+        valid_policies = (
+            [
+                p
+                for p in (raw_policies or [])
+                if isinstance(p, dict) or hasattr(p, "model_dump")
+            ]
+            if isinstance(raw_policies, (list, tuple))
+            else []
+        )
+        active_policies = PolicyEngine.sort_policies(valid_policies)
+    else:
+        active_policies = sorted_policies
+
+    eval_out = PolicyEngine.evaluate_policies(
+        file_path,
+        "",
+        "[STATUS:STATIC]",
+        active_policies,
+        return_halting=True,
+        is_sorted=True,
+    )
+    matched_policy, halt_evaluation = (
+        eval_out if isinstance(eval_out, tuple) else (eval_out, False)
+    )
+
+    matched_target: str | None = None
+    matched_action = False
+    if matched_policy is not None:
+        eff_action = PolicyEngine.resolve_effective_action(matched_policy)
+        if eff_action == "ignore":
+            return None, True, False
+        raw_target = matched_policy.get("target_path")
+        if raw_target:
+            matched_target = str(raw_target)
+        raw_action = matched_policy.get("action") or eff_action
+        if raw_action:
+            matched_action = PolicyEngine.validate_policy_action(str(raw_action))
+
+    if not halt_evaluation and not matched_target and not matched_action:
+        for attr_name in ("KEYWORD_RULES", "LEARNED_RULES"):
+            rules = getattr(settings, attr_name, {}) if settings else {}
+            if isinstance(rules, dict):
+                for keyword, target_folder in rules.items():
+                    kw_str = str(keyword)
+                    if kw_str.strip() and kw_str.lower() in fn_lower and target_folder:
+                        matched_target = str(target_folder)
+                        break
+            if matched_target:
+                break
+
+    if (
+        not halt_evaluation
+        and not matched_target
+        and not matched_action
+        and check_extension_categories
+    ):
+        matched_target = get_extension_category_target(file_path, settings)
+
+    return matched_target, matched_action, halt_evaluation
+
+
 class MetadataPass:
     """Component to execute static rule matching logic prior to heavy ingestion."""
 
@@ -122,8 +222,6 @@ class MetadataPass:
 
         effective_callback = progress_callback or callback
 
-        keyword_rules = getattr(settings, "KEYWORD_RULES", {})
-        learned_rules = getattr(settings, "LEARNED_RULES", {})
         policies = getattr(settings, "POLICIES", [])
         raw_aqr = getattr(settings, "AUTO_QUARANTINE_RATINGS", [])
         auto_quarantine_ratings = (
@@ -142,9 +240,16 @@ class MetadataPass:
         )
 
         # Sort policies in descending order of priority (higher priority number first)
-        sorted_policies = sorted(
-            policies, key=lambda x: x.get("priority", 0), reverse=True
+        valid_policies = (
+            [
+                p
+                for p in (policies or [])
+                if isinstance(p, dict) or hasattr(p, "model_dump")
+            ]
+            if isinstance(policies, (list, tuple))
+            else []
         )
+        sorted_policies = PolicyEngine.sort_policies(valid_policies)
 
         if db and hasattr(db, "worker"):
             from app.core.db import DBWorker
@@ -217,7 +322,6 @@ class MetadataPass:
             matched_target = None
             matched_policy_action = None
             halt_evaluation = False
-            halted_definitively = False
             ignored_definitively = False
 
             if file_hash in hash_to_target and not sorted_policies:
@@ -286,9 +390,9 @@ class MetadataPass:
                         ):
                             is_match = True
                     elif p_type in ("keyword", "action", "compliance", ""):
-                        if expr_lower and expr_lower in filename_only:
-                            is_match = True
-                        elif not expr_lower and p_action:
+                        if (expr_lower and expr_lower in filename_only) or (
+                            not expr_lower and p_action
+                        ):
                             is_match = True
 
                     if is_match:
@@ -310,11 +414,6 @@ class MetadataPass:
                                 saw_unmatched_compliance_policy = True
                         if policy.get("halting", False):
                             halt_evaluation = True
-                            if (
-                                not can_match_doc_text
-                                and not saw_unmatched_content_policy
-                            ):
-                                halted_definitively = True
                             break
 
                 if (
@@ -330,24 +429,16 @@ class MetadataPass:
                     and not ignored_definitively
                     and not matched_target
                 ):
-                    for keyword, target_folder in keyword_rules.items():
-                        if keyword.strip() and keyword.lower() in filename_only:
-                            matched_target = target_folder
-                            break
-                    if not matched_target:
-                        for keyword, target_folder in learned_rules.items():
-                            if keyword.strip() and keyword.lower() in filename_only:
-                                matched_target = target_folder
-                                break
-
-                # Evaluate extension category mapping / MIME fallback rules for unregistered extensions
-                if (
-                    not halt_evaluation
-                    and not ignored_definitively
-                    and not matched_target
-                    and not is_supported
-                ):
-                    matched_target = get_extension_category_target(item, settings)
+                    matched_static_target, _static_act, _static_halt = (
+                        evaluate_static_file_routing(
+                            item_path,
+                            settings,
+                            filename_only=filename_only,
+                            check_extension_categories=not is_supported,
+                            sorted_policies=[],
+                        )
+                    )
+                    matched_target = matched_static_target
 
             if ignored_definitively:
                 bypassed_files.append(item)
@@ -356,18 +447,6 @@ class MetadataPass:
                     effective_callback,
                     progress_or_update=progress_ratio,
                     stage=f"Ignored {item} via policy rule",
-                    unit_count=idx + 1,
-                    unit_type="files",
-                )
-                continue
-
-            if halted_definitively:
-                bypassed_files.append(item)
-                docs_to_upsert.append((src_root, rel_p, file_hash, "[STATUS:HALTED]"))
-                emit_progress(
-                    effective_callback,
-                    progress_or_update=progress_ratio,
-                    stage=f"Halted {item} via halting policy rule",
                     unit_count=idx + 1,
                     unit_type="files",
                 )

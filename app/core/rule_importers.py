@@ -775,9 +775,7 @@ class ImportResult:
                             pol_entry["enabled"] = new_policies[matching_idx]["enabled"]
                         new_policies[matching_idx] = pol_entry
             else:
-                if import_disabled and "enabled" not in pol_entry:
-                    pol_entry["enabled"] = False
-                elif import_disabled:
+                if import_disabled:
                     pol_entry["enabled"] = False
                 new_policies.append(pol_entry)
 
@@ -803,12 +801,10 @@ class BaseRuleImporter(abc.ABC):
     @abc.abstractmethod
     def parse_file(self, file_path: str | Path) -> ImportResult:
         """Parse rule package file and return extracted ImportResult."""
-        pass
 
     @abc.abstractmethod
     def can_import(self, file_path: str | Path) -> bool:
         """Check if this importer handles the specified file path or content."""
-        pass
 
     def _sanitize_path(self, path_str: str | None) -> str:
         """Normalize target folder path strings for Sortify configuration."""
@@ -1886,7 +1882,7 @@ class DropItRuleImporter(BaseRuleImporter):
             masks = [m.strip() for m in re.split(r"[;|,]", inc_part) if m.strip()]
 
         for mask in masks:
-            if (mask.startswith("!") or mask.startswith("-")) and len(mask) > 1:
+            if (mask.startswith(("!", "-"))) and len(mask) > 1:
                 result.warnings.append(
                     f"DropIt rule '{rule_name}' skipped negated pattern mask '{mask}'."
                 )
@@ -2238,9 +2234,7 @@ class TagSpacesRuleImporter(BaseRuleImporter):
             )
             return
 
-        if (tag_clean.startswith("!") or tag_clean.startswith("-")) and len(
-            tag_clean
-        ) > 1:
+        if (tag_clean.startswith(("!", "-"))) and len(tag_clean) > 1:
             result.warnings.append(
                 f"TagSpaces tag '{tag_clean}' skipped negated pattern."
             )
@@ -2487,9 +2481,7 @@ class TagSpacesRuleImporter(BaseRuleImporter):
         if not val_clean:
             return
 
-        if (val_clean.startswith("!") or val_clean.startswith("-")) and len(
-            val_clean
-        ) > 1:
+        if (val_clean.startswith(("!", "-"))) and len(val_clean) > 1:
             result.warnings.append(
                 f"TagSpaces rule '{rule_name}' skipped negated mask '{val_clean}'."
             )

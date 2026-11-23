@@ -588,7 +588,7 @@ def recursive_kmeans_worker_main(
             vector_buffers = [
                 VectorBuffer(v) if v is not None else None for v in pre_fetched_vectors
             ]
-            strategy._vector_map = {f: vb for f, vb in zip(filenames, vector_buffers)}
+            strategy._vector_map = dict(zip(filenames, vector_buffers))
         else:
             strategy._vector_map = {}
 
@@ -732,7 +732,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             vector_buffers = [
                 VectorBuffer(v) if v is not None else None for v in pre_fetched_vectors
             ]
-            self._vector_map = {f: vb for f, vb in zip(filenames, vector_buffers)}
+            self._vector_map = dict(zip(filenames, vector_buffers))
         else:
             self._vector_map = {}
 
@@ -777,7 +777,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             vector_buffers = [
                 VectorBuffer(v) if v is not None else None for v in pre_fetched_vectors
             ]
-            self._vector_map = {f: vb for f, vb in zip(filenames, vector_buffers)}
+            self._vector_map = dict(zip(filenames, vector_buffers))
         else:
             self._vector_map = {}
 
@@ -1497,13 +1497,9 @@ def gguf_worker_main(
 class _LogitsProcessor:
     """Fallback LogitsProcessor class when transformers is not available."""
 
-    pass
-
 
 class _LogitsProcessorList(list):
     """Fallback LogitsProcessorList list class when transformers is not available."""
-
-    pass
 
 
 class NegativeLogitBiasProcessor(_LogitsProcessor):
@@ -1616,7 +1612,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if getattr(self, "_vector_map", None):
             valid_vectors = {f: v for f, v in self._vector_map.items() if v is not None}
             if len(valid_vectors) > 0:
-                vector_dict = {f: v for f, v in self._vector_map.items()}
+                vector_dict = dict(self._vector_map.items())
                 use_dense = True
 
         db = getattr(self, "db", None)
@@ -2690,13 +2686,18 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                         ):
                             hist_vectors = []
                             hist_meta = []
-                            supported_exts_set = {
-                                ".txt",
-                                ".docx",
-                                ".csv",
-                                ".xlsx",
-                                ".xls",
-                                ".pdf",
+                            from app.core.extractor_strategies import registry
+
+                            non_text_media_exts = {
+                                ".png",
+                                ".jpg",
+                                ".jpeg",
+                                ".bmp",
+                                ".tiff",
+                                ".webp",
+                                ".mp3",
+                                ".wav",
+                                ".m4a",
                             }
                             for ex in pre_fetched_corpus.get("examples", []):
                                 filepath = ex["filepath"]
@@ -2710,8 +2711,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                         else ""
                                     )
                                     if (
-                                        ext in {".png", ".jpg", ".jpeg"}
-                                        or ext not in supported_exts_set
+                                        ext in non_text_media_exts
+                                        or not registry.is_supported(ext)
                                     ):
                                         continue
                                     if embedding_manager.validate_vector_dimension(v):
@@ -2775,10 +2776,25 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             if not use_semantic or not top_examples:
                 fallback_top_examples = []
                 historical_examples = []
+                from app.core.extractor_strategies import registry
+
+                non_text_media_exts = {
+                    ".png",
+                    ".jpg",
+                    ".jpeg",
+                    ".bmp",
+                    ".tiff",
+                    ".webp",
+                    ".mp3",
+                    ".wav",
+                    ".m4a",
+                }
                 for ex in pre_fetched_corpus.get("examples", []):
                     filepath = ex["filepath"]
-                    if not filepath.lower().endswith(
-                        (".txt", ".docx", ".csv", ".xlsx", ".xls", ".pdf")
+                    ext_dot = filepath.rfind(".")
+                    ext_check = filepath[ext_dot:].lower() if ext_dot != -1 else ""
+                    if ext_check in non_text_media_exts or not registry.is_supported(
+                        ext_check
                     ):
                         continue
                     decrypted_text = ex.get("text", "")
@@ -2881,13 +2897,18 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     ):
                         hist_vectors = []
                         hist_meta = []
-                        supported_exts_set = {
-                            ".txt",
-                            ".docx",
-                            ".csv",
-                            ".xlsx",
-                            ".xls",
-                            ".pdf",
+                        from app.core.extractor_strategies import registry
+
+                        non_text_media_exts = {
+                            ".png",
+                            ".jpg",
+                            ".jpeg",
+                            ".bmp",
+                            ".tiff",
+                            ".webp",
+                            ".mp3",
+                            ".wav",
+                            ".m4a",
                         }
 
                         if cached_decrypted_db_rows is not None:
@@ -2921,8 +2942,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                     )
                                     # Exclude non-textual attachments and image files from semantic similarity
                                     if (
-                                        ext in {".png", ".jpg", ".jpeg"}
-                                        or ext not in supported_exts_set
+                                        ext in non_text_media_exts
+                                        or not registry.is_supported(ext)
                                     ):
                                         return None, None, None
 
@@ -2960,8 +2981,8 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                                         else ""
                                     )
                                     if (
-                                        ext in {".png", ".jpg", ".jpeg"}
-                                        or ext not in supported_exts_set
+                                        ext in non_text_media_exts
+                                        or not registry.is_supported(ext)
                                     ):
                                         continue
                                     if v is not None:
@@ -3262,13 +3283,31 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                     try:
                         import os
 
+                        from app.core.extractor_strategies import registry
+
+                        non_text_media_exts = {
+                            ".png",
+                            ".jpg",
+                            ".jpeg",
+                            ".bmp",
+                            ".tiff",
+                            ".webp",
+                            ".mp3",
+                            ".wav",
+                            ".m4a",
+                        }
                         all_docs = db.get_all_documents(base_dir)
                         for doc in all_docs:
                             # doc is (filepath, decrypted_text, file_hash, user_verified_target_path)
                             if len(doc) > 3 and doc[1] and doc[3]:
                                 filepath = doc[0]
-                                if not filepath.lower().endswith(
-                                    (".txt", ".docx", ".csv", ".xlsx", ".xls", ".pdf")
+                                ext_dot = filepath.rfind(".")
+                                ext_check = (
+                                    filepath[ext_dot:].lower() if ext_dot != -1 else ""
+                                )
+                                if (
+                                    ext_check in non_text_media_exts
+                                    or not registry.is_supported(ext_check)
                                 ):
                                     continue
                                 decrypted_text = doc[1]
@@ -3427,7 +3466,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 if has_cjk:
                     parts.append("\u4e00-\u9fff")
 
-                sorted_others = "".join(sorted(list(other_chars)))
+                sorted_others = "".join(sorted(other_chars))
                 parts.append(sorted_others)
 
                 combined_chars = "".join(parts)

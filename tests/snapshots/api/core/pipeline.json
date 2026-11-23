@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "2a8c7d7291382487284049855c8aa4b170e2d0c6f8b20b59d5756598ab196bb6"
+    "checksum": "65bee0e4f0673ae7c3bf7fb0c4a1c9e4b6ebe660971fad05c78fdb27f6ea46a0"
   },
   "classes": [
     {
@@ -66,8 +66,8 @@
               "name": "self"
             },
             {
-              "annotation": null,
-              "default": null,
+              "annotation": "Any",
+              "default": "None",
               "name": "session"
             },
             {
@@ -198,6 +198,21 @@
             }
           ],
           "returns": "Any"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@property"
+          ],
+          "name": "planned_items",
+          "parameters": [
+            {
+              "annotation": null,
+              "default": null,
+              "name": "self"
+            }
+          ],
+          "returns": "list[Any]"
         },
         {
           "async": false,
@@ -386,6 +401,39 @@
     {
       "async": false,
       "decorators": [],
+      "name": "apply_drop_reroot",
+      "parameters": [
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "session"
+        },
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "plan"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "str | None",
+          "default": null,
+          "name": "resolved_dest"
+        },
+        {
+          "annotation": "bool",
+          "default": "False",
+          "name": "force_reroot"
+        }
+      ],
+      "returns": "tuple[Any, bool]"
+    },
+    {
+      "async": false,
+      "decorators": [],
       "name": "drop_scope",
       "parameters": [
         {
@@ -395,6 +443,70 @@
         }
       ],
       "returns": "tuple[str, list | None]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "expand_drop_scope_files",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "path"
+        },
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "settings"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "group_root"
+        }
+      ],
+      "returns": "tuple[str, list[str]]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "group_drop_targets",
+      "parameters": [
+        {
+          "annotation": "Sequence[str]",
+          "default": null,
+          "name": "paths"
+        },
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "settings"
+        },
+        {
+          "annotation": "dict[str, str | None] | None",
+          "default": "None",
+          "name": "staged_roots"
+        }
+      ],
+      "returns": "dict[str, list[str]]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "is_rerooted_destination",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "str | None",
+          "default": null,
+          "name": "resolved_dest"
+        }
+      ],
+      "returns": "bool"
     },
     {
       "async": false,
@@ -418,6 +530,47 @@
         }
       ],
       "returns": "dict[str, Any]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "restore_rerooted_source_dir",
+      "parameters": [
+        {
+          "annotation": "str | None",
+          "default": null,
+          "name": "source_dir"
+        },
+        {
+          "annotation": "bool",
+          "default": null,
+          "name": "was_dir"
+        },
+        {
+          "annotation": "bool",
+          "default": null,
+          "name": "re_rooted"
+        }
+      ],
+      "returns": "None"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "validate_drop_destination",
+      "parameters": [
+        {
+          "annotation": "str | None",
+          "default": null,
+          "name": "dest_dir"
+        },
+        {
+          "annotation": "Any",
+          "default": "None",
+          "name": "settings"
+        }
+      ],
+      "returns": "tuple[str | None, str | None]"
     },
     {
       "async": false,

@@ -173,12 +173,14 @@ def _get_compiled_home_patterns(
         if not raw_parts:
             continue
 
-        if len(raw_parts[0]) == 2 and raw_parts[0][1] == ":":
-            body_parts = raw_parts[1:]
-        elif (
-            len(raw_parts[0]) == 1
-            and raw_parts[0].isalpha()
-            and (h.startswith("/") or h.startswith("\\"))
+        if (
+            len(raw_parts[0]) == 2
+            and raw_parts[0][1] == ":"
+            or (
+                len(raw_parts[0]) == 1
+                and raw_parts[0].isalpha()
+                and (h.startswith(("/", "\\")))
+            )
         ):
             body_parts = raw_parts[1:]
         else:
@@ -365,11 +367,11 @@ def setup_session_directory(session_id: str | None = None) -> tuple[str, Path]:
 
 def resolve_db_crypto(db_path: Path | str):
     """Resolve and return the standard SessionCrypto instance for a given database path."""
-    from app.core.crypto import SessionCrypto
+    from app.core.crypto import _resolve_cached_session_crypto
 
     db_path_obj = Path(db_path).resolve()
     key_path = db_path_obj.parent / "secret.key"
-    return SessionCrypto(key_path, db_path_obj)
+    return _resolve_cached_session_crypto(key_path, db_path_obj)
 
 
 def validate_target_path(target_path: str, keyword: str | None = None) -> None:
@@ -390,8 +392,7 @@ def validate_target_path(target_path: str, keyword: str | None = None) -> None:
 
     # Check for absolute path roots (/ or \), platform-specific drive roots, or Windows drive prefixes
     if (
-        target_path.startswith("/")
-        or target_path.startswith("\\")
+        target_path.startswith(("/", "\\"))
         or os.path.isabs(target_path)
         or Path(target_path).is_absolute()
         or bool(re.match(r"^[a-zA-Z]:", target_path))
@@ -414,7 +415,7 @@ def validate_target_path(target_path: str, keyword: str | None = None) -> None:
         if not segment:
             continue
 
-        if segment.endswith(" ") or segment.endswith("."):
+        if segment.endswith((" ", ".")):
             raise ValueError(
                 f"Target path '{target_path}' contains segment '{segment}' with trailing space or period."
             )
@@ -471,8 +472,7 @@ def _is_absolute_path(path: str) -> bool:
     if not isinstance(path, str) or not path:
         return False
     return (
-        path.startswith("/")
-        or path.startswith("\\")
+        path.startswith(("/", "\\"))
         or os.path.isabs(path)
         or bool(re.match(r"^[a-zA-Z]:[/\\]?", path))
     )
@@ -480,7 +480,7 @@ def _is_absolute_path(path: str) -> bool:
 
 def _split_absolute_path(path_str: str) -> tuple[str, str, list[str], bool, bool]:
     """Split an absolute path into (root, sep, clean_parts, had_traversal, is_unc)."""
-    is_unc = path_str.startswith(r"\\") or path_str.startswith("//")
+    is_unc = path_str.startswith((r"\\", "//"))
     drive_match = re.match(r"^([a-zA-Z]:)[/\\]?", path_str)
     is_posix = path_str.startswith("/") and not is_unc
 
@@ -798,9 +798,22 @@ def _sanitize_plan_with_base(
 
     for key, content in plan.items():
         if content is None:
-            safe_file_key, transformed = _sanitize_plan_key(key, is_file=True)
-            if transformed:
-                warnings.append(f"Sanitized filename '{key}' to '{safe_file_key}'")
+            if isinstance(key, str) and "::" in key:
+                src_root_raw, rel_part = key.split("::", 1)
+                norm_root = os.path.normpath(src_root_raw)
+                safe_leaf, _ = _sanitize_plan_key(rel_part, is_file=True)
+                orig_leaf = re.split(r"[/\\]+", rel_part)[-1] if rel_part else ""
+                rel_parts = [p for p in re.split(r"[/\\]+", rel_part) if p]
+                has_traversal = ".." in rel_parts
+                if safe_leaf != orig_leaf or has_traversal:
+                    safe_file_key = f"{norm_root}::{safe_leaf}"
+                    warnings.append(f"Sanitized filename '{key}' to '{safe_file_key}'")
+                else:
+                    safe_file_key = f"{norm_root}::{rel_part}"
+            else:
+                safe_file_key, transformed = _sanitize_plan_key(key, is_file=True)
+                if transformed:
+                    warnings.append(f"Sanitized filename '{key}' to '{safe_file_key}'")
             if safe_file_key in sanitized_plan:
                 safe_file_key = _disambiguate_key(
                     sanitized_plan, safe_file_key, is_file=True
@@ -808,34 +821,78 @@ def _sanitize_plan_with_base(
             sanitized_plan[safe_file_key] = None
 
         elif _is_file_node(content):
-            safe_file_key, transformed = _sanitize_plan_key(key, is_file=True)
-            if transformed:
-                warnings.append(f"Sanitized filename '{key}' to '{safe_file_key}'")
-
             file_content = dict(content) if isinstance(content, dict) else content
-            if isinstance(file_content, dict):
-                if (
-                    "target_filename" in file_content
-                    and file_content["target_filename"]
-                ):
-                    old_tf = file_content["target_filename"]
-                    safe_tf, tf_transformed = sanitize_filename(old_tf)
-                    if tf_transformed:
-                        file_content["target_filename"] = safe_tf
-                        file_content["confirmed"] = True
-                        warnings.append(
-                            f"Sanitized target filename '{old_tf}' to '{safe_tf}'"
-                        )
+            if isinstance(key, str) and "::" in key:
+                src_root_raw, rel_part = key.split("::", 1)
+                norm_root = os.path.normpath(src_root_raw)
+                safe_leaf, _ = _sanitize_plan_key(rel_part, is_file=True)
+                orig_leaf = re.split(r"[/\\]+", rel_part)[-1] if rel_part else ""
+                rel_parts = [p for p in re.split(r"[/\\]+", rel_part) if p]
+                has_traversal = ".." in rel_parts
+                leaf_changed = safe_leaf != orig_leaf or has_traversal
+                if leaf_changed:
+                    safe_file_key = f"{norm_root}::{safe_leaf}"
+                    warnings.append(f"Sanitized filename '{key}' to '{safe_file_key}'")
                 else:
-                    if transformed:
+                    safe_file_key = f"{norm_root}::{rel_part}"
+
+                if isinstance(file_content, dict):
+                    file_content.setdefault("source_root", norm_root)
+                    if not file_content.get("source_path"):
+                        file_content["source_path"] = rel_part
+                    if (
+                        "target_filename" in file_content
+                        and file_content["target_filename"]
+                    ):
+                        old_tf = file_content["target_filename"]
+                        raw_old_tf = old_tf
+                        if isinstance(old_tf, str) and "::" in old_tf:
+                            _, old_tf = old_tf.split("::", 1)
+                        safe_tf, tf_transformed = sanitize_filename(old_tf)
+                        if tf_transformed or safe_tf != raw_old_tf:
+                            file_content["target_filename"] = safe_tf
+                            file_content["confirmed"] = True
+                            warnings.append(
+                                f"Sanitized target filename '{raw_old_tf}' to '{safe_tf}'"
+                            )
+                    elif leaf_changed:
                         file_content["confirmed"] = True
-                        file_content["target_filename"] = safe_file_key
+                        file_content["target_filename"] = safe_leaf
+            else:
+                safe_file_key, transformed = _sanitize_plan_key(key, is_file=True)
+                if transformed:
+                    warnings.append(f"Sanitized filename '{key}' to '{safe_file_key}'")
+
+                if isinstance(file_content, dict):
+                    if (
+                        "target_filename" in file_content
+                        and file_content["target_filename"]
+                    ):
+                        old_tf = file_content["target_filename"]
+                        safe_tf, tf_transformed = sanitize_filename(old_tf)
+                        if tf_transformed:
+                            file_content["target_filename"] = safe_tf
+                            file_content["confirmed"] = True
+                            warnings.append(
+                                f"Sanitized target filename '{old_tf}' to '{safe_tf}'"
+                            )
+                    else:
+                        if transformed:
+                            file_content["confirmed"] = True
+                            file_content["target_filename"] = safe_file_key
 
             if safe_file_key in sanitized_plan:
                 safe_file_key = _disambiguate_key(
                     sanitized_plan, safe_file_key, is_file=True
                 )
-                if isinstance(file_content, dict) and "target_filename" in file_content:
+                is_explicit_overwrite = isinstance(file_content, dict) and bool(
+                    file_content.get("overwrite") or file_content.get("allow_overwrite")
+                )
+                if (
+                    isinstance(file_content, dict)
+                    and "target_filename" in file_content
+                    and not is_explicit_overwrite
+                ):
                     file_content["target_filename"] = safe_file_key
                     file_content["confirmed"] = True
 

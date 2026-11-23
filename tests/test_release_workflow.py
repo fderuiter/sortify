@@ -405,3 +405,219 @@ def test_pyproject_and_uv_lock_route_cpu_pytorch_sources():
             assert "macosx" in url, (
                 f"Expected only macOS wheels in PyPI {pkg_name} entry, got: {url}"
             )
+
+
+def test_release_workflow_gates_pr_builds_on_packaging_changes():
+    """Verify check-packaging-changes gates build-binaries on PRs while preserving release/dispatch runs."""
+    workflow = _load_release_workflow()
+    triggers = workflow.get("on", workflow.get(True))
+    pr_paths = set(triggers["pull_request"]["paths"])
+    assert "pyproject.toml" in pr_paths
+    assert "uv.lock" in pr_paths
+    assert "scripts/check_release_changes.py" in pr_paths
+
+    jobs = workflow["jobs"]
+    assert "check-packaging-changes" in jobs
+    gate_job = jobs["check-packaging-changes"]
+    assert gate_job.get("if") == "github.event_name == 'pull_request'"
+    assert "permissions" not in gate_job
+    assert gate_job.get("outputs") == {
+        "should_build": "${{ steps.check.outputs.should_build }}"
+    }
+
+    gate_steps = gate_job.get("steps", [])
+    eval_step = next((s for s in gate_steps if s.get("id") == "check"), None)
+    assert eval_step is not None
+    assert "scripts/check_release_changes.py" in eval_step.get("run", "")
+
+    build_job = jobs["build-binaries"]
+    assert build_job.get("needs") == "check-packaging-changes"
+    build_if = str(build_job.get("if", ""))
+    assert "!cancelled()" in build_if
+    assert "github.event_name != 'pull_request'" in build_if
+    assert "needs.check-packaging-changes.outputs.should_build == 'true'" in build_if
+    assert "needs.check-packaging-changes.result == 'failure'" in build_if
+
+
+def test_release_workflow_model_weights_cache_excludes_pyproject_toml():
+    """Verify build-binaries model-weights cache hashes uv.lock and scripts/build.py without pyproject.toml or restore-keys."""
+    workflow = _load_release_workflow()
+    build_steps = workflow["jobs"]["build-binaries"]["steps"]
+    cache_steps = _steps_using(build_steps, "actions/cache")
+    model_cache = next(
+        (
+            s
+            for s in cache_steps
+            if str((s.get("with") or {}).get("key", "")).startswith("model-weights-")
+        ),
+        None,
+    )
+    assert model_cache is not None, "Missing model-weights cache step in build-binaries"
+    cache_with = model_cache["with"]
+    key = cache_with["key"]
+    assert "'uv.lock'" in key
+    assert "'scripts/build.py'" in key
+    assert "pyproject.toml" not in key
+    assert "restore-keys" not in cache_with
+
+
+def test_check_release_changes_skips_tool_only_pyproject_and_builds_packaging_edits(
+    tmp_path,
+):
+    """Verify tool-only [tool.*] pyproject.toml edits skip build-binaries while runtime/build/lockfile edits trigger it."""
+    import subprocess
+    import tomllib
+    from pathlib import Path
+
+    from scripts.check_release_changes import (
+        evaluate_git_range,
+        main,
+        pyproject_changes_affect_packaging,
+        should_run_release_build,
+    )
+
+    base_pyproject = Path("pyproject.toml").read_text(encoding="utf-8")
+
+    # Tool-only edits in lint/type/test/coverage tables do NOT affect packaging
+    tool_only_edits = [
+        base_pyproject.replace("line-length = 88", "line-length = 100"),
+        base_pyproject.replace("error-on-warning = true", "error-on-warning = false"),
+        base_pyproject.replace(
+            'baseline = "tests/ty_baseline.json"',
+            'baseline = "tests/ty_baseline_v2.json"',
+        ),
+        base_pyproject.replace("timeout = 360", "timeout = 400"),
+        base_pyproject.replace("show_missing = true", "show_missing = false"),
+        base_pyproject.replace(
+            'known_first_party = ["app", "scripts"]',
+            'known_first_party = ["app", "scripts", "tests"]',
+        ),
+        base_pyproject + "\n[tool.mypy]\nstrict = true\n",
+        base_pyproject.replace(
+            "[tool.sortify.ty-warning-ceilings]\n",
+            '[tool.sortify.ty-warning-ceilings]\n"tests/test_tui.py" = 1\n',
+        ),
+        base_pyproject.replace('"app/core/mover.py" = 74', '"app/core/mover.py" = 76'),
+    ]
+    for edited in tool_only_edits:
+        assert edited != base_pyproject
+        tomllib.loads(edited)
+        assert pyproject_changes_affect_packaging(base_pyproject, edited) is False
+        assert (
+            should_run_release_build(
+                ["pyproject.toml", "tests/test_ci_workflow.py"],
+                base_pyproject=base_pyproject,
+                head_pyproject=edited,
+            )
+            is False
+        )
+
+    # Packaging, runtime, build-system, uv source, unknown [tool.*], and lockfile edits DO trigger build-binaries
+    packaging_edits = [
+        base_pyproject.replace(
+            'name = "smart-autosorter"', 'name = "smart-autosorter-2"'
+        ),
+        base_pyproject.replace('"watchdog>=6.0.0"', '"watchdog>=6.0.1"'),
+        base_pyproject.replace('"easyocr>=1.7.0"', '"easyocr>=1.7.2"'),
+        base_pyproject.replace('"pyinstaller>=6.12.0"', '"pyinstaller>=6.13.0"'),
+        base_pyproject.replace(
+            'override-dependencies = ["torchvision"]',
+            'override-dependencies = ["torchvision>=0.20.0"]',
+        ),
+        base_pyproject + "\n[tool.pyinstaller]\nstrip = true\n",
+        base_pyproject + '\n[tool.sortify.release]\nbundle = "full"\n',
+    ]
+    for edited in packaging_edits:
+        assert edited != base_pyproject
+        tomllib.loads(edited)
+        assert pyproject_changes_affect_packaging(base_pyproject, edited) is True
+        assert (
+            should_run_release_build(
+                ["pyproject.toml"],
+                base_pyproject=base_pyproject,
+                head_pyproject=edited,
+            )
+            is True
+        )
+
+    assert (
+        should_run_release_build(
+            ["pyproject.toml", "uv.lock"],
+            base_pyproject=base_pyproject,
+            head_pyproject=base_pyproject.replace(
+                "line-length = 88", "line-length = 100"
+            ),
+        )
+        is True
+    )
+    assert pyproject_changes_affect_packaging(base_pyproject, "invalid = [toml") is True
+    assert pyproject_changes_affect_packaging(None, base_pyproject) is True
+
+    # End-to-end git range + CLI verification in a real temporary git repo
+    repo_dir = tmp_path / "repo"
+    repo_dir.mkdir()
+    subprocess.run(["git", "init", "--quiet", "-b", "main"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "config", "user.name", "Test"], cwd=repo_dir, check=True)
+    subprocess.run(
+        ["git", "config", "user.email", "test@example.com"], cwd=repo_dir, check=True
+    )
+    (repo_dir / "pyproject.toml").write_text(base_pyproject, encoding="utf-8")
+    subprocess.run(["git", "add", "pyproject.toml"], cwd=repo_dir, check=True)
+    subprocess.run(["git", "commit", "--quiet", "-m", "base"], cwd=repo_dir, check=True)
+    base_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repo_dir, text=True
+    ).strip()
+
+    # Commit 1: tool-only [tool.ruff] + [tool.sortify.ty-warning-ceilings] edit
+    (repo_dir / "pyproject.toml").write_text(
+        base_pyproject.replace("line-length = 88", "line-length = 99").replace(
+            '"app/config.py" = 1', '"app/config.py" = 0'
+        ),
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "pyproject.toml"], cwd=repo_dir, check=True)
+    subprocess.run(
+        ["git", "commit", "--quiet", "-m", "chore: tweak ruff"],
+        cwd=repo_dir,
+        check=True,
+    )
+    tool_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repo_dir, text=True
+    ).strip()
+
+    gh_out = tmp_path / "github_output.txt"
+    rc = main(
+        [
+            "--base-sha",
+            base_sha,
+            "--head-sha",
+            tool_sha,
+            "--repo-dir",
+            str(repo_dir),
+            "--github-output",
+            str(gh_out),
+        ]
+    )
+    assert rc == 0
+    assert gh_out.read_text(encoding="utf-8").strip() == "should_build=false"
+
+    # Commit 2: runtime dependency edit in [project]
+    (repo_dir / "pyproject.toml").write_text(
+        base_pyproject.replace(
+            'requires-python = ">=3.12,<4"', 'requires-python = ">=3.12,<3.14"'
+        ),
+        encoding="utf-8",
+    )
+    subprocess.run(["git", "add", "pyproject.toml"], cwd=repo_dir, check=True)
+    subprocess.run(
+        ["git", "commit", "--quiet", "-m", "build: constrain python"],
+        cwd=repo_dir,
+        check=True,
+    )
+    pkg_sha = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], cwd=repo_dir, text=True
+    ).strip()
+
+    assert evaluate_git_range(base_sha, pkg_sha, repo_dir=repo_dir) is True
+    # Unknown/missing git SHA fails closed
+    assert evaluate_git_range("deadbeef", pkg_sha, repo_dir=repo_dir) is True
