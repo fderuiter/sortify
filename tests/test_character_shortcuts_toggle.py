@@ -316,3 +316,137 @@ def test_f1_always_opens_cheat_sheet_regardless_of_shortcuts_state(temp_workspac
             assert isinstance(app.screen, ShortcutCheatSheetModal)
 
     asyncio.run(_test())
+
+
+def test_all_modal_subclasses_define_question_mark_and_f1_bindings():
+    """Verify every ModalScreen subclass in app.ui and app.plugins binds question_mark and f1 with show=False."""
+    import importlib
+    import pkgutil
+
+    from textual.binding import Binding
+    from textual.screen import ModalScreen
+
+    import app.plugins.clinical_compliance.tui_views  # noqa: F401
+    import app.ui.modals as modals_pkg
+
+    for mod_info in pkgutil.iter_modules(modals_pkg.__path__):
+        importlib.import_module(f"app.ui.modals.{mod_info.name}")
+
+    def _collect_subclasses(cls: type) -> set[type]:
+        found: set[type] = set()
+        for sub in cls.__subclasses__():
+            found.add(sub)
+            found.update(_collect_subclasses(sub))
+        return found
+
+    app_modals = [
+        cls
+        for cls in _collect_subclasses(ModalScreen)
+        if cls.__module__.startswith(("app.ui.", "app.plugins."))
+    ]
+    assert len(app_modals) >= 33
+
+    for modal_cls in app_modals:
+        bindings = {
+            b.key: b
+            for b in getattr(modal_cls, "BINDINGS", [])
+            if isinstance(b, Binding)
+        }
+        assert "question_mark" in bindings, (
+            f"{modal_cls.__name__} missing question_mark binding"
+        )
+        assert "f1" in bindings, f"{modal_cls.__name__} missing f1 binding"
+        assert bindings["question_mark"].show is False
+        assert bindings["f1"].show is False
+
+
+def test_f1_and_question_mark_across_non_text_controls_and_modals(temp_workspace):
+    """Verify ? opens cheat sheet on non-text controls (main screen and modals) while Input/Select block ? and allow F1."""
+    from textual.widgets import Button, Select
+
+    from app.ui.modals.command_palette import CommandPaletteModal
+    from app.ui.modals.reports import ExportReportModal
+
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+    settings.ENABLE_CHARACTER_KEY_SHORTCUTS = True
+
+    async def _test():
+        app = AutoSorterTUI(settings=settings, base_dir=temp_workspace)
+        async with app.run_test(size=(120, 45)) as pilot:
+            await pilot.pause(0.05)
+
+            # 1. Non-tree Button on main screen opens cheat sheet via ?
+            main_buttons = [b for b in app.screen.query(Button) if b.display]
+            assert main_buttons
+            main_buttons[0].focus()
+            await pilot.pause(0.05)
+            assert app._tree_has_focus() is False
+            await pilot.press("question_mark")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, ShortcutCheatSheetModal)
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+            assert not isinstance(app.screen, ShortcutCheatSheetModal)
+
+            # 2. Inside CommandPaletteModal: Input focused blocks ? (types '?') and allows F1
+            palette = CommandPaletteModal()
+            app.push_screen(palette)
+            await pilot.pause(0.05)
+            palette_inp = palette.query_one("#palette-input", Input)
+            palette_inp.focus()
+            await pilot.pause(0.05)
+
+            await pilot.press("question_mark")
+            await pilot.pause(0.05)
+            assert app.screen is palette
+            assert palette_inp.value == "?"
+
+            await pilot.press("f1")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, ShortcutCheatSheetModal)
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+            assert app.screen is palette
+
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+
+            # 3. Inside ExportReportModal: Select focused (closed & expanded) blocks ? and allows F1; Button focused allows ?
+            export_modal = ExportReportModal()
+            app.push_screen(export_modal)
+            await pilot.pause(0.05)
+
+            sel = export_modal.query_one("#select-export-format", Select)
+            sel.focus()
+            await pilot.pause(0.05)
+            await pilot.press("question_mark")
+            await pilot.pause(0.05)
+            assert app.screen is export_modal
+
+            # Expand Select dropdown so SelectOverlay holds focus
+            await pilot.press("enter")
+            await pilot.pause(0.05)
+            await pilot.press("question_mark")
+            await pilot.pause(0.05)
+            assert app.screen is export_modal
+
+            # F1 still opens cheat sheet while Select is expanded
+            await pilot.press("f1")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, ShortcutCheatSheetModal)
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+
+            # Focus Cancel button on modal -> ? opens cheat sheet, Escape returns to modal
+            btn_cancel = export_modal.query_one("#btn-cancel", Button)
+            btn_cancel.focus()
+            await pilot.pause(0.05)
+            await pilot.press("question_mark")
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, ShortcutCheatSheetModal)
+            await pilot.press("escape")
+            await pilot.pause(0.05)
+            assert app.screen is export_modal
+
+    asyncio.run(_test())

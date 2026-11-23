@@ -980,15 +980,19 @@ class IncrementalAnalyzer:
         if not isinstance(node, dict) or node.get("__type__") == "file":
             return node
 
+        from app.core.scanner import parse_item_identifier
+
+        default_base = getattr(self, "base_dir", "") or ""
         new_node = {}
         for k, v in node.items():
             if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
-                norm_k = k.replace("\\", "/")
+                _, rel_k = parse_item_identifier(k, default_base)
+                norm_k = rel_k.replace("\\", "/")
                 dirname = os.path.dirname(norm_k)
-                if not dirname:
+                parts = [p for p in dirname.split("/") if p and p != "."]
+                if not parts:
                     new_node[k] = v
                 else:
-                    parts = dirname.split("/")
                     current = new_node
                     for part in parts:
                         if (
@@ -1177,9 +1181,11 @@ class IncrementalAnalyzer:
                 _, clean_rel = parse_item_identifier(str(path_val), base_dir)
                 top_seg = clean_rel.replace("\\", "/").strip("/").split("/")[0]
                 return (
-                    top_seg.startswith("_Quarantine_Staging")
-                    or top_seg.startswith("_Compliance_Quarantine")
-                    or (bool(qdir_top) and top_seg == qdir_top)
+                    top_seg.startswith(
+                        ("_Quarantine_Staging", "_Compliance_Quarantine")
+                    )
+                    or bool(qdir_top)
+                    and top_seg == qdir_top
                 )
 
             if docs:
@@ -1712,7 +1718,7 @@ class IncrementalAnalyzer:
 
                     ext = os.path.splitext(d[0])[1].lower()
                     if (
-                        ext not in {".png", ".jpg", ".jpeg"}
+                        ext not in {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp"}
                         and registry.is_supported(ext)
                         and not d[1].startswith("[STATUS:")
                         and d[1].strip()
@@ -1818,7 +1824,7 @@ class IncrementalAnalyzer:
                     from sklearn.preprocessing import normalize
 
                     # Database TF-IDF Statistics Retrieval
-                    N, top_terms, doc_terms, doc_metadata = self.db.get_tfidf_stats(
+                    N, top_terms, doc_terms, _doc_metadata = self.db.get_tfidf_stats(
                         base_dir
                     )
 

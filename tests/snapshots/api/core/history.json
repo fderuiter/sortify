@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "896b665ae2171612dd0cee498949ed2a1b2d6b72b624f78a0de2b09892bf6d43"
+    "checksum": "09092128087519b3076b3cd7560d7e7e6f0aa4901b9c76c925798a07c58462c7"
   },
   "classes": [
     {
@@ -177,6 +177,31 @@
             }
           ],
           "returns": null
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "simulate_rollback_steps",
+          "parameters": [
+            {
+              "annotation": "Sequence[dict[str, Any]]",
+              "default": null,
+              "name": "steps_to_analyze"
+            },
+            {
+              "annotation": "Optional[str]",
+              "default": "None",
+              "name": "session_id"
+            },
+            {
+              "annotation": "bool",
+              "default": "False",
+              "name": "ignore_missing"
+            }
+          ],
+          "returns": "dict[str, Any]"
         },
         {
           "async": false,

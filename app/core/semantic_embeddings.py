@@ -19,13 +19,9 @@ from app.core.exceptions import SemanticEmbeddingError
 class DimensionMismatchError(SemanticEmbeddingError, ValueError):
     """Raised when there is a dimension mismatch between model and vector."""
 
-    pass
-
 
 class ModelValidationError(SemanticEmbeddingError, ValueError):
     """Raised when the active model configuration contract or SHA-256 validation fails."""
-
-    pass
 
 
 # Embedding work drops its thread to the lowest priority so sorting never
@@ -250,7 +246,7 @@ class SemanticEmbeddingManager:
             if force_validation or self.validate_on_init:
                 try:
                     self.validate_model_assets()
-                except Exception as e:  # noqa: BLE001 - capture asset or runtime validation failure into degraded fallback state
+                except Exception as e:
                     err_msg = str(e)
                     missing_ml_extra = (
                         isinstance(e.__cause__, (ImportError, ModuleNotFoundError))
@@ -413,10 +409,10 @@ class SemanticEmbeddingManager:
             dimensions = out.shape[-1]
             if not isinstance(dimensions, int) or dimensions <= 0:
                 raise ModelValidationError(f"Invalid model dimensions: {dimensions}")
-        except Exception as e:  # noqa: BLE001 - wrap session init errors into ModelValidationError
+        except Exception as e:
             try:
                 registry.unload_model(f"onnx_{onnx_file}")
-            except Exception:  # noqa: BLE001 - best-effort cleanup of failed session entry
+            except Exception:
                 logging.debug("Could not unload ONNX model", exc_info=True)
             if isinstance(e, ModelValidationError):
                 raise e

@@ -94,6 +94,8 @@ class RenameModal(
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     MODAL_CSS = """
@@ -577,7 +579,7 @@ class RenameModal(
             batch_items = []
             for idx, f in enumerate(self.files):
                 file_seq = self.seq + idx
-                meta, fallback, key, folder, info = self._extract_file_metadata(
+                _meta, fallback, key, folder, info = self._extract_file_metadata(
                     f, file_seq
                 )
                 formatted_name = (
@@ -633,6 +635,8 @@ class NewFolderModal(_SubmittableModalMixin, ResponsiveModalScreen[Optional[str]
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     MODAL_CSS = """
@@ -704,6 +708,8 @@ class ReassignModal(
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     MODAL_CSS = """
@@ -950,6 +956,8 @@ class DirectorySelectModal(
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     MODAL_CSS = """
@@ -978,14 +986,27 @@ class DirectorySelectModal(
         border: solid $primary;
         padding: 0 1;
     }
+    .source-actions-row {
+        width: 100%;
+        layout: grid;
+        grid-size: 2;
+        grid-gutter: 0 1;
+        margin-bottom: 1;
+        height: auto;
+        min-height: 3;
+    }
+    .source-actions-row Button {
+        width: 100%;
+        min-width: 0;
+    }
     .button-row {
         layout: grid;
-        grid-size: 4;
+        grid-size: 3;
         grid-gutter: 0 1;
         min-height: 3;
     }
     .compact .button-row, .narrow .button-row {
-        grid-size: 2;
+        grid-size: 3;
     }
     .button-row Button {
         width: 100%;
@@ -1088,6 +1109,15 @@ class DirectorySelectModal(
                     id="static-sources-list",
                     classes="sources-list",
                 )
+                with Horizontal(classes="source-actions-row"):
+                    btn_add = Button("Add Path", id="btn-add-dir", variant="default")
+                    btn_add.tooltip = "Add current path to multi-root source list"
+                    yield btn_add
+                    btn_clear = Button(
+                        "Clear Sources", id="btn-clear-sources", variant="default"
+                    )
+                    btn_clear.tooltip = "Clear staged multi-root source directories"
+                    yield btn_clear
                 yield Label("Quick Presets:")
                 with Horizontal(classes="preset-row"):
                     p_demo = Button(
@@ -1107,9 +1137,6 @@ class DirectorySelectModal(
                 btn_browse = Button("Native Browse", id="btn-browse", variant="default")
                 btn_browse.tooltip = "Launch native OS directory browser dialog"
                 yield btn_browse
-                btn_add = Button("Add Path", id="btn-add-dir", variant="default")
-                btn_add.tooltip = "Add current path to multi-root source list"
-                yield btn_add
                 btn_cancel = Button("Cancel", id="btn-cancel", variant="default")
                 btn_cancel.tooltip = "Cancel directory selection and close dialog"
                 yield btn_cancel
@@ -1160,6 +1187,18 @@ class DirectorySelectModal(
         except Exception:
             pass
 
+    @on(Button.Pressed, "#btn-clear-sources")
+    def action_clear_sources(self) -> None:
+        """Clear staged source directories and reset multi-source add state."""
+        self.selected_sources.clear()
+        self.added_via_btn = False
+        self._update_sources_widget()
+        try:
+            self.query_one("#lbl-error", Static).update("")
+        except Exception:
+            pass
+        self.announce("Cleared selected source directories.")
+
     @on(Button.Pressed, "#preset-demo")
     def action_demo(self) -> None:
         """Select sandbox demo workspace preset."""
@@ -1190,28 +1229,37 @@ class DirectorySelectModal(
             self.announce(err_msg, priority="assertive")
             notify(err_msg, type="error")
 
+        self.added_via_btn = False
+        self.selected_sources = [path]
+        self._update_sources_widget()
         self.announce(f"Selected demo workspace preset: {path}")
         self.dismiss(path)
 
     @on(Button.Pressed, "#preset-downloads")
     def action_downloads(self) -> None:
         """Select user Downloads directory preset."""
-        path = os.path.expanduser("~/Downloads")
+        path = os.path.abspath(os.path.expanduser("~/Downloads"))
         err = self._validate_directory_path(path)
         if err:
             self._show_error(err)
             return
+        self.added_via_btn = False
+        self.selected_sources = [path]
+        self._update_sources_widget()
         self.announce(f"Selected Downloads preset: {path}")
         self.dismiss(path)
 
     @on(Button.Pressed, "#preset-documents")
     def action_documents(self) -> None:
         """Select user Documents directory preset."""
-        path = os.path.expanduser("~/Documents")
+        path = os.path.abspath(os.path.expanduser("~/Documents"))
         err = self._validate_directory_path(path)
         if err:
             self._show_error(err)
             return
+        self.added_via_btn = False
+        self.selected_sources = [path]
+        self._update_sources_widget()
         self.announce(f"Selected Documents preset: {path}")
         self.dismiss(path)
 
@@ -1226,7 +1274,9 @@ class DirectorySelectModal(
                 return
 
             abs_p = os.path.abspath(os.path.expanduser(val))
-            if not self.added_via_btn and len(self.selected_sources) <= 1:
+            if not self.added_via_btn:
+                self.selected_sources = [abs_p]
+                self._update_sources_widget()
                 self.announce(f"Confirmed directory selection: '{abs_p}'")
                 self.dismiss(abs_p)
                 return
@@ -1290,7 +1340,10 @@ class DirectorySelectModal(
             inp.value = abs_p
         except Exception:
             pass
-        if abs_p not in self.selected_sources:
+        if not self.added_via_btn:
+            self.selected_sources = [abs_p]
+            self._update_sources_widget()
+        elif abs_p not in self.selected_sources:
             self.selected_sources.append(abs_p)
             self._update_sources_widget()
         self.announce(f"Selected native folder path: {abs_p}")
@@ -1314,6 +1367,8 @@ class ManualPathFallbackModal(ResponsiveModalScreen[Optional[str]]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     MODAL_CSS = """
@@ -1407,6 +1462,8 @@ class InteractiveCollisionResolverModal(
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     MODAL_CSS = """

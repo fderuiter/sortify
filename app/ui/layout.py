@@ -3,6 +3,7 @@
 from typing import Any, ClassVar, Optional
 
 from textual import events
+from textual.binding import Binding, BindingType
 from textual.containers import Vertical
 from textual.css.query import NoMatches
 from textual.screen import ModalScreen, ScreenResultType
@@ -222,6 +223,11 @@ class ResponsiveModalScreen(
 
     CSS: ClassVar[str] = BASE_MODAL_CSS
     MODAL_CSS: ClassVar[str] = ""
+    BINDINGS: ClassVar[list[BindingType]] = [
+        Binding("escape", "dismiss", "Close dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
+    ]
 
     def __init_subclass__(cls, **kwargs: Any) -> None:
         """Compose ``BASE_MODAL_CSS`` and subclass ``MODAL_CSS`` into ``Screen.CSS``.

@@ -417,7 +417,7 @@ class Database:
             norm_fp = fp.replace("\\", "/")
             reverse_norm.setdefault(norm_fp, []).append(fp)
 
-        result = {orig_fp: "" for orig_fp in filepaths}
+        result = dict.fromkeys(filepaths, "")
 
         with self._cache_lock:
             if self._cached_base_dir == base_dir and self._cached_documents is not None:

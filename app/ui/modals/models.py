@@ -31,6 +31,8 @@ class ModelManagerModal(ResponsiveModalScreen[None]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Close dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     MODAL_CSS = """

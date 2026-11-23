@@ -27,11 +27,13 @@ import requests
 
 from scripts.classify_pr import (
     BOT_AUTHORS,
+    MAINTAINER_PERMISSIONS,
     ClassificationResult,
     PRMetadata,
     classify_pr,
     dependency_update_type_from_diffs,
     dependency_update_type_from_title,
+    is_approved_automation_bot,
 )
 
 logger = logging.getLogger(__name__)
@@ -44,7 +46,6 @@ BRANCH_UPDATE_POLL_INTERVAL_SECONDS = 2.0
 GITHUB_ACTIONS_APP_SLUG = "github-actions"
 DEPENDABOT_LOGIN = "dependabot[bot]"
 AUTOMERGE_OPT_IN_LABEL = "automerge"
-MAINTAINER_PERMISSIONS = {"admin", "maintain", "write"}
 PENDING_CI_STATES = {None, "queued", "in_progress", "waiting", "pending", "requested"}
 
 
@@ -310,7 +311,21 @@ def build_pr_metadata(client: GitHubClient, full_pr: dict[str, Any]) -> PRMetada
     ]
     labels = [lbl["name"] for lbl in full_pr.get("labels", [])]
     title = full_pr.get("title", "")
-    author = (full_pr.get("user") or {}).get("login", "")
+    user_obj = full_pr.get("user") or {}
+    author = str(user_obj.get("login") or "")
+    author_type = str(user_obj.get("type") or "")
+    author_is_bot = bool(author_type == "Bot" or is_approved_automation_bot(author))
+    is_fork = not is_base_repo_branch(full_pr)
+    author_permission = "none"
+    if author and not author_is_bot and not is_fork:
+        try:
+            author_permission = client.get_collaborator_permission(author)
+        except Exception as exc:
+            logger.warning(
+                f"Could not verify collaborator permission for PR #{pr_number} author '{author}': {exc}"
+            )
+            author_permission = "none"
+
     is_dependabot = author == DEPENDABOT_LOGIN
     is_security_patch = (
         ("security" in labels and "dependencies" in labels)
@@ -394,6 +409,9 @@ def build_pr_metadata(client: GitHubClient, full_pr: dict[str, Any]) -> PRMetada
         base_requirements_txt=base_requirements_txt,
         head_requirements_txt=head_requirements_txt,
         manifest_diffs_evaluated=manifest_diffs_evaluated,
+        author_permission=author_permission,
+        author_is_bot=author_is_bot,
+        is_fork=is_fork,
     )
 
 

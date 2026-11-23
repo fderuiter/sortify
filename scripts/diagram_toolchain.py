@@ -220,7 +220,7 @@ def validate_mermaid_syntax(mmd_content: str) -> list[str]:
     if not header_entry:
         return ["Missing Mermaid diagram header definition."]
 
-    h_idx, h_raw, h_code = header_entry
+    h_idx, _h_raw, h_code = header_entry
     first_word = h_code.split()[0]
 
     if first_word not in valid_types:
@@ -458,7 +458,7 @@ def extract_markdown_anchors(file_path: Path) -> set[str]:
     in_code_block = False
     for line in content.splitlines():
         trimmed = line.strip()
-        if trimmed.startswith("```") or trimmed.startswith("~~~"):
+        if trimmed.startswith(("```", "~~~")):
             in_code_block = not in_code_block
             continue
         if in_code_block:

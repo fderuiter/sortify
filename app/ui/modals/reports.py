@@ -32,6 +32,8 @@ class ExtractionPreviewModal(ResponsiveModalScreen[Optional[int]]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     MODAL_CSS = """
@@ -243,6 +245,8 @@ class ExportReportModal(ResponsiveModalScreen[Optional[tuple[str, str]]]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     MODAL_CSS = """
@@ -341,6 +345,8 @@ class AuditReportModal(ResponsiveModalScreen[None]):
         Binding("ctrl+r", "retry_selected", "Retry Selected Failed Item", show=True),
         Binding("ctrl+t", "retry_all", "Retry All Failed Items", show=True),
         Binding("ctrl+j", "export_json", "Export JSON Report", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     MODAL_CSS = """

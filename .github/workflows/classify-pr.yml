@@ -65,6 +65,7 @@ jobs:
             const additions = files.reduce((acc, f) => acc + f.additions, 0);
             const deletions = files.reduce((acc, f) => acc + f.deletions, 0);
             const author = (pr.user && pr.user.login) ? pr.user.login : '';
+            const authorType = (pr.user && pr.user.type) ? pr.user.type : '';
             const botAuthors = new Set([
               'dependabot[bot]',
               'dependabot',
@@ -89,6 +90,36 @@ jobs:
             const isDependabot = author === 'dependabot[bot]';
             const headRef = pr.head ? pr.head.ref : '';
             const isApprovedBot = botAuthors.has(author) || author.endsWith('[bot]');
+            const authorIsBot = authorType === 'Bot' || isApprovedBot;
+            const headRepo = (pr.head && pr.head.repo) ? pr.head.repo : null;
+            const baseRepo = (pr.base && pr.base.repo) ? pr.base.repo : null;
+            const isBaseRepoBranch = Boolean(
+              headRepo &&
+              baseRepo &&
+              typeof headRepo.full_name === 'string' &&
+              typeof baseRepo.full_name === 'string' &&
+              headRepo.full_name.trim() &&
+              baseRepo.full_name.trim() &&
+              headRepo.full_name.toLowerCase() === baseRepo.full_name.toLowerCase() &&
+              (headRepo.id == null || baseRepo.id == null || headRepo.id === baseRepo.id)
+            );
+            const isFork = !isBaseRepoBranch;
+
+            let authorPermission = 'none';
+            if (author && !authorIsBot && !isFork) {
+              try {
+                const { data: authorPermData } = await github.rest.repos.getCollaboratorPermissionLevel({
+                  owner: context.repo.owner,
+                  repo: context.repo.repo,
+                  username: author,
+                });
+                authorPermission = authorPermData.permission || 'none';
+              } catch (err) {
+                console.log('Could not verify PR author collaborator permission:', err.message);
+                authorPermission = 'none';
+              }
+            }
+
             const isSecurityPatch = (
               (labels.includes('security') && labels.includes('dependencies')) ||
               headRef.startsWith('security/')
@@ -171,6 +202,9 @@ jobs:
               is_security_patch: isSecurityPatch,
               all_commits_verified: allCommitsVerified,
               unverified_commit_shas: unverifiedCommitShas,
+              author_permission: authorPermission,
+              author_is_bot: authorIsBot,
+              is_fork: isFork,
               ...manifestFields,
             };
 

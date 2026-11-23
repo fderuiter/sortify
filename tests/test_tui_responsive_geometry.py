@@ -24,7 +24,7 @@ from app.ui.modals.edit import (
     ReassignModal,
     RenameModal,
 )
-from app.ui.modals.help import ShortcutCheatSheetModal
+from app.ui.modals.help import ShortcutCheatSheetModal, TroubleshootingHelpModal
 from app.ui.modals.models import ModelManagerModal
 from app.ui.modals.quarantine import QuarantineVaultModal
 from app.ui.modals.reports import (
@@ -771,6 +771,10 @@ def test_all_modals_button_labels_tables_and_sticky_footers(
                 lambda: WizardModal(settings=settings, current_dir=str(tmp_path)),
             ),
             ("ShortcutCheatSheetModal", lambda: ShortcutCheatSheetModal()),
+            (
+                "TroubleshootingHelpModal",
+                lambda: TroubleshootingHelpModal(anchor="session-recovery"),
+            ),
             (
                 "SamplePlaygroundModal",
                 lambda: SamplePlaygroundModal(

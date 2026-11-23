@@ -13,6 +13,10 @@ if str(REPO_ROOT) not in sys.path:
     sys.path.insert(0, str(REPO_ROOT))
 
 _CHECK_STAGE_DIR: Path | None = None
+MKDOCS_CONFIG_PATH = "mkdocs.yml"
+ALLOWED_MKDOCS_YAML_TAGS = frozenset(
+    {"tag:yaml.org,2002:python/name:pymdownx.superfences.fence_code_format"}
+)
 
 
 def _resolve_output_path(rel_path: str) -> str:
@@ -870,7 +874,7 @@ def update_security_md(sec_file="SECURITY.md", local_only: bool = True):
                     )
 
     # Deduplicate and sort
-    network_deps = sorted(list(set(network_deps)))
+    network_deps = sorted(set(network_deps))
 
     has_critical_error = False
     print(f"Discovered {len(urls_to_validate)} unique network URLs to validate.")
@@ -958,7 +962,7 @@ def get_handwritten_docs():
                     full_path = Path(root, f).as_posix()
                     if full_path not in generated_set:
                         docs.append(full_path)
-    return sorted(list(set(docs)))
+    return sorted(set(docs))
 
 
 def audit_auto_merge_policy(content=None, doc_path="docs/auto_merge_policy.md"):
@@ -1589,7 +1593,7 @@ def validate_mermaid_diagrams():
 
     errors = []
 
-    for file_path in sorted(list(set(doc_files))):
+    for file_path in sorted(set(doc_files)):
         if not os.path.exists(file_path):
             continue
 
@@ -1610,6 +1614,102 @@ def validate_mermaid_diagrams():
                 )
 
     return errors
+
+
+def validate_mkdocs_config(config_path: str | Path = MKDOCS_CONFIG_PATH) -> list[str]:
+    """Validate mkdocs.yml syntax and reject any non-allowlisted YAML tags safely."""
+    import yaml
+    from yaml.constructor import ConstructorError
+
+    class _RestrictedMkDocsSafeLoader(yaml.SafeLoader):
+        """SafeLoader subclass permitting only the approved superfences formatter tag."""
+
+    def _construct_allowed_fence_tag(loader: yaml.SafeLoader, node: yaml.Node) -> str:
+        if not isinstance(node, yaml.ScalarNode) or node.value.strip() != "":
+            raise ConstructorError(
+                None,
+                None,
+                f"expected an empty scalar for allowlisted tag '{node.tag}'",
+                node.start_mark,
+            )
+        return node.tag
+
+    for allowed_tag in ALLOWED_MKDOCS_YAML_TAGS:
+        _RestrictedMkDocsSafeLoader.add_constructor(
+            allowed_tag, _construct_allowed_fence_tag
+        )
+
+    safe_base_tags = frozenset(
+        tag for tag in yaml.SafeLoader.yaml_constructors if isinstance(tag, str)
+    )
+    allowed_tags = safe_base_tags | ALLOWED_MKDOCS_YAML_TAGS
+
+    cfg_path = Path(config_path)
+    label = cfg_path.as_posix()
+    if not os.path.exists(cfg_path):
+        return [f"Missing MkDocs configuration file: {label}"]
+
+    try:
+        with open(cfg_path, "r", encoding="utf-8") as f:
+            raw_yaml = f.read()
+    except Exception as exc:
+        return [f"Could not read MkDocs configuration {label}: {exc}"]
+
+    errors: list[str] = []
+    try:
+        composed_docs = list(
+            yaml.compose_all(raw_yaml, Loader=_RestrictedMkDocsSafeLoader)
+        )
+    except yaml.YAMLError as exc:
+        return [f"Invalid YAML syntax in {label}: {exc}"]
+
+    if len(composed_docs) != 1 or composed_docs[0] is None:
+        return [
+            f"Invalid MkDocs configuration {label}: expected a single non-empty YAML mapping document"
+        ]
+
+    visited_ids: set[int] = set()
+
+    def _inspect_node(node: yaml.Node) -> None:
+        node_id = id(node)
+        if node_id in visited_ids:
+            return
+        visited_ids.add(node_id)
+
+        if node.tag not in allowed_tags:
+            errors.append(
+                f"Disallowed YAML tag in {label}: '{node.tag}' "
+                f"(only {sorted(ALLOWED_MKDOCS_YAML_TAGS)} is permitted)"
+            )
+        elif node.tag in ALLOWED_MKDOCS_YAML_TAGS:
+            if not isinstance(node, yaml.ScalarNode) or node.value.strip() != "":
+                errors.append(
+                    f"Malformed allowlisted YAML tag in {label}: '{node.tag}' must have an empty scalar value"
+                )
+
+        if isinstance(node, yaml.SequenceNode):
+            for child in node.value:
+                _inspect_node(child)
+        elif isinstance(node, yaml.MappingNode):
+            for key_node, val_node in node.value:
+                _inspect_node(key_node)
+                _inspect_node(val_node)
+
+    _inspect_node(composed_docs[0])
+    if errors:
+        return errors
+
+    try:
+        loaded_docs = list(yaml.load_all(raw_yaml, Loader=_RestrictedMkDocsSafeLoader))
+    except yaml.YAMLError as exc:
+        return [f"Rejected YAML construct in {label}: {exc}"]
+
+    if len(loaded_docs) != 1 or not isinstance(loaded_docs[0], dict):
+        return [
+            f"Invalid MkDocs configuration {label}: top-level YAML document must be a mapping"
+        ]
+
+    return []
 
 
 def validate_mkdocs_site(site_dir="site"):
@@ -1661,6 +1761,7 @@ def validate_mkdocs_site(site_dir="site"):
 
 def main():
     """Execute the unified documentation generation and validation pipeline."""
+    initial_cwd = Path.cwd()
     os.chdir(REPO_ROOT)
     import argparse
     import subprocess
@@ -1714,8 +1815,34 @@ def main():
         action="store_false",
         help="Perform live network reachability checks on external URLs.",
     )
+    parser.add_argument(
+        "--mkdocs-config",
+        default=None,
+        help="Optional path to mkdocs.yml configuration file to validate (default: mkdocs.yml).",
+    )
 
     args = parser.parse_args()
+
+    mkdocs_cfg_target: str | Path
+    if args.mkdocs_config:
+        candidate_cfg = Path(args.mkdocs_config)
+        mkdocs_cfg_target = (
+            candidate_cfg
+            if candidate_cfg.is_absolute()
+            else (initial_cwd / candidate_cfg)
+        )
+    else:
+        mkdocs_cfg_target = MKDOCS_CONFIG_PATH
+
+    mkdocs_cfg_errors = validate_mkdocs_config(mkdocs_cfg_target)
+    if mkdocs_cfg_errors:
+        sys.stderr.write(
+            "\nError: MkDocs configuration validation failed with the following issues:\n"
+        )
+        for err in mkdocs_cfg_errors:
+            sys.stderr.write(f"  - {err}\n")
+        sys.exit(1)
+        return
 
     # 1. Identify files to check
     generated_files = [
@@ -1850,6 +1977,8 @@ def main():
             )
         else:
             build_cmd = [sys.executable, "-m", "mkdocs", "build"]
+            if args.mkdocs_config:
+                build_cmd.extend(["-f", str(mkdocs_cfg_target)])
             if args.strict:
                 build_cmd.append("--strict")
 

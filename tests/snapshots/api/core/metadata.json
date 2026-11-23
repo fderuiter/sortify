@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "dcf0db43a607748959e2687ad39a75e311fc7bdbff8e008d7822ee4412dc0133"
+    "checksum": "cc3893cfd8d4b14af3e2b614d1837a5de773b7de64ff4e7165b0725a9704529d"
   },
   "classes": [
     {
@@ -61,6 +61,39 @@
     }
   ],
   "functions": [
+    {
+      "async": false,
+      "decorators": [],
+      "name": "evaluate_static_file_routing",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "file_path"
+        },
+        {
+          "annotation": "object",
+          "default": null,
+          "name": "settings"
+        },
+        {
+          "annotation": "str | None",
+          "default": "None",
+          "name": "filename_only"
+        },
+        {
+          "annotation": "bool",
+          "default": "True",
+          "name": "check_extension_categories"
+        },
+        {
+          "annotation": "list[dict] | None",
+          "default": "None",
+          "name": "sorted_policies"
+        }
+      ],
+      "returns": "tuple[str | None, bool, bool]"
+    },
     {
       "async": false,
       "decorators": [],

@@ -24,7 +24,7 @@ from app.ui.modals.edit import (
     ReassignModal,
     RenameModal,
 )
-from app.ui.modals.help import ShortcutCheatSheetModal
+from app.ui.modals.help import ShortcutCheatSheetModal, TroubleshootingHelpModal
 from app.ui.modals.models import ModelManagerModal
 from app.ui.modals.quarantine import QuarantineVaultModal
 from app.ui.modals.reports import (
@@ -128,6 +128,15 @@ CATALOG_REGISTRY: list[dict[str, Any]] = [
         "category": "modal",
         "description": "Modal cheat sheet displaying keyboard shortcut bindings.",
         "factory": lambda settings=None: ShortcutCheatSheetModal(),
+    },
+    {
+        "id": "troubleshooting_help_modal",
+        "name": "Troubleshooting Help Modal",
+        "category": "modal",
+        "description": "Offline troubleshooting guide viewer modal dialog.",
+        "factory": lambda settings=None: TroubleshootingHelpModal(
+            anchor="session-recovery"
+        ),
     },
     {
         "id": "model_manager_modal",

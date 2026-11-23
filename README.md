@@ -6,7 +6,7 @@ Smart AutoSorter AI Pro (package `smart-autosorter`, shown as "Sortify AI Pro" i
 
 - **Rules first, clustering second.** Locked paths, compliance policies, a sensitivity classifier, keyword and learned rules, extension categories and previous placements are applied before anything is clustered.
 - **Content clustering.** Remaining documents are vectorized with TF-IDF (or ONNX sentence embeddings when the optional model is installed) and grouped with `MiniBatchKMeans`, recursing into sub-folders. Folders are named from each cluster's top TF-IDF terms, or by a local LLM when AI-assisted naming is enabled.
-- **Many formats.** Text is extracted from `.txt`, `.docx`, `.csv`, `.xlsx`, `.xls` and `.pdf`; images (`.png`, `.jpg`, `.jpeg`) via OCR and audio (`.mp3`, `.wav`, `.m4a`) via Whisper when the `ml` extra is installed. Other files are sorted into extension categories.
+- **Many formats.** Text is extracted from `.txt`, `.md`, `.rst`, `.log`, `.docx`, `.pptx`, `.odt`, `.rtf`, `.eml`, `.csv`, `.tsv`, `.json`, `.yaml`, `.yml`, `.html`, `.htm`, `.xml`, `.xlsx`, `.xls` and `.pdf`; images (`.png`, `.jpg`, `.jpeg`, `.bmp`, `.tiff`, `.webp`) via OCR and audio (`.mp3`, `.wav`, `.m4a`) via Whisper when the `ml` extra is installed. Other files are sorted into extension categories.
 - **Safe moves.** A dry-run verifier checks the plan for collisions, path-length and boundary problems before anything moves; moves are journaled and can be rolled back with `undo`.
 - **Encrypted local state.** Extracted text and vectors live in a SQLCipher database with column-level encryption; the key is kept in the OS keyring, with a permission-restricted key file as fallback.
 - **Three ways to run it:** a Textual terminal UI, a scriptable CLI, and a folder-watching daemon.

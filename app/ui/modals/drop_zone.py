@@ -5,7 +5,6 @@ import os
 import re
 import shlex
 from datetime import datetime
-from pathlib import Path
 from typing import Any, Optional
 
 from textual import events, on, work
@@ -28,6 +27,8 @@ class DropPlanConfirmModal(ResponsiveModalScreen[bool]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     MODAL_CSS = """
@@ -92,6 +93,8 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     MODAL_CSS = """
@@ -607,8 +610,7 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         """Check whether the sorting pipeline can classify or route ``abs_p``."""
         from app.core.extractor_strategies import registry
         from app.core.jev_classifier import JevClassifierEngine
-        from app.core.metadata import get_extension_category_target
-        from app.core.policy_engine import match_pattern_expression
+        from app.core.metadata import evaluate_static_file_routing
 
         ext = os.path.splitext(abs_p)[1].lower()
         ignored_raw = (
@@ -636,58 +638,14 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         if ext and ext in jev_exts:
             return True
 
-        if get_extension_category_target(abs_p, self.settings) is not None:
-            return True
-
-        filename_only = os.path.basename(abs_p).lower()
-        file_path_lower = abs_p.lower()
-        policies = (
-            getattr(self.settings, "POLICIES", []) if self.settings else []
-        ) or []
-        if isinstance(policies, list):
-            sorted_policies = sorted(
-                (p for p in policies if isinstance(p, dict)),
-                key=lambda x: x.get("priority", 0),
-                reverse=True,
-            )
-            for policy in sorted_policies:
-                if not policy.get("enabled", True):
-                    continue
-                p_type = str(policy.get("type", "")).lower()
-                expr_lower = str(policy.get("expression", "")).lower()
-                target_path = policy.get("target_path")
-                is_match = False
-                if p_type == "override" and expr_lower:
-                    is_match = (
-                        expr_lower == filename_only
-                        or expr_lower in filename_only
-                        or expr_lower in file_path_lower
-                    )
-                elif p_type == "pattern" and expr_lower:
-                    is_match = match_pattern_expression(expr_lower, filename_only)
-                elif p_type == "unarchive" and expr_lower:
-                    is_match = match_pattern_expression(expr_lower, filename_only)
-                elif p_type == "keyword" and expr_lower:
-                    is_match = expr_lower in filename_only
-                if is_match and target_path:
-                    return True
-                if not is_match and policy.get("halting", False):
-                    return False
-
-        for attr_name in ("KEYWORD_RULES", "LEARNED_RULES"):
-            rules = (
-                getattr(self.settings, attr_name, {}) if self.settings else {}
-            ) or {}
-            if isinstance(rules, dict):
-                for keyword, target_folder in rules.items():
-                    if (
-                        str(keyword).strip()
-                        and str(keyword).lower() in filename_only
-                        and target_folder
-                    ):
-                        return True
-
-        return False
+        matched_target, matched_action, halt_evaluation = evaluate_static_file_routing(
+            abs_p,
+            self.settings,
+            check_extension_categories=True,
+        )
+        if halt_evaluation:
+            return False
+        return bool(matched_target or matched_action)
 
     def stage_paths(self, raw_text: str) -> None:
         """Parse raw input string, expand directories, validate, and stage items."""
@@ -695,7 +653,7 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         if not raw_items:
             return
 
-        from app.core.scanner import ScanFilter, get_files_recursively
+        from app.core.pipeline import drop_scope, expand_drop_scope_files
 
         protected = (
             getattr(self.settings, "PROTECTED_PATHS", []) if self.settings else []
@@ -704,18 +662,12 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
 
         for item in raw_items:
             abs_p = os.path.abspath(item)
-            if os.path.isdir(abs_p):
-                # The scanner returns paths relative to the folder it walked.
-                drop_filter = ScanFilter.from_settings(
-                    settings=self.settings, base_dir=abs_p
-                )
-                drop_filter.max_depth = None
-                files = get_files_recursively(
-                    abs_p, settings=self.settings, scan_filter=drop_filter
-                )
+            scope_dir, scope_files = drop_scope(abs_p)
+            if scope_files is None:
+                _, files = expand_drop_scope_files(abs_p, settings=self.settings)
                 for f_path in files:
                     self._add_single_file_to_staging(
-                        os.path.join(abs_p, f_path), protected, root_dir=abs_p
+                        os.path.join(scope_dir, f_path), protected, root_dir=scope_dir
                     )
                     new_count += 1
             else:
@@ -734,16 +686,20 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         self.update_status_msg(msg)
 
     def _add_single_file_to_staging(
-        self, abs_p: str, protected: list[str], root_dir: Optional[str] = None
+        self,
+        abs_p: str,
+        protected: Optional[list[str]] = None,
+        root_dir: Optional[str] = None,
     ) -> None:
         """Validate and append a single file path to staged_items."""
         from app.core.mover import is_subpath_or_equal
+        from app.core.pipeline import validate_drop_paths
 
-        is_prot = False
-        for prot in protected:
-            if prot and is_subpath_or_equal(abs_p, prot):
-                is_prot = True
-                break
+        _, issues = validate_drop_paths([abs_p], settings=self.settings)
+        issue_reason = issues[0].reason if issues else None
+        is_prot = issue_reason == "protected" or any(
+            prot and is_subpath_or_equal(abs_p, prot) for prot in (protected or ())
+        )
 
         filename = os.path.basename(abs_p) or abs_p
         ext = os.path.splitext(abs_p)[1].lower()
@@ -752,10 +708,10 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         if is_prot:
             status = "BLOCKED"
             size_bytes = os.path.getsize(abs_p) if os.path.exists(abs_p) else 0
-        elif not os.path.exists(abs_p):
+        elif issue_reason == "missing" or not os.path.exists(abs_p):
             status = "Not Found"
             size_bytes = 0
-        elif not self._is_supported_file(abs_p):
+        elif issue_reason == "ignored" or not self._is_supported_file(abs_p):
             status = "Unsupported"
             size_bytes = os.path.getsize(abs_p) if os.path.exists(abs_p) else 0
         else:
@@ -1034,24 +990,19 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
 
         resolved_dest: Optional[str] = None
         if raw_dest:
-            from app.core.mover import is_subpath_or_equal
+            from app.core.pipeline import validate_drop_destination
             from app.ui.notifications import notify
 
             decoded_dest = self._decode_path_token(raw_dest)
-            resolved_dest = str(Path(decoded_dest).expanduser().resolve())
-            protected = (
-                getattr(self.settings, "PROTECTED_PATHS", []) if self.settings else []
-            ) or []
-            if any(
-                prot and is_subpath_or_equal(resolved_dest, prot) for prot in protected
-            ):
-                err_text = f"Protected destination blocked: {resolved_dest}"
-                self._show_help_button(help_url)
-                notify(f"DropZone error: {err_text}", type="error", help_url=help_url)
-                self.update_status_msg(err_text, help_url=help_url)
-                return
-            if os.path.exists(resolved_dest) and not os.path.isdir(resolved_dest):
-                err_text = f"Destination path is not a folder: {resolved_dest}"
+            resolved_dest, dest_err = validate_drop_destination(
+                decoded_dest, settings=self.settings
+            )
+            if dest_err in ("protected", "not_directory"):
+                err_text = (
+                    f"Protected destination blocked: {resolved_dest}"
+                    if dest_err == "protected"
+                    else f"Destination path is not a folder: {resolved_dest}"
+                )
                 self._show_help_button(help_url)
                 notify(f"DropZone error: {err_text}", type="error", help_url=help_url)
                 self.update_status_msg(err_text, help_url=help_url)
@@ -1114,13 +1065,17 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         self._close_pending_drop()
         pending: list[dict[str, Any]] = []
         try:
-            from app.core.path_utils import safe_relpath
-            from app.core.pipeline import SortPipeline, reroot_plan
-            from app.core.scanner import ScanFilter, get_files_recursively
+            from app.core.pipeline import (
+                SortPipeline,
+                apply_drop_reroot,
+                group_drop_targets,
+                is_rerooted_destination,
+                validate_drop_destination,
+            )
             from app.core.session import AppSession
 
-            resolved_dest = (
-                str(Path(dest_dir).expanduser().resolve()) if dest_dir else None
+            resolved_dest, _ = validate_drop_destination(
+                dest_dir, settings=self.settings
             )
 
             # Plan every staged file under its dropped root folder together so a
@@ -1130,22 +1085,11 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
                 for item in list(self.staged_items)
                 if isinstance(item, dict) and "path" in item
             }
-            groups: dict[str, list[str]] = {}
-            for path in target_paths:
-                if os.path.isdir(path):
-                    drop_filter = ScanFilter.from_settings(
-                        settings=self.settings, base_dir=path
-                    )
-                    drop_filter.max_depth = None
-                    groups.setdefault(path, []).extend(
-                        get_files_recursively(
-                            path, settings=self.settings, scan_filter=drop_filter
-                        )
-                    )
-                else:
-                    group_root = staged_roots.get(path) or os.path.dirname(path)
-                    rel_item = safe_relpath(path, group_root)
-                    groups.setdefault(group_root, []).append(rel_item)
+            groups = group_drop_targets(
+                target_paths,
+                settings=self.settings,
+                staged_roots=staged_roots,
+            )
 
             for base_dir, files in groups.items():
                 if app_ref:
@@ -1155,11 +1099,7 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
                     )
 
                 session = AppSession(self.settings, base_dir=base_dir)
-                re_rooted = bool(
-                    resolved_dest
-                    and os.path.normcase(os.path.abspath(resolved_dest))
-                    != os.path.normcase(os.path.abspath(base_dir))
-                )
+                re_rooted = is_rerooted_destination(base_dir, resolved_dest)
                 pending.append(
                     {
                         "path": base_dir,
@@ -1170,9 +1110,7 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
                     }
                 )
                 plan = SortPipeline(session).plan(files, dest_dir=resolved_dest)
-                if re_rooted and resolved_dest is not None:
-                    plan = reroot_plan(plan, resolved_dest, source_dir=base_dir)
-                    session.base_dir = resolved_dest
+                plan, _ = apply_drop_reroot(session, plan, base_dir, resolved_dest)
                 pending[-1]["plan"] = plan
 
             self._pending_drop = pending
@@ -1239,20 +1177,18 @@ class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         failed_items = []
         outcomes = []
         try:
-            from app.core.pipeline import SortPipeline
+            from app.core.pipeline import SortPipeline, restore_rerooted_source_dir
 
             for item in pending:
                 try:
                     src_dir = item.get("path")
                     src_dir_was_dir = bool(src_dir and os.path.isdir(src_dir))
                     outcome = SortPipeline(item["session"]).execute(item["plan"])
-                    if (
-                        item.get("re_rooted")
-                        and src_dir
-                        and src_dir_was_dir
-                        and not os.path.exists(src_dir)
-                    ):
-                        os.makedirs(src_dir, exist_ok=True)
+                    restore_rerooted_source_dir(
+                        src_dir,
+                        was_dir=src_dir_was_dir,
+                        re_rooted=bool(item.get("re_rooted")),
+                    )
                     outcomes.append(outcome)
                     processed_items.append(
                         {
