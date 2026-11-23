@@ -1668,7 +1668,10 @@ class AutoSorterTUI(
         sessions = list_sessions()
         target_sess = None
         for s in sessions:
-            if str(s.get("status", "")).lower() == "completed":
+            if (
+                str(s.get("status", "")).lower() == "completed"
+                and int(s.get("step_count") or 0) > 0
+            ):
                 target_sess = s
                 break
 

@@ -210,7 +210,22 @@ class SortPipelineMixin:
             except Exception:
                 pass
 
-            self.plan = self.app_session.generate_sorting_plan()
+            import inspect
+
+            try:
+                gen_sig = inspect.signature(self.app_session.generate_sorting_plan)
+                has_var_kw = any(
+                    p.kind == inspect.Parameter.VAR_KEYWORD
+                    for p in gen_sig.parameters.values()
+                )
+                if has_var_kw or "target_paths" in gen_sig.parameters:
+                    self.plan = self.app_session.generate_sorting_plan(
+                        target_paths=files
+                    )
+                else:
+                    self.plan = self.app_session.generate_sorting_plan()
+            except (ValueError, TypeError):
+                self.plan = self.app_session.generate_sorting_plan(target_paths=files)
             if hasattr(self, "pipeline") and self.pipeline:
                 self.pipeline.transition_to(PipelineLifecycleState.PLANNED)
             self.call_from_thread(self.rebuild_tree)

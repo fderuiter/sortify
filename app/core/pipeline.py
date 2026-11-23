@@ -694,12 +694,19 @@ class SortPipeline(LifecycleTelemetryMixin):
                     self.base_dir, dest_dir=dest_dir, settings=self.settings
                 )
             )
+            effective_target_paths = items if target_paths is None else target_paths
             try:
                 gen_sig = inspect.signature(self.session.generate_sorting_plan)
                 has_var_kw = any(
                     p.kind == inspect.Parameter.VAR_KEYWORD
                     for p in gen_sig.parameters.values()
                 )
+                if (
+                    target_paths is None
+                    and effective_target_paths is not None
+                    and (has_var_kw or "target_paths" in gen_sig.parameters)
+                ):
+                    plan_kwargs["target_paths"] = effective_target_paths
                 if resolved_existing and (
                     has_var_kw or "existing_folders" in gen_sig.parameters
                 ):
@@ -707,6 +714,8 @@ class SortPipeline(LifecycleTelemetryMixin):
                 if dest_dir and (has_var_kw or "dest_dir" in gen_sig.parameters):
                     plan_kwargs["dest_dir"] = dest_dir
             except (ValueError, TypeError):
+                if target_paths is None and effective_target_paths is not None:
+                    plan_kwargs["target_paths"] = effective_target_paths
                 if resolved_existing:
                     plan_kwargs["existing_folders"] = resolved_existing
                 if dest_dir:
