@@ -7,7 +7,7 @@ repos:
       - id: check-json
       - id: check-toml
       - id: check-yaml
-        args: ['--unsafe']  # mkdocs.yml uses a !!python/name tag
+        exclude: '^mkdocs\.yml$'
       - id: check-merge-conflict
       - id: debug-statements
       - id: no-commit-to-branch

@@ -13,12 +13,12 @@ Because `fderuiter/sortify` is owned by a personal GitHub account (where native 
 Every Pull Request undergoes automated risk classification via `.github/workflows/classify-pr.yml` and `scripts/classify_pr.py`.
 
 ### A. Automatically Eligible by Default
-- **Documentation-only changes** (`docs/**`, `README.md`, `mkdocs.yml`) that do not touch sensitive/security files.
+- **Maintainer documentation-only changes** (`docs/**`, `README.md`) opened from an in-repository branch by a non-bot human collaborator with `write`, `maintain`, or `admin` repository access within low-risk size limits ($\le 10$ changed files and $\le 500$ changed lines) that do not touch sensitive/security files. Documentation changes from bots, external forks, non-collaborators, or oversized diffs require a human maintainer-applied `automerge` label (failing closed if collaborator permission lookup fails).
 - **Dependabot minor or patch updates** to `pyproject.toml`/`uv.lock` after full CI verification. Only PRs authored by `dependabot[bot]` or `dependabot` qualify; a `dependencies` label alone does not. GitHub Actions bumps touch `.github/**` and always need a human merge.
 
 ### B. Explicit Opt-In (`automerge` label) vs Classifier Approval (`automerge:eligible`)
-Production-code maintenance and refactor PRs require an explicit **`automerge`** label to authorize automated evaluation.
-Autonomous agent PRs (including `BOT_AUTHORS`: `stitch`, `jules`, `github-actions[bot]`, `dependabot[bot]`, `dependabot`) and automated security patches do not bypass review: they require an explicit maintainer-applied **`automerge`** label (applied by a human maintainer with write access or above) before automated evaluation or merging can proceed.
+Production-code maintenance, refactor, and non-maintainer/bot/fork/oversized documentation PRs require an explicit **`automerge`** label to authorize automated evaluation.
+Autonomous agent PRs (including `BOT_AUTHORS`: `stitch`, `jules`, `github-actions[bot]`, `dependabot[bot]`, `dependabot`, plus any `*[bot]` account), external fork PRs, and automated security patches do not bypass review: they require an explicit maintainer-applied **`automerge`** label (applied by a human maintainer with write access or above) before automated evaluation or merging can proceed.
 When present, `.github/workflows/classify-pr.yml` runs `scripts/classify_pr.py` to evaluate the PR. If low-risk criteria are met, the classifier applies the **`automerge:eligible`** label and posts a successful `automerge/classification` commit status.
 The auto-merge controller strictly requires `automerge:eligible` (not raw `automerge`) to proceed, and verifies via event history that the `automerge` label was added by a human maintainer rather than an automated bot or untrusted author.
 
@@ -40,13 +40,16 @@ Thresholds for low-risk opt-in PRs:
 ### C. Never Auto-Merge (Human Review Mandatory)
 The controller **fails closed** and blocks auto-merge for PRs touching any of the following sensitive categories:
 - Workflow or action configuration (`.github/**`)
+- Documentation build configuration (`mkdocs.yml`, with `scripts/generate_docs.py` rejecting non-allowlisted YAML tags before `mkdocs build`)
+- Local pre-commit hooks, repository git attributes, and custom merge drivers (`.pre-commit-config.yaml`, `.gitattributes`)
+- Agent instructions, skills, and local hook configurations (`AGENTS.md`, `CLAUDE.md`, `.agents/**`, `.claude/**`)
 - Security & privacy policies (`SECURITY.md`, `PRIVACY.md`, `.gitleaks.toml`)
 - Application configuration & schema (`app/config.py`, `network_rules.json`)
 - Envelope encryption & key management (`app/core/crypto.py`)
-- Safe file movement & rollback logic (`app/core/mover.py`, `app/core/history.py`)
+- Safe file movement, ledger, database, & rollback logic (`app/core/mover.py`, `app/core/resilient_file_ops.py`, `app/core/ledger.py`, `app/core/history.py`, `app/core/db.py`, `app/core/db_conn.py`, `app/core/db_worker.py`)
 - Quarantine & interceptor logic (`app/core/quarantine_interceptor.py`, `app/core/session.py`)
 - Release & compilation toolchains and CI/merge tooling (`scripts/**`, `smart-autosorter.spec`)
-- Dependency manifests and lockfile (`pyproject.toml`, `uv.lock`, `offline_bundle/requirements.txt`), unless the PR is an approved native Dependabot update (`dependabot[bot]`) or an automated security patch with a maintainer-applied `automerge` label
+- Dependency manifests and lockfiles (`pyproject.toml`, `uv.lock`, `offline_bundle/requirements.txt`, with `.github/CODEOWNERS` requiring owner review on `offline_bundle/requirements.txt`), unless the PR is an approved native Dependabot update (`dependabot[bot]`) or an automated security patch with a maintainer-applied `automerge` label
 - Major dependency updates (e.g. major version bumps)
 - Snapshot baselines (`tests/snapshots/api/**`, `tests/snapshots/tui_svg/**`)
 
@@ -58,7 +61,7 @@ The controller **fails closed** and blocks auto-merge for PRs touching any of th
 2. **Current-Main Validation & `workflow_dispatch` Orchestration:** Because branch updates and squash merges performed with `GITHUB_TOKEN` suppress downstream `pull_request` and `push` events, `scripts/auto_merge_controller.py` explicitly orchestrates `.github/workflows/ci.yml` via `workflow_dispatch`:
    - **In-repository stale branches:** When `mergeable_state == "behind"` and the PR's head branch belongs to `fderuiter/sortify`, the controller updates the branch via the GitHub `update-branch` API, polls pull request metadata briefly until the new head SHA is visible, and dispatches `.github/workflows/ci.yml` on that branch so `Required CI` runs on the updated commit.
    - **Post-merge `main` verification:** After `merge_pull_request` completes a squash merge, the controller dispatches `.github/workflows/ci.yml` on `main` so post-merge verification and `doc-deploy` run (logging any transient dispatch error without failing the completed merge).
-   - **Fork-branch limits:** `GITHUB_TOKEN` cannot update or dispatch `.github/workflows/ci.yml` against branches in external forks. Stale fork PRs (`mergeable_state == "behind"`) are skipped without blocking other eligible PRs in the queue until a contributor updates or rebases the fork branch onto `main` (which triggers normal `pull_request` CI). Up-to-date fork PRs with a passing `Required CI` check run still merge automatically.
+   - **Fork-branch limits:** `GITHUB_TOKEN` cannot update or dispatch `.github/workflows/ci.yml` against branches in external forks. Stale fork PRs (`mergeable_state == "behind"`) are skipped without blocking other eligible PRs in the queue until a contributor updates or rebases the fork branch onto `main` (which triggers normal `pull_request` CI). Up-to-date fork PRs with a maintainer-applied `automerge` label and a passing `Required CI` check run still merge automatically.
 3. **No Automatic Conflict Resolution:** If updating a branch results in Git merge conflicts, the controller:
    - Withholds auto-merge eligibility.
    - Applies the `automerge:conflict` and `automerge:blocked` labels.
