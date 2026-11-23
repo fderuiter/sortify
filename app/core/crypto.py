@@ -1189,10 +1189,7 @@ class VectorBuffer:
                     self._buffer = bytearray(struct.pack(f"{self._dim}f", *vector))
                 else:
                     self._buffer = bytearray()
-            elif isinstance(vector, bytearray):
-                self._buffer = bytearray(vector)
-                self._dim = len(vector) // 4
-            elif isinstance(vector, bytes):
+            elif isinstance(vector, (bytearray, bytes)):
                 self._buffer = bytearray(vector)
                 self._dim = len(vector) // 4
 

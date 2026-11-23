@@ -303,7 +303,7 @@ class CROMultiStudyPipeline(LifecycleTelemetryMixin):
                 filenames = [d.file_name for d in docs]
                 doc_texts = [d.extracted_text for d in docs]
 
-                plan, _ = strategy.generate_plan(filenames, doc_texts)
+                _plan, _ = strategy.generate_plan(filenames, doc_texts)
 
                 # Copy files non-destructively to target directory
                 classified_map = {}

@@ -775,7 +775,7 @@ def test_main_detects_unsynced_files_on_check():
                 Path("app/config_schema.json").as_posix(): ["schema1", "schema1"],
             }
 
-            counters = {k: 0 for k in file_contents}
+            counters = dict.fromkeys(file_contents, 0)
 
             class MockFile:
                 def __init__(self, filepath):
@@ -841,7 +841,7 @@ def test_main_clean_on_check():
                 Path("app/config_schema.json").as_posix(): ["schema1", "schema1"],
             }
 
-            counters = {k: 0 for k in file_contents}
+            counters = dict.fromkeys(file_contents, 0)
 
             class MockFile:
                 def __init__(self, filepath):
@@ -907,7 +907,7 @@ def test_main_detects_unsynced_config_schema_on_check():
                 Path("app/config_schema.json").as_posix(): ["schema_old", "schema_new"],
             }
 
-            counters = {k: 0 for k in file_contents}
+            counters = dict.fromkeys(file_contents, 0)
 
             class MockFile:
                 def __init__(self, filepath):

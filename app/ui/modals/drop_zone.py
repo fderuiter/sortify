@@ -722,9 +722,7 @@ class DropZoneModal(
                         or expr_lower in filename_only
                         or expr_lower in file_path_lower
                     )
-                elif p_type == "pattern" and expr_lower:
-                    is_match = match_pattern_expression(expr_lower, filename_only)
-                elif p_type == "unarchive" and expr_lower:
+                elif p_type in ("pattern", "unarchive") and expr_lower:
                     is_match = match_pattern_expression(expr_lower, filename_only)
                 elif p_type == "keyword" and expr_lower:
                     is_match = expr_lower in filename_only

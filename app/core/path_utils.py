@@ -173,12 +173,14 @@ def _get_compiled_home_patterns(
         if not raw_parts:
             continue
 
-        if len(raw_parts[0]) == 2 and raw_parts[0][1] == ":":
-            body_parts = raw_parts[1:]
-        elif (
-            len(raw_parts[0]) == 1
-            and raw_parts[0].isalpha()
-            and (h.startswith("/") or h.startswith("\\"))
+        if (
+            len(raw_parts[0]) == 2
+            and raw_parts[0][1] == ":"
+            or (
+                len(raw_parts[0]) == 1
+                and raw_parts[0].isalpha()
+                and (h.startswith(("/", "\\")))
+            )
         ):
             body_parts = raw_parts[1:]
         else:
@@ -390,8 +392,7 @@ def validate_target_path(target_path: str, keyword: str | None = None) -> None:
 
     # Check for absolute path roots (/ or \), platform-specific drive roots, or Windows drive prefixes
     if (
-        target_path.startswith("/")
-        or target_path.startswith("\\")
+        target_path.startswith(("/", "\\"))
         or os.path.isabs(target_path)
         or Path(target_path).is_absolute()
         or bool(re.match(r"^[a-zA-Z]:", target_path))
@@ -414,7 +415,7 @@ def validate_target_path(target_path: str, keyword: str | None = None) -> None:
         if not segment:
             continue
 
-        if segment.endswith(" ") or segment.endswith("."):
+        if segment.endswith((" ", ".")):
             raise ValueError(
                 f"Target path '{target_path}' contains segment '{segment}' with trailing space or period."
             )
@@ -471,8 +472,7 @@ def _is_absolute_path(path: str) -> bool:
     if not isinstance(path, str) or not path:
         return False
     return (
-        path.startswith("/")
-        or path.startswith("\\")
+        path.startswith(("/", "\\"))
         or os.path.isabs(path)
         or bool(re.match(r"^[a-zA-Z]:[/\\]?", path))
     )
@@ -480,7 +480,7 @@ def _is_absolute_path(path: str) -> bool:
 
 def _split_absolute_path(path_str: str) -> tuple[str, str, list[str], bool, bool]:
     """Split an absolute path into (root, sep, clean_parts, had_traversal, is_unc)."""
-    is_unc = path_str.startswith(r"\\") or path_str.startswith("//")
+    is_unc = path_str.startswith((r"\\", "//"))
     drive_match = re.match(r"^([a-zA-Z]:)[/\\]?", path_str)
     is_posix = path_str.startswith("/") and not is_unc
 

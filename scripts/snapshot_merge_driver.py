@@ -235,9 +235,7 @@ def merge_json_lists_by_key(
                 merged_items.append(o_item)
             elif a_item == o_item and b_item != o_item:
                 merged_items.append(b_item)
-            elif b_item == o_item and a_item != o_item:
-                merged_items.append(a_item)
-            elif a_item == b_item:
+            elif b_item == o_item and a_item != o_item or a_item == b_item:
                 merged_items.append(a_item)
             else:
                 # Need deeper merge (e.g. methods in class)
@@ -380,9 +378,7 @@ def three_way_json_merge(
             merged_payload[k] = val_o
         elif val_a == val_o and val_b != val_o:
             merged_payload[k] = val_b
-        elif val_b == val_o and val_a != val_o:
-            merged_payload[k] = val_a
-        elif val_a == val_b:
+        elif val_b == val_o and val_a != val_o or val_a == val_b:
             merged_payload[k] = val_a
         else:
             return False, {}

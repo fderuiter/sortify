@@ -588,7 +588,7 @@ def recursive_kmeans_worker_main(
             vector_buffers = [
                 VectorBuffer(v) if v is not None else None for v in pre_fetched_vectors
             ]
-            strategy._vector_map = {f: vb for f, vb in zip(filenames, vector_buffers)}
+            strategy._vector_map = dict(zip(filenames, vector_buffers))
         else:
             strategy._vector_map = {}
 
@@ -732,7 +732,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             vector_buffers = [
                 VectorBuffer(v) if v is not None else None for v in pre_fetched_vectors
             ]
-            self._vector_map = {f: vb for f, vb in zip(filenames, vector_buffers)}
+            self._vector_map = dict(zip(filenames, vector_buffers))
         else:
             self._vector_map = {}
 
@@ -777,7 +777,7 @@ class RecursiveKMeansStrategy(IsolatedStrategyMixin):
             vector_buffers = [
                 VectorBuffer(v) if v is not None else None for v in pre_fetched_vectors
             ]
-            self._vector_map = {f: vb for f, vb in zip(filenames, vector_buffers)}
+            self._vector_map = dict(zip(filenames, vector_buffers))
         else:
             self._vector_map = {}
 
@@ -1497,13 +1497,9 @@ def gguf_worker_main(
 class _LogitsProcessor:
     """Fallback LogitsProcessor class when transformers is not available."""
 
-    pass
-
 
 class _LogitsProcessorList(list):
     """Fallback LogitsProcessorList list class when transformers is not available."""
-
-    pass
 
 
 class NegativeLogitBiasProcessor(_LogitsProcessor):
@@ -1616,7 +1612,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         if getattr(self, "_vector_map", None):
             valid_vectors = {f: v for f, v in self._vector_map.items() if v is not None}
             if len(valid_vectors) > 0:
-                vector_dict = {f: v for f, v in self._vector_map.items()}
+                vector_dict = dict(self._vector_map.items())
                 use_dense = True
 
         db = getattr(self, "db", None)
@@ -3470,7 +3466,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
                 if has_cjk:
                     parts.append("\u4e00-\u9fff")
 
-                sorted_others = "".join(sorted(list(other_chars)))
+                sorted_others = "".join(sorted(other_chars))
                 parts.append(sorted_others)
 
                 combined_chars = "".join(parts)

@@ -54,7 +54,7 @@ def test_sqlite_incremental_tfidf_lifecycle():
             assert doc_metadata[filepath] == "Baking Recipes"
 
             # Verify that words like "baking", "chocolate", "cakes" are in the vocab with df = 1
-            vocab_dict = {term: df for term, df in top_terms}
+            vocab_dict = dict(top_terms)
             assert vocab_dict["baking"] == 1
             assert vocab_dict["chocolate"] == 1
 
@@ -67,7 +67,7 @@ def test_sqlite_incremental_tfidf_lifecycle():
 
             N, top_terms, doc_terms, doc_metadata = db.get_tfidf_stats(base_dir)
             assert N == 1
-            vocab_dict = {term: df for term, df in top_terms}
+            vocab_dict = dict(top_terms)
             assert "cookies" in vocab_dict
             assert "cupcakes" not in vocab_dict
 

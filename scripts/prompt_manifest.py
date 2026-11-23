@@ -83,7 +83,7 @@ def parse_and_validate_prompt(filepath: Path) -> tuple[dict, str]:
         if key not in valid_keys:
             raise ValueError(
                 f"Invalid schema key '{key}' in frontmatter of {filepath.name}. "
-                f"Valid keys are: {sorted(list(valid_keys))}"
+                f"Valid keys are: {sorted(valid_keys)}"
             )
 
     if "model" in frontmatter:

@@ -176,7 +176,7 @@ def test_generative_naming_strategy_passes_correct_grammars():
     documents = ["doc content 1", "doc content 2"]
     pre_fetched_vectors = [[1.0, 0.0], [0.0, 1.0]]
     strategy.threshold = 0.8
-    strategy._vector_map = {f: v for f, v in zip(filenames, pre_fetched_vectors)}
+    strategy._vector_map = dict(zip(filenames, pre_fetched_vectors))
 
     # We patch super().generate_plan to return a plan structure
     with patch(

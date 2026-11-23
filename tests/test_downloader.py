@@ -1127,17 +1127,17 @@ def test_bundle_staging_cleanup_on_corrupted_tokenizer_and_cancellation():
 
     good_payload = b"good-content"
     good_hash = hashlib.sha256(good_payload).hexdigest()
-    expected_hashes = {
-        fname: good_hash
-        for fname in (
+    expected_hashes = dict.fromkeys(
+        (
             "model.onnx",
             "config.json",
             "tokenizer.json",
             "tokenizer_config.json",
             "special_tokens_map.json",
             "vocab.txt",
-        )
-    }
+        ),
+        good_hash,
+    )
     expected_hashes["version.txt"] = hashlib.sha256(b"1.0.0").hexdigest()
     SharedModelRegistry.get_instance().register_expected_hashes(
         "model_download", expected_hashes
