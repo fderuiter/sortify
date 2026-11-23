@@ -128,6 +128,9 @@ class SortPipelineMixin:
                 except Exception:
                     pass
 
+            s_dirs = getattr(self, "source_dirs", None) or (
+                [self.base_dir] if self.base_dir else []
+            )
             self.app_session = AppSession(
                 self.settings,
                 self.base_dir,
@@ -136,21 +139,13 @@ class SortPipelineMixin:
 
             from app.core.pipeline import PipelineLifecycleState, SortPipeline
 
-            self.pipeline = SortPipeline(self.app_session)
+            self.pipeline = SortPipeline(
+                self.app_session,
+                base_dir=self.base_dir,
+                settings=self.settings,
+            )
             self.pipeline.add_state_change_hook(self._handle_pipeline_state_transition)
             self.pipeline.add_telemetry_hook(self._handle_pipeline_telemetry)
-            self.pipeline.transition_to(PipelineLifecycleState.PLANNING)
-
-            from app.core.scanner import get_files_from_sources
-
-            s_dirs = getattr(self, "source_dirs", None) or (
-                [self.base_dir] if self.base_dir else []
-            )
-            files = get_files_from_sources(
-                s_dirs, settings=getattr(self, "settings", None)
-            )
-
-            from app.core.metadata import MetadataPass
 
             def scan_progress_cb(
                 update_or_prog: Any, stage: str | None = None, **kwargs: Any
@@ -159,38 +154,11 @@ class SortPipelineMixin:
                     self._handle_progress_update, update_or_prog, stage, **kwargs
                 )
 
-            bypassed = MetadataPass.run(
-                self.base_dir,
-                files,
-                self.settings,
-                self.app_session.db,
+            self.plan = self.pipeline.plan(
                 progress_callback=scan_progress_cb,
                 cancel_check=lambda: False,
-                source_dirs=s_dirs,
             )
-
-            # Files no metadata rule matched still need their text extracted and
-            # fitted, otherwise clustering sees no documents and the plan is empty.
-            bypassed_set = {str(f).replace("\\", "/") for f in (bypassed or [])}
-            items_to_extract = [
-                f for f in files if str(f).replace("\\", "/") not in bypassed_set
-            ]
-            if items_to_extract:
-                from app.core.extractor import build_corpus_generator
-
-                total = len(items_to_extract)
-                done = 0
-                for chunk in build_corpus_generator(
-                    base_dir=self.base_dir,
-                    items_to_sort=items_to_extract,
-                    progress_callback=lambda *args, **kwargs: None,
-                    max_workers=getattr(self.settings, "MAX_WORKERS", 2),
-                    db=self.app_session.db,
-                    settings=self.settings,
-                ):
-                    self.app_session.partial_fit(chunk)
-                    done += len(chunk)
-                    scan_progress_cb(done / total, f"Extracting text ({done}/{total})")
+            files = self.pipeline.planned_items
 
             # Load locks & ratings
             try:
@@ -210,24 +178,6 @@ class SortPipelineMixin:
             except Exception:
                 pass
 
-            import inspect
-
-            try:
-                gen_sig = inspect.signature(self.app_session.generate_sorting_plan)
-                has_var_kw = any(
-                    p.kind == inspect.Parameter.VAR_KEYWORD
-                    for p in gen_sig.parameters.values()
-                )
-                if has_var_kw or "target_paths" in gen_sig.parameters:
-                    self.plan = self.app_session.generate_sorting_plan(
-                        target_paths=files
-                    )
-                else:
-                    self.plan = self.app_session.generate_sorting_plan()
-            except (ValueError, TypeError):
-                self.plan = self.app_session.generate_sorting_plan(target_paths=files)
-            if hasattr(self, "pipeline") and self.pipeline:
-                self.pipeline.transition_to(PipelineLifecycleState.PLANNED)
             self.call_from_thread(self.rebuild_tree)
             model_status = getattr(self.plan, "model_status", "HEALTHY")
             invalid_locks = getattr(self.plan, "invalid_locks", {}) or {}
@@ -591,24 +541,18 @@ class SortPipelineMixin:
             msg = f"Execution completed successfully! [Ctrl+Z] Undo available. Summary: {summary}"
             self.call_from_thread(self.announce, msg)
 
-            audit_report = (
-                summary.get("audit_report") if isinstance(summary, dict) else None
-            )
-            if not audit_report and exec_plan:
-                from app.core.audit_reporter import generate_audit_report
-                from app.core.verifier import VerificationEngine
+            from app.core.audit_reporter import resolve_audit_report
 
-                base_dir: str = (
-                    (self.app_session.base_dir if self.app_session else None)
-                    or self.base_dir
-                    or "."
-                )
-                moves = VerificationEngine.get_moves(base_dir, exec_plan)
-                records = [
-                    {"source_path": src, "destination_path": dst}
-                    for _, src, dst in moves
-                ]
-                audit_report = generate_audit_report(base_dir, records)
+            base_dir: str = (
+                (self.app_session.base_dir if self.app_session else None)
+                or self.base_dir
+                or "."
+            )
+            audit_report = resolve_audit_report(
+                summary.get("audit_report") if isinstance(summary, dict) else None,
+                base_dir,
+                exec_plan,
+            )
 
             if audit_report:
                 self.call_from_thread(self.action_open_audit_report, audit_report)

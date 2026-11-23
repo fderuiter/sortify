@@ -525,12 +525,19 @@ class MultiSessionRecoveryModal(
         if not selected:
             return
         sid = selected.get("session_id", "Unknown")
-        from app.core.session_catalog import forget_abandoned_session
+        app_clean = getattr(self.app, "_do_recovery_clean", None)
+        if callable(app_clean):
+            try:
+                app_clean(selected)
+            except Exception as e:
+                logger.error(f"Error cleaning session {sid}: {e}")
+        else:
+            from app.core.session_catalog import forget_abandoned_session
 
-        try:
-            forget_abandoned_session(selected)
-        except Exception as e:
-            logger.error(f"Error cleaning session {sid}: {e}")
+            try:
+                forget_abandoned_session(selected)
+            except Exception as e:
+                logger.error(f"Error cleaning session {sid}: {e}")
 
         self.announce(f"Cleaned session files for '{sid}'.")
         self.sessions = [s for s in self.sessions if s.get("session_id") != sid]
@@ -545,19 +552,33 @@ class MultiSessionRecoveryModal(
         if not selected:
             return
         sid = selected.get("session_id", "Unknown")
-        from app.core.session_catalog import roll_back_abandoned_session
+        app_rollback = getattr(self.app, "_do_recovery_rollback", None)
+        if callable(app_rollback):
+            outcome = app_rollback(selected)
+            succeeded = outcome is not False
+        else:
+            from app.core.session_catalog import roll_back_abandoned_session
 
-        settings = getattr(self, "settings", None) or getattr(
-            self.app, "settings", None
-        )
-        if settings:
-            roll_back_abandoned_session(settings, selected)
-        action_scan = getattr(self.app, "action_scan_directory", None)
-        if callable(action_scan):
-            try:
-                action_scan()
-            except Exception:
-                pass
+            settings = getattr(self, "settings", None) or getattr(
+                self.app, "settings", None
+            )
+            succeeded = (
+                bool(roll_back_abandoned_session(settings, selected))
+                if settings
+                else False
+            )
+            action_scan = getattr(self.app, "action_scan_directory", None)
+            if callable(action_scan):
+                try:
+                    action_scan()
+                except Exception:
+                    pass
+
+        if not succeeded:
+            self.announce(
+                f"Session recovery failed for '{sid}': write/permission error. Session files and safety storage preserved."
+            )
+            return
 
         self.announce(f"Rolled back session '{sid}'.")
         self.sessions = [s for s in self.sessions if s.get("session_id") != sid]
@@ -935,10 +956,9 @@ class RollbackConfirmModal(
         sid = self.session_info.get("session_id")
         if not self.all_items and sid:
             try:
-                from app.core.history import open_session_history
+                from app.core.session_catalog import get_session_moves
 
-                with open_session_history() as history_mgr:
-                    self.all_items = history_mgr.get_session_moves(sid)
+                self.all_items = get_session_moves(sid)
             except Exception as exc:
                 logger.exception(
                     "Failed to load session history for rollback modal: %s", exc
@@ -1057,104 +1077,21 @@ class RollbackConfirmModal(
             pass
 
     def _compute_dryrun_preview(self) -> dict[str, Any]:
-        """Compute dry-run simulation preview using HistoryManager or local simulation."""
+        """Compute dry-run simulation preview via session_catalog."""
+        from app.core.session_catalog import preview_session_rollback
+
         sid = self.session_info.get("session_id")
         chk = self.query("#chk-ignore-missing").results(Checkbox)
         chk_box = next(iter(chk), None)
         ignore_missing = chk_box.value if chk_box else False
-
         selected_ids = list(self.selected_step_ids) if self.selected_step_ids else []
 
-        if sid:
-            try:
-                from app.core.history import open_session_history
-
-                with open_session_history() as history_mgr:
-                    return history_mgr.preview_rollback(
-                        session_id=sid,
-                        selected_step_ids=selected_ids,
-                        ignore_missing=ignore_missing,
-                    )
-            except Exception:
-                pass
-
-        # Fallback local computation if history DB context is not active
-        from app.core.mover import get_safe_path
-        from app.core.resilient_file_ops import same_file_content
-
-        steps_to_analyze = [
-            item for item in self.all_items if item["step_id"] in self.selected_step_ids
-        ]
-        analyzed = []
-        clean = identical = collision = missing = 0
-        for item in steps_to_analyze:
-            step_id = item["step_id"]
-            src = str(item.get("source_path") or "")
-            dst = str(item.get("target_path") or "")
-            sz = item.get("size")
-
-            t_exists = bool(dst and os.path.lexists(dst))
-            s_exists = bool(src and os.path.lexists(src))
-
-            if not t_exists:
-                st = "MISSING_TARGET"
-                is_coll = False
-                rest_path = src
-                det = "Target sorted file is missing on disk"
-                missing += 1
-            elif s_exists:
-                if same_file_content(src, dst):
-                    st = "IDENTICAL_EXISTS"
-                    is_coll = False
-                    rest_path = src
-                    det = "Identical copy exists at original path; sorted copy will be removed"
-                    identical += 1
-                else:
-                    st = "COLLISION"
-                    is_coll = True
-                    dest_dir = os.path.dirname(src) or "."
-                    orig_filename = os.path.basename(src)
-                    rest_path = os.path.normpath(
-                        get_safe_path(dest_dir, orig_filename, dst)
-                    )
-                    det = f"Original path is occupied; will restore as {os.path.basename(rest_path)}"
-                    collision += 1
-            else:
-                st = "CLEAN"
-                is_coll = False
-                rest_path = src
-                det = "Ready for clean restoration"
-                clean += 1
-
-            analyzed.append(
-                {
-                    "step_id": step_id,
-                    "source_path": src,
-                    "target_path": dst,
-                    "restoration_path": rest_path,
-                    "status": st,
-                    "collision": is_coll,
-                    "size": sz,
-                    "detail": det,
-                }
-            )
-
-        tot = len(analyzed)
-        return {
-            "session_id": sid,
-            "total_operations": tot,
-            "summary": {
-                "total": tot,
-                "clean": clean,
-                "identical_exists": identical,
-                "collision": collision,
-                "missing_target": missing,
-            },
-            "has_collisions": collision > 0,
-            "has_missing": missing > 0,
-            "ignore_missing": ignore_missing,
-            "steps": analyzed,
-        }
+        return preview_session_rollback(
+            sid,
+            selected_step_ids=selected_ids,
+            ignore_missing=ignore_missing,
+            fallback_items=self.all_items,
+        )
 
     def _show_stage_2(self) -> None:
         """Compute dry-run preview and switch UI view to Stage 2."""
@@ -1656,6 +1593,25 @@ class HistoryModal(
         self.sessions = sessions or []
         self.base_dir = base_dir
         self._rollback_in_progress = False
+        self._rollback_pipeline: Any = None
+
+    def _build_session_select_options(self) -> list[tuple[str, str]]:
+        """Build Select widget options for available historical sessions."""
+        if not self.sessions:
+            return [("No historical sessions found", "none")]
+        options = [("All Sessions (Aggregate Audit Log)", "all")]
+        for s in self.sessions:
+            sid = s.get("session_id", "unknown")
+            b_dir = s.get("base_dir") or "N/A"
+            status = s.get("status") or "completed"
+            step_cnt = s.get("step_count") or s.get("file_count") or 0
+            options.append(
+                (
+                    f"{sid[:8]}... | {status.upper()} | {step_cnt} file(s) | {b_dir}",
+                    sid,
+                )
+            )
+        return options
 
     def compose(self) -> ComposeResult:
         """Compose history view, export, and rollback modal widgets."""
@@ -1672,21 +1628,7 @@ class HistoryModal(
                     classes="modal-subtitle",
                 )
 
-                options = [("All Sessions (Aggregate Audit Log)", "all")]
-                for s in self.sessions:
-                    sid = s.get("session_id", "unknown")
-                    b_dir = s.get("base_dir") or "N/A"
-                    status = s.get("status") or "completed"
-                    step_cnt = s.get("step_count") or s.get("file_count") or 0
-                    options.append(
-                        (
-                            f"{sid[:8]}... | {status.upper()} | {step_cnt} file(s) | {b_dir}",
-                            sid,
-                        )
-                    )
-
-                if len(options) == 1 and not self.sessions:
-                    options = [("No historical sessions found", "none")]
+                options = self._build_session_select_options()
 
                 select_sess = Select(
                     options,
@@ -1886,17 +1828,38 @@ class HistoryModal(
         selected_step_ids: Optional[list[Any]] = None,
     ) -> None:
         """Execute session rollback asynchronously in background worker thread."""
+        app_obj = getattr(self, "app", None)
         try:
-            from app.core.history import open_session_history
+            from app.core.pipeline import SortPipeline
 
-            kwargs: dict[str, Any] = {"ignore_missing": ignore_missing}
-            if selected_step_ids is not None:
-                kwargs["selected_step_ids"] = selected_step_ids
+            app_session = getattr(app_obj, "app_session", None)
+            settings = getattr(app_obj, "settings", None)
+            pipeline = getattr(app_obj, "pipeline", None)
+            if pipeline is None or pipeline.state.is_active:
+                pipeline = SortPipeline(app_session, settings=settings)
+                if app_obj is not None and getattr(app_obj, "pipeline", None) is None:
+                    app_obj.pipeline = pipeline
+                    state_hook = getattr(
+                        app_obj, "_handle_pipeline_state_transition", None
+                    )
+                    tel_hook = getattr(app_obj, "_handle_pipeline_telemetry", None)
+                    if callable(state_hook):
+                        pipeline.add_state_change_hook(state_hook)
+                    if callable(tel_hook):
+                        pipeline.add_telemetry_hook(tel_hook)
+            self._rollback_pipeline = pipeline
 
-            with open_session_history() as history_mgr:
-                restored_count = history_mgr.rollback(session_id, **kwargs)
+            undo_result = pipeline.undo(
+                session_id,
+                ignore_missing=ignore_missing,
+                selected_step_ids=selected_step_ids,
+            )
+            if "error" in undo_result.summary:
+                raise RuntimeError(str(undo_result.summary["error"]))
+            restored_count = int(
+                undo_result.summary.get("restored", len(undo_result.moved))
+            )
 
-            app_obj = getattr(self, "app", None)
             if app_obj and hasattr(app_obj, "call_from_thread"):
                 app_obj.call_from_thread(
                     self._on_rollback_success, session_id, restored_count
@@ -1904,11 +1867,12 @@ class HistoryModal(
             else:
                 self._on_rollback_success(session_id, restored_count)
         except Exception as err:
-            app_obj = getattr(self, "app", None)
             if app_obj and hasattr(app_obj, "call_from_thread"):
                 app_obj.call_from_thread(self._on_rollback_failure, session_id, err)
             else:
                 self._on_rollback_failure(session_id, err)
+        finally:
+            self._rollback_pipeline = None
 
     def _on_rollback_success(self, session_id: str, restored_count: int) -> None:
         """Handle successful session rollback completion on main thread."""
@@ -1965,18 +1929,7 @@ class HistoryModal(
     def _refresh_session_options(self, selected_sid: Optional[str] = None) -> None:
         """Re-populate session select dropdown widget options after state update."""
         select_sess = self.query_one("#select-history-session", Select)
-        options = [("All Sessions (Aggregate Audit Log)", "all")]
-        for s in self.sessions:
-            sid = s.get("session_id", "unknown")
-            b_dir = s.get("base_dir") or "N/A"
-            status = s.get("status") or "completed"
-            step_cnt = s.get("step_count") or s.get("file_count") or 0
-            options.append(
-                (f"{sid[:8]}... | {status.upper()} | {step_cnt} file(s) | {b_dir}", sid)
-            )
-
-        if len(options) == 1 and not self.sessions:
-            options = [("No historical sessions found", "none")]
+        options = self._build_session_select_options()
 
         select_sess.set_options(options)
         if selected_sid:
@@ -1986,7 +1939,12 @@ class HistoryModal(
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
         """Cancel history export modal, unless a rollback is still running."""
-        if self._rollback_in_progress:
+        from app.core.pipeline import PipelineLifecycleState
+
+        rb_pipe = getattr(self, "_rollback_pipeline", None)
+        if self._rollback_in_progress or (
+            rb_pipe is not None and rb_pipe.state == PipelineLifecycleState.ROLLING_BACK
+        ):
             self.announce("Rollback in progress. Please wait for it to finish.")
             return
         self.dismiss(None)

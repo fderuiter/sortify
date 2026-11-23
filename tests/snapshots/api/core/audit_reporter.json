@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "c23c2bda98fbee94008fc1b40bcf93d725a24d0206b2611e9ac50ccd563f3452"
+    "checksum": "e83914a2a4fe418bfc2ee94dcc2945de3268949ce861f233968ea457dbd1a952"
   },
   "classes": [],
   "functions": [
@@ -95,6 +95,29 @@
         }
       ],
       "returns": "dict[str, Any]"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "resolve_audit_report",
+      "parameters": [
+        {
+          "annotation": "Optional[dict[str, Any]]",
+          "default": null,
+          "name": "audit_report"
+        },
+        {
+          "annotation": "Optional[str]",
+          "default": null,
+          "name": "base_dir"
+        },
+        {
+          "annotation": "Any",
+          "default": null,
+          "name": "plan"
+        }
+      ],
+      "returns": "Optional[dict[str, Any]]"
     }
   ]
 }
