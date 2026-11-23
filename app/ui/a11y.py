@@ -6,9 +6,11 @@ import subprocess
 import sys
 import threading
 import time
+from collections.abc import Callable
 from dataclasses import dataclass
 from typing import Any, Optional
 
+from textual import on
 from textual.app import App
 from textual.binding import Binding
 from textual.screen import ModalScreen, Screen
@@ -17,6 +19,7 @@ from textual.widgets import Button
 from app.core.path_utils import scrub_user_home_paths
 from app.core.text_utils import sanitize_secret_patterns
 from app.ui.heading import Heading
+from app.ui.notifications import TROUBLESHOOTING_URL, notify
 
 logger = logging.getLogger(__name__)
 
@@ -338,6 +341,34 @@ class A11yMixin:
             "status_bar_available": status_bar_available,
         }
 
+    HELP_URL: str = TROUBLESHOOTING_URL
+
+    def _call_ui(self, func: Callable[..., Any], *args: Any, **kwargs: Any) -> None:
+        """Safely dispatch a UI callback onto the main Textual thread."""
+        app_obj = None
+        try:
+            app_obj = getattr(self, "app", None)
+        except Exception:
+            app_obj = None
+
+        if (
+            app_obj is not None
+            and app_obj is not self
+            and hasattr(app_obj, "call_from_thread")
+        ):
+            thread_id = getattr(app_obj, "_thread_id", None)
+            if not isinstance(thread_id, int) or thread_id != threading.get_ident():
+                try:
+                    app_obj.call_from_thread(func, *args, **kwargs)
+                    return
+                except Exception as exc:
+                    logger.debug(f"call_from_thread failed: {exc}")
+
+        try:
+            func(*args, **kwargs)
+        except Exception as exc:
+            logger.debug(f"Direct UI function call failed: {exc}")
+
     def _show_help_button(self, help_url: str) -> None:
         """Show the Help button and record contextual help_url."""
         self.help_url = help_url
@@ -351,14 +382,18 @@ class A11yMixin:
             except Exception:
                 pass
 
-        app_obj = getattr(self, "app", None)
-        if app_obj and hasattr(app_obj, "call_from_thread"):
-            try:
-                app_obj.call_from_thread(_unhide)
-            except Exception:
-                _unhide()
-        else:
-            _unhide()
+        self._call_ui(_unhide)
+
+    @on(Button.Pressed, "#btn-help")
+    def action_help(self) -> None:
+        """Open contextual troubleshooting documentation link and announce it."""
+        url = (
+            getattr(self, "help_url", None)
+            or getattr(self, "HELP_URL", None)
+            or TROUBLESHOOTING_URL
+        )
+        notify(f"Opening help link: {url}", type="info", help_url=url)
+        self.announce(f"Opened documentation link: {url}")
 
 
 @dataclass

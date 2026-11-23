@@ -7,51 +7,33 @@ from textual import events, on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select
 
-from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ModalBox, ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveModalScreen
 
 
-class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
+class _CancelToCloseMixin:
+    """Mixin delegating Escape `action_cancel` to `action_close`."""
+
+    def action_cancel(self) -> None:
+        """Cancel on Escape key."""
+        close_fn = getattr(self, "action_close", None)
+        if callable(close_fn):
+            close_fn()
+
+
+class TemplateGalleryModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
     """Modal screen for browsing and applying starter rule template packs."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
     ]
 
-    CSS = """
-    TemplateGalleryModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
+    MODAL_CSS = """
     .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
         max-width: 88;
-        min-width: 30;
-        height: auto;
         max-height: 92%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box, .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
     }
     .compact .modal-title {
         margin-bottom: 0;
@@ -77,14 +59,10 @@ class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         margin-left: 3;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
         layout: grid;
         grid-size: 2;
         grid-columns: 1fr 1fr;
         grid-gutter: 0 1;
-        height: auto;
     }
     .button-row Button {
         width: 100%;
@@ -162,7 +140,7 @@ class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     def on_mount(self) -> None:
         """Focus initial checkbox on mount and emit announcement."""
-        self._update_layout(self.size.width)
+        super().on_mount()
         from app.core.rule_templates import get_starter_templates
 
         templates = get_starter_templates()
@@ -253,48 +231,20 @@ class TemplateGalleryModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         self.announce("Closed starter rule template gallery.")
         self.dismiss(None)
 
-    def action_cancel(self) -> None:
-        """Cancel on Escape key."""
-        self.action_close()
 
-
-class ExportRulesModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Path]]):
+class ExportRulesModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Path]]):
     """Modal screen for exporting active keyword rules and policies to external formats."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
     ]
 
-    CSS = """
-    ExportRulesModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
+    MODAL_CSS = """
     .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
         min-width: 35;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
     }
     .compact .modal-box, .narrow .modal-box {
-        padding: 0 1;
         width: 95%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
     }
     .field-label {
         margin-top: 1;
@@ -314,13 +264,6 @@ class ExportRulesModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Pa
     .summary-text {
         color: $text-muted;
         margin-top: 1;
-    }
-    .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
-        align: right middle;
     }
     Button:focus, Input:focus, Select:focus {
         border: heavy $accent;
@@ -391,7 +334,7 @@ class ExportRulesModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Pa
 
     def on_mount(self) -> None:
         """Focus initial widget on mount and emit accessibility announcement."""
-        self._update_layout(self.size.width)
+        super().on_mount()
         try:
             self.query_one("#input-export-path", Input).focus()
         except Exception:
@@ -485,48 +428,19 @@ class ExportRulesModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Pa
         self.announce("Closed export rules modal.")
         self.dismiss(None)
 
-    def action_cancel(self) -> None:
-        """Cancel on Escape key."""
-        self.action_close()
 
-
-class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any]]):
+class RuleImportModal(_CancelToCloseMixin, ResponsiveModalScreen[Optional[Any]]):
     """Modal screen for selecting, inspecting, and merging external rules (Hazel, DropIt & TagSpaces)."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
     ]
 
-    CSS = """
-    RuleImportModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
+    MODAL_CSS = """
     .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
         max-width: 88;
         min-width: 35;
-        height: auto;
         max-height: 92%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box, .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
     }
     .compact .modal-title {
         margin-bottom: 0;
@@ -590,13 +504,6 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
     }
     .compact .status-text, .compact .warning-text {
         margin-top: 0;
-    }
-    .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
-        align: right middle;
     }
     .compact .button-row {
         margin-top: 0;
@@ -720,7 +627,7 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
 
     def on_mount(self) -> None:
         """Focus initial input field on mount and set up preview tables."""
-        self._update_layout(self.size.width)
+        super().on_mount()
         try:
             self.query_one("#input-rule-file-path", Input).focus()
             dt_kw = self.query_one("#dt-imported-keywords", DataTable)
@@ -967,9 +874,9 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
     ) -> None:
         """Cycle resolution strategy for the selected conflict row."""
         row_key = None
-        if isinstance(event, DataTable.RowSelected):
-            if event.row_key and event.row_key.value:
-                row_key = str(event.row_key.value)
+        rk_attr = getattr(event, "row_key", None)
+        if rk_attr is not None and getattr(rk_attr, "value", None):
+            row_key = str(rk_attr.value)
         elif isinstance(event, DataTable.CellSelected):
             try:
                 dt_conf = self.query_one("#dt-rule-conflicts", DataTable)
@@ -1100,48 +1007,21 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
         self.announce("Closed external rule importer modal.")
         self.dismiss(None)
 
-    def action_cancel(self) -> None:
-        """Cancel on Escape key."""
-        self.action_close()
 
-
-class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]]):
+class RuleEditModal(ResponsiveModalScreen[Optional[dict]]):
     """Modal screen for adding or editing a keyword rule with path validation."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
     ]
 
-    CSS = """
-    RuleEditModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
+    MODAL_CSS = """
     .rule-edit-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
         width: 80%;
         max-width: 65;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
     }
     .compact .rule-edit-box, .narrow .rule-edit-box {
-        padding: 0 1;
         width: 95%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
     }
     .field-label {
         margin-top: 1;
@@ -1156,13 +1036,6 @@ class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]
     }
     .error-label.visible {
         display: block;
-    }
-    .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
-        align: right middle;
     }
     Button:focus, Input:focus {
         border: heavy $accent;
@@ -1213,7 +1086,7 @@ class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]
 
     def on_mount(self) -> None:
         """Focus initial input on mount."""
-        self._update_layout(self.size.width)
+        super().on_mount()
         self.query_one("#input-rule-pattern", Input).focus()
 
     @on(Button.Pressed, "#btn-save-rule")
@@ -1261,46 +1134,17 @@ class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]
         self.dismiss(None)
 
 
-class DeleteRuleConfirmModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[bool]):
+class DeleteRuleConfirmModal(ResponsiveModalScreen[bool]):
     """Confirmation modal screen for deleting a rule."""
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel deletion", show=True),
     ]
 
-    CSS = """
-    DeleteRuleConfirmModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
+    MODAL_CSS = """
     .delete-confirm-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
         width: 80%;
         max-width: 60;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-    }
-    .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
-        align: right middle;
     }
     Button:focus {
         border: heavy $accent;
@@ -1337,7 +1181,7 @@ class DeleteRuleConfirmModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[bool]
 
     def on_mount(self) -> None:
         """Focus cancel button by default to avoid accidental deletion."""
-        self._update_layout(self.size.width)
+        super().on_mount()
         self.query_one("#btn-cancel-delete", Button).focus()
 
     @on(Button.Pressed, "#btn-confirm-delete")
@@ -1358,7 +1202,7 @@ class DeleteRuleConfirmModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[bool]
         self.dismiss(False)
 
 
-class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
+class ActiveRuleManagerModal(_CancelToCloseMixin, ResponsiveModalScreen[None]):
     """Dedicated modal screen for viewing, adding, editing, toggling, and deleting rules."""
 
     BINDINGS = [
@@ -1374,41 +1218,11 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
         Binding("b", "browse_templates", "Browse Templates", show=False),
     ]
 
-    CSS = """
-    ActiveRuleManagerModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
+    MODAL_CSS = """
     .rule-manager-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
         max-width: 88;
         min-width: 35;
-        height: auto;
         max-height: 92%;
-        overflow-y: hidden;
-    }
-    .compact .rule-manager-box, .narrow .rule-manager-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-footer {
-        dock: bottom;
-        width: 100%;
-        height: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
     }
     .compact .modal-title {
         margin-bottom: 0;
@@ -1425,13 +1239,10 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
         margin-bottom: 0;
     }
     .button-row {
-        width: 100%;
-        margin-top: 1;
         layout: grid;
         grid-size: 4;
         grid-columns: 1fr 1fr 1fr 1fr;
         grid-gutter: 0 1;
-        height: auto;
     }
     .compact .button-row, .narrow .button-row {
         margin-top: 0;
@@ -1528,7 +1339,7 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
 
     def on_mount(self) -> None:
         """Set up columns and load rules on mount."""
-        self._update_layout(self.size.width)
+        super().on_mount()
         table = self.query_one("#rules-table", DataTable)
         table.cursor_type = "row"
         table.add_columns("Status", "Type", "Pattern", "Target Folder", "Priority")
@@ -1859,11 +1670,7 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
         self.dismiss(None)
 
     def action_close_rules(self) -> None:
-        """Close active rule manager dialog (legacy handler)."""
-        self.action_close()
-
-    def action_cancel(self) -> None:
-        """Cancel on Escape key."""
+        """Close active rule manager (legacy alias)."""
         self.action_close()
 
     @on(events.DescendantFocus)

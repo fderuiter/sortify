@@ -4,15 +4,13 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.widgets import Button, Label
 
-from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ModalBox, ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveModalScreen
 
 
-class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
+class ShortcutCheatSheetModal(ResponsiveModalScreen[None]):
     """Modal dialog displaying categorized TUI keyboard shortcuts cheat sheet."""
 
     BINDINGS = [
@@ -21,42 +19,7 @@ class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None
         Binding("f1", "close", "Close dialog", show=False),
     ]
 
-    CSS = """
-    ShortcutCheatSheetModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
-    .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-    }
+    MODAL_CSS = """
     .section-title {
         text-style: bold;
         color: $primary-lighten-2;
@@ -67,12 +30,7 @@ class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None
         margin-bottom: 0;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
         min-height: 3;
-        align: right middle;
     }
     Button:focus, Input:focus, Select:focus {
         border: heavy $accent;
@@ -226,7 +184,7 @@ class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None
 
     def on_mount(self) -> None:
         """Focus close button on mount and emit screen reader announcement."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         self.query_one("#btn-close", Button).focus()
         self.announce("Opened keyboard shortcut cheat sheet dialog.")
 

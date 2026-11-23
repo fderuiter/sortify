@@ -7,13 +7,11 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Vertical
-from textual.screen import ModalScreen
 from textual.widgets import Input, Label, OptionList
 from textual.widgets.option_list import Option
 
-from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ResponsiveLayoutMixin
+from app.ui.layout import ResponsiveModalScreen
 
 
 @dataclass
@@ -216,9 +214,7 @@ DEFAULT_COMMAND_CATALOG: list[PaletteCommand] = [
 ]
 
 
-class CommandPaletteModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[PaletteCommand]]
-):
+class CommandPaletteModal(ResponsiveModalScreen[Optional[PaletteCommand]]):
     """Modal screen presenting a searchable command palette overlay."""
 
     BINDINGS = [
@@ -227,29 +223,18 @@ class CommandPaletteModal(
         Binding("down", "cursor_down", "Move selection down", show=False),
     ]
 
-    CSS = """
+    MODAL_CSS = """
     CommandPaletteModal {
-        align: center middle;
         background: rgba(0, 0, 0, 0.65);
     }
     .palette-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
         width: 80%;
         max-width: 76;
         min-width: 40;
-        height: auto;
         max-height: 85%;
     }
     .narrow .palette-box {
-        padding: 0 1;
         width: 95%;
-    }
-    .palette-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
     }
     .palette-input {
         margin-bottom: 1;
@@ -300,7 +285,7 @@ class CommandPaletteModal(
 
     def on_mount(self) -> None:
         """Initialize palette list, focus search input, and emit screen reader announcement."""
-        self._update_layout(self.size.width)
+        super().on_mount()
         self._populate_option_list()
         self.query_one("#palette-input", Input).focus()
         self.announce(
