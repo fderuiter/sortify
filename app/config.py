@@ -77,15 +77,22 @@ def _dispatch_observer_callback(cb: Any, key: str, value: Any) -> None:
         )
 
 
-def get_app_dir() -> Path:
-    """Get the app configuration directory path."""
+def _resolve_app_dir_path() -> Path:
+    """Resolve the app configuration directory path without creating it on disk."""
     override = os.environ.get("AUTOSORTER_APP_DIR")
     if override:
-        app_dir = Path(override)
-    else:
-        app_dir = Path.home() / ".autosorter"
+        return Path(override).resolve()
+    return (Path.home() / ".autosorter").resolve()
+
+
+def get_app_dir() -> Path:
+    """Get the app configuration directory path."""
+    app_dir = _resolve_app_dir_path()
     app_dir.mkdir(parents=True, exist_ok=True)
-    return app_dir.resolve()
+    return app_dir
+
+
+_IMPORT_DEFAULT_LOG_FILE = str(_resolve_app_dir_path() / "autosorter.log")
 
 
 def get_debug_log_dir() -> Path:
@@ -709,12 +716,19 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_debounce_delays(self) -> "Settings":
-        """Validate that DEBOUNCE_DELAY does not exceed MAX_DEBOUNCE_DELAY."""
+        """Validate debounce bounds and refresh default LOG_FILE for dynamic app dirs."""
         if self.DEBOUNCE_DELAY > self.MAX_DEBOUNCE_DELAY:
             raise ValueError(
                 f"DEBOUNCE_DELAY ({self.DEBOUNCE_DELAY}) cannot be greater than "
                 f"MAX_DEBOUNCE_DELAY ({self.MAX_DEBOUNCE_DELAY})."
             )
+        if (
+            "LOG_FILE" not in self.model_fields_set
+            and self.LOG_FILE == _IMPORT_DEFAULT_LOG_FILE
+        ):
+            dynamic_default = str(_resolve_app_dir_path() / "autosorter.log")
+            if dynamic_default != self.LOG_FILE:
+                object.__setattr__(self, "LOG_FILE", dynamic_default)
         return self
 
     @field_validator("CONFLICT_POLICY")
@@ -935,7 +949,7 @@ class Settings(BaseSettings):
         ),
     )
     LOG_FILE: str = Field(
-        default=str(get_app_dir() / "autosorter.log"),
+        default=_IMPORT_DEFAULT_LOG_FILE,
         min_length=1,
         description=(
             "Filesystem path to the primary rotating application log file "

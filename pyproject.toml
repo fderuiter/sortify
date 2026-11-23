@@ -143,7 +143,7 @@ python-version = "3.12"
 error-on-warning = false
 
 [tool.ty.src]
-include = ["app", "scripts"]
+include = ["app", "scripts", "sandbox_cli.py"]
 
 [tool.ty.analysis]
 # Optional `ml` extra and `build`/`docs` group packages, imported lazily behind guards.

@@ -24,6 +24,7 @@ Run from the repo root:  uv run python .agents/skills/run-sortify/driver.py
 import argparse
 import asyncio
 import json
+import logging
 import os
 import shlex
 import shutil
@@ -49,7 +50,11 @@ def make_corpus(target: Path) -> None:
 
 def svg_to_png(svg: Path, png: Path, width: int, height: int) -> bool:
     """Render a Textual SVG screenshot to PNG with headless Chromium."""
-    chrome = CHROME if os.path.exists(CHROME) else shutil.which("chromium")
+    chrome = (
+        CHROME
+        if os.path.exists(CHROME)
+        else (shutil.which("chromium") or shutil.which("google-chrome"))
+    )
     if not chrome:
         return False
     # Textual SVGs are ~ 12.2px per column / 24.4px per row, plus chrome.
@@ -83,9 +88,22 @@ def tree_lines(node, depth=0):
 async def run(args) -> int:
     """Launch the TUI under Pilot and execute driver commands."""
     from app.config import AppSettings
+    from app.log_filter import LogScrubbingFilter
     from app.ui.tui import AutoSorterTUI
 
     settings = AppSettings()
+    Path(settings.LOG_FILE).parent.mkdir(parents=True, exist_ok=True)
+    logging.basicConfig(
+        filename=settings.LOG_FILE,
+        level=logging.INFO,
+        format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
+    )
+    scrubber = LogScrubbingFilter(str(Path.home()))
+    root_logger = logging.getLogger()
+    root_logger.addFilter(scrubber)
+    for handler in root_logger.handlers:
+        handler.addFilter(scrubber)
+
     settings._settings_model.AI_CONSENT_GRANTED = True
     target = Path(args.dir).resolve()
     out = Path(args.out).resolve()
@@ -214,6 +232,7 @@ def main() -> int:
     if not args.keep_state:
         # Must be set before importing app.*: config resolves paths at import.
         os.environ["AUTOSORTER_APP_DIR"] = str(root / "appdir")
+        os.environ["SORTIFY_KEYS_DIR"] = str(root / "keys")
         os.environ["HOME"] = str(root / "home")
         (root / "home").mkdir()
     if not args.dir:

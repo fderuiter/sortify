@@ -1819,25 +1819,72 @@ def _main_impl():
     if getattr(args, "smoke_test", False) is True:
         run_smoke_test()
 
-    settings = AppSettings()
-    apply_config_overrides(settings, args)
-
-    # Configure Centralized Logger
-    logging.basicConfig(
-        filename=settings.LOG_FILE,
-        level=logging.INFO,
-        format="%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s",
+    is_demo_run = (
+        bool(getattr(args, "demo", False)) and getattr(args, "subcommand", None) is None
     )
+    if is_demo_run:
+        import tempfile
 
-    # Create and add the log scrubbing filter to the root logger
+        from app.core.db_conn import clear_connection_cache
+
+        prev_app_dir = os.environ.get("AUTOSORTER_APP_DIR")
+        prev_keys_dir = os.environ.get("SORTIFY_KEYS_DIR")
+        with tempfile.TemporaryDirectory(prefix="sortify-demo-") as demo_root:
+            demo_root_path = Path(demo_root)
+            os.environ["AUTOSORTER_APP_DIR"] = str(demo_root_path / "app")
+            os.environ["SORTIFY_KEYS_DIR"] = str(demo_root_path / "keys")
+            added_handlers: list[logging.Handler] = []
+            demo_settings: AppSettings | None = None
+            try:
+                demo_settings = _configure_settings_and_logging(
+                    args, tracked_handlers=added_handlers
+                )
+                from app.demo import run_demo
+
+                run_demo(demo_settings)
+            finally:
+                if demo_settings is not None:
+                    save_timer = demo_settings._save_timer
+                    if save_timer is not None:
+                        save_timer.cancel()
+                    AppSettings._cancel_file_timer(demo_settings._filepath)
+                _close_tracked_log_handlers(added_handlers)
+                clear_connection_cache(only_current_and_inactive=False)
+                if prev_app_dir is None:
+                    os.environ.pop("AUTOSORTER_APP_DIR", None)
+                else:
+                    os.environ["AUTOSORTER_APP_DIR"] = prev_app_dir
+                if prev_keys_dir is None:
+                    os.environ.pop("SORTIFY_KEYS_DIR", None)
+                else:
+                    os.environ["SORTIFY_KEYS_DIR"] = prev_keys_dir
+        return
+
+    added_handlers: list[logging.Handler] = []
+    settings = _configure_settings_and_logging(args, tracked_handlers=added_handlers)
+    try:
+        _run_configured_main(args, parser, settings)
+    finally:
+        _close_tracked_log_handlers(added_handlers)
+
+
+def _close_tracked_log_handlers(handlers: list[logging.Handler]) -> None:
+    """Flush, detach, and close log handlers added for the current CLI run."""
     root_logger = logging.getLogger()
+    for handler in handlers:
+        try:
+            handler.flush()
+        except Exception:
+            pass
+        root_logger.removeHandler(handler)
+        try:
+            handler.close()
+        except Exception:
+            pass
 
-    # Also apply to handlers to ensure child loggers are filtered
-    scrubber = LogScrubbingFilter(str(Path.home()))
-    root_logger.addFilter(scrubber)
-    for handler in root_logger.handlers:
-        handler.addFilter(scrubber)
 
+def _run_configured_main(args: Any, parser: Any, settings: AppSettings) -> None:
+    """Run configured CLI subcommands, headless modes, daemon, or interactive TUI."""
     _maybe_provision_model_for_cli_consent(args, settings)
 
     # Direct subcommand execution
@@ -1986,6 +2033,85 @@ def _main_impl():
             skip_wizard=_extract_bool_arg(args, "skip_wizard"),
             non_interactive=_extract_bool_arg(args, "non_interactive"),
         )
+
+
+def _configure_settings_and_logging(
+    args: Any,
+    tracked_handlers: list[logging.Handler] | None = None,
+) -> AppSettings:
+    """Load AppSettings while buffering early warnings into the configured log file."""
+
+    class _StartupLogBuffer(logging.Handler):
+        def __init__(self) -> None:
+            super().__init__(level=logging.INFO)
+            self.records: list[logging.LogRecord] = []
+
+        def emit(self, record: logging.LogRecord) -> None:
+            self.records.append(record)
+
+    root_logger = logging.getLogger()
+    pre_existing_handlers = set(root_logger.handlers)
+    prev_root_level = root_logger.level
+    startup_buffer = _StartupLogBuffer()
+    root_logger.addHandler(startup_buffer)
+    if not pre_existing_handlers and (
+        prev_root_level == logging.NOTSET or prev_root_level > logging.INFO
+    ):
+        root_logger.setLevel(logging.INFO)
+    try:
+        settings = AppSettings()
+        apply_config_overrides(settings, args)
+    finally:
+        root_logger.removeHandler(startup_buffer)
+        if not pre_existing_handlers:
+            root_logger.setLevel(prev_root_level)
+
+    log_path = Path(settings.LOG_FILE)
+    try:
+        log_path.parent.mkdir(parents=True, exist_ok=True)
+    except OSError:
+        pass
+
+    log_format = "%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
+    logging.basicConfig(
+        filename=settings.LOG_FILE,
+        level=logging.INFO,
+        format=log_format,
+    )
+
+    norm_log_file = os.path.normcase(os.path.abspath(settings.LOG_FILE))
+    has_target_file_handler = any(
+        isinstance(h, logging.FileHandler)
+        and os.path.normcase(os.path.abspath(getattr(h, "baseFilename", "")))
+        == norm_log_file
+        for h in root_logger.handlers
+    )
+    if not has_target_file_handler:
+        try:
+            file_handler = logging.FileHandler(settings.LOG_FILE, encoding="utf-8")
+            file_handler.setLevel(logging.INFO)
+            file_handler.setFormatter(logging.Formatter(log_format))
+            root_logger.addHandler(file_handler)
+        except OSError:
+            pass
+
+    scrubber = LogScrubbingFilter(str(Path.home()))
+    root_logger.addFilter(scrubber)
+    new_handlers: list[logging.Handler] = []
+    for handler in root_logger.handlers:
+        handler.addFilter(scrubber)
+        if handler not in pre_existing_handlers:
+            new_handlers.append(handler)
+            if tracked_handlers is not None:
+                tracked_handlers.append(handler)
+
+    for record in startup_buffer.records:
+        if scrubber.filter(record):
+            for handler in new_handlers:
+                if record.levelno >= handler.level:
+                    handler.handle(record)
+
+    return settings
 
 
 def main():

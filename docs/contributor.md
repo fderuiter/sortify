@@ -27,7 +27,7 @@ To help new developers see the end-to-end data flow without reading the source, 
 
 ### Running the Demo
 
-The demo automatically generates a sample corpus of documents that meet the pipeline requirements (minimum of 3 documents). It then simulates the background extraction and clustering logic, ultimately printing the resulting sorting plan.
+The demo automatically generates a sample corpus of documents that meet the pipeline requirements (minimum of 3 documents) inside an isolated temporary workspace. It simulates background extraction and clustering without writing state or key files to `$HOME`, then prints the resulting sorting plan with `stderr` left intact for diagnostics.
 
 To run the interactive demo, use the following command:
 
@@ -51,7 +51,7 @@ Shared path and packaging helpers live in `app.core.path_utils`, cryptography in
 * **`validate_target_path(target_path: str, keyword: str = None) -> None`**: Standard target path validation for illegal characters, absolute paths, or traversal segments.
 * **`is_subpath_or_equal(child: str, parent: str) -> bool`** (in `app.core.mover`, not `path_utils`): Cross-platform check that a candidate path is inside a parent directory.
 * **`setup_session_directory(session_id: str = None) -> tuple[str, Path]`**: Creates the session directory under `$AUTOSORTER_APP_DIR/sessions`, or in the OS temp folder when that variable is unset.
-* **`resolve_db_crypto(db_path: Path | str) -> SessionCrypto`**: Standard lookup function for session encryption keys and database decrypters.
+* **`resolve_db_crypto(db_path: Path | str) -> SessionCrypto`**: Standard cached lookup function for session encryption keys and database decrypters (reusing resolved keys across worker threads and honoring `SORTIFY_KEYS_DIR` for isolated sandboxes).
 * **`CryptoManager`**: Centralized facade (`app.core.crypto`) providing static methods for key derivation (`derive_db_hash`, `derive_keyring_account`, `derive_isolated_key_path`), envelope encryption (`encrypt_proxy_setting`, `decrypt_proxy_setting`), and pre-flight key generation (`generate_bootstrap_key`).
 * **`sanitize_secret_patterns(text: str, replacement: str = "") -> str`**: Centralized secret scrubbing delegate (`app.core.text_utils`) that redacts API keys, JWTs, Bearer tokens, private keys, and high-entropy secret payloads across text streams and logging filters.
 
