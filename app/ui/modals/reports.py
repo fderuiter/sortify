@@ -9,7 +9,6 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.widgets import (
     Button,
     DataTable,
@@ -21,17 +20,14 @@ from textual.widgets import (
     TabPane,
 )
 
-from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ModalBox, ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveModalScreen
 from app.ui.widgets.density_slider import DensitySlider
 
 logger = logging.getLogger(__name__)
 
 
-class ExtractionPreviewModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[int]]
-):
+class ExtractionPreviewModal(ResponsiveModalScreen[Optional[int]]):
     """Modal dialog for interactive visual inspection of PDF page extraction decisions."""
 
     BINDINGS = [
@@ -40,36 +36,15 @@ class ExtractionPreviewModal(
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    ExtractionPreviewModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
+    MODAL_CSS = """
     .preview-modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
         max-width: 84;
         min-width: 35;
-        height: auto;
         max-height: 92%;
-        overflow-y: hidden;
     }
     .compact .preview-modal-box, .narrow .preview-modal-box {
         padding: 0 1;
         width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
     }
     .file-path-label {
         color: $text-muted;
@@ -90,13 +65,6 @@ class ExtractionPreviewModal(
     .narrow-input {
         width: 12;
         margin-right: 1;
-    }
-    .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
-        align: right middle;
     }
     """
 
@@ -165,7 +133,7 @@ class ExtractionPreviewModal(
 
     def on_mount(self) -> None:
         """Handle modal mount event and populate initial preview data."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         self.announce("Opened PDF extraction strategy preview modal.")
         table = self.query_one("#preview-table", DataTable)
         table.add_columns("Page", "Embedded Chars", "Vector Paths", "Predicted Status")
@@ -272,9 +240,7 @@ class ExtractionPreviewModal(
         self.dismiss(None)
 
 
-class ExportReportModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[tuple[str, str]]]
-):
+class ExportReportModal(ResponsiveModalScreen[Optional[tuple[str, str]]]):
     """Modal dialog for exporting dry-run simulation reports."""
 
     BINDINGS = [
@@ -283,47 +249,13 @@ class ExportReportModal(
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    ExportReportModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
-    .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
+    MODAL_CSS = """
     .compact .modal-box, .narrow .modal-box {
-        padding: 0 1;
         width: 95%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
     }
     .modal-subtitle {
         color: $text-muted;
         margin-bottom: 1;
-    }
-    .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
-        align: right middle;
     }
     Button:focus, Input:focus, Select:focus {
         border: heavy $accent;
@@ -380,7 +312,7 @@ class ExportReportModal(
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit accessibility announcement."""
-        self._update_layout(self.size.width)
+        super().on_mount()
         self.query_one("#input-export-path", Input).focus()
         self.announce("Opened export simulation report dialog.")
 
@@ -405,7 +337,7 @@ class ExportReportModal(
         self.dismiss(None)
 
 
-class AuditReportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
+class AuditReportModal(ResponsiveModalScreen[None]):
     """Interactive Modal Screen for Tabular Verification Tree & Multi-Format Audit Export."""
 
     BINDINGS = [
@@ -417,31 +349,23 @@ class AuditReportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
+    MODAL_CSS = """
     AuditReportModal {
-        align: center middle;
         background: rgba(0, 0, 0, 0.7);
     }
     .audit-modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
         width: 95%;
         max-width: 108;
         min-width: 40;
         height: 90%;
         min-height: 20;
-        overflow-y: hidden;
     }
     .compact .audit-modal-box, .narrow .audit-modal-box {
-        padding: 0 1;
         width: 98%;
         height: 94%;
     }
     .modal-body {
-        width: 100%;
         height: 1fr;
-        overflow-y: auto;
     }
     .audit-title {
         text-style: bold;
@@ -532,14 +456,10 @@ class AuditReportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         margin-bottom: 0;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
         layout: grid;
         grid-size: 3;
         grid-columns: 1fr 1fr 1fr;
         grid-gutter: 0 1;
-        height: auto;
     }
     .compact .button-row {
         margin-top: 0;
@@ -666,7 +586,7 @@ class AuditReportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     def on_mount(self) -> None:
         """Initialize table rows, accessibility announcement, and initial focus."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         self._populate_table()
         total = self.report_data.get("total_files", 0)
         pass_cnt = self.report_data.get("verified_pass_count", 0)

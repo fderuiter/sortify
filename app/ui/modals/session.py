@@ -12,7 +12,6 @@ from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.coordinate import Coordinate
-from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static
 
 from app.config import get_app_dir
@@ -20,18 +19,17 @@ from app.core.path_utils import scrub_user_home_paths
 from app.core.resilient_file_ops import _set_posix_mode
 from app.core.text_utils import sanitize_secret_patterns
 from app.log_filter import scrub_diagnostic_text
-from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ModalBox, ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveModalScreen
 from app.ui.notifications import TROUBLESHOOTING_URL, notify
 
 logger = logging.getLogger(__name__)
 
 
-class SessionRecoveryModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
-):
+class SessionRecoveryModal(ResponsiveModalScreen[Optional[str]]):
     """Modal dialog for recovering interrupted file sorting sessions."""
+
+    HELP_URL = f"{TROUBLESHOOTING_URL}#session-recovery"
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
@@ -39,46 +37,15 @@ class SessionRecoveryModal(
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    SessionRecoveryModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
-    .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box, .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
+    MODAL_CSS = """
     .modal-title {
-        text-style: bold;
         color: $error;
-        margin-bottom: 1;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
         layout: grid;
         grid-size: 4;
         grid-columns: 1fr 1fr 1fr 1fr;
         grid-gutter: 0 1;
-        height: auto;
     }
     .compact .button-row, .narrow .button-row {
         grid-size: 2;
@@ -144,7 +111,7 @@ class SessionRecoveryModal(
 
     def on_mount(self) -> None:
         """Focus resume button on mount and emit screen reader announcement."""
-        self._update_layout(self.size.width)
+        super().on_mount()
         self.query_one("#btn-resume", Button).focus()
         self.announce("Opened interrupted session recovery dialog.")
 
@@ -165,12 +132,6 @@ class SessionRecoveryModal(
         """Confirm clean action."""
         self.announce("Confirmed session clean.")
         self.dismiss("clean")
-
-    @on(Button.Pressed, "#btn-help")
-    def action_help(self) -> None:
-        """Open session recovery troubleshooting guide."""
-        url = f"{TROUBLESHOOTING_URL}#session-recovery"
-        self.open_help_section(url)
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
@@ -200,10 +161,10 @@ class RecoveryResult(str):
         return obj
 
 
-class MultiSessionRecoveryModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any]]
-):
+class MultiSessionRecoveryModal(ResponsiveModalScreen[Optional[Any]]):
     """Modal dialog for recovering multiple interrupted file sorting sessions."""
+
+    HELP_URL = f"{TROUBLESHOOTING_URL}#multi-session-recovery"
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
@@ -211,40 +172,8 @@ class MultiSessionRecoveryModal(
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    MultiSessionRecoveryModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
-    .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box, .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-footer {
-        dock: bottom;
-        width: 100%;
-        height: auto;
-    }
+    MODAL_CSS = """
     .modal-title {
-        text-style: bold;
         color: $error;
         margin-bottom: 0;
     }
@@ -279,12 +208,6 @@ class MultiSessionRecoveryModal(
     }
     .compact .actions-heading {
         margin-top: 0;
-    }
-    .button-row {
-        width: 100%;
-        margin-top: 1;
-        height: auto;
-        align: right middle;
     }
     .compact .button-row {
         margin-top: 0;
@@ -409,7 +332,7 @@ class MultiSessionRecoveryModal(
 
     def on_mount(self) -> None:
         """Initialize table columns, populate rows, and announce session count."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         table = self.query_one("#sessions-table", DataTable)
         table.cursor_type = "row"
         table.add_columns("Session ID", "Target Directory", "Step Count", "Status")
@@ -586,12 +509,6 @@ class MultiSessionRecoveryModal(
         if not self.sessions:
             self.dismiss(RecoveryResult("rollback", session=selected, sessions=[]))
 
-    @on(Button.Pressed, "#btn-help")
-    def action_help(self) -> None:
-        """Open session recovery troubleshooting guide."""
-        url = f"{TROUBLESHOOTING_URL}#multi-session-recovery"
-        self.open_help_section(url)
-
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
         """Cancel recovery dialog."""
@@ -599,9 +516,7 @@ class MultiSessionRecoveryModal(
         self.dismiss(None)
 
 
-class RollbackConfirmModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict[str, Any]]]
-):
+class RollbackConfirmModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
     """Two-stage interactive confirmation modal dialog before executing session rollback."""
 
     BINDINGS = [
@@ -611,23 +526,18 @@ class RollbackConfirmModal(
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
+    MODAL_CSS = """
     RollbackConfirmModal {
-        align: center middle;
         background: rgba(0, 0, 0, 0.7);
     }
     .confirm-box {
-        padding: 1 2;
-        background: $panel;
         border: thick $warning;
         width: 92%;
         max-width: 98;
         height: 90%;
         max-height: 92%;
-        overflow-y: hidden;
     }
     .compact .confirm-box, .narrow .confirm-box {
-        padding: 0 1;
         width: 98%;
         height: 94%;
         max-height: 96%;
@@ -641,12 +551,9 @@ class RollbackConfirmModal(
         display: none;
     }
     .modal-body {
-        width: 100%;
         height: 1fr;
-        overflow-y: auto;
     }
     .modal-title {
-        text-style: bold;
         color: $warning;
         margin-bottom: 0;
     }
@@ -769,14 +676,10 @@ class RollbackConfirmModal(
         margin-bottom: 0;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
         layout: grid;
         grid-size: 3;
         grid-columns: 1fr 1fr 1fr;
         grid-gutter: 0 1;
-        height: auto;
     }
     .compact .button-row {
         margin-top: 0;
@@ -952,7 +855,7 @@ class RollbackConfirmModal(
 
     def on_mount(self) -> None:
         """Initialize items, populate tables and focus controls on mount."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         sid = self.session_info.get("session_id")
         if not self.all_items and sid:
             try:
@@ -1275,8 +1178,10 @@ class RollbackConfirmModal(
         self.dismiss(None)
 
 
-class RollbackErrorModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
+class RollbackErrorModal(ResponsiveModalScreen[None]):
     """Modal dialog displaying error messages encountered during session rollback."""
+
+    HELP_URL = f"{TROUBLESHOOTING_URL}#session-recovery"
 
     BINDINGS = [
         Binding("escape", "close", "Close error dialog", show=True),
@@ -1284,49 +1189,23 @@ class RollbackErrorModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
+    MODAL_CSS = """
     RollbackErrorModal {
-        align: center middle;
         background: rgba(0, 0, 0, 0.7);
     }
     .error-box {
-        padding: 1 2;
-        background: $panel;
         border: thick $error;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
     }
-    .compact .error-box, .narrow .error-box {
-        padding: 0 1;
-        width: 96%;
+    .narrow .error-box {
         max-height: 96%;
     }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
     .modal-title {
-        text-style: bold;
         color: $error;
-        margin-bottom: 1;
     }
     .error-text {
         margin-top: 1;
         margin-bottom: 1;
         color: $text;
-    }
-    .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
-        align: right middle;
     }
     .button-row Button {
         margin-left: 1;
@@ -1379,7 +1258,7 @@ class RollbackErrorModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     def on_mount(self) -> None:
         """Focus close button and announce error message."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         self.query_one("#btn-close-error", Button).focus()
         self.announce(f"Error dialog: {self.error_title}")
 
@@ -1464,16 +1343,6 @@ class RollbackErrorModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         _set_posix_mode(tmp_path, 0o600)
         return tmp_path
 
-    @on(Button.Pressed, "#btn-help")
-    def action_help(self) -> None:
-        """Open session recovery troubleshooting guide."""
-        url = getattr(
-            self,
-            "help_url",
-            f"{TROUBLESHOOTING_URL}#session-recovery",
-        )
-        self.open_help_section(url)
-
     @on(Button.Pressed, "#btn-export-diagnostics")
     def action_export_diagnostics(self) -> str:
         """Export scrubbed diagnostic log report with ``0o600`` permissions."""
@@ -1494,9 +1363,7 @@ class RollbackErrorModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         self.dismiss(None)
 
 
-class HistoryModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict[str, Any]]]
-):
+class HistoryModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
     """Modal dialog for viewing session history records, exporting audit logs, and rolling back sessions."""
 
     BINDINGS = [
@@ -1505,36 +1372,11 @@ class HistoryModal(
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    HistoryModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
+    MODAL_CSS = """
     .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
         max-width: 90;
         min-width: 40;
-        height: auto;
         max-height: 92%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box, .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
     }
     .compact .modal-title {
         margin-bottom: 0;
@@ -1555,14 +1397,10 @@ class HistoryModal(
         color: $text;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
         layout: grid;
         grid-size: 3;
         grid-columns: 1fr 1fr 1fr;
         grid-gutter: 0 1;
-        height: auto;
     }
     .button-row Button {
         width: 100%;
@@ -1693,7 +1531,7 @@ class HistoryModal(
 
     def on_mount(self) -> None:
         """Focus session select widget on mount and emit accessibility announcement."""
-        self._update_layout(self.size.width)
+        super().on_mount()
         select_widget = self.query_one("#select-history-session", Select)
         select_widget.focus()
         self._update_selected_session_view(select_widget.value)

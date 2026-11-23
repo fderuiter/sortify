@@ -8,13 +8,11 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.widgets import Button, Label, Markdown
 
 from app.core.path_utils import get_base_path
-from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ModalBox, ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveModalScreen
 
 _HEADING_RE = re.compile(r"^(#{1,6})\s+(.*)$")
 _IMAGE_LINE_RE = re.compile(r"^\s*!\[[^\]]*\]\([^)]+\)\s*$")
@@ -115,7 +113,7 @@ def extract_troubleshooting_section(
     return section_title, "\n".join(captured).strip(), True
 
 
-class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
+class ShortcutCheatSheetModal(ResponsiveModalScreen[None]):
     """Modal dialog displaying categorized TUI keyboard shortcuts cheat sheet."""
 
     BINDINGS = [
@@ -124,42 +122,7 @@ class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None
         Binding("f1", "close", "Close dialog", show=False),
     ]
 
-    CSS = """
-    ShortcutCheatSheetModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
-    .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-    }
+    MODAL_CSS = """
     .section-title {
         text-style: bold;
         color: $primary-lighten-2;
@@ -170,12 +133,7 @@ class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None
         margin-bottom: 0;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
         min-height: 3;
-        align: right middle;
     }
     Button:focus, Input:focus, Select:focus {
         border: heavy $accent;
@@ -365,7 +323,7 @@ class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None
 
     def on_mount(self) -> None:
         """Focus close button on mount and emit screen reader announcement."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         self.query_one("#btn-close", Button).focus()
         self.announce("Opened keyboard shortcut cheat sheet dialog.")
 
@@ -376,7 +334,7 @@ class ShortcutCheatSheetModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None
         self.dismiss(None)
 
 
-class TroubleshootingHelpModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
+class TroubleshootingHelpModal(ResponsiveModalScreen[None]):
     """Offline contextual troubleshooting viewer backed by bundled ``docs/troubleshooting.md``."""
 
     BINDINGS = [
@@ -385,45 +343,18 @@ class TroubleshootingHelpModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Non
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
+    MODAL_CSS = """
     TroubleshootingHelpModal {
-        align: center middle;
         background: rgba(0, 0, 0, 0.65);
     }
     .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
         max-width: 84;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
     }
-    .compact .modal-box, .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
+    .narrow .modal-box {
         max-height: 96%;
     }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-    }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
         min-height: 3;
-        align: right middle;
     }
     .button-row Button {
         margin-left: 1;
@@ -487,7 +418,7 @@ class TroubleshootingHelpModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Non
 
     def on_mount(self) -> None:
         """Focus close button on mount and emit screen reader announcement."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         self.query_one("#btn-close", Button).focus()
         self.announce(f"Opened troubleshooting help: {self.section_title}.")
 

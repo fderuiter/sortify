@@ -10,13 +10,11 @@ from textual import on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.widgets import Button, Input, Label, Select, Static
 
 from app.core.path_utils import _is_absolute_path
-from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ModalBox, ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveModalScreen
 
 logger = logging.getLogger(__name__)
 
@@ -52,9 +50,7 @@ class RenameResult(str):
         return (str(self), self.destination_override)
 
 
-def _set_collision_warning_helper(
-    modal: ModalScreen[Any], msg: str, is_error: bool = False
-) -> None:
+def _set_collision_warning_helper(modal: Any, msg: str, is_error: bool = False) -> None:
     """Update collision warning label widget text and styles on a modal screen."""
     try:
         lbl = modal.query_one("#warning-collision", Label)
@@ -73,8 +69,27 @@ _set_collision_warning = _set_collision_warning_helper
 _update_collision_warning = _set_collision_warning_helper
 
 
+class _SubmittableModalMixin:
+    """Mixin forwarding Enter submission on modal Input fields to ``action_confirm``."""
+
+    @on(Input.Submitted)
+    def action_submit(self) -> None:
+        """Submit input on Enter key press."""
+        getattr(self, "action_confirm")()
+
+
+class _CollisionWarningMixin:
+    """Mixin updating ``#warning-collision`` inline feedback state."""
+
+    def _set_collision_warning(self, msg: str, is_error: bool = False) -> None:
+        """Update collision warning label widget text and styles."""
+        _set_collision_warning_helper(self, msg, is_error=is_error)
+
+
 class RenameModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str | RenameResult]]
+    _CollisionWarningMixin,
+    _SubmittableModalMixin,
+    ResponsiveModalScreen[Optional[str | RenameResult]],
 ):
     """Modal dialog for renaming a file or folder node with pattern token formatting and destination path override support."""
 
@@ -84,42 +99,7 @@ class RenameModal(
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    RenameModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
-    .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-    }
+    MODAL_CSS = """
     .modal-subtitle {
         color: $text-muted;
         margin-bottom: 1;
@@ -141,12 +121,7 @@ class RenameModal(
         text-style: bold;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
         min-height: 3;
-        align: right middle;
     }
     .button-row Button {
         margin-left: 1;
@@ -381,7 +356,7 @@ class RenameModal(
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit screen reader announcement."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         self.query_one("#input-name", Input).focus()
         self.announce(
             f"Opened rename dialog for '{self.modal_title}'. Enter new name or pattern and press Enter or click Rename."
@@ -398,10 +373,6 @@ class RenameModal(
         if ".." in segments:
             return "Directory traversal ('..') segments are not permitted."
         return None
-
-    def _set_collision_warning(self, msg: str, is_error: bool = False) -> None:
-        """Update warning label widget text and styles."""
-        _set_collision_warning_helper(self, msg, is_error=is_error)
 
     def _check_collision_and_update_ui(self) -> tuple[bool, Optional[str]]:
         """Run live collision check and path validation across plan and filesystem.
@@ -659,13 +630,8 @@ class RenameModal(
         self.announce("Cancelled rename action.")
         self.dismiss(None)
 
-    @on(Input.Submitted)
-    def action_submit(self) -> None:
-        """Submit input on Enter key press."""
-        self.action_confirm()
 
-
-class NewFolderModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]):
+class NewFolderModal(_SubmittableModalMixin, ResponsiveModalScreen[Optional[str]]):
     """Modal dialog for creating a new folder node in the plan."""
 
     BINDINGS = [
@@ -674,49 +640,9 @@ class NewFolderModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    NewFolderModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
-    .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-    }
+    MODAL_CSS = """
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
         min-height: 3;
-        align: right middle;
     }
     .button-row Button {
         margin-left: 1;
@@ -753,7 +679,7 @@ class NewFolderModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit screen reader announcement."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         self.query_one("#input-folder-name", Input).focus()
         self.announce("Opened create new target folder dialog.")
 
@@ -773,13 +699,12 @@ class NewFolderModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]
         self.announce("Cancelled folder creation.")
         self.dismiss(None)
 
-    @on(Input.Submitted)
-    def action_submit(self) -> None:
-        """Submit input on Enter key press."""
-        self.action_confirm()
 
-
-class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]):
+class ReassignModal(
+    _CollisionWarningMixin,
+    _SubmittableModalMixin,
+    ResponsiveModalScreen[Optional[str]],
+):
     """Modal dialog for reassigning checked file nodes to a target category folder."""
 
     BINDINGS = [
@@ -788,42 +713,7 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    ReassignModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
-    .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-    }
+    MODAL_CSS = """
     .modal-warning {
         color: $warning;
         text-style: bold;
@@ -837,12 +727,7 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
         margin-bottom: 1;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
         min-height: 3;
-        align: right middle;
     }
     .button-row Button {
         margin-left: 1;
@@ -923,14 +808,10 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit announcement."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         self.query_one("#input-target-folder", Input).focus()
         self.announce(f"Opened bulk reassign dialog for {self.count} items.")
         self._check_collision_and_update_ui()
-
-    def _set_collision_warning(self, msg: str, is_error: bool = False) -> None:
-        """Update collision warning label."""
-        _set_collision_warning_helper(self, msg, is_error=is_error)
 
     def _check_collision_and_update_ui(self) -> tuple[bool, Optional[str]]:
         """Run live collision check and path validation across plan and filesystem."""
@@ -1067,14 +948,10 @@ class ReassignModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
         self.announce("Cancelled bulk reassign.")
         self.dismiss(None)
 
-    @on(Input.Submitted)
-    def action_submit(self) -> None:
-        """Submit reassign on Enter key press."""
-        self.action_confirm()
-
 
 class DirectorySelectModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str | list[str]]]
+    _SubmittableModalMixin,
+    ResponsiveModalScreen[Optional[str | list[str]]],
 ):
     """Modal dialog for choosing target base directory or presets."""
 
@@ -1084,42 +961,7 @@ class DirectorySelectModal(
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    DirectorySelectModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
-    .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
-        max-width: 80;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
-    }
+    MODAL_CSS = """
     .error-banner {
         color: $error;
         text-style: bold;
@@ -1159,13 +1001,9 @@ class DirectorySelectModal(
         min-width: 0;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
         layout: grid;
         grid-size: 3;
         grid-gutter: 0 1;
-        margin-top: 1;
-        height: auto;
         min-height: 3;
     }
     .compact .button-row, .narrow .button-row {
@@ -1321,7 +1159,7 @@ class DirectorySelectModal(
 
     def on_mount(self) -> None:
         """Focus input field on mount and emit screen reader announcement."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         try:
             self.query_one("#input-dir", Input).focus()
         except Exception:
@@ -1471,11 +1309,6 @@ class DirectorySelectModal(
         self.announce("Cancelled directory selection.")
         self.dismiss(None)
 
-    @on(Input.Submitted)
-    def action_submit(self) -> None:
-        """Submit input on Enter key press."""
-        self.action_confirm()
-
     @on(Button.Pressed, "#btn-browse")
     @work(thread=True)
     def action_native_browse(self) -> None:
@@ -1530,9 +1363,7 @@ class DirectorySelectModal(
             pass
 
 
-class ManualPathFallbackModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[str]]
-):
+class ManualPathFallbackModal(ResponsiveModalScreen[Optional[str]]):
     """Fallback modal dialog for manual directory path entry when native selection fails."""
 
     BINDINGS = [
@@ -1541,39 +1372,13 @@ class ManualPathFallbackModal(
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    ManualPathFallbackModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
+    MODAL_CSS = """
     .modal-box {
-        padding: 1 2;
-        background: $panel;
         border: thick $warning;
-        width: 90%;
         max-width: 70;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box, .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
         min-height: 3;
-        align: right middle;
     }
     .button-row Button {
         margin-left: 1;
@@ -1611,7 +1416,7 @@ class ManualPathFallbackModal(
 
     def on_mount(self) -> None:
         """Focus input field on mount and announce screen reader alert."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         self.query_one("#input-fallback-dir", Input).focus()
         self.announce("Opened manual directory entry fallback dialog.")
 
@@ -1649,10 +1454,10 @@ def _format_file_size(size_bytes: int) -> str:
     return f"{size:.1f} TB"
 
 
-class InteractiveCollisionResolverModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict[str, str]]]
-):
-    """Interactive per-file collision resolution modal before execution."""
+class _BaseGroupSelectionModal(ResponsiveModalScreen[Optional[dict[str, str]]]):
+    """Shared base modal screen for per-group collision and duplicate review dialogs."""
+
+    NARROW_WIDTH_BREAKPOINT = 60
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
@@ -1660,41 +1465,13 @@ class InteractiveCollisionResolverModal(
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
+    MODAL_CSS = """
     InteractiveCollisionResolverModal, DuplicateReviewModal {
-        align: center middle;
         background: rgba(0, 0, 0, 0.65);
     }
     .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
         max-width: 90;
         min-width: 40;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
     }
     .modal-subtitle {
         color: $text-muted;
@@ -1741,12 +1518,7 @@ class InteractiveCollisionResolverModal(
         height: auto;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
         min-height: 3;
-        align: right middle;
     }
     .button-row Button {
         margin-left: 1;
@@ -1756,6 +1528,90 @@ class InteractiveCollisionResolverModal(
         text-style: bold;
     }
     """
+
+    DEFAULT_BATCH_ACTION: str = "rename"
+    OPEN_ANNOUNCEMENT: str = ""
+    APPLY_ALL_SCOPE_LABEL: str = "groups"
+    CONFIRM_ANNOUNCEMENT: str = ""
+    CANCEL_ANNOUNCEMENT: str = ""
+
+    duplicate_groups: list[dict[str, Any]]
+    user_selections: dict[str, str]
+
+    def on_mount(self) -> None:
+        """Focus initial widget on mount and announce to screen reader."""
+        super().on_mount()
+        try:
+            self.query_one("#batch-action-select", Select).focus()
+        except (LookupError, AttributeError):
+            if self.duplicate_groups:
+                first_gid = self.duplicate_groups[0]["group_id"]
+                try:
+                    self.query_one(f"#select-action-{first_gid}", Select).focus()
+                except (LookupError, AttributeError):
+                    with contextlib.suppress(LookupError, AttributeError):
+                        self.query_one("#btn-confirm-duplicates", Button).focus()
+            else:
+                with contextlib.suppress(LookupError, AttributeError):
+                    self.query_one("#btn-confirm-duplicates", Button).focus()
+        if self.OPEN_ANNOUNCEMENT:
+            self.announce(self.OPEN_ANNOUNCEMENT)
+
+    @on(Button.Pressed, "#btn-apply-all")
+    def action_apply_to_all(self) -> None:
+        """Apply the selected batch action to all groups."""
+        try:
+            batch_sel = self.query_one("#batch-action-select", Select)
+            batch_value = (
+                str(batch_sel.value)
+                if batch_sel.value is not None
+                else self.DEFAULT_BATCH_ACTION
+            )
+        except (LookupError, AttributeError):
+            batch_value = self.DEFAULT_BATCH_ACTION
+
+        for group in self.duplicate_groups:
+            gid = group["group_id"]
+            self.user_selections[gid] = batch_value
+            with contextlib.suppress(LookupError, AttributeError):
+                sel_widget = self.query_one(f"#select-action-{gid}", Select)
+                sel_widget.value = batch_value
+
+        self.announce(
+            f"Applied '{batch_value}' action to all {self.APPLY_ALL_SCOPE_LABEL}."
+        )
+
+    @on(Select.Changed)
+    def on_select_changed(self, event: Select.Changed) -> None:
+        """Record user selection updates for per-group Select controls."""
+        if event.select.id and event.select.id.startswith("select-action-"):
+            gid = event.select.id.replace("select-action-", "")
+            if event.value is not None:
+                self.user_selections[gid] = str(event.value)
+
+    @on(Button.Pressed, "#btn-confirm-duplicates")
+    def action_confirm(self) -> None:
+        """Confirm selections and dismiss dialog."""
+        if self.CONFIRM_ANNOUNCEMENT:
+            self.announce(self.CONFIRM_ANNOUNCEMENT)
+        self.dismiss(self.user_selections)
+
+    @on(Button.Pressed, "#btn-cancel-duplicates")
+    def action_cancel(self) -> None:
+        """Cancel dialog and abort execution."""
+        if self.CANCEL_ANNOUNCEMENT:
+            self.announce(self.CANCEL_ANNOUNCEMENT)
+        self.dismiss(None)
+
+
+class InteractiveCollisionResolverModal(_BaseGroupSelectionModal):
+    """Interactive per-file collision resolution modal before execution."""
+
+    DEFAULT_BATCH_ACTION = "rename"
+    OPEN_ANNOUNCEMENT = "Opened interactive collision resolver modal."
+    APPLY_ALL_SCOPE_LABEL = "collision groups"
+    CONFIRM_ANNOUNCEMENT = "Applied collision resolution selections."
+    CANCEL_ANNOUNCEMENT = "Cancelled collision resolver dialog."
 
     RESOLVER_OPTIONS = [
         ("Rename (auto-number colliding files)", "rename"),
@@ -1777,7 +1633,7 @@ class InteractiveCollisionResolverModal(
         self.collision_groups = groups
         self.duplicate_groups = groups
         valid_values = {opt[1] for opt in self.RESOLVER_OPTIONS}
-        self.user_selections: dict[str, str] = {
+        self.user_selections = {
             g["group_id"]: (
                 str(g.get("default_action"))
                 if g.get("default_action") in valid_values
@@ -1909,89 +1765,15 @@ class InteractiveCollisionResolverModal(
                 )
                 yield btn_cancel
 
-    def _update_layout(self, width: int, height: Optional[int] = None) -> None:
-        """Update responsiveness based on modal container width and height."""
-        effective_height = self._resolve_viewport_height(height)
-        if width < 60:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-        if width <= 100 or effective_height <= 30:
-            self.add_class("compact")
-        else:
-            self.remove_class("compact")
 
-    def on_mount(self) -> None:
-        """Focus initial widget on mount and announce to screen reader."""
-        self._update_layout(self.size.width, self.size.height)
-        try:
-            self.query_one("#batch-action-select", Select).focus()
-        except (LookupError, AttributeError):
-            if self.collision_groups:
-                first_gid = self.collision_groups[0]["group_id"]
-                try:
-                    self.query_one(f"#select-action-{first_gid}", Select).focus()
-                except (LookupError, AttributeError):
-                    with contextlib.suppress(LookupError, AttributeError):
-                        self.query_one("#btn-confirm-duplicates", Button).focus()
-            else:
-                with contextlib.suppress(LookupError, AttributeError):
-                    self.query_one("#btn-confirm-duplicates", Button).focus()
-        self.announce("Opened interactive collision resolver modal.")
-
-    @on(Button.Pressed, "#btn-apply-all")
-    def action_apply_to_all(self) -> None:
-        """Apply the selected batch action to all collision groups."""
-        try:
-            batch_sel = self.query_one("#batch-action-select", Select)
-            batch_value = (
-                str(batch_sel.value) if batch_sel.value is not None else "rename"
-            )
-        except (LookupError, AttributeError):
-            batch_value = "rename"
-
-        for group in self.collision_groups:
-            gid = group["group_id"]
-            self.user_selections[gid] = batch_value
-            with contextlib.suppress(LookupError, AttributeError):
-                sel_widget = self.query_one(f"#select-action-{gid}", Select)
-                sel_widget.value = batch_value
-
-        self.announce(f"Applied '{batch_value}' action to all collision groups.")
-
-    @on(Select.Changed)
-    def on_select_changed(self, event: Select.Changed) -> None:
-        """Record user selection updates for collision groups."""
-        if event.select.id and event.select.id.startswith("select-action-"):
-            gid = event.select.id.replace("select-action-", "")
-            if event.value is not None:
-                self.user_selections[gid] = str(event.value)
-
-    @on(Button.Pressed, "#btn-confirm-duplicates")
-    def action_confirm(self) -> None:
-        """Confirm collision resolution selections and dismiss dialog."""
-        self.announce("Applied collision resolution selections.")
-        self.dismiss(self.user_selections)
-
-    @on(Button.Pressed, "#btn-cancel-duplicates")
-    def action_cancel(self) -> None:
-        """Cancel collision resolution and abort execution."""
-        self.announce("Cancelled collision resolver dialog.")
-        self.dismiss(None)
-
-
-class DuplicateReviewModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict[str, str]]]
-):
+class DuplicateReviewModal(_BaseGroupSelectionModal):
     """Dedicated review modal for exact byte-verified duplicate file clusters."""
 
-    BINDINGS = [
-        Binding("escape", "cancel", "Cancel dialog", show=True),
-        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
-        Binding("f1", "open_help_overlay(False)", "Help", show=False),
-    ]
-
-    CSS = InteractiveCollisionResolverModal.CSS
+    DEFAULT_BATCH_ACTION = "stage"
+    OPEN_ANNOUNCEMENT = "Opened byte-verified duplicate review modal."
+    APPLY_ALL_SCOPE_LABEL = "duplicate clusters"
+    CONFIRM_ANNOUNCEMENT = "Applied duplicate cleanup selections."
+    CANCEL_ANNOUNCEMENT = "Cancelled duplicate review dialog."
 
     DUPLICATE_OPTIONS = [
         ("Stage Duplicates for Undo (.sortify_duplicates)", "stage"),
@@ -2008,7 +1790,7 @@ class DuplicateReviewModal(
         super().__init__()
         self.duplicate_groups = duplicate_groups or []
         valid_values = {opt[1] for opt in self.DUPLICATE_OPTIONS}
-        self.user_selections: dict[str, str] = {
+        self.user_selections = {
             g["group_id"]: (
                 str(g.get("default_action"))
                 if g.get("default_action") in valid_values
@@ -2173,76 +1955,6 @@ class DuplicateReviewModal(
                     "Cancel duplicate review and abort execution",
                 )
                 yield btn_cancel
-
-    def _update_layout(self, width: int, height: Optional[int] = None) -> None:
-        """Update responsiveness based on modal container width and height."""
-        effective_height = self._resolve_viewport_height(height)
-        if width < 60:
-            self.add_class("narrow")
-        else:
-            self.remove_class("narrow")
-        if width <= 100 or effective_height <= 30:
-            self.add_class("compact")
-        else:
-            self.remove_class("compact")
-
-    def on_mount(self) -> None:
-        """Focus initial widget on mount and announce to screen reader."""
-        self._update_layout(self.size.width, self.size.height)
-        try:
-            self.query_one("#batch-action-select", Select).focus()
-        except (LookupError, AttributeError):
-            if self.duplicate_groups:
-                first_gid = self.duplicate_groups[0]["group_id"]
-                try:
-                    self.query_one(f"#select-action-{first_gid}", Select).focus()
-                except (LookupError, AttributeError):
-                    with contextlib.suppress(LookupError, AttributeError):
-                        self.query_one("#btn-confirm-duplicates", Button).focus()
-            else:
-                with contextlib.suppress(LookupError, AttributeError):
-                    self.query_one("#btn-confirm-duplicates", Button).focus()
-        self.announce("Opened byte-verified duplicate review modal.")
-
-    @on(Button.Pressed, "#btn-apply-all")
-    def action_apply_to_all(self) -> None:
-        """Apply the selected batch cleanup action to all duplicate clusters."""
-        try:
-            batch_sel = self.query_one("#batch-action-select", Select)
-            batch_value = (
-                str(batch_sel.value) if batch_sel.value is not None else "stage"
-            )
-        except (LookupError, AttributeError):
-            batch_value = "stage"
-
-        for group in self.duplicate_groups:
-            gid = group["group_id"]
-            self.user_selections[gid] = batch_value
-            with contextlib.suppress(LookupError, AttributeError):
-                sel_widget = self.query_one(f"#select-action-{gid}", Select)
-                sel_widget.value = batch_value
-
-        self.announce(f"Applied '{batch_value}' action to all duplicate clusters.")
-
-    @on(Select.Changed)
-    def on_select_changed(self, event: Select.Changed) -> None:
-        """Record user selection updates for duplicate clusters."""
-        if event.select.id and event.select.id.startswith("select-action-"):
-            gid = event.select.id.replace("select-action-", "")
-            if event.value is not None:
-                self.user_selections[gid] = str(event.value)
-
-    @on(Button.Pressed, "#btn-confirm-duplicates")
-    def action_confirm(self) -> None:
-        """Confirm duplicate cleanup selections and dismiss dialog."""
-        self.announce("Applied duplicate cleanup selections.")
-        self.dismiss(self.user_selections)
-
-    @on(Button.Pressed, "#btn-cancel-duplicates")
-    def action_cancel(self) -> None:
-        """Cancel duplicate review and abort execution."""
-        self.announce("Cancelled duplicate review dialog.")
-        self.dismiss(None)
 
 
 DirectoryModal = DirectorySelectModal

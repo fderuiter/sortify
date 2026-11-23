@@ -8,12 +8,10 @@ from textual import events, on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, Input, Label, Static, Switch
 
-from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveModalScreen
 from app.ui.widgets.labeled_switch import LabeledSwitch
 
 logger = logging.getLogger(__name__)
@@ -24,7 +22,7 @@ PRIVACY_GUARANTEE_ANNOUNCEMENT = (
 )
 
 
-class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
+class WizardModal(ResponsiveModalScreen[None]):
     """Modal dialog for model onboarding wizard."""
 
     BINDINGS = [
@@ -33,11 +31,7 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    WizardModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
+    MODAL_CSS = """
     .modal-frame {
         padding: 1 2;
         background: $panel;
@@ -59,15 +53,13 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         width: 96%;
     }
     .modal-box {
+        padding: 0;
+        border: none;
         width: 100%;
-        height: auto;
+        max-width: 100%;
+        min-width: 0;
         max-height: 100%;
         overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
     }
     .privacy-card {
         border: round $primary;
@@ -129,12 +121,7 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         align: left middle;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
         min-height: 3;
-        align: right middle;
     }
     Button:focus, Checkbox:focus, Switch:focus, Input:focus, .privacy-card:focus {
         border: heavy $accent;
@@ -156,8 +143,8 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     def compose(self) -> ComposeResult:
         """Compose modal dialog children."""
-        with Vertical(classes="modal-frame"):
-            with Vertical(classes="modal-box modal-body"):
+        with ModalBox(classes="modal-frame"):
+            with Vertical(classes="modal-body modal-box"):
                 yield Heading(
                     "Model Onboarding Wizard [Ctrl+W]",
                     level=1,
@@ -501,7 +488,7 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     def on_mount(self) -> None:
         """Focus switch on mount, refresh model status, and emit screen reader announcement."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
         self._refresh_model_status_label()
         self.set_interval(0.5, self._refresh_model_status_label)
         try:

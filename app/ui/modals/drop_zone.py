@@ -11,12 +11,10 @@ from textual import events, on, work
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Container, Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.widgets import Button, DataTable, Input, Label, Static
 
-from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ModalBox, ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveModalScreen
 from app.ui.notifications import TROUBLESHOOTING_URL
 
 logger = logging.getLogger(__name__)
@@ -24,7 +22,7 @@ logger = logging.getLogger(__name__)
 _WIN_DRIVE_RE = re.compile(r"^[a-zA-Z]:[/\\]")
 
 
-class DropPlanConfirmModal(A11yMixin, ModalScreen[bool]):
+class DropPlanConfirmModal(ResponsiveModalScreen[bool]):
     """Show the DropZone plan and ask before any file is moved."""
 
     BINDINGS = [
@@ -33,32 +31,9 @@ class DropPlanConfirmModal(A11yMixin, ModalScreen[bool]):
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    DropPlanConfirmModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
+    MODAL_CSS = """
     .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
-        width: 90%;
         max-width: 100;
-        min-width: 30;
-        height: auto;
-        max-height: 90%;
-        overflow-y: hidden;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
     }
     #drop-plan-tree {
         height: auto;
@@ -66,13 +41,6 @@ class DropPlanConfirmModal(A11yMixin, ModalScreen[bool]):
         overflow-y: auto;
         border: solid $secondary;
         padding: 0 1;
-    }
-    .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
-        align: right middle;
     }
     """
 
@@ -104,6 +72,7 @@ class DropPlanConfirmModal(A11yMixin, ModalScreen[bool]):
 
     def on_mount(self) -> None:
         """Focus Cancel so Enter never moves files by accident."""
+        super().on_mount()
         self.query_one("#btn-cancel-drop-plan", Button).focus()
 
     @on(Button.Pressed, "#btn-confirm-drop-plan")
@@ -117,10 +86,10 @@ class DropPlanConfirmModal(A11yMixin, ModalScreen[bool]):
         self.dismiss(False)
 
 
-class DropZoneModal(
-    ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict[str, Any]]]
-):
+class DropZoneModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
     """Floating overlay modal dialog for quick drag-and-drop or paste file triage."""
+
+    HELP_URL = f"{TROUBLESHOOTING_URL}#dropzone-errors"
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
@@ -128,35 +97,21 @@ class DropZoneModal(
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
+    MODAL_CSS = """
     DropZoneModal {
-        align: center middle;
         background: rgba(0, 0, 0, 0.7);
     }
     .modal-box {
-        padding: 1 2;
-        background: $panel;
         border: double $accent;
         width: 92%;
         max-width: 100;
         min-width: 40;
-        height: auto;
         max-height: 95%;
-        overflow-y: hidden;
     }
     .compact .modal-box, .narrow .modal-box {
-        padding: 0 1;
         width: 98%;
     }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
     .modal-title {
-        text-style: bold;
-        color: $accent;
         margin-bottom: 0;
     }
     .dropzone-target {
@@ -260,11 +215,7 @@ class DropZoneModal(
         text-style: italic;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
         margin-top: 0;
-        height: auto;
-        align: right middle;
     }
     .compact .button-row Button {
         height: 1;
@@ -293,9 +244,6 @@ class DropZoneModal(
     Button:focus, Input:focus, DataTable:focus {
         border: heavy $accent;
         text-style: bold;
-    }
-    Button.hidden {
-        display: none;
     }
     """
 
@@ -556,18 +504,15 @@ class DropZoneModal(
         self._refresh_table()
 
     @on(DataTable.RowHighlighted)
-    def _on_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
-        """Update metadata preview panel on table row focus/highlight."""
-        self.update_active_metadata_preview()
-
     @on(DataTable.RowSelected)
-    def _on_table_row_selected(self, event: DataTable.RowSelected) -> None:
-        """Update metadata preview panel on table row selection."""
-        self.update_active_metadata_preview()
-
     @on(DataTable.CellHighlighted)
-    def _on_table_cell_highlighted(self, event: DataTable.CellHighlighted) -> None:
-        """Update metadata preview panel on cell selection/focus."""
+    def _on_table_row_highlighted(
+        self,
+        event: DataTable.RowHighlighted
+        | DataTable.RowSelected
+        | DataTable.CellHighlighted,
+    ) -> None:
+        """Update metadata preview panel on table row or cell focus/selection."""
         self.update_active_metadata_preview()
 
     @staticmethod
@@ -896,7 +841,7 @@ class DropZoneModal(
     def on_mount(self) -> None:
         """Focus input on mount, stage initial paths if any, and announce modal opening."""
         self._app_ref = self.app
-        self._update_layout(self.size.width)
+        super().on_mount()
         self._refresh_table()
         try:
             self.query_one("#input-drop-paths", Input).focus()
@@ -1015,16 +960,6 @@ class DropZoneModal(
     def on_btn_process_pressed(self, event: Button.Pressed) -> None:
         """Handle Sort Items button press."""
         self.trigger_drop_triage()
-
-    @on(Button.Pressed, "#btn-help")
-    def action_help(self) -> None:
-        """Open troubleshooting documentation link for dropzone."""
-        url = getattr(
-            self,
-            "help_url",
-            f"{TROUBLESHOOTING_URL}#dropzone-errors",
-        )
-        self.open_help_section(url)
 
     @on(Button.Pressed, "#btn-cancel")
     def action_cancel(self) -> None:
