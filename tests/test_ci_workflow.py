@@ -514,14 +514,155 @@ def test_pre_commit_ty_check_triggers_on_app_scripts_pyproject_and_lockfile():
         )
 
 
+def _validate_gitleaks_config(gitleaks_cfg: dict) -> None:
+    """Fail closed if .gitleaks.toml drops default rule inheritance or adds blanket exclusions."""
+    import re
+
+    extend = gitleaks_cfg.get("extend")
+    assert isinstance(extend, dict), "Missing [extend] table in .gitleaks.toml"
+    assert extend.get("useDefault") is True, (
+        ".gitleaks.toml must set [extend] useDefault = true to load built-in rules"
+    )
+    assert not extend.get("disabledRules"), (
+        f".gitleaks.toml must not disable built-in rules globally: {extend.get('disabledRules')!r}"
+    )
+
+    global_allowlist = gitleaks_cfg.get("allowlist")
+    assert isinstance(global_allowlist, dict), (
+        "Missing top-level [allowlist] table in .gitleaks.toml"
+    )
+    for forbidden_global_key in ("commits", "regexes", "stopwords"):
+        assert not global_allowlist.get(forbidden_global_key), (
+            f"Top-level [allowlist] must not set global {forbidden_global_key!r}"
+        )
+
+    global_path_patterns = [re.compile(p) for p in global_allowlist.get("paths", [])]
+    assert global_path_patterns, (
+        "Top-level [allowlist] must define cache/artifact paths"
+    )
+
+    for ignored_path in (
+        ".venv/pyvenv.cfg",
+        "venv/bin/activate",
+        "tests/__pycache__/test_ci_workflow.cpython-312.pyc",
+        ".pytest_cache/v/cache/nodeids",
+        ".ruff_cache/0.17.5/cache",
+        ".coverage",
+        "coverage.json",
+        "coverage.xml",
+        "htmlcov/index.html",
+        "build/lib/app/main.py",
+        "dist/smart-autosorter/smart-autosorter",
+        "site/index.html",
+        "smart_autosorter.egg-info/PKG-INFO",
+    ):
+        assert any(p.search(ignored_path) for p in global_path_patterns), (
+            f"Expected .gitleaks.toml [allowlist].paths to ignore {ignored_path!r}"
+        )
+
+    for enforced_path in (
+        "app/main.py",
+        "app/config.py",
+        "app/core/crypto.py",
+        "app/binaries/manifest.json",
+        "scripts/build.py",
+        "scripts/prompt_manifest.py",
+        ".github/workflows/ci.yml",
+        ".github/workflows/scheduled-audit.yml",
+        "tests/test_notifications.py",
+        "tests/test_key_audit_ledger.py",
+        "tests/test_unified_lifecycle_telemetry.py",
+        "tests/test_file_renamer.py",
+        "tests/test_tui.py",
+        "tests/test_validate_links.py",
+    ):
+        assert not any(p.search(enforced_path) for p in global_path_patterns), (
+            f"Top-level [allowlist].paths must never exclude {enforced_path!r}"
+        )
+
+    rules = gitleaks_cfg.get("rules", [])
+    assert isinstance(rules, list) and rules, (
+        "Expected scoped [[rules]] allowlists in .gitleaks.toml"
+    )
+    synthetic_probes = (
+        "sk_" + "live_ABCDEF1234567890abcdef1234",
+        "gh" + "p_ABCDEF1234567890abcdef1234567890ABCD",
+        "AK" + "IAIOSFODNN7ABCDEFG",
+        "PROMPT_MANIFEST_" + 'PRIVATE_KEY = "' + ("a1b2c3d4e5f60718" * 4) + '"',
+        "REMEDIATION_APP_" + 'PRIVATE_KEY = "-----BEGIN ' + 'PRIVATE KEY-----"',
+    )
+    for rule in rules:
+        rule_id = rule.get("id")
+        assert isinstance(rule_id, str) and rule_id, "Rule entry missing id"
+        assert set(rule.keys()) <= {"id", "allowlists"}, (
+            f"Rule {rule_id!r} must inherit default detection attributes without overriding {set(rule.keys()) - {'id', 'allowlists'}!r}"
+        )
+        allowlists = rule.get("allowlists", [])
+        assert isinstance(allowlists, list) and allowlists, (
+            f"Rule {rule_id!r} must define non-empty [[rules.allowlists]]"
+        )
+        for entry in allowlists:
+            assert entry.get("condition") == "AND", (
+                f"Rule {rule_id!r} allowlist {entry.get('description')!r} must set condition = 'AND'"
+            )
+            assert not entry.get("stopwords"), (
+                f"Rule {rule_id!r} allowlist must not use broad stopwords"
+            )
+            paths = entry.get("paths", [])
+            regexes = entry.get("regexes", [])
+            assert paths and regexes, (
+                f"Rule {rule_id!r} allowlist {entry.get('description')!r} must scope both paths and regexes"
+            )
+            compiled_paths = [re.compile(p) for p in paths]
+            if any(p.search("app/binaries/manifest.json") for p in compiled_paths):
+                commits = entry.get("commits", [])
+                assert set(commits) == {
+                    "c501b29b8b503622bcf81b4cfe39ff308397ad10",
+                    "2174c81a7e883a0ca46bc0220d6bc18c1b5e5166",
+                    "78525ca1bd270557938ec5c7e1e67de177fa3b38",
+                }, (
+                    "app/binaries/manifest.json allowlist must pin exact historical commit SHAs"
+                )
+
+            compiled_regexes = [re.compile(r) for r in regexes]
+            for probe in synthetic_probes:
+                assert not any(r.search(probe) for r in compiled_regexes), (
+                    f"Rule {rule_id!r} regexes must not match fresh secret probe {probe!r}"
+                )
+
+
 def test_precommit_hooks_full_repo_readonly_parity():
     """Verify pre-commit hooks match CI full-repo read-only execution and trigger patterns."""
     import re
+    import tomllib
 
     repo_root = Path(__file__).resolve().parent.parent
     precommit_cfg = yaml.safe_load(
         (repo_root / ".pre-commit-config.yaml").read_text(encoding="utf-8")
     )
+    gitleaks_repo = next(
+        r
+        for r in precommit_cfg["repos"]
+        if r["repo"] == "https://github.com/gitleaks/gitleaks"
+    )
+    assert gitleaks_repo["rev"] == "v8.24.0"
+    gitleaks_hooks = {h.get("alias", h["id"]): h for h in gitleaks_repo["hooks"]}
+    assert "gitleaks" in gitleaks_hooks
+    assert gitleaks_hooks["gitleaks"].get("args") == ["--config", ".gitleaks.toml"]
+    assert "gitleaks-dir" in gitleaks_hooks
+    gitleaks_dir_hook = gitleaks_hooks["gitleaks-dir"]
+    assert gitleaks_dir_hook["id"] == "gitleaks"
+    assert gitleaks_dir_hook.get("pass_filenames") is False, (
+        "gitleaks-dir must set pass_filenames: false"
+    )
+    assert "gitleaks dir ." in gitleaks_dir_hook.get("entry", "")
+    assert gitleaks_dir_hook.get("args") == ["--config", ".gitleaks.toml"]
+
+    gitleaks_cfg = tomllib.loads(
+        (repo_root / ".gitleaks.toml").read_text(encoding="utf-8")
+    )
+    _validate_gitleaks_config(gitleaks_cfg)
+
     local_repo = next(r for r in precommit_cfg["repos"] if r["repo"] == "local")
     hooks = {h["id"]: h for h in local_repo["hooks"]}
 
@@ -574,6 +715,72 @@ def test_precommit_hooks_full_repo_readonly_parity():
         s for s in build_steps if s.get("name") == "Validate Configuration Schema"
     )
     assert "scripts/validate_config.py --check" in cfg_step.get("run", "")
+
+
+def test_gitleaks_config_fails_closed_on_missing_extend_or_blanket_exclusions():
+    """Verify _validate_gitleaks_config rejects dropped rule inheritance, disabled rules, and blanket exclusions, and docs/governance stay synced."""
+    import copy
+    import tomllib
+
+    repo_root = Path(__file__).resolve().parent.parent
+    base_cfg = tomllib.loads((repo_root / ".gitleaks.toml").read_text(encoding="utf-8"))
+    _validate_gitleaks_config(base_cfg)
+
+    # Dropping [extend] or setting useDefault = false must fail closed
+    no_extend = copy.deepcopy(base_cfg)
+    no_extend.pop("extend", None)
+    with pytest.raises(AssertionError, match="extend"):
+        _validate_gitleaks_config(no_extend)
+
+    disabled_default = copy.deepcopy(base_cfg)
+    disabled_default["extend"]["useDefault"] = False
+    with pytest.raises(AssertionError, match="useDefault"):
+        _validate_gitleaks_config(disabled_default)
+
+    disabled_rule = copy.deepcopy(base_cfg)
+    disabled_rule["extend"]["disabledRules"] = ["generic-api-key"]
+    with pytest.raises(AssertionError, match="disable built-in rules"):
+        _validate_gitleaks_config(disabled_rule)
+
+    # Blanket directory or test-module exclusions in [allowlist].paths must fail closed
+    for blanket_path in (
+        "^app/",
+        "^scripts/",
+        "^tests/",
+        "tests/test_notifications.py",
+    ):
+        blanket_cfg = copy.deepcopy(base_cfg)
+        blanket_cfg["allowlist"]["paths"].append(blanket_path)
+        with pytest.raises(AssertionError, match="must never exclude"):
+            _validate_gitleaks_config(blanket_cfg)
+
+    # Weakening [[rules.allowlists]] condition or adding unanchored prefix regexes must fail closed
+    or_condition_cfg = copy.deepcopy(base_cfg)
+    or_condition_cfg["rules"][0]["allowlists"][0]["condition"] = "OR"
+    with pytest.raises(AssertionError, match="condition = 'AND'"):
+        _validate_gitleaks_config(or_condition_cfg)
+
+    broad_regex_cfg = copy.deepcopy(base_cfg)
+    broad_regex_cfg["rules"][1]["allowlists"][0]["regexes"].append("sk_live_")
+    with pytest.raises(AssertionError, match="must not match fresh secret probe"):
+        _validate_gitleaks_config(broad_regex_cfg)
+
+    # Contributor guide, agent guide, and protected-path governance stay synchronized
+    agents_md = (repo_root / "AGENTS.md").read_text(encoding="utf-8")
+    assert "gitleaks-dir" in agents_md
+    assert ".gitleaks.toml" in agents_md
+
+    contributing_md = (repo_root / "CONTRIBUTING.md").read_text(encoding="utf-8")
+    assert "gitleaks-dir" in contributing_md
+    assert ".gitleaks.toml" in contributing_md
+
+    codeowners = (repo_root / ".github/CODEOWNERS").read_text(encoding="utf-8")
+    assert ".gitleaks.toml @fderuiter" in codeowners
+
+    auto_merge_doc = (repo_root / "docs/auto_merge_policy.md").read_text(
+        encoding="utf-8"
+    )
+    assert "`.gitleaks.toml`" in auto_merge_doc
 
 
 def test_ci_and_precommit_isolate_live_link_checks_and_retire_validate_imports():
