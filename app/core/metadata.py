@@ -132,8 +132,11 @@ class MetadataPass:
             isinstance(p, dict)
             and p.get("enabled", True)
             and (
-                str(p.get("type", "")).lower() == "compliance"
-                or str(p.get("action", "")).lower() in ("quarantine", "redact")
+                str(p.get("type", "")).lower() in ("compliance", "action")
+                or str(p.get("action", "")).lower()
+                in ("quarantine", "redact", "archive", "retain")
+                or str(p.get("expression", "")).strip().lower()
+                in ("secret", "credential")
             )
             for p in (policies or [])
         )
@@ -212,8 +215,12 @@ class MetadataPass:
             is_supported = registry.is_supported(ext)
 
             matched_target = None
+            matched_policy_action = ""
+            matched_from_policy = False
+            unmatched_higher_content_policy = False
             if file_hash in hash_to_target:
                 matched_target = hash_to_target[file_hash]
+                matched_from_policy = True
             else:
                 filename_only = os.path.basename(rel_p).lower()
                 file_path_lower = item_path.lower()
@@ -249,13 +256,30 @@ class MetadataPass:
 
                     if is_match:
                         matched_target = target_path
+                        matched_policy_action = str(
+                            policy.get("action", "") or ""
+                        ).lower()
+                        matched_from_policy = True
                         break
                     else:
+                        if p_type in (
+                            "keyword",
+                            "action",
+                            "compliance",
+                            "secret",
+                            "credential",
+                            "",
+                        ):
+                            unmatched_higher_content_policy = True
                         if policy.get("halting", False):
                             halt_evaluation = True
                             break
 
-                if not halt_evaluation and not matched_target:
+                if (
+                    not halt_evaluation
+                    and not matched_target
+                    and not matched_policy_action
+                ):
                     for keyword, target_folder in keyword_rules.items():
                         if keyword.strip() and keyword.lower() in filename_only:
                             matched_target = target_folder
@@ -267,7 +291,12 @@ class MetadataPass:
                                 break
 
                 # Evaluate extension category mapping / MIME fallback rules for unregistered extensions
-                if not halt_evaluation and not matched_target and not is_supported:
+                if (
+                    not halt_evaluation
+                    and not matched_target
+                    and not matched_policy_action
+                    and not is_supported
+                ):
                     matched_target = get_extension_category_target(item, settings)
 
             norm_rel_p = rel_p.replace("\\", "/")
@@ -277,8 +306,12 @@ class MetadataPass:
                 if mt_clean in rejected_set or (mt_clean.split("/")[0] in rejected_set):
                     matched_target = None
 
-            if matched_target and (
-                not is_supported or not has_content_compliance_policy
+            if (matched_target or matched_policy_action == "unarchive") and (
+                not is_supported
+                or (
+                    not has_content_compliance_policy
+                    and (matched_from_policy or not unmatched_higher_content_policy)
+                )
             ):
                 bypassed_files.append(item)
                 docs_to_upsert.append((src_root, rel_p, file_hash, "[STATUS:BYPASSED]"))

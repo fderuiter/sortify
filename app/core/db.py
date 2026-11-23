@@ -1963,6 +1963,36 @@ class Database:
 
         self.worker.execute_write(_write)
 
+    def _purge_document_vector(self, base_dir: str, filepath: str) -> None:
+        """Zero and delete persisted vector embeddings for a redacted document."""
+        if not base_dir or not filepath:
+            return
+        norm_fp = filepath.replace("\\", "/")
+        try:
+            existing_vec = self.get_document_vector(base_dir, norm_fp)
+            if existing_vec is not None:
+                from app.core.crypto import zero_vector_buffer
+
+                zero_vector_buffer(existing_vec)
+        except Exception:
+            pass
+
+        def _write():
+            conn = get_db_connection(self.db_path)
+            with conn:
+                conn.execute(
+                    "DELETE FROM document_vectors WHERE base_dir = ? AND filepath = ?",
+                    (base_dir, norm_fp),
+                )
+
+        self.clear_corrupted_vectors(base_dir, [norm_fp])
+        if hasattr(self, "matrix_lru_cache") and self.matrix_lru_cache:
+            try:
+                self.matrix_lru_cache.invalidate(base_dir)
+            except Exception:
+                pass
+        self.worker.execute_write(_write)
+
     def get_document_vectors_count(self) -> int:
         """Return total count of stored document vectors in document_vectors table."""
         try:

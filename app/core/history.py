@@ -1043,7 +1043,11 @@ class HistoryManager:
         suffixed name, so nothing is overwritten. Returns the number of files
         moved back.
         """
-        from app.core.mover import _prune_emptied_dirs
+        from app.core.mover import (
+            _prune_emptied_dirs,
+            is_subpath_or_equal,
+            overwrite_backup_dir,
+        )
         from app.core.resilient_file_ops import (
             resilient_move,
             resilient_remove,
@@ -1056,6 +1060,9 @@ class HistoryManager:
                 "SELECT base_dir FROM sessions WHERE session_id = ?", (session_id,)
             ).fetchone()
         base_dir = row[0] if row else None
+        session_backup_root = (
+            overwrite_backup_dir(base_dir, session_id) if base_dir else None
+        )
 
         claimed = {m.dst for m in moves if m.state not in (INTENT, FAILED)}
         docs_conn = get_db_connection(self.db.db_path)
@@ -1083,32 +1090,62 @@ class HistoryManager:
                 if moved:
                     claimed.add(moved)
                     dirs_to_prune.add(os.path.dirname(moved))
-                    if base_dir:
-                        _move_aside_blocking_parents(move.src, base_dir, docs_conn)
-                    os.makedirs(os.path.dirname(move.src), exist_ok=True)
-                    restored_to = move.src
-                    if os.path.lexists(move.src) and same_file_content(move.src, moved):
-                        # An identical copy is already back in place.
+                    is_synthetic_src = bool(
+                        session_backup_root
+                        and is_subpath_or_equal(move.src, session_backup_root)
+                    )
+                    if is_synthetic_src:
                         resilient_remove(moved)
+                        restored += 1
+                        if base_dir:
+                            try:
+                                rel_moved = safe_relpath(moved, base_dir).replace(
+                                    "\\", "/"
+                                )
+                                with docs_conn:
+                                    docs_conn.execute(
+                                        "DELETE FROM documents WHERE base_dir = ? AND (filepath = ? OR REPLACE(filepath, '\\', '/') = ?)",
+                                        (base_dir, rel_moved, rel_moved),
+                                    )
+                            except Exception as err:
+                                logging.warning(
+                                    f"Could not delete synthetic document row for {moved}: {err}"
+                                )
                     else:
-                        restored_to = resilient_move(moved, move.src)
-                        if not _is_same_restored_path(restored_to, move.src):
-                            logging.warning(
-                                f"Undo conflict: {move.src} is occupied by a different file; "
-                                f"restored {moved} to {restored_to} instead."
-                            )
-                    restored += 1
-                    if db and base_dir:
-                        try:
-                            db.update_document_path(
-                                base_dir,
-                                safe_relpath(moved, base_dir).replace("\\", "/"),
-                                safe_relpath(restored_to, base_dir).replace("\\", "/"),
-                            )
-                        except Exception as err:
-                            logging.warning(
-                                f"Could not update the document path for {restored_to}: {err}"
-                            )
+                        if base_dir:
+                            _move_aside_blocking_parents(move.src, base_dir, docs_conn)
+                        os.makedirs(os.path.dirname(move.src), exist_ok=True)
+                        restored_to = move.src
+                        if os.path.lexists(move.src) and same_file_content(
+                            move.src, moved
+                        ):
+                            # An identical copy is already back in place.
+                            resilient_remove(moved)
+                        else:
+                            restored_to = resilient_move(moved, move.src)
+                            if not _is_same_restored_path(restored_to, move.src):
+                                logging.warning(
+                                    f"Undo conflict: {move.src} is occupied by a different file; "
+                                    f"restored {moved} to {restored_to} instead."
+                                )
+                        if session_backup_root and is_subpath_or_equal(
+                            move.dst, session_backup_root
+                        ):
+                            dirs_to_prune.add(os.path.dirname(move.dst))
+                        restored += 1
+                        if db and base_dir:
+                            try:
+                                db.update_document_path(
+                                    base_dir,
+                                    safe_relpath(moved, base_dir).replace("\\", "/"),
+                                    safe_relpath(restored_to, base_dir).replace(
+                                        "\\", "/"
+                                    ),
+                                )
+                            except Exception as err:
+                                logging.warning(
+                                    f"Could not update the document path for {restored_to}: {err}"
+                                )
                 if move.displaced and os.path.lexists(move.displaced):
                     dirs_to_prune.add(os.path.dirname(move.displaced))
                     put_back = resilient_move(move.displaced, move.dst)
@@ -1129,6 +1166,8 @@ class HistoryManager:
         if base_dir and os.path.exists(base_dir):
             _remove_staging_leftovers(base_dir)
             _prune_emptied_dirs(dirs_to_prune, base_dir)
+            if not failures and not conflicts and not is_partial:
+                _purge_overwrite_backups(base_dir, session_id)
 
         if failures:
             try:

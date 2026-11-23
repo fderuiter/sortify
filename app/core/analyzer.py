@@ -1338,22 +1338,130 @@ class IncrementalAnalyzer:
                 )
 
                 if matched_policy:
+                    from app.core.quarantine_interceptor import (
+                        _is_redactable_extension,
+                    )
+
+                    raw_pol_target = (
+                        matched_policy.target_path
+                        if hasattr(matched_policy, "target_path")
+                        else matched_policy.get("target_path")
+                    )
+                    pol_expr = (
+                        matched_policy.expression
+                        if hasattr(matched_policy, "expression")
+                        else matched_policy.get("expression", "")
+                    )
+                    pol_type = (
+                        matched_policy.type
+                        if hasattr(matched_policy, "type")
+                        else matched_policy.get("type", "policy")
+                    )
+                    pol_action_raw = getattr(matched_policy, "action", None) or (
+                        matched_policy.get("action")
+                        if isinstance(matched_policy, dict)
+                        else None
+                    )
+                    pol_action = (
+                        str(pol_action_raw).strip().lower() if pol_action_raw else None
+                    )
+                    post_unarchive_act = (
+                        getattr(matched_policy, "post_unarchive_action", None)
+                        or (
+                            matched_policy.get("post_unarchive_action")
+                            if isinstance(matched_policy, dict)
+                            else None
+                        )
+                        or getattr(matched_policy, "post_action", None)
+                        or (
+                            matched_policy.get("post_action")
+                            if isinstance(matched_policy, dict)
+                            else None
+                        )
+                        or getattr(matched_policy, "archive_action", None)
+                        or (
+                            matched_policy.get("archive_action")
+                            if isinstance(matched_policy, dict)
+                            else None
+                        )
+                    )
+                    post_unarchive_tgt = (
+                        getattr(matched_policy, "post_unarchive_target", None)
+                        or (
+                            matched_policy.get("post_unarchive_target")
+                            if isinstance(matched_policy, dict)
+                            else None
+                        )
+                        or getattr(matched_policy, "archive_target", None)
+                        or (
+                            matched_policy.get("archive_target")
+                            if isinstance(matched_policy, dict)
+                            else None
+                        )
+                    )
+
+                    quarantine_dir_cfg = (
+                        getattr(
+                            runtime_settings,
+                            "QUARANTINE_DIR_NAME",
+                            "_Compliance_Quarantine",
+                        )
+                        if runtime_settings
+                        else "_Compliance_Quarantine"
+                    ) or "_Compliance_Quarantine"
+
+                    cleaned_pol_target = str(raw_pol_target or "").strip()
+                    if pol_action == "quarantine":
+                        resolved_pol_target = cleaned_pol_target or quarantine_dir_cfg
+                    elif pol_action == "redact":
+                        if not _is_redactable_extension(f):
+                            resolved_pol_target = quarantine_dir_cfg
+                        else:
+                            resolved_pol_target = (
+                                cleaned_pol_target or "Redacted_Documents"
+                            )
+                    elif pol_action == "archive":
+                        resolved_pol_target = cleaned_pol_target or "Archive"
+                    elif pol_action == "retain":
+                        resolved_pol_target = cleaned_pol_target or "Retained_Documents"
+                    elif pol_action == "unarchive":
+                        resolved_pol_target = cleaned_pol_target
+                    else:
+                        resolved_pol_target = cleaned_pol_target
+
                     policy_plan_files.append(
                         (
                             f,
-                            matched_policy.target_path
-                            if hasattr(matched_policy, "target_path")
-                            else matched_policy["target_path"],
-                            matched_policy.expression
-                            if hasattr(matched_policy, "expression")
-                            else matched_policy["expression"],
-                            matched_policy.type
-                            if hasattr(matched_policy, "type")
-                            else matched_policy["type"],
+                            resolved_pol_target,
+                            pol_expr,
+                            pol_type,
                             status_match,
+                            pol_action,
+                            str(post_unarchive_act).strip().lower()
+                            if post_unarchive_act
+                            else None,
+                            str(post_unarchive_tgt).strip()
+                            if post_unarchive_tgt is not None
+                            else None,
                         )
                     )
-                    matched_policies_map[f] = matched_policy
+                    matched_policies_map[f] = {
+                        "rule": matched_policy,
+                        "type": pol_type,
+                        "expression": pol_expr,
+                        "target_path": resolved_pol_target,
+                        "policy_action": pol_action,
+                        "post_unarchive_action": (
+                            str(post_unarchive_act).strip().lower()
+                            if post_unarchive_act
+                            else None
+                        ),
+                        "post_unarchive_target": (
+                            str(post_unarchive_tgt).strip()
+                            if post_unarchive_tgt is not None
+                            else None
+                        ),
+                    }
                     if target is not None:
                         historical_overrides[f] = (target, status_match)
                     continue
@@ -1522,19 +1630,29 @@ class IncrementalAnalyzer:
                         ai_documents.append(doc)
 
             if jev_results:
-                processed_files = {f for f, _, _, _ in jev_plan_files}
+                processed_files = {
+                    str(f).replace("\\", "/") for f, _, _, _ in jev_plan_files
+                }
+                for d_row in docs:
+                    raw_df = str(d_row[0]).replace("\\", "/")
+                    processed_files.add(raw_df)
+                    processed_files.add(
+                        parse_item_identifier(raw_df, base_dir)[1].replace("\\", "/")
+                    )
                 for k_jev, v_jev in jev_results.items():
                     f_path = str(k_jev)
+                    src_r, rel_r = parse_item_identifier(f_path, base_dir)
+                    norm_rel_r = rel_r.replace("\\", "/")
                     if (
                         not _is_quarantine_rel_path(f_path)
-                        and f_path not in processed_files
+                        and f_path.replace("\\", "/") not in processed_files
+                        and norm_rel_r not in processed_files
                         and os.path.basename(f_path) not in processed_files
                     ):
                         v_jev_model = validate_jev_classification_result(v_jev)
                         sens_upper = str(
                             v_jev_model.sensitivity_rating or "LOW"
                         ).upper()
-                        src_r, rel_r = parse_item_identifier(f_path, base_dir)
                         abs_r = (
                             os.path.join(src_r, rel_r)
                             if src_r and not os.path.isabs(rel_r)
@@ -1551,7 +1669,8 @@ class IncrementalAnalyzer:
                             jev_plan_files.append(
                                 (f_path, quarantine_dir_name, v_jev_model, None)
                             )
-                            processed_files.add(f_path)
+                            processed_files.add(f_path.replace("\\", "/"))
+                            processed_files.add(norm_rel_r)
                         elif (
                             v_jev_model.is_classified
                             and v_jev_model.confidence > 0.0
@@ -1560,7 +1679,8 @@ class IncrementalAnalyzer:
                             jev_plan_files.append(
                                 (f_path, v_jev_model.category, v_jev_model, None)
                             )
-                            processed_files.add(f_path)
+                            processed_files.add(f_path.replace("\\", "/"))
+                            processed_files.add(norm_rel_r)
 
             # Internal Jev Classifier Fallback execution for unclassified candidate documents in fast-path or for non-extractor files
             if ai_filenames and (
@@ -2239,10 +2359,30 @@ class IncrementalAnalyzer:
                 expression,
                 rule_type,
                 ext_status,
+                pol_action,
+                post_unarchive_act,
+                post_unarchive_tgt,
             ) in policy_plan_files:
                 if cancel_check and cancel_check():
                     return SortingPlan()
-                parts = target_folder.replace("\\", "/").split("/")
+                pol_node_info: dict[str, Any] = {
+                    "__type__": "file",
+                    "routed_by": rule_type,
+                    "keyword": expression,
+                    "extraction_status": ext_status,
+                }
+                if pol_action:
+                    pol_node_info["policy_action"] = pol_action
+                if post_unarchive_act:
+                    pol_node_info["post_unarchive_action"] = post_unarchive_act
+                if post_unarchive_tgt is not None:
+                    pol_node_info["post_unarchive_target"] = post_unarchive_tgt
+
+                norm_tf = target_folder.replace("\\", "/").strip("/")
+                if not norm_tf or norm_tf == ".":
+                    plan.setdefault("", {})[f] = pol_node_info
+                    continue
+                parts = [p for p in norm_tf.split("/") if p]
                 current = plan
                 for i, part in enumerate(parts):
                     if part not in current:
@@ -2250,12 +2390,7 @@ class IncrementalAnalyzer:
                     if not isinstance(current[part], dict):
                         current[part] = {"_original": current[part]}
                     if i == len(parts) - 1:
-                        current[part][f] = {
-                            "__type__": "file",
-                            "routed_by": rule_type,
-                            "keyword": expression,
-                            "extraction_status": ext_status,
-                        }
+                        current[part][f] = dict(pol_node_info)
                     else:
                         current = current[part]
 
@@ -2354,7 +2489,16 @@ class IncrementalAnalyzer:
 
             # Phase 1: Policy, Keyword, and Learned Rule sorting
             compliance_targets = {}
-            for f, target_folder, expression, rule_type, status in policy_plan_files:
+            for (
+                f,
+                target_folder,
+                expression,
+                rule_type,
+                status,
+                _pol_action,
+                _post_act,
+                _post_tgt,
+            ) in policy_plan_files:
                 compliance_targets[f] = target_folder
                 compliance_targets[f.replace("\\", "/")] = target_folder
             for f, target_folder, keyword, routed_by, ext_status in keyword_plan_files:
@@ -2364,17 +2508,33 @@ class IncrementalAnalyzer:
                 compliance_targets[f] = target_folder
                 compliance_targets[f.replace("\\", "/")] = target_folder
 
-            for f, target_folder, expression, rule_type, status in policy_plan_files:
+            for (
+                f,
+                target_folder,
+                expression,
+                rule_type,
+                status,
+                pol_action,
+                post_unarchive_act,
+                post_unarchive_tgt,
+            ) in policy_plan_files:
                 if cancel_check and cancel_check():
                     return SortingPlan()
                 if target_folder not in plan:
                     plan[target_folder] = {}
-                plan[target_folder][f] = {
+                pol_flat_info: dict[str, Any] = {
                     "__type__": "file",
                     "routed_by": rule_type,
                     "match": expression,
                     "status": status,
                 }
+                if pol_action:
+                    pol_flat_info["policy_action"] = pol_action
+                if post_unarchive_act:
+                    pol_flat_info["post_unarchive_action"] = post_unarchive_act
+                if post_unarchive_tgt is not None:
+                    pol_flat_info["post_unarchive_target"] = post_unarchive_tgt
+                plan[target_folder][f] = pol_flat_info
 
             for f, target_folder, keyword, rule_type, status in keyword_plan_files:
                 if cancel_check and cancel_check():
@@ -2445,6 +2605,27 @@ class IncrementalAnalyzer:
                         if isinstance(matched_pol, dict)
                         else None
                     )
+                    pol_act_override = (
+                        matched_pol.get("policy_action")
+                        if isinstance(matched_pol, dict)
+                        else getattr(matched_pol, "action", None)
+                    )
+                    if pol_act_override:
+                        info["policy_action"] = pol_act_override
+                    post_act_override = (
+                        matched_pol.get("post_unarchive_action")
+                        if isinstance(matched_pol, dict)
+                        else getattr(matched_pol, "post_unarchive_action", None)
+                    )
+                    if post_act_override:
+                        info["post_unarchive_action"] = post_act_override
+                    post_tgt_override = (
+                        matched_pol.get("post_unarchive_target")
+                        if isinstance(matched_pol, dict)
+                        else getattr(matched_pol, "post_unarchive_target", None)
+                    )
+                    if post_tgt_override is not None:
+                        info["post_unarchive_target"] = post_tgt_override
                 else:
                     info["routed_by"] = "historical"
                     info["match"] = "user assignment"
@@ -2498,7 +2679,13 @@ class IncrementalAnalyzer:
                         clean_plan[target_folder][f] = info
                     continue
 
-                parts = target_folder.replace("\\", "/").split("/")
+                norm_target_folder = target_folder.replace("\\", "/").strip("/")
+                if not norm_target_folder or norm_target_folder == ".":
+                    for f, info in files.items():
+                        clean_plan[f] = info
+                    continue
+
+                parts = [p for p in norm_target_folder.split("/") if p]
                 current = clean_plan
                 for i, part in enumerate(parts):
                     if part not in current:

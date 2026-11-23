@@ -26,11 +26,14 @@ def format_plan_tree(plan: dict) -> tuple[list[str], int, int]:
                 target = node.get("target_filename") or name
                 source = node.get("relative_source") or node.get("source_path")
                 renamed = source and Path(str(source)).name != target
-                lines.append(
+                policy_action = str(node.get("policy_action") or "").strip()
+                action_suffix = f"  [ACTION: {policy_action}]" if policy_action else ""
+                base_line = (
                     f"{indent}{target}  (was {source})"
                     if renamed
                     else f"{indent}{target}"
                 )
+                lines.append(f"{base_line}{action_suffix}")
             elif isinstance(node, dict):
                 counts["folders"] += 1
                 lines.append(f"{indent}{name}/")
