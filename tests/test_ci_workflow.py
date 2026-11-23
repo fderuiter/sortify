@@ -750,3 +750,30 @@ def test_ci_heavy_tests_model_weights_cache_excludes_pyproject_toml():
     assert "'scripts/build.py'" in key
     assert "pyproject.toml" not in key
     assert "restore-keys" not in cache_with
+
+
+def test_precommit_check_yaml_does_not_enable_global_unsafe_mode():
+    """Verify check-yaml in .pre-commit-config.yaml enforces safe YAML without --unsafe."""
+    import re
+
+    precommit_cfg = yaml.safe_load(
+        Path(".pre-commit-config.yaml").read_text(encoding="utf-8")
+    )
+    hooks_repo = next(
+        r
+        for r in precommit_cfg["repos"]
+        if "pre-commit-hooks" in str(r.get("repo", ""))
+    )
+    check_yaml = next(h for h in hooks_repo["hooks"] if h.get("id") == "check-yaml")
+    assert "--unsafe" not in (check_yaml.get("args") or []), (
+        "check-yaml must not pass --unsafe globally"
+    )
+    exclude_re = check_yaml.get("exclude", "")
+    assert exclude_re and re.search(exclude_re, "mkdocs.yml")
+    assert not re.search(exclude_re, ".github/workflows/ci.yml")
+
+    local_repo = next(r for r in precommit_cfg["repos"] if r["repo"] == "local")
+    validate_docs = next(
+        h for h in local_repo["hooks"] if h.get("id") == "validate-docs"
+    )
+    assert re.search(validate_docs["files"], "mkdocs.yml")
