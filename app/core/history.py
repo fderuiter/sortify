@@ -1100,11 +1100,19 @@ class HistoryManager:
                     restored += 1
                     if db and base_dir:
                         try:
-                            db.update_document_path(
-                                base_dir,
-                                safe_relpath(moved, base_dir).replace("\\", "/"),
-                                safe_relpath(restored_to, base_dir).replace("\\", "/"),
+                            old_rel = safe_relpath(moved, base_dir).replace("\\", "/")
+                            new_rel = safe_relpath(restored_to, base_dir).replace(
+                                "\\", "/"
                             )
+                            try:
+                                db.update_document_path(
+                                    base_dir,
+                                    old_rel,
+                                    new_rel,
+                                    clear_verified_target=True,
+                                )
+                            except TypeError:
+                                db.update_document_path(base_dir, old_rel, new_rel)
                         except Exception as err:
                             logging.warning(
                                 f"Could not update the document path for {restored_to}: {err}"

@@ -776,27 +776,51 @@ def handle_sort_command(args: argparse.Namespace, settings: AppSettings):
             sys.stdout.write(json.dumps(result, indent=2) + "\n")
             sys.stdout.flush()
         else:
-            _print_plan_for_humans(
-                serializable_plan,
-                target_path,
-                "Would move" if dry_run else "Moved",
-                quiet=quiet,
-            )
-            if not quiet:
-                if dry_run:
+            if dry_run:
+                _print_plan_for_humans(
+                    serializable_plan,
+                    target_path,
+                    "Would move",
+                    quiet=quiet,
+                )
+                if not quiet:
                     print(
                         "Dry run: no files were moved. Run again without --dry-run "
                         "to move them, or add --json for machine-readable output.",
                         file=sys.stderr,
                     )
-                else:
-                    print(outcome.describe(), file=sys.stderr)
-                    for source, reason in outcome.failed:
-                        print(f"  Failed: {source}: {reason}", file=sys.stderr)
+            else:
+                moved_count = len(outcome.moved) + len(outcome.quarantined)
+                if moved_count == 0 and not outcome.failed:
                     print(
-                        "To undo this sort, run: smart-autosorter undo --latest",
+                        f"Nothing to sort in '{target_path}'.",
                         file=sys.stderr,
                     )
+                    if not quiet and outcome.skipped:
+                        print(outcome.describe(), file=sys.stderr)
+                else:
+                    lines, _n_files, n_folders = format_plan_tree(serializable_plan)
+                    if lines:
+                        if not quiet:
+                            print(
+                                f"Moved {moved_count} file(s) into {n_folders} folder(s) in '{target_path}':",
+                                file=sys.stderr,
+                            )
+                        print("\n".join(lines))
+                    elif moved_count == 0:
+                        print(
+                            f"Nothing to sort in '{target_path}'.",
+                            file=sys.stderr,
+                        )
+                    if not quiet:
+                        print(outcome.describe(), file=sys.stderr)
+                        for source, reason in outcome.failed:
+                            print(f"  Failed: {source}: {reason}", file=sys.stderr)
+                        if moved_count > 0 and outcome.session_id:
+                            print(
+                                "To undo this sort, run: smart-autosorter undo --latest",
+                                file=sys.stderr,
+                            )
 
         sys.exit(0)
     except Exception as e:
@@ -1135,9 +1159,12 @@ def handle_undo_command(args: argparse.Namespace, settings: AppSettings):
                 "base_dir": None,
             }
     elif latest_flag:
-        # Skip sorts already undone, so running `undo --latest` again reaches the previous sort.
+        # Skip sorts already undone or empty, so running `undo --latest` reaches the latest real sort.
         undoable = [
-            s for s in all_sessions if str(s.get("status", "")).lower() != "rolled_back"
+            s
+            for s in all_sessions
+            if str(s.get("status", "")).lower() not in ("rolled_back", "abandoned")
+            and int(s.get("step_count") or 0) > 0
         ]
         if undoable:
             target_session = undoable[0]

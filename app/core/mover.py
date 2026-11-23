@@ -1865,42 +1865,6 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                 )
                 raise ValueError(f"Plan validation or confirmation failed: {warn_text}")
 
-            if not resume and history_manager:
-                # Without a registered session nothing could undo or roll back the
-                # moves, so refuse to start rather than move files untracked.
-                try:
-                    session_id = history_manager.start_session(base_dir)
-                except Exception as sess_err:
-                    raise RuntimeError(
-                        f"Refusing to move files: could not register sort session for {base_dir}: {sess_err}"
-                    ) from sess_err
-                if not session_id:
-                    raise RuntimeError(
-                        f"Refusing to move files: could not register sort session for {base_dir}."
-                    )
-                logging.info(f"Started sort session {session_id} for {base_dir}")
-            elif history_manager:
-                logging.info(f"Resuming sort session for {base_dir}")
-                try:
-                    sessions = history_manager.get_sessions()
-                    for s in sessions:
-                        if (
-                            _is_same_path(s["base_dir"], base_dir)
-                            and s["status"] == "active"
-                        ):
-                            session_id = s["session_id"]
-                            break
-                except Exception:
-                    pass
-                if not session_id and hasattr(history_manager, "start_session"):
-                    try:
-                        session_id = history_manager.start_session(base_dir)
-                    except Exception:
-                        pass
-
-            if not session_id:
-                session_id = str(uuid.uuid4())
-
             # No transaction spans the sort. Documents and move records share one
             # store (ADR 0008), so a sort-long write lock would stall every move
             # committed from a worker thread. Each chunk's updates commit on their own,
@@ -1944,6 +1908,87 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     or scan_filter.has_ignored_extension(item["source_path"])
                 )
             ]
+            auto_ratings = {
+                str(r).upper()
+                for r in (
+                    getattr(runtime_settings, "AUTO_QUARANTINE_RATINGS", []) or []
+                )
+                if r
+            }
+            quarantine_dir_name = (
+                getattr(
+                    runtime_settings,
+                    "QUARANTINE_DIR_NAME",
+                    "_Compliance_Quarantine",
+                )
+                or "_Compliance_Quarantine"
+            )
+
+            def _item_may_move(item: dict) -> bool:
+                src_abs = os.path.normcase(os.path.abspath(item["source_path"]))
+                dst_abs = os.path.normcase(
+                    os.path.abspath(
+                        os.path.join(base_dir, item["current_dest"], item["filename"])
+                    )
+                )
+                if src_abs != dst_abs:
+                    return True
+                content = item.get("content")
+                if auto_ratings and isinstance(content, dict):
+                    sens = str(content.get("sensitivity_rating") or "LOW").upper()
+                    if (
+                        sens in auto_ratings
+                        and item["current_dest"] != quarantine_dir_name
+                    ):
+                        return True
+                return False
+
+            has_candidate_moves = any(_item_may_move(item) for item in move_items)
+
+            registered_session = False
+            if not resume and history_manager and has_candidate_moves:
+                # Without a registered session nothing could undo or roll back the
+                # moves, so refuse to start rather than move files untracked.
+                try:
+                    session_id = history_manager.start_session(base_dir)
+                except Exception as sess_err:
+                    raise RuntimeError(
+                        f"Refusing to move files: could not register sort session for {base_dir}: {sess_err}"
+                    ) from sess_err
+                if not session_id:
+                    raise RuntimeError(
+                        f"Refusing to move files: could not register sort session for {base_dir}."
+                    )
+                registered_session = True
+                logging.info(f"Started sort session {session_id} for {base_dir}")
+            elif resume and history_manager:
+                logging.info(f"Resuming sort session for {base_dir}")
+                try:
+                    sessions = history_manager.get_sessions()
+                    for s in sessions:
+                        if (
+                            _is_same_path(s["base_dir"], base_dir)
+                            and s["status"] == "active"
+                        ):
+                            session_id = s["session_id"]
+                            registered_session = True
+                            break
+                except Exception:
+                    pass
+                if (
+                    not session_id
+                    and has_candidate_moves
+                    and hasattr(history_manager, "start_session")
+                ):
+                    try:
+                        session_id = history_manager.start_session(base_dir)
+                        if session_id:
+                            registered_session = True
+                    except Exception:
+                        pass
+
+            if not session_id and (resume or has_candidate_moves):
+                session_id = str(uuid.uuid4())
             total_items = len(move_items)
             chunks = [
                 move_items[i : i + effective_chunk_size]
@@ -2232,9 +2277,26 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         db_updates_batch.clear()
                         has_flushed_db = True
 
+                real_move_count = len(audit_records)
+                if session_id and history_manager:
+                    ledger = getattr(history_manager, "moves", None)
+                    if ledger is not None and hasattr(ledger, "list_moves"):
+                        try:
+                            from app.core.moves import DONE, VERIFIED
+
+                            recorded_moves = ledger.list_moves(session_id)
+                            real_move_count = sum(
+                                1
+                                for m in recorded_moves
+                                if getattr(m, "state", None) in (DONE, VERIFIED)
+                            )
+                        except Exception:
+                            real_move_count = len(audit_records)
+
                 if (
                     session_id
                     and history_manager
+                    and real_move_count > 0
                     and hasattr(history_manager, "complete_session")
                 ):
                     try:
@@ -2243,6 +2305,35 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         logging.warning(
                             f"Failed to mark session {session_id} completed: {complete_err}"
                         )
+                elif (
+                    session_id
+                    and registered_session
+                    and history_manager
+                    and real_move_count == 0
+                ):
+                    try:
+                        if hasattr(history_manager, "_transition_session_status"):
+                            hm_db = getattr(history_manager, "db", None)
+                            hm_worker = getattr(hm_db, "worker", None)
+                            if hm_worker is not None and hasattr(
+                                hm_worker, "execute_write"
+                            ):
+                                hm_worker.execute_write(
+                                    lambda: history_manager._transition_session_status(
+                                        session_id, "abandoned"
+                                    )
+                                )
+                            else:
+                                history_manager._transition_session_status(
+                                    session_id, "abandoned"
+                                )
+                    except Exception as abandon_err:
+                        logging.debug(
+                            f"Could not mark empty session {session_id} abandoned: {abandon_err}"
+                        )
+                    if not resume:
+                        session_id = None
+                        summary["session_id"] = None
 
                 self.transition_to(MoveEngineState.COMPLETED)
                 summary.state = self.state

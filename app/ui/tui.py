@@ -1690,7 +1690,10 @@ class AutoSorterTUI(
         )
         target_sess = None
         for s in sessions:
-            if str(s.get("status", "")).lower() != "completed":
+            if (
+                str(s.get("status", "")).lower() != "completed"
+                or int(s.get("step_count") or 0) <= 0
+            ):
                 continue
             if active_base:
                 sess_base_raw = str(s.get("base_dir", "") or "")
