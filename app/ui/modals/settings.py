@@ -584,6 +584,21 @@ class SettingsModal(
                         tooltip="Toggle AI contextual file renaming",
                     )
 
+                    yield Label(
+                        "Default Rename Template:",
+                        classes="field-label",
+                    )
+                    ren_pat_val = str(
+                        getattr(self.settings, "RENAME_PATTERN", "") or ""
+                    )
+                    inp_ren_pat = Input(
+                        value=ren_pat_val,
+                        placeholder="e.g. {date}_{stem}{extension}",
+                        id="input-rename-pattern",
+                    )
+                    inp_ren_pat.tooltip = "Optional default rename template combining {date}, {year}, {month}, {day}, {category}, {seq}, {stem}, {extension}"
+                    yield inp_ren_pat
+
                     current_auto_ratings = {
                         str(r).upper()
                         for r in (
@@ -1109,6 +1124,24 @@ class SettingsModal(
             self.announce(f"Settings error: {err_text}", help_url=help_url)
             return
 
+        try:
+            rename_pat_raw = self.query_one(
+                "#input-rename-pattern", Input
+            ).value.strip()
+        except Exception:
+            rename_pat_raw = str(getattr(self.settings, "RENAME_PATTERN", "") or "")
+        if rename_pat_raw:
+            if "\x00" in rename_pat_raw or ".." in rename_pat_raw.replace(
+                "\\", "/"
+            ).split("/"):
+                self._show_help_button(help_url)
+                from app.ui.notifications import notify
+
+                err_text = "Default rename template cannot contain null bytes or '..' traversal."
+                notify(f"Settings error: {err_text}", type="error", help_url=help_url)
+                self.announce(f"Settings error: {err_text}", help_url=help_url)
+                return
+
         res = {
             "PROTECTED_PATHS": p_list,
             "IGNORED_EXTENSIONS": i_list,
@@ -1117,9 +1150,11 @@ class SettingsModal(
             "PDF_TEXT_DENSITY_THRESHOLD": pdf_density,
             "CONFLICT_POLICY": conflict_pol,
             "SORTING_STRATEGY": strat,
-            "AI_ASSISTED_NAMING": strat == "generative",
+            "AI_ASSISTED_NAMING": strat == "generative"
+            or bool(getattr(self.settings, "AI_ASSISTED_NAMING", False)),
             "CLINICAL_SMART_RENAMING": clin_renaming,
             "CONTEXTUAL_RENAMING": ctx_renaming,
+            "RENAME_PATTERN": rename_pat_raw,
             "AI_CONSENT_GRANTED": ai_consent,
             "SPEAK_ANNOUNCEMENTS": speak,
             "ENABLE_CHARACTER_KEY_SHORTCUTS": char_shortcuts,

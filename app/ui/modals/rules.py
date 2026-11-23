@@ -967,9 +967,9 @@ class RuleImportModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[Any
     ) -> None:
         """Cycle resolution strategy for the selected conflict row."""
         row_key = None
-        if isinstance(event, DataTable.RowSelected):
-            if event.row_key and event.row_key.value:
-                row_key = str(event.row_key.value)
+        rk_attr = getattr(event, "row_key", None)
+        if rk_attr is not None and getattr(rk_attr, "value", None):
+            row_key = str(rk_attr.value)
         elif isinstance(event, DataTable.CellSelected):
             try:
                 dt_conf = self.query_one("#dt-rule-conflicts", DataTable)
@@ -1170,35 +1170,76 @@ class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]
     }
     """
 
+    RULE_TYPE_OPTIONS: list[tuple[str, str]] = [
+        ("Keyword", "keyword"),
+        ("Filename Glob / Pattern", "pattern"),
+        ("File Age (e.g. > 30d)", "age"),
+        ("Modified Date (e.g. < 2025-01-01)", "modified_date"),
+        ("Created Date (e.g. > 2024-01-01)", "created_date"),
+        ("EXIF / PDF Date (e.g. < 2023-06-01)", "exif_date"),
+        ("File Size (e.g. > 10MB)", "size"),
+        ("Compliance", "compliance"),
+        ("Filename Substring", "filename"),
+        ("Document Content", "content"),
+        ("File Extension", "extension"),
+        ("Status", "status"),
+        ("Unarchive", "unarchive"),
+    ]
+
     def __init__(
         self,
         title: str = "Add Keyword Rule",
         pattern: str = "",
         target_folder: str = "",
+        rule_type: str = "keyword",
+        rename_pattern: str = "",
+        priority: int = 75,
     ):
         super().__init__()
         self.title_text = title
         self.initial_pattern = pattern
         self.initial_target = target_folder
+        self.initial_rule_type = str(rule_type or "keyword").strip().lower()
+        self.initial_rename_pattern = str(rename_pattern or "").strip()
+        self.initial_priority = int(priority) if priority is not None else 75
 
     def compose(self) -> ComposeResult:
         """Compose rule editor inputs and action buttons."""
+        type_options = list(self.RULE_TYPE_OPTIONS)
+        if not any(val == self.initial_rule_type for _, val in type_options):
+            type_options.append((self.initial_rule_type, self.initial_rule_type))
+
         with ModalBox(classes="rule-edit-box modal-box"):
             yield Heading(
                 self.title_text, level=1, classes="modal-title", id="modal-title"
             )
             with Vertical(classes="modal-body"):
+                yield Label("Rule Type:", classes="field-label")
+                sel_type = Select(
+                    options=type_options,
+                    value=self.initial_rule_type,
+                    allow_blank=False,
+                    id="select-rule-type",
+                )
+                sel_type.tooltip = "Select keyword, pattern, age, date, EXIF date, size, or policy rule type"
+                yield sel_type
                 yield Label("Pattern / Keyword:", classes="field-label")
                 yield Input(
                     value=self.initial_pattern,
-                    placeholder="e.g. invoice or receipt",
+                    placeholder="e.g. invoice, *.pdf, > 30d, > 10MB, < 2025-01-01",
                     id="input-rule-pattern",
                 )
                 yield Label("Target Folder:", classes="field-label")
                 yield Input(
                     value=self.initial_target,
-                    placeholder="e.g. Finances/Invoices",
+                    placeholder="e.g. Finances/Invoices or Archive/{year}/{month}",
                     id="input-rule-target",
+                )
+                yield Label("Rename Template (optional):", classes="field-label")
+                yield Input(
+                    value=self.initial_rename_pattern,
+                    placeholder="e.g. {date}_{stem}{extension}",
+                    id="input-rule-rename-pattern",
                 )
                 yield Label("", classes="error-label", id="lbl-rule-error")
             with Horizontal(classes="button-row"):
@@ -1220,9 +1261,21 @@ class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]
     def action_save(self) -> None:
         """Validate inputs and dismiss modal with rule definition."""
         from app.core.path_utils import validate_target_path
+        from app.core.pattern_formatter import PatternTokenFormatter
+        from app.core.policy_engine import (
+            METADATA_POLICY_TYPES,
+            validate_metadata_expression,
+        )
 
+        raw_type = self.query_one("#select-rule-type", Select).value
+        selected_type = (
+            "keyword"
+            if raw_type == Select.BLANK or not raw_type
+            else str(raw_type).strip().lower()
+        )
         pattern = self.query_one("#input-rule-pattern", Input).value.strip()
         target = self.query_one("#input-rule-target", Input).value.strip()
+        rename_pat = self.query_one("#input-rule-rename-pattern", Input).value.strip()
         err_lbl = self.query_one("#lbl-rule-error", Label)
 
         if not pattern:
@@ -1237,8 +1290,34 @@ class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]
             self.announce("Target folder cannot be empty.", priority="assertive")
             return
 
+        if selected_type in METADATA_POLICY_TYPES:
+            try:
+                validate_metadata_expression(selected_type, pattern)
+            except ValueError as exc:
+                err_lbl.update(f"Invalid {selected_type} expression: {exc}")
+                err_lbl.add_class("visible")
+                self.announce(
+                    f"Invalid {selected_type} expression: {exc}", priority="assertive"
+                )
+                if hasattr(self.app, "notify"):
+                    self.app.notify(str(exc), severity="error")
+                return
+
         try:
-            validate_target_path(target, keyword=pattern)
+            if "{" in target and "}" in target:
+                PatternTokenFormatter.format_target_path(
+                    target,
+                    metadata={
+                        "date": "2026-01-15",
+                        "category": "sample",
+                        "original": "document",
+                        "stem": "document",
+                        "extension": ".pdf",
+                    },
+                    seq=1,
+                )
+            else:
+                validate_target_path(target, keyword=pattern)
         except (ValueError, Exception) as exc:
             err_lbl.update(f"Invalid path: {exc}")
             err_lbl.add_class("visible")
@@ -1247,7 +1326,47 @@ class RuleEditModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[Optional[dict]
                 self.app.notify(str(exc), severity="error")
             return
 
-        self.dismiss({"pattern": pattern, "target": target})
+        if rename_pat:
+            if "\x00" in rename_pat or ".." in rename_pat.replace("\\", "/").split("/"):
+                msg = "Rename template cannot contain null bytes or '..' traversal."
+                err_lbl.update(msg)
+                err_lbl.add_class("visible")
+                self.announce(msg, priority="assertive")
+                if hasattr(self.app, "notify"):
+                    self.app.notify(msg, severity="error")
+                return
+            preview_fn = PatternTokenFormatter.format_pattern(
+                rename_pat,
+                metadata={
+                    "date": "2026-01-15",
+                    "category": "sample",
+                    "original": "document",
+                    "stem": "document",
+                    "extension": ".pdf",
+                },
+                seq=1,
+                fallback_original="",
+            )
+            if not preview_fn or "/" in preview_fn or "\\" in preview_fn:
+                msg = (
+                    f"Rename template '{rename_pat}' does not produce a valid filename."
+                )
+                err_lbl.update(msg)
+                err_lbl.add_class("visible")
+                self.announce(msg, priority="assertive")
+                if hasattr(self.app, "notify"):
+                    self.app.notify(msg, severity="error")
+                return
+
+        self.dismiss(
+            {
+                "type": selected_type,
+                "pattern": pattern,
+                "target": target,
+                "rename_pattern": rename_pat,
+                "priority": self.initial_priority,
+            }
+        )
 
     @on(Button.Pressed, "#btn-cancel-edit-rule")
     def action_cancel_button(self) -> None:
@@ -1592,6 +1711,7 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
                         "type": str(pol.get("type", "policy")),
                         "pattern": str(pol.get("expression", "")),
                         "target_folder": str(pol.get("target_path", "")),
+                        "rename_pattern": str(pol.get("rename_pattern", "") or ""),
                         "priority": pol.get("priority", 0),
                         "policy_idx": idx,
                         "original": pol,
@@ -1707,20 +1827,44 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
 
     @on(Button.Pressed, "#btn-add-rule")
     def action_add_rule(self) -> None:
-        """Open editor modal to add a new keyword rule."""
+        """Open editor modal to add a new keyword or policy rule."""
 
         def on_rule_added(result: Optional[dict]) -> None:
             if not result:
                 return
+            r_type = str(result.get("type") or "keyword").strip().lower()
             pattern = result["pattern"]
             target = result["target"]
-            kw_rules = dict(getattr(self.settings, "KEYWORD_RULES", {}) or {})
-            kw_rules[pattern] = target
-            self.settings.KEYWORD_RULES = kw_rules
+            rename_pat = str(result.get("rename_pattern") or "").strip()
+            priority = int(result.get("priority") or 75)
+
+            if r_type == "keyword" and not rename_pat:
+                kw_rules = dict(getattr(self.settings, "KEYWORD_RULES", {}) or {})
+                kw_rules[pattern] = target
+                self.settings.KEYWORD_RULES = kw_rules
+            else:
+                policies = [
+                    dict(p) for p in (getattr(self.settings, "POLICIES", []) or [])
+                ]
+                new_pol: dict[str, Any] = {
+                    "type": r_type,
+                    "expression": pattern,
+                    "target_path": target,
+                    "priority": priority,
+                    "enabled": True,
+                    "halting": False,
+                }
+                if r_type == "unarchive":
+                    new_pol["action"] = "unarchive"
+                if rename_pat:
+                    new_pol["rename_pattern"] = rename_pat
+                policies.append(new_pol)
+                self.settings.POLICIES = policies
+
             if hasattr(self.settings, "flush"):
                 self.settings.flush()
             self._refresh_table(preserve_focus=False)
-            msg = f"Added rule '{pattern}' routing to '{target}'."
+            msg = f"Added {r_type} rule '{pattern}' routing to '{target}'."
             self.announce(msg)
             if hasattr(self.app, "notify"):
                 self.app.notify(msg)
@@ -1738,18 +1882,41 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
         def on_rule_edited(result: Optional[dict]) -> None:
             if not result:
                 return
+            new_type = str(result.get("type") or rule["type"]).strip().lower()
             new_pattern = result["pattern"]
             new_target = result["target"]
+            new_rename = str(result.get("rename_pattern") or "").strip()
 
             if rule["kind"] == "keyword":
                 old_key = rule["original_key"]
                 is_active = rule["status"] == "Active"
                 dict_name = "KEYWORD_RULES" if is_active else "DISABLED_KEYWORD_RULES"
                 rules_dict = dict(getattr(self.settings, dict_name, {}) or {})
-                if old_key in rules_dict and old_key != new_pattern:
-                    del rules_dict[old_key]
-                rules_dict[new_pattern] = new_target
-                setattr(self.settings, dict_name, rules_dict)
+                if new_type != "keyword" or new_rename:
+                    rules_dict.pop(old_key, None)
+                    setattr(self.settings, dict_name, rules_dict)
+                    policies = [
+                        dict(p) for p in (getattr(self.settings, "POLICIES", []) or [])
+                    ]
+                    promoted_pol: dict[str, Any] = {
+                        "type": new_type,
+                        "expression": new_pattern,
+                        "target_path": new_target,
+                        "priority": int(result.get("priority") or 75),
+                        "enabled": is_active,
+                        "halting": False,
+                    }
+                    if new_type == "unarchive":
+                        promoted_pol["action"] = "unarchive"
+                    if new_rename:
+                        promoted_pol["rename_pattern"] = new_rename
+                    policies.append(promoted_pol)
+                    self.settings.POLICIES = policies
+                else:
+                    if old_key in rules_dict and old_key != new_pattern:
+                        del rules_dict[old_key]
+                    rules_dict[new_pattern] = new_target
+                    setattr(self.settings, dict_name, rules_dict)
                 if hasattr(self.settings, "flush"):
                     self.settings.flush()
                 msg = f"Updated rule '{new_pattern}' target folder to '{new_target}'."
@@ -1769,8 +1936,15 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
                 ]
                 idx = rule["policy_idx"]
                 if 0 <= idx < len(policies):
+                    policies[idx]["type"] = new_type
                     policies[idx]["expression"] = new_pattern
                     policies[idx]["target_path"] = new_target
+                    if new_type == "unarchive":
+                        policies[idx].setdefault("action", "unarchive")
+                    if new_rename:
+                        policies[idx]["rename_pattern"] = new_rename
+                    else:
+                        policies[idx].pop("rename_pattern", None)
                     self.settings.POLICIES = policies
                     if hasattr(self.settings, "flush"):
                         self.settings.flush()
@@ -1785,11 +1959,17 @@ class ActiveRuleManagerModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]
             if hasattr(self.app, "notify"):
                 self.app.notify(msg)
 
+        initial_edit_type = (
+            "keyword" if rule["kind"] == "learned" else str(rule["type"] or "keyword")
+        )
         self.app.push_screen(
             RuleEditModal(
                 title=f"Edit Rule: {rule['pattern']}",
                 pattern=rule["pattern"],
                 target_folder=rule["target_folder"],
+                rule_type=initial_edit_type,
+                rename_pattern=str(rule.get("rename_pattern", "") or ""),
+                priority=int(rule.get("priority") or 75),
             ),
             on_rule_edited,
         )

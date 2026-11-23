@@ -4,11 +4,170 @@ import contextlib
 import csv
 import io
 import logging
+import os
+import re
+from datetime import datetime
 from typing import Any, Optional, Protocol, cast
 
 import pypdf
 
 from app.core.progress import emit_progress
+
+_IMAGE_EMBEDDED_DATE_EXTENSIONS = {
+    ".jpg",
+    ".jpeg",
+    ".tif",
+    ".tiff",
+    ".png",
+    ".webp",
+}
+
+
+def _parse_embedded_datetime(raw: Any) -> Optional[datetime]:
+    """Parse an embedded EXIF or PDF metadata timestamp into a naive local datetime."""
+    if raw is None:
+        return None
+    if isinstance(raw, datetime):
+        dt = raw
+        if dt.tzinfo is not None:
+            with contextlib.suppress(Exception):
+                dt = dt.astimezone().replace(tzinfo=None)
+            if dt.tzinfo is not None:
+                dt = dt.replace(tzinfo=None)
+        return dt if 1900 <= dt.year <= 2200 else None
+
+    if isinstance(raw, bytes):
+        raw = raw.decode("utf-8", errors="ignore")
+    if not isinstance(raw, str):
+        return None
+
+    cleaned = raw.strip().strip("\x00").strip()
+    if not cleaned:
+        return None
+
+    # PDF date format: D:YYYYMMDDHHmmSSOHH'mm'
+    pdf_candidate = cleaned[2:].strip() if cleaned.startswith("D:") else cleaned
+    pdf_match = re.match(
+        r"^(\d{4})(\d{2})?(\d{2})?(?:(\d{2})(\d{2})?(\d{2})?)?(?:[Zz]|[+\-]\d{2}'?\d{2}'?)?$",
+        pdf_candidate,
+    )
+    if pdf_match and (cleaned.startswith("D:") or len(pdf_candidate) >= 8):
+        try:
+            year = int(pdf_match.group(1))
+            month = int(pdf_match.group(2) or 1)
+            day = int(pdf_match.group(3) or 1)
+            hour = int(pdf_match.group(4) or 0)
+            minute = int(pdf_match.group(5) or 0)
+            second = int(pdf_match.group(6) or 0)
+            if 1900 <= year <= 2200:
+                return datetime(year, month, day, hour, minute, second)
+        except ValueError:
+            pass
+
+    # EXIF and ISO date formats: YYYY:MM:DD HH:MM:SS or YYYY-MM-DD[THH:MM:SS]
+    exif_match = re.match(
+        r"^(\d{4})[:\-/](\d{1,2})[:\-/](\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?",
+        cleaned,
+    )
+    if exif_match:
+        try:
+            year = int(exif_match.group(1))
+            month = int(exif_match.group(2))
+            day = int(exif_match.group(3))
+            hour = int(exif_match.group(4) or 0)
+            minute = int(exif_match.group(5) or 0)
+            second = int(exif_match.group(6) or 0)
+            if 1900 <= year <= 2200:
+                return datetime(year, month, day, hour, minute, second)
+        except ValueError:
+            pass
+
+    with contextlib.suppress(ValueError):
+        iso_dt = datetime.fromisoformat(cleaned.replace("Z", "+00:00"))
+        return _parse_embedded_datetime(iso_dt)
+
+    return None
+
+
+def extract_embedded_date(file_path: str | os.PathLike[str]) -> Optional[datetime]:
+    """Extract embedded creation/capture timestamp from image EXIF or PDF headers offline.
+
+    Uses strictly bundled Pillow (EXIF tags DateTimeOriginal, DateTimeDigitized, DateTime)
+    and pypdf (CreationDate, ModDate) without OCR or network requests.
+    """
+    try:
+        path_str = os.fspath(file_path)
+    except TypeError:
+        return None
+
+    if not path_str or not os.path.isfile(path_str):
+        return None
+
+    ext = os.path.splitext(path_str)[1].lower()
+    if ext in _IMAGE_EMBEDDED_DATE_EXTENSIONS:
+        try:
+            from PIL import Image
+
+            with Image.open(path_str) as img:
+                exif = img.getexif() if hasattr(img, "getexif") else None
+                exif_ifd: dict[Any, Any] = {}
+                if exif:
+                    with contextlib.suppress(Exception):
+                        if hasattr(exif, "get_ifd"):
+                            exif_ifd = dict(exif.get_ifd(0x8769) or {})
+                    # Priority: DateTimeOriginal (36867), DateTimeDigitized (36868), DateTime (306)
+                    for source_map, tag_id in (
+                        (exif_ifd, 36867),
+                        (exif, 36867),
+                        (exif_ifd, 36868),
+                        (exif, 36868),
+                        (exif, 306),
+                        (exif_ifd, 306),
+                    ):
+                        raw_val = source_map.get(tag_id) if source_map else None
+                        parsed = _parse_embedded_datetime(raw_val)
+                        if parsed is not None:
+                            return parsed
+
+                info = getattr(img, "info", None)
+                if isinstance(info, dict):
+                    for key in ("Creation Time", "date:create", "date:modify"):
+                        parsed = _parse_embedded_datetime(info.get(key))
+                        if parsed is not None:
+                            return parsed
+        except Exception:
+            logging.debug(
+                f"Failed to read embedded EXIF date from image {path_str}",
+                exc_info=True,
+            )
+        return None
+
+    if ext == ".pdf":
+        try:
+            with open(path_str, "rb") as f:
+                reader = pypdf.PdfReader(f)
+                meta = reader.metadata
+                if meta is not None:
+                    candidates = [
+                        getattr(meta, "creation_date", None),
+                        meta.get("/CreationDate") if hasattr(meta, "get") else None,
+                        getattr(meta, "creation_date_raw", None),
+                        getattr(meta, "modification_date", None),
+                        meta.get("/ModDate") if hasattr(meta, "get") else None,
+                        getattr(meta, "modification_date_raw", None),
+                    ]
+                    for raw_val in candidates:
+                        parsed = _parse_embedded_datetime(raw_val)
+                        if parsed is not None:
+                            return parsed
+        except Exception:
+            logging.debug(
+                f"Failed to read embedded PDF date from {path_str}",
+                exc_info=True,
+            )
+        return None
+
+    return None
 
 
 def get_ocr_reader():

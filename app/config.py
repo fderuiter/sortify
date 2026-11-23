@@ -113,12 +113,18 @@ class PolicyRule(TypedDict):
             "action",
             "compliance",
             "unarchive",
+            "age",
+            "modified_date",
+            "created_date",
+            "exif_date",
+            "size",
         ],
         Field(
             description=(
                 "Rule evaluation strategy: 'keyword', 'action', 'compliance', or 'unarchive' "
                 "match filenames and document text; 'pattern' matches lowercase filenames only; "
-                "'override' matches lowercase filenames or full file paths."
+                "'override' matches lowercase filenames or full file paths; 'age', 'modified_date', "
+                "'created_date', 'exif_date', and 'size' evaluate file timestamps, EXIF/PDF headers, and byte sizes."
             )
         ),
     ]
@@ -126,16 +132,21 @@ class PolicyRule(TypedDict):
         str,
         Field(
             min_length=1,
-            description="Non-empty case-insensitive substring or pattern expression to match.",
+            description=(
+                "Non-empty case-insensitive substring, wildcard pattern, or metadata comparison "
+                "expression (such as '> 30d', '< 2025-01-01', or '> 10MB') to match."
+            ),
         ),
     ]
     target_path: Annotated[
         str,
         Field(
             description=(
-                "Relative destination folder path validated against path safety rules "
-                "(no leading slashes, '..' traversal segments, OS-reserved device names, "
-                "illegal path characters, or trailing spaces/periods; may be empty when an action handles placement)."
+                "Relative destination folder path (supporting optional placeholders such as "
+                "'{year}/{month}', '{date}', '{day}', '{category}', '{seq}', '{extension}', and '{stem}') "
+                "validated against path safety rules (no leading slashes, '..' traversal segments, "
+                "OS-reserved device names, illegal path characters, or trailing spaces/periods; "
+                "may be empty when an action handles placement)."
             )
         ),
     ]
@@ -158,6 +169,18 @@ class PolicyRule(TypedDict):
             bool,
             Field(
                 description="Whether this policy rule is active during evaluation (defaults to true when omitted)."
+            ),
+        ]
+    ]
+    rename_pattern: NotRequired[
+        Annotated[
+            str,
+            Field(
+                description=(
+                    "Optional filename rename template applied when this policy matches "
+                    "(supports {date}, {year}, {month}, {day}, {category}, {seq}, {sequence}, "
+                    "{extension}, {stem}, and {original} placeholders)."
+                )
             ),
         ]
     ]
@@ -206,8 +229,16 @@ class Settings(BaseSettings):
     AI_ASSISTED_NAMING: bool = Field(
         default=False,
         description=(
-            "Whether to use the local generative LLM model to synthesize descriptive "
-            "folder and file names (requires AI consent and the optional 'ml' extra)."
+            "Whether to use local semantic embeddings and/or the generative LLM model to "
+            "synthesize descriptive folder and file names (requires AI consent and the optional 'ml' extra)."
+        ),
+    )
+    RENAME_PATTERN: str = Field(
+        default="",
+        description=(
+            "Optional default rename pattern template combining extracted document or file dates "
+            "with descriptive terms (for example '{date}_{stem}'; supports {date}, {year}, {month}, "
+            "{day}, {category}, {seq}, {sequence}, {extension}, {stem}, and {original} placeholders)."
         ),
     )
     PRESERVE_HIERARCHY: bool = Field(
@@ -316,8 +347,9 @@ class Settings(BaseSettings):
         default_factory=list,
         description=(
             "Ordered list of typed PolicyRule dictionaries evaluated from highest integer "
-            "priority to lowest across 6 rule types ('keyword', 'pattern', 'override', 'action', "
-            "'compliance', 'unarchive'), 5 lifecycle actions ('archive', 'retain', 'quarantine', "
+            "priority to lowest across 11 rule types ('keyword', 'pattern', 'override', 'action', "
+            "'compliance', 'unarchive', 'age', 'modified_date', 'created_date', 'exif_date', 'size'), "
+            "optional rename_pattern templates, 5 lifecycle actions ('archive', 'retain', 'quarantine', "
             "'redact', 'unarchive'), and 8 post-unarchive actions; warns when higher-priority rules shadow lower-priority rules."
         ),
     )
@@ -794,50 +826,125 @@ class Settings(BaseSettings):
                 )
         return v
 
+    @field_validator("RENAME_PATTERN")
+    @classmethod
+    def validate_rename_pattern_setting(cls, v: str) -> str:
+        """Validate that RENAME_PATTERN is a safe filename template without path separators or illegal chars."""
+        from app.core.path_utils import ILLEGAL_PATH_CHARS_SET
+
+        if not isinstance(v, str):
+            raise ValueError("RENAME_PATTERN must be a string.")
+        cleaned = v.strip()
+        if not cleaned:
+            return ""
+        if "/" in cleaned or "\\" in cleaned or ".." in cleaned or "\x00" in cleaned:
+            raise ValueError(
+                "RENAME_PATTERN cannot contain path separators, '..', or null bytes."
+            )
+        if any(ch in ILLEGAL_PATH_CHARS_SET for ch in cleaned):
+            raise ValueError("RENAME_PATTERN contains illegal filename characters.")
+        return cleaned
+
     @field_validator("KEYWORD_RULES", "LEARNED_RULES", "DISABLED_KEYWORD_RULES")
     @classmethod
     def validate_keyword_rules(cls, v: dict) -> dict:
         """Validate that keyword routing rules and learned rules have valid target paths."""
         from app.core.path_utils import validate_target_path
+        from app.core.pattern_formatter import PatternTokenFormatter
 
         for keyword, target_path in v.items():
             validate_target_path(target_path, keyword=keyword)
+            if isinstance(target_path, str) and "{" in target_path:
+                PatternTokenFormatter.format_target_path(
+                    target_path,
+                    metadata={
+                        "date": "2025-01-15",
+                        "category": "Category",
+                        "stem": "sample",
+                        "extension": ".txt",
+                    },
+                    seq=1,
+                )
         return v
 
     @field_validator("POLICIES", mode="before")
     @classmethod
     def validate_policies(cls, v: list[dict]) -> list[dict]:
         """Validate that unified policies have valid target paths, types, expression, and priority, and check for overlaps."""
-        from app.core.path_utils import validate_target_path
+        from app.core.path_utils import ILLEGAL_PATH_CHARS_SET, validate_target_path
+        from app.core.pattern_formatter import PatternTokenFormatter
+        from app.core.policy_engine import (
+            METADATA_POLICY_TYPES,
+            PolicyEngine,
+            validate_metadata_expression,
+        )
 
         if not isinstance(v, list):
             raise ValueError("POLICIES must be a list.")
+
+        valid_rule_types = (
+            "keyword",
+            "pattern",
+            "override",
+            "action",
+            "compliance",
+            "unarchive",
+            "age",
+            "modified_date",
+            "created_date",
+            "exif_date",
+            "size",
+        )
 
         normalized_policies = []
         for rule in v:
             if not isinstance(rule, dict):
                 raise ValueError("Each policy must be a dictionary.")
             rule_type = rule.get("type")
-            if rule_type not in (
-                "keyword",
-                "pattern",
-                "override",
-                "action",
-                "compliance",
-                "unarchive",
-            ):
+            if rule_type not in valid_rule_types:
                 raise ValueError(
-                    f"Invalid policy type: {rule_type}. Must be keyword, pattern, override, action, compliance, or unarchive."
+                    f"Invalid policy type: {rule_type}. Must be one of {', '.join(valid_rule_types)}."
                 )
 
             expression = rule.get("expression")
             if not isinstance(expression, str) or not expression.strip():
                 raise ValueError("Policy expression must be a non-empty string.")
 
+            if rule_type in METADATA_POLICY_TYPES:
+                validate_metadata_expression(rule_type, expression)
+
             target_path = rule.get("target_path")
             if target_path is None or not isinstance(target_path, str):
                 raise ValueError("Policy target_path must be a string.")
             validate_target_path(target_path, keyword=expression)
+            if "{" in target_path:
+                PatternTokenFormatter.format_target_path(
+                    target_path,
+                    metadata={
+                        "date": "2025-01-15",
+                        "category": "Category",
+                        "stem": "sample",
+                        "extension": ".txt",
+                    },
+                    seq=1,
+                )
+
+            rename_pat = rule.get("rename_pattern")
+            if rename_pat is not None:
+                if not isinstance(rename_pat, str):
+                    raise ValueError("Policy rename_pattern must be a string.")
+                rp_clean = rename_pat.strip()
+                if rp_clean:
+                    if (
+                        "/" in rp_clean
+                        or "\\" in rp_clean
+                        or ".." in rp_clean
+                        or "\x00" in rp_clean
+                        or any(ch in ILLEGAL_PATH_CHARS_SET for ch in rp_clean)
+                    ):
+                        raise ValueError(
+                            f"Invalid policy rename_pattern '{rename_pat}': path traversal or illegal filename characters are forbidden."
+                        )
 
             if (
                 "priority" not in rule
@@ -854,8 +961,6 @@ class Settings(BaseSettings):
 
             action = rule.get("action")
             if action is not None:
-                from app.core.policy_engine import PolicyEngine
-
                 if not isinstance(
                     action, str
                 ) or not PolicyEngine.validate_policy_action(action):
@@ -884,6 +989,7 @@ class Settings(BaseSettings):
             needs_copy = (
                 ("action" in rule and rule["action"] is None)
                 or (isinstance(action, str) and action != action.lower())
+                or ("rename_pattern" in rule and rule["rename_pattern"] is None)
                 or (
                     "post_unarchive_action" in rule
                     and rule["post_unarchive_action"] is None
@@ -901,6 +1007,11 @@ class Settings(BaseSettings):
                         updated_rule.pop("action")
                     elif isinstance(updated_rule["action"], str):
                         updated_rule["action"] = updated_rule["action"].lower()
+                if (
+                    "rename_pattern" in updated_rule
+                    and updated_rule["rename_pattern"] is None
+                ):
+                    updated_rule.pop("rename_pattern")
                 if "post_unarchive_action" in updated_rule:
                     if updated_rule["post_unarchive_action"] is None:
                         updated_rule.pop("post_unarchive_action")

@@ -5,26 +5,31 @@
       "description": "Typed dictionary schema for unified compliance and routing policy rules.",
       "properties": {
         "type": {
-          "description": "Rule evaluation strategy: 'keyword', 'action', 'compliance', or 'unarchive' match filenames and document text; 'pattern' matches lowercase filenames only; 'override' matches lowercase filenames or full file paths.",
+          "description": "Rule evaluation strategy: 'keyword', 'action', 'compliance', or 'unarchive' match filenames and document text; 'pattern' matches lowercase filenames only; 'override' matches lowercase filenames or full file paths; 'age', 'modified_date', 'created_date', 'exif_date', and 'size' evaluate file timestamps, EXIF/PDF headers, and byte sizes.",
           "enum": [
             "keyword",
             "pattern",
             "override",
             "action",
             "compliance",
-            "unarchive"
+            "unarchive",
+            "age",
+            "modified_date",
+            "created_date",
+            "exif_date",
+            "size"
           ],
           "title": "Type",
           "type": "string"
         },
         "expression": {
-          "description": "Non-empty case-insensitive substring or pattern expression to match.",
+          "description": "Non-empty case-insensitive substring, wildcard pattern, or metadata comparison expression (such as '> 30d', '< 2025-01-01', or '> 10MB') to match.",
           "minLength": 1,
           "title": "Expression",
           "type": "string"
         },
         "target_path": {
-          "description": "Relative destination folder path validated against path safety rules (no leading slashes, '..' traversal segments, OS-reserved device names, illegal path characters, or trailing spaces/periods; may be empty when an action handles placement).",
+          "description": "Relative destination folder path (supporting optional placeholders such as '{year}/{month}', '{date}', '{day}', '{category}', '{seq}', '{extension}', and '{stem}') validated against path safety rules (no leading slashes, '..' traversal segments, OS-reserved device names, illegal path characters, or trailing spaces/periods; may be empty when an action handles placement).",
           "title": "Target Path",
           "type": "string"
         },
@@ -42,6 +47,11 @@
           "description": "Whether this policy rule is active during evaluation (defaults to true when omitted).",
           "title": "Enabled",
           "type": "boolean"
+        },
+        "rename_pattern": {
+          "description": "Optional filename rename template applied when this policy matches (supports {date}, {year}, {month}, {day}, {category}, {seq}, {sequence}, {extension}, {stem}, and {original} placeholders).",
+          "title": "Rename Pattern",
+          "type": "string"
         },
         "action": {
           "description": "Optional lifecycle directive executed when the policy matches.",
@@ -91,9 +101,15 @@
     },
     "AI_ASSISTED_NAMING": {
       "default": false,
-      "description": "Whether to use the local generative LLM model to synthesize descriptive folder and file names (requires AI consent and the optional 'ml' extra).",
+      "description": "Whether to use local semantic embeddings and/or the generative LLM model to synthesize descriptive folder and file names (requires AI consent and the optional 'ml' extra).",
       "title": "Ai Assisted Naming",
       "type": "boolean"
+    },
+    "RENAME_PATTERN": {
+      "default": "",
+      "description": "Optional default rename pattern template combining extracted document or file dates with descriptive terms (for example '{date}_{stem}'; supports {date}, {year}, {month}, {day}, {category}, {seq}, {sequence}, {extension}, {stem}, and {original} placeholders).",
+      "title": "Rename Pattern",
+      "type": "string"
     },
     "PRESERVE_HIERARCHY": {
       "default": false,
@@ -184,7 +200,7 @@
       "type": "object"
     },
     "POLICIES": {
-      "description": "Ordered list of typed PolicyRule dictionaries evaluated from highest integer priority to lowest across 6 rule types ('keyword', 'pattern', 'override', 'action', 'compliance', 'unarchive'), 5 lifecycle actions ('archive', 'retain', 'quarantine', 'redact', 'unarchive'), and 8 post-unarchive actions; warns when higher-priority rules shadow lower-priority rules.",
+      "description": "Ordered list of typed PolicyRule dictionaries evaluated from highest integer priority to lowest across 11 rule types ('keyword', 'pattern', 'override', 'action', 'compliance', 'unarchive', 'age', 'modified_date', 'created_date', 'exif_date', 'size'), optional rename_pattern templates, 5 lifecycle actions ('archive', 'retain', 'quarantine', 'redact', 'unarchive'), and 8 post-unarchive actions; warns when higher-priority rules shadow lower-priority rules.",
       "items": {
         "$ref": "#/$defs/PolicyRule"
       },

@@ -182,26 +182,37 @@ class RenameModal(
         self.plan = plan
         self.base_dir = base_dir
         self.source_path = source_path
+        if not self.file_date and not self.is_folder and self.source_path:
+            from app.core.pattern_formatter import resolve_disk_file_date
+
+            self.file_date = resolve_disk_file_date(
+                self.source_path, base_dir=self.base_dir
+            )
         self._last_collision_state: Optional[str] = None
 
     def _extract_file_metadata(
         self, f: Any, seq: int
     ) -> tuple[dict[str, Any], str, str, str, Optional[dict[str, Any]]]:
         """Extract metadata dict, fallback filename, key, folder, and info dict from a file item."""
+        from app.core.pattern_formatter import resolve_disk_file_date
+
         if isinstance(f, str):
             key = f
             stem, ext = os.path.splitext(os.path.basename(f))
             cat = self.category
-            date = self.file_date
+            date = self.file_date or resolve_disk_file_date(f, base_dir=self.base_dir)
             info = None
             folder = self.category
             fallback = f"{stem}{ext}" if ext else stem
             meta = {
                 "original": stem,
+                "stem": stem,
                 "extension": ext,
                 "category": cat,
                 "date": date,
                 "seq": seq,
+                "base_dir": self.base_dir,
+                "filepath": f,
             }
             return meta, fallback, key, folder, info
 
@@ -217,10 +228,22 @@ class RenameModal(
             if not key and info and isinstance(info, dict):
                 key = info.get("target_filename") or info.get("key", "")
 
+            item_fp = (
+                f.get("filepath")
+                or f.get("source_path")
+                or (
+                    (info.get("filepath") or info.get("source_path"))
+                    if isinstance(info, dict)
+                    else None
+                )
+            )
+            if not item_fp and key and self.base_dir:
+                item_fp = os.path.join(self.base_dir, str(key))
+
             stem = f.get("original") or f.get("current_name") or f.get("stem")
             ext = f.get("extension") or f.get("ext")
             if not stem or ext is None:
-                base = os.path.basename(key or (f.get("filepath") or ""))
+                base = os.path.basename(key or (item_fp or ""))
                 base_stem, base_ext = os.path.splitext(base)
                 if not stem:
                     stem = base_stem
@@ -241,16 +264,27 @@ class RenameModal(
                     if isinstance(info, dict)
                     else None
                 )
+                or resolve_disk_file_date(
+                    str(item_fp) if item_fp else None,
+                    base_dir=(
+                        info.get("source_root")
+                        if isinstance(info, dict) and info.get("source_root")
+                        else self.base_dir
+                    ),
+                )
                 or self.file_date
             )
             seq_val = f.get("seq", seq)
             fallback = f"{stem}{ext}" if ext else stem
             meta = {
                 "original": stem,
+                "stem": stem,
                 "extension": ext,
                 "category": folder,
                 "date": date,
                 "seq": seq_val,
+                "base_dir": self.base_dir,
+                "filepath": item_fp,
             }
             return meta, fallback, key, folder, info
 
@@ -258,10 +292,12 @@ class RenameModal(
         stem, ext = os.path.splitext(os.path.basename(key_str))
         meta = {
             "original": stem,
+            "stem": stem,
             "extension": ext,
             "category": self.category,
             "date": self.file_date,
             "seq": seq,
+            "base_dir": self.base_dir,
         }
         return meta, key_str, key_str, self.category, None
 
@@ -275,11 +311,13 @@ class RenameModal(
         for idx, f in enumerate(self.files):
             file_seq = self.seq + idx
             meta, fallback, _, _, _ = self._extract_file_metadata(f, file_seq)
+            item_fp = meta.get("filepath")
             formatted = PatternTokenFormatter.format_pattern(
                 pattern=pattern_str,
                 metadata=meta,
                 seq=file_seq,
                 fallback_original=fallback,
+                file_path=str(item_fp) if item_fp else None,
             )
             previews.append(formatted)
         return previews
@@ -300,10 +338,12 @@ class RenameModal(
 
         metadata = {
             "original": self.current_name,
+            "stem": self.current_name,
             "extension": self.extension,
             "category": self.category,
             "date": self.file_date,
             "seq": self.seq,
+            "base_dir": self.base_dir,
         }
         fallback = (
             f"{self.current_name}{self.extension}"
@@ -315,6 +355,7 @@ class RenameModal(
             metadata=metadata,
             seq=self.seq,
             fallback_original=fallback,
+            file_path=None if self.is_folder else self.source_path,
         )
 
     def compose(self) -> ComposeResult:

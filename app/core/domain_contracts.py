@@ -287,6 +287,7 @@ class SortingPlanNodeModel(DictCompatMixin, BaseModel):
     user_confirmed: Optional[bool] = None
     jev_category: Optional[str] = None
     source_root: Optional[str] = None
+    file_date: Optional[str] = None
 
     model_config = ConfigDict(populate_by_name=True, extra="allow")
 

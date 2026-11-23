@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "d0d6da2a6c7278f8ec714412bc0088fd6f8a30dcee417bfa39005207518e4fbf"
+    "checksum": "9a88cf6112963284677239d65991b1e7429aa1a0d50bbb0be1ca12fb00621d14"
   },
   "classes": [
     {
@@ -63,6 +63,16 @@
               "annotation": "bool",
               "default": "False",
               "name": "is_sorted"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "abs_file_path"
+            },
+            {
+              "annotation": "datetime | None",
+              "default": "None",
+              "name": "now"
             }
           ],
           "returns": "PolicyEvaluationResult | None | tuple[PolicyEvaluationResult | None, bool]"
@@ -93,6 +103,21 @@
               "annotation": "str | None",
               "default": null,
               "name": "status_match"
+            },
+            {
+              "annotation": "str | None",
+              "default": "None",
+              "name": "abs_file_path"
+            },
+            {
+              "annotation": "datetime | None",
+              "default": "None",
+              "name": "now"
+            },
+            {
+              "annotation": "_LazyFileAttributes | None",
+              "default": "None",
+              "name": "_attrs"
             }
           ],
           "returns": "bool"
@@ -151,6 +176,26 @@
             }
           ],
           "returns": "tuple[bool, str | None]"
+        },
+        {
+          "async": false,
+          "decorators": [
+            "@staticmethod"
+          ],
+          "name": "validate_metadata_expression",
+          "parameters": [
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "rule_type"
+            },
+            {
+              "annotation": "str",
+              "default": null,
+              "name": "expression"
+            }
+          ],
+          "returns": "None"
         },
         {
           "async": false,
@@ -226,6 +271,70 @@
     {
       "async": false,
       "decorators": [],
+      "name": "evaluate_age_expression",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "expression"
+        },
+        {
+          "annotation": "datetime",
+          "default": null,
+          "name": "mtime"
+        },
+        {
+          "annotation": "Optional[datetime]",
+          "default": "None",
+          "name": "now"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "evaluate_date_expression",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "expression"
+        },
+        {
+          "annotation": "datetime",
+          "default": null,
+          "name": "target_dt"
+        },
+        {
+          "annotation": "Optional[datetime]",
+          "default": "None",
+          "name": "now"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "evaluate_size_expression",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "expression"
+        },
+        {
+          "annotation": "int",
+          "default": null,
+          "name": "size_bytes"
+        }
+      ],
+      "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
       "name": "is_masked_by",
       "parameters": [
         {
@@ -258,6 +367,24 @@
         }
       ],
       "returns": "bool"
+    },
+    {
+      "async": false,
+      "decorators": [],
+      "name": "validate_metadata_expression",
+      "parameters": [
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "rule_type"
+        },
+        {
+          "annotation": "str",
+          "default": null,
+          "name": "expression"
+        }
+      ],
+      "returns": "None"
     }
   ]
 }

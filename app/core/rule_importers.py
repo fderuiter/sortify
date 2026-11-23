@@ -190,6 +190,43 @@ _MOVE_ACTION_CORES = frozenset(
 _COPY_ACTION_CORES = frozenset(
     {"copy", "copyfile", "copyto", "copytofolder", "duplicate"}
 )
+_RENAME_ACTION_CORES = frozenset(
+    {"rename", "renamefile", "setname", "applyrenamepattern"}
+)
+_HAZEL_TOKEN_SUBS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"\$\(\s*year\s*\)|%Y", re.IGNORECASE), "{year}"),
+    (re.compile(r"\$\(\s*month\s*\)|%m", re.IGNORECASE), "{month}"),
+    (re.compile(r"\$\(\s*day\s*\)|%d", re.IGNORECASE), "{day}"),
+    (
+        re.compile(
+            r"\$\(\s*(?:date|date_?modified|date_?created|exif_?date)\s*\)",
+            re.IGNORECASE,
+        ),
+        "{date}",
+    ),
+    (re.compile(r"\$\(\s*category\s*\)", re.IGNORECASE), "{category}"),
+    (re.compile(r"\$\(\s*(?:name|stem)\s*\)", re.IGNORECASE), "{stem}"),
+    (re.compile(r"\$\(\s*original\s*\)", re.IGNORECASE), "{original}"),
+    (re.compile(r"\$\(\s*(?:ext|extension)\s*\)", re.IGNORECASE), "{extension}"),
+    (re.compile(r"\$\(\s*(?:seq|sequence|#)\s*\)", re.IGNORECASE), "{seq}"),
+)
+_HAZEL_ANGLE_RENAME_SUBS: tuple[tuple[re.Pattern[str], str], ...] = (
+    (re.compile(r"<\s*year\s*>", re.IGNORECASE), "{year}"),
+    (re.compile(r"<\s*month\s*>", re.IGNORECASE), "{month}"),
+    (re.compile(r"<\s*day\s*>", re.IGNORECASE), "{day}"),
+    (
+        re.compile(
+            r"<\s*(?:date|date\s*modified|datemodified|date\s*created|datecreated|exif\s*date|exifdate)\s*>",
+            re.IGNORECASE,
+        ),
+        "{date}",
+    ),
+    (re.compile(r"<\s*category\s*>", re.IGNORECASE), "{category}"),
+    (re.compile(r"<\s*(?:name|stem)\s*>", re.IGNORECASE), "{stem}"),
+    (re.compile(r"<\s*original\s*>", re.IGNORECASE), "{original}"),
+    (re.compile(r"<\s*(?:ext|extension)\s*>", re.IGNORECASE), "{extension}"),
+    (re.compile(r"<\s*(?:#|seq|sequence)\s*>", re.IGNORECASE), "{seq}"),
+)
 _INLINE_SIZE_RE = re.compile(
     r"^(?:"
     r"(?:size|filesize|file_size|bytes?)\s*(?:[<>]=?|!=|==|=|:)\s*\S+"
@@ -213,7 +250,8 @@ def _split_identifier_words(raw: str) -> set[str]:
     """Split camelCase, snake_case, or space-separated attribute/operator text into lowercase words."""
     if not raw:
         return set()
-    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", str(raw))
+    spaced = re.sub(r"([A-Z]+)([A-Z][a-z])", r"\1 \2", str(raw))
+    spaced = re.sub(r"([a-z0-9])([A-Z])", r"\1 \2", spaced)
     return set(re.findall(r"[a-z0-9]+", spaced.lower()))
 
 
@@ -305,6 +343,242 @@ def _has_wildcard_or_ext_mask(expr: str) -> bool:
         or ("[" in expr and "]" in expr)
         or expr.startswith(".")
     )
+
+
+def _translate_hazel_path_tokens(raw_text: str) -> str:
+    """Translate unambiguous Hazel $(token) and strftime date placeholders into Sortify {token} syntax."""
+    out = raw_text
+    for pat, repl in _HAZEL_TOKEN_SUBS:
+        out = pat.sub(repl, out)
+    return out
+
+
+def _normalize_imported_rename_pattern(raw_pattern: Any) -> tuple[str, str | None]:
+    """Normalize and validate an imported rename pattern string."""
+    if not raw_pattern or not isinstance(raw_pattern, str):
+        return "", None
+    cleaned = _translate_hazel_path_tokens(raw_pattern.strip())
+    for pat, repl in _HAZEL_ANGLE_RENAME_SUBS:
+        cleaned = pat.sub(repl, cleaned)
+    if not cleaned:
+        return "", None
+    if any(ord(ch) < 32 or ord(ch) == 127 for ch in cleaned):
+        return "", f"Rename pattern '{raw_pattern}' contains control characters."
+    if (
+        ".." in cleaned.replace("\\", "/").split("/")
+        or "/" in cleaned
+        or "\\" in cleaned
+    ):
+        return (
+            "",
+            f"Rename pattern '{raw_pattern}' cannot contain path separators or '..' traversal.",
+        )
+    from app.core.pattern_formatter import PatternTokenFormatter
+
+    preview = PatternTokenFormatter.format_pattern(
+        cleaned,
+        metadata={
+            "date": "2026-01-15",
+            "category": "sample",
+            "original": "document",
+            "stem": "document",
+            "extension": ".pdf",
+        },
+        seq=1,
+        fallback_original="",
+    )
+    if not preview:
+        return "", f"Rename pattern '{raw_pattern}' resolved to an empty filename."
+    return cleaned, None
+
+
+def _map_hazel_metadata_condition(
+    raw_attr: str,
+    raw_op: str,
+    raw_val: Any,
+    *,
+    negated_flag: bool = False,
+) -> tuple[str | None, str | None, str | None]:
+    """Map a single-condition Hazel size, age, or date clause to a Sortify metadata policy.
+
+    Returns ``(policy_type, expression, error_reason)``.
+    """
+    from app.core.policy_engine import validate_metadata_expression
+
+    words = _split_identifier_words(raw_attr)
+    attr_compact = re.sub(r"[^a-z0-9]+", "", str(raw_attr or "").lower())
+
+    p_type: str | None = None
+    implied_size_unit = ""
+    if words & _SIZE_ATTR_WORDS:
+        p_type = "size"
+        if words & {"kilobyte", "kilobytes"}:
+            implied_size_unit = "KB"
+        elif words & {"megabyte", "megabytes"}:
+            implied_size_unit = "MB"
+        elif words & {"gigabyte", "gigabytes"}:
+            implied_size_unit = "GB"
+    elif (
+        "exif" in words
+        or "taken" in words
+        or "contentcreationdate" in attr_compact
+        or "contentcreated" in attr_compact
+        or ("original" in words and "date" in words)
+    ):
+        p_type = "exif_date"
+    elif "age" in words:
+        p_type = "age"
+    elif words & {"created", "creation", "ctime", "birthtime"}:
+        p_type = "created_date"
+    elif words & {"modified", "modification", "mtime"} or attr_compact in {
+        "date",
+        "filedate",
+        "lastmodified",
+        "datelastmodified",
+    }:
+        p_type = "modified_date"
+    elif words & _DATE_ATTR_WORDS:
+        return (
+            None,
+            None,
+            f"Unsupported date filter attribute '{raw_attr}' (supported: modified_date, created_date, exif_date, age).",
+        )
+    else:
+        return None, None, None
+
+    if raw_val is None:
+        return None, None, f"Missing comparison value for '{raw_attr}'."
+    val_str = str(raw_val).strip()
+    if not val_str:
+        return None, None, f"Empty comparison value for '{raw_attr}'."
+
+    op_clean = " ".join(str(raw_op or "").strip().lower().split())
+    op_compact = re.sub(r"[\s_-]+", "", op_clean)
+
+    # Reject pure inequality / negation except "not in the last" (which expresses age > duration)
+    is_not_in_last = "not in the last" in op_clean or op_compact in (
+        "notinthelast",
+        "isnotinthelast",
+    )
+    if (negated_flag and "in the last" not in op_clean) or (
+        not is_not_in_last
+        and (
+            op_clean.startswith("!")
+            or op_clean in _NEGATED_OP_EXACT
+            or op_compact in _NEGATED_OP_EXACT
+            or ("not" in _split_identifier_words(raw_op))
+        )
+    ):
+        return (
+            None,
+            None,
+            f"Negated condition operator '{raw_op or 'negated'}' is not supported for '{raw_attr}'.",
+        )
+    if negated_flag and "in the last" in op_clean:
+        is_not_in_last = True
+
+    if op_clean in ("", "is", "equals", "equal", "==", "=", "matches", "match"):
+        try:
+            validate_metadata_expression(p_type, val_str)
+            return p_type, val_str, None
+        except ValueError:
+            pass
+
+    expr = ""
+    if p_type == "size":
+        val_with_unit = (
+            f"{val_str}{implied_size_unit}"
+            if implied_size_unit and re.fullmatch(r"\d+(?:\.\d+)?", val_str)
+            else val_str
+        )
+        if op_clean in (">", "gt") or any(
+            p in op_clean for p in ("greater than", "more than")
+        ):
+            expr = f"> {val_with_unit}"
+        elif op_clean in (">=", "gte") or "at least" in op_clean:
+            expr = f">= {val_with_unit}"
+        elif op_clean in ("<", "lt") or any(
+            p in op_clean for p in ("less than", "fewer than")
+        ):
+            expr = f"< {val_with_unit}"
+        elif op_clean in ("<=", "lte") or "at most" in op_clean:
+            expr = f"<= {val_with_unit}"
+        elif op_clean in ("", "is", "equals", "equal", "==", "="):
+            expr = (
+                val_with_unit
+                if val_with_unit.startswith((">", "<", "="))
+                else f"= {val_with_unit}"
+            )
+        else:
+            return (
+                None,
+                None,
+                f"Unsupported size operator '{raw_op}' on '{raw_attr}'.",
+            )
+    elif p_type == "age":
+        dur_val = val_str if re.search(r"[a-zA-Z]", val_str) else f"{val_str}d"
+        if (
+            is_not_in_last
+            or op_clean in (">", "gt")
+            or any(p in op_clean for p in ("greater than", "more than", "older than"))
+        ):
+            expr = f"> {dur_val}"
+        elif op_clean in (">=", "gte") or "at least" in op_clean:
+            expr = f">= {dur_val}"
+        elif (
+            "in the last" in op_clean
+            or op_clean in ("<", "lt")
+            or any(p in op_clean for p in ("less than", "fewer than", "newer than"))
+        ):
+            expr = f"< {dur_val}"
+        elif op_clean in ("<=", "lte") or "at most" in op_clean:
+            expr = f"<= {dur_val}"
+        elif op_clean in ("", "is", "equals", "equal", "==", "="):
+            expr = dur_val if dur_val.startswith((">", "<", "=")) else f"= {dur_val}"
+        else:
+            return (
+                None,
+                None,
+                f"Unsupported age operator '{raw_op}' on '{raw_attr}'.",
+            )
+    else:
+        # modified_date, created_date, exif_date
+        if is_not_in_last or "older than" in op_clean:
+            dur_val = val_str if re.search(r"[a-zA-Z]", val_str) else f"{val_str}d"
+            expr = f"older than {dur_val}"
+        elif "in the last" in op_clean or "newer than" in op_clean:
+            dur_val = val_str if re.search(r"[a-zA-Z]", val_str) else f"{val_str}d"
+            expr = f"in the last {dur_val}"
+        elif op_clean in ("<=", "lte") or any(
+            p in op_clean for p in ("on or before", "at most")
+        ):
+            expr = f"<= {val_str}"
+        elif op_clean in (">=", "gte") or any(
+            p in op_clean for p in ("on or after", "at least")
+        ):
+            expr = f">= {val_str}"
+        elif op_clean in ("<", "lt") or any(
+            p in op_clean for p in ("is before", "before", "less than")
+        ):
+            expr = f"< {val_str}"
+        elif op_clean in (">", "gt") or any(
+            p in op_clean for p in ("is after", "after", "greater than")
+        ):
+            expr = f"> {val_str}"
+        elif op_clean in ("", "is", "equals", "equal", "==", "="):
+            expr = val_str if val_str.startswith((">", "<", "=")) else f"= {val_str}"
+        else:
+            return (
+                None,
+                None,
+                f"Unsupported date operator '{raw_op}' on '{raw_attr}'.",
+            )
+
+    try:
+        validate_metadata_expression(p_type, expr)
+    except ValueError as err:
+        return None, None, str(err)
+    return p_type, expr, None
 
 
 def _percent_decode_uri_path(value: str) -> str:
@@ -454,6 +728,10 @@ def normalize_imported_target_path(raw_path: str) -> tuple[str, bool, str | None
 
     segments = [seg for seg in clean.split("/") if seg and seg != "."]
     candidate = "/".join(segments)
+    translated_candidate = _translate_hazel_path_tokens(candidate)
+    if translated_candidate != candidate:
+        was_converted = True
+        candidate = translated_candidate
 
     if not candidate:
         return (
@@ -463,7 +741,22 @@ def normalize_imported_target_path(raw_path: str) -> tuple[str, bool, str | None
         )
 
     try:
-        validate_target_path(candidate)
+        if "{" in candidate and "}" in candidate:
+            from app.core.pattern_formatter import PatternTokenFormatter
+
+            PatternTokenFormatter.format_target_path(
+                candidate,
+                metadata={
+                    "date": "2026-01-15",
+                    "category": "sample",
+                    "original": "document",
+                    "stem": "document",
+                    "extension": ".pdf",
+                },
+                seq=1,
+            )
+        else:
+            validate_target_path(candidate)
     except ValueError as err:
         return "", False, str(err)
 
@@ -556,6 +849,7 @@ class RuleConflictAnalyzer:
             p_expr = str(policy.get("expression", "")).strip().lower()
             p_target = policy.get("target_path", "")
             p_prio = policy.get("priority", 75)
+            p_ren = str(policy.get("rename_pattern", "") or "").strip()
 
             if not p_expr:
                 continue
@@ -566,9 +860,10 @@ class RuleConflictAnalyzer:
                 if ex_type == p_type and ex_expr == p_expr:
                     ex_target = ex_p.get("target_path", "")
                     ex_prio = ex_p.get("priority", 75)
+                    ex_ren = str(ex_p.get("rename_pattern", "") or "").strip()
                     san_ex = normalize_rule_path(ex_target)
                     san_imp = normalize_rule_path(p_target)
-                    if san_ex != san_imp or ex_prio != p_prio:
+                    if san_ex != san_imp or ex_prio != p_prio or ex_ren != p_ren:
                         ident = f"{ex_expr} ({ex_type})" if ex_type else ex_expr
                         conflicts.append(
                             RuleConflict(
@@ -713,6 +1008,21 @@ class ImportResult:
             if not p_expr_lower:
                 continue
 
+            from app.core.policy_engine import (
+                METADATA_POLICY_TYPES,
+                validate_metadata_expression,
+            )
+
+            if p_type in METADATA_POLICY_TYPES:
+                try:
+                    validate_metadata_expression(p_type, p_expr)
+                except ValueError as meta_err:
+                    self.warnings.append(
+                        f"Policy rule '{p_expr}' ({p_type}) skipped before merge: {meta_err}"
+                    )
+                    self.unsupported.append({"rule": p_expr, "reason": str(meta_err)})
+                    continue
+
             raw_target = str(policy.get("target_path", ""))
             norm_target, was_conv, err = normalize_imported_target_path(raw_target)
             if err is not None or not norm_target:
@@ -729,6 +1039,19 @@ class ImportResult:
 
             pol_entry = dict(policy)
             pol_entry["target_path"] = norm_target
+            if "rename_pattern" in pol_entry:
+                norm_ren, ren_err = _normalize_imported_rename_pattern(
+                    pol_entry.get("rename_pattern")
+                )
+                if ren_err is not None:
+                    self.warnings.append(
+                        f"Policy rule '{p_expr}': omitted invalid rename pattern ({ren_err})."
+                    )
+                    pol_entry.pop("rename_pattern", None)
+                elif norm_ren:
+                    pol_entry["rename_pattern"] = norm_ren
+                else:
+                    pol_entry.pop("rename_pattern", None)
 
             ident = f"{p_expr_lower} ({p_type})" if p_type else p_expr_lower
             ident_lower = ident.lower()
@@ -920,6 +1243,8 @@ class BaseRuleImporter(abc.ABC):
             return "unarchive", raw_label
         if core in _MOVE_ACTION_CORES:
             return "move", raw_label
+        if core in _RENAME_ACTION_CORES:
+            return "rename", raw_label
         if core in _COPY_ACTION_CORES:
             return "copy", raw_label
         return "unsupported", raw_label
@@ -1014,6 +1339,7 @@ class HazelRuleImporter(BaseRuleImporter):
                 actions = [actions]
 
             raw_target = ""
+            raw_rename_pattern = ""
             is_unarchive = False
             saw_explicit_actions = False
             saw_supported_action = False
@@ -1074,6 +1400,20 @@ class HazelRuleImporter(BaseRuleImporter):
                         )
                         if act_target and isinstance(act_target, str):
                             raw_target = act_target
+                        act_rename = (
+                            act.get("RenamePattern")
+                            or act.get("rename_pattern")
+                            or act.get("NewName")
+                            or (
+                                act.get("pattern")
+                                or act.get("value")
+                                or act.get("name")
+                                if act_kind == "rename"
+                                else None
+                            )
+                        )
+                        if act_rename and isinstance(act_rename, str):
+                            raw_rename_pattern = act_rename
                     elif isinstance(act, str) and ("/" in act or "\\" in act):
                         raw_target = act
 
@@ -1121,6 +1461,24 @@ class HazelRuleImporter(BaseRuleImporter):
                 if top_kind == "unarchive":
                     is_unarchive = True
                     saw_supported_action = True
+
+            if not raw_rename_pattern:
+                top_rename = rule.get("RenamePattern") or rule.get("rename_pattern")
+                if top_rename and isinstance(top_rename, str):
+                    raw_rename_pattern = top_rename
+
+            rule_rename_pattern = ""
+            if raw_rename_pattern:
+                norm_ren, ren_err = _normalize_imported_rename_pattern(
+                    raw_rename_pattern
+                )
+                if ren_err is not None:
+                    result.warnings.append(
+                        f"Hazel rule '{rule_name}' skipped invalid rename pattern '{raw_rename_pattern}': {ren_err}"
+                    )
+                    result.unsupported.append({"rule": rule_name, "reason": ren_err})
+                else:
+                    rule_rename_pattern = norm_ren
 
             if not raw_target and (not saw_explicit_actions or saw_supported_action):
                 top_target = (
@@ -1185,32 +1543,81 @@ class HazelRuleImporter(BaseRuleImporter):
                         if _has_wildcard_or_ext_mask(expr_val)
                         else "unarchive"
                     )
-                    result.policies.append(
-                        {
-                            "type": p_type,
-                            "action": "unarchive",
-                            "expression": expr_val,
-                            "target_path": target_dir,
-                            "priority": 75,
-                            "halting": False,
-                        }
-                    )
-                elif rule_name and len(rule_name.split()) == 1:
+                    pol_no_cond: dict[str, Any] = {
+                        "type": p_type,
+                        "action": "unarchive",
+                        "expression": expr_val,
+                        "target_path": target_dir,
+                        "priority": 75,
+                        "halting": False,
+                    }
+                    if rule_rename_pattern:
+                        pol_no_cond["rename_pattern"] = rule_rename_pattern
+                    result.policies.append(pol_no_cond)
+                elif (
+                    rule_name
+                    and len(rule_name.split()) == 1
+                    and not rule_rename_pattern
+                ):
                     result.keyword_rules[rule_name.lower()] = target_dir
                 else:
-                    result.policies.append(
-                        {
-                            "type": "keyword",
-                            "expression": rule_name,
-                            "target_path": target_dir,
-                            "priority": 75,
-                            "halting": False,
-                        }
-                    )
+                    pol_no_cond = {
+                        "type": "keyword",
+                        "expression": rule_name,
+                        "target_path": target_dir,
+                        "priority": 75,
+                        "halting": False,
+                    }
+                    if rule_rename_pattern:
+                        pol_no_cond["rename_pattern"] = rule_rename_pattern
+                    result.policies.append(pol_no_cond)
                 continue
+
+            def _has_nested_subconditions(c: dict[str, Any]) -> bool:
+                return any(
+                    isinstance(c.get(k), list)
+                    for k in (
+                        "subconditions",
+                        "NSRuleSubconditions",
+                        "Subconditions",
+                        "NSRuleConditions",
+                        "Conditions",
+                        "NSConditions",
+                        "conditions",
+                        "subrules",
+                    )
+                )
+
+            dict_conditions = [c for c in conditions if isinstance(c, dict)]
+            has_nested_group = any(
+                _has_nested_subconditions(c) for c in dict_conditions
+            )
+            is_multi_condition = len(dict_conditions) > 1 or has_nested_group
+            if has_nested_group:
+                result.warnings.append(
+                    f"Hazel rule '{rule_name}' contains nested boolean multi-condition groups which are not supported in flat policies."
+                )
+                result.unsupported.append(
+                    {
+                        "rule": rule_name,
+                        "reason": "Nested boolean multi-condition groups are not supported.",
+                    }
+                )
+            elif len(dict_conditions) > 1:
+                result.warnings.append(
+                    f"Hazel rule '{rule_name}' contains multiple conditions ({len(dict_conditions)} clauses); compound boolean rules are flattened or skipped."
+                )
+
+            def _attach_optional_rename(p_dict: dict[str, Any]) -> dict[str, Any]:
+                if rule_rename_pattern:
+                    p_dict["rename_pattern"] = rule_rename_pattern
+                return p_dict
 
             for cond in conditions:
                 if not isinstance(cond, dict):
+                    continue
+
+                if _has_nested_subconditions(cond):
                     continue
 
                 raw_attr = str(
@@ -1243,15 +1650,49 @@ class HazelRuleImporter(BaseRuleImporter):
 
                 attr_filter_kind = _classify_condition_attribute(raw_attr)
                 if attr_filter_kind is not None:
-                    result.warnings.append(
-                        f"Hazel rule '{rule_name}' skipped unsupported {attr_filter_kind} filter clause ('{raw_attr}')."
+                    if is_multi_condition:
+                        result.warnings.append(
+                            f"Hazel rule '{rule_name}' skipped multi-condition {attr_filter_kind} filter clause ('{raw_attr}'); metadata rules require a single condition."
+                        )
+                        result.unsupported.append(
+                            {
+                                "rule": rule_name,
+                                "reason": f"Multi-condition {attr_filter_kind} filter attribute '{raw_attr}' omitted.",
+                            }
+                        )
+                        continue
+
+                    meta_type, meta_expr, meta_err = _map_hazel_metadata_condition(
+                        raw_attr,
+                        raw_op,
+                        val,
+                        negated_flag=negated_flag,
                     )
-                    result.unsupported.append(
-                        {
-                            "rule": rule_name,
-                            "reason": f"Unsupported {attr_filter_kind} filter attribute '{raw_attr}' omitted.",
+                    if meta_type and meta_expr and meta_err is None:
+                        meta_pol: dict[str, Any] = {
+                            "type": meta_type,
+                            "expression": meta_expr,
+                            "target_path": target_dir,
+                            "priority": 75,
+                            "halting": False,
                         }
-                    )
+                        if is_unarchive:
+                            meta_pol["action"] = "unarchive"
+                        result.policies.append(_attach_optional_rename(meta_pol))
+                    else:
+                        reason_msg = (
+                            meta_err
+                            or f"Unsupported {attr_filter_kind} filter attribute '{raw_attr}' omitted."
+                        )
+                        result.warnings.append(
+                            f"Hazel rule '{rule_name}' skipped unsupported {attr_filter_kind} filter clause ('{raw_attr}'): {reason_msg}"
+                        )
+                        result.unsupported.append(
+                            {
+                                "rule": rule_name,
+                                "reason": reason_msg,
+                            }
+                        )
                     continue
 
                 op_kind = _classify_condition_operator(
@@ -1335,7 +1776,7 @@ class HazelRuleImporter(BaseRuleImporter):
                     }
                     if is_unarchive:
                         pol_dict["action"] = "unarchive"
-                    result.policies.append(pol_dict)
+                    result.policies.append(_attach_optional_rename(pol_dict))
                 elif op_kind == "ends_with":
                     expr = val_str if val_str.startswith("*") else f"*{val_str}"
                     pol_dict = {
@@ -1347,7 +1788,7 @@ class HazelRuleImporter(BaseRuleImporter):
                     }
                     if is_unarchive:
                         pol_dict["action"] = "unarchive"
-                    result.policies.append(pol_dict)
+                    result.policies.append(_attach_optional_rename(pol_dict))
                 elif (
                     "extension" in attribute
                     or "pattern" in attribute
@@ -1374,32 +1815,38 @@ class HazelRuleImporter(BaseRuleImporter):
                     }
                     if is_unarchive:
                         pol_dict["action"] = "unarchive"
-                    result.policies.append(pol_dict)
+                    result.policies.append(_attach_optional_rename(pol_dict))
                 elif is_unarchive:
                     result.policies.append(
-                        {
-                            "type": "unarchive",
-                            "action": "unarchive",
-                            "expression": val_str,
-                            "target_path": target_dir,
-                            "priority": 75,
-                            "halting": False,
-                        }
-                    )
-                else:
-                    if len(val_str.split()) == 1 and all(
-                        c.isalnum() or c in "_-" for c in val_str
-                    ):
-                        result.keyword_rules[val_str.lower()] = target_dir
-                    else:
-                        result.policies.append(
+                        _attach_optional_rename(
                             {
-                                "type": "keyword",
+                                "type": "unarchive",
+                                "action": "unarchive",
                                 "expression": val_str,
                                 "target_path": target_dir,
                                 "priority": 75,
                                 "halting": False,
                             }
+                        )
+                    )
+                else:
+                    if (
+                        len(val_str.split()) == 1
+                        and all(c.isalnum() or c in "_-" for c in val_str)
+                        and not rule_rename_pattern
+                    ):
+                        result.keyword_rules[val_str.lower()] = target_dir
+                    else:
+                        result.policies.append(
+                            _attach_optional_rename(
+                                {
+                                    "type": "keyword",
+                                    "expression": val_str,
+                                    "target_path": target_dir,
+                                    "priority": 75,
+                                    "halting": False,
+                                }
+                            )
                         )
 
         return result
@@ -2662,6 +3109,19 @@ class SortifyRuleImporter(BaseRuleImporter):
                         pol_out["post_unarchive_action"] = pol["post_unarchive_action"]
                     if isinstance(pol.get("post_unarchive_target"), str):
                         pol_out["post_unarchive_target"] = pol["post_unarchive_target"]
+                    if (
+                        isinstance(pol.get("rename_pattern"), str)
+                        and pol["rename_pattern"].strip()
+                    ):
+                        norm_ren, ren_err = _normalize_imported_rename_pattern(
+                            pol["rename_pattern"]
+                        )
+                        if ren_err is not None:
+                            result.warnings.append(
+                                f"Sortify policy rule '{p_expr}' skipped invalid rename pattern: {ren_err}"
+                            )
+                        elif norm_ren:
+                            pol_out["rename_pattern"] = norm_ren
                     result.policies.append(pol_out)
 
         if not result.keyword_rules and not result.policies and not result.warnings:

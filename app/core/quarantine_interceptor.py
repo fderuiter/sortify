@@ -418,12 +418,23 @@ class QuarantineInterceptorService:
                 )
 
             # 4. Extended Policy Engine Evaluation
+            orig_full_for_eval = (
+                os.path.join(base_dir, orig_rel_path)
+                if base_dir and orig_rel_path
+                else ""
+            )
+            eval_abs_path = (
+                orig_full_for_eval
+                if (orig_full_for_eval and os.path.isfile(orig_full_for_eval))
+                else staged_path
+            )
             matched_rule = PolicyEngine.evaluate_policies(
                 file_path=orig_rel_path,
                 doc_text=extracted_text,
                 status_match="",
                 policies=self.policies,
                 is_sorted=True,
+                abs_file_path=eval_abs_path,
             )
 
             action = (
@@ -439,7 +450,7 @@ class QuarantineInterceptorService:
                 else (record.get("policy_action") or "").lower()
             )
 
-            target_subfolder = (
+            raw_target_subfolder = (
                 getattr(matched_rule, "target_path", None)
                 or (
                     matched_rule.get("target_path")
@@ -449,6 +460,80 @@ class QuarantineInterceptorService:
                 if matched_rule
                 else None
             )
+            pol_rename_pattern = (
+                getattr(matched_rule, "rename_pattern", "")
+                or (
+                    matched_rule.get("rename_pattern", "")
+                    if isinstance(matched_rule, dict)
+                    else ""
+                )
+                if matched_rule
+                else ""
+            )
+            pol_resolved_date = (
+                getattr(matched_rule, "resolved_date", None)
+                or (
+                    matched_rule.get("resolved_date")
+                    if isinstance(matched_rule, dict)
+                    else None
+                )
+                if matched_rule
+                else None
+            )
+
+            # When no compliance lifecycle action is set and the original source file remains
+            # in place on disk, release in-place so the downstream SortPipeline routes and
+            # records undo history cleanly without creating duplicate '<name>_1' files.
+            orig_in_place = bool(
+                orig_full_for_eval
+                and os.path.exists(orig_full_for_eval)
+                and self._is_same_content(staged_path, orig_full_for_eval)
+            )
+            if not action and orig_in_place:
+                target_subfolder = None
+            else:
+                target_subfolder = raw_target_subfolder
+                if target_subfolder and "{" in str(target_subfolder):
+                    from app.core.pattern_formatter import PatternTokenFormatter
+
+                    with contextlib.suppress(ValueError):
+                        target_subfolder = PatternTokenFormatter.format_target_path(
+                            str(target_subfolder),
+                            metadata={
+                                "date": pol_resolved_date,
+                                "category": str(target_subfolder).split("/")[0]
+                                or "uncategorized",
+                            },
+                            seq=1,
+                            fallback_original=os.path.basename(orig_rel_path),
+                            file_path=eval_abs_path,
+                        )
+
+            target_basename = os.path.basename(orig_rel_path)
+            if (
+                pol_rename_pattern
+                and str(pol_rename_pattern).strip()
+                and (action in ("redact", "archive", "retain") or not orig_in_place)
+            ):
+                from app.core.pattern_formatter import PatternTokenFormatter
+
+                leaf_cat = (
+                    str(target_subfolder or action or "uncategorized")
+                    .replace("\\", "/")
+                    .strip("/")
+                    .split("/")[-1]
+                    or "uncategorized"
+                )
+                target_basename = PatternTokenFormatter.format_pattern(
+                    str(pol_rename_pattern),
+                    metadata={
+                        "date": pol_resolved_date,
+                        "category": leaf_cat,
+                    },
+                    seq=1,
+                    fallback_original=os.path.basename(orig_rel_path),
+                    file_path=eval_abs_path,
+                )
 
             # Re-check timeout guardrail before action execution
             if (
@@ -590,7 +675,7 @@ class QuarantineInterceptorService:
                 if dest_subfolder == ".":
                     dest_subfolder = ""
                 os.makedirs(dest_dir, exist_ok=True)
-                dest_file_path = os.path.join(dest_dir, os.path.basename(orig_rel_path))
+                dest_file_path = os.path.join(dest_dir, target_basename)
 
                 with atomic_quarantine_relocation(
                     staged_path, dest_file_path
@@ -630,9 +715,7 @@ class QuarantineInterceptorService:
                 if archive_subfolder == ".":
                     archive_subfolder = ""
                 os.makedirs(archive_dir, exist_ok=True)
-                archive_file_path = os.path.join(
-                    archive_dir, os.path.basename(orig_rel_path)
-                )
+                archive_file_path = os.path.join(archive_dir, target_basename)
 
                 with atomic_quarantine_relocation(staged_path, archive_file_path):
                     self.db.update_quarantine_status(
@@ -666,7 +749,7 @@ class QuarantineInterceptorService:
                 if dest_subfolder == ".":
                     dest_subfolder = ""
                 os.makedirs(dest_dir, exist_ok=True)
-                dest_file_path = os.path.join(dest_dir, os.path.basename(orig_rel_path))
+                dest_file_path = os.path.join(dest_dir, target_basename)
 
                 with atomic_quarantine_relocation(staged_path, dest_file_path):
                     self.db.update_quarantine_status(
@@ -813,7 +896,7 @@ class QuarantineInterceptorService:
                 if dest_subfolder == ".":
                     dest_subfolder = ""
                 os.makedirs(dest_dir, exist_ok=True)
-                dest_file_path = os.path.join(dest_dir, os.path.basename(orig_rel_path))
+                dest_file_path = os.path.join(dest_dir, target_basename)
 
                 # Releasing back over the unchanged original (the daemon stages a
                 # copy and leaves the original in place): keep the original rather

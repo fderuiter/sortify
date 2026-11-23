@@ -16,7 +16,13 @@ Whether to rename sorted files using extracted document context and dates during
 - **Type**: `bool`
 - **Default**: `False`
 
-Whether to use the local generative LLM model to synthesize descriptive folder and file names (requires AI consent and the optional 'ml' extra).
+Whether to use local semantic embeddings and/or the generative LLM model to synthesize descriptive folder and file names (requires AI consent and the optional 'ml' extra).
+
+### `RENAME_PATTERN`
+- **Type**: `str`
+- **Default**: `''`
+
+Optional default rename pattern template combining extracted document or file dates with descriptive terms (for example '{date}_{stem}'; supports {date}, {year}, {month}, {day}, {category}, {seq}, {sequence}, {extension}, {stem}, and {original} placeholders).
 
 ### `PRESERVE_HIERARCHY`
 - **Type**: `bool`
@@ -105,7 +111,7 @@ Custom mapping of category folder names to lists of file extensions or extension
 - **Type**: `list[PolicyRule]`
 - **Default**: `[]`
 
-Ordered list of typed PolicyRule dictionaries evaluated from highest integer priority to lowest across 6 rule types ('keyword', 'pattern', 'override', 'action', 'compliance', 'unarchive'), 5 lifecycle actions ('archive', 'retain', 'quarantine', 'redact', 'unarchive'), and 8 post-unarchive actions; warns when higher-priority rules shadow lower-priority rules.
+Ordered list of typed PolicyRule dictionaries evaluated from highest integer priority to lowest across 11 rule types ('keyword', 'pattern', 'override', 'action', 'compliance', 'unarchive', 'age', 'modified_date', 'created_date', 'exif_date', 'size'), optional rename_pattern templates, 5 lifecycle actions ('archive', 'retain', 'quarantine', 'redact', 'unarchive'), and 8 post-unarchive actions; warns when higher-priority rules shadow lower-priority rules.
 
 ### `VISUAL_TIMEOUT`
 - **Type**: `int`

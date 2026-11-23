@@ -7,7 +7,12 @@ import os
 
 from app.core.extractor import get_file_hash
 from app.core.extractor_strategies import registry
-from app.core.policy_engine import match_pattern_expression
+from app.core.policy_engine import (
+    METADATA_POLICY_TYPES,
+    PolicyEngine,
+    _LazyFileAttributes,
+    match_pattern_expression,
+)
 from app.core.progress import emit_progress
 
 DEFAULT_EXTENSION_CATEGORIES = {
@@ -218,6 +223,7 @@ class MetadataPass:
                 filename_only = os.path.basename(rel_p).lower()
                 file_path_lower = item_path.lower()
                 halt_evaluation = False
+                lazy_attrs = _LazyFileAttributes(item_path)
 
                 for policy in sorted_policies:
                     if not policy.get("enabled", True):
@@ -228,7 +234,11 @@ class MetadataPass:
                     expr_lower = expression.lower()
 
                     is_match = False
-                    if p_type == "override":
+                    if p_type in METADATA_POLICY_TYPES:
+                        is_match = PolicyEngine._match_metadata_rule(
+                            p_type, expression, lazy_attrs
+                        )
+                    elif p_type == "override":
                         if (
                             expr_lower == filename_only
                             or expr_lower in filename_only

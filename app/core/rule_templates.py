@@ -336,14 +336,47 @@ def export_active_rules(
             p_action = str(pol.get("action", "") or "").strip().lower()
             p_expr = str(pol.get("expression", "")).strip()
             p_target = str(pol.get("target_path", "")).strip()
+            p_rename = str(pol.get("rename_pattern", "") or "").strip()
             if not p_expr:
                 continue
 
+            cond_val = p_expr
             if p_type == "pattern":
                 cond_target = (
                     "Extension" if ("." in p_expr and "*" not in p_expr) else "Name"
                 )
                 cond_op = "matches"
+            elif p_type in (
+                "size",
+                "age",
+                "modified_date",
+                "created_date",
+                "exif_date",
+            ):
+                target_map = {
+                    "size": "Size",
+                    "age": "Age",
+                    "modified_date": "DateModified",
+                    "created_date": "DateCreated",
+                    "exif_date": "EXIFDate",
+                }
+                cond_target = target_map[p_type]
+                expr_lower = p_expr.lower()
+                if expr_lower.startswith("older than "):
+                    cond_op = "older than"
+                    cond_val = p_expr[len("older than ") :].strip()
+                elif expr_lower.startswith("in the last "):
+                    cond_op = "in the last"
+                    cond_val = p_expr[len("in the last ") :].strip()
+                elif p_expr.startswith((">=", "<=", "==")):
+                    cond_op = "=" if p_expr[:2] == "==" else p_expr[:2]
+                    cond_val = p_expr[2:].strip()
+                elif p_expr.startswith((">", "<", "=")):
+                    cond_op = p_expr[:1]
+                    cond_val = p_expr[1:].strip()
+                else:
+                    cond_op = "is"
+                    cond_val = p_expr
             else:
                 cond_target = "Name"
                 cond_op = "contains"
@@ -354,6 +387,20 @@ def export_active_rules(
                 else "NSRuleActionMove"
             )
 
+            rule_actions: list[dict[str, Any]] = [
+                {
+                    "NSRuleActionType": hazel_act_type,
+                    "DestinationPath": p_target,
+                }
+            ]
+            if p_rename:
+                rule_actions.append(
+                    {
+                        "NSRuleActionType": "NSRuleActionRename",
+                        "RenamePattern": p_rename,
+                    }
+                )
+
             rules_list.append(
                 {
                     "NSRuleName": f"Policy {idx + 1}: {p_expr}",
@@ -362,18 +409,13 @@ def export_active_rules(
                         {
                             "target": cond_target,
                             "operator": cond_op,
-                            "value": p_expr,
+                            "value": cond_val,
                             "NSRuleConditionTarget": cond_target,
                             "NSRuleConditionOperator": cond_op,
-                            "NSRuleConditionValue": p_expr,
+                            "NSRuleConditionValue": cond_val,
                         }
                     ],
-                    "NSRuleActions": [
-                        {
-                            "NSRuleActionType": hazel_act_type,
-                            "DestinationPath": p_target,
-                        }
-                    ],
+                    "NSRuleActions": rule_actions,
                 }
             )
 

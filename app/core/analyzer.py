@@ -1205,6 +1205,10 @@ class IncrementalAnalyzer:
                 if runtime_settings
                 else {}
             )
+            from app.core.pattern_formatter import (
+                PatternTokenFormatter,
+                resolve_disk_file_date,
+            )
             from app.core.policy_engine import PolicyEngine, PolicyEvaluationResult
 
             policies = (
@@ -1220,6 +1224,72 @@ class IncrementalAnalyzer:
             unsupported_files = []
             historical_overrides = {}
             matched_policies_map = {}
+            resolved_dates_map: dict[str, str] = {}
+            abs_paths_map: dict[str, str] = {}
+            folder_seq_counters: dict[str, int] = defaultdict(int)
+
+            def _get_or_resolve_file_date(
+                f_key: str,
+                abs_path: str,
+                matched_pol: Optional[Any] = None,
+            ) -> str:
+                if f_key in resolved_dates_map:
+                    return resolved_dates_map[f_key]
+                pol_date = (
+                    getattr(matched_pol, "resolved_date", None)
+                    if matched_pol is not None
+                    else None
+                )
+                if not pol_date and isinstance(matched_pol, dict):
+                    pol_date = matched_pol.get("resolved_date")
+                resolved = (
+                    str(pol_date or "")
+                    or resolve_disk_file_date(abs_path, base_dir=base_dir)
+                    or ""
+                )
+                if resolved:
+                    resolved_dates_map[f_key] = resolved
+                return resolved
+
+            def _expand_folder_template(
+                raw_folder: str,
+                f_key: str,
+                abs_path: str,
+                f_date: str,
+            ) -> str:
+                if not raw_folder or "{" not in raw_folder:
+                    return raw_folder
+                base_name = os.path.basename(f_key.split("::", 1)[-1])
+                stem_val, ext_val = os.path.splitext(base_name)
+                static_cat = next(
+                    (
+                        seg
+                        for seg in raw_folder.replace("\\", "/").split("/")
+                        if seg and "{" not in seg
+                    ),
+                    "uncategorized",
+                )
+                folder_seq_counters[raw_folder] += 1
+                seq_num = folder_seq_counters[raw_folder]
+                try:
+                    return PatternTokenFormatter.format_target_path(
+                        raw_folder,
+                        metadata={
+                            "date": f_date,
+                            "category": static_cat,
+                            "original": stem_val,
+                            "stem": stem_val,
+                            "extension": ext_val,
+                            "base_dir": base_dir,
+                        },
+                        seq=seq_num,
+                        file_path=abs_path,
+                    )
+                except ValueError as err:
+                    logging.warning(
+                        f"Failed to expand target folder template '{raw_folder}' for '{f_key}': {err}"
+                    )
+                    return "Miscellaneous"
 
             # Load document ratings and build per-file rejected target folder sets
             raw_ratings = (
@@ -1323,6 +1393,15 @@ class IncrementalAnalyzer:
                 if locked_files and f in locked_files:
                     target = locked_files[f]
 
+                src_root, rel_f = parse_item_identifier(f, base_dir)
+                abs_f = (
+                    os.path.join(src_root, rel_f)
+                    if src_root and not os.path.isabs(rel_f)
+                    else rel_f
+                )
+                abs_src_root = os.path.abspath(src_root) if src_root else ""
+                abs_paths_map[f] = abs_f
+
                 # Check against unified policies first!
                 # return_halting=True always yields a (result, halt) tuple.
                 matched_policy, halt_evaluation = cast(
@@ -1334,16 +1413,24 @@ class IncrementalAnalyzer:
                         sorted_policies,
                         return_halting=True,
                         is_sorted=True,
+                        abs_file_path=abs_f,
                     ),
                 )
 
                 if matched_policy:
+                    raw_pol_target = (
+                        matched_policy.target_path
+                        if hasattr(matched_policy, "target_path")
+                        else matched_policy["target_path"]
+                    )
+                    f_date = _get_or_resolve_file_date(f, abs_f, matched_policy)
+                    expanded_pol_target = _expand_folder_template(
+                        raw_pol_target, f, abs_f, f_date
+                    )
                     policy_plan_files.append(
                         (
                             f,
-                            matched_policy.target_path
-                            if hasattr(matched_policy, "target_path")
-                            else matched_policy["target_path"],
+                            expanded_pol_target,
                             matched_policy.expression
                             if hasattr(matched_policy, "expression")
                             else matched_policy["expression"],
@@ -1369,14 +1456,6 @@ class IncrementalAnalyzer:
                 if locked_files and f in locked_files and target is not None:
                     historical_overrides[f] = (target, status_match)
                     continue
-
-                src_root, rel_f = parse_item_identifier(f, base_dir)
-                abs_f = (
-                    os.path.join(src_root, rel_f)
-                    if src_root and not os.path.isabs(rel_f)
-                    else rel_f
-                )
-                abs_src_root = os.path.abspath(src_root) if src_root else ""
 
                 matched = False
                 jev_res = None
@@ -1477,8 +1556,12 @@ class IncrementalAnalyzer:
                             else (filename_only + " " + doc_lower)
                         )
                         if keyword.lower() in text_to_search:
+                            f_date = _get_or_resolve_file_date(f, abs_f)
+                            exp_folder = _expand_folder_template(
+                                target_folder, f, abs_f, f_date
+                            )
                             keyword_plan_files.append(
-                                (f, target_folder, keyword, "keyword", status_match)
+                                (f, exp_folder, keyword, "keyword", status_match)
                             )
                             matched = True
                             break
@@ -1498,8 +1581,12 @@ class IncrementalAnalyzer:
                         if kw_low in text_to_search or (
                             len(norm_kw) >= 3 and norm_kw in norm_search
                         ):
+                            f_date = _get_or_resolve_file_date(f, abs_f)
+                            exp_folder = _expand_folder_template(
+                                target_folder, f, abs_f, f_date
+                            )
                             keyword_plan_files.append(
-                                (f, target_folder, keyword, "pattern", status_match)
+                                (f, exp_folder, keyword, "pattern", status_match)
                             )
                             matched = True
                             break
@@ -2364,17 +2451,71 @@ class IncrementalAnalyzer:
                 compliance_targets[f] = target_folder
                 compliance_targets[f.replace("\\", "/")] = target_folder
 
+            rename_seq_counters: dict[str, int] = defaultdict(int)
+            policy_target_filenames: dict[str, str] = {}
+
+            def _compute_policy_rename(f_key: str, target_fld: str) -> Optional[str]:
+                if f_key in policy_target_filenames:
+                    return policy_target_filenames[f_key]
+                matched_pol = matched_policies_map.get(f_key)
+                if not matched_pol:
+                    return None
+                ren_pat = getattr(matched_pol, "rename_pattern", None) or (
+                    matched_pol.get("rename_pattern")
+                    if isinstance(matched_pol, dict)
+                    else None
+                )
+                if not ren_pat or not str(ren_pat).strip():
+                    return None
+                abs_path = abs_paths_map.get(f_key, "")
+                f_date = _get_or_resolve_file_date(f_key, abs_path, matched_pol)
+                base_name = os.path.basename(f_key.split("::", 1)[-1])
+                stem_val, ext_val = os.path.splitext(base_name)
+                cat_leaf = (
+                    target_fld.replace("\\", "/").strip("/").split("/")[-1]
+                    if target_fld
+                    else "uncategorized"
+                )
+                rename_seq_counters[target_fld] += 1
+                seq_num = rename_seq_counters[target_fld]
+                formatted_name = PatternTokenFormatter.format_pattern(
+                    str(ren_pat).strip(),
+                    metadata={
+                        "date": f_date,
+                        "category": cat_leaf or "uncategorized",
+                        "original": stem_val,
+                        "stem": stem_val,
+                        "extension": ext_val,
+                        "base_dir": base_dir,
+                    },
+                    seq=seq_num,
+                    fallback_original=base_name,
+                    file_path=abs_path,
+                )
+                if formatted_name:
+                    policy_target_filenames[f_key] = formatted_name
+                return formatted_name or None
+
             for f, target_folder, expression, rule_type, status in policy_plan_files:
                 if cancel_check and cancel_check():
                     return SortingPlan()
                 if target_folder not in plan:
                     plan[target_folder] = {}
-                plan[target_folder][f] = {
+                pol_node: dict[str, Any] = {
                     "__type__": "file",
                     "routed_by": rule_type,
                     "match": expression,
                     "status": status,
                 }
+                f_date = resolved_dates_map.get(f)
+                if f_date:
+                    pol_node["file_date"] = f_date
+                pol_renamed = _compute_policy_rename(f, target_folder)
+                if pol_renamed:
+                    pol_node["target_filename"] = pol_renamed
+                    pol_node["is_confirmed"] = True
+                    pol_node["user_confirmed"] = True
+                plan[target_folder][f] = pol_node
 
             for f, target_folder, keyword, rule_type, status in keyword_plan_files:
                 if cancel_check and cancel_check():
@@ -2445,6 +2586,14 @@ class IncrementalAnalyzer:
                         if isinstance(matched_pol, dict)
                         else None
                     )
+                    f_date = resolved_dates_map.get(f)
+                    if f_date:
+                        info["file_date"] = f_date
+                    pol_renamed = _compute_policy_rename(f, target_folder)
+                    if pol_renamed:
+                        info["target_filename"] = pol_renamed
+                        info["is_confirmed"] = True
+                        info["user_confirmed"] = True
                 else:
                     info["routed_by"] = "historical"
                     info["match"] = "user assignment"
@@ -2530,13 +2679,22 @@ class IncrementalAnalyzer:
                             if current_path
                             else src_root,
                         ).replace("\\", "/")
-                        node[k] = {
+                        leaf_dict: dict[str, Any] = {
                             "__type__": "file",
                             "source_path": raw_k,
                             "relative_source": rel_src,
                             "source_root": src_root,
                             "status": None,
                         }
+                        leaf_date = resolved_dates_map.get(k) or resolve_disk_file_date(
+                            os.path.join(src_root, raw_k)
+                            if src_root and not os.path.isabs(raw_k)
+                            else raw_k,
+                            base_dir=src_root,
+                        )
+                        if leaf_date:
+                            leaf_dict["file_date"] = leaf_date
+                        node[k] = leaf_dict
                     elif isinstance(v, dict):
                         if v.get("__type__") == "file":
                             raw_k = k.split("::", 1)[1] if "::" in k else k
@@ -2562,6 +2720,17 @@ class IncrementalAnalyzer:
                                 else s_root,
                             ).replace("\\", "/")
                             v["relative_source"] = rel_src
+                            if not v.get("file_date"):
+                                disk_cand = (
+                                    os.path.join(s_root, src_rel_for_calc)
+                                    if s_root and not os.path.isabs(src_rel_for_calc)
+                                    else src_rel_for_calc
+                                )
+                                leaf_date = resolved_dates_map.get(
+                                    k
+                                ) or resolve_disk_file_date(disk_cand, base_dir=s_root)
+                                if leaf_date:
+                                    v["file_date"] = leaf_date
                         else:
                             # It's a directory, recurse
                             _ensure_relative_source(
