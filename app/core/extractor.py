@@ -585,8 +585,7 @@ def build_corpus_generator(
                     item_text_str = str(item_text)
                     chunk[item_name] = {
                         "text": item_text_str
-                        if item_text_str.startswith("[STATUS:")
-                        or item_text_str.startswith(item_name + " ")
+                        if item_text_str.startswith(("[STATUS:", item_name + " "))
                         else item_name + " " + item_text_str,
                         "hash": file_hash,
                     }
@@ -632,8 +631,7 @@ def build_corpus_generator(
                     item_text_str = str(item_text)
                     chunk[item_name] = {
                         "text": item_text_str
-                        if item_text_str.startswith("[STATUS:")
-                        or item_text_str.startswith(item_name + " ")
+                        if item_text_str.startswith(("[STATUS:", item_name + " "))
                         else item_name + " " + item_text_str,
                         "hash": file_hash,
                     }

@@ -72,7 +72,7 @@ def verify_file_hash(
             )
             if not windows and not retry_empty:
                 return False
-        except Exception as error:  # noqa: BLE001 - legacy readers may raise any exception; failure must never verify bytes
+        except Exception as error:
             logging.debug("Hash verification read failed (%s)", type(error).__name__)
             if not recovery and not windows:
                 return False

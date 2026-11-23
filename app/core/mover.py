@@ -51,8 +51,6 @@ class MoveEngineState(str, Enum):
 class InvalidMoveStateError(SortifyBaseError, RuntimeError, ValueError):
     """Raised when an invalid MoveEngineState transition is attempted."""
 
-    pass
-
 
 _VALID_MOVE_ENGINE_TRANSITIONS: dict[MoveEngineState, set[MoveEngineState]] = {
     MoveEngineState.IDLE: {
@@ -1144,9 +1142,7 @@ def _collect_move_items(
                 pass
 
             if depth > 0 and _get_val(content, "relative_source") is None:
-                if content is not None and not (
-                    isinstance(content, dict) or isinstance(content, BaseModel)
-                ):
+                if content is not None and not (isinstance(content, (dict, BaseModel))):
                     raise ValueError(
                         f"Missing required relative source metadata field for nested item '{key}'"
                     )
@@ -1907,7 +1903,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                     except Exception:
                         chunk_hash_map = None
                 elif db is None:
-                    chunk_hash_map = {p: "" for p in chunk_rel_paths}
+                    chunk_hash_map = dict.fromkeys(chunk_rel_paths, "")
 
                 futures = [
                     pool.submit(
@@ -1930,7 +1926,7 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
 
                 # Never leave moves in flight: on the first failure, cancel
                 # what hasn't started and wait for the rest before any rollback.
-                done, not_done = concurrent.futures.wait(
+                _done, not_done = concurrent.futures.wait(
                     futures, return_when=concurrent.futures.FIRST_EXCEPTION
                 )
                 if not_done:
@@ -2035,20 +2031,17 @@ class AsyncMoveEngine(LifecycleTelemetryMixin):
                         ):
                             try:
                                 src_path = node.get("source_path")
-                                if src_path and (
-                                    is_junction_path(src_path)
-                                    or os.path.islink(src_path)
-                                ):
-                                    from app.core.resilient_file_ops import (
-                                        resilient_remove,
-                                    )
-
-                                    resilient_remove(src_path)
-                                    summary["deleted_folders"] += 1
-                                elif (
+                                if (
                                     src_path
-                                    and os.path.isdir(src_path)
-                                    and not os.listdir(src_path)
+                                    and (
+                                        is_junction_path(src_path)
+                                        or os.path.islink(src_path)
+                                    )
+                                    or (
+                                        src_path
+                                        and os.path.isdir(src_path)
+                                        and not os.listdir(src_path)
+                                    )
                                 ):
                                     from app.core.resilient_file_ops import (
                                         resilient_remove,

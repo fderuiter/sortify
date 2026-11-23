@@ -541,8 +541,7 @@ class SharedModelRegistry:
                 return True
             if model_id == "onnx":
                 return any(
-                    (k.startswith("onnx_") or k.startswith("tokenizer_"))
-                    and v is not None
+                    (k.startswith(("onnx_", "tokenizer_"))) and v is not None
                     for k, v in self._models.items()
                 )
             if model_id == "easyocr":
@@ -564,7 +563,7 @@ class SharedModelRegistry:
                     k
                     for k in set(self._models.keys())
                     | set(self._per_model_locks.keys())
-                    if k.startswith("onnx_") or k.startswith("tokenizer_")
+                    if k.startswith(("onnx_", "tokenizer_"))
                 ]
             else:
                 keys_to_remove = [

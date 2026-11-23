@@ -1203,8 +1203,8 @@ class VirtualFilesystemTracker:
 
                     # Check if target_filename differs from src_filename (rename proposal)
                     if target_filename != src_filename:
-                        src_stem, src_ext = os.path.splitext(src_filename)
-                        tgt_stem, tgt_ext = os.path.splitext(target_filename)
+                        _src_stem, src_ext = os.path.splitext(src_filename)
+                        _tgt_stem, tgt_ext = os.path.splitext(target_filename)
 
                         source_path = os.path.normpath(os.path.join(base_dir, rel_src))
                         dest_dir = os.path.normpath(

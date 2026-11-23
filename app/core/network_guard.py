@@ -61,7 +61,7 @@ def _is_local_address(host: str) -> bool:
     if local_hostname and host_lower == local_hostname:
         return True
 
-    if host_lower.endswith(".local") or host_lower.endswith(".localhost"):
+    if host_lower.endswith((".local", ".localhost")):
         return True
 
     try:

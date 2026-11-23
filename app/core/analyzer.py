@@ -1177,9 +1177,11 @@ class IncrementalAnalyzer:
                 _, clean_rel = parse_item_identifier(str(path_val), base_dir)
                 top_seg = clean_rel.replace("\\", "/").strip("/").split("/")[0]
                 return (
-                    top_seg.startswith("_Quarantine_Staging")
-                    or top_seg.startswith("_Compliance_Quarantine")
-                    or (bool(qdir_top) and top_seg == qdir_top)
+                    top_seg.startswith(
+                        ("_Quarantine_Staging", "_Compliance_Quarantine")
+                    )
+                    or bool(qdir_top)
+                    and top_seg == qdir_top
                 )
 
             if docs:
@@ -1818,7 +1820,7 @@ class IncrementalAnalyzer:
                     from sklearn.preprocessing import normalize
 
                     # Database TF-IDF Statistics Retrieval
-                    N, top_terms, doc_terms, doc_metadata = self.db.get_tfidf_stats(
+                    N, top_terms, doc_terms, _doc_metadata = self.db.get_tfidf_stats(
                         base_dir
                     )
 

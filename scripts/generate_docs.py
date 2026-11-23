@@ -870,7 +870,7 @@ def update_security_md(sec_file="SECURITY.md", local_only: bool = True):
                     )
 
     # Deduplicate and sort
-    network_deps = sorted(list(set(network_deps)))
+    network_deps = sorted(set(network_deps))
 
     has_critical_error = False
     print(f"Discovered {len(urls_to_validate)} unique network URLs to validate.")
@@ -958,7 +958,7 @@ def get_handwritten_docs():
                     full_path = Path(root, f).as_posix()
                     if full_path not in generated_set:
                         docs.append(full_path)
-    return sorted(list(set(docs)))
+    return sorted(set(docs))
 
 
 def audit_auto_merge_policy(content=None, doc_path="docs/auto_merge_policy.md"):
@@ -1589,7 +1589,7 @@ def validate_mermaid_diagrams():
 
     errors = []
 
-    for file_path in sorted(list(set(doc_files))):
+    for file_path in sorted(set(doc_files)):
         if not os.path.exists(file_path):
             continue
 

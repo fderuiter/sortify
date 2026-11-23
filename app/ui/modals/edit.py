@@ -606,7 +606,7 @@ class RenameModal(
             batch_items = []
             for idx, f in enumerate(self.files):
                 file_seq = self.seq + idx
-                meta, fallback, key, folder, info = self._extract_file_metadata(
+                _meta, fallback, key, folder, info = self._extract_file_metadata(
                     f, file_seq
                 )
                 formatted_name = (
