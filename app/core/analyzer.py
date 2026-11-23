@@ -1712,7 +1712,7 @@ class IncrementalAnalyzer:
 
                     ext = os.path.splitext(d[0])[1].lower()
                     if (
-                        ext not in {".png", ".jpg", ".jpeg"}
+                        ext not in {".png", ".jpg", ".jpeg", ".bmp", ".tiff", ".webp"}
                         and registry.is_supported(ext)
                         and not d[1].startswith("[STATUS:")
                         and d[1].strip()
