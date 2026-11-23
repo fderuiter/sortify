@@ -26,6 +26,8 @@ def test_docs_only_pr_is_eligible():
         pr_number=101,
         title="docs: update installation instructions",
         author="fderuiter",
+        author_permission="admin",
+        is_fork=False,
         changed_files=["docs/setup.md", "README.md"],
         additions=20,
         deletions=5,
@@ -35,6 +37,169 @@ def test_docs_only_pr_is_eligible():
     assert res.risk_level == "low"
     assert "automerge:eligible" in res.labels_to_add
     assert "risk:low" in res.labels_to_add
+
+
+@pytest.mark.parametrize(
+    "path",
+    [
+        "mkdocs.yml",
+        ".pre-commit-config.yaml",
+        ".claude/settings.json",
+        ".claude/hooks/session-start.sh",
+        ".agents/skills/tdd/SKILL.md",
+        "AGENTS.md",
+        "CLAUDE.md",
+        ".gitattributes",
+        "offline_bundle/requirements.txt",
+    ],
+)
+def test_newly_protected_config_hook_agent_and_manifest_paths_are_sensitive(path):
+    meta = PRMetadata(
+        pr_number=1010,
+        title=f"chore: update {path}",
+        author="fderuiter",
+        author_permission="admin",
+        labels=["automerge"],
+        changed_files=[path],
+        additions=4,
+        deletions=2,
+    )
+    res = classify_pr(meta)
+    assert res.eligible is False, path
+    assert res.risk_level == "sensitive", path
+    assert "risk:sensitive" in res.labels_to_add
+    assert "automerge:blocked" in res.labels_to_add
+    assert any("protected/sensitive" in r for r in res.blocking_reasons)
+
+
+@pytest.mark.parametrize("permission", ["write", "maintain", "admin"])
+def test_small_docs_pr_from_human_maintainer_is_eligible_without_label(permission):
+    meta = PRMetadata(
+        pr_number=1011,
+        title="docs: clarify user guide",
+        author="maintainer-user",
+        author_permission=permission,
+        author_is_bot=False,
+        is_fork=False,
+        changed_files=["docs/user_guide.md", "README.md"],
+        additions=12,
+        deletions=3,
+    )
+    res = classify_pr(meta)
+    assert res.eligible is True
+    assert res.risk_level == "low"
+    assert "automerge:eligible" in res.labels_to_add
+
+
+@pytest.mark.parametrize(
+    ("kwargs", "expected_reason_substr"),
+    [
+        (
+            {
+                "author": "google-labs-stitch[bot]",
+                "author_permission": "write",
+                "author_is_bot": True,
+                "changed_files": ["docs/user_guide.md"],
+            },
+            "automated bots",
+        ),
+        (
+            {
+                "author": "stitch",
+                "author_permission": "write",
+                "changed_files": ["README.md"],
+            },
+            "automated bots",
+        ),
+        (
+            {
+                "author": "external-contributor",
+                "author_permission": "write",
+                "is_fork": True,
+                "changed_files": ["docs/user_guide.md"],
+            },
+            "external forks",
+        ),
+        (
+            {
+                "author": "reader-user",
+                "author_permission": "read",
+                "is_fork": False,
+                "changed_files": ["README.md"],
+            },
+            "collaborator write access",
+        ),
+        (
+            {
+                "author": "unknown-user",
+                "changed_files": ["docs/user_guide.md"],
+            },
+            "collaborator write access",
+        ),
+        (
+            {
+                "author": "fderuiter",
+                "author_permission": "admin",
+                "changed_files": ["docs/user_guide.md"],
+                "additions": 400,
+                "deletions": 150,
+            },
+            "PR size exceeds low-risk thresholds",
+        ),
+        (
+            {
+                "author": "fderuiter",
+                "author_permission": "admin",
+                "changed_files": [f"docs/page_{i}.md" for i in range(11)],
+                "additions": 20,
+                "deletions": 5,
+            },
+            "PR size exceeds low-risk thresholds",
+        ),
+    ],
+)
+def test_unlabelled_docs_pr_blocked_for_bots_forks_non_collaborators_and_oversized_diffs(
+    kwargs, expected_reason_substr
+):
+    meta = PRMetadata(
+        pr_number=1012,
+        title="docs: documentation update",
+        **kwargs,
+    )
+    res = classify_pr(meta)
+    assert res.eligible is False
+    assert "automerge:blocked" in res.labels_to_add
+    assert any(expected_reason_substr in r for r in res.blocking_reasons), (
+        res.blocking_reasons
+    )
+
+
+def test_bot_and_fork_docs_pr_with_maintainer_automerge_label_is_eligible():
+    for meta in (
+        PRMetadata(
+            pr_number=1013,
+            title="docs: reviewed update",
+            author="google-labs-stitch[bot]",
+            author_is_bot=True,
+            labels=["automerge"],
+            changed_files=["docs/user_guide.md"],
+            additions=10,
+            deletions=2,
+        ),
+        PRMetadata(
+            pr_number=1013,
+            title="docs: reviewed update",
+            author="external-contributor",
+            is_fork=True,
+            labels=["automerge"],
+            changed_files=["README.md"],
+            additions=10,
+            deletions=2,
+        ),
+    ):
+        res = classify_pr(meta)
+        assert res.eligible is True
+        assert res.risk_level == "low"
 
 
 def test_opt_in_bot_pr_is_eligible():
@@ -824,6 +989,10 @@ def test_classify_pr_workflow_verifies_maintainer_and_fetches_manifests_via_api(
     assert "github.rest.repos.getCollaboratorPermissionLevel" in script
     assert "maintainerPermissions" in script
     assert "isApprovedBot" in script
+    assert "authorPermission" in script
+    assert "author_permission" in script
+    assert "author_is_bot" in script
+    assert "is_fork" in script
     assert "github.rest.repos.getContent" in script
     assert "offline_bundle/requirements.txt" in script
 
@@ -865,3 +1034,27 @@ def test_offline_requirements_manifest_requires_automerge_opt_in_for_security_pa
     assert eligible_res.eligible is True
     assert eligible_res.risk_level == "low"
     assert "automerge:eligible" in eligible_res.labels_to_add
+
+
+def test_main_cli_fails_closed_when_docs_author_permission_missing(
+    tmp_path, monkeypatch, capsys
+):
+    meta_path = tmp_path / "docs_meta.json"
+    meta_path.write_text(
+        json.dumps(
+            {
+                "pr_number": 900,
+                "title": "docs: unverified permission",
+                "author": "fderuiter",
+                "changed_files": ["docs/user_guide.md"],
+                "additions": 3,
+                "deletions": 1,
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr("sys.argv", ["classify_pr.py", "--json-input", str(meta_path)])
+    main()
+    result = json.loads(capsys.readouterr().out)
+    assert result["eligible"] is False
+    assert "automerge:blocked" in result["labels_to_add"]

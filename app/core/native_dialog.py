@@ -33,8 +33,6 @@ RULE_IMPORT_EXTENSIONS: tuple[str, ...] = (
 class NativeDialogError(Exception):
     """Raised when a native directory or file selection dialog fails to launch or run."""
 
-    pass
-
 
 def encode_path_to_base64(path: str) -> str:
     """Encode a UTF-8 path string into a Base64 ASCII string."""

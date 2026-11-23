@@ -93,23 +93,13 @@ def _extract_pdf_snippet(file_path: str) -> str:
 
 
 def _extract_docx_snippet(file_path: str) -> str:
-    """Extract initial paragraphs text snippet from a DOCX file up to 4096 characters."""
+    """Extract paragraphs, tables, headers, and footers snippet from a DOCX file up to 4096 characters."""
     try:
-        from docx import Document
+        from app.core.extractor_strategies import _extract_docx_text
 
         with open(file_path, "rb") as f:
-            doc = Document(f)
-            text_parts = []
-            curr_len = 0
-            for p in doc.paragraphs:
-                txt = p.text
-                if not txt:
-                    continue
-                text_parts.append(txt)
-                curr_len += len(txt) + 1
-                if curr_len >= 4096:
-                    break
-            return " ".join(text_parts)[:4096].lower()
+            raw_text = _extract_docx_text(f, max_chars=4096)
+        return " ".join(raw_text.split())[:4096].lower()
     except Exception as e:
         logger.debug(
             f"Fast DOCX snippet extraction failed for {file_path}: {e}",
@@ -185,27 +175,82 @@ def _extract_xls_snippet(file_path: str) -> str:
 
 
 def _extract_pptx_snippet(file_path: str) -> str:
-    """Extract first slide text snippet from a PPTX file up to 4096 characters."""
+    """Extract multi-slide text, tables, group shapes, and notes snippet from a PPTX file up to 4096 characters."""
     try:
-        from pptx import Presentation  # type: ignore[import-not-found,import-untyped]
+        from app.core.extractor_strategies import _extract_pptx_text
 
         with open(file_path, "rb") as f:
-            prs = Presentation(f)
-            text_parts = []
-            curr_len = 0
-            if prs.slides:
-                slide = prs.slides[0]
-                for shape in slide.shapes:
-                    if hasattr(shape, "text") and shape.text:
-                        txt = shape.text
-                        text_parts.append(txt)
-                        curr_len += len(txt) + 1
-                        if curr_len >= 4096:
-                            break
-            return " ".join(text_parts)[:4096].lower()
+            raw_text = _extract_pptx_text(f, max_chars=4096)
+        return " ".join(raw_text.split())[:4096].lower()
     except Exception as e:
         logger.debug(
             f"Fast PPTX snippet extraction failed for {file_path}: {e}",
+            exc_info=True,
+        )
+    return ""
+
+
+def _extract_eml_snippet(file_path: str) -> str:
+    """Extract headers and body text snippet from an EML file up to 4096 characters."""
+    try:
+        from app.core.extractor_strategies import _extract_eml_parts
+
+        raw_text, _, _ = _extract_eml_parts(
+            file_path, max_rows=200, max_chars=4096, collect_attachments=False
+        )
+        return " ".join(raw_text.split())[:4096].lower()
+    except Exception as e:
+        logger.debug(
+            f"Fast EML snippet extraction failed for {file_path}: {e}",
+            exc_info=True,
+        )
+    return ""
+
+
+def _extract_rtf_snippet(file_path: str) -> str:
+    """Extract stripped plain-text snippet from an RTF file up to 4096 characters."""
+    try:
+        from app.core.extractor_strategies import _extract_rtf_text
+
+        with open(file_path, "r", encoding="latin-1", errors="ignore") as f:
+            raw_rtf = f.read(65536)
+        raw_text, _ = _extract_rtf_text(raw_rtf, max_rows=200, max_chars=4096)
+        return " ".join(raw_text.split())[:4096].lower()
+    except Exception as e:
+        logger.debug(
+            f"Fast RTF snippet extraction failed for {file_path}: {e}",
+            exc_info=True,
+        )
+    return ""
+
+
+def _extract_odt_snippet(file_path: str) -> str:
+    """Extract body and header text snippet from an ODT file up to 4096 characters."""
+    try:
+        from app.core.extractor_strategies import _extract_odt_text
+
+        raw_text, _ = _extract_odt_text(file_path, max_rows=200, max_chars=4096)
+        return " ".join(raw_text.split())[:4096].lower()
+    except Exception as e:
+        logger.debug(
+            f"Fast ODT snippet extraction failed for {file_path}: {e}",
+            exc_info=True,
+        )
+    return ""
+
+
+def _extract_html_snippet(file_path: str) -> str:
+    """Extract visible plain-text snippet from an HTML file up to 4096 characters."""
+    try:
+        from app.core.extractor_strategies import _strip_html_to_text
+
+        with open(file_path, "r", encoding="utf-8", errors="ignore") as f:
+            raw_html = f.read(65536)
+        raw_text, _ = _strip_html_to_text(raw_html, max_rows=200, max_chars=4096)
+        return " ".join(raw_text.split())[:4096].lower()
+    except Exception as e:
+        logger.debug(
+            f"Fast HTML snippet extraction failed for {file_path}: {e}",
             exc_info=True,
         )
     return ""
@@ -720,21 +765,23 @@ class JevClassifierEngine:
                         if ext in {
                             ".txt",
                             ".csv",
+                            ".tsv",
                             ".json",
                             ".xml",
                             ".yaml",
                             ".yml",
                             ".log",
                             ".md",
+                            ".rst",
                             ".py",
                             ".js",
-                            ".html",
-                            ".htm",
                         }:
                             with open(
                                 file_path, "r", encoding="utf-8", errors="ignore"
                             ) as f:
                                 snippet = f.read(4096).lower()
+                        elif ext in {".html", ".htm"}:
+                            snippet = _extract_html_snippet(file_path)
                         elif ext == ".pdf":
                             snippet = _extract_pdf_snippet(file_path)
                         elif ext == ".docx":
@@ -745,6 +792,12 @@ class JevClassifierEngine:
                             snippet = _extract_xls_snippet(file_path)
                         elif ext == ".pptx":
                             snippet = _extract_pptx_snippet(file_path)
+                        elif ext == ".eml":
+                            snippet = _extract_eml_snippet(file_path)
+                        elif ext == ".rtf":
+                            snippet = _extract_rtf_snippet(file_path)
+                        elif ext == ".odt":
+                            snippet = _extract_odt_snippet(file_path)
 
             text_to_check = f"{fn_lower} {snippet}"
 

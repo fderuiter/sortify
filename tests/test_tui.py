@@ -2712,3 +2712,239 @@ def test_ai_provisioning_idle_poll_executes_zero_stat_calls_and_tracks_transitio
                 assert mock_stat_dl.call_count == 0
 
     asyncio.run(_test())
+
+
+def test_tui_all_five_contextual_help_actions_open_offline_modal_and_optional_browser(
+    temp_workspace,
+):
+    """Verify all 5 contextual Help actions open TroubleshootingHelpModal offline without auto-launching a browser."""
+    from app.ui.modals.help import TroubleshootingHelpModal
+    from app.ui.modals.session import MultiSessionRecoveryModal
+
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+
+    async def _test():
+        app = AutoSorterTUI(
+            settings=settings, base_dir=temp_workspace, skip_wizard=True
+        )
+        async with app.run_test(size=(100, 45)) as pilot:
+            await pilot.pause(0.05)
+            opened_urls: list[str] = []
+            app.open_url = lambda url, **kwargs: opened_urls.append(url)
+
+            modals_and_expected = [
+                (
+                    CROForensicModal(settings, temp_workspace),
+                    "CRO forensic ingestion",
+                ),
+                (
+                    DropZoneModal(settings, temp_workspace),
+                    "DropZone errors",
+                ),
+                (
+                    SessionRecoveryModal(
+                        {
+                            "session_id": "sess_1",
+                            "base_dir": temp_workspace,
+                            "status": "failed",
+                        }
+                    ),
+                    "Session recovery",
+                ),
+                (
+                    MultiSessionRecoveryModal(
+                        [
+                            {
+                                "session_id": "sess_1",
+                                "base_dir": temp_workspace,
+                                "status": "failed",
+                                "step_count": 2,
+                            }
+                        ],
+                        settings=settings,
+                    ),
+                    "Multi-session recovery",
+                ),
+                (
+                    SettingsModal(settings),
+                    "Settings configuration",
+                ),
+            ]
+
+            for modal, expected_section in modals_and_expected:
+                app.push_screen(modal)
+                await pilot.pause(0.05)
+
+                modal.action_help()
+                await pilot.pause(0.05)
+
+                assert isinstance(app.screen, TroubleshootingHelpModal)
+                help_screen = app.screen
+                assert help_screen.section_found is True
+                assert help_screen.section_title == expected_section
+                assert opened_urls == []
+
+                # Pressing Open in Browser invokes app.open_url explicitly
+                help_screen.action_open_browser()
+                await pilot.pause(0.02)
+                assert len(opened_urls) == 1
+                assert opened_urls.pop() == help_screen.help_url
+
+                help_screen.action_close()
+                await pilot.pause(0.05)
+                assert app.screen is modal
+                app.pop_screen()
+                await pilot.pause(0.05)
+
+    asyncio.run(_test())
+
+
+def test_tui_shortcut_cheat_sheet_includes_all_dialog_sections(temp_workspace):
+    """Verify ShortcutCheatSheetModal renders all 5 dialog level-2 headings and 16 dialog shortcuts."""
+    from app.ui.heading import Heading
+
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+
+    async def _test():
+        app = AutoSorterTUI(
+            settings=settings, base_dir=temp_workspace, skip_wizard=True
+        )
+        async with app.run_test(size=(110, 45)) as pilot:
+            app.action_open_cheat_sheet(False)
+            await pilot.pause(0.05)
+            modal = app.screen
+            assert isinstance(modal, ShortcutCheatSheetModal)
+
+            h2_titles = [
+                str(h.render()).strip()
+                for h in modal.query(Heading)
+                if getattr(h, "level", None) == 2
+            ]
+            for expected_heading in (
+                "Active Rule Manager:",
+                "Audit Report:",
+                "Command Palette:",
+                "Quarantine Vault:",
+                "Rollback Confirm:",
+            ):
+                assert expected_heading in h2_titles
+
+            rows_text = "\n".join(
+                str(lbl.render()) for lbl in modal.query(".shortcut-row")
+            )
+            for expected_entry in (
+                "Toggle Rule",
+                "Edit Rule",
+                "Delete Rule",
+                "Import Rules",
+                "Export Rules",
+                "Browse Templates",
+                "Retry Selected Failed Item",
+                "Retry All Failed Items",
+                "Export JSON Report",
+                "Move selection up",
+                "Move selection down",
+                "Release file",
+                "Dismiss item",
+                "Re-inspect item",
+                "Refresh vault",
+                "Toggle selection",
+            ):
+                assert expected_entry in rows_text
+
+    asyncio.run(_test())
+
+
+def test_tui_rollback_error_modal_help_and_scrubbed_diagnostics_export(
+    temp_workspace, tmp_path, monkeypatch
+):
+    """Verify RollbackErrorModal opens #session-recovery help and exports 0o600 scrubbed diagnostics."""
+    import stat
+
+    import app.ui.modals.session as session_mod
+    from app.ui.modals.help import TroubleshootingHelpModal
+    from app.ui.modals.session import RollbackErrorModal
+
+    settings = AppSettings()
+    settings._settings_model.AI_CONSENT_GRANTED = True
+
+    fake_home = tmp_path / "fake_user_home"
+    fake_home.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setenv("HOME", str(fake_home))
+
+    log_path = tmp_path / "autosorter_test.log"
+    secret_token = "sk_live_1234567890123456789012345"
+    encrypted_line = "2026-05-01 INFO Loaded API_KEY=enc:v1:super_secret_blob_payload"
+    log_path.write_text(
+        "\n".join(
+            [
+                f"2026-05-01 ERROR Failed moving {fake_home}/docs/tax.pdf token={secret_token}",
+                encrypted_line,
+                "2026-05-01 ERROR Rollback step 4 failed: PermissionError",
+            ]
+        ),
+        encoding="utf-8",
+    )
+    settings._settings_model.LOG_FILE = str(log_path)
+
+    async def _test():
+        app = AutoSorterTUI(
+            settings=settings, base_dir=temp_workspace, skip_wizard=True
+        )
+        async with app.run_test(size=(100, 40)) as pilot:
+            await pilot.pause(0.05)
+
+            err_modal = RollbackErrorModal(
+                "Rollback Failed",
+                f"Could not restore {fake_home}/docs/tax.pdf ({secret_token})",
+                settings=settings,
+            )
+            app.push_screen(err_modal)
+            await pilot.pause(0.05)
+
+            # 1. Help button opens offline #session-recovery section
+            err_modal.action_help()
+            await pilot.pause(0.05)
+            assert isinstance(app.screen, TroubleshootingHelpModal)
+            assert app.screen.section_title == "Session recovery"
+            app.screen.action_close()
+            await pilot.pause(0.05)
+            assert app.screen is err_modal
+
+            # 2. Export Diagnostics writes 0o600 scrubbed report in workspace
+            exported_path = err_modal.action_export_diagnostics()
+            await pilot.pause(0.05)
+            assert exported_path is not None
+            exported = Path(exported_path)
+            assert exported.exists()
+            assert exported.parent == Path(temp_workspace)
+            if os.name != "nt":
+                assert stat.S_IMODE(exported.stat().st_mode) == 0o600
+
+            body = exported.read_text(encoding="utf-8")
+            assert secret_token not in body
+            assert str(fake_home) not in body
+            assert "enc:" not in body
+            assert "Rollback step 4 failed: PermissionError" in body
+
+            # 3. Fallback when LOG_FILE is missing and base_dir is unavailable
+            fallback_app_dir = tmp_path / "fallback_app_dir"
+            monkeypatch.setattr(session_mod, "get_app_dir", lambda: fallback_app_dir)
+            settings._settings_model.LOG_FILE = str(tmp_path / "nonexistent.log")
+            app.base_dir = str(tmp_path / "nonexistent_workspace_dir")
+
+            fallback_export = err_modal.action_export_diagnostics()
+            assert fallback_export is not None
+            fb_file = Path(fallback_export)
+            assert fb_file.exists()
+            assert fb_file.parent == fallback_app_dir
+            if os.name != "nt":
+                assert stat.S_IMODE(fb_file.stat().st_mode) == 0o600
+            assert (
+                "Application log file unavailable or absent on disk."
+                in fb_file.read_text(encoding="utf-8")
+            )
+
+    asyncio.run(_test())

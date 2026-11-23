@@ -182,7 +182,7 @@ class LifecycleTelemetryMixin:
                 )
                 if has_varargs or len(params) == 1:
                     listener(event_payload)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning(
                     f"Error executing listener {listener} on emit_telemetry: {e}",
                     exc_info=True,
@@ -210,7 +210,7 @@ class LifecycleTelemetryMixin:
                     hook(event_payload)
                 else:
                     hook()
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning(f"Error in telemetry hook {hook}: {e}", exc_info=True)
 
     def _notify_lifecycle_listeners(
@@ -274,7 +274,7 @@ class LifecycleTelemetryMixin:
                     listener(old_state, new_state, context or {})
                 else:
                     listener(base_payload)
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning(
                     f"Error executing transition listener {listener}: {e}",
                     exc_info=True,
@@ -301,7 +301,7 @@ class LifecycleTelemetryMixin:
                     hook(old_state, new_state)
                 else:
                     hook(old_state, new_state, context or {})
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning(f"Error in state change hook {hook}: {e}", exc_info=True)
 
         # 3. Notify telemetry hooks about the state transition
@@ -327,5 +327,5 @@ class LifecycleTelemetryMixin:
                     t_hook(base_payload)
                 else:
                     t_hook()
-            except Exception as e:  # noqa: BLE001
+            except Exception as e:
                 logger.warning(f"Error in telemetry hook {t_hook}: {e}", exc_info=True)

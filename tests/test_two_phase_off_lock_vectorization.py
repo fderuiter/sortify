@@ -57,7 +57,7 @@ def test_off_lock_term_frequency_precomputation(tmp_path: Path):
     # Verify TF-IDF terms in DB match expected pre-computed counts
     stats_n, top_terms, doc_terms, doc_meta = db.get_tfidf_stats(base_dir)
     assert stats_n == 2
-    df_dict = {term: df for term, df in top_terms}
+    df_dict = dict(top_terms)
     assert df_dict.get("apple") == 1  # in 1 doc
     assert df_dict.get("banana") == 2  # in 2 docs
 
@@ -168,7 +168,7 @@ def test_numerical_parity_and_vocabulary_integrity(tmp_path: Path):
     db.upsert_documents(docs1)
 
     N, top_terms, doc_terms, meta = db.get_tfidf_stats(base_dir)
-    term_dict = {term: total_tf for term, total_tf in top_terms}
+    term_dict = dict(top_terms)
 
     # "common_term" should appear in all 10 documents
     assert term_dict.get("common_term") == 10

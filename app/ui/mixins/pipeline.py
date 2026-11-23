@@ -341,6 +341,15 @@ class SortPipelineMixin:
         self.verification_result = result or {}
 
         collisions = result.get("collisions", [])
+        recoverable_types = ("target_collision", "duplicate_target")
+        critical_collisions = [
+            c for c in collisions if c.get("type") not in recoverable_types
+        ]
+        recoverable_collisions = list(
+            (result.get("recoverable_collisions") or [])
+            if "recoverable_collisions" in result
+            else [c for c in collisions if c.get("type") in recoverable_types]
+        )
         circular = result.get("circular_renames", [])
         invalid = result.get("invalid_renames", [])
         long_paths = result.get("long_paths", [])
@@ -351,15 +360,15 @@ class SortPipelineMixin:
         has_critical = bool(
             result.get("has_critical_errors")
             if "has_critical_errors" in result
-            else (collisions or circular or invalid or long_paths)
+            else (critical_collisions or circular or invalid or long_paths)
         )
-        has_warnings = bool(broken_links or unconfirmed)
+        has_warnings = bool(recoverable_collisions or broken_links or unconfirmed)
 
         self.has_critical_errors = has_critical
 
         # Build path sets for tree node highlighting
         crit_paths = set()
-        for c in collisions:
+        for c in critical_collisions:
             if c.get("path"):
                 crit_paths.add(os.path.normpath(c["path"]))
             if c.get("source"):
@@ -383,6 +392,13 @@ class SortPipelineMixin:
                 crit_paths.add(os.path.normpath(lp["source"]))
 
         warn_paths = set()
+        for rc in recoverable_collisions:
+            if rc.get("path"):
+                warn_paths.add(os.path.normpath(rc["path"]))
+            if rc.get("source"):
+                warn_paths.add(os.path.normpath(rc["source"]))
+            for s in rc.get("sources", []):
+                warn_paths.add(os.path.normpath(s))
         for bl in broken_links:
             if bl.get("path"):
                 warn_paths.add(os.path.normpath(bl["path"]))
@@ -393,7 +409,7 @@ class SortPipelineMixin:
                 warn_paths.add(os.path.normpath(unc["source"]))
 
         collision_paths = set()
-        for c in collisions:
+        for c in list(collisions) + list(recoverable_collisions):
             if c.get("path"):
                 collision_paths.add(os.path.normpath(c["path"]))
             if c.get("source"):
@@ -436,11 +452,11 @@ class SortPipelineMixin:
                 alert_banner.add_class("alert-critical")
 
                 msgs = []
-                if collisions:
+                if critical_collisions:
                     msgs.append(
                         "⛔ CRITICAL FILE COLLISION(S) / STRUCTURAL DIRECTORY COLLISION(S) DETECTED:"
                     )
-                    for c in collisions:
+                    for c in critical_collisions:
                         dst_p = c.get("path", "")
                         msgs.append(
                             f"  • Destination: {dst_p} ({c.get('message', 'Collision')})"
@@ -467,6 +483,11 @@ class SortPipelineMixin:
                 alert_banner.add_class("alert-warning")
 
                 msgs = ["⚠️ NON-FATAL WARNING(S) REPORTED (Execution unblocked):"]
+                for rc in recoverable_collisions:
+                    dst_p = rc.get("path", "")
+                    msgs.append(
+                        f"  • Recoverable collision at {dst_p} ({rc.get('message', 'Collision')} — resolve on [Ctrl+E])"
+                    )
                 for bl in broken_links:
                     msgs.append(f"  • {bl.get('message')}")
                 for unc in unconfirmed:

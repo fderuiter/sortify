@@ -54,6 +54,7 @@ from app.ui.modals.edit import NewFolderModal as NewFolderModal
 from app.ui.modals.edit import ReassignModal as ReassignModal
 from app.ui.modals.edit import RenameModal as RenameModal
 from app.ui.modals.help import ShortcutCheatSheetModal
+from app.ui.modals.help import TroubleshootingHelpModal as TroubleshootingHelpModal
 from app.ui.modals.models import ModelManagerModal
 from app.ui.modals.quarantine import QuarantineVaultModal
 from app.ui.modals.reports import (
@@ -528,7 +529,9 @@ class AutoSorterTUI(
         res = super().announce(message, priority=priority, help_url=help_url)
         try:
             log_w = self.query_one("#tui-log", Log)
-            display_msg = f"{res} [Help: {help_url}]" if help_url else res
+            display_msg = (
+                f"{res} [Help: {help_url}]" if help_url and help_url not in res else res
+            )
             log_w.write_line(display_msg)
         except Exception:
             pass
@@ -1090,13 +1093,6 @@ class AutoSorterTUI(
         except Exception:
             return False
 
-    def _character_shortcuts_enabled(self) -> bool:
-        """Return True if single-character keyboard shortcuts are enabled."""
-        settings = getattr(self, "settings", None)
-        if settings is None:
-            return True
-        return bool(getattr(settings, "ENABLE_CHARACTER_KEY_SHORTCUTS", True))
-
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Check whether an action is enabled before dispatching key bindings."""
         is_char_action = action in {
@@ -1110,15 +1106,15 @@ class AutoSorterTUI(
             "rate_negative",
             "generate_sample_corpus",
         }
-        if (
-            action in ("open_cheat_sheet", "toggle_daemon")
-            and parameters
-            and parameters[0] is True
-        ):
+        if action == "toggle_daemon" and parameters and parameters[0] is True:
             is_char_action = True
 
         if is_char_action:
             if not self._tree_has_focus() or not self._character_shortcuts_enabled():
+                return False
+
+        if action == "open_cheat_sheet" and parameters and parameters[0] is True:
+            if not self._character_shortcuts_enabled():
                 return False
 
         return super().check_action(action, parameters)
@@ -1136,8 +1132,21 @@ class AutoSorterTUI(
             paths = [path] if isinstance(path, str) else list(path)
             valid_paths = [os.path.abspath(p) for p in paths if p and os.path.exists(p)]
             if valid_paths:
+                prev_sources = [
+                    os.path.abspath(p) for p in getattr(self, "source_dirs", []) if p
+                ]
+                if valid_paths != prev_sources:
+                    self.locked_files.clear()
+                    self._ratings_cache.clear()
+                    self.has_critical_errors = False
+                    self.verification_result = {}
+                    self.critical_error_paths.clear()
+                    self.warning_paths.clear()
+                    self.collision_paths.clear()
                 self.source_dirs = valid_paths
                 self.base_dir = valid_paths[0]
+                self._update_onboarding_cta_visibility()
+                self.update_status()
                 self.run_worker(
                     self._poll_daemon_status(), name="poll_daemon_on_dir_select"
                 )
@@ -1522,12 +1531,18 @@ class AutoSorterTUI(
         else:
             self.announce("CRO Forensic ingestion plugin is not enabled.")
 
-    def action_open_cheat_sheet(self, from_character: bool = False) -> None:
+    def action_open_cheat_sheet(self, from_character: Optional[bool] = None) -> None:
         """Open keyboard shortcut cheat sheet modal screen."""
-        if from_character:
-            if not self._tree_has_focus() or not self._character_shortcuts_enabled():
+        if from_character is True:
+            if (
+                self._is_character_input_focused()
+                or not self._character_shortcuts_enabled()
+            ):
                 return
-        if self._is_text_control_focused(allow_tree_search=True):
+        elif from_character is None:
+            if self._is_text_control_focused(allow_tree_search=True):
+                return
+        if isinstance(self.screen, ShortcutCheatSheetModal):
             return
         self.push_screen(ShortcutCheatSheetModal())
 
@@ -1668,11 +1683,26 @@ class AutoSorterTUI(
         from app.core.session_catalog import list_sessions
 
         sessions = list_sessions()
+        active_base = (
+            os.path.normcase(os.path.normpath(os.path.abspath(self.base_dir)))
+            if self.base_dir
+            else ""
+        )
         target_sess = None
         for s in sessions:
-            if str(s.get("status", "")).lower() == "completed":
-                target_sess = s
-                break
+            if str(s.get("status", "")).lower() != "completed":
+                continue
+            if active_base:
+                sess_base_raw = str(s.get("base_dir", "") or "")
+                if not sess_base_raw:
+                    continue
+                sess_base = os.path.normcase(
+                    os.path.normpath(os.path.abspath(sess_base_raw))
+                )
+                if sess_base != active_base:
+                    continue
+            target_sess = s
+            break
 
         if not target_sess:
             self.announce("No completed sorting session available to undo.")
@@ -1745,6 +1775,12 @@ class AutoSorterTUI(
             notify(msg, type="info")
         except Exception:
             pass
+        if not getattr(self, "source_dirs", None) and self.base_dir:
+            self.source_dirs = [self.base_dir]
+        if getattr(self, "source_dirs", None) and any(
+            os.path.isdir(d) for d in self.source_dirs
+        ):
+            self._start_scan()
 
     def _on_undo_failure(self, session_id: str, err: Exception) -> None:
         """Handle session rollback failure on main thread."""
@@ -1758,7 +1794,11 @@ class AutoSorterTUI(
             pass
 
         self.push_screen(
-            RollbackErrorModal(title="Rollback Failed", error_message=str(err))
+            RollbackErrorModal(
+                title="Rollback Failed",
+                error_message=str(err),
+                settings=self.settings,
+            )
         )
 
     @on(Button.Pressed, "#btn-execute")

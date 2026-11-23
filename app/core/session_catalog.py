@@ -186,7 +186,7 @@ def preview_session_rollback(
                 )
             if preview.get("total_operations", 0) > 0 or not fallback_items:
                 return preview
-        except Exception:  # noqa: BLE001 - fall back to preloaded items when store is unavailable
+        except Exception:  # fall back to preloaded items when store is unavailable
             if fallback_items is None:
                 raise
 
