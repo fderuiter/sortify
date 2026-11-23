@@ -29,6 +29,8 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     BINDINGS = [
         Binding("escape", "cancel", "Cancel dialog", show=True),
+        Binding("question_mark", "open_help_overlay(True)", "Help", show=False),
+        Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
     CSS = """

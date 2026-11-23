@@ -54,6 +54,7 @@ from app.ui.modals.edit import NewFolderModal as NewFolderModal
 from app.ui.modals.edit import ReassignModal as ReassignModal
 from app.ui.modals.edit import RenameModal as RenameModal
 from app.ui.modals.help import ShortcutCheatSheetModal
+from app.ui.modals.help import TroubleshootingHelpModal as TroubleshootingHelpModal
 from app.ui.modals.models import ModelManagerModal
 from app.ui.modals.quarantine import QuarantineVaultModal
 from app.ui.modals.reports import (
@@ -528,7 +529,9 @@ class AutoSorterTUI(
         res = super().announce(message, priority=priority, help_url=help_url)
         try:
             log_w = self.query_one("#tui-log", Log)
-            display_msg = f"{res} [Help: {help_url}]" if help_url else res
+            display_msg = (
+                f"{res} [Help: {help_url}]" if help_url and help_url not in res else res
+            )
             log_w.write_line(display_msg)
         except Exception:
             pass
@@ -1088,13 +1091,6 @@ class AutoSorterTUI(
         except Exception:
             return False
 
-    def _character_shortcuts_enabled(self) -> bool:
-        """Return True if single-character keyboard shortcuts are enabled."""
-        settings = getattr(self, "settings", None)
-        if settings is None:
-            return True
-        return bool(getattr(settings, "ENABLE_CHARACTER_KEY_SHORTCUTS", True))
-
     def check_action(self, action: str, parameters: tuple[object, ...]) -> bool | None:
         """Check whether an action is enabled before dispatching key bindings."""
         is_char_action = action in {
@@ -1108,15 +1104,15 @@ class AutoSorterTUI(
             "rate_negative",
             "generate_sample_corpus",
         }
-        if (
-            action in ("open_cheat_sheet", "toggle_daemon")
-            and parameters
-            and parameters[0] is True
-        ):
+        if action == "toggle_daemon" and parameters and parameters[0] is True:
             is_char_action = True
 
         if is_char_action:
             if not self._tree_has_focus() or not self._character_shortcuts_enabled():
+                return False
+
+        if action == "open_cheat_sheet" and parameters and parameters[0] is True:
+            if not self._character_shortcuts_enabled():
                 return False
 
         return super().check_action(action, parameters)
@@ -1520,12 +1516,18 @@ class AutoSorterTUI(
         else:
             self.announce("CRO Forensic ingestion plugin is not enabled.")
 
-    def action_open_cheat_sheet(self, from_character: bool = False) -> None:
+    def action_open_cheat_sheet(self, from_character: Optional[bool] = None) -> None:
         """Open keyboard shortcut cheat sheet modal screen."""
-        if from_character:
-            if not self._tree_has_focus() or not self._character_shortcuts_enabled():
+        if from_character is True:
+            if (
+                self._is_character_input_focused()
+                or not self._character_shortcuts_enabled()
+            ):
                 return
-        if self._is_text_control_focused(allow_tree_search=True):
+        elif from_character is None:
+            if self._is_text_control_focused(allow_tree_search=True):
+                return
+        if isinstance(self.screen, ShortcutCheatSheetModal):
             return
         self.push_screen(ShortcutCheatSheetModal())
 
@@ -1741,7 +1743,11 @@ class AutoSorterTUI(
             pass
 
         self.push_screen(
-            RollbackErrorModal(title="Rollback Failed", error_message=str(err))
+            RollbackErrorModal(
+                title="Rollback Failed",
+                error_message=str(err),
+                settings=self.settings,
+            )
         )
 
     @on(Button.Pressed, "#btn-execute")
