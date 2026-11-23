@@ -859,6 +859,6 @@ class WizardModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
     def action_cancel(self) -> None:
         """Cancel wizard on Escape key press."""
         if hasattr(self.app, "_wizard_dismissed_this_session"):
-            self.app._wizard_dismissed_this_session = True
+            setattr(self.app, "_wizard_dismissed_this_session", True)
         self.announce("Closed model onboarding wizard dialog.")
         self.dismiss(None)

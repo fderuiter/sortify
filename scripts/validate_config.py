@@ -3,6 +3,7 @@
 
 import argparse
 import json
+import os
 import sys
 import tomllib
 from pathlib import Path
@@ -163,10 +164,24 @@ def generate_config_schema() -> dict:
     """Generate normalized JSON schema for application Settings."""
     from app.config import Settings
 
-    # Instantiate to ensure default schema is valid
-    Settings()
+    saved_env = {
+        key: os.environ.pop(key)
+        for key in list(os.environ)
+        if key == "AUTOSORTER_APP_DIR" or key.startswith("SORTIFY_")
+    }
+    try:
+        # Instantiate isolated from host env/.env to ensure default schema is valid
+        Settings(_env_file=None)
+        schema = Settings.model_json_schema()
+    finally:
+        for key in [
+            k
+            for k in list(os.environ)
+            if k == "AUTOSORTER_APP_DIR" or k.startswith("SORTIFY_")
+        ]:
+            os.environ.pop(key, None)
+        os.environ.update(saved_env)
 
-    schema = Settings.model_json_schema()
     # Normalize LOG_FILE default to use a placeholder or remove it to avoid user-specific paths
     if (
         "LOG_FILE" in schema.get("properties", {})

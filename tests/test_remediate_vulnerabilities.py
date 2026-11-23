@@ -22,13 +22,18 @@ from scripts.classify_pr import (
     dependency_update_type_from_title,
 )
 from scripts.remediate_vulnerabilities import (
+    _ADVISORY_CACHE,
+    ALLOWED_STAGED_REPO_PATHS,
     MANIFEST_FILENAME,
     GitHubRemediationClient,
     PackageVulnerability,
     VulnerabilityDetail,
+    build_failure_issue_payload,
+    build_pr_labels_for_severity,
     build_sanitized_subprocess_env,
     create_github_app_jwt,
     cvss_to_severity,
+    discover_targeted_tests,
     extract_exemptions_from_security_md,
     fetch_advisory_severity_and_cvss,
     format_security_pr_title,
@@ -38,10 +43,12 @@ from scripts.remediate_vulnerabilities import (
     mint_github_app_installation_token,
     normalize_severity,
     parse_audit_output,
+    parse_cvss_vector_score,
     publish_staged_remediations,
     remediate_vulnerabilities,
     run_license_audit,
     run_local_tests,
+    run_uv_audit,
     sanitize_sensitive_info,
 )
 
@@ -69,6 +76,7 @@ def test_normalize_severity():
 
 @patch("scripts.remediate_vulnerabilities.requests.get")
 def test_fetch_advisory_severity_and_cvss_osv_success(mock_get):
+    _ADVISORY_CACHE.clear()
     mock_resp = MagicMock()
     mock_resp.status_code = 200
     mock_resp.json.return_value = {
@@ -82,6 +90,92 @@ def test_fetch_advisory_severity_and_cvss_osv_success(mock_get):
     sev, score = fetch_advisory_severity_and_cvss("GHSA-test-osv-1")
     assert sev == "CRITICAL"
     assert score == 9.8
+
+
+def test_parse_cvss_vector_scores_across_versions():
+    # CVE-2025-69872 (CVSS 3.1 Critical 9.8)
+    assert (
+        parse_cvss_vector_score("CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H") == 9.8
+    )
+    # PYSEC-2026-3387 (CVSS 3.1 High 7.7 with Changed Scope)
+    assert (
+        parse_cvss_vector_score("CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:N/A:N") == 7.7
+    )
+    # CVSS 3.0 vector
+    assert (
+        parse_cvss_vector_score("CVSS:3.0/AV:N/AC:H/PR:N/UI:R/S:U/C:H/I:N/A:N") == 5.3
+    )
+    # CVSS 4.0 vector
+    v4_score = parse_cvss_vector_score(
+        "CVSS:4.0/AV:N/AC:L/AT:N/PR:N/UI:N/VC:H/VI:H/VA:H/SC:N/SI:N/SA:N"
+    )
+    assert v4_score == 9.3
+    # CVSS 2.0 vector
+    assert parse_cvss_vector_score("AV:N/AC:L/Au:N/C:P/I:P/A:P") == 7.5
+    assert parse_cvss_vector_score("not-a-vector") is None
+
+
+@patch("scripts.remediate_vulnerabilities.requests.get")
+def test_fetch_advisory_osv_vectors_and_alias_resolution_for_cve_and_pysec(mock_get):
+    """Verify OSV CVSS vector parsing and alias traversal for CVE-2025-69872 and PYSEC-2026-3387."""
+    _ADVISORY_CACHE.clear()
+    osv_payloads = {
+        "https://api.osv.dev/v1/vulns/CVE-2025-69872": {
+            "id": "CVE-2025-69872",
+            "aliases": ["GHSA-w8v5-vhqr-4h9v"],
+            "severity": [
+                {
+                    "type": "CVSS_V3",
+                    "score": "CVSS:3.1/AV:N/AC:L/PR:N/UI:N/S:U/C:H/I:H/A:H",
+                }
+            ],
+        },
+        "https://api.osv.dev/v1/vulns/PYSEC-2026-3387": {
+            "id": "PYSEC-2026-3387",
+            "aliases": ["CVE-2026-49853", "GHSA-3x9g-8vmp-wqvf"],
+            "severity": [
+                {
+                    "type": "CVSS_V3",
+                    "score": "CVSS:3.1/AV:N/AC:L/PR:L/UI:N/S:C/C:H/I:N/A:N",
+                }
+            ],
+        },
+        "https://api.osv.dev/v1/vulns/GHSA-w8v5-vhqr-4h9v": {
+            "id": "GHSA-w8v5-vhqr-4h9v",
+            "aliases": ["CVE-2025-69872"],
+            "database_specific": {"severity": "MODERATE"},
+        },
+    }
+
+    def fake_get(url: str, **kwargs):
+        if url in osv_payloads:
+            return MagicMock(status_code=200, json=lambda u=url: osv_payloads[u])
+        return MagicMock(status_code=404, json=dict)
+
+    mock_get.side_effect = fake_get
+
+    sev_cve, score_cve = fetch_advisory_severity_and_cvss("CVE-2025-69872")
+    assert sev_cve == "CRITICAL"
+    assert score_cve == 9.8
+    assert "severity:critical" in build_pr_labels_for_severity(sev_cve)
+    assert "priority:urgent" in build_pr_labels_for_severity(sev_cve)
+
+    sev_pysec, score_pysec = fetch_advisory_severity_and_cvss("PYSEC-2026-3387")
+    assert sev_pysec == "HIGH"
+    assert score_pysec == 7.7
+    assert "severity:high" in build_pr_labels_for_severity(sev_pysec)
+    assert "priority:urgent" in build_pr_labels_for_severity(sev_pysec)
+    _, _, issue_labels = build_failure_issue_payload(
+        [{"package_name": "tornado", "severity": sev_pysec}], "audit"
+    )
+    assert "severity:high" in issue_labels
+    assert "priority:urgent" in issue_labels
+
+    # Alias traversal upgrades MODERATE GHSA record to CRITICAL 9.8 from aliased CVE-2025-69872
+    _ADVISORY_CACHE.clear()
+    sev_alias, score_alias = fetch_advisory_severity_and_cvss("GHSA-w8v5-vhqr-4h9v")
+    assert sev_alias == "CRITICAL"
+    assert score_alias == 9.8
 
 
 @patch("scripts.remediate_vulnerabilities.requests.get")
@@ -177,7 +271,10 @@ certifi 2026.7.22 has 1 known vulnerability:
     ):
         mock_sub.return_value = MagicMock(returncode=0, stdout="6 passed", stderr="")
         remediate_vulnerabilities(
-            repo_root=tmp_path, token="fake_tok", repo_full="owner/repo"
+            repo_root=tmp_path,
+            token="fake_tok",
+            repo_full="owner/repo",
+            license_auditor=lambda _root, _pkg: (True, "MPL-2.0"),
         )
 
     mock_gh_client.create_pull_request.assert_called_once()
@@ -223,7 +320,10 @@ certifi 2026.7.22 has 1 known vulnerability:
     ):
         mock_sub.return_value = MagicMock(returncode=0, stdout="6 passed", stderr="")
         remediate_vulnerabilities(
-            repo_root=tmp_path, token="fake_tok", repo_full="owner/repo"
+            repo_root=tmp_path,
+            token="fake_tok",
+            repo_full="owner/repo",
+            license_auditor=lambda _root, _pkg: (True, "MPL-2.0"),
         )
 
     mock_gh_client.create_pull_request.assert_called_once()
@@ -458,7 +558,12 @@ certifi 2026.7.22 has 1 known vulnerability:
     )
 
     assert res is False
-    mock_run_tests.assert_called_once_with(tmp_path)
+    mock_run_tests.assert_called_once_with(
+        tmp_path,
+        package_name="certifi",
+        baseline_uv_lock='[[package]]\nname = "certifi"\nversion = "2026.7.22"\n',
+        baseline_pyproject=None,
+    )
 
     # Verify git checkout uv.lock was called to revert changes
     git_checkout_calls = [
@@ -513,11 +618,20 @@ certifi 2026.7.22 has 1 known vulnerability:
     )
 
     res = remediate_vulnerabilities(
-        repo_root=tmp_path, dry_run=False, token="dummy_token", repo_full="owner/repo"
+        repo_root=tmp_path,
+        dry_run=False,
+        token="dummy_token",
+        repo_full="owner/repo",
+        license_auditor=lambda _root, _pkg: (True, "MPL-2.0"),
     )
 
     assert res is True
-    mock_run_tests.assert_called_once_with(tmp_path)
+    mock_run_tests.assert_called_once_with(
+        tmp_path,
+        package_name="certifi",
+        baseline_uv_lock='[[package]]\nname = "certifi"\nversion = "2026.7.22"\n',
+        baseline_pyproject=None,
+    )
     mock_client.create_signed_branch.assert_called_once()
     branch_kwargs = mock_client.create_signed_branch.call_args.kwargs
     assert branch_kwargs["branch_name"] == "security/patch-certifi-2026-10-19"
@@ -585,7 +699,11 @@ certifi 2026.7.22 has 1 known vulnerability:
         },
     ):
         res = remediate_vulnerabilities(
-            repo_root=tmp_path, dry_run=False, token="   ", repo_full="owner/repo"
+            repo_root=tmp_path,
+            dry_run=False,
+            token="   ",
+            repo_full="owner/repo",
+            license_auditor=lambda _root, _pkg: (True, "MPL-2.0"),
         )
 
     assert res is False
@@ -638,16 +756,14 @@ certifi 2026.7.22 has 1 known vulnerability:
     )
 
     secret_token = "super_secret_pat_9999"
-    mock_sub_run.return_value = MagicMock(
-        returncode=0,
-        stdout=json.dumps(
-            [{"Name": "certifi", "Version": "2026.10.19", "License": "MPL-2.0"}]
-        ),
-        stderr="",
-    )
+    mock_sub_run.return_value = MagicMock(returncode=0, stdout="", stderr="")
 
     res = remediate_vulnerabilities(
-        repo_root=tmp_path, dry_run=False, token=secret_token, repo_full="owner/repo"
+        repo_root=tmp_path,
+        dry_run=False,
+        token=secret_token,
+        repo_full="owner/repo",
+        license_auditor=lambda _root, _pkg: (True, "MPL-2.0"),
     )
 
     assert res is False
@@ -699,6 +815,9 @@ def test_is_license_compatible_multi_license_expressions():
     # Disjunctive / dual licensing (approved if at least one branch is compatible)
     disjunctive_cases = [
         "Apache-2.0 OR BSD-3-Clause",
+        "(MIT OR Apache-2.0) AND BSD-3-Clause",
+        "BSL-1.0",
+        "Apache-2.0 WITH LLVM-exception",
         "dual Apache and BSD",
         "Dual-license: Apache-2.0 or BSD-2-Clause",
         "dual Apache and Proprietary",
@@ -713,6 +832,7 @@ def test_is_license_compatible_multi_license_expressions():
     # Conjunctive licensing (approved if all components are compatible)
     conjunctive_cases = [
         "BSD-3-Clause AND 0BSD AND MIT AND Zlib AND CC0-1.0",
+        "Apache-2.0 AND CNRI-Python",
         "DFSG approved; MIT License",
         "BSD-3-Clause, Apache-2.0, dependency licenses",
     ]
@@ -725,6 +845,7 @@ def test_is_license_compatible_multi_license_expressions():
     # Incompatible conjunctive expressions
     incompatible_expressions = [
         "Proprietary AND MIT",
+        "(MIT OR Apache-2.0) AND Proprietary",
         "dual Proprietary and Commercial",
     ]
     for expr in incompatible_expressions:
@@ -741,6 +862,8 @@ def test_is_license_compatible_prohibited():
         "Closed Source",
         "GPL-2.0-only",
         "GPL-2.0",
+        "GPLv2",
+        "GNU General Public License v2 (GPLv2)",
         "SSPL",
         "BUSL-1.1",
         "All Rights Reserved",
@@ -769,61 +892,153 @@ def test_is_license_compatible_unknown_and_missing():
         )
 
 
-@patch("scripts.remediate_vulnerabilities.subprocess.run")
-def test_run_license_audit_approved(mock_sub_run, tmp_path: Path):
-    mock_payload = [
-        {"Name": "requests", "Version": "2.34.2", "License": "Apache Software License"},
-        {"Name": "certifi", "Version": "2026.10.19", "License": "MPL-2.0"},
-    ]
-    mock_sub_run.return_value = MagicMock(
-        returncode=0, stdout=json.dumps(mock_payload), stderr=""
-    )
+def test_run_license_audit_approved_with_dotted_names_and_build_exclusion(
+    tmp_path: Path,
+):
+    (tmp_path / "uv.lock").write_text(
+        """
+[[package]]
+name = "smart-autosorter"
+version = "0.1.0"
+source = { virtual = "." }
+dependencies = [
+    { name = "certifi" },
+    { name = "jaraco-classes" },
+]
 
-    ok, msg = run_license_audit(tmp_path, package_name="certifi")
+[package.dev-dependencies]
+dev = [{ name = "pytest" }]
+notebooks = [{ name = "tornado" }]
+build = [{ name = "pyinstaller" }]
+
+[[package]]
+name = "certifi"
+version = "2026.10.19"
+
+[[package]]
+name = "jaraco.classes"
+version = "3.4.0"
+
+[[package]]
+name = "pytest"
+version = "9.0.0"
+
+[[package]]
+name = "tornado"
+version = "6.5.5"
+
+[[package]]
+name = "pyinstaller"
+version = "6.19.0"
+dependencies = [{ name = "altgraph" }]
+
+[[package]]
+name = "altgraph"
+version = "0.17.5"
+        """,
+        encoding="utf-8",
+    )
+    licenses = {
+        ("certifi", "2026.10.19"): "MPL-2.0",
+        ("jaraco.classes", "3.4.0"): "MIT",
+        ("pytest", "9.0.0"): "MIT",
+        ("tornado", "6.5.5"): "Apache-2.0",
+        ("pyinstaller", "6.19.0"): "GPLv2-or-later with PyInstaller-exception",
+        ("altgraph", "0.17.5"): "GPL-2.0-only",
+    }
+
+    ok, msg = run_license_audit(
+        tmp_path,
+        package_name="jaraco-classes",
+        license_resolver=lambda name, ver, _pkg: licenses.get((name, ver)),
+    )
     assert ok is True
     assert "compatible" in msg.lower()
 
-
-@patch("scripts.remediate_vulnerabilities.subprocess.run")
-def test_run_license_audit_prohibited(mock_sub_run, tmp_path: Path):
-    mock_payload = [
-        {"Name": "bad-lib", "Version": "1.0.0", "License": "Proprietary"},
-    ]
-    mock_sub_run.return_value = MagicMock(
-        returncode=0, stdout=json.dumps(mock_payload), stderr=""
+    # Uninstalled group dependency (e.g. tornado when running under --group dev) also passes
+    ok_t, _ = run_license_audit(
+        tmp_path,
+        package_name="tornado",
+        license_resolver=lambda name, ver, _pkg: licenses.get((name, ver)),
     )
+    assert ok_t is True
 
-    ok, msg = run_license_audit(tmp_path, package_name="bad-lib")
+
+def test_run_license_audit_prohibited(tmp_path: Path):
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "bad-lib"\nversion = "1.0.0"\n',
+        encoding="utf-8",
+    )
+    ok, msg = run_license_audit(
+        tmp_path,
+        package_name="bad-lib",
+        license_resolver=lambda _n, _v, _p: "Proprietary",
+    )
     assert ok is False
     assert "incompatible" in msg.lower() or "proprietary" in msg.lower()
 
 
-@patch("scripts.remediate_vulnerabilities.subprocess.run")
-def test_run_license_audit_unknown(mock_sub_run, tmp_path: Path):
-    mock_payload = [
-        {"Name": "mystery-lib", "Version": "1.0.0", "License": "UNKNOWN"},
-    ]
-    mock_sub_run.return_value = MagicMock(
-        returncode=0, stdout=json.dumps(mock_payload), stderr=""
+def test_run_license_audit_unknown(tmp_path: Path):
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "mystery-lib"\nversion = "1.0.0"\n',
+        encoding="utf-8",
     )
-
-    ok, msg = run_license_audit(tmp_path, package_name="mystery-lib")
+    ok, msg = run_license_audit(
+        tmp_path,
+        package_name="mystery-lib",
+        license_resolver=lambda _n, _v, _p: "UNKNOWN",
+    )
     assert ok is False
     assert "missing" in msg.lower() or "unknown" in msg.lower()
 
 
-@patch("scripts.remediate_vulnerabilities.subprocess.run")
-def test_run_license_audit_missing_package_metadata(mock_sub_run, tmp_path: Path):
-    mock_payload = [
-        {"Name": "other-pkg", "Version": "1.0.0", "License": "MIT"},
-    ]
-    mock_sub_run.return_value = MagicMock(
-        returncode=0, stdout=json.dumps(mock_payload), stderr=""
+def test_run_license_audit_missing_package_metadata(tmp_path: Path):
+    (tmp_path / "uv.lock").write_text(
+        '[[package]]\nname = "other-pkg"\nversion = "1.0.0"\n',
+        encoding="utf-8",
     )
-
-    ok, msg = run_license_audit(tmp_path, package_name="uninstalled-pkg")
+    ok, msg = run_license_audit(
+        tmp_path,
+        package_name="uninstalled-pkg",
+        license_resolver=lambda _n, _v, _p: "MIT",
+    )
     assert ok is False
     assert "missing license metadata" in msg.lower()
+
+
+@patch("scripts.remediate_vulnerabilities._get_metadata_session")
+@patch("scripts.remediate_vulnerabilities._build_installed_license_map")
+def test_run_license_audit_pep658_wheel_metadata_for_uninstalled_locked_pkg(
+    mock_installed, mock_session_fn, tmp_path: Path
+):
+    """Uninstalled packages in uv.lock resolve license headers via PEP 658 .metadata URLs."""
+    from scripts.remediate_vulnerabilities import _LOCKED_LICENSE_CACHE
+
+    _LOCKED_LICENSE_CACHE.clear()
+    mock_installed.return_value = {}
+    (tmp_path / "uv.lock").write_text(
+        """
+[[package]]
+name = "tornado"
+version = "6.5.5"
+wheels = [
+    { url = "https://files.pythonhosted.org/packages/tornado-6.5.5-cp39-abi3-manylinux1_x86_64.whl" }
+]
+        """,
+        encoding="utf-8",
+    )
+    fake_session = MagicMock()
+    fake_session.get.return_value = MagicMock(
+        status_code=200,
+        text="Metadata-Version: 2.4\nName: tornado\nVersion: 6.5.5\nLicense-Expression: Apache-2.0\n",
+    )
+    mock_session_fn.return_value = fake_session
+
+    ok, msg = run_license_audit(tmp_path, package_name="tornado")
+    assert ok is True
+    assert "compatible" in msg.lower()
+    fake_session.get.assert_called_once()
+    assert fake_session.get.call_args.args[0].endswith(".whl.metadata")
 
 
 @patch("scripts.remediate_vulnerabilities.GitHubRemediationClient")
@@ -986,12 +1201,18 @@ def test_pytest_and_pip_licenses_strip_github_tokens_and_git_config(
     assert pytest_env["PYTHON_KEYRING_BACKEND"] == "keyring.backends.fail.Keyring"
 
     mock_sub_run.reset_mock()
-    ok, _ = run_license_audit(tmp_path, package_name="certifi")
-    assert ok is True
-    licenses_env = mock_sub_run.call_args.kwargs["env"]
-    assert "GITHUB_TOKEN" not in licenses_env
-    assert "GH_TOKEN" not in licenses_env
-    assert not any(k.startswith("GIT_CONFIG_") for k in licenses_env)
+    mock_sub_run.return_value = MagicMock(
+        returncode=0,
+        stdout='{"vulnerabilities": []}',
+        stderr="warning: `uv audit` is experimental and may change without warning",
+    )
+    audit_rc, audit_out = run_uv_audit(["GHSA-w8v5-vhqr-4h9v"], tmp_path)
+    assert audit_rc == 0
+    assert audit_out == '{"vulnerabilities": []}'
+    audit_env = mock_sub_run.call_args.kwargs["env"]
+    assert "GITHUB_TOKEN" not in audit_env
+    assert "GH_TOKEN" not in audit_env
+    assert not any(k.startswith("GIT_CONFIG_") for k in audit_env)
 
 
 @patch("scripts.remediate_vulnerabilities.GitHubRemediationClient")
@@ -1657,3 +1878,274 @@ def test_publish_cancelled_audit_job_updates_issue_944_preserving_labels(
     assert "ready-for-human" in payload["labels"]
     assert "severity:medium" in payload["labels"]
     assert "cancelled" in payload["body"]
+
+
+@patch("scripts.remediate_vulnerabilities.fetch_advisory_severity_and_cvss")
+@patch("scripts.remediate_vulnerabilities.subprocess.run")
+def test_run_uv_audit_json_separates_stderr_warnings_and_parses_structured_output(
+    mock_sub_run, mock_fetch, tmp_path: Path
+):
+    """uv audit --output-format json must ignore experimental stderr warnings when parsing stdout."""
+    mock_fetch.return_value = ("HIGH", 7.7)
+    structured_json = json.dumps(
+        {
+            "vulnerabilities": [
+                {
+                    "dependency": {"name": "tornado", "version": "6.5.4"},
+                    "id": "PYSEC-2026-3387",
+                    "aliases": ["CVE-2026-49853", "GHSA-3x9g-8vmp-wqvf"],
+                    "description": "Tornado HTTP header parsing flaw\nExtra details",
+                    "fix_versions": ["6.5.5"],
+                    "link": "https://osv.dev/vulnerability/PYSEC-2026-3387",
+                }
+            ]
+        }
+    )
+    mock_sub_run.return_value = MagicMock(
+        returncode=1,
+        stdout=structured_json,
+        stderr="warning: `uv audit` is experimental and may change without warning.\nwarning: `--ignore-until-fixed` is experimental",
+    )
+
+    rc, stdout_payload = run_uv_audit(["GHSA-w8v5-vhqr-4h9v"], tmp_path)
+    assert rc == 1
+    cmd = mock_sub_run.call_args.args[0]
+    assert cmd[:5] == ["uv", "audit", "--output-format", "json", "--color"]
+    assert "warning:" not in stdout_payload
+
+    parsed = parse_audit_output(stdout_payload)
+    assert len(parsed) == 1
+    assert parsed[0].package_name == "tornado"
+    assert parsed[0].current_version == "6.5.4"
+    assert parsed[0].target_fix_version == "6.5.5"
+    assert parsed[0].severity == "HIGH"
+    assert parsed[0].cvss_score == 7.7
+    mock_fetch.assert_called_once_with(
+        "PYSEC-2026-3387", aliases=("CVE-2026-49853", "GHSA-3x9g-8vmp-wqvf")
+    )
+
+
+def test_discover_targeted_tests_maps_reverse_dependencies_and_skips_unrelated_tui():
+    repo_root = Path(__file__).resolve().parent.parent
+    # tornado is only in notebooks dependency group; zero app/scripts/TUI modules import it
+    tornado_tests = discover_targeted_tests(repo_root, "tornado")
+    assert "tests/test_critical_enforcement_alert_banner.py" not in tornado_tests
+    assert tornado_tests == []
+
+    # jaraco-classes -> keyring -> app/core/crypto.py -> targeted crypto tests (not TUI banner tests)
+    jaraco_tests = discover_targeted_tests(repo_root, "jaraco-classes")
+    assert "tests/test_crypto.py" in jaraco_tests
+    assert "tests/test_critical_enforcement_alert_banner.py" not in jaraco_tests
+
+
+@patch("scripts.remediate_vulnerabilities.subprocess.run")
+def test_run_local_tests_ignores_preexisting_baseline_failure_and_catches_new_regression(
+    mock_sub_run, tmp_path: Path
+):
+    (tmp_path / "app").mkdir()
+    (tmp_path / "app" / "mod.py").write_text("import certifi\n", encoding="utf-8")
+    (tmp_path / "tests").mkdir()
+    (tmp_path / "tests" / "test_mod.py").write_text(
+        "from app import mod\ndef test_preexisting(): pass\ndef test_new_reg(): pass\n",
+        encoding="utf-8",
+    )
+    baseline_lock = '[[package]]\nname = "certifi"\nversion = "2026.7.22"\n'
+    upgraded_lock = '[[package]]\nname = "certifi"\nversion = "2026.10.19"\n'
+    (tmp_path / "uv.lock").write_text(upgraded_lock, encoding="utf-8")
+
+    def write_junit(cmd: list[str], failing_names: list[str]) -> None:
+        for arg in cmd:
+            if arg.startswith("--junitxml="):
+                xml_path = Path(arg.split("=", 1)[1])
+                cases = "".join(
+                    f'<testcase classname="tests.test_mod" name="{n}"><failure message="boom"/></testcase>'
+                    for n in failing_names
+                )
+                xml_path.write_text(
+                    f'<testsuite tests="{len(failing_names)}">{cases}</testsuite>',
+                    encoding="utf-8",
+                )
+
+    # Case 1: Same failure exists in both upgrade and baseline -> returns 0 (ignored) and cleans pytest_failures.txt
+    def fake_run_preexisting(cmd, **kwargs):
+        if cmd[:3] == ["uv", "run", "python"]:
+            return MagicMock(returncode=0, stdout="", stderr="")
+        (tmp_path / "pytest_failures.txt").write_text(
+            "stale failure\n", encoding="utf-8"
+        )
+        write_junit(cmd, ["test_preexisting"])
+        return MagicMock(returncode=1, stdout="1 failed", stderr="")
+
+    mock_sub_run.side_effect = fake_run_preexisting
+    rc_ok, msg_ok = run_local_tests(
+        tmp_path, package_name="certifi", baseline_uv_lock=baseline_lock
+    )
+    assert rc_ok == 0
+    assert "Pre-existing baseline test failures ignored" in msg_ok
+    assert (tmp_path / "uv.lock").read_text(encoding="utf-8") == upgraded_lock
+    assert not (tmp_path / "pytest_failures.txt").exists()
+
+    # Case 2: Upgrade introduces a new failure that passes on baseline -> returns non-zero
+    call_idx = {"pytest": 0}
+
+    def fake_run_regression(cmd, **kwargs):
+        if cmd[:3] == ["uv", "run", "python"]:
+            return MagicMock(returncode=0, stdout="", stderr="")
+        call_idx["pytest"] += 1
+        if call_idx["pytest"] == 1:
+            write_junit(cmd, ["test_new_reg"])
+            return MagicMock(returncode=1, stdout="FAILED test_new_reg", stderr="")
+        write_junit(cmd, [])
+        return MagicMock(returncode=0, stdout="1 passed", stderr="")
+
+    mock_sub_run.side_effect = fake_run_regression
+    rc_fail, msg_fail = run_local_tests(
+        tmp_path, package_name="certifi", baseline_uv_lock=baseline_lock
+    )
+    assert rc_fail == 1
+    assert "FAILED test_new_reg" in msg_fail
+
+
+@patch("scripts.remediate_vulnerabilities.subprocess.run")
+@patch("scripts.remediate_vulnerabilities.sync_offline_requirements_manifest")
+@patch("scripts.remediate_vulnerabilities.run_local_tests")
+@patch("scripts.remediate_vulnerabilities.run_lock_upgrade")
+@patch("scripts.remediate_vulnerabilities.run_uv_audit")
+def test_stage_and_publish_commits_uv_lock_and_offline_requirements_atomically(
+    mock_audit,
+    mock_upgrade,
+    mock_run_tests,
+    mock_sync_offline,
+    mock_sub_run,
+    tmp_path: Path,
+):
+    assert "offline_bundle/requirements.txt" in ALLOWED_STAGED_REPO_PATHS
+    audit_json = json.dumps(
+        {
+            "vulnerabilities": [
+                {
+                    "dependency": {"name": "certifi", "version": "2026.7.22"},
+                    "id": "GHSA-6q48-6c7w-9gw2",
+                    "summary": "CA issue",
+                    "fix_versions": ["2026.10.19"],
+                    "severity": "HIGH",
+                    "cvss_score": 7.5,
+                }
+            ]
+        }
+    )
+    mock_audit.side_effect = [(1, audit_json), (0, '{"vulnerabilities": []}')]
+
+    orig_lock = '[[package]]\nname = "certifi"\nversion = "2026.7.22"\n'
+    new_lock = '[[package]]\nname = "certifi"\nversion = "2026.10.19"\n'
+    orig_offline = "certifi==2026.7.22 --hash=sha256:" + ("1" * 64) + "\n"
+    new_offline = "certifi==2026.10.19 --hash=sha256:" + ("2" * 64) + "\n"
+
+    (tmp_path / "SECURITY.md").write_text(
+        "## Vulnerability Exemptions\n", encoding="utf-8"
+    )
+    (tmp_path / "uv.lock").write_text(orig_lock, encoding="utf-8")
+    (tmp_path / "offline_bundle").mkdir()
+    (tmp_path / "offline_bundle" / "requirements.txt").write_text(
+        orig_offline, encoding="utf-8"
+    )
+
+    def do_upgrade(_pkg: str, root: Path) -> bool:
+        (root / "uv.lock").write_text(new_lock, encoding="utf-8")
+        return True
+
+    def do_sync(root: Path) -> tuple[bool, str]:
+        (root / "offline_bundle" / "requirements.txt").write_text(
+            new_offline, encoding="utf-8"
+        )
+        return True, "synced"
+
+    mock_upgrade.side_effect = do_upgrade
+    mock_sync_offline.side_effect = do_sync
+    mock_run_tests.return_value = (0, "ok")
+    mock_sub_run.return_value = MagicMock(returncode=0)
+
+    stage_dir = tmp_path / "stage_atomic"
+    ok = remediate_vulnerabilities(
+        repo_root=tmp_path,
+        stage_dir=stage_dir,
+        license_auditor=lambda _r, _p: (True, "MPL-2.0"),
+    )
+    assert ok is True
+
+    # Working tree files must be restored cleanly without drift
+    assert (tmp_path / "uv.lock").read_text(encoding="utf-8") == orig_lock
+    assert (tmp_path / "offline_bundle" / "requirements.txt").read_text(
+        encoding="utf-8"
+    ) == orig_offline
+
+    manifest = json.loads((stage_dir / MANIFEST_FILENAME).read_text(encoding="utf-8"))
+    staged_files = manifest["packages"][0]["staged_files"]
+    assert set(staged_files.keys()) == {"uv.lock", "offline_bundle/requirements.txt"}
+    assert (stage_dir / staged_files["uv.lock"]).read_text(encoding="utf-8") == new_lock
+    assert (stage_dir / staged_files["offline_bundle/requirements.txt"]).read_text(
+        encoding="utf-8"
+    ) == new_offline
+
+
+@patch("scripts.remediate_vulnerabilities.requests.patch")
+@patch("scripts.remediate_vulnerabilities.requests.post")
+@patch("scripts.remediate_vulnerabilities.requests.get")
+def test_clean_publish_auto_closes_resolved_issue_944_preserving_triage_labels(
+    mock_get, mock_post, mock_patch, tmp_path: Path
+):
+    stage_dir = tmp_path / "clean_stage"
+    stage_dir.mkdir()
+    clean_manifest = {
+        "schema_version": 1,
+        "base_branch": "main",
+        "audit_clean": True,
+        "audit_output": '{"vulnerabilities": []}',
+        "packages": [],
+    }
+    (stage_dir / MANIFEST_FILENAME).write_text(
+        json.dumps(clean_manifest), encoding="utf-8"
+    )
+
+    existing_issue_944 = {
+        "number": 944,
+        "title": "[Security] Automated Dependency Audit Failure",
+        "labels": [
+            {"name": "bug"},
+            {"name": "security"},
+            {"name": "ready-for-human"},
+            {"name": "severity:high"},
+            {"name": "priority:urgent"},
+        ],
+    }
+    unrelated_security_issue = {
+        "number": 950,
+        "title": "Harden SQLCipher key rotation UX",
+        "labels": [{"name": "security"}, {"name": "enhancement"}],
+    }
+    mock_get.return_value = MagicMock(
+        status_code=200,
+        json=lambda: [existing_issue_944, unrelated_security_issue],
+        raise_for_status=lambda: None,
+    )
+    mock_post.return_value = MagicMock(status_code=201, json=lambda: {"id": 1})
+    mock_patch.return_value = MagicMock(status_code=200, json=lambda: {"number": 944})
+
+    ok = publish_staged_remediations(
+        stage_dir=stage_dir,
+        repo_full="fderuiter/sortify",
+        token="app_tok",
+        audit_job_status="success",
+    )
+    assert ok is True
+
+    # Resolution comment posted only on #944
+    mock_post.assert_called_once()
+    assert mock_post.call_args.args[0].endswith("/issues/944/comments")
+
+    # Issue #944 closed with preserved human triage labels and stripped stale severity/urgent labels
+    mock_patch.assert_called_once()
+    assert mock_patch.call_args.args[0].endswith("/issues/944")
+    patch_payload = mock_patch.call_args.kwargs["json"]
+    assert patch_payload["state"] == "closed"
+    assert patch_payload["labels"] == ["bug", "security", "ready-for-human"]

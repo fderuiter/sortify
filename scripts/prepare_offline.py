@@ -228,8 +228,113 @@ def _parse_manifest_entries(content: str) -> list[dict[str, object]]:
     return parsed
 
 
-def _validate_manifest(content: str, is_cpu: bool) -> None:
-    """Validate hashes, base + `ml` package coverage, and CPU PyTorch pins."""
+def _load_lockfile_runtime_ml_expectation(
+    uv_lock_path: Path | None = None,
+) -> tuple[set[str], dict[tuple[str, str], set[str]]] | None:
+    """Load expected runtime+`ml` package set and locked SHA-256 digests from uv.lock."""
+    candidate = uv_lock_path if uv_lock_path is not None else Path("uv.lock")
+    if not candidate.is_file():
+        return None
+
+    lock_data = tomllib.loads(candidate.read_bytes().decode("utf-8"))
+    packages = lock_data.get("package", [])
+    if not isinstance(packages, list) or not packages:
+        return None
+
+    by_name: dict[str, list[dict[str, object]]] = {}
+    lock_hashes: dict[tuple[str, str], set[str]] = {}
+    root_name: str | None = None
+
+    for pkg in packages:
+        if not isinstance(pkg, dict):
+            continue
+        raw_name = str(pkg.get("name", ""))
+        if not raw_name:
+            continue
+        norm_name = _normalize_pkg_name(raw_name)
+        version = str(pkg.get("version", ""))
+        by_name.setdefault(norm_name, []).append(pkg)
+
+        source = pkg.get("source")
+        if isinstance(source, dict) and (
+            source.get("virtual") == "." or source.get("editable") == "."
+        ):
+            root_name = norm_name
+
+        digests: set[str] = lock_hashes.setdefault((norm_name, version), set())
+        sdist = pkg.get("sdist")
+        if isinstance(sdist, dict) and sdist.get("hash"):
+            digests.add(str(sdist["hash"]))
+        wheels = pkg.get("wheels", [])
+        if isinstance(wheels, list):
+            for whl in wheels:
+                if isinstance(whl, dict) and whl.get("hash"):
+                    digests.add(str(whl["hash"]))
+
+    if root_name is None and "smart-autosorter" in by_name:
+        root_name = "smart-autosorter"
+
+    reachable_pkgs: set[str] = set()
+    if root_name is not None:
+        queue: list[tuple[str, str | None]] = [(root_name, None), (root_name, "ml")]
+        seen: set[tuple[str, str | None]] = set()
+        while queue:
+            cur_name, cur_extra = queue.pop()
+            if (cur_name, cur_extra) in seen:
+                continue
+            seen.add((cur_name, cur_extra))
+            if cur_name != root_name:
+                reachable_pkgs.add(cur_name)
+            for entry in by_name.get(cur_name, []):
+                if cur_extra is None:
+                    deps_raw = entry.get("dependencies", [])
+                else:
+                    opt_deps = entry.get("optional-dependencies", {})
+                    deps_raw = (
+                        opt_deps.get(cur_extra, [])
+                        if isinstance(opt_deps, dict)
+                        else []
+                    )
+                if not isinstance(deps_raw, list):
+                    continue
+                for dep in deps_raw:
+                    if not isinstance(dep, dict) or not dep.get("name"):
+                        continue
+                    dep_name = _normalize_pkg_name(str(dep["name"]))
+                    queue.append((dep_name, None))
+                    extras = dep.get("extra", [])
+                    if isinstance(extras, list):
+                        for ex in extras:
+                            queue.append((dep_name, str(ex)))
+
+    return reachable_pkgs, lock_hashes
+
+
+def export_offline_requirements(reqs_file: Path, cwd: Path | None = None) -> None:
+    """Export exact locked runtime + `ml` requirements with hashes from uv.lock."""
+    subprocess.run(
+        [
+            "uv",
+            "export",
+            "--frozen",
+            "--format",
+            "requirements.txt",
+            "--extra",
+            "ml",
+            "--no-dev",
+            "--no-emit-project",
+            "-o",
+            str(reqs_file),
+        ],
+        cwd=cwd,
+        check=True,
+    )
+
+
+def _validate_manifest(
+    content: str, is_cpu: bool, uv_lock_path: Path | None = None
+) -> None:
+    """Validate hashes, uv.lock parity, base + `ml` coverage, and CPU PyTorch pins."""
     try:
         entries = _parse_manifest_entries(content)
     except ValueError as exc:
@@ -274,6 +379,69 @@ def _validate_manifest(content: str, is_cpu: bool) -> None:
             + ". Run 'uv run python scripts/prepare_offline.py --cpu' to regenerate it."
         )
         sys.exit(1)
+
+    lock_expectation = _load_lockfile_runtime_ml_expectation(uv_lock_path)
+    if lock_expectation is not None:
+        expected_lock_pkgs, lock_hashes = lock_expectation
+        manifest_names = {str(item["name"]) for item in entries}
+
+        drifted_pins: list[str] = []
+        drifted_hashes: list[str] = []
+        for item in entries:
+            name = str(item["name"])
+            version = str(item["version"])
+            spec = str(item["spec"])
+            key = (name, version)
+            if key not in lock_hashes:
+                locked_versions = sorted(
+                    v for (pkg_n, v) in lock_hashes if pkg_n == name
+                )
+                expected_str = (
+                    ", ".join(locked_versions) if locked_versions else "not in uv.lock"
+                )
+                drifted_pins.append(f"{spec} (uv.lock has {expected_str})")
+                continue
+
+            expected_digests = lock_hashes[key]
+            raw_item_hashes = item["hashes"]
+            item_hashes = (
+                {str(h) for h in raw_item_hashes}
+                if isinstance(raw_item_hashes, list)
+                else set()
+            )
+            if expected_digests and not item_hashes.issubset(expected_digests):
+                drifted_hashes.append(spec)
+
+        missing_from_manifest = sorted(expected_lock_pkgs - manifest_names)
+        unexpected_in_manifest = (
+            sorted(manifest_names - expected_lock_pkgs) if expected_lock_pkgs else []
+        )
+
+        if (
+            drifted_pins
+            or drifted_hashes
+            or missing_from_manifest
+            or unexpected_in_manifest
+        ):
+            problems: list[str] = []
+            if drifted_pins:
+                problems.append(f"pin drift ({'; '.join(drifted_pins[:5])})")
+            if drifted_hashes:
+                problems.append(f"hash mismatch ({', '.join(drifted_hashes[:5])})")
+            if missing_from_manifest:
+                problems.append(
+                    f"missing locked packages ({', '.join(missing_from_manifest[:5])})"
+                )
+            if unexpected_in_manifest:
+                problems.append(
+                    f"unexpected packages not in runtime/ml lock graph ({', '.join(unexpected_in_manifest[:5])})"
+                )
+            print(
+                "Error: offline_bundle/requirements.txt diverges from uv.lock: "
+                + "; ".join(problems)
+                + ". Run 'uv run python scripts/prepare_offline.py --cpu' to synchronize it."
+            )
+            sys.exit(1)
 
     if is_cpu:
         for item in entries:
@@ -403,20 +571,35 @@ def main():
     parser.add_argument(
         "--frozen",
         action="store_true",
-        help="Skip recompilation and validate/download from the tracked offline_bundle/requirements.txt.",
+        help="Skip export and validate/download from the tracked offline_bundle/requirements.txt.",
+    )
+    parser.add_argument(
+        "--verify-lockfile",
+        action="store_true",
+        help="Validate that offline_bundle/requirements.txt matches uv.lock and exit without downloading wheels.",
     )
     args = parser.parse_args()
     is_cpu = args.cpu
     is_frozen = args.frozen
+    verify_lockfile_only = args.verify_lockfile
 
     print("Preparing offline bundle...")
     bundle_dir = Path("offline_bundle")
     bundle_dir.mkdir(exist_ok=True)
     reqs_file = bundle_dir / "requirements.txt"
 
-    if is_frozen and not reqs_file.exists():
-        print(f"Error: --frozen requires an existing manifest at {reqs_file}.")
+    if (is_frozen or verify_lockfile_only) and not reqs_file.exists():
+        print(
+            f"Error: --frozen/--verify-lockfile requires an existing manifest at {reqs_file}."
+        )
         sys.exit(1)
+
+    if verify_lockfile_only:
+        with open(reqs_file, "r", encoding="utf-8") as f:
+            manifest_content = f.read()
+        _validate_manifest(manifest_content, is_cpu=is_cpu)
+        print(f"Verified {reqs_file} is synchronized with uv.lock.")
+        return
 
     # Clean up previous ZIP output if any
     zip_output = Path("offline_bundle.zip")
@@ -432,32 +615,12 @@ def main():
         shutil.rmtree(wheels_dir)
     wheels_dir.mkdir()
 
-    # 1. Compile requirements with CPU-only PyTorch and `ml` extras (unless --frozen)
+    # 1. Export exact locked requirements from uv.lock with `ml` extras (unless --frozen)
     if is_frozen:
         print(f"Using frozen manifest at {reqs_file}...")
     else:
-        print("Compiling requirements...")
-        # --torch-backend cpu scopes https://download.pytorch.org/whl/cpu strictly
-        # to PyTorch packages while keeping PyPI authoritative under first-index.
-        subprocess.run(
-            [
-                "uv",
-                "pip",
-                "compile",
-                "pyproject.toml",
-                "--extra",
-                "ml",
-                "--universal",
-                "--generate-hashes",
-                "--index-strategy",
-                "first-index",
-                "--torch-backend",
-                "cpu",
-                "-o",
-                str(reqs_file),
-            ],
-            check=True,
-        )
+        print("Exporting locked requirements from uv.lock...")
+        export_offline_requirements(reqs_file)
 
     # Validate manifest hashes, base + `ml` coverage, and CPU torch entries before downloading
     if not reqs_file.exists():

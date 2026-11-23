@@ -400,3 +400,47 @@ async def test_two_stage_rollback_confirm_modal_workflow(selective_env):
         assert dismiss_result is not None
         assert dismiss_result["confirmed"] is True
         assert dismiss_result["session_id"] == session_id
+
+
+@pytest.mark.anyio
+async def test_rollback_confirm_modal_action_toggle_current_row(
+    selective_env: dict[str, object],
+) -> None:
+    """Verify RollbackConfirmModal.action_toggle_current_row toggles row checkbox via Coordinate."""
+    from textual.coordinate import Coordinate
+
+    session_id = str(selective_env["session_id"])
+    history_mgr = selective_env["history_mgr"]
+    assert hasattr(history_mgr, "get_session_moves")
+    moves = history_mgr.get_session_moves(session_id)
+
+    session_info: dict[str, object] = {
+        "session_id": session_id,
+        "base_dir": str(selective_env["base_dir"]),
+        "timestamp": 1234567890,
+        "items": moves,
+    }
+
+    app = AutoSorterTUI(settings=AppSettings())
+    async with app.run_test() as pilot:
+        modal = RollbackConfirmModal(session_info=session_info)
+        app.push_screen(modal)
+        await pilot.pause()
+
+        dt = modal.query_one("#rollback-items-table", DataTable)
+        await wait_for_rows(pilot, dt, 3)
+        dt.focus()
+        await pilot.pause()
+
+        assert len(modal.selected_step_ids) == 3
+        assert str(dt.get_cell_at(Coordinate(0, 0))) == "[X]"
+
+        modal.action_toggle_current_row()
+        await pilot.pause()
+        assert len(modal.selected_step_ids) == 2
+        assert str(dt.get_cell_at(Coordinate(0, 0))) == "[ ]"
+
+        modal.action_toggle_current_row()
+        await pilot.pause()
+        assert len(modal.selected_step_ids) == 3
+        assert str(dt.get_cell_at(Coordinate(0, 0))) == "[X]"

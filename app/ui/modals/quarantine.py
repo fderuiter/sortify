@@ -12,6 +12,7 @@ from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
 from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, DataTable, Input, Label, Select, Static
+from textual.widgets.data_table import ColumnKey, RowKey
 
 from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
@@ -304,7 +305,12 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
         self._update_layout(self.size.width)
         dt = self.query_one("#quarantine-table", DataTable)
         dt.add_columns(
-            "Sel", "Job ID", "Filename", "Status", "Policy Action", "Created"
+            ("Sel", "Sel"),
+            "Job ID",
+            "Filename",
+            "Status",
+            "Policy Action",
+            "Created",
         )
         self.announce("Opened Quarantine Vault modal.")
         self.action_refresh_records()
@@ -402,9 +408,14 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
             dt = self.query_one("#quarantine-table", DataTable)
             for r in self.filtered_records:
                 job_id = r.get("job_id")
-                if job_id and dt.has_row(job_id):
+                if job_id and RowKey(job_id) in dt.rows and dt.ordered_columns:
                     sel_str = "[x]" if job_id in self.selected_job_ids else "[ ]"
-                    dt.update_cell(job_id, "Sel", sel_str)
+                    col_key = (
+                        "Sel"
+                        if ColumnKey("Sel") in dt.columns
+                        else dt.ordered_columns[0].key
+                    )
+                    dt.update_cell(job_id, col_key, sel_str)
         except Exception:
             pass
 
@@ -500,14 +511,14 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
     @on(DataTable.CellHighlighted)
     def _on_cell_highlighted(self, event: DataTable.CellHighlighted) -> None:
-        if event.coordinate and (dt := self.query_one("#quarantine-table", DataTable)):
-            try:
-                row_key = dt.coordinate_to_cell_key(event.coordinate).row_key
-                if row_key and row_key.value:
-                    self.selected_job_id = row_key.value
-                    self._render_detail_pane(self.selected_job_id)
-            except Exception:
-                pass
+        try:
+            dt = self.query_one("#quarantine-table", DataTable)
+            row_key = dt.coordinate_to_cell_key(event.coordinate).row_key
+            if row_key and row_key.value:
+                self.selected_job_id = row_key.value
+                self._render_detail_pane(self.selected_job_id)
+        except Exception:
+            pass
 
     def _get_selected_record(self, job_id: Optional[str]) -> Optional[dict[str, Any]]:
         if not job_id:
@@ -584,7 +595,9 @@ class QuarantineVaultModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
 
         base_dir = self.base_dir or "."
 
-        def _dir_selected_callback(target_dir: Optional[str]) -> None:
+        def _dir_selected_callback(target_dir: Optional[str | list[str]]) -> None:
+            if isinstance(target_dir, list):
+                target_dir = target_dir[0] if target_dir else None
             if not target_dir:
                 self.announce("Release operation cancelled.")
                 return

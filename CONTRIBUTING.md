@@ -32,7 +32,7 @@ uv run python sandbox_cli.py analyze -q --json  # isolated sandbox analysis (aut
 uv run pytest -m "not slow"             # fast suite, parallel by default (pytest-xdist)
 uv run pytest -m slow -n 0              # ML, snapshot and integration tests
 uv run ruff check . && uv run ruff format .
-uv run ty check                         # type check app/, scripts/ and sandbox_cli.py (config in pyproject.toml)
+uv run ty check                         # type check app/, scripts/, tests/, .agents/ and sandbox_cli.py (config in pyproject.toml)
 SKIP=no-commit-to-branch uv run pre-commit run --all-files       # every hook offline, including on main
 uv run python scripts/validate_config.py --check                 # verify config schema and pyproject.toml bounds read-only
 uv run python scripts/generate_docs.py --check --no-build --local-only  # verify generated docs/diagrams offline and read-only
@@ -62,7 +62,7 @@ CI (`.github/workflows/ci.yml`) runs the same checks, a dependency audit and sec
 Read-only `--check` and `--verify` commands never overwrite tracked files on disk. When you change a baseline on purpose, run the explicit sync command and commit the result so reviewers can see the diff:
 
 - **Configuration schema:** `uv run python scripts/validate_config.py --sync` rewrites `app/config_schema.json` from `app/config.py`.
-- **Generated docs:** `uv run python scripts/generate_docs.py` rewrites the generated pages, `SECURITY.md`, and synchronizes `app/config_schema.json`.
+- **Generated docs:** `uv run python scripts/generate_docs.py` rewrites the generated pages, `SECURITY.md`, and synchronizes `app/config_schema.json` offline without building `site/` (pass `--build` to also build the MkDocs HTML site and `--live-links` to probe external URLs).
 - **API and CLI signatures:** `uv run python scripts/validate_signatures.py --update`.
 - **TUI snapshots:** `UPDATE_SNAPSHOTS=1 uv run pytest tests/test_visual_snapshots.py -n 0`, then commit `tests/snapshots/tui_svg/`.
 - **Diagrams:** edit the spec in `scripts/diagram_schema.py`, then run `uv run python scripts/diagram_toolchain.py build` and commit the `.mmd` and `.svg` files in `docs/assets/diagrams/`. Rendering needs Node and mermaid-cli (`npm install -g @mermaid-js/mermaid-cli`, which also fetches the headless Chrome it uses). Without it the build keeps the existing SVGs and warns that a changed diagram is stale.

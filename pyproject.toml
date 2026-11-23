@@ -136,14 +136,17 @@ convention = "numpy"
 [tool.ruff.format]
 docstring-code-format = true
 
+[tool.ty]
+baseline = "tests/ty_baseline.json"
+
 [tool.ty.environment]
 python-version = "3.12"
 
 [tool.ty.terminal]
-error-on-warning = false
+error-on-warning = true
 
 [tool.ty.src]
-include = ["app", "scripts", "sandbox_cli.py"]
+include = ["app", "scripts", "tests", ".agents", "sandbox_cli.py"]
 
 [tool.ty.analysis]
 # Optional `ml` extra and `build`/`docs` group packages, imported lazily behind guards.
@@ -157,25 +160,6 @@ allowed-unresolved-imports = [
     "torch",
     "transformers",
 ]
-
-[tool.ty.rules]
-# `def f(x: str = None)` legacy sites are ratcheted via [tool.sortify.ty-warning-ceilings].
-invalid-parameter-default = "warn"
-
-# UI modules report dynamic typing findings as warnings (#740).
-[[tool.ty.overrides]]
-include = [
-    "app/ui/**",
-]
-
-[tool.ty.overrides.rules]
-not-callable = "warn"
-incompatible-method-override = "warn"
-invalid-argument-type = "warn"
-invalid-assignment = "warn"
-missing-attribute = "warn"
-missing-union-attribute = "warn"
-no-matching-overload = "warn"
 
 [dependency-groups]
 dev = [
@@ -269,31 +253,7 @@ show_missing = true
 "app/core/verifier.py" = 82
 "app/core/path_utils.py" = 77
 
-# Per-file shrink-only ceilings for legacy ty warnings (#740), enforced by
-# scripts/check_ty_warnings.py. Unlisted files must have 0 warnings; lower a
-# ceiling or delete its line as warnings are resolved, never raise one.
+# Per-file upper-bound ceilings for legacy ty warnings across linux, darwin, and
+# win32, enforced by scripts/check_ty_warnings.py. Ceilings and baseline entries
+# are forbidden for app/, scripts/, and .agents/; unlisted files must have 0 warnings.
 [tool.sortify.ty-warning-ceilings]
-"app/config.py" = 1
-"app/core/analyzer.py" = 1
-"app/core/analyzer_strategies.py" = 2
-"app/core/daemon.py" = 1
-"app/core/downloader.py" = 1
-"app/core/env_helper.py" = 1
-"app/core/mover.py" = 15
-"app/core/path_utils.py" = 2
-"app/log_filter.py" = 1
-"app/ui/a11y.py" = 6
-"app/ui/mixins/pipeline.py" = 73
-"app/ui/mixins/selection.py" = 132
-"app/ui/mixins/tree_view.py" = 45
-"app/ui/modals/drop_zone.py" = 2
-"app/ui/modals/edit.py" = 3
-"app/ui/modals/quarantine.py" = 3
-"app/ui/modals/reports.py" = 6
-"app/ui/modals/rules.py" = 4
-"app/ui/modals/sample_playground.py" = 3
-"app/ui/modals/session.py" = 1
-"app/ui/modals/settings.py" = 4
-"app/ui/modals/wizard.py" = 1
-"app/ui/tui.py" = 2
-"app/ui/widgets/vim_tree.py" = 2

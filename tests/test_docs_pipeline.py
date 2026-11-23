@@ -262,19 +262,37 @@ def test_audit_adr_status_detects_missing_or_incomplete_implementation_section(
 
 
 def test_auto_merge_policy_bot_authors_consistency():
-    """Verify that every entry in BOT_AUTHORS exists in docs/auto_merge_policy.md:L15-L52."""
+    """Verify that every entry in BOT_AUTHORS exists in docs/auto_merge_policy.md under '1. Risk Classification & Eligibility'."""
     from scripts.classify_pr import BOT_AUTHORS
+    from scripts.generate_docs import _extract_markdown_section
 
     policy_file = Path("docs/auto_merge_policy.md")
     assert policy_file.exists(), f"{policy_file} does not exist"
 
-    lines = policy_file.read_text(encoding="utf-8").splitlines()
-    section_content = "\n".join(lines[14:52])
+    content = policy_file.read_text(encoding="utf-8")
+    section_content = _extract_markdown_section(
+        content, "1. Risk Classification & Eligibility"
+    )
+    assert section_content is not None, (
+        "Missing '## 1. Risk Classification & Eligibility' section in docs/auto_merge_policy.md"
+    )
 
     for bot in BOT_AUTHORS:
         assert bot in section_content, (
-            f"Bot author '{bot}' from BOT_AUTHORS is missing from docs/auto_merge_policy.md:L15-L52"
+            f"Bot author '{bot}' from BOT_AUTHORS is missing from '1. Risk Classification & Eligibility' in docs/auto_merge_policy.md"
         )
+
+
+def test_audit_auto_merge_policy_uses_section_heading_not_line_slice():
+    """Verify audit_auto_merge_policy extracts '1. Risk Classification & Eligibility' dynamically regardless of line offsets."""
+    baseline = Path("docs/auto_merge_policy.md").read_text(encoding="utf-8")
+    shifted = ("<!-- preamble line -->\n" * 60) + baseline
+    assert audit_auto_merge_policy(content=shifted) == []
+
+    # Removing a bot from section 1 fails even if the bot appears in section 2
+    section1_missing_stitch = baseline.replace("`stitch`, ", "", 1) + "\n`stitch`\n"
+    errors = audit_auto_merge_policy(content=section1_missing_stitch)
+    assert any("stitch" in e for e in errors)
 
 
 def test_audit_auto_merge_policy_detects_missing_bot(tmp_path):
@@ -447,8 +465,8 @@ def test_audit_handwritten_docs_detects_broken_link(tmp_path):
 
 
 def test_main_strict_flag():
-    """Verify that --strict (default) and --no-strict set mkdocs arguments correctly."""
-    with patch("sys.argv", ["generate_docs.py", "--no-strict"]):
+    """Verify that --strict (default) and --no-strict set mkdocs arguments correctly when --build is passed."""
+    with patch("sys.argv", ["generate_docs.py", "--build", "--no-strict"]):
         with (
             patch("scripts.generate_docs.compile_diagram_assets") as mock_diag,
             patch("scripts.generate_docs.generate_tutorial_docs") as mock_tut,
@@ -484,8 +502,8 @@ def test_main_strict_flag():
 
 
 def test_main_default_strict():
-    """Verify that by default mkdocs is run with --strict."""
-    with patch("sys.argv", ["generate_docs.py"]):
+    """Verify that with --build, mkdocs is run with --strict by default."""
+    with patch("sys.argv", ["generate_docs.py", "--build"]):
         with (
             patch("scripts.generate_docs.compile_diagram_assets") as mock_diag,
             patch("scripts.generate_docs.generate_tutorial_docs") as mock_tut,
@@ -514,8 +532,8 @@ def test_main_default_strict():
 
 
 def test_main_exits_nonzero_when_mkdocs_site_validation_fails(capsys):
-    """Verify main() exits with code 1 when validate_mkdocs_site reports invalid artifacts."""
-    with patch("sys.argv", ["generate_docs.py"]):
+    """Verify main() exits with code 1 when --build runs and validate_mkdocs_site reports invalid artifacts."""
+    with patch("sys.argv", ["generate_docs.py", "--build"]):
         with (
             patch("scripts.generate_docs.compile_diagram_assets"),
             patch("scripts.generate_docs.generate_tutorial_docs"),
@@ -703,8 +721,8 @@ def test_main_skip_build_flag():
 
 
 def test_main_missing_mkdocs_logs_warning_and_skips_build(capsys):
-    """Verify that when mkdocs is missing, main() logs a warning and skips build cleanly."""
-    with patch("sys.argv", ["generate_docs.py"]):
+    """Verify that when --build is requested and mkdocs is missing, main() logs a warning and skips build cleanly."""
+    with patch("sys.argv", ["generate_docs.py", "--build"]):
         with (
             patch("scripts.generate_docs.compile_diagram_assets"),
             patch("scripts.generate_docs.generate_tutorial_docs"),
@@ -1958,7 +1976,7 @@ def test_user_guide_rename_shortcut_and_tui_bindings():
 
 
 def test_admin_guide_field_descriptions_policies_and_env_vars():
-    """Verify docs/admin_guide.md documents all 54 field descriptions, 6 policy types, 5 actions, 8 post-unarchive values, and runtime env vars."""
+    """Verify docs/admin_guide.md documents all Settings field descriptions, 6 policy types, 5 actions, 8 post-unarchive values, and runtime env vars."""
     from app.config import Settings
     from app.core.policy_engine import PolicyEngine
 
@@ -2181,3 +2199,158 @@ def test_audit_handwritten_docs_memoizes_adr_inspections():
     # Subsequent ADR status check reuses the memoized state (cache hit)
     assert audit_adr_status() == []
     assert gen_docs._inspect_adr_runtime_state.cache_info().hits >= 1
+
+
+def test_main_defaults_to_offline_and_skips_mkdocs_build():
+    """Verify bare generate_docs.py defaults local_only=True and skips mkdocs build, while --live-links opts into live checks."""
+    with patch("sys.argv", ["generate_docs.py"]):
+        with (
+            patch("scripts.generate_docs.compile_diagram_assets"),
+            patch("scripts.generate_docs.generate_tutorial_docs"),
+            patch("scripts.generate_docs.generate_api_docs"),
+            patch("scripts.generate_docs.generate_ui_docs"),
+            patch("scripts.generate_docs.generate_admin_guide"),
+            patch("scripts.generate_docs.generate_keyboard_docs"),
+            patch("scripts.generate_docs.update_security_md") as mock_sec,
+            patch("scripts.generate_docs.sync_config_schema"),
+            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch("subprocess.run") as mock_run,
+            patch.dict("sys.modules", {"mkdocs": MagicMock()}),
+        ):
+            main()
+            mock_sec.assert_called_once_with(local_only=True)
+            mock_run.assert_not_called()
+
+    with patch("sys.argv", ["generate_docs.py", "--live-links"]):
+        with (
+            patch("scripts.generate_docs.compile_diagram_assets"),
+            patch("scripts.generate_docs.generate_tutorial_docs"),
+            patch("scripts.generate_docs.generate_api_docs"),
+            patch("scripts.generate_docs.generate_ui_docs"),
+            patch("scripts.generate_docs.generate_admin_guide"),
+            patch("scripts.generate_docs.generate_keyboard_docs"),
+            patch("scripts.generate_docs.update_security_md") as mock_sec_live,
+            patch("scripts.generate_docs.sync_config_schema"),
+            patch("scripts.generate_docs.validate_mermaid_diagrams", return_value=[]),
+            patch("subprocess.run") as mock_run_live,
+        ):
+            main()
+            mock_sec_live.assert_called_once_with(local_only=False)
+            mock_run_live.assert_not_called()
+
+
+def test_generate_admin_guide_isolates_columns_app_dir_and_sortify_env(
+    tmp_path, monkeypatch
+):
+    """Verify generate_admin_guide() pins COLUMNS=80, clears AUTOSORTER_APP_DIR and SORTIFY_*, and restores env."""
+    import os
+
+    import scripts.generate_docs as gen_docs
+
+    committed_admin = Path("docs/admin_guide.md").read_text(encoding="utf-8")
+    stage_dir = tmp_path / "stage"
+    stage_dir.mkdir()
+    uncreated_app_dir = tmp_path / "leaked_app_dir"
+
+    monkeypatch.setenv("COLUMNS", "120")
+    monkeypatch.setenv("AUTOSORTER_APP_DIR", str(uncreated_app_dir))
+    monkeypatch.setenv("SORTIFY_MAX_FOLDERS", "999")
+    monkeypatch.setattr(gen_docs, "_CHECK_STAGE_DIR", stage_dir)
+
+    gen_docs.generate_admin_guide()
+
+    rendered = (stage_dir / "docs" / "admin_guide.md").read_text(encoding="utf-8")
+    assert "`'~/.autosorter/autosorter.log'`" in rendered
+    assert str(uncreated_app_dir) not in rendered
+    assert rendered == committed_admin
+    assert not uncreated_app_dir.exists()
+
+    # Caller environment must be restored untouched
+    assert os.environ.get("COLUMNS") == "120"
+    assert os.environ.get("AUTOSORTER_APP_DIR") == str(uncreated_app_dir)
+    assert os.environ.get("SORTIFY_MAX_FOLDERS") == "999"
+
+    # When COLUMNS was originally unset, it must not remain in os.environ
+    monkeypatch.delenv("COLUMNS", raising=False)
+    gen_docs.generate_admin_guide()
+    assert "COLUMNS" not in os.environ
+
+
+def test_generate_docs_offline_check_and_sync_under_host_env(tmp_path):
+    """Verify bare generate_docs.py --check and write-mode sync succeed offline under COLUMNS=120, AUTOSORTER_APP_DIR, and SORTIFY_MAX_FOLDERS=999."""
+    import os
+    import subprocess
+    import sys
+
+    import scripts.generate_docs as gen_docs
+
+    uncreated_app_dir = tmp_path / "host_env_app_dir"
+    env = dict(os.environ)
+    env["COLUMNS"] = "120"
+    env["AUTOSORTER_APP_DIR"] = str(uncreated_app_dir)
+    env["SORTIFY_MAX_FOLDERS"] = "999"
+    env["HTTPS_PROXY"] = "http://127.0.0.1:9"
+    env["HTTP_PROXY"] = "http://127.0.0.1:9"
+    env.setdefault("PYTHON_KEYRING_BACKEND", "keyring.backends.fail.Keyring")
+
+    result = subprocess.run(
+        [sys.executable, "scripts/generate_docs.py", "--check"],
+        env=env,
+        capture_output=True,
+        text=True,
+    )
+    assert result.returncode == 0, f"stdout:\n{result.stdout}\nstderr:\n{result.stderr}"
+    assert not uncreated_app_dir.exists()
+    assert not Path("site").exists()
+
+    # Also verify bare write-mode sync (redirected to tmp_path) makes zero live network calls
+    stage_dir = tmp_path / "sync_out"
+    stage_dir.mkdir()
+
+    def _redirect_output(rel_path: str) -> str:
+        target = stage_dir / rel_path
+        target.parent.mkdir(parents=True, exist_ok=True)
+        return str(target)
+
+    sec_copy = stage_dir / "SECURITY.md"
+    sec_copy.write_text(
+        Path("SECURITY.md").read_text(encoding="utf-8"), encoding="utf-8"
+    )
+    orig_update_sec = update_security_md
+
+    with (
+        patch.dict(
+            os.environ,
+            {
+                "COLUMNS": "120",
+                "AUTOSORTER_APP_DIR": str(uncreated_app_dir),
+                "SORTIFY_MAX_FOLDERS": "999",
+            },
+        ),
+        patch("sys.argv", ["generate_docs.py"]),
+        patch.object(gen_docs, "_resolve_output_path", side_effect=_redirect_output),
+        patch.object(
+            gen_docs,
+            "update_security_md",
+            side_effect=lambda local_only=True: orig_update_sec(
+                sec_file=str(sec_copy), local_only=local_only
+            ),
+        ) as spy_sec,
+        patch.object(gen_docs, "compile_diagram_assets"),
+        patch.object(
+            gen_docs,
+            "sync_config_schema",
+            side_effect=lambda: __import__(
+                "scripts.validate_config", fromlist=["sync_config_schema"]
+            ).sync_config_schema(schema_path=stage_dir / "app" / "config_schema.json"),
+        ),
+        patch("subprocess.run") as mock_mkdocs,
+    ):
+        main()
+        spy_sec.assert_called_once_with(local_only=True)
+        mock_mkdocs.assert_not_called()
+
+    assert not uncreated_app_dir.exists()
+    assert (stage_dir / "docs" / "admin_guide.md").read_text(encoding="utf-8") == Path(
+        "docs/admin_guide.md"
+    ).read_text(encoding="utf-8")

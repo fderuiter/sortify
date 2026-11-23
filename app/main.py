@@ -2066,11 +2066,12 @@ def _configure_settings_and_logging(
         if not pre_existing_handlers:
             root_logger.setLevel(prev_root_level)
 
-    log_path = Path(settings.LOG_FILE)
-    try:
-        log_path.parent.mkdir(parents=True, exist_ok=True)
-    except OSError:
-        pass
+    if settings.LOG_FILE:
+        log_path = Path(settings.LOG_FILE)
+        try:
+            log_path.parent.mkdir(parents=True, exist_ok=True)
+        except OSError:
+            pass
 
     log_format = "%(asctime)s - %(levelname)s - [%(filename)s:%(lineno)d] - %(message)s"
     logging.basicConfig(

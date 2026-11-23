@@ -448,6 +448,7 @@ def test_startup_logging_buffers_warnings_and_preserves_db_key_identifiers(
         non_interactive=True,
         skip_wizard=True,
     )
+    loaded_settings = None
     try:
         loaded_settings = _configure_settings_and_logging(
             args, tracked_handlers=tracked
@@ -461,8 +462,10 @@ def test_startup_logging_buffers_warnings_and_preserves_db_key_identifiers(
         assert expected_account in content
         assert f"'{expected_account}':" in content
     finally:
-        if getattr(loaded_settings, "_save_timer", None) is not None:
-            loaded_settings._save_timer.cancel()
+        if loaded_settings is not None:
+            save_timer = loaded_settings._save_timer
+            if save_timer is not None:
+                save_timer.cancel()
         root_logger = logging.getLogger()
         for handler in tracked:
             root_logger.removeHandler(handler)

@@ -12,6 +12,65 @@ from app.ui.modals.edit import (
     RenameModal,
     RenameResult,
 )
+from app.ui.protocols import TUIHostProtocol
+
+
+def _resolve_plan_folder_dict(
+    plan: dict[str, Any], folder_path: str, *, create: bool = False
+) -> Optional[dict[str, Any]]:
+    """Resolve a flat or slash-delimited nested folder dictionary inside ``plan``."""
+    if not folder_path:
+        return plan
+    direct = plan.get(folder_path)
+    if isinstance(direct, dict) and direct.get("__type__") != "file":
+        return direct
+
+    from app.core.path_utils import _is_absolute_path
+
+    if _is_absolute_path(folder_path):
+        if create:
+            created: dict[str, Any] = {}
+            plan[folder_path] = created
+            return created
+        return None
+
+    parts = [p for p in folder_path.replace("\\", "/").strip("/").split("/") if p]
+    if not parts:
+        return plan
+
+    curr: dict[str, Any] = plan
+    for part in parts:
+        nxt = curr.get(part)
+        if isinstance(nxt, dict) and nxt.get("__type__") != "file":
+            curr = nxt
+        elif create and nxt is None:
+            new_sub: dict[str, Any] = {}
+            curr[part] = new_sub
+            curr = new_sub
+        else:
+            return None
+    return curr
+
+
+def _find_file_in_plan(
+    plan: dict[str, Any],
+    file_key: str,
+    target_info: Any = None,
+    current_folder: str = "",
+) -> tuple[str, Optional[dict[str, Any]], Any]:
+    """Recursively locate ``file_key`` (or ``target_info``) inside a nested ``plan``."""
+    for k, v in plan.items():
+        if isinstance(v, dict) and v.get("__type__") == "file":
+            if (target_info is not None and v is target_info) or k == file_key:
+                return current_folder, plan, v
+        elif isinstance(v, dict):
+            sub_folder = f"{current_folder}/{k}" if current_folder else k
+            found_folder, found_container, found_val = _find_file_in_plan(
+                v, file_key, target_info=target_info, current_folder=sub_folder
+            )
+            if found_container is not None:
+                return found_folder, found_container, found_val
+    return "", None, None
 
 
 def _derive_learned_pattern(raw_name: str) -> Optional[str]:
@@ -31,14 +90,16 @@ def _derive_learned_pattern(raw_name: str) -> Optional[str]:
 class SelectionActionsMixin:
     """Key-bound actions that select, edit and rate nodes in the plan tree."""
 
-    def register_visual_selected_node(self, node: TreeNode) -> None:
+    def register_visual_selected_node(
+        self: TUIHostProtocol, node: TreeNode[Any]
+    ) -> None:
         """Register node into visual range selection list when visual selection is active."""
         if not self.visual_select_active or not node:
             return
         if node not in self.visual_selected_nodes:
             self.visual_selected_nodes.append(node)
 
-    def action_visual_range_select(self) -> None:
+    def action_visual_range_select(self: TUIHostProtocol) -> None:
         """Toggle visual range selection mode [V]."""
         if self._is_text_control_focused():
             return
@@ -54,7 +115,7 @@ class SelectionActionsMixin:
         else:
             self.announce("Visual range selection mode disabled.")
 
-    def action_toggle_selection(self) -> None:
+    def action_toggle_selection(self: TUIHostProtocol) -> None:
         """Toggle checkbox selection for active node, folder group, or visual range [Space]."""
         if self._is_text_control_focused():
             return
@@ -107,7 +168,7 @@ class SelectionActionsMixin:
             f"Toggled {len(file_infos_to_toggle)} document item(s) to {status_str}."
         )
 
-    def _get_target_file_infos(self) -> list[dict[str, Any]]:
+    def _get_target_file_infos(self: TUIHostProtocol) -> list[dict[str, Any]]:
         """Return checked file info dicts, or active/focused node file infos if none checked."""
         all_files = self._collect_file_nodes_from_dict(self.plan)
         checked_files = [
@@ -132,7 +193,7 @@ class SelectionActionsMixin:
             folder_files = self._collect_file_nodes_from_dict(data.get("info", {}))
             return folder_files if folder_files else all_files
 
-    def action_exclude_selected(self) -> None:
+    def action_exclude_selected(self: TUIHostProtocol) -> None:
         """Bulk exclude checked items or active node [X]."""
         if self._is_text_control_focused():
             return
@@ -149,7 +210,7 @@ class SelectionActionsMixin:
         self.rebuild_tree()
         self.announce(f"Excluded {len(target_files)} file(s) from sorting plan.")
 
-    def action_include_selected(self) -> None:
+    def action_include_selected(self: TUIHostProtocol) -> None:
         """Bulk include selected items or active node [I]."""
         if self._is_text_control_focused():
             return
@@ -166,7 +227,7 @@ class SelectionActionsMixin:
         self.rebuild_tree()
         self.announce(f"Included {len(target_files)} file(s) in sorting plan.")
 
-    def action_reassign_selected(self) -> None:
+    def action_reassign_selected(self: TUIHostProtocol) -> None:
         """Bulk reassign checked file items or active node to target category [R]."""
         if self._is_text_control_focused():
             return
@@ -312,7 +373,7 @@ class SelectionActionsMixin:
             on_reassigned,
         )
 
-    def action_toggle_select_all(self) -> None:
+    def action_toggle_select_all(self: TUIHostProtocol) -> None:
         """Toggle Select All / Deselect All file nodes in plan [A]."""
         if self._is_text_control_focused():
             return
@@ -363,7 +424,7 @@ class SelectionActionsMixin:
             self.announce(f"{status_str} {len(all_files)} file item(s).")
 
     def _get_executable_plan(
-        self, plan_dict: Optional[dict[str, Any]] = None
+        self: TUIHostProtocol, plan_dict: Optional[dict[str, Any]] = None
     ) -> dict[str, Any]:
         """Return filtered plan dictionary containing only checked, non-excluded file nodes."""
         if plan_dict is None:
@@ -384,7 +445,7 @@ class SelectionActionsMixin:
                 result[k] = v
         return result
 
-    def action_toggle_lock(self) -> None:
+    def action_toggle_lock(self: TUIHostProtocol) -> None:
         """Toggle node lock state [Ctrl+L]."""
         if self._is_text_control_focused(allow_tree_search=True):
             return
@@ -419,12 +480,12 @@ class SelectionActionsMixin:
         self.announce(msg)
         self.rebuild_tree()
 
-    def _get_checked_file_keys(self) -> list[str]:
+    def _get_checked_file_keys(self: TUIHostProtocol) -> list[str]:
         """Collect keys of checked, non-excluded file nodes."""
         entries = self._get_checked_file_entries()
         return [e["key"] for e in entries if e.get("key")]
 
-    def _get_checked_file_entries(self) -> list[dict[str, Any]]:
+    def _get_checked_file_entries(self: TUIHostProtocol) -> list[dict[str, Any]]:
         """Collect full metadata entries for checked, non-excluded file nodes."""
         entries: list[dict[str, Any]] = []
 
@@ -503,7 +564,7 @@ class SelectionActionsMixin:
         _walk_plan(self.plan)
         return entries
 
-    def action_rename_node(self) -> None:
+    def action_rename_node(self: TUIHostProtocol) -> None:
         """Rename file or folder category node [F2]."""
         if self._is_text_control_focused(allow_tree_search=True):
             return
@@ -619,10 +680,10 @@ class SelectionActionsMixin:
 
                 renamed_count = 0
                 for item in batch_items:
-                    old_name = item.get("key") or item.get("old_name")
-                    new_filename = item.get("new_name")
-                    old_folder = item.get("old_folder") or item.get("folder", "")
-                    target_folder = (
+                    old_name = str(item.get("key") or item.get("old_name") or "")
+                    new_filename = str(item.get("new_name") or "")
+                    old_folder = str(item.get("old_folder") or item.get("folder") or "")
+                    target_folder = str(
                         dest_override
                         if dest_override
                         else (item.get("folder") or old_folder)
@@ -632,48 +693,57 @@ class SelectionActionsMixin:
                     if not old_name or not new_filename:
                         continue
 
-                    # Search in self.plan if old_folder or old_name not directly found
-                    if (
-                        old_folder not in self.plan
-                        or old_name not in self.plan[old_folder]
-                    ):
-                        for f_name, f_content in list(self.plan.items()):
-                            if isinstance(f_content, dict) and old_name in f_content:
-                                old_folder = f_name
-                                if data_info is None:
-                                    data_info = f_content[old_name]
-                                break
+                    old_container = _resolve_plan_folder_dict(self.plan, old_folder)
+                    if old_container is None or old_name not in old_container:
+                        found_folder, found_container, found_val = _find_file_in_plan(
+                            self.plan,
+                            old_name,
+                            target_info=data_info
+                            if isinstance(data_info, dict)
+                            else None,
+                        )
+                        if found_container is not None:
+                            old_container = found_container
+                            if not item.get("folder") and not dest_override:
+                                target_folder = found_folder
+                            old_folder = found_folder
+                            if not isinstance(data_info, dict) and isinstance(
+                                found_val, dict
+                            ):
+                                data_info = found_val
 
-                    if not data_info or not isinstance(data_info, dict):
-                        if (
-                            old_folder in self.plan
-                            and old_name in self.plan[old_folder]
-                        ):
-                            data_info = self.plan[old_folder][old_name]
+                    if not isinstance(data_info, dict) and old_container is not None:
+                        existing_val = old_container.get(old_name)
+                        if isinstance(existing_val, dict):
+                            data_info = existing_val
 
                     # Remove from old location in self.plan
-                    if old_folder in self.plan and old_name in self.plan[old_folder]:
-                        self.plan[old_folder].pop(old_name, None)
+                    if old_container is not None and old_name in old_container:
+                        old_container.pop(old_name, None)
 
-                    if target_folder not in self.plan:
+                    target_container = _resolve_plan_folder_dict(
+                        self.plan, target_folder, create=True
+                    )
+                    if target_container is None:
                         self.plan[target_folder] = {}
+                        target_container = self.plan[target_folder]
 
                     # Collision check & numeric disambiguation
                     if (
-                        new_filename in self.plan[target_folder]
-                        and self.plan[target_folder][new_filename] is not data_info
+                        new_filename in target_container
+                        and target_container[new_filename] is not data_info
                     ):
                         new_filename = _disambiguate_key(
-                            self.plan[target_folder], new_filename, is_file=True
+                            target_container, new_filename, is_file=True
                         )
 
-                    if data_info is not None:
-                        self.plan[target_folder][new_filename] = data_info
+                    if isinstance(data_info, dict):
+                        target_container[new_filename] = data_info
                         data_info["target_filename"] = new_filename
                         data_info["folder"] = target_folder
                         data_info["is_locked"] = True
                     else:
-                        self.plan[target_folder][new_filename] = {
+                        target_container[new_filename] = {
                             "__type__": "file",
                             "target_filename": new_filename,
                             "folder": target_folder,
@@ -743,24 +813,51 @@ class SelectionActionsMixin:
                     return
 
                 # Remove from old location in self.plan
-                if folder_cat in self.plan and old_name in self.plan[folder_cat]:
-                    self.plan[folder_cat].pop(old_name, None)
+                old_container = _resolve_plan_folder_dict(self.plan, folder_cat)
+                if old_container is None or old_name not in old_container:
+                    _, found_container, _ = _find_file_in_plan(
+                        self.plan,
+                        old_name,
+                        target_info=data.get("info")
+                        if isinstance(data.get("info"), dict)
+                        else None,
+                    )
+                    if found_container is not None:
+                        old_container = found_container
+                if old_container is not None and old_name in old_container:
+                    old_container.pop(old_name, None)
 
-                if target_folder not in self.plan:
+                target_container = _resolve_plan_folder_dict(
+                    self.plan, target_folder, create=True
+                )
+                if target_container is None:
                     self.plan[target_folder] = {}
+                    target_container = self.plan[target_folder]
 
                 # Collision check & numeric disambiguation
-                if new_filename in self.plan[target_folder] and self.plan[
-                    target_folder
-                ][new_filename] is not data.get("info"):
+                file_info = data.get("info")
+                if (
+                    new_filename in target_container
+                    and target_container[new_filename] is not file_info
+                ):
                     new_filename = _disambiguate_key(
-                        self.plan[target_folder], new_filename, is_file=True
+                        target_container, new_filename, is_file=True
                     )
 
-                self.plan[target_folder][new_filename] = data["info"]
-                data["info"]["target_filename"] = new_filename
-                data["info"]["folder"] = target_folder
-                data["info"]["is_locked"] = True
+                if isinstance(file_info, dict):
+                    target_container[new_filename] = file_info
+                    file_info["target_filename"] = new_filename
+                    file_info["folder"] = target_folder
+                    file_info["is_locked"] = True
+                else:
+                    file_info = {
+                        "__type__": "file",
+                        "target_filename": new_filename,
+                        "folder": target_folder,
+                        "is_locked": True,
+                    }
+                    data["info"] = file_info
+                    target_container[new_filename] = file_info
                 data["folder"] = target_folder
                 data["is_locked"] = True
                 self.locked_files[new_filename] = target_folder
@@ -773,7 +870,7 @@ class SelectionActionsMixin:
 
             self.push_screen(modal, on_renamed)
 
-    def action_new_folder(self) -> None:
+    def action_new_folder(self: TUIHostProtocol) -> None:
         """Create a new folder category node [Ctrl+N]."""
         if self._is_text_control_focused(allow_tree_search=True):
             return
@@ -790,19 +887,19 @@ class SelectionActionsMixin:
 
         self.push_screen(NewFolderModal(), on_created)
 
-    def action_rate_positive(self) -> None:
+    def action_rate_positive(self: TUIHostProtocol) -> None:
         """Set positive ML rating feedback [+] for selected node."""
         if self._is_text_control_focused():
             return
         self._set_rating_for_selected("positive")
 
-    def action_rate_negative(self) -> None:
+    def action_rate_negative(self: TUIHostProtocol) -> None:
         """Set negative ML rating feedback [-] for selected node."""
         if self._is_text_control_focused():
             return
         self._set_rating_for_selected("negative")
 
-    def _set_rating_for_selected(self, rating: str) -> None:
+    def _set_rating_for_selected(self: TUIHostProtocol, rating: str) -> None:
         host: Any = self
         node = host._get_active_node()
         if not node or not node.data or not node.data.get("is_file"):

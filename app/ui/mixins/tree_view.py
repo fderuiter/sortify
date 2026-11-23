@@ -10,6 +10,7 @@ from rich.text import Text
 from textual.widgets import Input, Static, Tree
 from textual.widgets.tree import TreeNode
 
+from app.ui.protocols import TUIHostProtocol
 from app.ui.widgets.path_diff import (
     format_folder_path_comparison,
     format_side_by_side_path_comparison,
@@ -42,7 +43,9 @@ class TreeViewMixin:
     _tree_expansion_memory: dict[str, bool] = {}
     _last_cursor_key: Optional[str] = None
 
-    def _build_path_lookup_index(self, paths: Optional[Any] = None) -> PathLookupIndex:
+    def _build_path_lookup_index(
+        self: TUIHostProtocol, paths: Optional[Any] = None
+    ) -> PathLookupIndex:
         """Build sets of normalized paths and filename basenames from input path collections.
 
         Pre-indexes path variants (raw, normalized, POSIX, Windows, absolute, and base_dir-joined)
@@ -117,7 +120,9 @@ class TreeViewMixin:
 
         return PathLookupIndex(paths=indexed_paths, basenames=indexed_basenames)
 
-    def _capture_tree_state(self, tree: Tree, search_query: str = "") -> None:
+    def _capture_tree_state(
+        self: TUIHostProtocol, tree: Tree[Any], search_query: str = ""
+    ) -> None:
         """Record node expansion status and cursor key prior to tree rebuild."""
         if (
             not hasattr(self, "_tree_expansion_memory")
@@ -144,7 +149,9 @@ class TreeViewMixin:
                 if key:
                     self._last_cursor_key = key
 
-    def _restore_tree_state(self, tree: Tree, search_query: str = "") -> None:
+    def _restore_tree_state(
+        self: TUIHostProtocol, tree: Tree[Any], search_query: str = ""
+    ) -> None:
         """Apply saved expansion states and restore cursor position after render."""
         target_cursor_node = None
         last_key = getattr(self, "_last_cursor_key", None)
@@ -176,7 +183,7 @@ class TreeViewMixin:
             tree.select_node(target_cursor_node)
             self.active_tree_node = target_cursor_node
 
-    def _apply_tree_node_styles(self) -> None:
+    def _apply_tree_node_styles(self: TUIHostProtocol) -> None:
         """Apply red/yellow styling to existing tree nodes and refresh collision labels."""
         try:
             tree = self.query_one("#plan-tree", Tree)
@@ -376,16 +383,15 @@ class TreeViewMixin:
                     _stylize_node(child)
 
             _stylize_node(tree.root)
+            active_node = getattr(self, "active_tree_node", None)
             if tree.cursor_node and tree.cursor_node.data:
                 self._update_inspector(tree.cursor_node, announce=False)
-            elif getattr(self, "active_tree_node", None) and getattr(
-                self.active_tree_node, "data", None
-            ):
-                self._update_inspector(self.active_tree_node, announce=False)
+            elif active_node is not None and getattr(active_node, "data", None):
+                self._update_inspector(active_node, announce=False)
         except Exception as e:
             logger.debug(f"Error applying tree node styles: {e}")
 
-    def _has_file_nodes(self, plan_dict: dict[str, Any]) -> bool:
+    def _has_file_nodes(self: TUIHostProtocol, plan_dict: dict[str, Any]) -> bool:
         """Check if plan structure contains any document file nodes."""
         if not plan_dict or not isinstance(plan_dict, dict):
             return False
@@ -401,7 +407,7 @@ class TreeViewMixin:
                 return True
         return False
 
-    def _get_current_search_query(self) -> str:
+    def _get_current_search_query(self: TUIHostProtocol) -> str:
         """Return lowercased search query string if search input exists and contains text."""
         try:
             search_input = self.query_one("#tree-search-input", Input)
@@ -410,7 +416,10 @@ class TreeViewMixin:
             return ""
 
     def _build_matching_node_ids(
-        self, plan_dict: dict[str, Any], query: str, current_folder: str = ""
+        self: TUIHostProtocol,
+        plan_dict: dict[str, Any],
+        query: str,
+        current_folder: str = "",
     ) -> set[int]:
         """Perform a single O(N) bottom-up pass returning a set of dictionary object IDs matching the query."""
         matching_ids: set[int] = set()
@@ -452,7 +461,7 @@ class TreeViewMixin:
         _walk(plan_dict, current_folder)
         return matching_ids
 
-    def render_tree(self, search_query: Optional[str] = None) -> None:
+    def render_tree(self: TUIHostProtocol, search_query: Optional[str] = None) -> None:
         """Render Textual Tree widget from in-memory plan structure without running validation worker."""
         try:
             tree_matches = self.query("#plan-tree")
@@ -519,29 +528,35 @@ class TreeViewMixin:
                     )
             tree.root.expand_all()
             self._restore_tree_state(tree, query)
+            active_node = getattr(self, "active_tree_node", None)
             if tree.cursor_node and tree.cursor_node.data:
                 self._update_inspector(tree.cursor_node, announce=False)
-            elif getattr(self, "active_tree_node", None) and self.active_tree_node.data:
-                self._update_inspector(self.active_tree_node, announce=False)
+            elif active_node is not None and active_node.data:
+                self._update_inspector(active_node, announce=False)
             else:
                 self._update_inspector(None, announce=False)
         except Exception as e:
             logger.error(f"Error rendering tree: {e}")
 
     def rebuild_tree(
-        self, search_query: Optional[str] = None, run_validation: bool = True
+        self: TUIHostProtocol,
+        search_query: Optional[str] = None,
+        run_validation: bool = True,
     ) -> None:
         """Rebuild Textual Tree widget from in-memory plan structure and optionally validate plan integrity."""
         self.render_tree(search_query=search_query)
-        if hasattr(self, "_update_onboarding_cta_visibility"):
+        update_cta = getattr(self, "_update_onboarding_cta_visibility", None)
+        if callable(update_cta):
             try:
-                self._update_onboarding_cta_visibility()
+                update_cta()
             except Exception:
                 pass
         if run_validation:
             self.run_validation_worker()
 
-    def _collect_file_nodes_from_dict(self, d: dict[str, Any]) -> list[dict[str, Any]]:
+    def _collect_file_nodes_from_dict(
+        self: TUIHostProtocol, d: dict[str, Any]
+    ) -> list[dict[str, Any]]:
         """Collect all file info dicts nested within a plan directory subtree."""
         files = []
         if not isinstance(d, dict):
@@ -555,7 +570,7 @@ class TreeViewMixin:
         return files
 
     def _collect_visible_file_nodes_from_dict(
-        self,
+        self: TUIHostProtocol,
         node_dict: dict[str, Any],
         current_folder: str = "",
         query: str = "",
@@ -604,7 +619,11 @@ class TreeViewMixin:
         return files
 
     def _node_matches_query(
-        self, key: str, val: dict[str, Any], current_folder: str, query: str
+        self: TUIHostProtocol,
+        key: str,
+        val: dict[str, Any],
+        current_folder: str,
+        query: str,
     ) -> bool:
         """Check if a node (file or directory) or any of its descendants match the search query."""
         if not query:
@@ -615,9 +634,9 @@ class TreeViewMixin:
         return id(val) in matching_ids
 
     def _build_tree_nodes(
-        self,
+        self: TUIHostProtocol,
         node_dict: dict[str, Any],
-        parent_item: TreeNode,
+        parent_item: TreeNode[Any],
         current_folder: str,
         query: str = "",
         parent_folder_matches: bool = False,
@@ -946,11 +965,14 @@ class TreeViewMixin:
 
         return added_count
 
-    def _update_inspector(self, node_or_data: Any = None, announce: bool = True) -> str:
+    def _update_inspector(
+        self: TUIHostProtocol, node_or_data: Any = None, announce: bool = True
+    ) -> str:
         """Update and return formatted metadata text for the inspector panel and path comparison pane."""
-        if hasattr(self, "_update_onboarding_cta_visibility"):
+        update_cta = getattr(self, "_update_onboarding_cta_visibility", None)
+        if callable(update_cta):
             try:
-                self._update_onboarding_cta_visibility()
+                update_cta()
             except Exception:
                 pass
 
@@ -981,9 +1003,10 @@ class TreeViewMixin:
             except Exception:
                 pass
             if path_comp_widget:
+                plan_dict = getattr(self, "plan", None)
                 all_files = (
-                    self._collect_file_nodes_from_dict(self.plan)
-                    if hasattr(self, "plan") and self.plan
+                    self._collect_file_nodes_from_dict(plan_dict)
+                    if isinstance(plan_dict, dict) and plan_dict
                     else []
                 )
                 if all_files:

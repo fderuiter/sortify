@@ -286,7 +286,7 @@ def get_meipass_dir() -> Optional[str]:
     return None
 
 
-def get_base_path(caller_file_path: str = None) -> str:
+def get_base_path(caller_file_path: str | None = None) -> str:
     """Get the standard base path of the application.
 
     Compatible with frozen/packaged execution and local development.
@@ -346,7 +346,7 @@ def get_session_base_dir() -> Path:
     return p
 
 
-def setup_session_directory(session_id: str = None) -> tuple[str, Path]:
+def setup_session_directory(session_id: str | None = None) -> tuple[str, Path]:
     """Set up and return the session ID and standard session database directory."""
     import uuid
 

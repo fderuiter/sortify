@@ -92,6 +92,10 @@ This document is automatically generated. Do not edit manually.
 
 ::: app.ui.notifications
 
+## `app.ui.protocols`
+
+::: app.ui.protocols
+
 ## `app.ui.tui`
 
 ::: app.ui.tui

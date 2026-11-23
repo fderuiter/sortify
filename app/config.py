@@ -77,22 +77,21 @@ def _dispatch_observer_callback(cb: Any, key: str, value: Any) -> None:
         )
 
 
-def _resolve_app_dir_path() -> Path:
-    """Resolve the app configuration directory path without creating it on disk."""
+def _resolve_app_dir() -> Path:
+    """Resolve the app configuration directory path without creating it."""
     override = os.environ.get("AUTOSORTER_APP_DIR")
     if override:
-        return Path(override).resolve()
-    return (Path.home() / ".autosorter").resolve()
+        app_dir = Path(override)
+    else:
+        app_dir = Path.home() / ".autosorter"
+    return app_dir.resolve()
 
 
 def get_app_dir() -> Path:
     """Get the app configuration directory path."""
-    app_dir = _resolve_app_dir_path()
+    app_dir = _resolve_app_dir()
     app_dir.mkdir(parents=True, exist_ok=True)
-    return app_dir
-
-
-_IMPORT_DEFAULT_LOG_FILE = str(_resolve_app_dir_path() / "autosorter.log")
+    return app_dir.resolve()
 
 
 def get_debug_log_dir() -> Path:
@@ -716,19 +715,12 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def validate_debounce_delays(self) -> "Settings":
-        """Validate debounce bounds and refresh default LOG_FILE for dynamic app dirs."""
+        """Validate that DEBOUNCE_DELAY does not exceed MAX_DEBOUNCE_DELAY."""
         if self.DEBOUNCE_DELAY > self.MAX_DEBOUNCE_DELAY:
             raise ValueError(
                 f"DEBOUNCE_DELAY ({self.DEBOUNCE_DELAY}) cannot be greater than "
                 f"MAX_DEBOUNCE_DELAY ({self.MAX_DEBOUNCE_DELAY})."
             )
-        if (
-            "LOG_FILE" not in self.model_fields_set
-            and self.LOG_FILE == _IMPORT_DEFAULT_LOG_FILE
-        ):
-            dynamic_default = str(_resolve_app_dir_path() / "autosorter.log")
-            if dynamic_default != self.LOG_FILE:
-                object.__setattr__(self, "LOG_FILE", dynamic_default)
         return self
 
     @field_validator("CONFLICT_POLICY")
@@ -949,7 +941,8 @@ class Settings(BaseSettings):
         ),
     )
     LOG_FILE: str = Field(
-        default=_IMPORT_DEFAULT_LOG_FILE,
+        default_factory=lambda: str(_resolve_app_dir() / "autosorter.log"),
+        json_schema_extra={"default": "autosorter.log"},
         min_length=1,
         description=(
             "Filesystem path to the primary rotating application log file "
@@ -1037,7 +1030,7 @@ class Settings(BaseSettings):
 
 def app_env_file() -> Path:
     """Return the optional `.env` file that may hold SORTIFY_ settings."""
-    return get_app_dir() / ".env"
+    return _resolve_app_dir() / ".env"
 
 
 def _env_sourced_keys(env_file: Path) -> set[str]:
@@ -1372,7 +1365,7 @@ class AppSettings:
                 cls._class_observers[key].remove(callback)
 
     @classmethod
-    def clear_observers(cls, key: str = None) -> None:
+    def clear_observers(cls, key: str | None = None) -> None:
         """Clear all registered observers or observers for a specific key."""
         with cls._class_observer_lock:
             if key is None:

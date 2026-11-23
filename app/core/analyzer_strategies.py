@@ -1805,7 +1805,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
             error,
         )
 
-    def __init__(self, model_path: str = None):
+    def __init__(self, model_path: str | None = None):
         self._generator = None
         self.task = None
         self.token_biases = {}
@@ -2135,7 +2135,7 @@ class GenerativeNamingStrategy(RecursiveKMeansStrategy):
         self,
         prompt: str,
         max_tokens: int,
-        grammar: str = None,
+        grammar: str | None = None,
         stop: Optional[list[str] | str] = None,
         stop_sequences: Optional[list[str] | str] = None,
     ) -> str:

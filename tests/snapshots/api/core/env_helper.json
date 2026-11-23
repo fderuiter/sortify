@@ -1,6 +1,6 @@
 {
   "_metadata": {
-    "checksum": "7c536bbe53d8930a37a9114323af9e5c0b5cc1faece533e919fd0ee8c4a402a9"
+    "checksum": "f76858cd16ed6d0d171c44849c97d370a193671fbb812b272d93b2dff33df8e5"
   },
   "classes": [],
   "functions": [
@@ -31,7 +31,7 @@
       "name": "get_cleaned_env",
       "parameters": [
         {
-          "annotation": "dict",
+          "annotation": "dict | None",
           "default": "None",
           "name": "env"
         }
