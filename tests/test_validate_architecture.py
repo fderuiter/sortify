@@ -62,6 +62,110 @@ def test_validate_architecture_incremental_duplication_order_independent(
     )
 
 
+def test_validate_architecture_same_file_ui_duplicate_methods_fail(
+    monkeypatch, tmp_path
+):
+    from scripts.validate_architecture import validate_codebase_duplication
+
+    monkeypatch.chdir(tmp_path)
+    modals_dir = tmp_path / "app" / "ui" / "modals"
+    modals_dir.mkdir(parents=True, exist_ok=True)
+
+    modal_file = modals_dir / "dup_modal.py"
+    modal_file.write_text(
+        "class FirstModal:\n"
+        "    def action_cancel(self) -> None:\n"
+        '        """Cancel first modal."""\n'
+        "        self.action_close()\n\n"
+        "class SecondModal:\n"
+        "    def action_cancel(self) -> None:\n"
+        '        """Cancel second modal."""\n'
+        "        self.action_close()\n",
+        encoding="utf-8",
+    )
+    rel_path = "app/ui/modals/dup_modal.py"
+
+    full_errors: list[str] = []
+    validate_codebase_duplication(full_errors)
+    assert any(
+        "Duplicate function body found for 'action_cancel'" in err and rel_path in err
+        for err in full_errors
+    )
+
+    inc_errors: list[str] = []
+    validate_codebase_duplication(inc_errors, target_files={rel_path})
+    assert any(
+        "Duplicate function body found for 'action_cancel'" in err and rel_path in err
+        for err in inc_errors
+    )
+
+
+def test_validate_architecture_allows_docstring_stubs_and_overloads(
+    monkeypatch, tmp_path
+):
+    from scripts.validate_architecture import validate_codebase_duplication
+
+    monkeypatch.chdir(tmp_path)
+    app_dir = tmp_path / "app"
+    app_dir.mkdir(parents=True, exist_ok=True)
+
+    (app_dir / "stream_stubs.py").write_text(
+        "from typing import overload\n\n"
+        "class NullA:\n"
+        "    def isatty(self) -> bool:\n"
+        '        """Return False for null stream."""\n'
+        "        return False\n\n"
+        "class NullB:\n"
+        "    def isatty(self) -> bool:\n"
+        '        """Return False for null stream."""\n'
+        "        return False\n\n"
+        "@overload\n"
+        "def query(sel: str) -> int: ...\n"
+        "@overload\n"
+        "def query(sel: bytes) -> str: ...\n"
+        "def query(sel: object) -> object:\n"
+        "    return sel\n",
+        encoding="utf-8",
+    )
+
+    errors: list[str] = []
+    validate_codebase_duplication(errors)
+    assert errors == []
+
+
+def test_validate_modal_shell_conventions_flags_direct_modal_screen_and_inlined_css():
+    import ast
+
+    from scripts.validate_architecture import validate_modal_shell_conventions
+
+    bad_source = (
+        "from textual.screen import ModalScreen\n"
+        "from app.ui.layout import ResponsiveModalScreen\n\n"
+        "class LegacyDialogModal(ModalScreen[bool]):\n"
+        '    CSS = "LegacyDialogModal { align: center middle; background: rgba(0, 0, 0, 0.6); }"\n\n'
+        "class ReInlinedModal(ResponsiveModalScreen[None]):\n"
+        '    MODAL_CSS = ".button-row { dock: bottom; align: right middle; }"\n'
+    )
+    good_source = (
+        "from app.ui.layout import ResponsiveModalScreen\n\n"
+        "class CleanModal(ResponsiveModalScreen[bool]):\n"
+        '    MODAL_CSS = ".modal-box { max-width: 60; }"\n'
+    )
+
+    errors: list[str] = []
+    validate_modal_shell_conventions(
+        errors,
+        parsed_files=[
+            ("app/ui/modals/bad.py", ast.parse(bad_source)),
+            ("app/ui/modals/good.py", ast.parse(good_source)),
+        ],
+    )
+    assert any("inherits directly from 'ModalScreen'" in err for err in errors)
+    assert any("defines 'CSS' directly" in err for err in errors)
+    assert any("re-inlines shared modal shell CSS rules" in err for err in errors)
+    assert not any("good.py" in err for err in errors)
+
+
 def test_validate_architecture_incremental_violation(monkeypatch, tmp_path):
     bad_file = tmp_path / "bad_module.py"
     bad_file.write_text("import sys\nx = sys.frozen\n", encoding="utf-8")

@@ -9,7 +9,6 @@ from textual import on
 from textual.app import ComposeResult
 from textual.binding import Binding
 from textual.containers import Horizontal, Vertical
-from textual.screen import ModalScreen
 from textual.widgets import Button, Checkbox, DataTable, Label, OptionList, Static
 from textual.widgets.option_list import Option
 
@@ -19,14 +18,13 @@ from app.core.sample_corpus import (
     get_sample_corpus_items,
     simulate_corpus_classification,
 )
-from app.ui.a11y import A11yMixin
 from app.ui.heading import Heading
-from app.ui.layout import ModalBox, ResponsiveLayoutMixin
+from app.ui.layout import ModalBox, ResponsiveModalScreen
 
 logger = logging.getLogger(__name__)
 
 
-class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None]):
+class SamplePlaygroundModal(ResponsiveModalScreen[None]):
     """Modal screen for interactive onboarding sample playground with live rule simulation."""
 
     BINDINGS = [
@@ -35,41 +33,12 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
         Binding("f1", "open_help_overlay(False)", "Help", show=False),
     ]
 
-    CSS = """
-    SamplePlaygroundModal {
-        align: center middle;
-        background: rgba(0, 0, 0, 0.6);
-    }
+    MODAL_CSS = """
     .modal-box {
-        padding: 1 2;
-        background: $panel;
-        border: thick $primary;
         width: 92%;
         max-width: 100;
         min-width: 40;
-        height: auto;
         max-height: 92%;
-        overflow-y: hidden;
-    }
-    .compact .modal-box {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .narrow .modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
-    .modal-body {
-        width: 100%;
-        height: auto;
-        max-height: 100%;
-        overflow-y: auto;
-    }
-    .modal-title {
-        text-style: bold;
-        color: $accent;
-        margin-bottom: 1;
     }
     .field-label {
         margin-top: 1;
@@ -122,12 +91,7 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
         margin-bottom: 1;
     }
     .button-row {
-        dock: bottom;
-        width: 100%;
-        margin-top: 1;
-        height: auto;
         min-height: 3;
-        align: right middle;
     }
     .button-row Button {
         margin-left: 1;
@@ -230,7 +194,7 @@ class SamplePlaygroundModal(ResponsiveLayoutMixin, A11yMixin, ModalScreen[None])
 
     def on_mount(self) -> None:
         """Set up prediction matrix columns, focus doc list, and evaluate predictions."""
-        self._update_layout(self.size.width, self.size.height)
+        super().on_mount()
 
         matrix = self.query_one("#playground-prediction-matrix", DataTable)
         matrix.cursor_type = "row"
