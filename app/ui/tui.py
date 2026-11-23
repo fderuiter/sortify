@@ -1134,8 +1134,21 @@ class AutoSorterTUI(
             paths = [path] if isinstance(path, str) else list(path)
             valid_paths = [os.path.abspath(p) for p in paths if p and os.path.exists(p)]
             if valid_paths:
+                prev_sources = [
+                    os.path.abspath(p) for p in getattr(self, "source_dirs", []) if p
+                ]
+                if valid_paths != prev_sources:
+                    self.locked_files.clear()
+                    self._ratings_cache.clear()
+                    self.has_critical_errors = False
+                    self.verification_result = {}
+                    self.critical_error_paths.clear()
+                    self.warning_paths.clear()
+                    self.collision_paths.clear()
                 self.source_dirs = valid_paths
                 self.base_dir = valid_paths[0]
+                self._update_onboarding_cta_visibility()
+                self.update_status()
                 self.run_worker(
                     self._poll_daemon_status(), name="poll_daemon_on_dir_select"
                 )
@@ -1666,11 +1679,26 @@ class AutoSorterTUI(
         from app.core.session_catalog import list_sessions
 
         sessions = list_sessions()
+        active_base = (
+            os.path.normcase(os.path.normpath(os.path.abspath(self.base_dir)))
+            if self.base_dir
+            else ""
+        )
         target_sess = None
         for s in sessions:
-            if str(s.get("status", "")).lower() == "completed":
-                target_sess = s
-                break
+            if str(s.get("status", "")).lower() != "completed":
+                continue
+            if active_base:
+                sess_base_raw = str(s.get("base_dir", "") or "")
+                if not sess_base_raw:
+                    continue
+                sess_base = os.path.normcase(
+                    os.path.normpath(os.path.abspath(sess_base_raw))
+                )
+                if sess_base != active_base:
+                    continue
+            target_sess = s
+            break
 
         if not target_sess:
             self.announce("No completed sorting session available to undo.")
@@ -1728,6 +1756,12 @@ class AutoSorterTUI(
             notify(msg, type="info")
         except Exception:
             pass
+        if not getattr(self, "source_dirs", None) and self.base_dir:
+            self.source_dirs = [self.base_dir]
+        if getattr(self, "source_dirs", None) and any(
+            os.path.isdir(d) for d in self.source_dirs
+        ):
+            self._start_scan()
 
     def _on_undo_failure(self, session_id: str, err: Exception) -> None:
         """Handle session rollback failure on main thread."""

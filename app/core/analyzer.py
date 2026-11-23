@@ -980,15 +980,19 @@ class IncrementalAnalyzer:
         if not isinstance(node, dict) or node.get("__type__") == "file":
             return node
 
+        from app.core.scanner import parse_item_identifier
+
+        default_base = getattr(self, "base_dir", "") or ""
         new_node = {}
         for k, v in node.items():
             if v is None or (isinstance(v, dict) and v.get("__type__") == "file"):
-                norm_k = k.replace("\\", "/")
+                _, rel_k = parse_item_identifier(k, default_base)
+                norm_k = rel_k.replace("\\", "/")
                 dirname = os.path.dirname(norm_k)
-                if not dirname:
+                parts = [p for p in dirname.split("/") if p and p != "."]
+                if not parts:
                     new_node[k] = v
                 else:
-                    parts = dirname.split("/")
                     current = new_node
                     for part in parts:
                         if (
