@@ -74,26 +74,28 @@ class ModelManagerModal(ResponsiveModalScreen[None]):
         grid-columns: 1fr 1fr 1fr;
         grid-gutter: 0 1;
     }
-    .compact .button-row {
-        margin-top: 0;
-    }
-    .narrow .button-row {
-        grid-size: 2;
-        grid-columns: 1fr 1fr;
-    }
     .button-row Button {
         width: 100%;
         min-width: 0;
         margin: 0;
     }
-    .compact .button-row Button {
-        height: 1;
-        min-height: 1;
-        border: none;
-    }
     Button:focus, Input:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    ModelManagerModal {
+        &.compact .button-row {
+            margin-top: 0;
+        }
+        &.narrow .button-row {
+            grid-size: 2;
+            grid-columns: 1fr 1fr;
+        }
+        &.compact .button-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+        }
     }
     """
 

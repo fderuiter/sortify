@@ -226,17 +226,11 @@ class CommandPaletteModal(ResponsiveModalScreen[Optional[PaletteCommand]]):
     ]
 
     MODAL_CSS = """
-    CommandPaletteModal {
-        background: rgba(0, 0, 0, 0.65);
-    }
     .palette-box {
         width: 80%;
         max-width: 76;
         min-width: 40;
         max-height: 85%;
-    }
-    .narrow .palette-box {
-        width: 95%;
     }
     .palette-input {
         margin-bottom: 1;
@@ -251,6 +245,20 @@ class CommandPaletteModal(ResponsiveModalScreen[Optional[PaletteCommand]]):
         margin-top: 1;
         color: $text-muted;
         text-style: italic;
+    }
+    CommandPaletteModal {
+        background: rgba(0, 0, 0, 0.65);
+        &.compact .palette-box, &.narrow .palette-box {
+            padding: 0 1;
+            width: 96%;
+            max-height: 96%;
+        }
+        &.compact .palette-input {
+            margin-bottom: 0;
+        }
+        &.compact .palette-status {
+            margin-top: 0;
+        }
     }
     """
 

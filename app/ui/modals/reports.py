@@ -42,29 +42,16 @@ class ExtractionPreviewModal(ResponsiveModalScreen[Optional[int]]):
         min-width: 35;
         max-height: 92%;
     }
-    .compact .preview-modal-box, .narrow .preview-modal-box {
-        padding: 0 1;
-        width: 96%;
-    }
     .hidden {
         display: none;
-    }
-    .compact .modal-title {
-        margin-bottom: 0;
     }
     .file-path-label {
         color: $text-muted;
         margin-bottom: 1;
     }
-    .compact .file-path-label {
-        margin-bottom: 0;
-    }
     .field-label {
         margin-top: 1;
         text-style: bold;
-    }
-    .compact .field-label {
-        margin-top: 0;
     }
     .preview-table {
         height: auto;
@@ -74,24 +61,13 @@ class ExtractionPreviewModal(ResponsiveModalScreen[Optional[int]]):
         margin-bottom: 1;
         border: solid $primary-lighten-2;
     }
-    .compact .preview-table {
-        margin-top: 0;
-        margin-bottom: 0;
-    }
     .threshold-row {
         height: 3;
         align: left middle;
     }
-    .compact .threshold-row {
-        height: 1;
-    }
     .narrow-input {
         width: 12;
         margin-right: 1;
-    }
-    .compact .narrow-input {
-        height: 1;
-        border: none;
     }
     .preview-text-box {
         width: 100%;
@@ -103,18 +79,44 @@ class ExtractionPreviewModal(ResponsiveModalScreen[Optional[int]]):
         border: solid $accent;
         color: $text;
     }
-    .compact .preview-text-box {
-        min-height: 2;
-        max-height: 4;
-    }
-    .compact .button-row {
-        margin-top: 0;
-    }
-    .compact .button-row Button {
-        height: 1;
-        min-height: 1;
-        border: none;
-        margin: 0;
+    ExtractionPreviewModal {
+        &.compact .preview-modal-box, &.narrow .preview-modal-box {
+            padding: 0 1;
+            width: 96%;
+        }
+        &.compact .modal-title {
+            margin-bottom: 0;
+        }
+        &.compact .file-path-label {
+            margin-bottom: 0;
+        }
+        &.compact .field-label {
+            margin-top: 0;
+        }
+        &.compact .preview-table {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.compact .threshold-row {
+            height: 1;
+        }
+        &.compact .narrow-input {
+            height: 1;
+            border: none;
+        }
+        &.compact .preview-text-box {
+            min-height: 2;
+            max-height: 4;
+        }
+        &.compact .button-row {
+            margin-top: 0;
+        }
+        &.compact .button-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+            margin: 0;
+        }
     }
     """
 
@@ -386,9 +388,6 @@ class ExportReportModal(ResponsiveModalScreen[Optional[tuple[str, str]]]):
     ]
 
     MODAL_CSS = """
-    .compact .modal-box, .narrow .modal-box {
-        width: 95%;
-    }
     .modal-subtitle {
         color: $text-muted;
         margin-bottom: 1;
@@ -396,6 +395,14 @@ class ExportReportModal(ResponsiveModalScreen[Optional[tuple[str, str]]]):
     Button:focus, Input:focus, Select:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    ExportReportModal {
+        &.compact .modal-box, &.narrow .modal-box {
+            width: 95%;
+        }
+        &.compact .modal-subtitle {
+            margin-bottom: 0;
+        }
     }
     """
 
@@ -486,19 +493,12 @@ class AuditReportModal(ResponsiveModalScreen[None]):
     ]
 
     MODAL_CSS = """
-    AuditReportModal {
-        background: rgba(0, 0, 0, 0.7);
-    }
     .audit-modal-box {
         width: 95%;
         max-width: 108;
         min-width: 40;
         height: 90%;
         min-height: 20;
-    }
-    .compact .audit-modal-box, .narrow .audit-modal-box {
-        width: 98%;
-        height: 94%;
     }
     .modal-body {
         height: 1fr;
@@ -512,21 +512,11 @@ class AuditReportModal(ResponsiveModalScreen[None]):
         color: $text-muted;
         margin-bottom: 1;
     }
-    .compact .audit-subtitle {
-        margin-bottom: 0;
-    }
     .audit-stats-row {
         width: 100%;
         height: auto;
         margin-bottom: 1;
         layout: horizontal;
-    }
-    .compact .audit-stats-row, .narrow .audit-stats-row {
-        margin-bottom: 0;
-        layout: grid;
-        grid-size: 3;
-        grid-columns: 1fr 1fr 1fr;
-        grid-gutter: 0 1;
     }
     .stat-card {
         width: 1fr;
@@ -535,11 +525,6 @@ class AuditReportModal(ResponsiveModalScreen[None]):
         margin-right: 1;
         border: solid $secondary;
         background: $surface;
-    }
-    .compact .stat-card, .narrow .stat-card {
-        border: none;
-        height: 1;
-        margin-right: 0;
     }
     .stat-pass {
         color: $success;
@@ -562,9 +547,6 @@ class AuditReportModal(ResponsiveModalScreen[None]):
         height: auto;
         margin-bottom: 1;
     }
-    .compact .filter-row {
-        margin-bottom: 0;
-    }
     #audit-search-input {
         width: 1fr;
         margin-right: 1;
@@ -580,16 +562,10 @@ class AuditReportModal(ResponsiveModalScreen[None]):
         margin-bottom: 1;
         border: solid $accent;
     }
-    .compact #audit-table, .compact #failed-items-table {
-        margin-bottom: 0;
-    }
     #audit-tabs {
         height: auto;
         min-height: 11;
         margin-bottom: 1;
-    }
-    .compact #audit-tabs {
-        margin-bottom: 0;
     }
     .button-row {
         layout: grid;
@@ -597,22 +573,62 @@ class AuditReportModal(ResponsiveModalScreen[None]):
         grid-columns: 1fr 1fr 1fr;
         grid-gutter: 0 1;
     }
-    .compact .button-row {
-        margin-top: 0;
-    }
     .button-row Button {
         width: 100%;
         min-width: 0;
         margin: 0;
     }
-    .compact .button-row Button {
-        height: 1;
-        min-height: 1;
-        border: none;
-    }
     Button:focus, Input:focus, Select:focus, DataTable:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    AuditReportModal {
+        background: rgba(0, 0, 0, 0.7);
+        &.compact .audit-modal-box, &.narrow .audit-modal-box {
+            padding: 0 1;
+            width: 98%;
+            height: 96%;
+            max-height: 96%;
+        }
+        &.compact .audit-subtitle {
+            margin-bottom: 0;
+        }
+        &.compact .audit-stats-row, &.narrow .audit-stats-row {
+            margin-bottom: 0;
+            layout: grid;
+            grid-size: 3;
+            grid-columns: 1fr 1fr 1fr;
+            grid-gutter: 0 1;
+        }
+        &.compact .stat-card, &.narrow .stat-card {
+            border: none;
+            height: 1;
+            margin-right: 0;
+        }
+        &.compact .filter-row {
+            margin-bottom: 0;
+        }
+        &.narrow #audit-status-filter {
+            width: 20;
+        }
+        &.compact #audit-table, &.compact #failed-items-table {
+            margin-bottom: 0;
+        }
+        &.compact #audit-tabs {
+            margin-bottom: 0;
+        }
+        &.compact .button-row {
+            margin-top: 0;
+        }
+        &.narrow .button-row {
+            grid-size: 2;
+            grid-columns: 1fr 1fr;
+        }
+        &.compact .button-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+        }
     }
     """
 

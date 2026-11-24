@@ -43,15 +43,6 @@ class WizardModal(ResponsiveModalScreen[None]):
         max-height: 90%;
         overflow-y: hidden;
     }
-    .compact .modal-frame {
-        padding: 0 1;
-        width: 96%;
-        max-height: 96%;
-    }
-    .narrow .modal-frame {
-        padding: 0 1;
-        width: 96%;
-    }
     .modal-box {
         padding: 0;
         border: none;
@@ -71,10 +62,6 @@ class WizardModal(ResponsiveModalScreen[None]):
     }
     .privacy-card:focus {
         border: heavy $accent;
-    }
-    .narrow .privacy-card {
-        padding: 0 1;
-        border: round $primary;
     }
     .privacy-badge {
         color: $success;
@@ -131,6 +118,43 @@ class WizardModal(ResponsiveModalScreen[None]):
         height: 1;
         border: none;
         padding: 0 1;
+    }
+    WizardModal {
+        &.compact .modal-frame {
+            padding: 0 1;
+            width: 96%;
+            max-height: 96%;
+        }
+        &.narrow .modal-frame {
+            padding: 0 1;
+            width: 96%;
+        }
+        &.compact .modal-box, &.narrow .modal-box {
+            padding: 0;
+            width: 100%;
+            max-height: 100%;
+        }
+        &.narrow .privacy-card {
+            padding: 0 1;
+            border: round $primary;
+        }
+        &.compact .preset-row {
+            margin-top: 0;
+            margin-bottom: 0;
+            min-height: 1;
+        }
+        &.compact .preset-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+        }
+        &.narrow .preset-row {
+            grid-size: 2;
+        }
+        &.narrow .button-row Button {
+            min-width: 0;
+            padding: 0 1;
+        }
     }
     """
 

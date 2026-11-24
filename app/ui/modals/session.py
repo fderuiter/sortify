@@ -47,23 +47,25 @@ class SessionRecoveryModal(ResponsiveModalScreen[Optional[str]]):
         grid-columns: 1fr 1fr 1fr 1fr;
         grid-gutter: 0 1;
     }
-    .compact .button-row, .narrow .button-row {
-        grid-size: 2;
-        grid-columns: 1fr 1fr;
-    }
     .button-row Button {
         width: 100%;
         min-width: 0;
         margin: 0;
     }
-    .compact .button-row Button {
-        height: 1;
-        min-height: 1;
-        border: none;
-    }
     Button:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    SessionRecoveryModal {
+        &.compact .button-row, &.narrow .button-row {
+            grid-size: 2;
+            grid-columns: 1fr 1fr;
+        }
+        &.compact .button-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+        }
     }
     """
 
@@ -181,9 +183,6 @@ class MultiSessionRecoveryModal(ResponsiveModalScreen[Optional[Any]]):
         color: $text-muted;
         margin-bottom: 1;
     }
-    .compact .modal-subtitle {
-        margin-bottom: 0;
-    }
     #sessions-table {
         height: auto;
         min-height: 6;
@@ -191,26 +190,14 @@ class MultiSessionRecoveryModal(ResponsiveModalScreen[Optional[Any]]):
         border: solid $primary;
         margin-bottom: 1;
     }
-    .compact #sessions-table {
-        margin-bottom: 0;
-    }
     #lbl-selected-session {
         text-style: bold;
         color: $accent;
         margin-bottom: 1;
     }
-    .compact #lbl-selected-session {
-        margin-bottom: 0;
-    }
     .actions-heading {
         margin-top: 1;
         margin-bottom: 0;
-    }
-    .compact .actions-heading {
-        margin-top: 0;
-    }
-    .compact .button-row {
-        margin-top: 0;
     }
     .batch-button-row {
         layout: grid;
@@ -229,14 +216,35 @@ class MultiSessionRecoveryModal(ResponsiveModalScreen[Optional[Any]]):
         min-width: 0;
         margin: 0;
     }
-    .compact .button-row Button {
-        height: 1;
-        min-height: 1;
-        border: none;
-    }
     Button:focus, DataTable:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    MultiSessionRecoveryModal {
+        &.compact .modal-subtitle {
+            margin-bottom: 0;
+        }
+        &.compact #sessions-table {
+            margin-bottom: 0;
+        }
+        &.compact #lbl-selected-session {
+            margin-bottom: 0;
+        }
+        &.compact .actions-heading {
+            margin-top: 0;
+        }
+        &.compact .button-row {
+            margin-top: 0;
+        }
+        &.compact .button-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+        }
+        &.narrow .item-button-row {
+            grid-size: 2;
+            grid-columns: 1fr 1fr;
+        }
     }
     """
 
@@ -527,20 +535,12 @@ class RollbackConfirmModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
     ]
 
     MODAL_CSS = """
-    RollbackConfirmModal {
-        background: rgba(0, 0, 0, 0.7);
-    }
     .confirm-box {
         border: thick $warning;
         width: 92%;
         max-width: 98;
         height: 90%;
         max-height: 92%;
-    }
-    .compact .confirm-box, .narrow .confirm-box {
-        width: 98%;
-        height: 94%;
-        max-height: 96%;
     }
     #stage-1-container, #stage-2-container {
         width: 100%;
@@ -574,50 +574,23 @@ class RollbackConfirmModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         margin-bottom: 1;
         layout: horizontal;
     }
-    .compact .controls-row, .narrow .controls-row {
-        layout: vertical;
-        margin-top: 0;
-        margin-bottom: 0;
-    }
     #rollback-search-input {
         width: 1fr;
         margin-right: 1;
-    }
-    .compact #rollback-search-input, .narrow #rollback-search-input {
-        width: 100%;
-        margin-right: 0;
     }
     .bulk-actions-row {
         width: auto;
         height: auto;
         layout: horizontal;
     }
-    .compact .bulk-actions-row, .narrow .bulk-actions-row {
-        width: 100%;
-        layout: grid;
-        grid-size: 3;
-        grid-columns: 1fr 1fr 1fr;
-        grid-gutter: 0 1;
-    }
     .bulk-btn {
         min-width: 12;
         margin-right: 1;
-    }
-    .compact .bulk-btn, .narrow .bulk-btn {
-        width: 100%;
-        min-width: 0;
-        margin-right: 0;
-        height: 1;
-        min-height: 1;
-        border: none;
     }
     #lbl-selection-count {
         text-style: bold;
         color: $accent;
         margin-bottom: 1;
-    }
-    .compact #lbl-selection-count {
-        margin-bottom: 0;
     }
     #rollback-items-table, #dryrun-diff-table {
         width: 100%;
@@ -626,9 +599,6 @@ class RollbackConfirmModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         max-height: 14;
         border: solid $primary;
         margin-bottom: 1;
-    }
-    .compact #rollback-items-table, .compact #dryrun-diff-table {
-        margin-bottom: 0;
     }
     .summary-bar {
         width: 100%;
@@ -639,14 +609,6 @@ class RollbackConfirmModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         border: solid $accent;
         padding: 0 1;
         layout: horizontal;
-    }
-    .compact .summary-bar, .narrow .summary-bar {
-        margin-top: 0;
-        margin-bottom: 0;
-        layout: grid;
-        grid-size: 2;
-        grid-columns: 1fr 1fr;
-        grid-gutter: 0 1;
     }
     .summary-stat {
         width: 1fr;
@@ -671,32 +633,90 @@ class RollbackConfirmModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         color: $text;
         height: auto;
     }
-    .compact .warning-box {
-        margin-top: 0;
-        margin-bottom: 0;
-    }
     .button-row {
         layout: grid;
         grid-size: 3;
         grid-columns: 1fr 1fr 1fr;
         grid-gutter: 0 1;
     }
-    .compact .button-row {
-        margin-top: 0;
-    }
     .button-row Button {
         width: 100%;
         min-width: 0;
         margin: 0;
     }
-    .compact .button-row Button {
-        height: 1;
-        min-height: 1;
-        border: none;
-    }
     Button:focus, Input:focus, DataTable:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    RollbackConfirmModal {
+        background: rgba(0, 0, 0, 0.7);
+        &.compact .confirm-box, &.narrow .confirm-box {
+            padding: 0 1;
+            width: 98%;
+            height: 94%;
+            max-height: 96%;
+        }
+        &.compact .controls-row, &.narrow .controls-row {
+            layout: vertical;
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.compact #rollback-search-input, &.narrow #rollback-search-input {
+            width: 100%;
+            margin-right: 0;
+        }
+        &.compact .bulk-actions-row {
+            width: 100%;
+            layout: grid;
+            grid-size: 3;
+            grid-columns: 1fr 1fr 1fr;
+            grid-gutter: 0 1;
+        }
+        &.narrow .bulk-actions-row {
+            width: 100%;
+            layout: grid;
+            grid-size: 2;
+            grid-columns: 1fr 1fr;
+            grid-gutter: 0 1;
+        }
+        &.compact .bulk-btn, &.narrow .bulk-btn {
+            width: 100%;
+            min-width: 0;
+            margin-right: 0;
+            height: 1;
+            min-height: 1;
+            border: none;
+        }
+        &.compact #lbl-selection-count {
+            margin-bottom: 0;
+        }
+        &.compact #rollback-items-table, &.compact #dryrun-diff-table {
+            margin-bottom: 0;
+        }
+        &.compact .summary-bar, &.narrow .summary-bar {
+            margin-top: 0;
+            margin-bottom: 0;
+            layout: grid;
+            grid-size: 2;
+            grid-columns: 1fr 1fr;
+            grid-gutter: 0 1;
+        }
+        &.compact .warning-box {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.compact .button-row {
+            margin-top: 0;
+        }
+        &.narrow .button-row {
+            grid-size: 2;
+            grid-columns: 1fr 1fr;
+        }
+        &.compact .button-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+        }
     }
     """
 
@@ -1190,14 +1210,8 @@ class RollbackErrorModal(ResponsiveModalScreen[None]):
     ]
 
     MODAL_CSS = """
-    RollbackErrorModal {
-        background: rgba(0, 0, 0, 0.7);
-    }
     .error-box {
         border: thick $error;
-    }
-    .narrow .error-box {
-        max-height: 96%;
     }
     .modal-title {
         color: $error;
@@ -1213,6 +1227,20 @@ class RollbackErrorModal(ResponsiveModalScreen[None]):
     Button:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    RollbackErrorModal {
+        background: rgba(0, 0, 0, 0.7);
+        &.compact .error-box, &.narrow .error-box {
+            max-height: 96%;
+        }
+        &.compact .error-text {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.narrow .button-row Button {
+            min-width: 0;
+            padding: 0 1;
+        }
     }
     """
 
@@ -1378,15 +1406,9 @@ class HistoryModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         min-width: 40;
         max-height: 92%;
     }
-    .compact .modal-title {
-        margin-bottom: 0;
-    }
     .modal-subtitle {
         color: $text-muted;
         margin-bottom: 1;
-    }
-    .compact .modal-subtitle {
-        margin-bottom: 0;
     }
     .details-box {
         margin-top: 1;
@@ -1407,14 +1429,30 @@ class HistoryModal(ResponsiveModalScreen[Optional[dict[str, Any]]]):
         min-width: 0;
         margin: 0;
     }
-    .compact .button-row Button {
-        height: 1;
-        min-height: 1;
-        border: none;
-    }
     Button:focus, Input:focus, Select:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    HistoryModal {
+        &.compact .modal-title {
+            margin-bottom: 0;
+        }
+        &.compact .modal-subtitle {
+            margin-bottom: 0;
+        }
+        &.compact .details-box {
+            margin-top: 0;
+            margin-bottom: 0;
+        }
+        &.narrow .button-row {
+            grid-size: 2;
+            grid-columns: 1fr 1fr;
+        }
+        &.compact .button-row Button {
+            height: 1;
+            min-height: 1;
+            border: none;
+        }
     }
     """
 

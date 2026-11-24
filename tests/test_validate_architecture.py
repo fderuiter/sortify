@@ -166,6 +166,55 @@ def test_validate_modal_shell_conventions_flags_direct_modal_screen_and_inlined_
     assert not any("good.py" in err for err in errors)
 
 
+def test_validate_modal_shell_conventions_rejects_unnested_breakpoint_selectors():
+    import ast
+
+    from scripts.validate_architecture import validate_modal_shell_conventions
+
+    bad_top_level = (
+        "from app.ui.layout import ResponsiveModalScreen\n\n"
+        "class TopLevelCompactModal(ResponsiveModalScreen[None]):\n"
+        '    MODAL_CSS = ".compact .modal-box { width: 98%; }"\n\n'
+        "class TopLevelNarrowModal(ResponsiveModalScreen[None]):\n"
+        '    MODAL_CSS = ".narrow .button-row { grid-size: 2; }"\n\n'
+        "class UnboundNestedModal(ResponsiveModalScreen[None]):\n"
+        '    MODAL_CSS = "UnboundNestedModal { .compact .button-row { margin-top: 0; } }"\n\n'
+        "class TopLevelAmpersandModal(ResponsiveModalScreen[None]):\n"
+        '    MODAL_CSS = "&.compact .modal-box { width: 98%; }"\n'
+    )
+    good_nested = (
+        "from app.ui.layout import ResponsiveModalScreen\n\n"
+        "class ProperlyNestedModal(ResponsiveModalScreen[None]):\n"
+        '    MODAL_CSS = """\n'
+        "    .narrow-input { width: 12; }\n"
+        "    ProperlyNestedModal {\n"
+        "        &.compact .narrow-input { height: 1; }\n"
+        "        &.narrow .button-row { grid-size: 2; }\n"
+        "    }\n"
+        '    """\n'
+    )
+
+    errors: list[str] = []
+    validate_modal_shell_conventions(
+        errors,
+        parsed_files=[
+            ("app/ui/modals/bad_bp.py", ast.parse(bad_top_level)),
+            ("app/ui/modals/good_bp.py", ast.parse(good_nested)),
+        ],
+    )
+    for cls_name in (
+        "TopLevelCompactModal",
+        "TopLevelNarrowModal",
+        "UnboundNestedModal",
+        "TopLevelAmpersandModal",
+    ):
+        assert any(
+            cls_name in err and "un-nested '.compact' or '.narrow'" in err
+            for err in errors
+        ), f"Expected un-nested breakpoint error for {cls_name}, got {errors}"
+    assert not any("good_bp.py" in err for err in errors)
+
+
 def test_validate_architecture_incremental_violation(monkeypatch, tmp_path):
     bad_file = tmp_path / "bad_module.py"
     bad_file.write_text("import sys\nx = sys.frozen\n", encoding="utf-8")

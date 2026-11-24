@@ -139,6 +139,11 @@ class ShortcutCheatSheetModal(ResponsiveModalScreen[None]):
         border: heavy $accent;
         text-style: bold;
     }
+    ShortcutCheatSheetModal {
+        &.compact .section-title {
+            margin-top: 0;
+        }
+    }
     """
 
     def compose(self) -> ComposeResult:
@@ -344,14 +349,8 @@ class TroubleshootingHelpModal(ResponsiveModalScreen[None]):
     ]
 
     MODAL_CSS = """
-    TroubleshootingHelpModal {
-        background: rgba(0, 0, 0, 0.65);
-    }
     .modal-box {
         max-width: 84;
-    }
-    .narrow .modal-box {
-        max-height: 96%;
     }
     .button-row {
         min-height: 3;
@@ -362,6 +361,16 @@ class TroubleshootingHelpModal(ResponsiveModalScreen[None]):
     Button:focus {
         border: heavy $accent;
         text-style: bold;
+    }
+    TroubleshootingHelpModal {
+        background: rgba(0, 0, 0, 0.65);
+        &.compact .modal-box, &.narrow .modal-box {
+            max-height: 96%;
+        }
+        &.narrow .button-row Button {
+            min-width: 0;
+            padding: 0 1;
+        }
     }
     """
 

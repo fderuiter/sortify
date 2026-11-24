@@ -15,6 +15,27 @@ BASE_MODAL_CSS = """
 ResponsiveModalScreen {
     align: center middle;
     background: rgba(0, 0, 0, 0.6);
+    &.compact .modal-box {
+        padding: 0 1;
+        width: 96%;
+        max-height: 96%;
+    }
+    &.narrow .modal-box {
+        padding: 0 1;
+        width: 96%;
+    }
+    &.compact .modal-title {
+        margin-bottom: 0;
+    }
+    &.compact .button-row {
+        margin-top: 0;
+        min-height: 1;
+    }
+    &.compact .button-row Button {
+        height: 1;
+        min-height: 1;
+        border: none;
+    }
 }
 .modal-box {
     padding: 1 2;
@@ -27,19 +48,10 @@ ResponsiveModalScreen {
     max-height: 90%;
     overflow-y: hidden;
 }
-.compact .modal-box {
-    padding: 0 1;
-    width: 96%;
-    max-height: 96%;
-}
-.narrow .modal-box {
-    padding: 0 1;
-    width: 96%;
-}
 .modal-body {
     width: 100%;
-    height: auto;
-    max-height: 100%;
+    height: 1fr;
+    min-height: 0;
     overflow-y: auto;
 }
 .modal-footer {
